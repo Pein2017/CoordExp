@@ -39,7 +39,6 @@ from src.qwen.images import apply_logical_image_transform, rgb_image_sha256
 from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
 
 
-VLLM_MAX_MODEL_LEN = 2048
 _FORCED_REPLAY_IDS_KEY = "coordexp_expected_token_ids"
 EngineFactory = Callable[[Mapping[str, object]], Any]
 ComponentsLoader = Callable[[BackendLaunch], Any]
@@ -70,6 +69,7 @@ class VLLMBackendSession:
         self._engine_kwargs = dict(engine_kwargs)
         self._tokenizer = tokenizer
         self._receipt = receipt
+        self._max_model_len = _vllm_max_model_len(launch)
         self._forced_replay_processor = forced_replay_processor
         self._raw_replay_qualifier = raw_replay_qualifier
         self._raw_replay_evidence: dict[str, dict[str, object]] = {}
@@ -97,7 +97,10 @@ class VLLMBackendSession:
             )
         synchronize_cuda_for_timing(torch)
         started_at = time.perf_counter()
-        policy = _require_shared_generation_policy(checked)
+        policy = _require_shared_generation_policy(
+            checked,
+            max_model_len=self._max_model_len,
+        )
         if policy.include_raw_model_logprob:
             self._require_known_raw_replay_semantics()
         if self._engine is None:
@@ -289,7 +292,10 @@ class VLLMBackendSession:
         generated_by_request = [
             _generated_token_ids(native) for native in generation_outputs
         ]
-        policy = _require_shared_generation_policy(requests)
+        policy = _require_shared_generation_policy(
+            requests,
+            max_model_len=self._max_model_len,
+        )
         processor = self._resolve_forced_replay_processor()
         processor_identity = _processor_source_identity(processor)
         qualification = self._qualify_raw_replay(processor_identity)
@@ -778,7 +784,7 @@ def _engine_kwargs(
         "dtype": dtype,
         "seed": 0,
         "gpu_memory_utilization": options["gpu_memory_utilization"],
-        "max_model_len": VLLM_MAX_MODEL_LEN,
+        "max_model_len": options["max_model_len"],
         "max_num_seqs": launch.batch_size,
         "disable_custom_all_reduce": True,
         "disable_log_stats": True,
@@ -1116,7 +1122,11 @@ def _open_verified_rgb_image(request: DecodeRequest) -> Image.Image:
         ) from exc
 
 
-def _require_shared_generation_policy(requests: Sequence[DecodeRequest]) -> Any:
+def _require_shared_generation_policy(
+    requests: Sequence[DecodeRequest],
+    *,
+    max_model_len: int,
+) -> Any:
     policies = {request.generation_policy for request in requests}
     if len(policies) != 1:
         raise RuntimeContractError(
@@ -1126,14 +1136,14 @@ def _require_shared_generation_policy(requests: Sequence[DecodeRequest]) -> Any:
         )
     policy = policies.pop()
     longest = max(len(request.expected_executed_prompt_token_ids) for request in requests)
-    if longest + policy.max_new_tokens > VLLM_MAX_MODEL_LEN:
+    if longest + policy.max_new_tokens > max_model_len:
         raise RuntimeContractError(
             "vLLM prompt plus generation exceeds the qualified model length",
             code="vllm_backend.model_length",
             context={
                 "prompt_tokens": longest,
                 "max_new_tokens": policy.max_new_tokens,
-                "max_model_len": VLLM_MAX_MODEL_LEN,
+                "max_model_len": max_model_len,
             },
         )
     return policy
@@ -1156,7 +1166,19 @@ def _vllm_options(launch: BackendLaunch) -> Mapping[str, object]:
             "vLLM gpu_memory_utilization must be between zero and one",
             code="vllm_backend.launch_options",
         )
+    _vllm_max_model_len(launch)
     return options
+
+
+def _vllm_max_model_len(launch: BackendLaunch) -> int:
+    options = launch.backend_options.get("vllm")
+    value = options.get("max_model_len") if isinstance(options, Mapping) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise RuntimeContractError(
+            "vLLM max_model_len must be a positive integer",
+            code="vllm_backend.launch_options",
+        )
+    return value
 
 
 def _default_engine_factory(kwargs: Mapping[str, object]) -> Any:

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import Field, ValidationError, model_validator
+from pydantic import Field, StrictInt, ValidationError, model_validator
 
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_file, sha256_json
@@ -98,6 +98,7 @@ class InferVllmBackendOptions(StrictConfigModel):
         le=1.0,
         allow_inf_nan=False,
     )
+    max_model_len: StrictInt = Field(default=2048, gt=0)
 
 
 class InferHfBackendConfig(StrictConfigModel):

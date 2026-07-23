@@ -90,6 +90,7 @@ def test_all_canonical_infer_configs_use_strict_backend_projection(
         assert set(resolved.config_dict["backend"]) == {"type", "hf"}
     else:
         assert 0 < resolved.config.backend.vllm.gpu_memory_utilization <= 1
+        assert resolved.config.backend.vllm.max_model_len == 2048
         assert set(resolved.config_dict["backend"]) == {"type", "vllm"}
     assert set(resolved.config_dict["model"]) == {"base_model", "dtype", "processor"}
     assert resolved.config.generation.temperature == pytest.approx(0.0)
@@ -216,6 +217,33 @@ def test_vllm_backend_accepts_strict_selected_block(
     assert resolved.config.backend.vllm.gpu_memory_utilization == pytest.approx(
         gpu_memory_utilization
     )
+    assert resolved.config.backend.vllm.max_model_len == 2048
+
+
+def test_vllm_backend_accepts_explicit_max_model_len(tmp_path: Path) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference.runtime import prepare_backend_launch
+
+    resolved = load_infer_config(
+        _write_vllm_config(
+            tmp_path,
+            gpu_memory_utilization=0.7,
+            max_model_len=4096,
+        )
+    )
+    launch = prepare_backend_launch(
+        resolved.config,
+        generation_config_fingerprint="generation-fingerprint",
+        execution_model={
+            "model_path": str(tmp_path / "snapshot"),
+            "mode": "materialized",
+            "composition_key": "a" * 64,
+            "snapshot_fingerprint": "b" * 64,
+        },
+    )
+
+    assert resolved.config.backend.vllm.max_model_len == 4096
+    assert launch.backend_options["vllm"]["max_model_len"] == 4096
 
 
 def test_vllm_backend_replaces_inherited_hf_discriminated_block(
@@ -269,6 +297,26 @@ def test_vllm_backend_rejects_invalid_gpu_memory_utilization(
     assert exc_info.value.context["field"].endswith(
         "vllm.gpu_memory_utilization"
     )
+
+
+@pytest.mark.parametrize("max_model_len", [0, -1, 1.5, True])
+def test_vllm_backend_rejects_invalid_max_model_len(
+    tmp_path: Path,
+    max_model_len: object,
+) -> None:
+    from src.config.inference import load_infer_config
+
+    config_path = _write_vllm_config(
+        tmp_path,
+        gpu_memory_utilization=0.7,
+        max_model_len=max_model_len,
+    )
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_infer_config(config_path)
+
+    assert exc_info.value.code == "config.schema_validation"
+    assert exc_info.value.context["field"].endswith("vllm.max_model_len")
 
 
 @pytest.mark.parametrize(
@@ -903,14 +951,18 @@ def _write_vllm_config(
     path_or_dir: Path,
     *,
     gpu_memory_utilization: float,
+    max_model_len: object | None = None,
 ) -> Path:
     directory = path_or_dir if path_or_dir.suffix == "" else path_or_dir.parent
     directory.mkdir(parents=True, exist_ok=True)
     path = path_or_dir if path_or_dir.suffix else directory / "infer.yaml"
     payload = _base_config(directory)
+    vllm: dict[str, object] = {"gpu_memory_utilization": gpu_memory_utilization}
+    if max_model_len is not None:
+        vllm["max_model_len"] = max_model_len
     payload["backend"] = {
         "type": "vllm",
-        "vllm": {"gpu_memory_utilization": gpu_memory_utilization},
+        "vllm": vllm,
     }
     payload["debug"] = {"smoke": False, "dry_run": True}
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
