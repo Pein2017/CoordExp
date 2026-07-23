@@ -9,6 +9,7 @@ subtree.
 
 ## Current Investigations
 
+- [Pi Lightweight External Worker Ablation](pi-lightweight-worker-ablation/)
 - [Docs vs MCP Authority Boundary](docs-vs-mcp-authority/)
 - [Autoregressive Binding Template Study](autoregressive-binding-template-study/)
 - [CoordExp Historical Experiment Knowledge Handoff](coordexp-experiment-knowledge-handoff/)
