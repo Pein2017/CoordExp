@@ -1,0 +1,20 @@
+schema_version: 1
+extends: ../smoke/qwen3_vl_2b_physical_owner_local_duplicate_rejection_and_recovery_one_update_learning_rate_1e-5.yaml
+
+run:
+  name: qwen3_vl_2b_physical_owner_local_duplicate_rejection_and_recovery_48_events_one_epoch_learning_rate_1e-5_v3
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/training-screen-24-v1/runs
+  collision_policy: fail
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/state-banks-screen-24-v6/state-banks/local_duplicate_rejection_and_recovery/state-bank/manifest.json
+
+training:
+  epochs: 1
+  max_steps: 6
+  effective_batch_size: 8
+
+checkpoint:
+  every_fraction: 0.3
+  steps: []
+  save_final: true

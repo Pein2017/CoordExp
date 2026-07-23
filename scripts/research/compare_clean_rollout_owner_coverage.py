@@ -5,6 +5,12 @@ The artifact contract stores GT boxes as norm1000 bins and decoded prediction
 boxes as pixels.  This utility deliberately keeps entity discovery (category
 and box matching) separate from interpretation of unmatched predictions:
 unmatched predictions are counted, but are never labelled hallucinations.
+
+The broad duplicate metric remains a low-threshold geometry triage signal for
+backward compatibility.  The stricter physical-owner metric is also a
+geometry-derived candidate signal: it requires an unambiguous annotated owner
+and an earlier overlapping prediction for that owner, but still requires image
+review before it can be called a confirmed duplicate.
 """
 
 from __future__ import annotations
@@ -137,6 +143,69 @@ def _pred_objects(row: dict[str, Any]) -> tuple[list[tuple[str, tuple[float, flo
     return result, invalid
 
 
+def _strict_physical_owner_duplicate_candidates(
+    row: dict[str, Any],
+    *,
+    row_id: str,
+    annotation_iou_threshold: float,
+    prediction_iou_threshold: float,
+) -> tuple[list[dict[str, Any]], int]:
+    """Return ordered, unambiguous physical-owner duplicate candidates.
+
+    A valid prediction is attributed only when exactly one same-category GT
+    owner reaches the annotation threshold.  A later attributed prediction is
+    a candidate only when it overlaps an earlier attributed prediction for the
+    same owner at the prediction-to-prediction threshold.  This deliberately
+    stays a geometry-derived review aid rather than a semantic label.
+    """
+    gt = _gt_objects(row, row_id=row_id)
+    raw_predictions = row.get("pred", [])
+    if not isinstance(raw_predictions, list):
+        return [], 0
+
+    attributed_by_owner: dict[int, list[tuple[int, tuple[float, float, float, float], float]]] = {}
+    candidates: list[dict[str, Any]] = []
+    ambiguous_attribution_count = 0
+    for prediction_index, value in enumerate(raw_predictions):
+        category = _category(value)
+        box = _pixel_box(_bbox(value))
+        if not category or box is None:
+            continue
+        owner_candidates = [
+            (iou_xyxy(gt_box, box), owner_index)
+            for owner_index, (owner_category, gt_box) in enumerate(gt)
+            if owner_category == category and iou_xyxy(gt_box, box) >= annotation_iou_threshold
+        ]
+        if len(owner_candidates) != 1:
+            ambiguous_attribution_count += int(len(owner_candidates) > 1)
+            continue
+        owner_iou, owner_index = owner_candidates[0]
+        earlier = attributed_by_owner.get(owner_index, [])
+        overlapping_earlier = [
+            (iou_xyxy(earlier_box, box), earlier_index, earlier_owner_iou)
+            for earlier_index, earlier_box, earlier_owner_iou in earlier
+            if iou_xyxy(earlier_box, box) >= prediction_iou_threshold
+        ]
+        if overlapping_earlier:
+            prediction_overlap, earlier_index, earlier_owner_iou = max(
+                overlapping_earlier,
+                key=lambda item: (item[0], -item[1]),
+            )
+            candidates.append(
+                {
+                    "row_id": row_id,
+                    "owner_index": owner_index,
+                    "prediction_index": prediction_index,
+                    "earlier_prediction_index": earlier_index,
+                    "annotation_iou": owner_iou,
+                    "earlier_annotation_iou": earlier_owner_iou,
+                    "prediction_to_prediction_iou": prediction_overlap,
+                }
+            )
+        attributed_by_owner.setdefault(owner_index, []).append((prediction_index, box, owner_iou))
+    return candidates, ambiguous_attribution_count
+
+
 def _distribution(values: Iterable[float]) -> dict[str, Any]:
     ordered = sorted(float(value) for value in values)
     if not ordered:
@@ -247,6 +316,8 @@ def _row_metrics(
     row_id: str,
     match_iou_threshold: float,
     duplicate_iou_threshold: float,
+    strict_annotation_iou_threshold: float,
+    strict_prediction_iou_threshold: float,
 ) -> tuple[dict[str, Any], int, int, int, int, int]:
     gt = _gt_objects(row, row_id=row_id)
     pred, invalid_predictions = _pred_objects(row)
@@ -293,6 +364,12 @@ def _row_metrics(
         elif len(owner_candidates) > 1:
             ambiguous_duplicate_candidate_count += 1
     duplicate_candidate_count = sum(max(0, count - 1) for count in owner_hits.values())
+    strict_duplicate_candidates, strict_ambiguous_attribution_count = _strict_physical_owner_duplicate_candidates(
+        row,
+        row_id=row_id,
+        annotation_iou_threshold=strict_annotation_iou_threshold,
+        prediction_iou_threshold=strict_prediction_iou_threshold,
+    )
     return (
         {
             "gt_count": len(gt),
@@ -303,6 +380,9 @@ def _row_metrics(
             "size_errors_px": size_errors,
             "duplicate_candidate_count": duplicate_candidate_count,
             "ambiguous_duplicate_candidate_count": ambiguous_duplicate_candidate_count,
+            "strict_physical_owner_duplicate_candidate_count": len(strict_duplicate_candidates),
+            "strict_physical_owner_duplicate_candidates": strict_duplicate_candidates,
+            "strict_physical_owner_ambiguous_attribution_count": strict_ambiguous_attribution_count,
             "dropped_prediction_count": dropped_predictions,
             "invalid_prediction_count": invalid_predictions,
         },
@@ -357,22 +437,30 @@ def _matched_owner_geometry(
 
 
 def _summarize(
-    rows: dict[str, dict[str, Any]], *, match_iou_threshold: float, duplicate_iou_threshold: float
+    rows: dict[str, dict[str, Any]], *, match_iou_threshold: float, duplicate_iou_threshold: float,
+    strict_annotation_iou_threshold: float, strict_prediction_iou_threshold: float,
 ) -> dict[str, Any]:
     totals = {"gt_count": 0, "prediction_count": 0, "unique_matched_gt_owners": 0,
               "duplicate_candidate_count": 0, "ambiguous_duplicate_candidate_count": 0,
+              "strict_physical_owner_duplicate_candidate_count": 0,
+              "strict_physical_owner_ambiguous_attribution_count": 0,
               "malformed_row_count": 0, "invalid_row_count": 0, "dropped_row_count": 0,
               "dropped_prediction_count": 0, "invalid_prediction_count": 0}
     ious: list[float] = []
     centers: list[float] = []
     sizes: list[float] = []
+    strict_duplicate_candidates: list[dict[str, Any]] = []
     for row_id in sorted(rows):
         metrics, malformed, invalid, dropped, dropped_predictions, invalid_predictions = _row_metrics(
             rows[row_id], row_id=row_id, match_iou_threshold=match_iou_threshold,
             duplicate_iou_threshold=duplicate_iou_threshold,
+            strict_annotation_iou_threshold=strict_annotation_iou_threshold,
+            strict_prediction_iou_threshold=strict_prediction_iou_threshold,
         )
         for key in ("gt_count", "prediction_count", "unique_matched_gt_owners",
-                    "duplicate_candidate_count", "ambiguous_duplicate_candidate_count"):
+                    "duplicate_candidate_count", "ambiguous_duplicate_candidate_count",
+                    "strict_physical_owner_duplicate_candidate_count",
+                    "strict_physical_owner_ambiguous_attribution_count"):
             totals[key] += metrics[key]
         totals["malformed_row_count"] += malformed
         totals["invalid_row_count"] += invalid
@@ -382,6 +470,7 @@ def _summarize(
         ious.extend(metrics["matched_iou"])
         centers.extend(metrics["center_errors_px"])
         sizes.extend(metrics["size_errors_px"])
+        strict_duplicate_candidates.extend(metrics["strict_physical_owner_duplicate_candidates"])
     gt_count = totals["gt_count"]
     totals.update({
         "row_count": len(rows),
@@ -390,8 +479,36 @@ def _summarize(
         "matched_iou": _distribution(ious),
         "center_error_mean_px": sum(centers) / len(centers) if centers else None,
         "size_error_mean_px": sum(sizes) / len(sizes) if sizes else None,
+        "strict_physical_owner_duplicate_candidates": strict_duplicate_candidates,
     })
     return totals
+
+
+def _select_rows(
+    rows: dict[str, dict[str, Any]], *, include_row_ids: Iterable[str] | None
+) -> tuple[dict[str, dict[str, Any]], list[str] | None]:
+    if include_row_ids is None:
+        return rows, None
+    selected_ids = sorted({str(row_id) for row_id in include_row_ids})
+    if not selected_ids:
+        raise ValueError("include-row-id selection is empty")
+    missing = sorted(set(selected_ids) - set(rows))
+    if missing:
+        raise ValueError(f"include-row-id values are absent from artifacts: {missing[:5]}")
+    return {row_id: rows[row_id] for row_id in selected_ids}, selected_ids
+
+
+def _read_include_row_ids(
+    include_row_ids: Iterable[str], include_row_id_files: Iterable[Path]
+) -> list[str] | None:
+    selected = {str(row_id) for row_id in include_row_ids if str(row_id)}
+    for path in include_row_id_files:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise ValueError(f"cannot read include-row-id file {path}") from exc
+        selected.update(line.strip() for line in lines if line.strip())
+    return sorted(selected) if selected else None
 
 
 def compare_artifacts(
@@ -400,8 +517,19 @@ def compare_artifacts(
     *,
     match_iou_threshold: float = 0.50,
     duplicate_iou_threshold: float = 0.30,
+    strict_annotation_iou_threshold: float = 0.50,
+    strict_prediction_iou_threshold: float = 0.90,
+    include_row_ids: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    if not (0.0 <= match_iou_threshold <= 1.0 and 0.0 <= duplicate_iou_threshold <= 1.0):
+    if not all(
+        0.0 <= threshold <= 1.0
+        for threshold in (
+            match_iou_threshold,
+            duplicate_iou_threshold,
+            strict_annotation_iou_threshold,
+            strict_prediction_iou_threshold,
+        )
+    ):
         raise ValueError("IoU thresholds must be between 0 and 1")
     path_a = Path(arm_a_path).resolve()
     path_b = Path(arm_b_path).resolve()
@@ -412,16 +540,26 @@ def compare_artifacts(
     for row_id in sorted(arm_a):
         if _gt_signature(arm_a[row_id], row_id=row_id) != _gt_signature(arm_b[row_id], row_id=row_id):
             raise ValueError(f"GT mismatch for row_id {row_id!r}")
+    arm_a, selected_row_ids = _select_rows(arm_a, include_row_ids=include_row_ids)
+    arm_b, selected_row_ids_b = _select_rows(arm_b, include_row_ids=include_row_ids)
+    if selected_row_ids != selected_row_ids_b:  # Defensive: row-set equality above should guarantee this.
+        raise ValueError("selected artifact row sets do not match")
     summary_a = _summarize(
-        arm_a, match_iou_threshold=match_iou_threshold, duplicate_iou_threshold=duplicate_iou_threshold
+        arm_a, match_iou_threshold=match_iou_threshold, duplicate_iou_threshold=duplicate_iou_threshold,
+        strict_annotation_iou_threshold=strict_annotation_iou_threshold,
+        strict_prediction_iou_threshold=strict_prediction_iou_threshold,
     )
     summary_b = _summarize(
-        arm_b, match_iou_threshold=match_iou_threshold, duplicate_iou_threshold=duplicate_iou_threshold
+        arm_b, match_iou_threshold=match_iou_threshold, duplicate_iou_threshold=duplicate_iou_threshold,
+        strict_annotation_iou_threshold=strict_annotation_iou_threshold,
+        strict_prediction_iou_threshold=strict_prediction_iou_threshold,
     )
     delta: dict[str, Any] = {}
     for key in ("gt_count", "prediction_count", "unique_matched_gt_owners", "owner_coverage",
                 "owner_false_negative_rate", "duplicate_candidate_count",
                 "ambiguous_duplicate_candidate_count", "malformed_row_count",
+                "strict_physical_owner_duplicate_candidate_count",
+                "strict_physical_owner_ambiguous_attribution_count",
                 "invalid_row_count", "dropped_row_count", "dropped_prediction_count",
                 "invalid_prediction_count", "center_error_mean_px", "size_error_mean_px"):
         left, right = summary_a[key], summary_b[key]
@@ -435,6 +573,8 @@ def compare_artifacts(
     common_size_deltas: list[float] = []
     arm_a_only_owner_count = 0
     arm_b_only_owner_count = 0
+    arm_a_only_owner_refs: list[dict[str, Any]] = []
+    arm_b_only_owner_refs: list[dict[str, Any]] = []
     for row_id in sorted(arm_a):
         geometry_a = _matched_owner_geometry(
             arm_a[row_id], row_id=row_id, match_iou_threshold=match_iou_threshold
@@ -443,8 +583,18 @@ def compare_artifacts(
             arm_b[row_id], row_id=row_id, match_iou_threshold=match_iou_threshold
         )
         common = set(geometry_a) & set(geometry_b)
-        arm_a_only_owner_count += len(set(geometry_a) - set(geometry_b))
-        arm_b_only_owner_count += len(set(geometry_b) - set(geometry_a))
+        arm_a_only = set(geometry_a) - set(geometry_b)
+        arm_b_only = set(geometry_b) - set(geometry_a)
+        arm_a_only_owner_count += len(arm_a_only)
+        arm_b_only_owner_count += len(arm_b_only)
+        arm_a_only_owner_refs.extend(
+            {"row_id": row_id, "owner_index": owner_index}
+            for owner_index in sorted(arm_a_only)
+        )
+        arm_b_only_owner_refs.extend(
+            {"row_id": row_id, "owner_index": owner_index}
+            for owner_index in sorted(arm_b_only)
+        )
         for owner_index in sorted(common):
             iou_a, center_a, size_a = geometry_a[owner_index]
             iou_b, center_b, size_b = geometry_b[owner_index]
@@ -455,15 +605,26 @@ def compare_artifacts(
         "inputs": {
             "arm_a": {"path": str(path_a), "sha256": _sha256(path_a)},
             "arm_b": {"path": str(path_b), "sha256": _sha256(path_b)},
+            "cohort": {
+                "selection": "all_artifact_rows" if selected_row_ids is None else "explicit_include_row_ids",
+                "included_row_ids": selected_row_ids,
+            },
         },
         "policy": {
             "match_iou_threshold": match_iou_threshold,
             "duplicate_iou_threshold": duplicate_iou_threshold,
+            "strict_annotation_iou_threshold": strict_annotation_iou_threshold,
+            "strict_prediction_iou_threshold": strict_prediction_iou_threshold,
             "delta_convention": "arm_b_minus_arm_a",
             "unmatched_predictions_are_not_hallucinations": True,
             "duplicate_policy": (
                 "count only extra predictions uniquely attributable to one same-category GT owner; "
                 "report ambiguous candidates separately"
+            ),
+            "strict_physical_owner_duplicate_policy": (
+                "geometry-derived candidate only, not human-confirmed: require exactly one same-category "
+                "GT owner at the annotation IoU threshold and a prior attributed prediction for that owner "
+                "at the prediction-to-prediction IoU threshold"
             ),
         },
         "arm_a": summary_a,
@@ -473,6 +634,8 @@ def compare_artifacts(
             "owner_count": len(common_iou_deltas),
             "arm_a_only_owner_count": arm_a_only_owner_count,
             "arm_b_only_owner_count": arm_b_only_owner_count,
+            "arm_a_only_owner_refs": arm_a_only_owner_refs,
+            "arm_b_only_owner_refs": arm_b_only_owner_refs,
             "iou_delta": _distribution(common_iou_deltas),
             "center_error_delta_px": _distribution(common_center_deltas),
             "size_error_delta_px": _distribution(common_size_deltas),
@@ -487,9 +650,17 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--match-iou-threshold", type=float, default=0.50)
     parser.add_argument("--duplicate-iou-threshold", type=float, default=0.30)
+    parser.add_argument("--strict-annotation-iou-threshold", type=float, default=0.50)
+    parser.add_argument("--strict-prediction-iou-threshold", type=float, default=0.90)
+    parser.add_argument("--include-row-id", action="append", default=[])
+    parser.add_argument("--include-row-id-file", type=Path, action="append", default=[])
     args = parser.parse_args()
+    include_row_ids = _read_include_row_ids(args.include_row_id, args.include_row_id_file)
     result = compare_artifacts(args.arm_a, args.arm_b, match_iou_threshold=args.match_iou_threshold,
-                               duplicate_iou_threshold=args.duplicate_iou_threshold)
+                               duplicate_iou_threshold=args.duplicate_iou_threshold,
+                               strict_annotation_iou_threshold=args.strict_annotation_iou_threshold,
+                               strict_prediction_iou_threshold=args.strict_prediction_iou_threshold,
+                               include_row_ids=include_row_ids)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 

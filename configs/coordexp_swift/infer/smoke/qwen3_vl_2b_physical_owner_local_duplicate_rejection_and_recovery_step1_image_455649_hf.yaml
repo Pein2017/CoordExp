@@ -1,0 +1,30 @@
+extends: ../research/qwen3_vl_2b_source_route_preservation_screen_source_train_256_hf.yaml
+
+run:
+  name: qwen3-vl-2b-physical-owner-local-duplicate-rejection-and-recovery-step1-image-455649-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/smoke-checkpoint-inference-v2
+  collision_policy: fail
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/smoke-eval-input-v3/image-455649.coord.jsonl
+
+generation:
+  batch_size: 1
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true
+
+debug:
+  smoke: true
+
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/smoke-training-v1/runs/qwen3_vl_2b_physical_owner_local_duplicate_rejection_and_recovery_one_update_learning_rate_1e-5/checkpoints/step-1/adapter
+  name: default
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/smoke-training-v1/runs/qwen3_vl_2b_physical_owner_local_duplicate_rejection_and_recovery_one_update_learning_rate_1e-5/checkpoints/step-1/special_token_embeddings

@@ -1,0 +1,34 @@
+schema_version: 1
+extends: qwen3_vl_2b_desc_first_geo_sorted_positive_path_imitation_learning_rate_1e-5_one_event_v1.yaml
+
+run:
+  name: qwen3_vl_2b_physical_owner_local_duplicate_rejection_and_recovery_one_update_learning_rate_1e-5
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/smoke-training-v1/runs
+  collision_policy: fail
+
+rollout_calibration:
+  profile: local_duplicate_rejection_and_recovery
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-physical-owner-duplication-causality-and-training-treatment/smoke-state-banks-455649-v3/state-banks/local_duplicate_rejection_and_recovery/state-bank/manifest.json
+  source_checkpoint_id: ec308f8f5a26f5425eadeecf6fde5114d10dbf8e31de0b1fa0cc78abab8c3f2c
+  entity_transition:
+    weight: 1.0
+    margin: 1.0
+    smooth_max_temperature: 0.5
+  coordinate_boundary:
+    weight: 0.0
+    margin: 1.0
+  duplicate_rejection:
+    weight: 1.0
+    margin: 1.0
+  incomplete_objective_policy: fail
+  online_state_bank_refresh: false
+
+training:
+  epochs: 1
+  max_steps: 1
+  effective_batch_size: 2
+
+checkpoint:
+  every_fraction: 1.0
+  steps: []
+  save_final: true
