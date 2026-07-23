@@ -1,0 +1,21 @@
+extends: source-b16-full-repetition-penalty-1p10-source.yaml
+run:
+  name: source-b16-full-repetition-penalty-1p10-concentrated-seed-23-step-30
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/repetition-penalty-1p10-v2/concentrated/seed-23/step-30
+  collision_policy: fail
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/candidate-pool-2432.coord.jsonl
+generation:
+  batch_size: 32
+  max_new_tokens: 2048
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.10
+scoring:
+  enabled: true
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/train-992-events-v1/concentrated/seed-23/runs/qwen3_vl_2b_constant_dose_breadth_concentrated_496_sampled_496_source_992_events_seed23_learning_rate_1e-5/checkpoints/step-30/adapter
+  name: default
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/train-992-events-v1/concentrated/seed-23/runs/qwen3_vl_2b_constant_dose_breadth_concentrated_496_sampled_496_source_992_events_seed23_learning_rate_1e-5/checkpoints/step-30/special_token_embeddings

@@ -8,12 +8,35 @@ architecture_promotion_status: not_promoted
 implementation_status: authorized_separately
 unit_id: 2026-07-22-constant-dose-image-breadth-treatment-screen
 topic: qwen3-vl-dense-enumeration
-status: running
-evidence_status: partial
+status: complete
+evidence_status: verified_bounded_no_heldout_image_breadth_advantage
 updated: 2026-07-23
 ---
 
 # Constant-Dose Image-Breadth Treatment Screen
+
+## Execution Outcome
+
+The screen is complete. At the frozen 992-event, 31-update dose, spreading
+supervision over 496 images instead of concentrating it in 162 matched images
+did not improve annotated-owner coverage on the pre-admission held-out cohort.
+The selected sampled-route owners were nevertheless recovered much more often
+than non-selected owners on gradient images. This strongly enriched recovery is
+consistent with owner-specific uptake of the supervision, but it is not a
+same-owner untreated counterfactual. This screen did not establish that greater
+image breadth turns that local effect into a transferable set-expansion rule.
+
+The primary conclusion uses repetition penalty 1.0. A separately executed
+repetition-penalty-1.10 sensitivity panel changed many owner identities and
+lowered the Source matched-owner count without reliably increasing treatment
+matched-owner count. It must therefore be treated as a decoding-policy
+intervention, not as a harmless duplicate-only adjustment. The first attempted
+1.10 panel is invalid because the runtime silently remained at 1.0; only the
+validated second panel contributes evidence.
+
+See `results.md` for the complete result, artifact identities, uncertainty,
+and the next research decision. Do not scale this unchanged positive-only
+complete-row treatment by adding more images or epochs.
 
 ## Question
 
@@ -133,6 +156,36 @@ production panel therefore estimates sampled object support only. Its receipt
 and exact claim boundary are recorded in
 `trajectory-panel-vllm-receipt.md`.
 
+Collect a separate finite Source baseline before route admission. Define
+`Source@B16` as greedy decoding at repetition penalty 1.0, stopped immediately
+after the sixteenth complete object row or at an earlier natural image-end.
+Here `B16` means a budget of sixteen complete object rows.
+It is a semantic row-budget view, not a token-length-truncated completion. A
+run that reaches the token limit before either condition is incomplete and
+cannot define Source ownership. The runtime may generate beyond row sixteen
+when that is operationally simpler, but no later row participates in the
+baseline. Project every sampled trajectory to its first sixteen complete rows
+for the matched comparison. Greedy decoding at repetition penalty 1.10 is a
+separately named decoding-policy sensitivity check, not the route-admission
+baseline.
+
+Treat `Source@B16` as a policy-conditioned, immutable realized baseline, not as
+a batching-invariant property of the checkpoint. The 64-image qualification
+showed that changing only the request batch partition can change meaning-bearing
+greedy rows. Freeze vLLM 0.14.1, Brain Floating Point 16-bit computation,
+`max_num_seqs=32`, `image_batch_size=16`, eight stable strided image shards,
+request order, prompt and model identities, and the exact artifact realization.
+Two independent Graphics Processing Unit runs under the frozen per-engine
+batch policy reproduced all 64 raw and projected token hashes exactly. The
+qualification and full-panel evidence are recorded in
+`source-b16-vllm-receipt.md`.
+
+An image with `failed_invalid_before_budget` or
+`failed_token_limit_before_budget` has no usable Source baseline. This does not
+mean that its Source owner set is empty. Persist the evidence, continue the
+remaining collection, and exclude the image from admission. Do not retry it
+under another batch grouping to obtain a favorable Source realization.
+
 Development and held-out trajectories may be materialized for later
 evaluation, but no admission statistic from those images may affect either
 training bank.
@@ -145,23 +198,22 @@ only. They never supply gradients and are not part of the 2,432-image pool.
 Apply the same conservative route admission semantics as the completed screen:
 
 - parser-accepted and naturally closed route;
-- verified annotated physical-owner set strictly expands the Source greedy
-  owner set;
+- verified annotated physical-owner set within its first sixteen complete rows
+  strictly expands the `Source@B16` owner set;
 - no increase in confirmed duplicates or malformed rows;
 - only trusted first-occurrence physical owners receive gradient;
 - entity identity and coordinate trust remain separate;
 - unresolved or annotation-ambiguous rows receive no gradient.
 
-The sampled-only production panel does not contain the source greedy owner set
-referenced by the first admission rule. Before any StateBank is frozen, define
-a separate finite source-baseline decoding policy or revise the admission rule
-and its claims. Do not silently substitute a length-truncated greedy loop, a
-greedy run with a different repetition penalty, or an arbitrary sampled route.
-Until this decision is recorded, trajectory collection is complete but
-StateBank assembly remains pending.
+Build Source-preservation events only from trusted first occurrences inside
+`Source@B16`. Rows emitted after the sixteenth complete row do not expand the
+Source owner set and do not supply preservation events. Unresolved rows remain
+neutral; they are neither trusted owners nor negative examples.
 
 Run route admission only inside the frozen 2,048-image training-candidate
-split.
+split and only on the intersection of Source-eligible and sampled-eligible
+images. Report Source ineligibility by split and object-count band. All owner
+claims and feasibility denominators must name this joined eligible cohort.
 For each image, define a trusted pair count as the smaller of its eligible
 sampled-event count and trusted Source-preservation-event count.
 
@@ -176,6 +228,48 @@ trusted Source-preservation event. The gate therefore proves that the broad
 bank can use 496 different physical images with no second event from any image.
 If it fails, stop before training rather than weakening trust rules.
 
+The original equal-band design failed a stronger pre-training feasibility
+audit and is superseded prospectively. The joined eligible training cohort has
+797 images: 33 sparse images with one to three annotated objects, 158 medium
+images with four to seven objects, 294 dense images with eight to fifteen
+objects, and 312 very-dense images with sixteen or more objects. Selecting 124
+broad images from every band is impossible because only 33 sparse images are
+eligible. The original fixed 118-image concentrated cohort, with band counts
+30, 30, 29, and 29, also cannot supply 124 distinct trusted pairs per band:
+its capacities are respectively 39, 74, 123, and 191. These failures were
+found before a StateBank was frozen or training began. Do not weaken trust,
+clone events, or substitute another image in response.
+
+For the validated `coordexp_vllm_trajectory_panel.v2` execution contract only,
+freeze the prospective protocol amendment
+`v2_capacity_constrained_capped_max_min_breadth_v1`. In plain English, first
+allocate 496 broad images and pair events by deterministic capped max-min
+fairness over eligible object-count bands in the canonical sparse, medium,
+dense, very-dense order. Then, within each selected broad band cohort, use the
+shortest deterministic image-hash prefix whose cumulative usable trusted pair
+capacity reaches that band's event quota. Usable pair capacity is the smaller
+of raw distinct pair capacity and eight for each image, because every pair
+materializes two complete-row records and the canonical StateBank permits at
+most sixteen such records per image. Never skip a prefix image or swap in a
+capacity-richer image. Legacy execution contracts retain the original
+equal-band 496-versus-118 behavior.
+
+The frozen current-data census is:
+
+| Object-count band | Eligible images | Broad images and pair events | Concentrated prefix images | Raw distinct capacity at prefix minus one / prefix | Usable capacity at prefix minus one / prefix | Pair events per concentrated image |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sparse, 1 to 3 | 33 | 33 | 26 | 31 / 33 | 31 / 33 | 1.2692 |
+| Medium, 4 to 7 | 158 | 155 | 72 | 154 / 157 | 154 / 157 | 2.1528 |
+| Dense, 8 to 15 | 294 | 154 | 37 | 156 / 161 | 150 / 155 | 4.1622 |
+| Very dense, 16 or more | 312 | 154 | 27 | 164 / 174 | 152 / 160 | 5.7037 |
+
+The broad arm therefore uses 496 images and 496 pairs. The concentrated arm
+uses 162 images and the same 496 pair-event quotas, for an overall ratio of
+3.0617 pair events per concentrated image. The existing independent
+within-band round-robin supplies exactly 33, 155, 154, and 154 distinct pairs
+without cloning or selecting more than eight pairs for any image. Record the
+exact allocation proof in every selection and arm receipt.
+
 Build two newly matched `StateBank` artifacts. Here, a StateBank is the
 persisted collection of model states, prefixes, target rows, and token-level
 training supervision consumed by the training pipeline. Each contains exactly:
@@ -185,10 +279,12 @@ training supervision consumed by the training pipeline. Each contains exactly:
 - 992 total events;
 - 31 optimizer updates at effective event batch size 32.
 
-First freeze exactly 496 broad images in deterministic object-count-band and
-image-hash order. Then freeze a 118-image concentrated subset of the broad set
-with the same band balance.
-The subset choice does not inspect candidate-row score or downstream value.
+First freeze exactly 496 broad images under the execution-contract-specific
+band quotas and deterministic image-hash order. Then freeze the concentrated
+subset under the corresponding execution-contract-specific rule. For v2,
+that is the 162-image minimum-prefix cohort above. The subset choice inspects
+only distinct trusted pair capacity needed to establish the shortest prefix;
+it does not inspect candidate-row score, downstream value, or training result.
 
 Use the same event-ranking rule in both banks. Within an image, prioritize
 marginal route-added owners, then total route-added owners, fewer unresolved
@@ -196,11 +292,12 @@ rows, lower seed identifier, and earlier trusted Source-anchor order.
 
 Before freezing either bank, run a pair-supply census. The broad arm and the
 concentrated arm must first attempt to match their selected-pair histogram by
-object-count band and within-image selection rank. Allocate the same number of
-pairs to each object-count band in both arms, then assign the broad arm's one
-pair per image so its rank histogram matches the concentrated arm. This keeps
-image breadth from silently becoming an easier-row versus harder-row
-comparison. If exact ranks are infeasible, try one predeclared coarsening:
+object-count band and within-image selection rank. Allocate the same
+execution-contract-specific pair quota to each band in both arms, then assign
+the broad arm's one pair per image so its rank histogram matches the
+concentrated arm. This keeps image breadth from silently becoming an
+easier-row versus harder-row comparison. If exact ranks are infeasible, try
+one predeclared coarsening:
 rank 1, rank 2, rank 3, and rank 4 or deeper. If that is also infeasible, the
 run may proceed only as a comparison of two data-allocation policies; it must
 not claim that physical image breadth alone caused the difference. Record the
@@ -214,11 +311,19 @@ For the broad bank:
 4. satisfy the accepted band-by-rank matching rule;
 5. divide each image's credit equally between the two families.
 
-For the concentrated bank, use a within-band round-robin rule over its 118
-images until the same per-band pair quotas and 496 total pairs are selected.
-Fail if the trusted pair supply is insufficient. Concentration necessarily
-gives more event credit to each image; that is the intended changed factor. No
-event may be cloned.
+For the concentrated bank, use the within-band round-robin rule over its
+execution-contract-specific nested image cohort until the same per-band pair
+quotas and 496 total pairs are selected. Fail if the trusted pair supply is
+insufficient. Concentration necessarily gives more event credit to each
+image; that is the intended changed factor. No event may be cloned.
+
+The v2 claim boundary is a capacity-constrained and canonical-StateBank-cap-
+constrained 496-versus-162 image allocation comparison. It is not the rejected
+equal-band 496-versus-118 design, not a natural Common Objects in Context
+prevalence comparison, and not a uniform four-times concentration contrast.
+Because pair events per image differ materially by band, every treatment
+result must report object-count bands separately; an aggregate result cannot
+establish a band-uniform image-breadth effect.
 
 Do not increase total row count, family ratio, optimizer updates, or per-image
 total credit to make either arm fit. Rescale all event weights independently in
@@ -235,7 +340,7 @@ attributed to image count alone.
 
 Evaluation only.
 
-### Newly matched concentrated 118-image treatment
+### Newly matched concentrated 162-image treatment
 
 Train the newly assembled concentrated StateBank. The historical 118-image
 checkpoints are context only because their cohort and route-selection rule were
@@ -259,18 +364,47 @@ supervised-fine-tuning mixture, or online refresh is added.
 
 ## Evaluation Split and Milestone Choice
 
-Run clean greedy inference for Source and every treatment milestone on the 256
-development images. Select one shared optimizer step for both arms by
-maximizing the broad-minus-concentrated unique-owner difference at intersection
-over union 0.30, averaged across the two matched training seeds. Break ties by
-the same contrast at intersection over union 0.50, then fewer confirmed
-duplicate candidates, then standard mean Average Precision. Freeze that one
-shared step before reading the held-out comparison.
+Materialize clean greedy inference for Source and every treatment milestone by
+executing the frozen full 2,432-image request panel. This preserves the exact
+worker partition, image batches, prompt realization, and vLLM numerical path of
+the Source run. The development JSONL is an analysis filter over those full
+panels; it is not a smaller inference input.
+
+Before comparing milestones, define one fixed complete-case development cohort
+containing only images that are Source@B16-eligible in Source and in all sixteen
+treatment panels:
+
+```text
+two arms x two training seeds x four optimizer steps
+```
+
+Use this same fixed image set for every owner, duplicate-candidate, and mean
+Average Precision comparison. Report ineligible and invalid counts separately
+over all 256 development images. Never turn an ineligible image into a
+zero-owner loss.
+
+Select one shared optimizer step for both arms by maximizing the
+broad-minus-concentrated matched annotated-owner count at intersection over
+union 0.30, averaged across the two matched training seeds. Keep each seed's
+contrast visible. Break exact ties by the same averaged contrast at
+intersection over union 0.50, then by fewer annotation-anchored duplicate
+candidates at intersection over union 0.30 summed across both arms and seeds,
+then by the mean standard mean Average Precision across the four arm-seed
+panels. Freeze that one shared step before reading the held-out comparison.
+Paired image-level uncertainty and object-count-band results inform how strong
+the development signal is, but do not replace this mechanical milestone rule.
+
+The primary owner-gain and owner-retention comparison uses the same bounded
+`Source@B16` policy. After the shared milestone is frozen, also evaluate the
+canonical repetition-penalty-1.10 greedy policy as a decoding-policy
+sensitivity check. This secondary policy cannot change route admission,
+training events, or milestone selection, and its conclusion must be reported
+separately from the fixed-budget neutral-policy conclusion.
 
 Run only the frozen shared step for both arms and both training seeds on the 128
 held-out images. The held-out split was fixed before route admission and owns
 the transfer conclusion. Also report training-cohort results separately for
-the 118 concentrated images, the additional broad-only gradient images, and
+the 162 concentrated images, the additional broad-only gradient images, and
 the whole broad gradient set. Historical checkpoints remain context and do not
 participate in shared-step selection.
 
@@ -324,19 +458,29 @@ size replication. This unit itself does not authorize that replication.
 1. Create and verify the 2,432-image label-only pool.
 2. Freeze the label-only 2,048/256/128 split before generating or inspecting
    new trajectories.
-3. Derive the 2,176 images not covered by the old panel, then generate one
-   greedy and sixteen sampled Source trajectories over eight Graphics
-   Processing Units.
-4. Merge the old and new request-scoped trajectory panels, validate exact
-   model identity, prompt policy, seed coverage, and image coverage, then run
-   admission only inside the 2,048-image training candidates.
-5. Apply the feasibility condition, then assemble and audit the newly matched
-   concentrated and broad 992-event StateBanks.
-6. Run one real mixed-step smoke, then train both arms for two matched seeds and
+3. Generate the complete 2,432-image panel with the unified vLLM backend:
+   sixteen sampled Source trajectories per image and no greedy trajectory. Do
+   not reuse or merge the earlier Hugging Face panel.
+4. Validate exact model identity, prompt policy, all sixteen sample indexes per
+   image, complete image coverage, natural closure, and zero length
+   truncation. Use this panel to estimate sampled owner support and mine
+   candidate owner-prefix transitions inside the 2,048-image training split.
+5. Qualify `Source@B16` on 64 training-candidate images selected without route
+   inspection: sixteen from each object-count band. Freeze the execution policy
+   and require exact same-policy replay. Then collect one immutable
+   `Source@B16` realization over the complete 2,432-image panel, recording and
+   excluding per-image ineligibility without aborting a worker.
+6. Compare sampled and Source owner sets at the common first-sixteen-row
+   horizon, apply the feasibility condition and v2 prospective allocation
+   amendment, then assemble and audit the newly matched concentrated and broad
+   992-event StateBanks. Verify the exact 496-versus-162 nested image cohorts,
+   band-specific prefix-capacity proofs, and 992 unique events per arm before
+   training.
+7. Run one real mixed-step smoke, then train both arms for two matched seeds and
    31 updates on eight Graphics Processing Units.
-7. Select one shared milestone on the development slice and evaluate only that
+8. Select one shared milestone on the development slice and evaluate only that
    step on the held-out and human-refined slices.
-8. Close the treatment family or authorize a larger replication from the
+9. Close the treatment family or authorize a larger replication from the
    owner-ledger evidence.
 
 ## Non-Goals

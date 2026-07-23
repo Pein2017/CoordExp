@@ -1,0 +1,23 @@
+extends: qwen3_vl_2b_step4887_candidate_pool_2432_vllm_panel.yaml
+
+run:
+  name: qwen3-vl-2b-step4887-candidate-pool-2432-source-b16-vllm
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/source-b16-trajectory-panel-2432-vllm/infer-config-only
+  collision_policy: fail
+
+backend:
+  vllm:
+    max_model_len: 4096
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/candidate-pool-2432.coord.jsonl
+
+generation:
+  batch_size: 32
+  max_new_tokens: 2048
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true

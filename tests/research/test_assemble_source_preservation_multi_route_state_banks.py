@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import importlib.util
 import json
@@ -356,6 +357,7 @@ def _breadth_candidate(
     return {
         "event_id": f"{family}-{image_id}-{rank}",
         "image_id": image_id,
+        "route_id": f"{family}-route-{rank}",
         "prefix_token_ids_sha256": f"prefix-{family}-{image_id}-{rank}",
         "candidate_token_ids_sha256": f"row-{family}-{image_id}-{rank}",
         "owner_id": f"{image_id}:{family}:{rank}",
@@ -440,6 +442,205 @@ def _batch1_request_major_execution_metadata() -> dict[str, object]:
     }
 
 
+def _v2_execution_metadata() -> dict[str, object]:
+    return {
+        "panel_schema_version": "coordexp_vllm_trajectory_panel.v2",
+        "sampled_panel_mode": "sampled_only",
+        "source_panel_mode": "source_b16",
+        "sampling_order": "request_major",
+        "sample_index_range": [0, 15],
+        "sample_count": 16,
+        "source_b16_row_budget": 16,
+        "execution_model_identity_sha256": "a" * 64,
+    }
+
+
+def _v2_capacity_constrained_breadth_inputs() -> tuple[
+    dict[str, list[dict[str, object]]],
+    dict[str, list[dict[str, object]]],
+    dict[str, str],
+]:
+    eligible_counts = {
+        "sparse_1_to_3": 33,
+        "medium_4_to_7": 158,
+        "dense_8_to_15": 294,
+        "very_dense_16_plus": 312,
+    }
+    broad_quotas = {
+        "sparse_1_to_3": 33,
+        "medium_4_to_7": 155,
+        "dense_8_to_15": 154,
+        "very_dense_16_plus": 154,
+    }
+    prefix_capacities = {
+        "sparse_1_to_3": [2] * 6 + [1] * 19 + [2],
+        "medium_4_to_7": [3] * 12 + [2] * 59 + [3],
+        "dense_8_to_15": [5] * 13 + [4] * 22 + [3],
+        "very_dense_16_plus": [7] * 9 + [6] * 15 + [10],
+    }
+    sampled: dict[str, list[dict[str, object]]] = {}
+    source: dict[str, list[dict[str, object]]] = {}
+    image_bands: dict[str, str] = {}
+    next_image = 20_000
+    for band in MODULE._BREADTH_BANDS:
+        images = [str(next_image + index) for index in range(eligible_counts[band])]
+        next_image += eligible_counts[band]
+        ordered = sorted(images, key=MODULE._breadth_image_order)
+        capacities = [
+            *prefix_capacities[band],
+            *([16] * (broad_quotas[band] - len(prefix_capacities[band]))),
+            *([1] * (len(images) - broad_quotas[band])),
+        ]
+        for image, capacity in zip(ordered, capacities, strict=True):
+            image_bands[image] = band
+            sampled[image] = [
+                _breadth_candidate(image, "sampled", rank) for rank in range(capacity)
+            ]
+            source[image] = [
+                _breadth_candidate(image, "source", rank) for rank in range(capacity)
+            ]
+            for candidate in [*sampled[image], *source[image]]:
+                candidate.pop("event_id")
+    return sampled, source, image_bands
+
+
+def test_capped_max_min_quota_caps_scarce_band_and_uses_canonical_remainder() -> None:
+    eligible = {
+        "sparse_1_to_3": 33,
+        "medium_4_to_7": 158,
+        "dense_8_to_15": 294,
+        "very_dense_16_plus": 312,
+    }
+    assert MODULE._breadth_capped_max_min_quota(eligible, total=496) == {
+        "sparse_1_to_3": 33,
+        "medium_4_to_7": 155,
+        "dense_8_to_15": 154,
+        "very_dense_16_plus": 154,
+    }
+    with pytest.raises(ValueError, match="exact canonical band set"):
+        MODULE._breadth_capped_max_min_quota(
+            {key: value for key, value in eligible.items() if key != "sparse_1_to_3"},
+            total=496,
+        )
+    with pytest.raises(ValueError, match="lacks total eligible supply"):
+        MODULE._breadth_capped_max_min_quota(
+            {band: 1 for band in MODULE._BREADTH_BANDS}, total=496
+        )
+
+
+def test_minimum_capacity_prefix_is_hash_ordered_and_never_skips() -> None:
+    images = ["41", "42", "43", "44"]
+    ordered = sorted(images, key=MODULE._breadth_image_order)
+    capacities = [1, 1, 5, 100]
+    pairs = {
+        image: [{"pair": index} for index in range(capacity)]
+        for image, capacity in zip(ordered, capacities, strict=True)
+    }
+    selected, receipt = MODULE._breadth_minimum_capacity_prefix(
+        images=list(reversed(images)), pairs_by_image=pairs, required_pair_count=6
+    )
+    assert selected == ordered[:3]
+    assert receipt["prefix_image_count"] == 3
+    assert receipt["raw_distinct_pair_capacity_at_prefix_minus_one"] == 2
+    assert receipt["raw_distinct_pair_capacity_at_prefix"] == 7
+    assert receipt["usable_pair_capacity_at_prefix_minus_one"] == 2
+    assert receipt["usable_pair_capacity_at_prefix"] == 7
+    with pytest.raises(ValueError, match="lacks usable trusted pair supply"):
+        MODULE._breadth_minimum_capacity_prefix(
+            images=images, pairs_by_image=pairs, required_pair_count=108
+        )
+
+
+def test_minimum_capacity_prefix_caps_one_high_capacity_image() -> None:
+    images = ["51", "52"]
+    ordered = sorted(images, key=MODULE._breadth_image_order)
+    pairs = {
+        ordered[0]: [{"pair": index} for index in range(12)],
+        ordered[1]: [{"pair": index} for index in range(3)],
+    }
+    selected, receipt = MODULE._breadth_minimum_capacity_prefix(
+        images=images,
+        pairs_by_image=pairs,
+        required_pair_count=10,
+        max_pairs_per_image=8,
+    )
+    assert selected == ordered
+    assert receipt["raw_distinct_pair_capacity_at_prefix_minus_one"] == 12
+    assert receipt["usable_pair_capacity_at_prefix_minus_one"] == 8
+    assert receipt["raw_distinct_pair_capacity_at_prefix"] == 15
+    assert receipt["usable_pair_capacity_at_prefix"] == 11
+
+
+def test_v2_capacity_constrained_protocol_freezes_exact_prefix_proofs() -> None:
+    sampled, source, bands = _v2_capacity_constrained_breadth_inputs()
+    result = MODULE.select_constant_dose_breadth_arms(
+        sampled_candidates=sampled,
+        source_candidates=source,
+        training_image_bands=bands,
+        trajectory_panel_execution_metadata=_v2_execution_metadata(),
+    )
+    assert result["eligible_images_by_band"] == {
+        "sparse_1_to_3": 33,
+        "medium_4_to_7": 158,
+        "dense_8_to_15": 294,
+        "very_dense_16_plus": 312,
+    }
+    assert result["broad_band_quota"] == result["pair_quota_by_object_count_band"] == {
+        "sparse_1_to_3": 33,
+        "medium_4_to_7": 155,
+        "dense_8_to_15": 154,
+        "very_dense_16_plus": 154,
+    }
+    assert result["concentrated_band_quota"] == {
+        "sparse_1_to_3": 26,
+        "medium_4_to_7": 72,
+        "dense_8_to_15": 36,
+        "very_dense_16_plus": 25,
+    }
+    assert len(result["broad"]["image_ids"]) == 496
+    assert len(result["concentrated"]["image_ids"]) == 159
+    assert set(result["concentrated"]["image_ids"]) < set(result["broad"]["image_ids"])
+    protocol = result["allocation_protocol_receipt"]
+    assert protocol["protocol_amendment_name"] == MODULE.V2_BREADTH_PROTOCOL_AMENDMENT
+    assert protocol["concentrated_image_count"] == 159
+    assert protocol["breadth_ratio_pair_count_per_image_by_band"] == {
+        "sparse_1_to_3": 33 / 26,
+        "medium_4_to_7": 155 / 72,
+        "dense_8_to_15": 154 / 36,
+        "very_dense_16_plus": 154 / 25,
+    }
+    assert protocol["overall_breadth_ratio_pair_count_per_image"] == 496 / 159
+    proofs = protocol["minimum_prefix_capacity_proof_by_band"]
+    assert {
+        band: (
+            proof["prefix_image_count"],
+            proof["usable_pair_capacity_at_prefix_minus_one"],
+            proof["usable_pair_capacity_at_prefix"],
+        )
+        for band, proof in proofs.items()
+    } == {
+        "sparse_1_to_3": (26, 31, 33),
+        "medium_4_to_7": (72, 154, 157),
+        "dense_8_to_15": (36, 153, 156),
+        "very_dense_16_plus": (25, 153, 161),
+    }
+    assert protocol["max_pairs_per_concentrated_image"] == 8
+    assert result["rank_matching_receipt"]["matching_mode"] == (
+        "exact_band_by_selection_rank"
+    )
+    for arm_name in ("broad", "concentrated"):
+        arm = result[arm_name]
+        assert arm["event_count"] == 992
+        identities = [MODULE._breadth_identity(event) for event in arm["events"]]
+        assert len(identities) == len(set(identities)) == 992
+    concentrated_treatment_counts = Counter(
+        str(event["image_id"])
+        for event in result["concentrated"]["events"]
+        if event["event_family"] == "treatment"
+    )
+    assert max(concentrated_treatment_counts.values()) <= 8
+
+
 def test_constant_dose_breadth_selection_is_nested_matched_and_weighted() -> None:
     sampled, source, bands = _breadth_inputs_with_rank_feasibility("exact")
     result = MODULE.select_constant_dose_breadth_arms(
@@ -456,6 +657,7 @@ def test_constant_dose_breadth_selection_is_nested_matched_and_weighted() -> Non
     )
     broad = result["broad"]
     concentrated = result["concentrated"]
+    assert "allocation_protocol_receipt" not in result
     assert result["eligible_unique_training_image_count"] == 496
     assert broad["event_count"] == concentrated["event_count"] == 992
     assert broad["sampled_event_count"] == concentrated["sampled_event_count"] == 496

@@ -25,6 +25,8 @@ if __package__ in {None, ""}:
 
 from src.config.fingerprint import sha256_file, sha256_json  # noqa: E402
 from src.inference.backend import token_ids_sha256  # noqa: E402
+from src.qwen.special_token_embeddings import SpecialTokenSelection  # noqa: E402
+from src.rollout_calibration import CheckpointIdentity  # noqa: E402
 
 from scripts.research.assemble_positive_path_imitation_state_bank import (  # noqa: E402
     AssemblyError,
@@ -37,6 +39,8 @@ from scripts.research.assemble_positive_path_imitation_state_bank import (  # no
 )
 from scripts.research.assemble_source_preservation_multi_route_state_banks import (  # noqa: E402
     ROUTE_ANALYSIS_SCHEMA_VERSION,
+    _breadth_identity,
+    _breadth_sampled_rank,
     _build_multi_candidates,
     _build_source_candidates,
     _load_rollout_rows,
@@ -49,6 +53,12 @@ from scripts.research.assemble_source_preservation_multi_route_state_banks impor
     validate_constant_dose_panel_execution_contract,
     validate_constant_dose_training_reservoir,
 )
+from scripts.research.analyze_individual_trajectory_union_support import (  # noqa: E402
+    _malformed_before_budget,
+    _parsed_rows,
+    load_generation7_annotations,
+    match_prefix,
+)
 from scripts.research.validate_constant_dose_trajectory_panel_union import (  # noqa: E402
     GREEDY_SEED,
     SAMPLED_SEEDS,
@@ -59,6 +69,14 @@ from scripts.research.validate_constant_dose_trajectory_panel_union import (  # 
 SCHEMA_VERSION = "constant_dose_breadth_state_bank_assembly.v1"
 UNION_SCHEMA_VERSION = "constant_dose_trajectory_panel_union.v1"
 CANONICAL_ANALYSIS_IOU_THRESHOLD = 0.5
+V2_PANEL_SCHEMA_VERSION = "coordexp_vllm_trajectory_panel.v2"
+SOURCE_B16_ACCEPTED_STATUSES = frozenset({"accepted_budget", "accepted_natural_end"})
+SOURCE_B16_INELIGIBLE_STATUSES = frozenset(
+    {"failed_invalid_before_budget", "failed_token_limit_before_budget"}
+)
+SOURCE_B16_STATUSES = SOURCE_B16_ACCEPTED_STATUSES | SOURCE_B16_INELIGIBLE_STATUSES
+SOURCE_B16_ROW_BUDGET = 16
+SAMPLED_INDEX_COUNT = 16
 ANALYZER_PATH = Path(__file__).resolve().with_name(
     "analyze_individual_trajectory_union_support.py"
 )
@@ -375,6 +393,516 @@ def _validate_trajectory_analysis_provenance(
         )
 
 
+def _discover_v2_artifacts(root: Path, *, mode: str) -> list[Path]:
+    root = root.expanduser().resolve(strict=True)
+    pattern = "sampled-batch-*.json" if mode == "sampled" else "source_b16-batch-*.json"
+    paths = sorted(root.rglob(pattern), key=str) if root.is_dir() else []
+    if not paths:
+        raise AssemblyError(f"no {pattern} artifacts under {root}")
+    return paths
+
+
+def _v2_execution_identity(payload: Mapping[str, Any], path: Path) -> tuple[dict[str, Any], str]:
+    model = _mapping(payload.get("model_identity"), f"{path}.model_identity")
+    execution = dict(
+        _mapping(
+            model.get("execution_model_identity"),
+            f"{path}.model_identity.execution_model_identity",
+        )
+    )
+    return execution, sha256_json(execution)
+
+
+def _derive_v2_checkpoint_identity(payload: Mapping[str, Any], *, path: Path) -> CheckpointIdentity:
+    model = _mapping(payload.get("model_identity"), f"{path}.model_identity")
+    execution = _mapping(
+        model.get("execution_model_identity"), f"{path}.execution_model_identity"
+    )
+    source = _mapping(execution.get("source_identity"), f"{path}.source_identity")
+    adapter = _mapping(source.get("adapter"), f"{path}.source_identity.adapter")
+    embedding = _mapping(
+        source.get("embedding_delta"), f"{path}.source_identity.embedding_delta"
+    )
+    semantic = _mapping(
+        embedding.get("semantic_identity"), f"{path}.embedding_delta.semantic_identity"
+    )
+    strings, ids = semantic.get("token_strings"), semantic.get("token_ids")
+    if not isinstance(strings, list) or not isinstance(ids, list):
+        raise AssemblyError(f"v2 execution receipt lacks selected token identity: {path}")
+    selection = SpecialTokenSelection(token_strings=strings, token_ids=ids)
+    tokenizer = _mapping(model.get("tokenizer_identity"), f"{path}.tokenizer_identity")
+    processor = _mapping(model.get("processor_identity"), f"{path}.processor_identity")
+    return CheckpointIdentity(
+        adapter_fingerprint=_norm_sha(adapter.get("fingerprint"), f"{path}.adapter.fingerprint"),
+        embedding_delta_fingerprint=_norm_sha(
+            embedding.get("fingerprint"), f"{path}.embedding_delta.fingerprint"
+        ),
+        base_config_sha256=_norm_sha(
+            semantic.get("base_config_sha256"), f"{path}.base_config_sha256"
+        ),
+        tokenizer_sha256=_norm_sha(
+            semantic.get("tokenizer_sha256"), f"{path}.tokenizer_sha256"
+        ),
+        token_identity_sha256=sha256_json(dict(tokenizer)),
+        special_token_identity_sha256=sha256_json(selection.to_artifact_dict()),
+        processor_identity_sha256=sha256_json(dict(processor)),
+    )
+
+
+def _v2_row_identity(
+    payload: Mapping[str, Any], row: Mapping[str, Any], path: Path, model_hash: str
+) -> dict[str, Any]:
+    image = _canonical_image_id(row.get("image_id"), field=f"{path}.rollout.image_id")
+    example = str(row.get("example_id", ""))
+    metadata_map = _mapping(payload.get("prompt_metadata"), f"{path}.prompt_metadata")
+    metadata = _mapping(
+        metadata_map.get(example, metadata_map.get(image)), f"{path}.prompt_metadata[{example}]"
+    )
+    prompt = _token_ids(row.get("prompt_token_ids"), f"{path}:{image}.prompt_token_ids")
+    prompt_hash = _norm_sha(
+        row.get("prompt_token_ids_sha256"), f"{path}:{image}.prompt_token_ids_sha256"
+    )
+    metadata_prompt = _token_ids(
+        metadata.get("prompt_token_ids"), f"{path}:{image}.metadata.prompt_token_ids"
+    )
+    metadata_hash = _norm_sha(
+        metadata.get("prompt_token_ids_sha256"),
+        f"{path}:{image}.metadata.prompt_token_ids_sha256",
+    )
+    if (
+        token_ids_sha256(prompt) != prompt_hash
+        or token_ids_sha256(metadata_prompt) != metadata_hash
+        or prompt != metadata_prompt
+        or prompt_hash != metadata_hash
+    ):
+        raise AssemblyError(f"v2 prompt-token identity mismatch for image {image}")
+    source_hash = _norm_sha(
+        row.get("source_image_file_sha256"), f"{path}:{image}.source_image_file_sha256"
+    )
+    if source_hash != _norm_sha(
+        metadata.get("source_image_file_sha256"),
+        f"{path}:{image}.metadata.source_image_file_sha256",
+    ):
+        raise AssemblyError(f"v2 source-image identity mismatch for image {image}")
+    width, height = metadata.get("width"), metadata.get("height")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in (width, height)):
+        raise AssemblyError(f"v2 prompt metadata lacks dimensions for image {image}")
+    if row.get("image_width", width) != width or row.get("image_height", height) != height:
+        raise AssemblyError(f"v2 image dimensions mismatch for image {image}")
+    image_path = metadata.get("image_path")
+    if not isinstance(image_path, str) or not image_path:
+        raise AssemblyError(f"v2 prompt metadata lacks image_path for image {image}")
+    return {
+        "image_id": image,
+        "example_id": example,
+        "prompt_token_ids": prompt,
+        "prompt_token_ids_sha256": prompt_hash,
+        "source_image_file_sha256": source_hash,
+        "executed_rgb_sha256": _norm_sha(
+            row.get("executed_rgb_sha256"), f"{path}:{image}.executed_rgb_sha256"
+        ),
+        "width": width,
+        "height": height,
+        "image_path": str(Path(image_path).expanduser().resolve()),
+        "execution_model_identity_sha256": model_hash,
+    }
+
+
+_V2_IDENTITY_FIELDS = (
+    "prompt_token_ids",
+    "prompt_token_ids_sha256",
+    "source_image_file_sha256",
+    "executed_rgb_sha256",
+    "width",
+    "height",
+    "image_path",
+    "execution_model_identity_sha256",
+)
+
+
+def _register_v2_identity(
+    identities: dict[str, dict[str, Any]], observed: Mapping[str, Any]
+) -> dict[str, Any]:
+    image = str(observed["image_id"])
+    previous = identities.setdefault(image, copy.deepcopy(dict(observed)))
+    mismatch = [field for field in _V2_IDENTITY_FIELDS if previous[field] != observed[field]]
+    if mismatch:
+        raise AssemblyError(
+            f"sampled/Source v2 identity mismatch for image {image}: {', '.join(mismatch)}"
+        )
+    return previous
+
+
+def _v2_assignment(
+    row: Mapping[str, Any], owners: Sequence[Mapping[str, Any]]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    parsed, parser = _parsed_rows(row)
+    assignment = match_prefix(parsed, owners, SOURCE_B16_ROW_BUDGET)
+    malformed = _malformed_before_budget(parser, parsed, SOURCE_B16_ROW_BUDGET)
+    duplicate = sum(
+        item.get("entity_status") in {"duplicate", "duplicate_owner"}
+        for item in assignment["row_assignment_receipts"]
+    )
+    unresolved_statuses = {
+        "semantic_mismatch_unresolved",
+        "unresolved_pending_crop_review",
+        "ambiguous_matched_review",
+        "uncertain",
+    }
+    unresolved = sum(
+        item.get("entity_status") in unresolved_statuses
+        for item in assignment["row_assignment_receipts"]
+    )
+    assignment.update(
+        {
+            "malformed_row_count": malformed,
+            "harmful_row_count": malformed + duplicate,
+            "row_counts": {
+                "duplicate": duplicate,
+                "malformed": malformed,
+                "unsupported_hallucination": 0,
+                "semantic_error": 0,
+                "unresolved": unresolved,
+            },
+        }
+    )
+    return assignment, parser
+
+
+def _compact_v2_rollout(
+    row: Mapping[str, Any], path: Path, config: Mapping[str, Any], identity: Mapping[str, Any], seed: int
+) -> dict[str, Any]:
+    tokens = _token_ids(row.get("generated_token_ids"), f"{path}.generated_token_ids")
+    token_hash = _norm_sha(row.get("generated_token_ids_sha256"), f"{path}.generated_token_ids_sha256")
+    if token_ids_sha256(tokens) != token_hash:
+        raise AssemblyError(f"v2 generated-token hash mismatch for image {identity['image_id']}")
+    return {
+        "image_id": str(identity["image_id"]),
+        "example_id": str(identity["example_id"]),
+        "trajectory_id": str(row.get("trajectory_id", "")),
+        "decode_mode": str(row.get("decode_mode", "")),
+        "seed": seed,
+        "sample_index": row.get("sample_index"),
+        "stop_reason": str(row.get("stop_reason", "")),
+        "prompt_token_ids": identity["prompt_token_ids"],
+        "prompt_token_ids_sha256": str(identity["prompt_token_ids_sha256"]),
+        "source_image_file_sha256": str(identity["source_image_file_sha256"]),
+        "executed_rgb_sha256": str(identity["executed_rgb_sha256"]),
+        "image_width": int(identity["width"]),
+        "image_height": int(identity["height"]),
+        "generated_token_ids": tokens,
+        "generated_token_ids_sha256": token_hash,
+        "_source_path": str(path),
+        "_temperature": float(config.get("temperature", 0.0)),
+        "_top_p": float(config.get("top_p", 1.0)),
+        "_repetition_penalty": float(config.get("repetition_penalty", 1.0)),
+    }
+
+
+def _v2_references(
+    pool: Mapping[str, Mapping[str, Any]], pool_path: Path, identities: Mapping[str, Mapping[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for image, candidate in pool.items():
+        identity = _mapping(identities.get(image), f"v2 identity {image}")
+        images, metadata = candidate.get("images"), candidate.get("metadata")
+        if not isinstance(images, list) or len(images) != 1 or not isinstance(images[0], str):
+            raise AssemblyError(f"candidate-pool image {image} lacks one image path")
+        if not isinstance(metadata, Mapping) or metadata.get("split") != "train":
+            raise AssemblyError(f"candidate-pool image {image} lacks train split metadata")
+        path = Path(images[0])
+        path = path.resolve() if path.is_absolute() else (pool_path.parent / path).resolve()
+        if path != Path(str(identity["image_path"])):
+            raise AssemblyError(f"candidate-pool image path differs from v2 panel for image {image}")
+        if candidate.get("width") != identity["width"] or candidate.get("height") != identity["height"]:
+            raise AssemblyError(f"candidate-pool dimensions differ from v2 panel for image {image}")
+        prompt = list(identity["prompt_token_ids"])
+        result[image] = {
+            "image": {
+                "image_id": int(image),
+                "path": str(path),
+                "width": int(identity["width"]),
+                "height": int(identity["height"]),
+                "content_sha256": str(identity["source_image_file_sha256"]),
+            },
+            "split": "train",
+            "executed_prompt_token_ids": prompt,
+            "executed_prompt_token_ids_sha256": str(identity["prompt_token_ids_sha256"]),
+            "image_pad_interval": list(_image_pad_interval(prompt)),
+        }
+    return result
+
+
+def load_v2_b16_panel_adapter(
+    *, sampled_panel_root: Path, source_b16_root: Path, candidate_pool: Path
+) -> dict[str, Any]:
+    """Adapt v2 sampled + Source@B16 artifacts to the existing candidate seam."""
+
+    pool_path = candidate_pool.expanduser().resolve(strict=True)
+    pool = _candidate_pool(pool_path)
+    owners = load_generation7_annotations(pool_path)
+    if set(owners) != set(pool):
+        raise AssemblyError("candidate-pool owner records do not cover the exact v2 image cohort")
+    sampled_paths = _discover_v2_artifacts(sampled_panel_root, mode="sampled")
+    source_paths = _discover_v2_artifacts(source_b16_root, mode="source_b16")
+    identities: dict[str, dict[str, Any]] = {}
+    sampled_rows: dict[tuple[str, int], dict[str, Any]] = {}
+    source_rows: dict[tuple[str, int], dict[str, Any]] = {}
+    routes: dict[str, dict[str, dict[str, Any]]] = {}
+    source_status: dict[str, str] = {}
+    source_provenance: dict[str, dict[str, Any]] = {}
+    execution: dict[str, Any] | None = None
+    execution_hash: str | None = None
+    representative: dict[str, Any] | None = None
+    artifact_provenance: list[dict[str, Any]] = []
+
+    def artifact(path: Path, mode: str) -> tuple[dict[str, Any], Mapping[str, Any], str, str]:
+        nonlocal execution, execution_hash, representative
+        payload = dict(_mapping(_read_json(path), f"v2 artifact {path}"))
+        if payload.get("schema_version") != V2_PANEL_SCHEMA_VERSION:
+            raise AssemblyError(f"unsupported v2 panel schema in {path}")
+        config = _mapping(payload.get("config"), f"{path}.config")
+        if config.get("decode_mode") != mode:
+            raise AssemblyError(f"v2 artifact has wrong decode mode in {path}")
+        current, current_hash = _v2_execution_identity(payload, path)
+        if execution_hash is None:
+            execution, execution_hash = current, current_hash
+            representative = {"model_identity": copy.deepcopy(payload["model_identity"])}
+        elif current_hash != execution_hash or current != execution:
+            raise AssemblyError("sampled/Source v2 execution-model identity mismatch")
+        rows = payload.get("rollouts")
+        if not isinstance(rows, list) or not rows or payload.get("rollout_count") not in {None, len(rows)}:
+            raise AssemblyError(f"v2 artifact lacks consistent rollout rows: {path}")
+        digest = sha256_file(path)
+        artifact_provenance.append(
+            {"mode": mode, "path": str(path), "sha256": digest, "execution_model_identity_sha256": current_hash}
+        )
+        return payload, config, current_hash, digest
+
+    for path in sampled_paths:
+        payload, config, model_hash, _ = artifact(path, "sampled")
+        if (
+            config.get("panel_mode") != "sampled_only"
+            or config.get("sample_count") != 16
+            or config.get("sample_index_range") != [0, 15]
+            or (float(config.get("temperature", -1)), float(config.get("top_p", -1)), float(config.get("repetition_penalty", -1)))
+            != (0.4, 0.95, 1.0)
+        ):
+            raise AssemblyError(f"sampled v2 artifact has non-canonical panel config: {path}")
+        for raw in payload["rollouts"]:
+            row = _mapping(raw, f"{path}.rollout")
+            identity = _register_v2_identity(
+                identities, _v2_row_identity(payload, row, path, model_hash)
+            )
+            image = str(identity["image_id"])
+            index = row.get("sample_index")
+            if isinstance(index, bool) or not isinstance(index, int) or index not in range(16):
+                raise AssemblyError(f"sampled v2 row has invalid sample_index for image {image}")
+            if row.get("decode_mode") != "sampled" or row.get("stop_reason") != "im_end":
+                raise AssemblyError(f"sampled v2 row is not naturally closed for image {image}")
+            if (image, index) in sampled_rows:
+                raise AssemblyError(f"duplicate sampled v2 image/sample_index: {image}/{index}")
+            normalized = _compact_v2_rollout(row, path, config, identity, index)
+            normalized["trajectory_id"] = f"sample-{index:02d}"
+            normalized["predictions"] = row.get("predictions")
+            assignment, parser = _v2_assignment(normalized, owners[image])
+            normalized.pop("predictions", None)
+            sampled_rows[(image, index)] = normalized
+            routes.setdefault(image, {})[normalized["trajectory_id"]] = {
+                "assignment": assignment,
+                "parser": parser,
+                "stop_reason": "im_end",
+                "seed": index,
+                "decode_mode": "sampled",
+            }
+    observed: dict[str, set[int]] = {}
+    for image, index in sampled_rows:
+        observed.setdefault(image, set()).add(index)
+    if set(observed) != set(pool):
+        raise AssemblyError("sampled v2 panel image cohort differs from the candidate pool")
+    incomplete = {image: values for image, values in observed.items() if values != set(range(16))}
+    if incomplete:
+        image = min(incomplete, key=int)
+        raise AssemblyError(f"sampled v2 image does not have sample_index 0..15: {image}")
+
+    for path in source_paths:
+        payload, config, model_hash, artifact_hash = artifact(path, "source_b16")
+        if (
+            config.get("panel_mode") != "source_b16"
+            or config.get("source_b16_row_budget") != 16
+            or (float(config.get("temperature", -1)), float(config.get("top_p", -1)), float(config.get("repetition_penalty", -1)))
+            != (0.0, 1.0, 1.0)
+        ):
+            raise AssemblyError(f"Source@B16 artifact has non-canonical panel config: {path}")
+        for raw in payload["rollouts"]:
+            row = _mapping(raw, f"{path}.rollout")
+            identity = _register_v2_identity(
+                identities, _v2_row_identity(payload, row, path, model_hash)
+            )
+            image = str(identity["image_id"])
+            if image in source_status:
+                raise AssemblyError(f"duplicate Source@B16 image: {image}")
+            receipt = _mapping(row.get("source_b16"), f"{path}:{image}.source_b16")
+            status = str(receipt.get("status", ""))
+            if (
+                row.get("decode_mode") != "source_b16"
+                or row.get("trajectory_id") != "source-b16"
+                or status not in SOURCE_B16_STATUSES
+                or receipt.get("row_budget") != 16
+            ):
+                raise AssemblyError(f"invalid Source@B16 contract for image {image}")
+            raw_ids = _token_ids(row.get("generated_token_ids"), f"{path}:{image}.generated_token_ids")
+            raw_hash = _norm_sha(
+                row.get("generated_token_ids_sha256"), f"{path}:{image}.generated_token_ids_sha256"
+            )
+            if token_ids_sha256(raw_ids) != raw_hash:
+                raise AssemblyError(f"raw Source token hash mismatch for image {image}")
+            provenance = {
+                "status": status,
+                "source_artifact_path": str(path),
+                "source_artifact_sha256": artifact_hash,
+                "raw_generated_token_ids_sha256": raw_hash,
+                "raw_generated_token_count": len(raw_ids),
+                "raw_stop_reason": str(row.get("stop_reason", "")),
+            }
+            source_status[image], source_provenance[image] = status, provenance
+            if status not in SOURCE_B16_ACCEPTED_STATUSES:
+                continue
+            projected = _token_ids(
+                receipt.get("projected_token_ids"), f"{path}:{image}.projected_token_ids"
+            )
+            projected_hash = _norm_sha(
+                receipt.get("projected_token_ids_sha256"), f"{path}:{image}.projected_token_ids_sha256"
+            )
+            parser = receipt.get("projected_parser_evidence")
+            text = receipt.get("projected_text")
+            count = receipt.get("projected_valid_complete_row_count")
+            if (
+                token_ids_sha256(projected) != projected_hash
+                or not isinstance(text, str)
+                or not isinstance(parser, Mapping)
+                or parser.get("parse_status") != "accepted"
+                or parser.get("dropped_prediction_count") != 0
+                or isinstance(count, bool)
+                or not isinstance(count, int)
+                or not 0 <= count <= 16
+                or parser.get("valid_prediction_count") != count
+                or (status == "accepted_budget" and count != 16)
+            ):
+                raise AssemblyError(f"Source@B16 projection is invalid for image {image}")
+            normalized = _compact_v2_rollout(
+                {**dict(row), "generated_token_ids": projected, "generated_token_ids_sha256": projected_hash},
+                path,
+                config,
+                identity,
+                0,
+            )
+            normalized.update(
+                {
+                    "trajectory_id": "source-b16",
+                    "decode_mode": "greedy",
+                    "generated_text": text,
+                    "predictions": parser,
+                    "_source_b16_provenance": {
+                        **provenance,
+                        "projected_token_ids_sha256": projected_hash,
+                        "projected_token_count": len(projected),
+                        "projected_valid_complete_row_count": count,
+                    },
+                }
+            )
+            assignment, parser_evidence = _v2_assignment(normalized, owners[image])
+            normalized.pop("predictions", None)
+            normalized.pop("generated_text", None)
+            source_rows[(image, 0)] = normalized
+            routes.setdefault(image, {})["source-b16"] = {
+                "assignment": assignment,
+                "parser": parser_evidence,
+                "stop_reason": str(row.get("stop_reason", "")),
+                "seed": 0,
+                "decode_mode": "greedy",
+            }
+    if set(source_status) != set(pool) or set(identities) != set(pool):
+        raise AssemblyError("Source@B16 image cohort differs from the candidate pool")
+
+    image_results: dict[str, dict[str, Any]] = {}
+    sampled_ids = [f"sample-{index:02d}" for index in range(16)]
+    for image, _ in sorted(source_rows, key=lambda item: int(item[0])):
+        route_map = routes[image]
+        assignments = {
+            route: copy.deepcopy(route_map[route]["assignment"])
+            for route in ["source-b16", *sampled_ids]
+        }
+        image_results[image] = {
+            "image_id": image,
+            "greedy_trajectory_id": "source-b16",
+            "sampled_trajectory_ids": sampled_ids,
+            "trajectory_evidence": {
+                route: {
+                    "decode_mode": route_map[route]["decode_mode"],
+                    "seed": route_map[route]["seed"],
+                    "stop_reason": route_map[route]["stop_reason"],
+                    "parser": copy.deepcopy(route_map[route]["parser"]),
+                }
+                for route in ["source-b16", *sampled_ids]
+            },
+            "owners": copy.deepcopy(owners[image]),
+            "budgets": [
+                {
+                    "budget": 16,
+                    "trajectory_assignments": assignments,
+                    "owner_sets": {
+                        route: list(value["matched_owner_ids"])
+                        for route, value in assignments.items()
+                    },
+                }
+            ],
+        }
+    references = _v2_references(pool, pool_path, identities)
+    counts = Counter(source_status.values())
+    assert execution is not None and execution_hash is not None and representative is not None
+    return {
+        "sampled_paths": sampled_paths,
+        "source_paths": source_paths,
+        "sampled_rows": sampled_rows,
+        "source_rows": source_rows,
+        "image_results": image_results,
+        "reference_records": references,
+        "execution_model_identity": execution,
+        "execution_model_identity_sha256": execution_hash,
+        "representative_payload": representative,
+        "prompt_identity_sha256": sha256_json(
+            [[image, identities[image]["prompt_token_ids_sha256"]] for image in sorted(identities, key=int)]
+        ),
+        "execution_metadata": {
+            "panel_schema_version": V2_PANEL_SCHEMA_VERSION,
+            "sampled_panel_mode": "sampled_only",
+            "source_panel_mode": "source_b16",
+            "sampling_order": "request_major",
+            "sample_index_range": [0, 15],
+            "sample_count": 16,
+            "source_b16_row_budget": 16,
+            "execution_model_identity_sha256": execution_hash,
+        },
+        "census": {
+            "sampled_image_count": len(observed),
+            "sampled_trajectory_count": len(sampled_rows),
+            "source_image_count": len(source_status),
+            "source_status_counts": dict(sorted(counts.items())),
+            "source_accepted_image_count": sum(counts[item] for item in SOURCE_B16_ACCEPTED_STATUSES),
+            "source_ineligible_image_count": sum(counts[item] for item in SOURCE_B16_INELIGIBLE_STATUSES),
+            "source_ineligible_excluded_from_admission_count": sum(
+                counts[item] for item in SOURCE_B16_INELIGIBLE_STATUSES
+            ),
+            "source_rows": [
+                {"image_id": image, **source_provenance[image]}
+                for image in sorted(source_provenance, key=int)
+            ],
+            "artifact_provenance": artifact_provenance,
+        },
+    }
+
+
 def _selection_receipt(selection: Mapping[str, Any]) -> dict[str, Any]:
     """Project selection to immutable JSON without serializing internal inputs twice."""
 
@@ -390,6 +918,10 @@ def _selection_receipt(selection: Mapping[str, Any]) -> dict[str, Any]:
                 "rank_matching_receipt",
             )
         }
+        if "allocation_protocol_receipt" in arm:
+            arms[name]["allocation_protocol_receipt"] = copy.deepcopy(
+                arm["allocation_protocol_receipt"]
+            )
         arms[name]["events"] = [
             {
                 key: copy.deepcopy(event[key])
@@ -403,7 +935,7 @@ def _selection_receipt(selection: Mapping[str, Any]) -> dict[str, Any]:
             }
             for event in arm["events"]
         ]
-    return {
+    receipt = {
         "schema_version": SCHEMA_VERSION,
         "status": "frozen_selection",
         "trajectory_panel_execution_metadata": copy.deepcopy(selection["trajectory_panel_execution_metadata"]),
@@ -417,21 +949,325 @@ def _selection_receipt(selection: Mapping[str, Any]) -> dict[str, Any]:
         "rank_matching_receipt": copy.deepcopy(selection["rank_matching_receipt"]),
         "arms": arms,
     }
+    if "allocation_protocol_receipt" in selection:
+        receipt["allocation_protocol_receipt"] = copy.deepcopy(
+            selection["allocation_protocol_receipt"]
+        )
+    return receipt
+
+
+def _deduplicate_v2_sampled_candidates(
+    candidates_by_image: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    """Collapse v2 cross-route exact identities before shared selection.
+
+    The shared selector remains fail-closed on clones.  This adapter-local
+    normalization treats identical rows from different sampled trajectories
+    as one available event and keeps the route preferred by the frozen unit
+    ranking.
+    """
+
+    deduplicated: dict[str, list[dict[str, Any]]] = {}
+    duplicate_groups: list[dict[str, Any]] = []
+
+    def descriptor(item: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            field: copy.deepcopy(item.get(field))
+            for field in (
+                "route_id",
+                "route_seed",
+                "generated_row_index",
+                "owner_id",
+                "marginal_route_added_owner_count",
+                "route_added_owner_count",
+                "unresolved_row_count",
+                "event_id",
+                "prefix_token_ids_sha256",
+                "candidate_token_ids_sha256",
+            )
+        }
+
+    for image in sorted((str(value) for value in candidates_by_image), key=int):
+        groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+        for raw in candidates_by_image[image]:
+            item = dict(raw)
+            groups.setdefault(_breadth_identity(item), []).append(item)
+        retained: list[dict[str, Any]] = []
+        for identity, group in sorted(groups.items()):
+            ordered = sorted(group, key=_breadth_sampled_rank)
+            retained.append(ordered[0])
+            if len(ordered) > 1:
+                duplicate_groups.append(
+                    {
+                        "image_id": image,
+                        "identity": {
+                            "prefix_token_ids_sha256": identity[1],
+                            "candidate_token_ids_sha256": identity[2],
+                            "owner_id": identity[3],
+                        },
+                        "candidate_count": len(ordered),
+                        "retained": descriptor(ordered[0]),
+                        "discarded": [descriptor(item) for item in ordered[1:]],
+                    }
+                )
+        deduplicated[image] = sorted(retained, key=_breadth_sampled_rank)
+    before = sum(len(values) for values in candidates_by_image.values())
+    after = sum(len(values) for values in deduplicated.values())
+    return deduplicated, {
+        "policy": "v2_exact_identity_keep_existing_sampled_rank_winner",
+        "candidate_count_before": before,
+        "candidate_count_after": after,
+        "duplicate_candidate_count_removed": before - after,
+        "duplicate_identity_group_count": len(duplicate_groups),
+        "affected_image_count": len({item["image_id"] for item in duplicate_groups}),
+        "duplicate_groups": duplicate_groups,
+    }
+
+
+def _materialize_v2_arm(
+    selection: Mapping[str, Any], *, checkpoint_id: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    assembled = materialize_constant_dose_breadth_arm(selection, checkpoint_id=checkpoint_id)
+    provenance: dict[str, dict[str, Any]] = {}
+    for event in selection.get("events", []):
+        if not isinstance(event, Mapping) or event.get("event_family") != "source_preservation":
+            continue
+        inputs = event.get("_event_inputs")
+        rollout = inputs.get("rollout") if isinstance(inputs, Mapping) else None
+        source = rollout.get("_source_b16_provenance") if isinstance(rollout, Mapping) else None
+        if not isinstance(source, Mapping):
+            raise AssemblyError("selected Source@B16 event lacks raw completion provenance")
+        event_id = (
+            f"source-preservation-image-{event['image_id']}-route-{event['route_id']}-"
+            f"row-{event['generated_row_index']}"
+        )
+        provenance[event_id] = copy.deepcopy(dict(source))
+    rollouts, reviews, receipts, arm = assembled
+    for rollout, review, receipt in zip(rollouts, reviews, receipts, strict=True):
+        source = provenance.get(str(receipt.get("event_id")))
+        if source is None:
+            continue
+        review_provenance = dict(_mapping(review.get("review_provenance"), "review_provenance"))
+        review_provenance["source_b16"] = copy.deepcopy(source)
+        review["review_provenance"], receipt["source_b16"] = review_provenance, copy.deepcopy(source)
+    return rollouts, reviews, receipts, arm
+
+
+def _training_surfaces(
+    training_ids: set[str], candidate_rows: Mapping[str, Mapping[str, Any]]
+) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    bands: dict[str, str] = {}
+    annotations: dict[str, dict[str, Any]] = {}
+    for image in training_ids:
+        row = candidate_rows[image]
+        objects = row.get("objects")
+        if not isinstance(objects, list) or not objects:
+            raise AssemblyError(f"candidate-pool training image {image} has no annotation objects")
+        count = len(objects)
+        bands[image] = (
+            "sparse_1_to_3" if count <= 3 else "medium_4_to_7" if count <= 7
+            else "dense_8_to_15" if count <= 15 else "very_dense_16_plus"
+        )
+        annotations[image] = dict(row)
+    return bands, annotations
+
+
+def assemble_v2_b16_constant_dose_breadth_state_banks(
+    *,
+    candidate_pool: Path,
+    split_receipt: Path,
+    sampled_panel_root: Path,
+    source_b16_root: Path,
+    output_dir: Path,
+) -> dict[str, Any]:
+    output = output_dir.expanduser().resolve()
+    if output.exists():
+        raise AssemblyError(f"output path already exists and will not be overwritten: {output}")
+    pool_path = candidate_pool.expanduser().resolve(strict=True)
+    split_path = split_receipt.expanduser().resolve(strict=True)
+    split_ids = _split_membership(candidate_pool=pool_path, split_receipt=split_path)
+    candidate_rows = _candidate_pool(pool_path)
+    adapter = load_v2_b16_panel_adapter(
+        sampled_panel_root=sampled_panel_root,
+        source_b16_root=source_b16_root,
+        candidate_pool=pool_path,
+    )
+    training_ids = split_ids["train_candidate"]
+    bands, annotations = _training_surfaces(training_ids, candidate_rows)
+    admitted = sorted(training_ids & set(adapter["image_results"]), key=int)
+    status_by_image = {
+        str(item["image_id"]): str(item["status"])
+        for item in adapter["census"]["source_rows"]
+    }
+    training_status = Counter(status_by_image[image] for image in training_ids)
+    adapter_census = copy.deepcopy(adapter["census"])
+    adapter_census.update(
+        {
+            "training_source_status_counts": dict(sorted(training_status.items())),
+            "training_source_accepted_image_count": len(admitted),
+            "training_source_ineligible_excluded_from_admission_count": sum(
+                training_status[item] for item in SOURCE_B16_INELIGIBLE_STATUSES
+            ),
+            "development_admission_count": 0,
+            "heldout_admission_count": 0,
+        }
+    )
+    representative_path = adapter["sampled_paths"][0]
+    source_checkpoint = _derive_v2_checkpoint_identity(
+        adapter["representative_payload"], path=representative_path
+    )
+    checkpoint_id = sha256_json(source_checkpoint.to_artifact_dict())
+    sampled_candidates, sampled_census = _build_multi_candidates(
+        image_results=adapter["image_results"],
+        sampled_rows=adapter["sampled_rows"],
+        reference_records=adapter["reference_records"],
+        annotations=annotations,
+        image_ids=admitted,
+        checkpoint_id=checkpoint_id,
+    )
+    sampled_candidates, sampled_deduplication = _deduplicate_v2_sampled_candidates(
+        sampled_candidates
+    )
+    sampled_census["v2_exact_identity_deduplication"] = copy.deepcopy(
+        sampled_deduplication
+    )
+    adapter_census["sampled_exact_identity_deduplication"] = copy.deepcopy(
+        sampled_deduplication
+    )
+    source_candidates, source_census = _build_source_candidates(
+        image_results=adapter["image_results"],
+        greedy_rows=adapter["source_rows"],
+        reference_records=adapter["reference_records"],
+        annotations=annotations,
+        image_ids=admitted,
+        manual_review=None,
+    )
+    validate_constant_dose_training_reservoir(
+        training_image_bands=bands,
+        development_image_ids=sorted(split_ids["development"], key=int),
+        heldout_image_ids=sorted(split_ids["heldout"], key=int),
+        sampled_candidates=sampled_candidates,
+        source_candidates=source_candidates,
+    )
+    selection = select_constant_dose_breadth_arms(
+        sampled_candidates=sampled_candidates,
+        source_candidates=source_candidates,
+        training_image_bands=bands,
+        trajectory_panel_execution_metadata=adapter["execution_metadata"],
+    )
+    arms = {
+        name: _materialize_v2_arm(selection[name], checkpoint_id=checkpoint_id)
+        for name in ("broad", "concentrated")
+    }
+    source_paths = [
+        ("candidate-pool", pool_path),
+        ("split-receipt", split_path),
+        *[(f"sampled-v2-{index:04d}", path) for index, path in enumerate(adapter["sampled_paths"])],
+        *[(f"source-b16-v2-{index:04d}", path) for index, path in enumerate(adapter["source_paths"])],
+    ]
+    artifacts = _source_artifacts(source_paths)
+    verified = [
+        {
+            "artifact_path": str(path),
+            "checkpoint_id": checkpoint_id,
+            "checkpoint_identity": source_checkpoint.to_artifact_dict(),
+            "execution_model_identity_sha256": adapter["execution_model_identity_sha256"],
+        }
+        for path in [*adapter["sampled_paths"], *adapter["source_paths"]]
+    ]
+    output.mkdir(parents=True)
+    selection_document = _selection_receipt(selection)
+    selection_document.update({"source_artifacts": artifacts, "v2_panel_adapter": adapter_census})
+    _write_json(output / "selection-receipt.json", selection_document)
+    common_census = {
+        "v2_panel_adapter": adapter_census,
+        "sampled_candidates": sampled_census,
+        "source_candidates": source_census,
+        "selection": selection_document,
+    }
+    arm_receipts: dict[str, Any] = {}
+    for name, assembled in arms.items():
+        arm_receipts[name] = _write_arm(
+            root=output / f"{name}-plus-source-preservation",
+            rollouts=assembled[0],
+            reviews=assembled[1],
+            receipts=assembled[2],
+            census={**common_census, "arm": assembled[3]},
+            arm_receipt=assembled[3],
+            source_checkpoint=source_checkpoint,
+            prompt_identity_sha256=str(adapter["prompt_identity_sha256"]),
+            source_artifacts=artifacts,
+            verified_rollout_checkpoint_identities=verified,
+        )
+    receipt = {
+        "schema_version": SCHEMA_VERSION,
+        "status": "assembled",
+        "input_mode": "v2_sampled_panel_plus_source_b16",
+        "source_checkpoint": source_checkpoint.to_artifact_dict(),
+        "source_checkpoint_id": checkpoint_id,
+        "prompt_identity_sha256": adapter["prompt_identity_sha256"],
+        "execution_metadata": adapter["execution_metadata"],
+        "reference_derivation": {
+            "policy": "exact_v2_prompt_ids_plus_matched_source_file_and_executed_rgb_hashes",
+            "image_count": len(adapter["reference_records"]),
+            "sampled_and_source_b16_identity_cross_checked": True,
+            "source_semantics": "projected_token_ids_text_and_parser_evidence_only",
+        },
+        "v2_panel_adapter": adapter_census,
+        "selection_receipt": str((output / "selection-receipt.json").resolve()),
+        "arms": {
+            name: str((output / f"{name}-plus-source-preservation" / "assembly-receipt.json").resolve())
+            for name in arm_receipts
+        },
+        "source_artifacts": artifacts,
+    }
+    _write_json(output / "assembly-receipt.json", receipt)
+    return receipt
 
 
 def assemble_constant_dose_breadth_state_banks(
     *,
     candidate_pool: Path,
     split_receipt: Path,
-    trajectory_analysis: Path,
-    panel_union_receipt: Path,
-    old_greedy: Sequence[Path],
-    new_greedy: Sequence[Path],
-    old_sampled: Sequence[Path],
-    new_sampled: Sequence[Path],
+    trajectory_analysis: Path | None = None,
+    panel_union_receipt: Path | None = None,
+    old_greedy: Sequence[Path] | None = None,
+    new_greedy: Sequence[Path] | None = None,
+    old_sampled: Sequence[Path] | None = None,
+    new_sampled: Sequence[Path] | None = None,
+    sampled_panel_root: Path | None = None,
+    source_b16_root: Path | None = None,
     output_dir: Path,
 ) -> dict[str, Any]:
     """Validate frozen evidence and write two immutable matched StateBanks."""
+
+    legacy = (
+        trajectory_analysis,
+        panel_union_receipt,
+        old_greedy,
+        new_greedy,
+        old_sampled,
+        new_sampled,
+    )
+    if sampled_panel_root is not None or source_b16_root is not None:
+        if sampled_panel_root is None or source_b16_root is None:
+            raise AssemblyError("--sampled-panel-root and --source-b16-root must be supplied together")
+        if any(value is not None for value in legacy):
+            raise AssemblyError("v2 panel roots are mutually exclusive with legacy analysis/rollout inputs")
+        return assemble_v2_b16_constant_dose_breadth_state_banks(
+            candidate_pool=candidate_pool,
+            split_receipt=split_receipt,
+            sampled_panel_root=sampled_panel_root,
+            source_b16_root=source_b16_root,
+            output_dir=output_dir,
+        )
+    if any(value is None for value in legacy):
+        raise AssemblyError(
+            "legacy mode requires trajectory analysis, panel receipt, and all old/new rollout families"
+        )
+    assert trajectory_analysis is not None and panel_union_receipt is not None
+    assert old_greedy is not None and new_greedy is not None
+    assert old_sampled is not None and new_sampled is not None
 
     output = output_dir.expanduser().resolve()
     if output.exists():
@@ -612,10 +1448,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-pool", type=Path, required=True)
     parser.add_argument("--split-receipt", type=Path, required=True)
-    parser.add_argument("--trajectory-analysis", type=Path, required=True)
-    parser.add_argument("--panel-union-receipt", type=Path, required=True)
+    parser.add_argument("--trajectory-analysis", type=Path)
+    parser.add_argument("--panel-union-receipt", type=Path)
     for name in ("old-greedy", "new-greedy", "old-sampled", "new-sampled"):
-        parser.add_argument(f"--{name}", type=Path, action="append", required=True)
+        parser.add_argument(f"--{name}", type=Path, action="append")
+    parser.add_argument("--sampled-panel-root", type=Path)
+    parser.add_argument("--source-b16-root", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -632,6 +1470,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             new_greedy=args.new_greedy,
             old_sampled=args.old_sampled,
             new_sampled=args.new_sampled,
+            sampled_panel_root=args.sampled_panel_root,
+            source_b16_root=args.source_b16_root,
             output_dir=args.output_dir,
         )
     except (AssemblyError, FileNotFoundError, ValueError) as exc:

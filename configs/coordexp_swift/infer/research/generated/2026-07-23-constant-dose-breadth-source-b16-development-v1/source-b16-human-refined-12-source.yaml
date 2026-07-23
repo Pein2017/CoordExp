@@ -1,0 +1,15 @@
+extends: ../../qwen3_vl_2b_step4887_candidate_pool_2432_source_b16_vllm.yaml
+run:
+  name: source-b16-human-refined-12-source
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/human-refined-safety-v1/source
+  collision_policy: fail
+data:
+  input_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+generation:
+  batch_size: 32
+  max_new_tokens: 2048
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+scoring:
+  enabled: true

@@ -90,6 +90,21 @@ GEOMETRY_IOU_THRESHOLD = 0.75
 BREADTH_EVENT_COUNT = 496
 BREADTH_BROAD_IMAGE_COUNT = 496
 BREADTH_CONCENTRATED_IMAGE_COUNT = 118
+V2_BREADTH_MAX_PAIRS_PER_IMAGE = 8
+V2_BREADTH_PROTOCOL_AMENDMENT = "v2_capacity_constrained_capped_max_min_breadth_v1"
+V2_BREADTH_PROTOCOL_MEANING = (
+    "Allocate the 496 broad images and pair events by deterministic capped max-min "
+    "fairness over eligible object-count bands, then use each band's shortest "
+    "deterministic image-hash prefix with enough usable trusted pairs for the same quota, "
+    "where usable capacity is capped at eight pairs per image to preserve the canonical "
+    "sixteen-complete-row-record StateBank limit."
+)
+V2_BREADTH_PROTOCOL_CLAIM_BOUNDARY = (
+    "capacity-constrained and canonical-StateBank-cap-constrained 496-vs-minimum-prefix "
+    "image allocation comparison; "
+    "not the original equal-band 496-vs-118 design and not natural Common Objects "
+    "in Context prevalence"
+)
 _BREADTH_BANDS = (
     "sparse_1_to_3",
     "medium_4_to_7",
@@ -839,6 +854,132 @@ def _breadth_quota(total: int) -> dict[str, int]:
     }
 
 
+def _breadth_capped_max_min_quota(
+    eligible_count_by_band: Mapping[str, int], *, total: int
+) -> dict[str, int]:
+    """Allocate ``total`` deterministically by capped max-min fairness.
+
+    One slot is offered to each non-saturated band in canonical band order on
+    every pass.  This makes the remainder rule explicit while preventing a
+    scarce band from making the complete allocation infeasible.
+    """
+
+    if isinstance(total, bool) or not isinstance(total, int) or total <= 0:
+        raise AssemblyError("capped max-min breadth allocation requires a positive integer total")
+    if set(eligible_count_by_band) != set(_BREADTH_BANDS):
+        raise AssemblyError(
+            "capped max-min breadth allocation requires the exact canonical band set"
+        )
+    capacities: dict[str, int] = {}
+    for band in _BREADTH_BANDS:
+        value = eligible_count_by_band[band]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise AssemblyError(
+                f"eligible breadth image count must be a non-negative integer: {band}={value!r}"
+            )
+        capacities[band] = value
+    if sum(capacities.values()) < total:
+        raise AssemblyError(
+            "capped max-min breadth allocation lacks total eligible supply: "
+            f"available={sum(capacities.values())}, required={total}"
+        )
+    quota = {band: 0 for band in _BREADTH_BANDS}
+    allocated = 0
+    while allocated < total:
+        progressed = False
+        for band in _BREADTH_BANDS:
+            if quota[band] >= capacities[band]:
+                continue
+            quota[band] += 1
+            allocated += 1
+            progressed = True
+            if allocated == total:
+                break
+        if not progressed:  # guarded by the aggregate supply check
+            raise AssemblyError("capped max-min breadth allocation unexpectedly exhausted supply")
+    return quota
+
+
+def _breadth_minimum_capacity_prefix(
+    *,
+    images: Sequence[str],
+    pairs_by_image: Mapping[str, Sequence[Mapping[str, Any]]],
+    required_pair_count: int,
+    max_pairs_per_image: int | None = None,
+) -> tuple[list[str], dict[str, Any]]:
+    """Return the shortest image-hash prefix with enough usable pair supply."""
+
+    if (
+        isinstance(required_pair_count, bool)
+        or not isinstance(required_pair_count, int)
+        or required_pair_count <= 0
+    ):
+        raise AssemblyError("minimum breadth prefix requires a positive integer pair quota")
+    normalized = [str(image) for image in images]
+    if len(normalized) != len(set(normalized)):
+        raise AssemblyError("minimum breadth prefix received duplicate image IDs")
+    if max_pairs_per_image is not None and (
+        isinstance(max_pairs_per_image, bool)
+        or not isinstance(max_pairs_per_image, int)
+        or max_pairs_per_image <= 0
+    ):
+        raise AssemblyError("minimum breadth prefix pair cap must be a positive integer")
+    ordered = sorted(normalized, key=_breadth_image_order)
+    raw_cumulative = 0
+    usable_cumulative = 0
+    raw_previous = 0
+    usable_previous = 0
+    for index, image in enumerate(ordered, start=1):
+        values = pairs_by_image.get(image)
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)) or not values:
+            raise AssemblyError(
+                f"minimum breadth prefix image lacks distinct trusted pair supply: {image}"
+            )
+        raw_previous = raw_cumulative
+        usable_previous = usable_cumulative
+        raw_cumulative += len(values)
+        usable_cumulative += (
+            len(values)
+            if max_pairs_per_image is None
+            else min(len(values), max_pairs_per_image)
+        )
+        if usable_cumulative >= required_pair_count:
+            selected = ordered[:index]
+            return selected, {
+                "required_pair_count": required_pair_count,
+                "prefix_image_count": index,
+                "max_pairs_per_image": max_pairs_per_image,
+                "raw_distinct_pair_capacity_at_prefix_minus_one": raw_previous,
+                "raw_distinct_pair_capacity_at_prefix": raw_cumulative,
+                "usable_pair_capacity_at_prefix_minus_one": usable_previous,
+                "usable_pair_capacity_at_prefix": usable_cumulative,
+                "raw_distinct_pair_capacity_of_last_prefix_image": len(values),
+                "usable_pair_capacity_of_last_prefix_image": (
+                    len(values)
+                    if max_pairs_per_image is None
+                    else min(len(values), max_pairs_per_image)
+                ),
+                "available_image_count": len(ordered),
+                "available_raw_distinct_pair_capacity": sum(
+                    len(pairs_by_image[value]) for value in ordered
+                ),
+                "available_usable_pair_capacity": sum(
+                    len(pairs_by_image[value])
+                    if max_pairs_per_image is None
+                    else min(len(pairs_by_image[value]), max_pairs_per_image)
+                    for value in ordered
+                ),
+                "selection_rule": (
+                    "shortest exact deterministic image-hash prefix whose usable pair "
+                    "capacity reaches the quota; no image skips or capacity-based swaps"
+                ),
+            }
+    raise AssemblyError(
+        "minimum breadth prefix lacks usable trusted pair supply: "
+        f"available={usable_cumulative}, required={required_pair_count}"
+    )
+
+
 def _breadth_image_order(image_id: str) -> tuple[str, str, str]:
     """Stable image-hash order, with the ID as an audit-friendly final tie-break."""
 
@@ -1021,8 +1162,16 @@ def _select_concentrated_pairs_by_band_round_robin(
     concentrated_images: Sequence[str],
     image_bands: Mapping[str, str],
     pair_quota_by_band: Mapping[str, int],
+    max_pairs_per_image: int | None = None,
 ) -> list[dict[str, Any]]:
     """Select each band's concentrated pairs by an independent round robin."""
+
+    if max_pairs_per_image is not None and (
+        isinstance(max_pairs_per_image, bool)
+        or not isinstance(max_pairs_per_image, int)
+        or max_pairs_per_image <= 0
+    ):
+        raise AssemblyError("concentrated round-robin pair cap must be a positive integer")
 
     selected: list[dict[str, Any]] = []
     for band in _BREADTH_BANDS:
@@ -1037,6 +1186,8 @@ def _select_concentrated_pairs_by_band_round_robin(
             progressed = False
             for image in images:
                 rank_index = next_rank[image]
+                if max_pairs_per_image is not None and rank_index >= max_pairs_per_image:
+                    continue
                 if rank_index >= len(pairs_by_image[image]):
                     continue
                 band_selected.append(dict(pairs_by_image[image][rank_index]))
@@ -1050,6 +1201,18 @@ def _select_concentrated_pairs_by_band_round_robin(
                     f"band={band}, selected={len(band_selected)}, required={target}"
                 )
         selected.extend(band_selected)
+    if max_pairs_per_image is not None:
+        selected_by_image = Counter(str(pair["image_id"]) for pair in selected)
+        excessive = {
+            image: count
+            for image, count in selected_by_image.items()
+            if count > max_pairs_per_image
+        }
+        if excessive:
+            raise AssemblyError(
+                "concentrated round-robin exceeded the per-image pair cap: "
+                f"cap={max_pairs_per_image}, counts={excessive}"
+            )
     if len(selected) != BREADTH_EVENT_COUNT:
         raise AssemblyError(
             "concentrated band-wise round robin did not select exactly 496 pairs: "
@@ -1203,6 +1366,28 @@ def validate_constant_dose_panel_execution_contract(
     reservoir, plus any additional producer evidence unchanged.
     """
 
+    if contract.get("panel_schema_version") == "coordexp_vllm_trajectory_panel.v2":
+        expected = {
+            "sampled_panel_mode": "sampled_only",
+            "source_panel_mode": "source_b16",
+            "sampling_order": "request_major",
+            "sample_index_range": [0, 15],
+            "sample_count": 16,
+            "source_b16_row_budget": 16,
+        }
+        mismatches = [
+            field for field, value in expected.items() if contract.get(field) != value
+        ]
+        identity = contract.get("execution_model_identity_sha256")
+        if not isinstance(identity, str) or len(identity) != 64:
+            mismatches.append("execution_model_identity_sha256")
+        if mismatches:
+            raise AssemblyError(
+                "constant-dose v2 panel execution contract is invalid: "
+                + ", ".join(mismatches)
+            )
+        return copy.deepcopy(dict(contract))
+
     batch_size = contract.get("physical_batch_size")
     if batch_size != 1:
         raise AssemblyError(
@@ -1226,16 +1411,16 @@ def select_constant_dose_breadth_arms(
     training_image_bands: Mapping[str, str],
     trajectory_panel_execution_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Freeze the matched 496-image broad and nested 118-image arms.
+    """Freeze matched 496-image broad and nested concentrated arms.
 
     Each selected pair has one sampled treatment row and one trusted Source
-    row.  Concentrated round-robins 124 whole pairs independently inside each
-    object-count band.  Broad uses one pair from each of 496 distinct images
-    and first attempts to match the concentrated band-by-exact-rank histogram.
-    It may then try only the unit's declared rank-1/rank-2/rank-3/rank-4-plus
-    coarsening.  If neither is feasible, rank one is retained as an explicitly
-    policy-only comparison.  All weights are assigned locally so both arms
-    have exactly 992 events, mean weight one, and total weight 992.
+    row.  Legacy execution retains the equal-band 496-versus-118 allocation.
+    The v2 execution contract uses the prospective capacity-constrained
+    allocation recorded in the returned protocol receipt.  Both paths first
+    attempt exact band-by-rank matching, then the predeclared coarse rank
+    groups, and finally an explicitly policy-only rank-one comparison.  All
+    weights are assigned locally so both arms have exactly 992 events, mean
+    weight one, and total weight 992.
     """
 
     execution_contract = validate_constant_dose_panel_execution_contract(
@@ -1260,36 +1445,114 @@ def select_constant_dose_breadth_arms(
             "broad unique-image feasibility is below 496: "
             f"eligible_unique_training_images={eligible_image_count}"
         )
-    broad_quota = _breadth_quota(BREADTH_BROAD_IMAGE_COUNT)
-    insufficient = {
-        band: {"available": len(eligible_by_band[band]), "required": count}
-        for band, count in broad_quota.items()
-        if len(eligible_by_band[band]) < count
+    eligible_count_by_band = {
+        band: len(eligible_by_band[band]) for band in _BREADTH_BANDS
     }
-    if insufficient:
-        raise AssemblyError(f"broad band-balanced image selection is infeasible: {insufficient}")
+    is_v2_protocol = (
+        execution_contract.get("panel_schema_version")
+        == "coordexp_vllm_trajectory_panel.v2"
+    )
+    allocation_protocol_receipt: dict[str, Any] | None = None
+    if is_v2_protocol:
+        broad_quota = _breadth_capped_max_min_quota(
+            eligible_count_by_band, total=BREADTH_BROAD_IMAGE_COUNT
+        )
+    else:
+        broad_quota = _breadth_quota(BREADTH_BROAD_IMAGE_COUNT)
+        insufficient = {
+            band: {"available": len(eligible_by_band[band]), "required": count}
+            for band, count in broad_quota.items()
+            if len(eligible_by_band[band]) < count
+        }
+        if insufficient:
+            raise AssemblyError(
+                f"broad band-balanced image selection is infeasible: {insufficient}"
+            )
+    broad_images_by_band = {
+        band: eligible_by_band[band][: broad_quota[band]] for band in _BREADTH_BANDS
+    }
     broad_images = [
         image
         for band in _BREADTH_BANDS
-        for image in eligible_by_band[band][: broad_quota[band]]
+        for image in broad_images_by_band[band]
     ]
-    concentrated_quota = _breadth_quota(BREADTH_CONCENTRATED_IMAGE_COUNT)
-    concentrated_images = [
-        image
-        for band in _BREADTH_BANDS
-        for image in broad_images
-        if image_bands[image] == band
-    ]
-    concentrated_images = [
-        image
-        for band in _BREADTH_BANDS
-        for image in sorted(
-            (image for image in concentrated_images if image_bands[image] == band),
-            key=_breadth_image_order,
-        )[: concentrated_quota[band]]
-    ]
-    if len(concentrated_images) != BREADTH_CONCENTRATED_IMAGE_COUNT:
-        raise AssemblyError("nested concentrated image selection did not reach 118 images")
+    if len(broad_images) != BREADTH_BROAD_IMAGE_COUNT:
+        raise AssemblyError("broad image selection did not reach exactly 496 images")
+
+    if is_v2_protocol:
+        pair_quota_by_band = copy.deepcopy(broad_quota)
+        concentrated_images_by_band: dict[str, list[str]] = {}
+        prefix_proof_by_band: dict[str, dict[str, Any]] = {}
+        for band in _BREADTH_BANDS:
+            prefix, proof = _breadth_minimum_capacity_prefix(
+                images=broad_images_by_band[band],
+                pairs_by_image=pairs_by_image,
+                required_pair_count=pair_quota_by_band[band],
+                max_pairs_per_image=V2_BREADTH_MAX_PAIRS_PER_IMAGE,
+            )
+            concentrated_images_by_band[band] = prefix
+            prefix_proof_by_band[band] = proof
+        concentrated_quota = {
+            band: len(concentrated_images_by_band[band]) for band in _BREADTH_BANDS
+        }
+        concentrated_images = [
+            image
+            for band in _BREADTH_BANDS
+            for image in concentrated_images_by_band[band]
+        ]
+        if not set(concentrated_images) < set(broad_images):
+            raise AssemblyError(
+                "v2 concentrated minimum-prefix cohort is not a strict subset of broad images"
+            )
+        allocation_protocol_receipt = {
+            "protocol_amendment_name": V2_BREADTH_PROTOCOL_AMENDMENT,
+            "plain_english_meaning": V2_BREADTH_PROTOCOL_MEANING,
+            "execution_scope": "coordexp_vllm_trajectory_panel.v2_only",
+            "eligible_image_count_by_band": copy.deepcopy(eligible_count_by_band),
+            "broad_image_and_pair_quota_by_band": copy.deepcopy(broad_quota),
+            "broad_image_count": len(broad_images),
+            "broad_pair_count": sum(pair_quota_by_band.values()),
+            "max_pairs_per_concentrated_image": V2_BREADTH_MAX_PAIRS_PER_IMAGE,
+            "max_complete_row_records_per_concentrated_image": (
+                2 * V2_BREADTH_MAX_PAIRS_PER_IMAGE
+            ),
+            "usable_pair_capacity_rule": (
+                "min(raw_distinct_pair_capacity, 8) per image because every selected pair "
+                "materializes one treatment and one Source complete-row record"
+            ),
+            "concentrated_image_count_by_band": copy.deepcopy(concentrated_quota),
+            "concentrated_image_count": len(concentrated_images),
+            "minimum_prefix_capacity_proof_by_band": copy.deepcopy(
+                prefix_proof_by_band
+            ),
+            "breadth_ratio_pair_count_per_image_by_band": {
+                band: pair_quota_by_band[band] / concentrated_quota[band]
+                for band in _BREADTH_BANDS
+            },
+            "overall_breadth_ratio_pair_count_per_image": (
+                BREADTH_EVENT_COUNT / len(concentrated_images)
+            ),
+            "claim_boundary": V2_BREADTH_PROTOCOL_CLAIM_BOUNDARY,
+        }
+    else:
+        pair_quota_by_band = _breadth_quota(BREADTH_EVENT_COUNT)
+        concentrated_quota = _breadth_quota(BREADTH_CONCENTRATED_IMAGE_COUNT)
+        concentrated_images = [
+            image
+            for band in _BREADTH_BANDS
+            for image in broad_images
+            if image_bands[image] == band
+        ]
+        concentrated_images = [
+            image
+            for band in _BREADTH_BANDS
+            for image in sorted(
+                (image for image in concentrated_images if image_bands[image] == band),
+                key=_breadth_image_order,
+            )[: concentrated_quota[band]]
+        ]
+        if len(concentrated_images) != BREADTH_CONCENTRATED_IMAGE_COUNT:
+            raise AssemblyError("nested concentrated image selection did not reach 118 images")
 
     def events_for_pairs(pairs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
@@ -1297,6 +1560,19 @@ def select_constant_dose_breadth_arms(
             for family, candidate in (("treatment", pair["sampled"]), ("source_preservation", pair["source"])):
                 candidate = dict(candidate)
                 route_count = _breadth_int(candidate, "route_count")
+                if not str(candidate.get("event_id", "")):
+                    route_id = str(candidate.get("route_id", ""))
+                    if not route_id:
+                        raise AssemblyError("breadth candidate lacks route_id for stable event identity")
+                    materialized_family = (
+                        "source_preservation"
+                        if family == "source_preservation"
+                        else "multi_route_treatment"
+                    )
+                    candidate["event_id"] = (
+                        f"{materialized_family.replace('_', '-')}-image-{pair['image_id']}-"
+                        f"route-{route_id}-row-{_breadth_int(candidate, 'generated_row_index')}"
+                    )
                 events.append(
                     {
                         **candidate,
@@ -1313,12 +1589,14 @@ def select_constant_dose_breadth_arms(
                 )
         return events
 
-    pair_quota_by_band = _breadth_quota(BREADTH_EVENT_COUNT)
     concentrated_pairs = _select_concentrated_pairs_by_band_round_robin(
         pairs_by_image=pairs_by_image,
         concentrated_images=concentrated_images,
         image_bands=image_bands,
         pair_quota_by_band=pair_quota_by_band,
+        max_pairs_per_image=(
+            V2_BREADTH_MAX_PAIRS_PER_IMAGE if is_v2_protocol else None
+        ),
     )
     concentrated_exact_histogram = _breadth_pair_rank_histogram(concentrated_pairs)
     concentrated_coarse_histogram = _breadth_pair_rank_group_histogram(
@@ -1433,7 +1711,7 @@ def select_constant_dose_breadth_arms(
     concentrated_arm["rank_matching_receipt"] = copy.deepcopy(matching_receipt)
     broad_arm["trajectory_panel_execution_metadata"] = copy.deepcopy(execution_contract)
     concentrated_arm["trajectory_panel_execution_metadata"] = copy.deepcopy(execution_contract)
-    return {
+    result = {
         "trajectory_panel_execution_metadata": execution_contract,
         "eligible_unique_training_image_count": eligible_image_count,
         "eligible_images_by_band": {band: len(images) for band, images in eligible_by_band.items()},
@@ -1444,6 +1722,17 @@ def select_constant_dose_breadth_arms(
         "broad": broad_arm,
         "concentrated": concentrated_arm,
     }
+    if allocation_protocol_receipt is not None:
+        result["allocation_protocol_receipt"] = copy.deepcopy(
+            allocation_protocol_receipt
+        )
+        broad_arm["allocation_protocol_receipt"] = copy.deepcopy(
+            allocation_protocol_receipt
+        )
+        concentrated_arm["allocation_protocol_receipt"] = copy.deepcopy(
+            allocation_protocol_receipt
+        )
+    return result
 
 
 def validate_constant_dose_training_reservoir(
@@ -1567,7 +1856,7 @@ def materialize_constant_dose_breadth_arm(
         family=f"constant_dose_{arm_name}_plus_source_preservation",
         image_ids=[str(image) for image in image_ids],
     )
-    assembled[3]["constant_dose_breadth_selection"] = {
+    breadth_selection_receipt = {
         "arm": arm_name,
         "image_ids": [str(image) for image in image_ids],
         "trajectory_panel_execution_metadata": copy.deepcopy(
@@ -1578,6 +1867,11 @@ def materialize_constant_dose_breadth_arm(
         "total_event_weight": float(selection.get("total_event_weight", 0.0)),
         "mean_event_weight": float(selection.get("mean_event_weight", 0.0)),
     }
+    if "allocation_protocol_receipt" in selection:
+        breadth_selection_receipt["allocation_protocol_receipt"] = copy.deepcopy(
+            selection["allocation_protocol_receipt"]
+        )
+    assembled[3]["constant_dose_breadth_selection"] = breadth_selection_receipt
     return assembled
 
 

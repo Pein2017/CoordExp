@@ -1,0 +1,110 @@
+{
+  "schema_version": "source_b16_pilot_cohort.v1",
+  "purpose": "Qualify the finite deterministic Source baseline at a budget of sixteen complete object rows before full-panel collection.",
+  "source": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/train-candidate.jsonl",
+    "sha256": "c0efce5806e0ee487298f7b3b7697f4ebe663d1fa210b2e0e10e08de08ab5746"
+  },
+  "selection": {
+    "route_outcomes_inspected": false,
+    "images_per_object_count_band": 16,
+    "hash_namespace": "source-b16-pilot-v1:",
+    "ordering": "Within each object-count band, sort by the hexadecimal SHA-256 digest of hash_namespace concatenated with the decimal image_id, then take the first sixteen images.",
+    "band_order": [
+      "sparse_1_to_3",
+      "medium_4_to_7",
+      "dense_8_to_15",
+      "very_dense_16_plus"
+    ]
+  },
+  "image_ids": [
+    236048, 25147, 145429, 37413, 14940, 533079, 551622, 246576,
+    200492, 256444, 84968, 577512, 472700, 22004, 104808, 209822,
+    831, 27862, 20720, 60203, 316170, 206956, 159061, 539216,
+    459731, 292171, 126950, 162102, 2346, 308235, 430273, 405114,
+    243222, 499134, 190738, 567274, 154435, 11774, 359775, 320333,
+    458338, 492268, 67116, 547528, 465050, 516408, 405174, 372874,
+    461311, 296182, 222662, 502089, 454252, 481222, 215132, 54943,
+    535750, 272439, 192579, 305093, 211609, 464087, 563597, 272015
+  ],
+  "object_count_bands": {
+    "sparse_1_to_3": [
+      {"image_id": 236048, "annotated_object_count": 1},
+      {"image_id": 25147, "annotated_object_count": 3},
+      {"image_id": 145429, "annotated_object_count": 1},
+      {"image_id": 37413, "annotated_object_count": 2},
+      {"image_id": 14940, "annotated_object_count": 1},
+      {"image_id": 533079, "annotated_object_count": 3},
+      {"image_id": 551622, "annotated_object_count": 2},
+      {"image_id": 246576, "annotated_object_count": 2},
+      {"image_id": 200492, "annotated_object_count": 2},
+      {"image_id": 256444, "annotated_object_count": 2},
+      {"image_id": 84968, "annotated_object_count": 2},
+      {"image_id": 577512, "annotated_object_count": 1},
+      {"image_id": 472700, "annotated_object_count": 1},
+      {"image_id": 22004, "annotated_object_count": 2},
+      {"image_id": 104808, "annotated_object_count": 3},
+      {"image_id": 209822, "annotated_object_count": 2}
+    ],
+    "medium_4_to_7": [
+      {"image_id": 831, "annotated_object_count": 5},
+      {"image_id": 27862, "annotated_object_count": 4},
+      {"image_id": 20720, "annotated_object_count": 4},
+      {"image_id": 60203, "annotated_object_count": 4},
+      {"image_id": 316170, "annotated_object_count": 6},
+      {"image_id": 206956, "annotated_object_count": 5},
+      {"image_id": 159061, "annotated_object_count": 6},
+      {"image_id": 539216, "annotated_object_count": 6},
+      {"image_id": 459731, "annotated_object_count": 5},
+      {"image_id": 292171, "annotated_object_count": 4},
+      {"image_id": 126950, "annotated_object_count": 6},
+      {"image_id": 162102, "annotated_object_count": 4},
+      {"image_id": 2346, "annotated_object_count": 5},
+      {"image_id": 308235, "annotated_object_count": 5},
+      {"image_id": 430273, "annotated_object_count": 4},
+      {"image_id": 405114, "annotated_object_count": 7}
+    ],
+    "dense_8_to_15": [
+      {"image_id": 243222, "annotated_object_count": 14},
+      {"image_id": 499134, "annotated_object_count": 13},
+      {"image_id": 190738, "annotated_object_count": 12},
+      {"image_id": 567274, "annotated_object_count": 14},
+      {"image_id": 154435, "annotated_object_count": 14},
+      {"image_id": 11774, "annotated_object_count": 14},
+      {"image_id": 359775, "annotated_object_count": 9},
+      {"image_id": 320333, "annotated_object_count": 13},
+      {"image_id": 458338, "annotated_object_count": 8},
+      {"image_id": 492268, "annotated_object_count": 8},
+      {"image_id": 67116, "annotated_object_count": 15},
+      {"image_id": 547528, "annotated_object_count": 14},
+      {"image_id": 465050, "annotated_object_count": 12},
+      {"image_id": 516408, "annotated_object_count": 9},
+      {"image_id": 405174, "annotated_object_count": 10},
+      {"image_id": 372874, "annotated_object_count": 10}
+    ],
+    "very_dense_16_plus": [
+      {"image_id": 461311, "annotated_object_count": 29},
+      {"image_id": 296182, "annotated_object_count": 21},
+      {"image_id": 222662, "annotated_object_count": 21},
+      {"image_id": 502089, "annotated_object_count": 48},
+      {"image_id": 454252, "annotated_object_count": 30},
+      {"image_id": 481222, "annotated_object_count": 24},
+      {"image_id": 215132, "annotated_object_count": 19},
+      {"image_id": 54943, "annotated_object_count": 43},
+      {"image_id": 535750, "annotated_object_count": 22},
+      {"image_id": 272439, "annotated_object_count": 20},
+      {"image_id": 192579, "annotated_object_count": 20},
+      {"image_id": 305093, "annotated_object_count": 17},
+      {"image_id": 211609, "annotated_object_count": 17},
+      {"image_id": 464087, "annotated_object_count": 18},
+      {"image_id": 563597, "annotated_object_count": 19},
+      {"image_id": 272015, "annotated_object_count": 20}
+    ]
+  },
+  "separate_known_loop_diagnostics": [
+    {"image_id": 1757, "annotated_object_count": 17},
+    {"image_id": 18688, "annotated_object_count": 17},
+    {"image_id": 47739, "annotated_object_count": 15},
+    {"image_id": 57213, "annotated_object_count": 43}
+  ]
+}
