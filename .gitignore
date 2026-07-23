@@ -39,6 +39,7 @@
 !.cursorignore
 !.cursorindexingignore
 !pytest.ini
+!pyrightconfig.json
 !*.md
 !public_data/**/
 !public_data/**/*.py
@@ -48,6 +49,22 @@
 !research/**
 !memories/**
 !.planning/**
+
+# Preserve only the current dense-enumeration route correction and its
+# fresh-session synthesis. Other handoff files remain local by default.
+!handoff/
+handoff/*
+!handoff/from-side-chat.md
+!handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md
+
+# Track only Pi-owned source below its worktree-local HOME. Runtime state,
+# shell initialization, authentication, sessions, and receipts remain ignored.
+!.pi-worker/
+.pi-worker/*
+!.pi-worker/home/
+.pi-worker/home/*
+!.pi-worker/home/pi-worker/
+!.pi-worker/home/pi-worker/**
 
 # Hard local-only workspace roots. These patterns are intentionally explicit
 # even though the repo uses an allowlist, so future allowlist edits do not

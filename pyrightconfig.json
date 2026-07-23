@@ -1,0 +1,16 @@
+{
+  "include": [
+    ".codex",
+    "public_data",
+    "reference",
+    "repo_lifecycle",
+    "scripts",
+    "src",
+    "tests",
+    "vis_tools"
+  ],
+  "exclude": [
+    "model_cache",
+    "outputs"
+  ]
+}

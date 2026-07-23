@@ -56,3 +56,34 @@ benchmark of mechanically verifiable tasks. It does not clear the cost gate:
 native Codex exposes no comparable token or monetary receipt, and the current
 rotated single-cell matrix cannot rank models or reasoning levels causally.
 Do not build an adapter or promote Pi to a default route from this unit.
+
+## Stateful Thread Pilot
+
+A separately authorized pilot now establishes that Pi can retain task-local
+conversation across turns and supervisor process restarts. The implementation
+is a thin, Codex-independent JSONL supervisor over Pi RPC, not a native Codex
+Multi-Agent Version 2 thread and not a default worker route. One persistent
+session is bound to one prepared sandbox and exact runtime contract; Codex
+continues to own delegation, verification, and scientific judgment.
+
+The bounded smoke used one Luna-medium session for three turns. The second and
+third turns reused previously computed values without tool calls, and the third
+turn succeeded after a full supervisor restart with the same session
+identifier. See
+`experiments/2026-07-23-stateful-rpc-thread-pilot/results.md`.
+
+## Default Direct-CLI Context Parity
+
+For the direct independent-research comparison, the default interactive Pi CLI
+now receives the root `AGENTS.md`, all 26 worktree `.codex/skills`, and the same
+Serena launch contract as Codex. Serena is exposed as twelve direct MCP tools;
+the adapter proxy tool is hidden so it does not change the token surface.
+
+A real Luna-medium smoke recovered the durable-artifact language rule,
+recognized three named skills, and called Serena successfully against this
+exact worktree. Its first request reported 10,887 input tokens, which is the
+initial-background baseline for a later matched Codex CLI comparison. This
+setup applies only to the default interactive `pi` command; the isolated
+stateful supervisor retains its ambient-context exclusions.
+
+See `default-pi-cli-context.md` for the configuration and receipt.

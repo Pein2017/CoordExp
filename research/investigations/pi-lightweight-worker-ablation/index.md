@@ -11,6 +11,7 @@ unit work, or Pi as a scientific decision maker.
 ## Reading Path
 
 - [Overview](overview.md)
+- [Default Pi CLI context parity setup](default-pi-cli-context.md)
 - [Experiment units](experiments/)
 - [Stage 0 frozen-task harness screen](experiments/2026-07-22-stage0-frozen-task-harness-screen/unit.md)
 

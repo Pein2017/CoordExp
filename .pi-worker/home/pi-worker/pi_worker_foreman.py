@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run one isolated Pi task behind a Codex-independent receipt contract.
 
-This experiment-local foreman deliberately imports no Codex implementation.
+This Pi-home-local foreman deliberately imports no Codex implementation.
 Any caller that can start a process and read JSON can use it, including a
 native Codex subagent, the root agent, a future MCP tool, or a batch scheduler.
 

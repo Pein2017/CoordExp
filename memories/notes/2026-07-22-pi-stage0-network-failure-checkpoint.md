@@ -21,7 +21,7 @@ chroot when proxy variables were present, while the identical chroot without
 them timed out with code `000`. This establishes a harness network failure,
 not a Pi, model, task, or reasoning-level failure.
 
-The ignored runner `.pi-worker/run-stage0-pi-matrix.sh` now preserves only the
+The Pi-home runner `.pi-worker/home/pi-worker/run-stage0-pi-matrix.sh` now preserves only the
 proxy variables across the clean environment boundary. It has not been rerun.
 The user's cap is ambiguous as to whether zero-token transport launches count
 as executions; because twelve Pi launches plus four native controls have

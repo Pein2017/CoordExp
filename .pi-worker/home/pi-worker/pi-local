@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pi_home="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+pi_worker_root="$(cd "$pi_home/.." && pwd)"
+mkdir -p \
+  "$pi_worker_root/home" \
+  "$pi_worker_root/agent" \
+  "$pi_worker_root/sessions"
+
+export HOME="$pi_worker_root/home"
+export PI_CODING_AGENT_DIR="$pi_worker_root/agent"
+export PI_CODING_AGENT_SESSION_DIR="$pi_worker_root/sessions"
+export PI_TELEMETRY=0
+
+if [[ -f "$HOME/.bashrc" ]]; then
+  source "$HOME/.bashrc"
+fi
+
+exec /data/CoordExp/outputs/research/pi-lightweight-worker-ablation/tooling/pi-coding-agent-0.81.1-local/node_modules/.bin/pi "$@"

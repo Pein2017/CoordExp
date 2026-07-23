@@ -19,6 +19,10 @@
 - Prefer generic subagents with task-specific briefs. Choose the model and
   reasoning effort at dispatch time rather than relying on a fixed
   role-to-model mapping.
+- Before substantial delegation, read `.codex/MODEL_ROUTING.md`. It is a
+  living, evidence-based routing guide rather than an executable role map;
+  monitor outcomes and revise its defaults when repeated task evidence changes
+  the cost-quality boundary.
 - Use a cost-efficient model when a command, test, artifact receipt, or other
   mechanical check can decide success. Use the strongest appropriate model
   when judgment can change scientific meaning, architecture, or a
