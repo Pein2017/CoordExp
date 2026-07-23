@@ -1,0 +1,76 @@
+{
+  "schema_version": "physical_owner_duplication_prefix_counterfactual.case.v1",
+  "cases": [
+    {
+      "case_id": "455649-bottle-clean-duplicate-recovery",
+      "image_id": "455649",
+      "entity_ledger": [
+        {
+          "owner_id": "coco-ann-89490",
+          "description": "bottle",
+          "bbox_norm1000": [18, 19, 100, 305],
+          "review_status": "trusted_physical_owner_and_geometry"
+        },
+        {
+          "owner_id": "coco-ann-85960",
+          "description": "bottle",
+          "bbox_norm1000": [183, 16, 299, 316],
+          "review_status": "trusted_physical_owner_and_geometry"
+        },
+        {
+          "owner_id": "coco-ann-81761",
+          "description": "bottle",
+          "bbox_norm1000": [310, 16, 428, 304],
+          "review_status": "trusted_physical_owner_and_geometry"
+        }
+      ],
+      "prefix_rows": [
+        {
+          "owner_id": "coco-ann-89490",
+          "description": "bottle",
+          "row_id": "generated-order-0",
+          "row_token_ids": [151646, 65, 62118, 151647, 151648, 151670, 151690, 151769, 151971, 151649],
+          "row_token_ids_sha256": "9b8e4a18f57e8307598b1b6c36999441feb172a93d470276c325fb2372689207"
+        },
+        {
+          "owner_id": "coco-ann-85960",
+          "description": "bottle",
+          "row_id": "generated-order-1",
+          "row_token_ids": [151646, 65, 62118, 151647, 151648, 151847, 151690, 151969, 151977, 151649],
+          "row_token_ids_sha256": "b4070a1ddea056f0bacc71ec373db17ddcd69308f724a78b702e02ef3c01aa92"
+        }
+      ],
+      "impending_duplicate_owner_id": "coco-ann-89490",
+      "candidates": [
+        {
+          "candidate_id": "observed-duplicate-generated-order-2",
+          "owner_id": "coco-ann-89490",
+          "role": "impending_duplicate",
+          "description": "bottle",
+          "truth_status": "confirmed_physical_owner_duplicate",
+          "covered": true,
+          "row_token_ids": [151646, 65, 62118, 151647, 151648, 151670, 151694, 151771, 151973, 151649],
+          "row_token_ids_sha256": "7ce1295c3f1f890791c610b208665b25315ce9b4be5c224c7d062313b36c5e1c"
+        },
+        {
+          "candidate_id": "observed-recovery-generated-order-3",
+          "owner_id": "coco-ann-81761",
+          "role": "verified_uncovered_recovery",
+          "description": "bottle",
+          "truth_status": "trusted_physical_owner_and_geometry",
+          "covered": false,
+          "row_token_ids": [151646, 65, 62118, 151647, 151648, 151978, 151694, 152100, 151977, 151649],
+          "row_token_ids_sha256": "2463f64a9676df4e50093edd2562dc22cb11171ad052d7f1743dcb51d4e79505"
+        }
+      ],
+      "interventions": {
+        "shuffle_owner_order": ["coco-ann-85960", "coco-ann-89490"],
+        "replacement_owner_id": "coco-ann-85960",
+        "coordinate_corruption": {
+          "coordinate_token_ids": [152170, 151690, 152270, 151977],
+          "coordinate_token_ids_sha256": "36468d92c90e8cc6e5c4d6478a3c9331e56dee99adb180437db80e85f9866652"
+        }
+      }
+    }
+  ]
+}
