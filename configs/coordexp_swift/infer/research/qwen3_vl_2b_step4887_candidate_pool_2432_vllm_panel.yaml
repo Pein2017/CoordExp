@@ -9,6 +9,7 @@ backend:
   type: vllm
   vllm:
     gpu_memory_utilization: 0.70
+    max_model_len: 4096
 
 data:
   input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/candidate-pool-2432.coord.jsonl
