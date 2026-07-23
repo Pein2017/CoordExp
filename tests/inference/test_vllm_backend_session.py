@@ -127,7 +127,11 @@ def fake_vllm_modules(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     return cleanup
 
 
-def _launch(*, gpu_memory_utilization: float = 0.7) -> Any:
+def _launch(
+    *,
+    gpu_memory_utilization: float = 0.7,
+    max_model_len: int = 2048,
+) -> Any:
     from src.inference.backend import BackendLaunch
 
     return BackendLaunch(
@@ -137,7 +141,10 @@ def _launch(*, gpu_memory_utilization: float = 0.7) -> Any:
         batch_size=2,
         generation_config_fingerprint="generation-fingerprint",
         backend_options={
-            "vllm": {"gpu_memory_utilization": gpu_memory_utilization}
+            "vllm": {
+                "gpu_memory_utilization": gpu_memory_utilization,
+                "max_model_len": max_model_len,
+            }
         },
         execution_model_identity={
             "model_path": "/unused/materialized-model",
@@ -485,7 +492,7 @@ def test_open_vllm_backend_session_validates_launch_and_engine_settings(
 ) -> None:
     from src.inference import vllm_backend
 
-    launch = _launch(gpu_memory_utilization=1.0)
+    launch = _launch(gpu_memory_utilization=1.0, max_model_len=4096)
     captured: dict[str, Any] = {}
     engine = FakeEngine()
 
@@ -512,6 +519,7 @@ def test_open_vllm_backend_session_validates_launch_and_engine_settings(
     assert captured["data_parallel_size"] == 1
     assert captured["max_num_seqs"] == launch.batch_size
     assert captured["gpu_memory_utilization"] == pytest.approx(1.0)
+    assert captured["max_model_len"] == 4096
     assert captured["logprobs_mode"] == "processed_logprobs"
     assert captured["mm_processor_kwargs"] == {"do_resize": False}
     assert session.receipt.execution_model_identity == launch.execution_model_identity
@@ -1393,6 +1401,24 @@ def test_vllm_session_skips_raw_replay_when_disabled(tmp_path: Path) -> None:
 
     assert len(engine.calls) == 1
     assert all(trace.raw_model_logprob is None for trace in result.token_trace)
+
+
+def test_vllm_session_uses_launch_max_model_len_for_generation_guard(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2), color="white").save(image_path)
+    session = _session(FakeEngine(), launch=_launch(max_model_len=4096))
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        session.decode([_request(image_path, prompt_ids=(1,) * 4095)])
+
+    assert exc_info.value.code == "vllm_backend.model_length"
+    assert exc_info.value.context == {
+        "prompt_tokens": 4095,
+        "max_new_tokens": 2,
+        "max_model_len": 4096,
+    }
 
 
 def test_vllm_session_rejects_shifted_raw_replay_alignment(tmp_path: Path) -> None:
