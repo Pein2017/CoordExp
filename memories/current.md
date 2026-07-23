@@ -1,8 +1,44 @@
 # Current Project Memory
 
-Last verified: 2026-07-22T16:00:53Z. At that check, eight sampled workers were
-active, no sampled JSON shard was complete, and the outer launcher remained
-paused. Recheck all live execution claims before acting.
+Last verified for the physical-owner duplication unit: 2026-07-22T21:25:00Z.
+
+## Closed result: physical-owner duplication
+
+The physical-owner duplication unit is complete. Equal-update Source-only
+controls show that the duplicate-cleaned trajectory training recipe, rather
+than extra optimizer steps alone, produces the only favorable bounded result.
+Relative to its 6-update Source control it is `+4` matched unique owners and `-51`
+strict duplicate candidates on train-256, including `+3` owners and `-48`
+duplicates on 240 never-trained images. On the disjoint twelve-image
+human-refined panel it is `+3` owners and `-9` duplicates versus the equal-update
+control, and `+4` owners and `-3` duplicates versus frozen Source.
+
+These controls repeat Source rows, so they do not match event composition or
+Source exposure and cannot isolate cleaned semantics as the sole cause. The
+complete recipe is promising but not uniformly safe: image `10707` loses a
+laptop and
+develops a repeated remote row. Recovery-positive and local rejection reduce
+duplicates but often lose owners; the combined local-plus-cleaned profile is
+rejected. Do not automatically promote the current expanded overlap queue:
+most extra immediate-recovery cases are concentrated in one image, and many
+longer candidates contain unresolved intervening rows. The next scale axis is
+more exact self-rollout trajectories plus row-level physical-owner review.
+
+Authoritative result:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/results.md`
+
+Parallel breadth-screen and Pi-worker state below was not revalidated by this
+closeout.
+
+Last verified for the breadth screen: 2026-07-22T17:17:09Z. The previously recorded eight sampled
+workers were no longer running, and the trajectory-panel directory still had
+only short model-load logs with no completed sampled JSON shard. Treat that
+breadth-screen launch as interrupted and re-audit it before any continuation.
+
+The parallel Pi worker-ablation execution state was last verified at
+`2026-07-23T01:35:06Z`; the port-9090 infrastructure rerun is complete and no
+Pi process is live. The investigation used no graphics-processing unit.
 
 ## Active objective
 
@@ -15,6 +51,64 @@ same dose spread across 496 images.
 This is a bounded test of whether narrow image breadth caused the previous
 owner exchange. It is not full-size promotion and not an architecture
 commitment.
+
+## Closed parallel objective: physical-owner duplication
+
+The user authorized an independent long-running goal that proceeded in
+parallel with the interrupted breadth screen:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/unit.md`
+
+The frozen question is whether generated history causes repeated selection of
+one physical instance and whether training can reject the repeated row while
+recovering into a later valid, uncovered owner. Official unmatched predictions
+remain neutral unless review confirms a category error or entity hallucination;
+verified false negatives and physical-owner duplicates are actionable signals.
+
+The dedicated implementation contract is:
+
+`openspec/changes/add-physical-owner-duplicate-rejection-and-recovery-training/`
+
+The OpenSpec proposal, design, capability spec, and tasks are complete and
+strict validation passes. Planned controls and treatments are frozen Source,
+Source-preservation-only, recovery-positive-only, local duplicate rejection
+and recovery, duplicate-cleaned counterfactual trajectory imitation, and their
+combined profile. Diagnosis and training proceed in parallel; causal
+results control interpretation rather than canceling a valid training smoke.
+
+The initial 256-image census found 113 annotation-anchored repeated-owner rows
+in 38 trajectories. Thirty-four trajectories later recover an uncovered
+annotated owner. The safest initial subset is 34 near-exact repeated rows in 12
+images. The existing 144 geometry-derived ambiguous overlap candidates remain
+excluded from automatic duplication supervision.
+
+## Parallel bounded investigation: Pi external worker
+
+Pi `0.81.1` is installed in a non-global output prefix. Four read-only Stage 0
+task fixtures and hidden verifiers are frozen under:
+
+`/data/CoordExp/outputs/research/pi-lightweight-worker-ablation/2026-07-22-stage0-frozen-task-harness-screen/fixtures-v1/`
+
+The research owner is:
+
+`research/investigations/pi-lightweight-worker-ablation/experiments/2026-07-22-stage0-frozen-task-harness-screen/unit.md`
+
+The user completed worktree-local OAuth, specified the required port-9090
+proxy, and authorized reopening the twelve Pi cells. All worktree-local Bash
+and Pi entry points now export the proxy through `127.0.0.1:9090`. The rerun
+completed with positive token usage in all cells and no workspace mutation.
+
+Luna, Terra, and Sol all pass artifact inventory and mechanical aggregation.
+The audited Task 2 verifier passes Luna and Terra; Pi Sol and native Sol share
+one exact `HFBackendSession` capitalization error. All Pi Task 3 cells have the
+correct verdict, identifiers, and logical argument but fail the original
+lexical limitations checks. Native Sol remains three of four under the
+original frozen verifiers.
+
+Stage 0 supports a larger frozen benchmark for mechanically verifiable tasks,
+not an adapter or default route. Native Codex lacks comparable token and cost
+receipts, so no total-cost advantage or causal harness effect is established.
+See `memories/notes/2026-07-23-pi-stage0-proxy9090-rerun-result.md`.
 
 ## Most recent closed evidence
 
@@ -63,21 +157,18 @@ breadth-effect claim at fixed ordinal-rank distribution. Coarse matching has a
 weaker claim, and policy-only fallback cannot identify physical image breadth
 as the cause.
 
-## Live execution state
+## Breadth-screen execution state
 
 The missing 2,176-image sampled panel is running at:
 
 `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-2432-v1/`
 
-Eight GPUs are processing independent two-seed shards for seeds 31,001 through
-31,016. Each request contains one image, uses temperature 0.4, nucleus
-probability 0.95, repetition penalty 1.0, and a 512-token generation limit, and
-resets random state per image and seed. At the last live check all eight
-workers were healthy and no sampled JSON shard had completed.
-
-The outer launcher is intentionally paused so it cannot start its original
-single-GPU greedy stage after the sampled workers finish. The sampled child
-workers are not paused. Leave them running.
+The previously recorded workers are no longer present. Each shard log ends
+after model loading and no sampled JSON shard is present. Do not describe this
+panel as running or complete. Its intended request semantics remain one image,
+temperature 0.4, nucleus probability 0.95, repetition penalty 1.0, 512 generated
+tokens, and per-image seeded reset, but a fresh continuation receipt is needed
+before relaunch.
 
 ## Current understanding
 
@@ -115,32 +206,26 @@ Rejected or held:
 
 ## Immediate next actions
 
-1. Wait for all eight sampled shard files and confirm the sampled workers have
-   exited cleanly.
-2. Prevent the paused outer launcher from falling through to one-GPU greedy;
-   generate greedy seed 31,000 as eight image shards under the same physical
-   batch-one semantics.
-3. Validate the old-plus-new trajectory union, run the full 2,432-image route
-   analysis, and assemble both StateBanks.
-4. Read the actual `matching_mode` and `interpretation_scope` before making any
-   claim or launching training.
-5. Run one real mixed-step StateBank loader and gradient smoke. If it passes,
-   train broad and concentrated arms under matched optimizer seeds 19 and 23
-   for 31 updates, saving steps 10, 20, 30, and 31.
-6. Choose one shared step on development, then evaluate held-out once under
-   the unit's owner-ledger and output-health rules.
-
-The worktree is intentionally dirty with current research implementation,
-configs, tests, and documents. Do not clean, revert, stage, or commit unrelated
-changes while resuming this run.
+1. Treat the physical-owner duplication unit as closed bounded evidence; do not
+   promote the combined profile or automatically expand the current overlap
+   queue.
+2. If duplication work continues, open a separate expansion unit for more
+   exact self-rollout trajectories and row-level physical-owner review.
+3. Treat Pi Stage 0 as closed; require a new frozen benchmark before adapter or
+   default-route promotion.
+4. Re-audit the interrupted breadth-screen launcher and artifacts before any
+   relaunch or claim about its execution state.
+5. Preserve separate-thread work by intent and verify the live worktree before
+   staging, committing, or resuming any unit.
 
 ## Minimum reading path
 
-1. `memories/notes/2026-07-22-constant-dose-image-breadth-screen-checkpoint.md`
-2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/results.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/unit.md`
-4. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-5. `memories/notes/019f4a19-d81c-75a2-84b0-2c20379e686e-comprehensive-recap.md`
+1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/unit.md`
+2. `openspec/changes/add-physical-owner-duplicate-rejection-and-recovery-training/design.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/results.md`
+4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/unit.md`
+5. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
 
-The comprehensive recap remains the long historical reconstruction. The new
-checkpoint note is the operational handoff for the running breadth screen.
+The comprehensive recap remains the long historical reconstruction. The
+breadth-screen checkpoint is historical evidence for an interrupted run; the
+closed physical-owner and Pi notes above are the current operational handoffs.
