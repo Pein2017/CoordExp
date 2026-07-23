@@ -9,6 +9,7 @@ import pytest
 
 from scripts.research.collect_vllm_trajectory_panel import (
     SCHEMA_VERSION,
+    _decode_modes,
     _materialize_completion,
     _ordered_completions,
     _generation_health,
@@ -65,6 +66,11 @@ def test_sampling_policy_is_one_greedy_and_sixteen_samples() -> None:
     assert sampled["top_p"] == 0.95
     assert sampled["repetition_penalty"] == 1.0
     assert sampled["seed"] == 31_001
+
+
+def test_sampled_only_panel_uses_no_greedy_artifact_mode() -> None:
+    assert _decode_modes(sampled_only=False) == ("greedy", "sampled")
+    assert _decode_modes(sampled_only=True) == ("sampled",)
 
 
 @dataclass
@@ -253,4 +259,75 @@ def test_resume_skips_only_hash_valid_complete_zero_truncation_pair(tmp_path: Pa
         expected_examples=[Example()],
         resolved_fingerprint="resolved",
         model_identity=model_identity,
+    ) is None
+
+
+def test_sampled_only_resume_requires_exact_sampled_artifact(tmp_path: Path) -> None:
+    class Example:
+        example_id = "example-1"
+        metadata = {"source": {"image_id": 1}}
+
+    model_identity = {"model": "source-step-4887"}
+    rows = [
+        {
+            "image_id": 1,
+            "example_id": "example-1",
+            "decode_mode": "sampled",
+            "sample_index": index,
+            "generated_token_ids": [7],
+            "stop_reason": "im_end",
+            "predictions": {"parse_status": "accepted", "predictions": []},
+        }
+        for index in range(16)
+    ]
+    artifact = {
+        "schema_version": SCHEMA_VERSION,
+        "config": {
+            "decode_mode": "sampled",
+            "panel_mode": "sampled_only",
+            "resolved_fingerprint": "resolved",
+        },
+        "model_identity": model_identity,
+        "rollouts": rows,
+    }
+    path = tmp_path / "sampled.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    entry = {
+        "batch_index": 0,
+        "image_ids": [1],
+        "artifacts": {
+            "sampled": {
+                "path": path.name,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        },
+        "generation_health": {
+            "sampled": {
+                "completion_count": 16,
+                "generated_token_count": 16,
+                "stop_reason_counts": {"im_end": 16, "length": 0},
+                "natural_closure_count": 16,
+                "parser_status_counts": {"accepted": 16},
+                "elapsed_seconds": 1.0,
+            }
+        },
+    }
+    assert _validated_resume_batch(
+        worker_root=tmp_path,
+        entry=entry,
+        expected_batch_index=0,
+        expected_examples=[Example()],
+        resolved_fingerprint="resolved",
+        model_identity=model_identity,
+        decode_modes=("sampled",),
+    ) is not None
+    entry["artifacts"]["greedy"] = {"path": "greedy.json", "sha256": "unused"}
+    assert _validated_resume_batch(
+        worker_root=tmp_path,
+        entry=entry,
+        expected_batch_index=0,
+        expected_examples=[Example()],
+        resolved_fingerprint="resolved",
+        model_identity=model_identity,
+        decode_modes=("sampled",),
     ) is None

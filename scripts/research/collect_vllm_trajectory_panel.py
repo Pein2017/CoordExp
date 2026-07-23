@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Collect one greedy plus sixteen sampled trajectories with offline vLLM.
+"""Collect sixteen sampled trajectories, with an optional greedy comparison, using vLLM.
 
 This is an experiment-local collector for the dense-enumeration trajectory
 panel.  One process owns one visible GPU and one vLLM engine.  Images are
 sharded across workers; vLLM owns scheduling within each worker.  Completed
-image batches are written as immutable greedy/sampled artifact pairs so a
-long panel does not live only in process memory.
+image batches are written as immutable per-mode artifacts so a long panel does
+not live only in process memory.
 """
 
 from __future__ import annotations
@@ -39,6 +39,12 @@ DEFAULT_CONFIG = Path(
 )
 SAMPLED_COUNT = 16
 SCHEMA_VERSION = "coordexp_vllm_trajectory_panel.v2"
+
+
+def _decode_modes(*, sampled_only: bool) -> tuple[str, ...]:
+    """Return the artifact modes required by the selected panel contract."""
+
+    return ("sampled",) if sampled_only else ("greedy", "sampled")
 
 
 def shard_examples(
@@ -201,6 +207,7 @@ def _artifact_config(
     worker_index: int,
     worker_count: int,
     image_batch_size: int,
+    sampled_only: bool,
 ) -> dict[str, Any]:
     config: dict[str, Any] = {
         "infer_config_path": str(infer_config.resolve()),
@@ -208,6 +215,7 @@ def _artifact_config(
         "model_dtype": model_dtype,
         "backend": "vllm",
         "decode_mode": decode_mode,
+        "panel_mode": "sampled_only" if sampled_only else "paired",
         "temperature": 0.0 if decode_mode == "greedy" else 0.4,
         "top_p": 1.0 if decode_mode == "greedy" else 0.95,
         "repetition_penalty": 1.0,
@@ -451,6 +459,7 @@ def _validated_resume_batch(
     expected_examples: Sequence[Any],
     resolved_fingerprint: str,
     model_identity: Mapping[str, Any],
+    decode_modes: Sequence[str] = ("greedy", "sampled"),
 ) -> dict[str, Any] | None:
     """Return a fail-closed completed batch entry, otherwise regenerate it."""
 
@@ -460,11 +469,19 @@ def _validated_resume_batch(
         expected_ids = [physical_image_id(example) for example in expected_examples]
         if entry.get("image_ids") != expected_ids:
             return None
+        modes = tuple(decode_modes)
+        if (
+            not modes
+            or len(set(modes)) != len(modes)
+            or any(mode not in {"greedy", "sampled"} for mode in modes)
+        ):
+            raise ValueError("resume decode modes must be greedy and/or sampled")
         parts = entry.get("artifacts")
-        if not isinstance(parts, Mapping) or set(parts) != {"greedy", "sampled"}:
+        if not isinstance(parts, Mapping) or set(parts) != set(modes):
             return None
         recomputed_health: dict[str, Any] = {}
-        for mode in ("greedy", "sampled"):
+        expected_panel_mode = "sampled_only" if modes == ("sampled",) else "paired"
+        for mode in modes:
             part = parts[mode]
             if not isinstance(part, Mapping):
                 return None
@@ -484,6 +501,7 @@ def _validated_resume_batch(
                 or not isinstance(config, Mapping)
                 or config.get("resolved_fingerprint") != resolved_fingerprint
                 or config.get("decode_mode") != mode
+                or config.get("panel_mode", "paired") != expected_panel_mode
                 or not isinstance(rows, list)
             ):
                 return None
@@ -519,7 +537,7 @@ def _validated_resume_batch(
         return {
             "batch_index": expected_batch_index,
             "image_ids": expected_ids,
-            "artifacts": {mode: dict(parts[mode]) for mode in ("greedy", "sampled")},
+            "artifacts": {mode: dict(parts[mode]) for mode in modes},
             "generation_health": recomputed_health,
             "resumed": True,
         }
@@ -643,6 +661,7 @@ def collect_panel(
     max_images: int | None,
     request_seed: int | None,
     resume: bool,
+    sampled_only: bool = False,
 ) -> Path:
     from src.config.fingerprint import sha256_json
     from src.config.inference import load_infer_config
@@ -672,6 +691,8 @@ def collect_panel(
         examples = examples[:max_images]
     if not examples:
         raise ValueError("worker shard contains no images")
+    decode_modes = _decode_modes(sampled_only=sampled_only)
+    panel_mode = "sampled_only" if sampled_only else "paired"
 
     worker_root = output_root / f"worker-{worker_index:02d}-of-{worker_count:02d}"
     if worker_root.exists() and any(worker_root.iterdir()) and not resume:
@@ -686,6 +707,7 @@ def collect_panel(
                 candidate.get("worker_index") == worker_index
                 and candidate.get("worker_count") == worker_count
                 and candidate.get("image_count") == len(examples)
+                and candidate.get("panel_mode", "paired") == panel_mode
             ):
                 old_manifest = candidate
         except (OSError, ValueError, json.JSONDecodeError):
@@ -708,6 +730,13 @@ def collect_panel(
         "image_count": len(examples),
         "image_batch_size": image_batch_size,
         "max_num_seqs": 32,
+        "panel_mode": panel_mode,
+        "decode_modes": list(decode_modes),
+        "trajectory_contract": (
+            "sixteen_sampled_trajectories_per_image"
+            if sampled_only
+            else "one_greedy_plus_sixteen_sampled_trajectories_per_image"
+        ),
         "runtime_contract": "upstream_live_preflight_plus_research_multi_completion",
         "zero_truncation_required": True,
         "completed_image_count": 0,
@@ -733,6 +762,7 @@ def collect_panel(
                 expected_examples=batch_examples,
                 resolved_fingerprint=resolved.fingerprint,
                 model_identity=model_identity,
+                decode_modes=decode_modes,
             )
             if resumed_batch is not None:
                 manifest["batches"].append(resumed_batch)
@@ -746,7 +776,7 @@ def collect_panel(
             written: dict[str, dict[str, str]] = {}
             mode_health: dict[str, Any] = {}
             batch_length_count = 0
-            for decode_mode in ("greedy", "sampled"):
+            for decode_mode in decode_modes:
                 generated_new_batch = True
                 outputs, media_hashes, elapsed_seconds = _run_native_generation(
                     session=session,
@@ -784,6 +814,7 @@ def collect_panel(
                         worker_index=worker_index,
                         worker_count=worker_count,
                         image_batch_size=image_batch_size,
+                        sampled_only=sampled_only,
                     ),
                     model_identity=model_identity,
                     prompt_metadata=batch_prompt_metadata,
@@ -903,7 +934,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Skip only completed artifact pairs that pass identity/hash/count validation.",
+        help="Skip only completed panel artifacts that pass identity/hash/count validation.",
+    )
+    parser.add_argument(
+        "--sampled-only",
+        action="store_true",
+        help=(
+            "Collect exactly sixteen sampled trajectories per image; do not run or require "
+            "greedy artifacts."
+        ),
     )
     return parser.parse_args()
 
@@ -921,6 +960,7 @@ def main() -> int:
         max_images=args.max_images,
         request_seed=args.request_seed,
         resume=args.resume,
+        sampled_only=args.sampled_only,
     )
     return 0
 
