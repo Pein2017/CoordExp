@@ -1,5 +1,7 @@
 # Current Project Memory
 
+Last verified for the active dense-enumeration route: 2026-07-23.
+
 Last verified for the physical-owner duplication unit: 2026-07-22T21:25:00Z.
 
 ## Closed result: physical-owner duplication
@@ -21,8 +23,10 @@ develops a repeated remote row. Recovery-positive and local rejection reduce
 duplicates but often lose owners; the combined local-plus-cleaned profile is
 rejected. Do not automatically promote the current expanded overlap queue:
 most extra immediate-recovery cases are concentrated in one image, and many
-longer candidates contain unresolved intervening rows. The next scale axis is
-more exact self-rollout trajectories plus row-level physical-owner review.
+longer candidates contain unresolved intervening rows. If that closed
+duplication-specific branch is reopened later, its only justified expansion is
+more exact self-rollout trajectories plus row-level physical-owner review; it
+is not the active program route.
 
 Authoritative result:
 
@@ -31,26 +35,32 @@ Authoritative result:
 Parallel breadth-screen and Pi-worker state below was not revalidated by this
 closeout.
 
-Last verified for the breadth screen: 2026-07-22T17:17:09Z. The previously recorded eight sampled
-workers were no longer running, and the trajectory-panel directory still had
-only short model-load logs with no completed sampled JSON shard. Treat that
-breadth-screen launch as interrupted and re-audit it before any continuation.
+Last verified for the breadth screen: 2026-07-23T03:57:46Z. A fresh unified
+vLLM sampled-only panel completed across eight workers at `production-v2`:
+2,432 images, 38,912 sampled trajectories, 38,912 natural closures, and zero
+length stops. The output image set exactly matches the candidate pool; every
+image has one unique `sample_index` 0 through 15, and all 152 persisted artifact
+hashes match their manifests. This panel estimates sampled object support. It
+does not contain a matched greedy baseline and cannot support a sampled-rescue-
+over-greedy claim by itself.
 
-The parallel Pi worker-ablation execution state was last verified at
-`2026-07-23T01:35:06Z`; the port-9090 infrastructure rerun is complete and no
-Pi process is live. The investigation used no graphics-processing unit.
+The parallel Pi worker-ablation execution state was last verified on
+`2026-07-23`; the port-9090 infrastructure rerun and stateful Remote Procedure
+Call thread pilot are complete, and no Pi process is live. The investigation
+used no graphics-processing unit.
 
 ## Active objective
 
-Run the constant-dose image-breadth treatment screen for Qwen3-VL dense object
-enumeration. Hold sampled-route event count, Source-preservation event count,
-optimizer updates, object-count-band allocation, and event difficulty as fixed
-as feasible while comparing supervision concentrated in 118 images with the
-same dose spread across 496 images.
-
-This is a bounded test of whether narrow image breadth caused the previous
-owner exchange. It is not full-size promotion and not an architecture
-commitment.
+The user has corrected the next Qwen3-VL dense-enumeration treatment to true,
+order-independent set-level supervision. The previous same-prefix single-row
+comparison remains useful as a diagnostic or auxiliary term, but it is no
+longer the primary treatment. At an actual model-produced prefix, every
+verified uncovered physical owner is a valid next owner; candidate
+continuations are judged by their final unique-owner sets, and trajectories
+that exchange different owners without set inclusion are incomparable rather
+than positive versus negative. Unknown or potentially unlabeled entities
+receive no negative gradient. A compact covered-set or task-state carrier
+remains a later fallback rather than a current architecture commitment.
 
 ## Closed parallel objective: physical-owner duplication
 
@@ -106,11 +116,70 @@ lexical limitations checks. Native Sol remains three of four under the
 original frozen verifiers.
 
 Stage 0 supports a larger frozen benchmark for mechanically verifiable tasks,
-not an adapter or default route. Native Codex lacks comparable token and cost
-receipts, so no total-cost advantage or causal harness effect is established.
-See `memories/notes/2026-07-23-pi-stage0-proxy9090-rerun-result.md`.
+not a default route. Native Codex lacks comparable token and cost receipts, so
+no total-cost advantage or causal harness effect is established.
+
+A separately authorized pilot added
+`.pi-worker/home/pi-worker/pi_worker_thread.py` as the main Pi integration
+path. It is a
+Codex-independent JSONL supervisor over Pi RPC that preserves one conversation
+across turns and process restarts. A three-turn Luna-medium smoke reused prior
+results twice without new tool calls, including after restart with the same
+session identifier. Treat Pi as a logical child below a native Codex foreman,
+not as a native Multi-Agent Version 2 node. Bind each thread to one prepared
+sandbox and do not permit concurrent shared writes.
+
+The default interactive `pi` command now has a separate matched-context setup:
+Pi natively loads the root `AGENTS.md`, discovers all 26 worktree skills, and
+receives the same Serena MCP launch contract as Codex through twelve direct
+tools. A real Luna-medium smoke verified all three surfaces against this exact
+worktree and reported 10,887 first-request input tokens. Use that value as the
+Pi initial-background baseline for the later direct Codex CLI comparison. The
+stateful supervisor's isolation flags were not changed.
+
+See `memories/notes/2026-07-23-pi-stage0-proxy9090-rerun-result.md`,
+`memories/notes/2026-07-23-pi-stateful-rpc-thread-pilot.md`, and
+`memories/notes/2026-07-23-pi-default-cli-context-parity.md`.
+
+Historical harness-comparison note: two same-HEAD forks named
+`codex-research-probes` and `pi-research-probes` were prepared on 2026-07-23,
+their Serena language configuration and Pi RTK hook parity were verified, and
+their shared-output risk was recorded. Both worktree directories have since
+been removed and neither appears in the current Git worktree registry. Do not
+use their old paths as live execution targets. Preserve the bounded setup and
+receipt history in
+`memories/notes/2026-07-23-codex-pi-research-probe-forks.md`.
 
 ## Most recent closed evidence
+
+The constant-dose image-breadth screen is complete. Both arms contain 496
+sampled-route events and 496 Source-preservation events and run 31 optimizer
+updates under two matched seeds. The broad arm uses 496 images; the
+concentrated arm uses 162 nested images with exact object-count-band by
+selection-rank matching.
+
+At the primary repetition penalty 1.0, broad does not beat concentrated on the
+124-image pre-admission held-out complete-case cohort. Broad minus concentrated
+is `0/-12` by seed at Intersection over Union 0.30 and `-3/-10` at 0.50; the
+mean paired intervals include zero. Broad image exposure therefore has no
+established held-out advantage at this fixed dose.
+
+The training signal nevertheless produces strongly owner-enriched recovery on
+gradient images. Sampled-route treatment owners missed by Source are recovered
+approximately 36 to 41 percent of the time, versus approximately 8 to 12
+percent for non-selected missed owners. Source-preservation events retain
+approximately 95 to 97 percent of the Source owners they name. This is
+consistent with owner-specific uptake, but it is not a same-owner untreated
+counterfactual, and the loss does not define how to gain an owner while
+preserving the complete final owner set.
+
+The corrected repetition-penalty-1.10 sensitivity panel exchanges roughly 65
+to 100 owner identities per arm and seed relative to repetition penalty 1.0 and
+usually lowers absolute matched-owner count. Its apparently stronger
+treatment-versus-Source deltas are partly caused by a weaker Source baseline.
+Treat repetition penalty as a trajectory intervention, not a harmless
+duplicate-only adjustment. The earlier `repetition-penalty-1p10-v1` attempt is
+invalid because the live collector actually used 1.0.
 
 The 118-image Source-route-preservation screen is complete. Its treatment was
 learnable but narrow:
@@ -139,11 +208,11 @@ image identity and object-count band into:
 * 256 development images, 64 per band;
 * 128 held-out images, 32 per band.
 
-Each treatment arm will contain 496 sampled-route rows plus 496 exact Source
-rows: 992 unique events, 31 optimizer updates, and effective event batch size
-32. The broad arm uses 496 physical images; the concentrated arm uses a nested
-118-image subset. The twelve human-refined images remain safety evidence only
-and never supply gradients.
+Each executed treatment arm contains 496 sampled-route rows plus 496 exact
+Source-preservation rows: 992 unique events, 31 optimizer updates, and effective
+event batch size 32. The broad arm uses 496 physical images; the concentrated
+arm uses a nested 162-image subset. The twelve human-refined images remain
+safety evidence only and never supply gradients.
 
 The selector must record one of three matching modes:
 
@@ -157,18 +226,45 @@ breadth-effect claim at fixed ordinal-rank distribution. Coarse matching has a
 weaker claim, and policy-only fallback cannot identify physical image breadth
 as the cause.
 
-## Breadth-screen execution state
+## Breadth-screen closeout state
 
-The missing 2,176-image sampled panel is running at:
+The authoritative trajectory panel is complete at:
 
-`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-2432-v1/`
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-2432-vllm/production-v2/`
 
-The previously recorded workers are no longer present. Each shard log ends
-after model loading and no sampled JSON shard is present. Do not describe this
-panel as running or complete. Its intended request semantics remain one image,
-temperature 0.4, nucleus probability 0.95, repetition penalty 1.0, 512 generated
-tokens, and per-image seeded reset, but a fresh continuation receipt is needed
-before relaunch.
+It was regenerated for all 2,432 images with one unified vLLM backend rather
+than mixing the interrupted Hugging Face panel with new outputs. Its request
+semantics are sixteen sampled trajectories per image, temperature 0.4, nucleus
+probability 0.95, repetition penalty 1.0, 1,024 generated tokens, 4,096 maximum
+prompt-plus-generation tokens, and `sample_index` 0 through 15. Request seed is
+not an experimental variable.
+
+A targeted four-image comparison showed that greedy decoding at repetition
+penalty 1.0 enters stable repeated-row loops and consumes the full generation
+allowance, while all 64 low-temperature trajectories close naturally. The
+production panel is therefore sampled-only. Preserve those greedy failures as
+mechanism evidence; do not enlarge their limit or treat their truncation as a
+complete greedy reference.
+
+The verified receipt and claim boundary are in:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-vllm-receipt.md`
+
+The finite `Source@B16` baseline was qualified and frozen as repetition penalty
+1.0 with at most sixteen complete object rows or an earlier natural image-end.
+The StateBanks, four training runs, development milestone selection, held-out
+evaluation, gradient-cohort attribution, human-refined check, and corrected
+repetition-penalty sensitivity panel are complete. The primary result is in:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
+
+The owner-attribution receipt is:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/gradient-owner-ledger-v1/treatment-owner-attribution-v2.json`
+
+The common repetition-penalty comparison is:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/repetition-penalty-1p10-v2/heldout-owner-ledgers-v1/repetition-penalty-sensitivity-comparison.json`
 
 ## Current understanding
 
@@ -185,47 +281,72 @@ Established or bounded-supported:
   exchanging away other Source owners.
 * Standard mean Average Precision can improve even when unique physical-owner
   coverage does not.
+* Under repetition penalty 1.0, dense-image greedy decoding can enter stable
+  exact-row duplication loops even when matched low-temperature trajectories
+  terminate naturally.
+* At fixed event and update dose, expanding from 162 to 496 gradient images
+  does not establish better pre-admission held-out owner coverage.
+* Sampled-route event owners are recovered about four times as often as
+  non-selected missed owners on gradient images, providing strongly enriched
+  recovery consistent with owner-specific uptake.
+* Repetition penalty 1.10 substantially changes owner identity and may lower
+  absolute owner coverage even when treatment-minus-Source looks better.
 
 Tentative or unresolved:
 
-* Whether greater physical image breadth turns narrow owner redistribution
-  into a transferable rule.
-* Whether complete-row positive imitation intrinsically exchanges owners even
-  after matching training dose and event difficulty.
-* Whether any explicit covered-set carrier, object slot, cursor, or other
-  architecture change is necessary.
+* Whether grouped set-level supervision over nondominated trajectories can
+  convert sampled object support into safe clean-greedy final-set expansion.
+* Whether the existing sampled trajectories contain enough strict owner-set
+  dominance relations to produce a useful gradient without recollection.
+* Whether native prefix state is sufficient once supervision is made more
+  set-aligned, or a compact covered-set or task-state carrier is necessary.
 
 Rejected or held:
 
 * Do not interpret longer output, terminal suppression, selected-owner
   recovery, or a mean Average Precision gain alone as set expansion.
-* Do not scale the previous 118-image treatment unchanged.
+* Do not scale the previous 118-image or current 496-image positive-only
+  treatment unchanged.
+* Do not make one sampled owner, geometry-sorted owner, complete row, or
+  trajectory the unique teacher target for the next treatment.
 * Do not add a second cohort, external detector, object slot, terminal
   suppression, canonical supervised-fine-tuning mixture, or online refresh to
   this pilot.
 
 ## Immediate next actions
 
-1. Treat the physical-owner duplication unit as closed bounded evidence; do not
-   promote the combined profile or automatically expand the current overlap
-   queue.
-2. If duplication work continues, open a separate expansion unit for more
-   exact self-rollout trajectories and row-level physical-owner review.
-3. Treat Pi Stage 0 as closed; require a new frozen benchmark before adapter or
-   default-route promotion.
-4. Re-audit the interrupted breadth-screen launcher and artifacts before any
-   relaunch or claim about its execution state.
-5. Preserve separate-thread work by intent and verify the live worktree before
+1. Design the next bounded treatment as a 256-image grouped set-level screen.
+   First close a read-only admission census using only the 2,004 Source-eligible
+   members of the frozen 2,048-image training split. Map each continuation to
+   its verified final physical-owner set, consume every valid strict set-
+   inclusion edge, keep owner-exchange and unknown trajectories neutral, and
+   reject groups that collapse to one maximal serialization. Then freeze the
+   training unit and evaluate clean greedy gained, retained, and lost owners.
+   Keep a compact task-state carrier as the fallback branch if native prefix
+   state cannot use the stronger set-level signal.
+2. Treat the constant-dose breadth screen as closed. Do not spend the next run
+   on more image breadth, epochs, or repetition-penalty tuning.
+3. Preserve separate-thread work by intent and verify the live worktree before
    staging, committing, or resuming any unit.
+4. Treat the physical-owner duplication unit as closed bounded evidence; do not
+   promote the combined profile or automatically expand the current overlap
+   queue. If it is reopened, use a separate unit with more exact self-rollout
+   trajectories and row-level physical-owner review.
+5. Treat Pi Stage 0 and the stateful-thread pilot as closed; any later default-
+   route claim requires a new frozen benchmark.
 
 ## Minimum reading path
 
-1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/unit.md`
-2. `openspec/changes/add-physical-owner-duplicate-rejection-and-recovery-training/design.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/results.md`
-4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/unit.md`
-5. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
+1. `handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
+2. `handoff/from-side-chat.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
+4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
+5. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/unit.md`
+6. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-vllm-receipt.md`
+7. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/results.md`
 
-The comprehensive recap remains the long historical reconstruction. The
-breadth-screen checkpoint is historical evidence for an interrupted run; the
-closed physical-owner and Pi notes above are the current operational handoffs.
+The comprehensive handoff is the fresh-session entry point and states the
+current set-level treatment correction. The breadth and duplication documents
+remain bounded evidence; neither owns the next training route. Reopen the
+experiment units and receipts only when their exact claim or implementation
+details matter.

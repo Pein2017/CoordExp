@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-21
+updated: 2026-07-23
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -17,6 +17,10 @@ This page is the mutable program-level compass for the Qwen3 Vision-Language
 current beliefs, strongest alternatives, next discriminators, and candidate
 paper thesis. It does not own executed facts, runtime behavior, a final
 architecture, or an implementation contract.
+
+The current fresh-session synthesis and route correction is:
+
+`/data/CoordExp/.worktrees/research-probes/handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
 
 The [weekly integrated research
 report](2026-07-13-to-2026-07-16-weekly-research-report.md) is the compact
@@ -46,52 +50,57 @@ a safe greedy traversal. This is an objective, not an established capability.
 
 ## Current Treatment Gate
 
-The completed [Greedy-Prefix Forced Object-Path
-Intervention](experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md)
-showed that coherent sampled row fragments can unlock real uncovered objects
-from exact greedy states. The exact-terminal training version was too sparse
-and caused repetition. The subsequent [Best Sampled Trajectory Positive Row
-Imitation
-Screen](experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md)
-therefore trained complete verified rows from one selected sampled route per
-image.
+The completed [Constant-Dose Image-Breadth Treatment
+Screen](experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md)
+closes the current positive-only complete-row scale-up branch. With 992 events,
+31 updates, two matched training seeds, and exact object-count-band by
+selection-rank matching, spreading supervision over 496 images does not beat
+concentrating the same dose in 162 nested images on the pre-admission held-out
+cohort. Broad minus concentrated is `0/-12` by seed at Intersection over Union
+0.30 and `-3/-10` at 0.50 under the primary repetition-penalty-1.0 policy; both
+paired uncertainty intervals include zero.
 
-That one-epoch screen produces a specific mixed result. On the 118 admitted
-images, step 15 matches 109 of 238 owners added by the frozen sampled routes,
-versus 93 for a separate clean Source rollout. It gains 31 and loses 15 owners
-in that fixed route-added set, but loses a similar number of ordinary route
-owners; total admitted annotated-owner coverage remains `907 / 1,761`. The 138
-non-admitted images regress from 770 to 751 matched owners. Positive route
-credit therefore changes greedy choices toward the selected route family, but
-the current loss does not preserve the rest of the useful owner set. Only 118
-of the 238 route-added owners are direct event targets; their matches move only
-from 61 to 63 at step 15, while non-target owners on the same routes account
-for most of the shift. This is a route-level shift, not demonstrated direct
-owner-wise imitation.
+The negative transfer result does show that owner-directed credit actuates
+locally; it does not establish that optimization strength, transfer, or native-
+state accessibility are sufficient. On gradient images, sampled-route event
+owners missed by Source are
+recovered approximately 36 to 41 percent of the time, versus approximately 8
+to 12 percent for non-selected missed owners. Source-preservation events retain
+approximately 95 to 97 percent of the Source owners they explicitly name. The
+enrichment is consistent with owner-specific uptake, but it is not a same-owner
+untreated counterfactual. The current loss still does not specify how to gain an
+owner while preserving the value of the complete final owner set.
 
-The next bounded treatment discriminator is:
+The separate repetition-penalty-1.10 panel also changes the research boundary.
+It exchanges roughly 65 to 100 owner identities per arm and seed relative to
+repetition penalty 1.0, usually without improving absolute owner count. It is a
+trajectory intervention, not a harmless duplicate-only adjustment, and must
+remain frozen and reported separately in future comparisons.
+
+The user has now corrected the next treatment boundary. The same-prefix
+single-row comparison proposed immediately after the breadth screen is a useful
+diagnostic or auxiliary loss, but it is not the primary treatment. The next
+bounded treatment must supervise the final unique physical-owner set without
+declaring one canonical next owner:
 
 ```text
-same frozen Source checkpoint, image cohort, optimizer budget, and per-image credit
-  -> compare single-route only
-  -> compare single-route + Source-route preservation
-  -> compare multi-route + the same Source-route preservation
-  -> ask whether route-added owners enter greedy
-  -> require ordinary-owner retention and non-admitted transfer
-  -> judge final unique-owner coverage, geometry, repetition, and format
+image plus an actual model-produced prefix
+  -> recover the verified covered-owner set and remaining-owner set
+  -> keep every verified uncovered owner as a valid next owner
+  -> compare candidate continuations by final unique-owner set inclusion
+  -> preserve incomparable owner-exchange trajectories as neutral alternatives
+  -> assign no negative gradient to unknown or potentially unlabeled entities
+  -> train on every valid strict owner-set dominance edge
+  -> keep nondominated or incomparable orphans neutral rather than negative
+  -> evaluate clean greedy gained, retained, and lost physical owners
 ```
 
-This remains a 256-image supervised-learning screen. It does not yet require a
-group-relative policy objective, object slots, a coverage ledger, an external
-detector, or an inference-time controller. Low-temperature sampling remains
-the donor-discovery method. Beam search remains deferred unless an equal-
-compute diagnostic later tests search efficiency.
-
-The twelve human-refined dense validation images are development and
-validation cases for this discriminator and never training data. Because they
-now influence route selection, they are not the final blind cohort. A new blind
-dense cohort will be created only after the treatment family and thresholds
-are frozen.
+This keeps a loss-only set-level treatment as the simplest live branch without
+assuming that the pretrained transformer has or lacks an explicit ledger. A
+local valid-versus-harmful row comparison may be retained only as an auxiliary
+when it does not collapse the group back to one selected owner. Object slots, a
+coverage carrier, an external detector, terminal suppression, and inference-
+time control remain unselected.
 
 ## Working First-Principles Model
 
@@ -495,11 +504,11 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and a matched ordering-policy pilot. Random complete-row training changes the route distribution but does not create symmetric covered-set behavior; on image `2299` it collapses to one successor. The first-wrong-coordinate Smoke B proves that a local exact-prefix boundary margin is learnable, but it does not improve free-rollout geometry or health relative to the matched gate-only control. | The state may encode geometry-conditioned route compatibility rather than semantic coverage, and a local frozen-prefix target may not control owner selection or later trajectory state. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and one checkpoint per ordering policy remain alternatives. | Do not scale the current coordinate loss. Any later loss-only unit must first compare same-prefix one-row alternatives by downstream owner-and-geometry value; any explicit carrier remains a separate hypothesis rather than the default next implementation. |
+| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and a matched ordering-policy pilot. Random complete-row training changes the route distribution but does not create symmetric covered-set behavior; on image `2299` it collapses to one successor. The first-wrong-coordinate Smoke B proves that a local exact-prefix boundary margin is learnable, but it does not improve free-rollout geometry or health relative to the matched gate-only control. | The state may encode geometry-conditioned route compatibility rather than semantic coverage, and a local frozen-prefix target may not control owner selection or later trajectory state. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and one checkpoint per ordering policy remain alternatives. | Use actual prefix states to construct grouped set-level supervision, but do not make one row or owner the canonical target. Any explicit carrier remains a separate hypothesis rather than the default next implementation. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
-| Bagging support can be concentrated into deterministic greedy traversal | Partially supported at the route-family level, not as direct owner-wise imitation or final-set expansion. Single-route complete-row training raises clean greedy matches on the fixed route-added owner set from 93 to 107, 109, and 110 across milestones, while ordinary owners fall by a similar amount. Only 118 of 238 route-added owners are direct event targets, and most of the shift occurs on other owners from the same route family. | Bagging may expose several valid but mutually competing routes, and positive credit for one route may overwrite other useful routes instead of expanding coverage. | Run matched-budget 256-image arms: single-route only, single-route plus Source preservation, and multi-route plus the same preservation. Require route-added gain, ordinary-owner retention, and no non-admitted regression before larger scale. |
+| Bagging support can be concentrated into deterministic greedy traversal | Partially supported at the route-family level, not as direct owner-wise imitation or final-set expansion. Single-route and multi-route complete-row training can recover named owners, but ordinary owners are exchanged and greater image breadth does not establish held-out final-set expansion at the fixed dose. | Bagging may expose several valid but mutually competing routes, and positive credit for one route may overwrite other useful routes instead of expanding coverage. | Run a 256-image order-independent set-level screen. Reward strict final-owner-set dominance, keep exchanged-owner trajectories incomparable, keep unknown entities neutral, and require gained-owner improvement without losing the Source owner set before larger scale. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -514,24 +523,17 @@ failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
 
-The [Best Sampled Trajectory Positive Row Imitation
-Screen](experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md)
-is now closed. Its 512-event, eight-Graphics-Processing-Unit epoch produces a
-route-family behavior change: every milestone matches more of the owners in
-the fixed route-added set. Most of that change occurs on owners from the same
-route family that were not direct positive-row event targets. The same
-checkpoints lose ordinary route owners at nearly the same rate, leave
-admitted-image total coverage flat or
-slightly worse, and regress on non-admitted images. Intermediate checkpoints
-sometimes improve mean Average Precision by producing fewer, cleaner rows and
-slightly tighter retained boxes. This rejects the executed one-route objective
-as a direct 1,024-image scale candidate, while retaining route-conditioned
-credit as a testable hypothesis. The highest-priority next treatment is a
-matched-budget
-256-image comparison of single-route only, single-route plus Source-route
-preservation, and multi-route plus the same preservation anchor;
-group-relative final-set optimization remains a later alternative rather than
-the default next implementation.
+The positive-row sequence is now closed through the [Constant-Dose Image-
+Breadth Treatment
+Screen](experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md).
+Single-route, multiple-route, Source-preservation, and broader-image variants
+all show that selected-owner or route-family credit is learnable, but none
+defines how to expand the complete owner set without owner exchange. The user
+has therefore promoted order-independent set-level supervision from a later
+alternative to the highest-priority next treatment. The first screen must keep
+all verified uncovered owners valid, preserve nondominated trajectories, and
+use final unique-owner set inclusion rather than one selected complete row as
+the primary supervision unit.
 
 The completed [Person 25 Dominant-Owner Commit and Persistence Closeout
 results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
@@ -655,8 +657,8 @@ phase-specific unit, training screen, or architecture is automatically active.
 The completed [Fixed-Encoding Soft Spatial-Key Bias Dose
 Response](experiments/2026-07-15-fixed-encoding-soft-spatial-key-bias-dose-response/results.md)
 closes the uniform positive-bias follow-up. All four anchors actuate strongly,
-but every complete-row and geometry target gamma remains negative at every
-frozen dose. The hard endpoint is not a smooth continuation of the finite-
+but the target-versus-competitor margin for every complete-row and geometry
+target remains negative at every frozen dose. The hard endpoint is not a smooth continuation of the finite-
 bias curve: in its positive cases, target-row likelihood changes little while
 the competing row collapses. No free-row replay, phase-specific unit, training
 screen, larger cohort, or additional dose is active.
@@ -742,23 +744,30 @@ A 256-image training screen may start when all of the following are true:
    probability on uncovered objects, less probability on committed objects, or
    a smaller greedy-versus-sampled coverage gap.
 
-The screen compares a few matched-budget arms on 256 images. It is a stop-or-
-promote test for learnability, not a final model, broad hyperparameter search,
-or paper result.
+The screen compares frozen Source with one 256-image set-level treatment. That
+comparison measures complete-recipe efficacy, not the isolated causal effect
+of set semantics. A decision-grade component claim requires a matched-budget
+control frozen in the training unit. This is a stop-or-promote test for
+learnability, not a final model, broad hyperparameter search, or paper result.
 
-Current gate decision: **closed after the executed single-route positive-
-imitation screen**. Clean greedy behavior shifts toward the selected-route
-owner family, but this is not direct owner-wise imitation, and the gain is
-offset by loss of ordinary owners and by regression outside the admitted image
-set. The result rejects promotion of
-this exact objective to 1,024 images or full size. A future 256-image screen
-must compare matched single-route-only, single-route-plus-preservation, and
-multi-route-plus-preservation treatments, keep annotation-unknown predictions
-neutral, and verify both route-added-owner
-gain and ordinary-owner retention. The current evidence contains no full-bank
-pre/post exact-prefix likelihood receipt, so it does not claim that every
-stored row was independently shown to improve at its frozen prefix. This
-decision selects neither an architecture nor a general replacement loss.
+Current gate decision: **ready to design a new 256-image set-level treatment;
+the positive-row scale-up branch is closed**. The new screen must group multiple
+candidate continuations for the same image or rollout state, map each to its
+verified final physical-owner set, and reward strict set dominance without
+ranking incomparable owner exchanges. Unknown or potentially unlabeled
+entities remain neutral. Token-type gating may stabilize which tokens receive
+gradient, but it must not turn the objective back into exact cross-entropy on
+one selected row. Promotion to 1,024 images requires promising clean greedy
+owner-set expansion with explicit gained, retained, and lost-owner accounting,
+not merely better teacher-forced scores, longer output, or more selected-owner
+recoveries. This decision selects neither an architecture nor a final general
+replacement loss.
+
+Before freezing that training unit, close a read-only admission census using
+only Source-eligible identifiers from the frozen 2,048-image training split.
+The census must reject or separately augment groups that contain only one
+maximal serialization, and it must keep unresolved entity trajectories out of
+the primary preference loss rather than treating them as negatives.
 
 ## Demoted or Rejected Claims
 
