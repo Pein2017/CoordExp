@@ -1,0 +1,81 @@
+{
+  "artifact_kind": "b16_drop_chronology_fix_and_frozen_panel_impact_review",
+  "census_differential": {
+    "at_least_two_eligible_image_count": 709,
+    "candidate_receipt_diff_count": 0,
+    "censored_and_nonpassing_population_count": 1622,
+    "censored_and_nonpassing_population_ordered_ids_sha256": "75f6606f507f8b92cc624e78fbf23524b70ce8c05e48bd5252153b0fe8835cb3",
+    "censored_image_count": 1626,
+    "eligible_candidate_count": 9427,
+    "excluded_candidate_count": 24641,
+    "fully_adjudicable_image_count": 378,
+    "image_record_diff_count": 0,
+    "primary_admission_count": 8,
+    "primary_admission_image_ids": [
+      "2434",
+      "16796",
+      "69532",
+      "174740",
+      "207431",
+      "256151",
+      "294679",
+      "569960"
+    ]
+  },
+  "chronology_census": {
+    "accepted_with_drops_count": 861,
+    "affected_ordered_route_list_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "corrected_malformed_before_b16_positive_count": 655,
+    "development_or_heldout_route_semantics_inspected": false,
+    "missing_or_unplaceable_chronology_count": 0,
+    "old_malformed_before_b16_positive_count": 655,
+    "old_zero_to_corrected_positive_count": 0,
+    "post_b16_only_image_count": 91,
+    "post_b16_only_ordered_route_pair_sha256": "5e7eecc99523fa17fe37f43fe13dbbb8808070182b404c39d717e1cac4d7d419",
+    "post_b16_only_route_count": 206,
+    "route_count": 34068,
+    "stored_unmatched_text_count": 0
+  },
+  "decision": {
+    "census_requires_rerun": false,
+    "retain_code_fix_for_future_inputs": true,
+    "stage_zero_population_or_pool_changed": false,
+    "training_gate_changed": false
+  },
+  "fixed_source": {
+    "path": "scripts/research/analyze_individual_trajectory_union_support.py",
+    "sha256": "cf7b498b1aa643d14b54d144eb6d1444b5a5ef9b9b92e852d000efe685c470d5"
+  },
+  "fixed_test": {
+    "path": "tests/research/test_analyze_individual_trajectory_union_support.py",
+    "sha256": "8dc90aea8007ea84c43b4a994b5aad04305a674d14133b87158f07c299f2a51d"
+  },
+  "independent_review_lanes": {
+    "fix_semantic_audit": "b16_drop_fix_audit",
+    "frozen_panel_impact_replay": "b16_drop_real_impact"
+  },
+  "no_side_effects": {
+    "entropy_acquired": false,
+    "frozen_artifacts_modified": false,
+    "production_artifacts_created": false,
+    "sample_selected": false
+  },
+  "schema_version": "trajectory_owner_set_adjudication_salvage_gate.b16_drop_impact_review.v1",
+  "stage_zero_differential": {
+    "candidate_state_count": 27574,
+    "candidate_state_diff_count": 0,
+    "category_state_canonical_sha256": "f0d95e0934b7f257e6f59a7e3800d0df45cfa56757841374567d0582e7d4cb34",
+    "exact_token_duplicate_count": 71,
+    "exact_token_representative_count": 27503,
+    "impossible_image_count": 516,
+    "impossible_ordered_ids_json_sha256": "ce0b34eba789cd5e7258e56f2e6fbfe780e951011b747bc80a8c114f0e4ff50d",
+    "parser_unusable_count": 655,
+    "parser_usable_count": 26919,
+    "possible_image_count": 1106,
+    "possible_ordered_ids_json_sha256": "b8a6aed067b645721e509189f4d3844f3f0534cd6f48a3d04dc5d0d0f8907adc",
+    "production_receipt_materialized": false,
+    "witness_and_certificate_serialization_hashes_regenerated": false
+  },
+  "terminal_status": "completed",
+  "verdict": "frozen_census_and_stage_zero_membership_unchanged"
+}

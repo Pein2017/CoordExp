@@ -1,0 +1,37 @@
+{
+  "artifact_kind": "independent_advanced_model_contract_review",
+  "fixed_point_history": [
+    {
+      "reviewed_unit_sha256": "a49120644c76231c3938cf3a6c0e59345ddeff062a60b42401a475333d6af83e",
+      "verdict": "hold"
+    },
+    {
+      "reviewed_unit_sha256": "defa56a2ed6d92f314c5843d6ad2766011adc9da009b1982eaeca817e8cfd221",
+      "verdict": "approved"
+    },
+    {
+      "change_scope": "metadata_only_evidence_status",
+      "reviewed_unit_sha256": "885683a947a000a732bc4ed9afce6384bd694068dedb88f49aae0f600005c687",
+      "verdict": "approved"
+    }
+  ],
+  "held_findings_closed": [
+    "pre_entropy_possible_pool_image_and_replay_input_manifest",
+    "canonical_durable_one_draw_journal_state_machine",
+    "exact_downstream_selection_and_cumulative_look_binding",
+    "statistical_decision_blind_adjudication"
+  ],
+  "independent_reviewer_lane": "successor_stat_contract_rereview",
+  "no_side_effects": {
+    "entropy_acquired": false,
+    "files_edited_by_reviewer": false,
+    "production_artifacts_created": false,
+    "sample_selected": false
+  },
+  "review_scope": "complete_contract_fixed_point",
+  "schema_version": "trajectory_owner_set_adjudication_salvage_gate.contract_review.v1",
+  "terminal_status": "completed",
+  "unit_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md",
+  "unit_sha256": "885683a947a000a732bc4ed9afce6384bd694068dedb88f49aae0f600005c687",
+  "verdict": "approved"
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,6 +13,7 @@ from scripts.research.analyze_individual_trajectory_union_support import (
     match_prefix,
     parse_args,
 )
+from src.inference.parsing import ParseRow, parse_compact_object_box_closed
 
 
 def _prediction(trajectory: str, index: int, category: str, box: list[float]) -> dict[str, object]:
@@ -83,6 +85,42 @@ def _review(*decisions: dict[str, object]) -> dict[str, object]:
         "schema_version": "individual_trajectory_union_support_review_decisions.v1",
         "decisions": list(decisions),
     }
+
+
+def _compact_object_span(index: int) -> str:
+    return (
+        f"<|object_ref_start|>object {index}<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_100|>"
+        "<|coord_200|><|coord_200|><|box_end|>"
+    )
+
+
+def _malformed_object_span() -> str:
+    return (
+        "<|object_ref_start|>broken object<|object_ref_end|>"
+        "<|box_start|><|coord_100|><|coord_100|><|coord_200|><|box_end|>"
+    )
+
+
+def _parse_real_trajectory(
+    text: str,
+) -> tuple[ParseRow, list[dict[str, Any]], dict[str, Any]]:
+    parsed = parse_compact_object_box_closed(
+        text,
+        row_id="b16-trajectory",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+    complete, evidence = analyzer._parsed_rows(
+        {
+            "image_id": "scene",
+            "decode_mode": "greedy",
+            "seed": 21000,
+            "predictions": parsed.to_artifact_dict(),
+        }
+    )
+    return parsed, complete, evidence
 
 
 def test_cli_can_select_only_the_fixed_row_budget_needed_by_a_large_panel() -> None:
@@ -294,6 +332,71 @@ def test_accepted_with_drops_keeps_valid_rows_and_applies_cutoff_to_malformed_co
     assert budgets[0]["trajectory_assignments"]["greedy"]["malformed_row_count"] == 0
     assert budgets[1]["trajectory_assignments"]["greedy"]["malformed_row_count"] == 1
     assert budgets[1]["panel_harmful_row_count"] == 1
+
+
+def test_real_parser_counts_unmatched_text_before_sixteenth_complete_row() -> None:
+    text = _compact_object_span(0) + "BROKEN" + "".join(
+        _compact_object_span(index) for index in range(1, 16)
+    )
+
+    parsed, complete, evidence = _parse_real_trajectory(text)
+
+    assert parsed.parse_status == "accepted_with_drops"
+    assert parsed.valid_prediction_count == 16
+    assert parsed.dropped_predictions[0]["reason"] == "unmatched_text"
+    assert parsed.dropped_predictions[0]["generated_order"] is None
+    assert parsed.dropped_predictions[0]["char_end"] < complete[-1]["raw"]["char_end"]
+    assert analyzer._malformed_before_budget(evidence, complete, 16) == 1
+
+
+def test_real_parser_ignores_unmatched_text_after_sixteenth_complete_row() -> None:
+    text = "".join(_compact_object_span(index) for index in range(16)) + "BROKEN"
+
+    parsed, complete, evidence = _parse_real_trajectory(text)
+
+    assert parsed.parse_status == "accepted_with_drops"
+    assert parsed.valid_prediction_count == 16
+    assert parsed.dropped_predictions[0]["char_start"] == complete[-1]["raw"]["char_end"]
+    assert analyzer._malformed_before_budget(evidence, complete, 16) == 0
+
+
+def test_real_parser_counts_malformed_span_with_both_chronology_coordinates() -> None:
+    text = (
+        _compact_object_span(0)
+        + _malformed_object_span()
+        + "".join(_compact_object_span(index) for index in range(1, 16))
+    )
+
+    parsed, complete, evidence = _parse_real_trajectory(text)
+
+    drop = parsed.dropped_predictions[0]
+    assert drop["reason"] == "malformed_object_span"
+    assert drop["generated_order"] == 1
+    assert drop["char_start"] < complete[-1]["raw"]["char_end"]
+    assert analyzer._malformed_before_budget(evidence, complete, 16) == 1
+
+
+def test_real_parser_counts_all_drops_when_complete_rows_are_below_budget() -> None:
+    text = _compact_object_span(0) + "BROKEN" + _compact_object_span(1) + "TRAILING"
+
+    parsed, complete, evidence = _parse_real_trajectory(text)
+
+    assert parsed.valid_prediction_count == 2
+    assert parsed.dropped_prediction_count == 2
+    assert analyzer._malformed_before_budget(evidence, complete, 16) == 2
+
+
+def test_missing_drop_chronology_is_conservatively_before_reached_budget() -> None:
+    complete = [
+        {"generated_row_index": index, "prediction_id": f"row-{index}"}
+        for index in range(16)
+    ]
+    parser = {
+        "dropped_prediction_count": 2,
+        "dropped_predictions": [{"reason": "legacy_drop_without_chronology"}],
+    }
+
+    assert analyzer._malformed_before_budget(parser, complete, 16) == 2
 
 
 def test_review_verified_owner_adds_unresolved_owner_to_coverage() -> None:

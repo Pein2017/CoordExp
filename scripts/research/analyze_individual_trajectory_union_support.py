@@ -504,45 +504,85 @@ def _malformed_before_budget(
 ) -> int:
     """Count parser drops before the fixed complete-row cutoff.
 
-    Parser drops carry ``generated_order`` and/or ``char_start`` in the live
-    artifact.  A reported count without chronology is conservatively counted
-    only while the trajectory has not reached the requested budget.
+    Parser drops carry generated-order and/or character-span chronology in the
+    live artifact.  Character spans take precedence; generated order is used
+    only as a same-coordinate fallback.  Missing chronology is conservatively
+    placed before the cutoff.
     """
 
     dropped = [item for item in parser.get("dropped_predictions", []) if isinstance(item, Mapping)]
     complete = [item for item in complete_rows if isinstance(item, Mapping)]
+    budget = int(budget)
 
-    def event_key(item: Mapping[str, Any], fallback: int) -> tuple[int, int]:
-        for key in ("generated_order", "generated_row_index", "char_start", "row_index"):
+    def sources(item: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+        raw = item.get("raw")
+        if isinstance(raw, Mapping):
+            yield raw
+        yield item
+
+    def char_span(item: Mapping[str, Any]) -> tuple[int, int] | None:
+        for source in sources(item):
             try:
-                if item.get(key) is not None:
-                    return (int(item[key]), fallback)
-            except (TypeError, ValueError):
+                start = int(source["char_start"])
+                end = int(source["char_end"])
+            except (KeyError, TypeError, ValueError):
                 continue
-        return (fallback, fallback)
+            if start >= 0 and end >= start:
+                return start, end
+        return None
 
-    events: list[tuple[tuple[int, int], str]] = []
-    for index, item in enumerate(complete):
-        events.append((event_key(item, index), "complete"))
-    for index, item in enumerate(dropped):
-        events.append((event_key(item, len(complete) + index), "malformed"))
-    events.sort(key=lambda item: item[0])
-    complete_seen = 0
-    malformed_count = 0
-    for _, kind in events:
-        if kind == "complete":
-            if complete_seen >= int(budget):
-                break
-            complete_seen += 1
-        elif complete_seen < int(budget):
-            malformed_count += 1
+    def generated_order(item: Mapping[str, Any]) -> int | None:
+        for source in sources(item):
+            for key in ("generated_order", "generated_row_index"):
+                try:
+                    if source.get(key) is not None:
+                        return int(source[key])
+                except (TypeError, ValueError):
+                    continue
+        return None
+
     try:
         reported = int(parser.get("dropped_prediction_count", len(dropped)) or 0)
     except (TypeError, ValueError):
         reported = len(dropped)
-    if reported > len(dropped) and complete_seen < int(budget):
-        malformed_count += min(reported - len(dropped), int(budget) - complete_seen)
-    return malformed_count
+    missing = max(0, reported - len(dropped))
+    if budget <= 0:
+        return 0
+    if len(complete) < budget:
+        return len(dropped) + missing
+
+    complete_with_spans = [(span, item) for item in complete if (span := char_span(item))]
+    if len(complete_with_spans) == len(complete):
+        complete_with_spans.sort(key=lambda value: value[0])
+        boundary_span, boundary_row = complete_with_spans[budget - 1]
+        boundary_end = boundary_span[1]
+        boundary_order = generated_order(boundary_row)
+        malformed_count = 0
+        for item in dropped:
+            span = char_span(item)
+            if span is not None:
+                malformed_count += int(span[0] < boundary_end)
+                continue
+            order = generated_order(item)
+            malformed_count += int(
+                order < boundary_order
+                if order is not None and boundary_order is not None
+                else True
+            )
+        return malformed_count + missing
+
+    complete_with_order = [(order, item) for item in complete if (order := generated_order(item)) is not None]
+    if len(complete_with_order) < len(complete):
+        return len(dropped) + missing
+    complete_with_order.sort(key=lambda value: value[0])
+    boundary_order = complete_with_order[budget - 1][0]
+    return (
+        sum(
+            int(order < boundary_order if (order := generated_order(item)) is not None else True)
+            for item in dropped
+        )
+        + missing
+    )
 
 
 def _collect_rows(artifacts: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], dict[tuple[str, str], dict[str, Any]]]:

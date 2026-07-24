@@ -16,6 +16,8 @@ from scripts.research.assemble_constant_dose_breadth_state_banks import (
     SAMPLED_SEEDS,
     _selection_receipt,
     _deduplicate_v2_sampled_candidates,
+    _project_sampled_b16,
+    _validate_accepted_source_b16,
     _validate_panel_receipt_match,
     _validate_trajectory_analysis_provenance,
     derive_reference_records,
@@ -150,7 +152,11 @@ def _v2_artifact(
             "execution_model_identity": {
                 "algorithm_version": "test-v1",
                 "composition_key": "c" * 64,
-            }
+            },
+            "tokenizer_identity": {
+                "im_end_token_ids": [151645],
+                "wrapper_token_ids": {"<|box_end|>": BOX_END},
+            },
         },
         "prompt_metadata": _v2_metadata(image),
         "rollout_count": len(rows),
@@ -193,7 +199,7 @@ def _write_v2_panel(
     source_root.mkdir()
     sampled_rows: list[dict[str, object]] = []
     for sample_index in sampled_indices:
-        generated = _row_tokens(50 + sample_index)
+        generated = [*_row_tokens(50 + sample_index), 151645]
         sampled_rows.append(
             {
                 **_v2_base_row(generated_ids=generated),
@@ -217,27 +223,32 @@ def _write_v2_panel(
         _parser_prediction(category="cat", row_index=row_index)
         for row_index in range(projected_row_count)
     ]
-    raw = [*projected, *_row_tokens(90, offset=10)]
+    tail_prediction = _parser_prediction(
+        category="dog", row_index=projected_row_count, offset=10
+    )
+    if source_status == "accepted_natural_end":
+        raw = [*projected, 151645]
+        raw_parser = _parser(*projected_predictions)
+    else:
+        raw = [*projected, *_row_tokens(90, offset=10), 151645]
+        raw_parser = _parser(*projected_predictions, tail_prediction)
     source_row = {
         **_v2_base_row(generated_ids=raw),
         "trajectory_id": "source-b16",
         "decode_mode": "source_b16",
         "stop_reason": "im_end",
         "executed_rgb_sha256": source_executed_rgb_sha256,
-        "predictions": _parser(
-            *projected_predictions,
-            _parser_prediction(
-                category="dog", row_index=projected_row_count, offset=10
-            ),
-        ),
+        "predictions": raw_parser,
         "source_b16": {
             "status": source_status,
             "row_budget": 16,
             "projected_token_ids": projected,
             "projected_token_ids_sha256": token_ids_sha256(projected),
+            "projected_token_end_offset_exclusive": len(projected),
             "projected_text": "projected-cat-only",
             "projected_valid_complete_row_count": projected_row_count,
             "projected_parser_evidence": _parser(*projected_predictions),
+            "raw_parser_evidence": copy.deepcopy(raw_parser),
         },
     }
     source = _v2_artifact(mode="source_b16", rows=[source_row], image=image)
@@ -250,6 +261,13 @@ def _write_v2_panel(
         json.dumps(source), encoding="utf-8"
     )
     return candidate_pool, sampled_root, source_root, image
+
+
+def _strict_v2_inventory(root: Path, pattern: str) -> list[dict[str, str]]:
+    return [
+        {"path": str(path.resolve()), "sha256": sha256_file(path)}
+        for path in sorted(root.rglob(pattern), key=str)
+    ]
 
 
 def _patch_synthetic_candidate_pool(
@@ -274,7 +292,7 @@ def _patch_synthetic_candidate_pool(
     monkeypatch.setattr(
         breadth_assembler,
         "load_generation7_annotations",
-        lambda _: {
+        lambda _, image_ids=None: {
             "42": [
                 {
                     "owner_id": "42:1",
@@ -406,6 +424,12 @@ def test_v2_source_raw_rows_after_projection_cannot_enter_semantics(
         candidate_pool=candidate_pool,
     )
 
+    sampled_row = adapted["sampled_rows"][("42", 0)]
+    assert sampled_row["generated_token_ids"] == _row_tokens(50)
+    assert sampled_row["_sampled_b16_provenance"]["status"] == "accepted_natural_end"
+    assert sampled_row["_sampled_b16_provenance"]["raw_generated_token_count"] == (
+        len(sampled_row["generated_token_ids"]) + 1
+    )
     source_row = adapted["source_rows"][("42", 0)]
     assert source_row["generated_token_ids"] == [
         token for row_index in range(16) for token in _row_tokens(70 + row_index)
@@ -417,6 +441,47 @@ def test_v2_source_raw_rows_after_projection_cannot_enter_semantics(
     assert "42:2" not in source_assignment["matched_owner_ids"]
     provenance = source_row["_source_b16_provenance"]
     assert provenance["raw_generated_token_count"] > provenance["projected_token_count"]
+
+
+def test_v2_strict_inventory_rejects_mutation_before_json_decode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate_pool, sampled_root, source_root, image = _write_v2_panel(tmp_path)
+    _patch_synthetic_candidate_pool(monkeypatch, image)
+    sampled_inventory = _strict_v2_inventory(sampled_root, "sampled-batch-*.json")
+    source_inventory = _strict_v2_inventory(source_root, "source_b16-batch-*.json")
+    sampled_path = Path(sampled_inventory[0]["path"])
+    sampled_path.write_bytes(b"not JSON and not the manifest-bound bytes")
+
+    with pytest.raises(AssemblyError, match="hash differs before JSON decoding"):
+        load_v2_b16_panel_adapter(
+            sampled_panel_root=sampled_root,
+            source_b16_root=source_root,
+            candidate_pool=candidate_pool,
+            sampled_artifact_inventory=sampled_inventory,
+            source_artifact_inventory=source_inventory,
+        )
+
+
+def test_v2_strict_inventory_rejects_unmanifested_nested_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate_pool, sampled_root, source_root, image = _write_v2_panel(tmp_path)
+    _patch_synthetic_candidate_pool(monkeypatch, image)
+    sampled_inventory = _strict_v2_inventory(sampled_root, "sampled-batch-*.json")
+    source_inventory = _strict_v2_inventory(source_root, "source_b16-batch-*.json")
+    nested = sampled_root / "unmanifested" / "sampled-batch-99999.json"
+    nested.parent.mkdir()
+    nested.write_bytes(Path(sampled_inventory[0]["path"]).read_bytes())
+
+    with pytest.raises(AssemblyError, match="artifact discovery differs from strict inventory"):
+        load_v2_b16_panel_adapter(
+            sampled_panel_root=sampled_root,
+            source_b16_root=source_root,
+            candidate_pool=candidate_pool,
+            sampled_artifact_inventory=sampled_inventory,
+            source_artifact_inventory=source_inventory,
+        )
 
 
 def test_v2_projected_tokens_drive_exact_source_anchor_slicing(
@@ -473,21 +538,256 @@ def test_v2_failed_source_is_counted_and_excluded_from_admission(
     assert adapted["census"]["source_ineligible_excluded_from_admission_count"] == 1
 
 
+def test_v2_semantic_filter_skips_excluded_rows_before_route_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidate_pool, sampled_root, source_root, image = _write_v2_panel(tmp_path)
+    monkeypatch.setattr(
+        breadth_assembler, "_candidate_pool", lambda _: {"42": _candidate(image.name)}
+    )
+    monkeypatch.setattr(
+        breadth_assembler,
+        "load_generation7_annotations",
+        lambda _, image_ids=None: {},
+    )
+
+    def forbidden(*args: object, **kwargs: object) -> dict[str, object]:
+        raise AssertionError("excluded route identity was inspected")
+
+    monkeypatch.setattr(breadth_assembler, "_v2_row_identity", forbidden)
+
+    adapted = load_v2_b16_panel_adapter(
+        sampled_panel_root=sampled_root,
+        source_b16_root=source_root,
+        candidate_pool=candidate_pool,
+        semantic_image_ids=[],
+    )
+
+    assert adapted["sampled_rows"] == {}
+    assert adapted["source_rows"] == {}
+    assert adapted["image_results"] == {}
+    assert adapted["census"]["sampled_image_count"] == 0
+    assert adapted["census"]["source_image_count"] == 0
+
+
+def _sampled_projection_row(
+    rows: list[list[int]],
+    *,
+    predictions: dict[str, object] | None = None,
+) -> dict[str, object]:
+    generated = [token for row in rows for token in row] + [151645]
+    return {
+        **_v2_base_row(generated_ids=generated),
+        "trajectory_id": "sample-00",
+        "decode_mode": "sampled",
+        "sample_index": 0,
+        "stop_reason": "im_end",
+        "predictions": predictions
+        or _parser(
+            *(
+                _parser_prediction(category="cat", row_index=index)
+                for index in range(len(rows))
+            )
+        ),
+    }
+
+
+def test_sampled_b16_projects_seventeen_rows_and_dedups_tail_only_difference() -> None:
+    prefix = [_row_tokens(100 + index) for index in range(16)]
+    left = _sampled_projection_row([*prefix, _row_tokens(200)])
+    right = _sampled_projection_row([*prefix, _row_tokens(201)])
+
+    left_ids, left_hash, left_provenance = _project_sampled_b16(
+        left, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+    right_ids, right_hash, right_provenance = _project_sampled_b16(
+        right, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+
+    expected = [token for row in prefix for token in row]
+    assert left_ids == right_ids == expected
+    assert left_hash == right_hash == token_ids_sha256(expected)
+    assert left_provenance["status"] == right_provenance["status"] == "accepted_budget"
+    assert left_provenance["raw_generated_token_ids_sha256"] != right_provenance[
+        "raw_generated_token_ids_sha256"
+    ]
+
+
+def test_sampled_b16_natural_end_and_malformed_boundary() -> None:
+    fifteen = [_row_tokens(100 + index) for index in range(15)]
+    natural = _sampled_projection_row(fifteen)
+    natural_ids, _, natural_provenance = _project_sampled_b16(
+        natural, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+    assert natural_ids == [token for row in fifteen for token in row]
+    assert natural_provenance["status"] == "accepted_natural_end"
+
+    sixteen = [_row_tokens(100 + index) for index in range(16)]
+    sixteen_natural = _sampled_projection_row(sixteen)
+    sixteen_ids, _, sixteen_provenance = _project_sampled_b16(
+        sixteen_natural, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+    assert sixteen_ids == [token for row in sixteen for token in row]
+    assert sixteen_provenance["status"] == "accepted_budget"
+
+    malformed_tail_parser = _parser(
+        *(
+            _parser_prediction(category="cat", row_index=index)
+            for index in range(16)
+        )
+    )
+    malformed_tail_parser.update(
+        {
+            "parse_status": "accepted_with_drops",
+            "dropped_prediction_count": 1,
+            "dropped_predictions": [{"generated_order": 17, "reason": "invalid"}],
+        }
+    )
+    tail = _sampled_projection_row(
+        [*sixteen, _row_tokens(250)], predictions=malformed_tail_parser
+    )
+    tail_ids, _, tail_provenance = _project_sampled_b16(
+        tail, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+    assert tail_ids == [token for row in sixteen for token in row]
+    assert tail_provenance["status"] == "accepted_budget"
+    assert tail_provenance["malformed_or_dropped_before_b16_count"] == 0
+
+    malformed_before_parser = copy.deepcopy(malformed_tail_parser)
+    malformed_before_parser["dropped_predictions"] = [
+        {"generated_order": 5, "reason": "invalid"}
+    ]
+    before = _sampled_projection_row(
+        [*sixteen, _row_tokens(251)], predictions=malformed_before_parser
+    )
+    _, _, before_provenance = _project_sampled_b16(
+        before, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+    assert before_provenance["status"] == "failed_invalid_before_budget"
+    assert before_provenance["malformed_or_dropped_before_b16_count"] == 1
+
+
+def test_sampled_b16_rejects_raw_token_hash_corruption() -> None:
+    row = _sampled_projection_row([_row_tokens(100)])
+    row["generated_token_ids_sha256"] = "0" * 64
+    with pytest.raises(AssemblyError, match="raw generated-token hash mismatch"):
+        _project_sampled_b16(
+            row, im_end_token_id=151645, box_end_token_id=BOX_END
+        )
+
+
+def _source_replay_case(
+    *, status: str, row_count: int, dropped_order: int | None = None
+) -> tuple[dict[str, object], dict[str, object]]:
+    rows = [_row_tokens(100 + index) for index in range(row_count)]
+    projected = [token for item in rows[:16] for token in item]
+    predictions = _parser(
+        *(
+            _parser_prediction(category="cat", row_index=index)
+            for index in range(row_count)
+        )
+    )
+    raw = [token for item in rows for token in item]
+    if dropped_order is not None:
+        raw.extend(_row_tokens(250))
+        predictions.update(
+            {
+                "parse_status": "accepted_with_drops",
+                "dropped_prediction_count": 1,
+                "dropped_predictions": [
+                    {"generated_order": dropped_order, "reason": "geometry_invalid"}
+                ],
+            }
+        )
+    raw.append(151645)
+    row: dict[str, object] = {
+        **_v2_base_row(generated_ids=raw),
+        "trajectory_id": "source-b16",
+        "decode_mode": "source_b16",
+        "stop_reason": "im_end",
+        "predictions": predictions,
+    }
+    receipt: dict[str, object] = {
+        "status": status,
+        "raw_parser_evidence": copy.deepcopy(predictions),
+        "projected_parser_evidence": _parser(
+            *(
+                _parser_prediction(category="cat", row_index=index)
+                for index in range(min(row_count, 16))
+            )
+        ),
+        "projected_token_ids": projected if status == "accepted_budget" else raw[:-1],
+        "projected_token_end_offset_exclusive": (
+            len(projected) if status == "accepted_budget" else len(raw) - 1
+        ),
+        "projected_valid_complete_row_count": 16 if status == "accepted_budget" else row_count,
+    }
+    return row, receipt
+
+
+def test_source_b16_replay_rejects_exact_sixteen_natural_and_non_prefix() -> None:
+    row, natural = _source_replay_case(status="accepted_natural_end", row_count=16)
+    with pytest.raises(AssemblyError, match="accepted_natural_end"):
+        _validate_accepted_source_b16(
+            row, natural, im_end_token_id=151645, box_end_token_id=BOX_END
+        )
+
+    row, budget = _source_replay_case(status="accepted_budget", row_count=17)
+    projected_ids = budget["projected_token_ids"]
+    assert isinstance(projected_ids, list)
+    budget["projected_token_ids"] = [999, *projected_ids[1:]]
+    with pytest.raises(AssemblyError, match="exact raw prefix"):
+        _validate_accepted_source_b16(
+            row, budget, im_end_token_id=151645, box_end_token_id=BOX_END
+        )
+
+    row, budget = _source_replay_case(status="accepted_budget", row_count=17)
+    projected_parser = budget["projected_parser_evidence"]
+    assert isinstance(projected_parser, dict)
+    predictions = projected_parser["predictions"]
+    assert isinstance(predictions, list)
+    predictions[0] = _parser_prediction(category="dog", row_index=0)
+    with pytest.raises(AssemblyError, match="exact raw-parser prefix"):
+        _validate_accepted_source_b16(
+            row, budget, im_end_token_id=151645, box_end_token_id=BOX_END
+        )
+
+
+def test_source_b16_replay_malformed_chronology_boundary() -> None:
+    before_row, before = _source_replay_case(
+        status="accepted_budget", row_count=16, dropped_order=5
+    )
+    with pytest.raises(AssemblyError, match="before B16"):
+        _validate_accepted_source_b16(
+            before_row, before, im_end_token_id=151645, box_end_token_id=BOX_END
+        )
+
+    after_row, after = _source_replay_case(
+        status="accepted_budget", row_count=16, dropped_order=17
+    )
+    _validate_accepted_source_b16(
+        after_row, after, im_end_token_id=151645, box_end_token_id=BOX_END
+    )
+
+
 @pytest.mark.parametrize(
-    ("kwargs", "message"),
+    ("source_executed_rgb_sha256", "source_execution_key", "message"),
     [
-        ({"source_executed_rgb_sha256": "d" * 64}, "identity mismatch"),
-        ({"source_execution_key": "e" * 64}, "execution-model identity mismatch"),
+        ("d" * 64, "c" * 64, "identity mismatch"),
+        ("b" * 64, "e" * 64, "execution-model identity mismatch"),
     ],
 )
 def test_v2_sampled_and_source_identity_mismatch_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    kwargs: dict[str, str],
+    source_executed_rgb_sha256: str,
+    source_execution_key: str,
     message: str,
 ) -> None:
     candidate_pool, sampled_root, source_root, image = _write_v2_panel(
-        tmp_path, **kwargs
+        tmp_path,
+        source_executed_rgb_sha256=source_executed_rgb_sha256,
+        source_execution_key=source_execution_key,
     )
     _patch_synthetic_candidate_pool(monkeypatch, image)
 
@@ -739,10 +1039,12 @@ def test_saved_panel_receipt_must_match_recomputed_execution_metadata() -> None:
             "producer_script_sha256": "a" * 64,
         },
     }
+    execution_metadata = recomputed["execution_metadata"]
+    assert isinstance(execution_metadata, dict)
     saved = {
         **recomputed,
         "execution_metadata": {
-            **recomputed["execution_metadata"],
+            **execution_metadata,
             "producer_script_sha256": "b" * 64,
         },
     }

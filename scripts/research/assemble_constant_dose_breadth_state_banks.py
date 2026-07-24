@@ -15,6 +15,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 import copy
 import glob
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -70,6 +71,10 @@ SCHEMA_VERSION = "constant_dose_breadth_state_bank_assembly.v1"
 UNION_SCHEMA_VERSION = "constant_dose_trajectory_panel_union.v1"
 CANONICAL_ANALYSIS_IOU_THRESHOLD = 0.5
 V2_PANEL_SCHEMA_VERSION = "coordexp_vllm_trajectory_panel.v2"
+SAMPLED_B16_ACCEPTED_STATUSES = frozenset(
+    {"accepted_budget", "accepted_natural_end"}
+)
+SAMPLED_B16_FAILED_STATUS = "failed_invalid_before_budget"
 SOURCE_B16_ACCEPTED_STATUSES = frozenset({"accepted_budget", "accepted_natural_end"})
 SOURCE_B16_INELIGIBLE_STATUSES = frozenset(
     {"failed_invalid_before_budget", "failed_token_limit_before_budget"}
@@ -402,6 +407,64 @@ def _discover_v2_artifacts(root: Path, *, mode: str) -> list[Path]:
     return paths
 
 
+def _read_json_exact_bytes(
+    path: Path, *, expected_sha256: str | None = None
+) -> tuple[Any, str]:
+    """Hash one byte buffer before decoding JSON from that same buffer."""
+
+    raw = path.read_bytes()
+    observed_sha256 = hashlib.sha256(raw).hexdigest()
+    if expected_sha256 is not None and observed_sha256 != expected_sha256:
+        raise AssemblyError(
+            f"v2 artifact hash differs before JSON decoding: {path}"
+        )
+    try:
+        text = raw.decode("utf-8")
+        return json.loads(text), observed_sha256
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AssemblyError(f"invalid exact-byte JSON artifact: {path}") from exc
+
+
+def _resolve_v2_artifact_inventory(
+    root: Path,
+    *,
+    mode: str,
+    strict_inventory: Sequence[Mapping[str, Any]] | None,
+) -> tuple[list[Path], dict[Path, str]]:
+    root = root.expanduser().resolve(strict=True)
+    discovered = _discover_v2_artifacts(root, mode=mode)
+    if strict_inventory is None:
+        return discovered, {}
+    expected: dict[Path, str] = {}
+    for index, raw in enumerate(strict_inventory):
+        path = Path(str(raw.get("path", ""))).expanduser().resolve(strict=True)
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise AssemblyError(
+                f"strict {mode} artifact is outside its panel root: {path}"
+            ) from exc
+        digest = str(raw.get("sha256", ""))
+        if len(digest) != 64:
+            raise AssemblyError(
+                f"strict {mode} artifact {index} has an invalid SHA-256"
+            )
+        try:
+            int(digest, 16)
+        except ValueError as exc:
+            raise AssemblyError(
+                f"strict {mode} artifact {index} has an invalid SHA-256"
+            ) from exc
+        if path in expected:
+            raise AssemblyError(f"strict {mode} artifact inventory duplicates {path}")
+        expected[path] = digest
+    if set(discovered) != set(expected):
+        raise AssemblyError(
+            f"{mode} artifact discovery differs from strict inventory"
+        )
+    return discovered, expected
+
+
 def _v2_execution_identity(payload: Mapping[str, Any], path: Path) -> tuple[dict[str, Any], str]:
     model = _mapping(payload.get("model_identity"), f"{path}.model_identity")
     execution = dict(
@@ -411,6 +474,173 @@ def _v2_execution_identity(payload: Mapping[str, Any], path: Path) -> tuple[dict
         )
     )
     return execution, sha256_json(execution)
+
+
+def _v2_tokenizer_contract(
+    payload: Mapping[str, Any], path: Path
+) -> tuple[dict[str, Any], str, int, int]:
+    model = _mapping(payload.get("model_identity"), f"{path}.model_identity")
+    tokenizer = dict(
+        _mapping(model.get("tokenizer_identity"), f"{path}.tokenizer_identity")
+    )
+    im_end_ids = tokenizer.get("im_end_token_ids")
+    wrappers = _mapping(
+        tokenizer.get("wrapper_token_ids"), f"{path}.tokenizer_identity.wrapper_token_ids"
+    )
+    box_end = wrappers.get("<|box_end|>")
+    if (
+        not isinstance(im_end_ids, list)
+        or len(im_end_ids) != 1
+        or isinstance(im_end_ids[0], bool)
+        or not isinstance(im_end_ids[0], int)
+        or isinstance(box_end, bool)
+        or not isinstance(box_end, int)
+        or im_end_ids[0] == box_end
+    ):
+        raise AssemblyError(f"invalid frozen tokenizer token contract in {path}")
+    return tokenizer, sha256_json(tokenizer), int(im_end_ids[0]), int(box_end)
+
+
+def _project_sampled_b16(
+    row: Mapping[str, Any], *, im_end_token_id: int, box_end_token_id: int
+) -> tuple[list[int], str, dict[str, Any]]:
+    """Project one naturally closed sampled route to its exact B16 token prefix."""
+
+    raw_ids = _token_ids(row.get("generated_token_ids"), "sampled.generated_token_ids")
+    raw_hash = _norm_sha(
+        row.get("generated_token_ids_sha256"), "sampled.generated_token_ids_sha256"
+    )
+    if token_ids_sha256(raw_ids) != raw_hash:
+        raise AssemblyError("sampled raw generated-token hash mismatch")
+    if (
+        row.get("stop_reason") != "im_end"
+        or not raw_ids
+        or raw_ids[-1] != im_end_token_id
+        or raw_ids.count(im_end_token_id) != 1
+    ):
+        raise AssemblyError("sampled route lacks exact terminal im_end token evidence")
+    parser_ids = raw_ids[:-1]
+    parsed, parser = _parsed_rows(row)
+    malformed_before = _malformed_before_budget(
+        parser, parsed, SOURCE_B16_ROW_BUDGET
+    )
+    box_ends = [index for index, value in enumerate(parser_ids) if value == box_end_token_id]
+    if len(box_ends) < min(len(parsed), SOURCE_B16_ROW_BUDGET):
+        raise AssemblyError("sampled parser rows exceed exact box-end token evidence")
+    if malformed_before:
+        projected = list(parser_ids)
+        status = SAMPLED_B16_FAILED_STATUS
+        projected_count = min(len(parsed), SOURCE_B16_ROW_BUDGET)
+        projected_end = len(projected)
+    elif len(parsed) >= SOURCE_B16_ROW_BUDGET:
+        projected_end = box_ends[SOURCE_B16_ROW_BUDGET - 1] + 1
+        projected = parser_ids[:projected_end]
+        status = "accepted_budget"
+        projected_count = SOURCE_B16_ROW_BUDGET
+    else:
+        projected = list(parser_ids)
+        projected_end = len(projected)
+        status = "accepted_natural_end"
+        projected_count = len(parsed)
+    projected_hash = token_ids_sha256(projected)
+    provenance = {
+        "status": status,
+        "row_budget": SOURCE_B16_ROW_BUDGET,
+        "raw_generated_token_ids_sha256": raw_hash,
+        "raw_generated_token_count": len(raw_ids),
+        "raw_stop_reason": "im_end",
+        "terminal_im_end_token_id": im_end_token_id,
+        "box_end_token_id": box_end_token_id,
+        "raw_valid_complete_row_count": len(parsed),
+        "malformed_or_dropped_before_b16_count": malformed_before,
+        "projected_valid_complete_row_count": projected_count,
+        "projected_token_end_offset_exclusive": projected_end,
+        "projected_token_ids_sha256": projected_hash,
+        "projected_token_count": len(projected),
+        "natural_end_before_or_at_budget": status == "accepted_natural_end",
+    }
+    return projected, projected_hash, provenance
+
+
+def _validate_accepted_source_b16(
+    row: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    *,
+    im_end_token_id: int,
+    box_end_token_id: int,
+) -> None:
+    """Replay accepted Source projection from raw tokens/parser chronology."""
+
+    status = str(receipt.get("status", ""))
+    if status not in SOURCE_B16_ACCEPTED_STATUSES:
+        raise AssemblyError("Source replay validator requires an accepted status")
+    raw_ids = _token_ids(row.get("generated_token_ids"), "Source.raw_generated_token_ids")
+    raw_hash = _norm_sha(
+        row.get("generated_token_ids_sha256"), "Source.raw_generated_token_ids_sha256"
+    )
+    if token_ids_sha256(raw_ids) != raw_hash:
+        raise AssemblyError("Source raw generated-token hash mismatch")
+    raw_parser = _mapping(row.get("predictions"), "Source.predictions")
+    stored_raw_parser = _mapping(
+        receipt.get("raw_parser_evidence"), "Source.raw_parser_evidence"
+    )
+    if dict(raw_parser) != dict(stored_raw_parser):
+        raise AssemblyError("Source stored raw parser evidence differs from top-level parser")
+    projected = _token_ids(
+        receipt.get("projected_token_ids"), "Source.projected_token_ids"
+    )
+    end = receipt.get("projected_token_end_offset_exclusive")
+    if isinstance(end, bool) or not isinstance(end, int) or end != len(projected):
+        raise AssemblyError("Source projected token end offset is not its exact length")
+    if projected != raw_ids[:end]:
+        raise AssemblyError("Source projected token IDs are not an exact raw prefix")
+    parsed, parser_evidence = _parsed_rows(row)
+    malformed_before = _malformed_before_budget(
+        parser_evidence, parsed, SOURCE_B16_ROW_BUDGET
+    )
+    if malformed_before:
+        raise AssemblyError("accepted Source has malformed/drop evidence before B16")
+    count = receipt.get("projected_valid_complete_row_count")
+    if isinstance(count, bool) or not isinstance(count, int):
+        raise AssemblyError("Source projected row count is invalid")
+    projected_parser = _mapping(
+        receipt.get("projected_parser_evidence"), "Source.projected_parser_evidence"
+    )
+    raw_predictions = raw_parser.get("predictions")
+    projected_predictions = projected_parser.get("predictions")
+    if (
+        not isinstance(raw_predictions, list)
+        or not isinstance(projected_predictions, list)
+        or projected_predictions != raw_predictions[:count]
+    ):
+        raise AssemblyError("Source projected parser is not the exact raw-parser prefix")
+    if status == "accepted_budget":
+        box_ends = [
+            index for index, token_id in enumerate(raw_ids) if token_id == box_end_token_id
+        ]
+        expected_end = (
+            box_ends[SOURCE_B16_ROW_BUDGET - 1] + 1
+            if len(box_ends) >= SOURCE_B16_ROW_BUDGET
+            else None
+        )
+        if (
+            count != SOURCE_B16_ROW_BUDGET
+            or len(parsed) < SOURCE_B16_ROW_BUDGET
+            or end != expected_end
+            or not projected
+            or projected[-1] != box_end_token_id
+        ):
+            raise AssemblyError("Source accepted_budget does not end exactly at row 16")
+    elif (
+        count >= SOURCE_B16_ROW_BUDGET
+        or count != len(parsed)
+        or row.get("stop_reason") != "im_end"
+        or not raw_ids
+        or raw_ids[-1] != im_end_token_id
+        or raw_ids.count(im_end_token_id) != 1
+        or projected != raw_ids[:-1]
+    ):
+        raise AssemblyError("Source accepted_natural_end lacks exact terminal im_end projection")
 
 
 def _derive_v2_checkpoint_identity(payload: Mapping[str, Any], *, path: Path) -> CheckpointIdentity:
@@ -634,17 +864,54 @@ def _v2_references(
 
 
 def load_v2_b16_panel_adapter(
-    *, sampled_panel_root: Path, source_b16_root: Path, candidate_pool: Path
+    *,
+    sampled_panel_root: Path,
+    source_b16_root: Path,
+    candidate_pool: Path,
+    semantic_image_ids: Sequence[str] | None = None,
+    sampled_artifact_inventory: Sequence[Mapping[str, Any]] | None = None,
+    source_artifact_inventory: Sequence[Mapping[str, Any]] | None = None,
+    expected_candidate_pool_sha256: str | None = None,
 ) -> dict[str, Any]:
-    """Adapt v2 sampled + Source@B16 artifacts to the existing candidate seam."""
+    """Adapt v2 sampled + Source@B16 artifacts to the existing candidate seam.
+
+    ``semantic_image_ids`` is a split barrier: excluded rows are inspected only
+    for ``image_id`` and are skipped before stop, parser, text, owner, or route
+    semantics are read. Strict callers pass both manifest-bound artifact
+    inventories; recursive discovery must then match those paths exactly, and
+    each artifact hash is checked from the same bytes decoded as JSON.
+    """
 
     pool_path = candidate_pool.expanduser().resolve(strict=True)
+    candidate_pool_sha256 = sha256_file(pool_path)
+    if (
+        expected_candidate_pool_sha256 is not None
+        and candidate_pool_sha256 != expected_candidate_pool_sha256
+    ):
+        raise AssemblyError("candidate pool differs before v2 adapter decoding")
     pool = _candidate_pool(pool_path)
-    owners = load_generation7_annotations(pool_path)
-    if set(owners) != set(pool):
+    semantic_ids = (
+        set(pool)
+        if semantic_image_ids is None
+        else {_canonical_image_id(item, field="semantic_image_ids") for item in semantic_image_ids}
+    )
+    if not semantic_ids <= set(pool):
+        raise AssemblyError("semantic image filter is not a candidate-pool subset")
+    owners = load_generation7_annotations(pool_path, image_ids=semantic_ids)
+    if sha256_file(pool_path) != candidate_pool_sha256:
+        raise AssemblyError("candidate pool changed while loading the v2 adapter")
+    if set(owners) != semantic_ids:
         raise AssemblyError("candidate-pool owner records do not cover the exact v2 image cohort")
-    sampled_paths = _discover_v2_artifacts(sampled_panel_root, mode="sampled")
-    source_paths = _discover_v2_artifacts(source_b16_root, mode="source_b16")
+    sampled_paths, sampled_expected_hashes = _resolve_v2_artifact_inventory(
+        sampled_panel_root,
+        mode="sampled",
+        strict_inventory=sampled_artifact_inventory,
+    )
+    source_paths, source_expected_hashes = _resolve_v2_artifact_inventory(
+        source_b16_root,
+        mode="source_b16",
+        strict_inventory=source_artifact_inventory,
+    )
     identities: dict[str, dict[str, Any]] = {}
     sampled_rows: dict[tuple[str, int], dict[str, Any]] = {}
     source_rows: dict[tuple[str, int], dict[str, Any]] = {}
@@ -653,27 +920,52 @@ def load_v2_b16_panel_adapter(
     source_provenance: dict[str, dict[str, Any]] = {}
     execution: dict[str, Any] | None = None
     execution_hash: str | None = None
+    tokenizer_identity: dict[str, Any] | None = None
+    tokenizer_hash: str | None = None
+    im_end_token_id: int | None = None
+    box_end_token_id: int | None = None
     representative: dict[str, Any] | None = None
     artifact_provenance: list[dict[str, Any]] = []
 
     def artifact(path: Path, mode: str) -> tuple[dict[str, Any], Mapping[str, Any], str, str]:
         nonlocal execution, execution_hash, representative
-        payload = dict(_mapping(_read_json(path), f"v2 artifact {path}"))
+        nonlocal tokenizer_identity, tokenizer_hash, im_end_token_id, box_end_token_id
+        expected_hashes = (
+            sampled_expected_hashes if mode == "sampled" else source_expected_hashes
+        )
+        decoded, digest = _read_json_exact_bytes(
+            path, expected_sha256=expected_hashes.get(path)
+        )
+        payload = dict(_mapping(decoded, f"v2 artifact {path}"))
         if payload.get("schema_version") != V2_PANEL_SCHEMA_VERSION:
             raise AssemblyError(f"unsupported v2 panel schema in {path}")
         config = _mapping(payload.get("config"), f"{path}.config")
         if config.get("decode_mode") != mode:
             raise AssemblyError(f"v2 artifact has wrong decode mode in {path}")
         current, current_hash = _v2_execution_identity(payload, path)
+        current_tokenizer, current_tokenizer_hash, current_im_end, current_box_end = (
+            _v2_tokenizer_contract(payload, path)
+        )
         if execution_hash is None:
             execution, execution_hash = current, current_hash
             representative = {"model_identity": copy.deepcopy(payload["model_identity"])}
         elif current_hash != execution_hash or current != execution:
             raise AssemblyError("sampled/Source v2 execution-model identity mismatch")
+        if tokenizer_hash is None:
+            tokenizer_identity = current_tokenizer
+            tokenizer_hash = current_tokenizer_hash
+            im_end_token_id = current_im_end
+            box_end_token_id = current_box_end
+        elif (
+            current_tokenizer_hash != tokenizer_hash
+            or current_tokenizer != tokenizer_identity
+            or current_im_end != im_end_token_id
+            or current_box_end != box_end_token_id
+        ):
+            raise AssemblyError("sampled/Source v2 tokenizer identity mismatch")
         rows = payload.get("rollouts")
         if not isinstance(rows, list) or not rows or payload.get("rollout_count") not in {None, len(rows)}:
             raise AssemblyError(f"v2 artifact lacks consistent rollout rows: {path}")
-        digest = sha256_file(path)
         artifact_provenance.append(
             {"mode": mode, "path": str(path), "sha256": digest, "execution_model_identity_sha256": current_hash}
         )
@@ -691,6 +983,11 @@ def load_v2_b16_panel_adapter(
             raise AssemblyError(f"sampled v2 artifact has non-canonical panel config: {path}")
         for raw in payload["rollouts"]:
             row = _mapping(raw, f"{path}.rollout")
+            image = _canonical_image_id(
+                row.get("image_id"), field=f"{path}.rollout.image_id"
+            )
+            if image not in semantic_ids:
+                continue
             identity = _register_v2_identity(
                 identities, _v2_row_identity(payload, row, path, model_hash)
             )
@@ -705,6 +1002,15 @@ def load_v2_b16_panel_adapter(
             normalized = _compact_v2_rollout(row, path, config, identity, index)
             normalized["trajectory_id"] = f"sample-{index:02d}"
             normalized["predictions"] = row.get("predictions")
+            assert im_end_token_id is not None and box_end_token_id is not None
+            projected, projected_hash, sampled_b16 = _project_sampled_b16(
+                normalized,
+                im_end_token_id=im_end_token_id,
+                box_end_token_id=box_end_token_id,
+            )
+            normalized["generated_token_ids"] = projected
+            normalized["generated_token_ids_sha256"] = projected_hash
+            normalized["_sampled_b16_provenance"] = sampled_b16
             assignment, parser = _v2_assignment(normalized, owners[image])
             normalized.pop("predictions", None)
             sampled_rows[(image, index)] = normalized
@@ -714,12 +1020,13 @@ def load_v2_b16_panel_adapter(
                 "stop_reason": "im_end",
                 "seed": index,
                 "decode_mode": "sampled",
+                "sampled_b16": copy.deepcopy(sampled_b16),
             }
     observed: dict[str, set[int]] = {}
     for image, index in sampled_rows:
         observed.setdefault(image, set()).add(index)
-    if set(observed) != set(pool):
-        raise AssemblyError("sampled v2 panel image cohort differs from the candidate pool")
+    if set(observed) != semantic_ids:
+        raise AssemblyError("sampled v2 panel image cohort differs from the semantic image filter")
     incomplete = {image: values for image, values in observed.items() if values != set(range(16))}
     if incomplete:
         image = min(incomplete, key=int)
@@ -736,6 +1043,11 @@ def load_v2_b16_panel_adapter(
             raise AssemblyError(f"Source@B16 artifact has non-canonical panel config: {path}")
         for raw in payload["rollouts"]:
             row = _mapping(raw, f"{path}.rollout")
+            image = _canonical_image_id(
+                row.get("image_id"), field=f"{path}.rollout.image_id"
+            )
+            if image not in semantic_ids:
+                continue
             identity = _register_v2_identity(
                 identities, _v2_row_identity(payload, row, path, model_hash)
             )
@@ -768,6 +1080,13 @@ def load_v2_b16_panel_adapter(
             source_status[image], source_provenance[image] = status, provenance
             if status not in SOURCE_B16_ACCEPTED_STATUSES:
                 continue
+            assert im_end_token_id is not None and box_end_token_id is not None
+            _validate_accepted_source_b16(
+                row,
+                receipt,
+                im_end_token_id=im_end_token_id,
+                box_end_token_id=box_end_token_id,
+            )
             projected = _token_ids(
                 receipt.get("projected_token_ids"), f"{path}:{image}.projected_token_ids"
             )
@@ -822,8 +1141,8 @@ def load_v2_b16_panel_adapter(
                 "seed": 0,
                 "decode_mode": "greedy",
             }
-    if set(source_status) != set(pool) or set(identities) != set(pool):
-        raise AssemblyError("Source@B16 image cohort differs from the candidate pool")
+    if set(source_status) != semantic_ids or set(identities) != semantic_ids:
+        raise AssemblyError("Source@B16 image cohort differs from the semantic image filter")
 
     image_results: dict[str, dict[str, Any]] = {}
     sampled_ids = [f"sample-{index:02d}" for index in range(16)]
@@ -858,18 +1177,24 @@ def load_v2_b16_panel_adapter(
                 }
             ],
         }
-    references = _v2_references(pool, pool_path, identities)
+    references = _v2_references(
+        {image: pool[image] for image in semantic_ids}, pool_path, identities
+    )
     counts = Counter(source_status.values())
     assert execution is not None and execution_hash is not None and representative is not None
+    assert tokenizer_identity is not None and tokenizer_hash is not None
     return {
         "sampled_paths": sampled_paths,
         "source_paths": source_paths,
+        "candidate_pool_sha256": candidate_pool_sha256,
         "sampled_rows": sampled_rows,
         "source_rows": source_rows,
         "image_results": image_results,
         "reference_records": references,
         "execution_model_identity": execution,
         "execution_model_identity_sha256": execution_hash,
+        "tokenizer_identity": tokenizer_identity,
+        "tokenizer_identity_sha256": tokenizer_hash,
         "representative_payload": representative,
         "prompt_identity_sha256": sha256_json(
             [[image, identities[image]["prompt_token_ids_sha256"]] for image in sorted(identities, key=int)]

@@ -49,28 +49,125 @@ The parallel Pi worker-ablation execution state was last verified on
 Call thread pilot are complete, and no Pi process is live. The investigation
 used no graphics-processing unit.
 
-## Active objective
+## Closed result: trajectory owner-set admission census
 
-The user has corrected the next Qwen3-VL dense-enumeration treatment to true,
-order-independent set-level supervision. The previous same-prefix single-row
-comparison remains useful as a diagnostic or auxiliary term, but it is no
-longer the primary treatment. At an actual model-produced prefix, every
-verified uncovered physical owner is a valid next owner; candidate
-continuations are judged by their final unique-owner sets, and trajectories
-that exchange different owners without set inclusion are incomparable rather
-than positive versus negative. Unknown or potentially unlabeled entities
-receive no negative gradient. A compact covered-set or task-state carrier
-remains a later fallback rather than a current architecture commitment.
+The read-only root-state trajectory owner-set admission census is complete and
+training promotion is rejected. Among the exact 2,004 Source-eligible training
+images, only eight satisfy the frozen primary predicate, versus 256 required.
+The eight image identifiers are `2434`, `16796`, `69532`, `174740`, `207431`,
+`256151`, `294679`, and `569960`. Do not launch the grouped set-level training
+screen and do not use a unique-row or unique-trajectory fallback.
 
-The user also authorized independent advanced-model review at important or
-stage-defining difficulties. The reviewer may be Pro, Fable, or another
-advanced model outside the primary implementation and internal-audit chain;
-no provider is fixed. Use one frozen packet, keep multiple reviewers blind to
-one another, and treat their answers as advisory rather than scientific
-evidence. For the active route, run the admission census internally first. If
-the post-census choice of set score, owner-preservation semantics, matched
-control, or launch interpretation remains conclusion-critical, invoke the gate
-before freezing the 256-image training unit.
+The production artifact contains 2,004 records and 34,068 candidates. It has
+9,427 eligible and 24,641 excluded candidates, 134 strict owner-set edges, 105
+admissible edges, and 709 images with at least two eligible candidates. Of 378
+fully adjudicable images, only four pass; 355 have neither an admissible edge
+nor a same-class multiple-first-owner alias. This establishes structural
+scarcity in that selected subset. It does not establish population-wide
+structural absence because 1,626 images are censored by excluded candidates.
+
+Three blind advanced-model reviews approved the artifact and stop decision.
+They agreed that no conclusion-critical ambiguity remains for `8 < 256`, but
+that the present evidence cannot choose censoring or structural scarcity as
+the sole causal explanation. Any causal-resolution work belongs to a separate
+successor research unit. With four fully adjudicable admissions fixed, the
+censored population would need at least 252 admissions out of 1,626, or 15.50
+percent, to make a 256-image screen feasible. Treat that as a falsifiable
+future threshold, not a current estimate or a preselected method.
+
+Authoritative result:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md`
+
+Production artifact:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-23-trajectory-owner-set-admission-census/production-v1`
+
+No successor direction was selected before this closeout. The persistent goal
+permits choosing one dynamically from this result and then leading a separate
+exploration to a decision-grade checkpoint.
+
+## Active successor: frozen-panel owner-ledger salvage gate
+
+After the admission census closed, independent science, quantitative,
+infrastructure, and adversarial lanes selected a train-only image-first owner-
+ledger salvage futility gate as the next highest-value discriminator. The
+frozen question is whether the 1,622 censored, nonpassing training images can
+contribute the 248 additional primary admissions required by the unchanged
+17-candidate panel.
+
+Stage Zero is authorized. It may use only immutable exact-B16 parser, projected-
+token, row-order, and generated-category facts to build a no-false-negative
+category-capacity over-approximation. It must emit a witness or replayable
+impossibility certificate for every image and pass independent full replay.
+Owner-based reconnaissance pools of 576 and 606 were withdrawn because global
+matching can reassign previously resolved rows. A later 1,106-image category-
+only scout is non-authoritative until production reconstruction and audit.
+
+The frozen unit includes the empty-lower-owner-set corner, permits the lower-
+first preservation witness to reuse either high alias, accepts valid parser
+drops only after the exact B16 boundary, and treats every unresolved review
+case as a potential success across owner-universe, assignment, safety, edge,
+frontier, and admission state. Only after Stage Zero and all reviewer,
+adjudication, replay, and outcome-classifier artifacts are frozen and approved
+may one canonical 64-byte entropy journal use exact rejection and ordered-sample
+unranking to select cumulative looks of 16 and 32 images. An independent
+advanced-model fixed-point review approved the contract after requiring pre-
+entropy binding of every possible-pool image and replay input, a mechanically
+unique one-draw journal, exact downstream look-root binding, and statistical-
+decision-blind adjudication. No entropy, seed, or sample exists yet. Training,
+model inference, graphics-processing-unit work, development and held-out route
+semantics, loss selection, and
+architecture selection remain unauthorized.
+
+A final Stage Zero semantic gate found and corrected a shared B16 chronology
+defect: generated-row ordinals had been mixed with character offsets, so future
+unmatched text before the sixteenth complete row could be misclassified as
+post-boundary. An independent fix audit approved the correction. Exact read-
+only differential replay over all 34,068 train-U routes found no triggering
+stored case and reproduced all 2,004 census records exactly, including the 8
+admissions, 1,622-image successor population, and 709 images with at least two
+eligible candidates. Stage Zero category state and exhaustive pool membership
+also remained unchanged at 1,106 possible and 516 impossible images. The
+completed census therefore remains authoritative and does not require rerun.
+
+After a final independent admission gate approved exactly one production
+materialization, the immutable `stage-zero-v1` artifact completed successfully.
+It contains the exact 1,622-image population partition: 1,106 possible and 516
+impossible images, with the pre-authorized ordered-image hashes reproduced.
+An independent audit then replayed all 1,106 witnesses and 516 impossibility
+certificates in both forward and reverse order without a semantic mismatch.
+However, that audit imported the frozen source snapshot as root and created 54
+undeclared `.pyc` files in 13 `__pycache__` directories. No declared artifact
+is missing or mutated, and no sibling staging, failed, or quarantine residue
+exists, but exact root inventory is currently violated. AgentGuard prohibits
+agent cleanup, so the audit verdict is `HOLD` until the user manually removes
+those 13 derived cache directories and a fresh bytecode-disabled audit proves
+the exact 64-file, 19-directory receipt-bound inventory before writing the
+closed approval receipt. No entropy, sample, real image review, model
+inference, graphics-processing-unit work, or training has begun.
+
+The selection and blind-review machinery has otherwise reached an independent
+fixed point. The selector, review assembler, tests, reviewer-visible packet,
+and real no-op smoke evidence are frozen read-only. Independent audits closed
+production entropy injection, exact one-draw resume, full official-owner
+binding, reviewer sequential-information blindness, pre-entropy member and
+Stage Zero chronology, closed Stage Zero audit binding, exact no-addition
+census equality, and terminal regeneration of added-owner replay before
+outcome classification. The combined suite passes 111 tests. A durable
+bytecode-disabled smoke exactly reproduces all 17 route rows and complete
+census records for admitted image `2434` and geometry-exclusion image `831`.
+Therefore the audit-created Stage Zero cache inventory is the sole current
+external blocker before the independent Stage Zero approval receipt and the
+single canonical entropy acquisition.
+
+Stage Zero artifact:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/stage-zero-v1`
+
+Authoritative contract:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md`
 
 ## Closed parallel objective: physical-owner duplication
 
@@ -301,13 +398,22 @@ Established or bounded-supported:
   recovery consistent with owner-specific uptake.
 * Repetition penalty 1.10 substantially changes owner identity and may lower
   absolute owner coverage even when treatment-minus-Source looks better.
+* The frozen root-state census finds only 8 primary multiple-positive strict
+  owner-set groups among 2,004 Source-eligible training images; the proposed
+  256-image training screen is not feasible from current automatic evidence.
+* Structural scarcity is real inside the 378 fully adjudicable images, while
+  1,626 censored images prevent a population-wide causal attribution.
 
 Tentative or unresolved:
 
-* Whether grouped set-level supervision over nondominated trajectories can
-  convert sampled object support into safe clean-greedy final-set expansion.
-* Whether the existing sampled trajectories contain enough strict owner-set
-  dominance relations to produce a useful gradient without recollection.
+* Whether train-only adjudication or improved matcher and trusted-geometry
+  coverage would raise the censored population's primary-admission rate to the
+  15.50-percent feasibility threshold.
+* Whether the censored population shares the strict-edge and same-class
+  first-owner-alias scarcity observed in the fully adjudicable subset.
+* Whether a separately frozen exploration intervention can create enough
+  strict owner-set dominance and natural first-owner diversity without
+  weakening the primary predicate.
 * Whether native prefix state is sufficient once supervision is made more
   set-aligned, or a compact covered-set or task-state carrier is necessary.
 
@@ -317,6 +423,9 @@ Rejected or held:
   recovery, or a mean Average Precision gain alone as set expansion.
 * Do not scale the previous 118-image or current 496-image positive-only
   treatment unchanged.
+* Do not launch the proposed 256-image grouped set-level screen from the
+  current census, count the two image-level-only frontier cases, or reopen the
+  admission predicate after seeing the shortfall.
 * Do not make one sampled owner, geometry-sorted owner, complete row, or
   trajectory the unique teacher target for the next treatment.
 * Do not add a second cohort, external detector, object slot, terminal
@@ -325,15 +434,11 @@ Rejected or held:
 
 ## Immediate next actions
 
-1. Design the next bounded treatment as a 256-image grouped set-level screen.
-   First close a read-only admission census using only the 2,004 Source-eligible
-   members of the frozen 2,048-image training split. Map each continuation to
-   its verified final physical-owner set, consume every valid strict set-
-   inclusion edge, keep owner-exchange and unknown trajectories neutral, and
-   reject groups that collapse to one maximal serialization. Then freeze the
-   training unit and evaluate clean greedy gained, retained, and lost owners.
-   Keep a compact task-state carrier as the fallback branch if native prefix
-   state cannot use the stronger set-level signal.
+1. Treat the admission census as closed and the 256-image training promotion as
+   stopped. Dynamically select a separate successor question from the observed
+   censoring-versus-structural boundary; freeze its falsifiable contract before
+   inspecting new outcomes. Do not precommit the method merely because
+   adjudication, matcher coverage, and improved exploration are all plausible.
 2. Treat the constant-dose breadth screen as closed. Do not spend the next run
    on more image breadth, epochs, or repetition-penalty tuning.
 3. Preserve separate-thread work by intent and verify the live worktree before
@@ -347,16 +452,15 @@ Rejected or held:
 
 ## Minimum reading path
 
-1. `handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
-2. `handoff/from-side-chat.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
-5. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/unit.md`
-6. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/trajectory-panel-vllm-receipt.md`
-7. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/results.md`
+1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md`
+2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/unit.md`
+3. `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-23-trajectory-owner-set-admission-census/production-v1/receipt.json`
+4. `handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
+5. `handoff/from-side-chat.md`
+6. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
+7. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
 
-The comprehensive handoff is the fresh-session entry point and states the
-current set-level treatment correction. The breadth and duplication documents
-remain bounded evidence; neither owns the next training route. Reopen the
-experiment units and receipts only when their exact claim or implementation
-details matter.
+The completed admission-census result now owns the current route. The
+comprehensive handoff remains provenance for how the question was frozen, but
+its conditional 256-image training path was not admitted. The breadth and
+duplication documents remain bounded evidence; none owns the successor route.
