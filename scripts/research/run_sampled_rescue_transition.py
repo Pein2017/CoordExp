@@ -30,7 +30,37 @@ from src.analysis.sampled_rescue_transition.comparison import (
     OBJECT_REF_START,
     trajectory_rows,
 )
-from src.analysis.spatial_scope_history.schedule import PRIMARY_ROOT_SEED
+# This experiment uses the sealed root seed but does not depend on the retired
+# spatial-scope execution framework that originally declared it.
+PRIMARY_ROOT_SEED = 2026071301
+SECOND_ROOT_SEED = 2026071302
+SEED_NAMESPACE = "coordexp-dense-enumeration-seeds-v1"
+
+
+def derive_sampling_seed(
+    *, root_seed: int, role: str, image_id: int, cell_or_call_label: str
+) -> int:
+    """Derive the experiment's frozen unsigned 63-bit request seed."""
+
+    if root_seed not in {PRIMARY_ROOT_SEED, SECOND_ROOT_SEED}:
+        raise ValueError(f"unauthorized research root seed: {root_seed}")
+    if role not in {
+        "baseline",
+        "paired-cell",
+        "temperature-calibration",
+        "image-bootstrap",
+    }:
+        raise ValueError(f"unknown sampling seed role: {role}")
+    if isinstance(image_id, bool) or not isinstance(image_id, int) or image_id < 0:
+        raise ValueError("image identifier must be a nonnegative integer")
+    if not isinstance(cell_or_call_label, str) or not cell_or_call_label:
+        raise ValueError("seed call label must be nonempty")
+    domain = (
+        f"{SEED_NAMESPACE}\0{root_seed}\0{role}\0{image_id}\0{cell_or_call_label}"
+    ).encode("utf-8")
+    return int.from_bytes(hashlib.sha256(domain).digest()[:8], "big") & (
+        (1 << 63) - 1
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -222,8 +252,6 @@ def _run_runtime_smoke(
     from src.inference.prompt import AssistantContinuation, build_prompt_record
     from src.inference.parsing import parse_compact_object_box_closed
     from src.inference.runtime import assemble_runtime
-    from src.analysis.spatial_scope_history.schedule import derive_sampling_seed
-
     config_path = args.infer_config.expanduser().resolve(strict=True)
     source_path = args.source_jsonl.expanduser().resolve(strict=True)
     requested_image_id = str(args.image_ids[0])
@@ -595,8 +623,6 @@ def _run_forced_span_runtime(
     from src.inference.prompt import AssistantContinuation, build_prompt_record
     from src.inference.parsing import parse_compact_object_box_closed
     from src.inference.runtime import assemble_runtime
-    from src.analysis.spatial_scope_history.schedule import derive_sampling_seed
-
     config_path = args.infer_config.expanduser().resolve(strict=True)
     source_path = args.source_jsonl.expanduser().resolve(strict=True)
     with _temporary_cwd(config_path.parents[3]):

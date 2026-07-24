@@ -419,10 +419,12 @@ be explained by parsing, annotation, or sampling failure.
 ## Reused Surfaces and Expected Implementation Boundary
 
 Reuse current model loading, prompt rendering, token parsing, and batched
-inference. Reuse the existing one-to-one matching foundations under
-`src/analysis/spatial_scope_history/metrics.py` and trajectory parsing under
-`src/analysis/sampled_rescue_transition/` when their semantics match this
-unit. Add only an experiment-local launcher or summarizer under
+inference. The implementation reused the one-to-one matching foundations from
+the historical implementation at
+`f5af926ba:src/analysis/spatial_scope_history/metrics.py` and trajectory parsing
+under `src/analysis/sampled_rescue_transition/`. The commit-qualified spatial
+path is a provenance handle rather than a current application programming
+interface. Add only an experiment-local launcher or summarizer under
 `scripts/research/` for the missing fixed-budget owner-union calculation and
 review packet.
 

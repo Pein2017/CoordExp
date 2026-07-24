@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.analysis.sampled_rescue_transition.artifacts import (
     CallRecord,
+    _exact_maximum_flow_assignment,
     cluster_geometry_modes,
     load_case_table,
     load_call_records,
@@ -28,6 +29,7 @@ from scripts.research.run_sampled_rescue_transition import (
     _validate_forced_span_grammar,
     _write_bundle_once,
     build_parser,
+    derive_sampling_seed,
 )
 from src.inference.parsing import parse_compact_object_box_closed
 
@@ -210,6 +212,21 @@ def test_sampling_temperature_parser_default_and_validation() -> None:
         except SystemExit:
             continue
         raise AssertionError(f"invalid sampling temperature was accepted: {invalid}")
+
+
+def test_retired_spatial_framework_helpers_preserve_frozen_semantics() -> None:
+    assert derive_sampling_seed(
+        root_seed=2026071301,
+        role="baseline",
+        image_id=7818,
+        cell_or_call_label="call-0",
+    ) == 65610539429397169
+    assert _exact_maximum_flow_assignment(
+        prediction_count=2,
+        reference_count=2,
+        candidate_rows=((0, 0, 0.9), (0, 1, 0.8), (1, 0, 0.85)),
+        benefits=(90, 80, 85),
+    ) == frozenset({1, 2})
 
 
 def test_leading_unmatched_drop_is_first_action() -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 import hashlib
+import heapq
 import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -368,6 +369,129 @@ def match_mode_to_ledger(
     }
 
 
+@dataclass
+class _FlowEdge:
+    to_node: int
+    reverse_index: int
+    capacity: int
+    cost: int
+    candidate_index: int | None
+
+
+def _exact_maximum_flow_assignment(
+    *,
+    prediction_count: int,
+    reference_count: int,
+    candidate_rows: Sequence[tuple[int, int, float]],
+    benefits: Sequence[int],
+) -> frozenset[int]:
+    """Return the exact one-to-one assignment used by this artifact reader."""
+
+    source = 0
+    prediction_offset = 1
+    reference_offset = prediction_offset + prediction_count
+    sink = reference_offset + reference_count
+    graph: list[list[_FlowEdge]] = [[] for _ in range(sink + 1)]
+
+    def add_edge(
+        source_node: int,
+        target_node: int,
+        capacity: int,
+        cost: int,
+        candidate_index: int | None = None,
+    ) -> None:
+        forward = _FlowEdge(
+            target_node,
+            len(graph[target_node]),
+            capacity,
+            cost,
+            candidate_index,
+        )
+        backward = _FlowEdge(
+            source_node,
+            len(graph[source_node]),
+            0,
+            -cost,
+            None,
+        )
+        graph[source_node].append(forward)
+        graph[target_node].append(backward)
+
+    for prediction_index in range(prediction_count):
+        add_edge(source, prediction_offset + prediction_index, 1, 0)
+    for reference_index in range(reference_count):
+        add_edge(reference_offset + reference_index, sink, 1, 0)
+    for candidate_index, ((prediction_index, reference_index, _), benefit) in enumerate(
+        zip(candidate_rows, benefits, strict=True)
+    ):
+        add_edge(
+            prediction_offset + prediction_index,
+            reference_offset + reference_index,
+            1,
+            -benefit,
+            candidate_index,
+        )
+
+    potentials = [0] * len(graph)
+    reference_has_candidate = [False] * reference_count
+    for candidate_index, (_, reference_index, _) in enumerate(candidate_rows):
+        reference_has_candidate[reference_index] = True
+        reference_node = reference_offset + reference_index
+        potentials[reference_node] = min(
+            potentials[reference_node], -benefits[candidate_index]
+        )
+    reachable_reference_potentials = [
+        potentials[reference_offset + reference_index]
+        for reference_index in range(reference_count)
+        if reference_has_candidate[reference_index]
+    ]
+    potentials[sink] = min(reachable_reference_potentials)
+
+    while True:
+        distance: list[int | None] = [None] * len(graph)
+        previous: list[tuple[int, int] | None] = [None] * len(graph)
+        distance[source] = 0
+        queue: list[tuple[int, int]] = [(0, source)]
+        while queue:
+            current_distance, node = heapq.heappop(queue)
+            if current_distance != distance[node]:
+                continue
+            for edge_index, edge in enumerate(graph[node]):
+                if edge.capacity <= 0:
+                    continue
+                reduced_cost = edge.cost + potentials[node] - potentials[edge.to_node]
+                if reduced_cost < 0:
+                    raise RuntimeError("exact matcher produced a negative reduced cost")
+                candidate_distance = current_distance + reduced_cost
+                if (
+                    distance[edge.to_node] is None
+                    or candidate_distance < distance[edge.to_node]
+                ):
+                    distance[edge.to_node] = candidate_distance
+                    previous[edge.to_node] = (node, edge_index)
+                    heapq.heappush(queue, (candidate_distance, edge.to_node))
+        if previous[sink] is None:
+            break
+        for node, node_distance in enumerate(distance):
+            if node_distance is not None:
+                potentials[node] += node_distance
+        node = sink
+        while node != source:
+            prior_node, edge_index = previous[node]  # type: ignore[misc]
+            edge = graph[prior_node][edge_index]
+            edge.capacity -= 1
+            graph[node][edge.reverse_index].capacity += 1
+            node = prior_node
+
+    selected: set[int] = set()
+    for prediction_index in range(prediction_count):
+        node = prediction_offset + prediction_index
+        for edge in graph[node]:
+            if edge.candidate_index is not None and edge.capacity == 0:
+                selected.add(edge.candidate_index)
+    return frozenset(selected)
+
+
 def match_calls_to_ledger(
     calls: Sequence[CallRecord],
     ledger_rows: Sequence[Mapping[str, Any]],
@@ -400,8 +524,6 @@ def match_calls_to_ledger(
         for row in objects
     }
     extras: list[dict[str, Any]] = []
-    from src.analysis.spatial_scope_history.metrics import _exact_maximum_flow_assignment
-
     for call in calls:
         candidate_rows: list[tuple[int, int, float]] = []
         for pi, pred in enumerate(call.predictions):
