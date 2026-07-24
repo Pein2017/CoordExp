@@ -34,10 +34,11 @@ before choosing when the base changes scientific meaning or merge direction.
 ## Navigate with Serena
 
 Serena MCP uses the custom `coordexp-codex` context, not the built-in `codex`
-context. Its stdio server starts with `--project-from-cwd`; dynamic project
-switching, Serena memory, onboarding, shell, generic file operations, and broad
-text search are disabled. CoordExp research knowledge remains in `research/`,
-docs, skills, and Codex memory. Serena runtime state is persisted under
+context. Its stdio server starts with `--project-from-cwd`, so the initial
+project follows the launch directory. Explicit project switching is enabled;
+Serena memory, onboarding, shell, generic file operations, and broad text search
+remain disabled. CoordExp research knowledge remains in `research/`, docs,
+skills, and Codex memory. Serena runtime state is persisted under
 `/data/CoordExp/.codex/runtime/serena`. Install or verify the portable context
 and concise initial instructions with:
 
@@ -48,9 +49,11 @@ and concise initial instructions with:
 
 At the start of a conclusion-sensitive task, call `initial_instructions` and
 confirm the reported absolute worktree path. The response is intentionally a
-short routing note plus project receipt, not a general coding manual. Restart
-Serena from the intended worktree if it differs. Do not share one active-project
-server across parallel worktrees.
+short routing note plus project receipt, not a general coding manual. If the
+task moves to another folder or worktree, call `activate_project` with the exact
+absolute path and verify its activation receipt before using symbol tools. A
+server restart is not required solely because the target path changed. Avoid
+ambiguous project names, and do not mix evidence from different worktrees.
 
 Use these Serena tools when symbol semantics matter:
 
@@ -59,12 +62,14 @@ Use these Serena tools when symbol semantics matter:
   `get_diagnostics_for_file`;
 - refactor: `replace_symbol_body`, `insert_before_symbol`,
   `insert_after_symbol`, `rename_symbol`, and `safe_delete_symbol`;
-- integration: `initial_instructions` for the active project receipt.
+- integration: `initial_instructions` for the startup project receipt,
+  `activate_project` for an explicit absolute-path switch, and
+  `get_current_config` when the active project needs another confirmation.
 
 Use `rg` and RTK for broad text or file search, and `apply_patch` for ordinary
 edits. Manual `serena project index` is optional because the language-server
 index updates with source changes. When Serena conflicts with the live source,
-verify the file directly and restart the worktree-bound Serena server.
+verify the file directly and reactivate the exact absolute project path.
 
 ## Complete
 
