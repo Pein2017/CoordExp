@@ -212,7 +212,7 @@ The new image-`19432` runner and its focused pure-function checks are:
 
 ```text
 scripts/research/run_fixed_prefix_nonboundary_box_grammar_image19432.py
-tests/analysis/test_fixed_prefix_nonboundary_box_grammar_image19432.py
+f5af926ba:tests/analysis/test_fixed_prefix_nonboundary_box_grammar_image19432.py
 ```
 
 The focused test slice passed `9/9`; Python compilation and `git diff --check`

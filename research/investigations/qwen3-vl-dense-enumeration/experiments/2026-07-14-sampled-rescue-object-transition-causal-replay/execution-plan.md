@@ -129,7 +129,7 @@ ownership is:
 | Prompt and token boundaries | `src/inference/prompt.py::build_prompt_record`, its `AssistantContinuation`, `src/templates/`, and `src/qwen/encoding.py` | A legal arbitrary fixed-prefix helper only if the current continuation renderer cannot represent the selected prefix exactly. |
 | Parsing and raw artifacts | `src/inference/parsing.py::parse_compact_object_box_closed` and `src/inference/artifacts.py` | Compact research receipt, not a new artifact framework. |
 | Candidate forward scores | `src/eval/forward.py`, `src/qwen/forward.py` | Thin candidate-row scorer if current forward evaluation cannot expose token phases. |
-| Analysis | Existing bagging artifacts and `src/analysis/spatial_scope_history/postrun_loader.py::load_postrun_evidence` | Start experiment-local; promote to `src/analysis/` only after a second consumer. Do not inherit the prior sealed schedule unless its exact semantics are needed. |
+| Analysis | Existing bagging artifacts and the historical implementation at `f5af926ba:src/analysis/spatial_scope_history/postrun_loader.py` (`load_postrun_evidence`) | Start experiment-local; promote to `src/analysis/` only after a second consumer. Do not inherit the prior sealed schedule unless its exact semantics are needed. |
 | Thin command entry | `scripts/research/` | One command-line entry for the first consumer. |
 | Visualization | `src/vis/` and prior review images | A small comparison sheet only when it changes case interpretation. |
 
