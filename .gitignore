@@ -134,11 +134,10 @@ handoff/*
 # Ignore downloaded/installed skill system runtime artifacts
 .codex/skills/.system/
 
-# Ignore common Python cache folders
-**/__pycache__/**
-**/*.pyc
-**/*.pyo
-**/*.pyd
+# Python bytecode caches are always local and must never surface in Git state.
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
 **/.Python
 **/build/
 **/develop-eggs
