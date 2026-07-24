@@ -101,30 +101,11 @@ If a lane has no distinct risk or no possible decision impact, do not dispatch
 it. Default to one reviewer for one decision surface. Use a second lane only
 when two genuinely independent judgment surfaces are both required.
 
-Each subagent prompt must include:
-
-```text
-Scope:
-- exact artifact/work to review
-- exact files/docs/artifacts allowed
-- read-only or mutation rules
-
-Output:
-- P0/P1/P2 findings
-- evidence handles
-- impact
-- decision implication: fix, narrow, drop, probe, or needs user decision
-- fix/probe direction
-- verification
-- confirmed OK checks
-- unresolved questions
-
-Rules:
-- do not edit unless explicitly assigned an implementation slice
-- reviewer timeout/disconnection is unresolved, not approval
-- do not broaden beyond assigned lane
-- report only new findings or status changes when a finding ledger/prior packet exists
-```
+Each prompt must name the exact evidence scope, mutation boundary, owned risk,
+decision impact, and stop condition. For review output, use the `audit-review`
+output contract rather than restating its severity and disposition schema here.
+Reviewers must not broaden or edit outside their lane, and must report only new
+findings or status changes when a prior ledger exists.
 
 Do not wait idly. While agents run, continue local non-overlapping work.
 
@@ -134,50 +115,36 @@ Use `audit-review` as the owner of severity vocabulary and exploratory blocking
 criteria. Review findings are advisory evidence: the lead owns acceptance,
 deduplication, synthesis, and final disposition. This loop owns orchestration
 and convergence.
-
-Classify every returned issue:
-
-- Priority zero (`P0`): invalidates correctness, research meaning,
-  reproducibility, or launch safety
-- Priority one (`P1`): substantial risk to supported workflow, contract,
-  metrics, artifacts, or maintainability
-- Priority two (`P2`): clarity, coverage, or future-maintenance issue
-- `non-blocking`: useful but not required now
-- `wrong`: reject with technical reason and evidence
-- `duplicate`: merge into existing finding
-
-Timeouts, missing reviewers, or vague reviewer claims are not approval.
+Apply its classification and disposition rules, reject or merge findings with
+evidence, and treat missing or vague required reviews as unresolved rather than
+approval.
 
 ### 5. Decision Turn
 
-Before revising, classify each accepted P0/P1:
-
-- `fix`: intended direction still stands; make a bounded correction.
-- `narrow`: reduce the claim, workflow, support matrix, or launch scope.
-- `drop`: stop the mechanism/path as framed.
-- `probe`: run or specify the cheapest discriminating artifact/runtime/baseline check first.
-- `needs user decision`: next step changes research meaning, compatibility, cost, destructive behavior, or publication/launch risk.
-
-If any P0/P1 is `narrow`, `drop`, `probe`, or `needs user decision`, do not automatically patch through it. Record the decision, ask the user when required, or produce the probe plan/artifact gate. Treat "fix everything" as valid only after the decision turn says the direction still deserves fixing.
+Before revising, apply the `audit-review` decision disposition. Do not patch
+through `narrow`, `drop`, `probe`, or `needs user decision`. Before treating a
+research-meaning change as `fix`, apply the
+[originating-intent and semantic-delta gate](../coordexp-research-knowledge-workflow/references/research-graph-contract.md#originating-intent-and-semantic-delta-gate).
+If the originating source does not determine the answer, pause at the owning
+decision rather than letting review convergence manufacture a requirement.
 
 ### 6. Revise
 
 Revise only the surfaces allowed by the current mode.
 
-For each accepted P0/P1 classified as `fix`, update the artifact/work and add or update verification coverage. For `probe`, produce or request the probe before revising unless the probe itself is the allowed work. For `narrow` or `drop`, revise claims, scope, or plan rather than code by default. Fix P2 only when cheap and aligned.
+For accepted `fix` findings, update the allowed surface and its verification.
+For `probe`, obtain the discriminator first; for `narrow` or `drop`, revise the
+claim or scope rather than code by default. Fix lower-priority items only when
+cheap and aligned.
 
 For docs/spec/plan loops, capture important review resolutions in a review log or plan section. For implementation loops, run targeted tests after fixes.
 
 ### 7. Check Convergence
 
-Converged only when all required conditions are true:
-
-- all P0/P1 findings are fixed, narrowed, dropped, probed, explicitly rejected with evidence, or converted into a user decision
-- no reviewer output is pending if it is needed for the stop condition
-- verification commands or doc/routing checks cover the actual requirement
-- approval gates are explicit
-- stable docs/specs/launch claims do not exceed the evidence scope
-- final artifact states what is approved, what is not approved, and what remains gated
+Convergence requires a disposition for every required P0/P1, completion of
+reviews and verification named by the stop condition, bounded claims, and an
+explicit next gate. The final artifact must distinguish approved, unsupported,
+and still-gated scope.
 
 For an exploratory research pilot, convergence does not mean every finding is
 fixed. It means every conclusion-threatening finding has a disposition and the
@@ -267,14 +234,6 @@ For implementation loops, run the targeted tests named in the plan, docs, OpenSp
 
 ## Output
 
-Report:
-
-- mode and mutation scope
-- decision at stake and stop condition
-- artifact/work produced
-- review lanes launched
-- accepted findings, decision implications, and revisions/probes/scope changes
-- rejected findings with reason
-- verification run
-- remaining gates
-- exact next state: `ready for user approval`, `hold`, `needs user decision`, `probe required`, `narrowed/dropped`, or `implemented and verified`
+Report the mode, decision and stop condition; reviewed artifact and lanes;
+accepted or rejected findings and their dispositions; revision and verification;
+remaining gates; and the exact stop state from Step 8.

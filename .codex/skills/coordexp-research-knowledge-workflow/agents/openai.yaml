@@ -1,4 +1,4 @@
 interface:
   display_name: "CoordExp Research Knowledge"
   short_description: "Research knowledge synthesis workflow"
-  default_prompt: "Use $coordexp-research-knowledge-workflow to organize CoordExp research evidence into units, investigations, decisions, mechanisms, and durable artifact handles without confusing them with current docs or stable specs."
+  default_prompt: "Use $coordexp-research-knowledge-workflow to organize CoordExp evidence into owned research surfaces, distinguish them from current docs or stable specs, and close originating-intent versus derived-constraint deltas before a unit becomes ready."

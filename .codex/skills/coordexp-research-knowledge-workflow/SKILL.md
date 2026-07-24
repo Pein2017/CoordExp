@@ -58,9 +58,13 @@ authority without an explicit docs/spec update.
    authorization. Read
    [Research Graph and Unit Contract](references/research-graph-contract.md)
    when creating or closing a unit.
-7. **Check research alignment.** Before a treatment or scale-up, record the
-   decision-owning outcome, intervention or proxy, final evaluation surface,
-   transfer claim, preservation risks, and signal supply. Read
+7. **Close semantic deltas before freeze.** Apply the originating-intent and
+   semantic-delta gate in the research graph contract before a unit becomes
+   `ready` or freezes a cohort, predicate, estimand, control, claim, or stop
+   rule. Treat handoffs and reviewer suggestions as derived routing context,
+   not user-owned requirements. Then record the decision-owning outcome,
+   intervention or proxy, final evaluation surface, transfer claim,
+   preservation risks, and nested signal supply. Read
    [Research Alignment Examples](references/research-alignment-examples.md)
    when positive and negative patterns would clarify the boundary.
 8. **Match the evidence tier.** Keep exploratory units as compact executable
@@ -69,9 +73,9 @@ authority without an explicit docs/spec update.
 9. **Close the routing fan-out once.** After evidence closes, update the owning
    unit/results, its experiment index, and the current decision or compass when
    the route changed. Refresh project memory only when continuation state
-   changed, and create a durable handoff only for an actual session or machine
-   transfer. Link these surfaces rather than copying the same current-state
-   prose into each one.
+   changed. Create a handoff only for an actual session or machine transfer and
+   treat it as consumed transport, not a durable current-state owner. Link
+   authority surfaces rather than copying the same prose into each one.
 10. **Route discoveries.** Promote only stable current behavior into `docs/`; use OpenSpec only for stable compatibility-sensitive contracts.
 11. **Verify the boundary.** Check source counts, manifest rows, tracked file set,
    local links, YAML Ain't Markup Language (`YAML`) frontmatter where used, and
@@ -138,10 +142,9 @@ and internal-audit chain. A named model such as Pro or Fable is only one
 possible reviewer, never a fixed dependency.
 
 Read [Research Graph and Unit Contract](references/research-graph-contract.md)
-and apply its independent advanced-model review gate. Prefer an internal
-discriminating experiment when it can answer the question directly. Use an
-external review for a bounded method, interpretation, promotion, or costly
-route decision rather than open-ended brainstorming.
+and apply its independent advanced-model review gate. Run the cheapest
+discriminating observation first; use external review only for a bounded
+method, interpretation, promotion, or costly route decision that remains open.
 
 Good default packet:
 
@@ -151,16 +154,9 @@ Good default packet:
 03_review_questions.md
 ```
 
-The brief should foreground the decision, strongest findings, demoted claims,
-competing explanations, and the launch or training gate. The atlas should group
-evidence by mechanism family with source-note and artifact handles. The review
-questions should request explicit counterexamples, assumptions, verdicts,
-minimal discriminating experiments, and claim boundaries.
-
-Give independent reviewers the same frozen core packet and do not reveal one
-reviewer's verdict to another. The main research lead reconciles their advice
-with executable evidence; reviewer output is advisory and does not become
-scientific evidence or project authority by itself.
+Keep the packet decision-focused and follow the reference for evidence scope,
+blindness, verdicts, and closeout. Reviewer output is advisory and does not
+become scientific evidence, originating intent, or project authority.
 
 Place packet files outside the original nonrecursive source glob when the user gave one, so follow-up collection does not re-ingest its own synthesis.
 

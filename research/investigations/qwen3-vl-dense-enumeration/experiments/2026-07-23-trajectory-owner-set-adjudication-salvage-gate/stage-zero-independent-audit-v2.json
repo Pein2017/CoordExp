@@ -1,0 +1,19 @@
+{
+  "category_state_sha256": "cc2744a8a742ebe878ef25a8ffaf1c62a0b4577c5fe29513a06604feb7b645a6",
+  "full_certificate_replay": true,
+  "impossible_pool_count": 516,
+  "ordered_impossible_image_ids_sha256": "ce0b34eba789cd5e7258e56f2e6fbfe780e951011b747bc80a8c114f0e4ff50d",
+  "ordered_possible_image_ids_sha256": "b8a6aed067b645721e509189f4d3844f3f0534cd6f48a3d04dc5d0d0f8907adc",
+  "population_count": 1622,
+  "population_scope": "train_only_censored_nonpassing_U",
+  "possibility_census_sha256": "d43a4a23d250ae73436021f6d1b7cf6d480c62b60e056f9f0260884ca4ba3666",
+  "possible_pool_count": 1106,
+  "replayed_impossibility_certificate_count": 516,
+  "replayed_possible_witness_count": 1106,
+  "review_scope": "full_witness_and_certificate_replay",
+  "schema_version": "trajectory_owner_set_adjudication_salvage_gate.stage_zero_audit.v2",
+  "stage_zero_receipt_sha256": "395351617c424b021ad41b72b235ddbfb65ec5a47daee87da9c07b144bbf7121",
+  "stage_zero_root_inventory_sha256": "7f0ac097a83d79f30a4adcb3c0f9da2728457a4d9b6dd3059b3d93472b9a8217",
+  "terminal_status": "completed",
+  "verdict": "approved"
+}

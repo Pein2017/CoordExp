@@ -1,4 +1,4 @@
 interface:
   display_name: "Handoff"
   short_description: "Continuation or cross-machine state package"
-  default_prompt: "Use $handoff when the user asks for a handoff, continuation prompt, another-agent brief, compact session summary, or cross-machine execution note. Return inline unless the user gives a path or asks for a durable handoff file."
+  default_prompt: "Use $handoff for a continuation or transfer. Return it inline by default, treat it as a one-shot route to owning state rather than current authority, and use a repo-local handoff only for an actual transfer or user-named path."

@@ -98,6 +98,34 @@ an already authorized research goal to `not_authorized` merely because a new
 unit is created. Architecture promotion and stable-contract work remain
 separate decisions.
 
+## Originating Intent And Semantic Delta Gate
+
+Before a unit becomes `ready` or freezes a predicate, cohort, estimand,
+control, claim, or stop rule, compare it with the originating user brief or
+named criteria. Derived handoffs, reviews, units, and syntheses may route to
+those sources but may not silently strengthen them. Record only conditions
+that can change scientific meaning:
+
+| Condition | Source | Class | Decision effect | Disposition |
+| --- | --- | --- | --- | --- |
+| Exact behavior or requirement | User brief, evidence, or derived proposal | `scientific invariant`, `loss-conditional`, or `conservative design choice` | Cohort, estimand, control, claim, stop rule, cost, or none | Inherited, approved, proposed, or `needs user decision` |
+
+Classify a condition as a `scientific invariant` directly required by the
+originating outcome or safety semantics, `loss-conditional` when required only
+by the selected objective or implementation, or a `conservative design choice`
+when it strengthens assurance but is not necessary for the broader objective.
+
+A directly cited scientific invariant may be inherited. A loss-conditional or
+conservative condition that changes population, estimand, control, claim, stop
+rule, material cost, or successor arithmetic keeps the unit `planned` until the
+owning decision accepts it. An undefined criterion is a semantic fork, not an
+automatic `fix`, unless the originating source determines the answer.
+
+For a census, report nested counts for broad signal, safely usable signal, and
+stronger claim-specific subsets. Give separate verdicts for the selected
+design and the broader originating objective; the strictest intersection must
+not silently become the only feasibility count or successor estimand.
+
 ## Terminology and Naming Rule
 
 Every abbreviation, shortened arm name, hypothesis identifier, metric symbol,
@@ -166,8 +194,11 @@ Helper-level tests alone are not this representative smoke.
 Add a frozen cohort, primary estimand, minimum meaningful effect, paired
 controls, uncertainty plan, safety gate, complete artifact identities, and an
 independent evidence audit only after the exploratory observation survives its
-control. Publication- or production-grade work may then add broader
-replication, human annotation, stable schemas, and operational hardening.
+control and the semantic-delta gate is closed. Publication- or production-grade
+work may then add broader replication, human annotation, stable schemas, and
+operational hardening. Do not use randomization journals, exhaustive source
+closures, adversarial mutation defenses, or resume machinery to make a
+pre-observation exploratory unit appear ready.
 
 After execution begins, record changes that alter scientific meaning,
 comparability, scope, or artifact attribution and use a fresh run identifier.
@@ -252,6 +283,9 @@ Close a unit from the evidence owner outward:
 These surfaces may summarize the same decision, but they must not become
 independent authorities. Keep one current frontier, link to the owning result,
 mark superseded routes explicitly, and resolve contradictions before handoff.
+A handoff is a one-shot transport artifact: after consumption, the owning
+result, decision, and memory remain; the handoff must not become the permanent
+route authority.
 
 ## Artifact Root
 

@@ -1,6 +1,6 @@
 # Current Project Memory
 
-Last verified for the active dense-enumeration route: 2026-07-23.
+Last verified for the active dense-enumeration route: 2026-07-24T07:16:47Z.
 
 Last verified for the physical-owner duplication unit: 2026-07-22T21:25:00Z.
 
@@ -51,29 +51,36 @@ used no graphics-processing unit.
 
 ## Closed result: trajectory owner-set admission census
 
-The read-only root-state trajectory owner-set admission census is complete and
-training promotion is rejected. Among the exact 2,004 Source-eligible training
-images, only eight satisfy the frozen primary predicate, versus 256 required.
+The read-only root-state trajectory owner-set admission census is complete.
+Among the exact 2,004 Source-eligible training images, only eight satisfy its
+frozen primary predicate, versus 256 required by the exact all-positive
+natural-alias pairwise design that the census tested.
 The eight image identifiers are `2434`, `16796`, `69532`, `174740`, `207431`,
-`256151`, `294679`, and `569960`. Do not launch the grouped set-level training
-screen and do not use a unique-row or unique-trajectory fallback.
+`256151`, `294679`, and `569960`. Do not launch that exact grouped set-level
+screen and do not silently use a unique-row or unique-trajectory fallback.
 
 The production artifact contains 2,004 records and 34,068 candidates. It has
 9,427 eligible and 24,641 excluded candidates, 134 strict owner-set edges, 105
-admissible edges, and 709 images with at least two eligible candidates. Of 378
+admissible edges, 76 images with at least one admissible edge, and 709 images
+with at least two eligible candidates. Of 378
 fully adjudicable images, only four pass; 355 have neither an admissible edge
 nor a same-class multiple-first-owner alias. This establishes structural
 scarcity in that selected subset. It does not establish population-wide
 structural absence because 1,626 images are censored by excluded candidates.
 
-Three blind advanced-model reviews approved the artifact and stop decision.
-They agreed that no conclusion-critical ambiguity remains for `8 < 256`, but
-that the present evidence cannot choose censoring or structural scarcity as
-the sole causal explanation. Any causal-resolution work belongs to a separate
-successor research unit. With four fully adjudicable admissions fixed, the
-censored population would need at least 252 admissions out of 1,626, or 15.50
-percent, to make a 256-image screen feasible. Treat that as a falsifiable
-future threshold, not a current estimate or a preselected method.
+The census predicate is a strict composite: a nondominated exact-owner-set
+class must have multiple natural token serializations with different first
+owners and must be the higher side of an admissible, first-owner-preserving
+strict inclusion edge. Independent reviews later established that `8 < 256`
+decisively stops this exact design, but not every possible 256-image owner-set
+training design. A real strict edge or other nonzero set-level contrast is
+needed for an image claimed to train set expansion under the frozen pairwise
+loss. The natural-alias condition is a conservative guard for a strong natural
+order-independence claim, not a universal prerequisite for all owner-set
+training. The originating proposal did not state that all 256 images must pass
+the later exact numerical composite predicate. Any alternative must explicitly
+separate signal, preservation/background, and matched-control images and narrow
+its claims rather than treating arbitrary images as equivalent signal.
 
 Authoritative result:
 
@@ -83,11 +90,7 @@ Production artifact:
 
 `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-23-trajectory-owner-set-admission-census/production-v1`
 
-No successor direction was selected before this closeout. The persistent goal
-permits choosing one dynamically from this result and then leading a separate
-exploration to a decision-grade checkpoint.
-
-## Active successor: frozen-panel owner-ledger salvage gate
+## Paused successor: frozen-panel owner-ledger salvage gate
 
 After the admission census closed, independent science, quantitative,
 infrastructure, and adversarial lanes selected a train-only image-first owner-
@@ -96,29 +99,19 @@ frozen question is whether the 1,622 censored, nonpassing training images can
 contribute the 248 additional primary admissions required by the unchanged
 17-candidate panel.
 
-Stage Zero is authorized. It may use only immutable exact-B16 parser, projected-
-token, row-order, and generated-category facts to build a no-false-negative
-category-capacity over-approximation. It must emit a witness or replayable
-impossibility certificate for every image and pass independent full replay.
-Owner-based reconnaissance pools of 576 and 606 were withdrawn because global
-matching can reassign previously resolved rows. A later 1,106-image category-
-only scout is non-authoritative until production reconstruction and audit.
+Stage Zero used only immutable exact-B16 parser, projected-token, row-order,
+and generated-category facts to build a no-false-negative category-capacity
+over-approximation. Its one production materialization and independent full
+replay are complete. The clean immutable artifact exactly partitions the 1,622
+images into 1,106 possible and 516 impossible cases.
 
-The frozen unit includes the empty-lower-owner-set corner, permits the lower-
-first preservation witness to reuse either high alias, accepts valid parser
-drops only after the exact B16 boundary, and treats every unresolved review
-case as a potential success across owner-universe, assignment, safety, edge,
-frontier, and admission state. Only after Stage Zero and all reviewer,
-adjudication, replay, and outcome-classifier artifacts are frozen and approved
-may one canonical 64-byte entropy journal use exact rejection and ordered-sample
-unranking to select cumulative looks of 16 and 32 images. An independent
-advanced-model fixed-point review approved the contract after requiring pre-
-entropy binding of every possible-pool image and replay input, a mechanically
-unique one-draw journal, exact downstream look-root binding, and statistical-
-decision-blind adjudication. No entropy, seed, or sample exists yet. Training,
-model inference, graphics-processing-unit work, development and held-out route
-semantics, loss selection, and
-architecture selection remain unauthorized.
+The selector, blind-review assembler, outcome finalizer, tests, reviewer packet,
+and real no-op smoke are frozen read-only and independently approved. The user
+manually removed the audit-created bytecode caches; the recovered Stage Zero
+root now has the exact receipt-bound inventory, and the closed independent audit
+receipt is approved. There is no remaining mechanical sample-selection blocker.
+No entropy, seed, sample, real image review, model inference,
+graphics-processing-unit work, or training has occurred.
 
 A final Stage Zero semantic gate found and corrected a shared B16 chronology
 defect: generated-row ordinals had been mixed with character offsets, so future
@@ -131,35 +124,22 @@ eligible candidates. Stage Zero category state and exhaustive pool membership
 also remained unchanged at 1,106 possible and 516 impossible images. The
 completed census therefore remains authoritative and does not require rerun.
 
-After a final independent admission gate approved exactly one production
-materialization, the immutable `stage-zero-v1` artifact completed successfully.
-It contains the exact 1,622-image population partition: 1,106 possible and 516
-impossible images, with the pre-authorized ordered-image hashes reproduced.
-An independent audit then replayed all 1,106 witnesses and 516 impossibility
-certificates in both forward and reverse order without a semantic mismatch.
-However, that audit imported the frozen source snapshot as root and created 54
-undeclared `.pyc` files in 13 `__pycache__` directories. No declared artifact
-is missing or mutated, and no sibling staging, failed, or quarantine residue
-exists, but exact root inventory is currently violated. AgentGuard prohibits
-agent cleanup, so the audit verdict is `HOLD` until the user manually removes
-those 13 derived cache directories and a fresh bytecode-disabled audit proves
-the exact 64-file, 19-directory receipt-bound inventory before writing the
-closed approval receipt. No entropy, sample, real image review, model
-inference, graphics-processing-unit work, or training has begun.
+The successor is now deliberately paused before entropy because its estimand
+may not match the user's intended training design. Continuing it would ask
+whether the 1,106 possible censored nonpassers can supply 248 more admissions
+for the exact strict design. If the intended 256-image screen is a mixed
+cohort, that is the wrong next question. One plausible mixed design would use
+the 76 edge-positive images as the explicit set-expansion signal stratum, the
+eight exact-primary images as the strongest natural order-alias subset, and
+additional preservation, background, and matched-dose control strata. Such a
+design cannot claim that every one of the 256 images carries the same set-level
+signal.
 
-The selection and blind-review machinery has otherwise reached an independent
-fixed point. The selector, review assembler, tests, reviewer-visible packet,
-and real no-op smoke evidence are frozen read-only. Independent audits closed
-production entropy injection, exact one-draw resume, full official-owner
-binding, reviewer sequential-information blindness, pre-entropy member and
-Stage Zero chronology, closed Stage Zero audit binding, exact no-addition
-census equality, and terminal regeneration of added-owner replay before
-outcome classification. The combined suite passes 111 tests. A durable
-bytecode-disabled smoke exactly reproduces all 17 route rows and complete
-census records for admitted image `2434` and geometry-exclusion image `831`.
-Therefore the audit-created Stage Zero cache inventory is the sole current
-external blocker before the independent Stage Zero approval receipt and the
-single canonical entropy acquisition.
+The user asked to stop after this round and discuss whether 256 means an
+arbitrary training set and whether the primary predicate is necessary. Do not
+acquire entropy or resume the 248-admission salvage sample until the user chooses
+between the exact strict design and a revised mixed signal/control design. See
+`memories/notes/2026-07-24-primary-predicate-design-scope-fork.md`.
 
 Stage Zero artifact:
 

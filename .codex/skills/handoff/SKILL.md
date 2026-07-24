@@ -5,20 +5,30 @@ description: Use when the user asks for a handoff, continuation prompt, compact 
 
 # Handoff
 
-Write a continuation document containing only the state a fresh agent or another machine needs.
+Write a one-shot continuation document containing only the state a fresh agent
+or another machine needs. A handoff routes to current owners; it is not itself
+a scientific or current-state authority.
 
-## Output Target
+## Lifecycle And Output Target
+
+Authority runs from the user's brief or named criteria to owning results,
+decisions, docs or stable specifications, then project memory. A handoff only
+routes to them; it may label a proposal but may not freeze it as user intent.
 
 - If the user gives a path, write there.
 - For an ephemeral same-session or side-agent transfer, return the handoff
   inline or use a temporary Markdown file from `mktemp -t handoff-XXXXXX.md`.
-- For a durable repo-local handoff, use the user-named tracked path or the
-  repository's established handoff/memory policy. A temporary file is not
-  durable until the user copies it to a persistent destination.
+- Use a repo-local `handoff/` path only for an actual transfer, a user-named
+  destination, or an established repository policy. Treat the directory as an
+  inbox, not an archive or source of truth.
 - For a cross-machine handoff without a named destination, use a temporary file
   for manual transfer and state that persistence is still the user's
   responsibility.
 - Read the target path before writing if it already exists.
+
+After consumption, move durable state to its owners. Before cleanup, check
+tracked status, ignore rules, and live references; delete or archive only exact
+user-authorized targets, never the directory by default.
 
 ## Fresh-Session Contract
 
