@@ -12,9 +12,63 @@ from src.losses import (
     RolloutGateSite,
     first_wrong_coordinate_preference,
     grouped_entity_transition_preference,
+    owner_conditioned_candidate_loss,
     positive_path_imitation_loss,
     rollout_site_token_type_gate,
 )
+
+
+def test_owner_conditioned_candidate_loss_uses_summed_complete_action_scores() -> None:
+    positive = _path(
+        "positive",
+        "owner-a",
+        ((0.0, 2.0, -1.0, 0.0), (0.0, -1.0, 2.0, 0.0)),
+        (1, 2),
+    )
+    harmful = CandidatePath(
+        candidate_id="stop",
+        physical_owner_id=None,
+        logits=torch.tensor(((0.0, -1.0, -1.0, 2.0),)),
+        target_token_ids=(3,),
+        premature_terminal=True,
+    )
+
+    result = owner_conditioned_candidate_loss((positive,), (harmful,))
+
+    expected_positive = torch.log_softmax(positive.logits.float(), dim=1)[
+        torch.arange(2), torch.tensor((1, 2))
+    ].sum()
+    expected_harmful = torch.log_softmax(harmful.logits.float(), dim=1)[0, 3]
+    assert torch.allclose(result.positive_group_score, expected_positive)
+    assert torch.allclose(result.harmful_group_score, expected_harmful)
+    assert torch.allclose(
+        result.raw_loss, F.softplus(expected_harmful - expected_positive)
+    )
+
+
+def test_owner_conditioned_candidate_loss_normalizes_alias_multiplicity() -> None:
+    positive_a = _path("a", "owner-a", ((0.0, 2.0, -1.0, 0.0),), (1,))
+    positive_b = _path("b", "owner-a", ((0.0, 0.0, -1.0, 2.0),), (3,))
+    harmful = _path("harm", "covered-owner", ((0.0, -1.0, 2.0, 0.0),), (2,))
+
+    singleton = owner_conditioned_candidate_loss((positive_a,), (harmful,))
+    duplicated = owner_conditioned_candidate_loss(
+        (positive_a, positive_b), (harmful,)
+    )
+
+    assert torch.allclose(duplicated.positive_group_score, singleton.positive_group_score)
+    assert torch.allclose(duplicated.raw_loss, singleton.raw_loss)
+    assert duplicated.positive_weights == (0.5, 0.5)
+
+
+def test_owner_conditioned_candidate_loss_rejects_identical_token_aliases() -> None:
+    positive_a = _path("a", "owner-a", ((0.0, 2.0, -1.0, 0.0),), (1,))
+    positive_b = _path("b", "owner-a", ((0.0, 1.0, -1.0, 0.0),), (1,))
+    harmful = _path("harm", "covered-owner", ((0.0, -1.0, 2.0, 0.0),), (2,))
+
+    with pytest.raises(LossContractError) as exc_info:
+        owner_conditioned_candidate_loss((positive_a, positive_b), (harmful,))
+    assert exc_info.value.code == "loss.rollout_owner_candidate_tokens_duplicate"
 
 
 def test_entity_transition_groups_aliases_before_distinct_owner_smooth_max() -> None:

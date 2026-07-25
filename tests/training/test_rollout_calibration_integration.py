@@ -111,6 +111,39 @@ def test_joint_runner_uses_compact_logits_and_emits_event_balanced_metrics() -> 
     assert artifact["finite_status"]["all_finite"] is True
 
 
+def test_complete_action_pairwise_runner_uses_summed_candidate_scores() -> None:
+    micro_step = _micro_step(_single_family_metadata("entity"))
+    logits = torch.tensor(
+        [[[0.0, 0.0, 2.0, -1.0, -1.0, -1.0], [0.0, 0.0, -1.0, 1.5, 0.5, -1.0]]],
+        requires_grad=True,
+    )
+    context = rollout_calibration_loss_context(
+        micro_step,
+        SimpleNamespace(logits=logits, logits_position_ids=(0, 2)),
+    )
+    runner = RolloutCalibrationLossRunner(
+        profile="complete_action_pairwise",
+        entity_weight=1.0,
+        entity_margin=0.0,
+        entity_smooth_max_temperature=0.5,
+        coordinate_weight=0.0,
+        coordinate_margin=0.0,
+        gate_weight=0.1,
+    )
+
+    plan = runner.prepare_planned_step((micro_step,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    bundle.total_loss.backward()
+    entity = next(
+        term for term in bundle.terms if term.name == "rollout_entity_transition"
+    )
+
+    assert entity.diagnostics["score_semantics"] == "summed_complete_action_log_probability"
+    assert entity.diagnostics["positive_path_count"] == 1
+    assert entity.diagnostics["harmful_path_count"] == 1
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+
+
 def test_positive_path_imitation_runner_has_no_branch_and_weights_both_terms() -> None:
     positive = CalibrationCandidateMetadata(
         candidate_id="positive-row",

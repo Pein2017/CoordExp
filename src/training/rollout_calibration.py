@@ -17,6 +17,7 @@ from src.losses import (
     RolloutGateSite,
     first_wrong_coordinate_preference,
     grouped_entity_transition_preference,
+    owner_conditioned_candidate_loss,
     positive_path_imitation_loss,
     rollout_site_token_type_gate,
 )
@@ -626,6 +627,66 @@ class RolloutCalibrationLossRunner:
                     "eligible entity-transition event is incomplete",
                     code="loss.rollout_entity_event_incomplete",
                     context={"event_id": context.metadata.event_id},
+                )
+            if self.profile in {
+                "complete_action_pairwise",
+                "owner_conditioned_candidate",
+            }:
+                owner_ids = {path.physical_owner_id for path in positives}
+                if len(owner_ids) != 1:
+                    raise LossContractError(
+                        "owner-conditioned complete-action positives must share one owner",
+                        code="loss.rollout_owner_candidate_owner_count",
+                        context={
+                            "event_id": context.metadata.event_id,
+                            "owner_ids": sorted(str(item) for item in owner_ids),
+                        },
+                    )
+                if self.profile == "complete_action_pairwise" and len(positives) != 1:
+                    raise LossContractError(
+                        "complete-action pairwise profile requires one positive action",
+                        code="loss.rollout_complete_action_pairwise_positive_count",
+                        context={
+                            "event_id": context.metadata.event_id,
+                            "positive_count": len(positives),
+                        },
+                    )
+                candidate_result = owner_conditioned_candidate_loss(
+                    tuple(positives), (harmful,)
+                )
+                raw_event = candidate_result.raw_loss
+                selected_count = sum(
+                    len(path.target_token_ids) for path in positives
+                ) + len(harmful.target_token_ids)
+                diagnostics = {
+                    "event_id": context.metadata.event_id,
+                    "target_margin": float(
+                        candidate_result.target_margin.detach().item()
+                    ),
+                    "positive_group_score": float(
+                        candidate_result.positive_group_score.detach().item()
+                    ),
+                    "harmful_group_score": float(
+                        candidate_result.harmful_group_score.detach().item()
+                    ),
+                    "positive_path_count": len(candidate_result.positive_paths),
+                    "harmful_path_count": len(candidate_result.harmful_paths),
+                    "positive_weights": list(candidate_result.positive_weights),
+                    "harmful_weights": list(candidate_result.harmful_weights),
+                    "score_semantics": "summed_complete_action_log_probability",
+                }
+                return _term_result(
+                    name=ENTITY_TERM,
+                    raw_event=raw_event,
+                    weight=self.entity_weight,
+                    denominator=plan.denominators[ENTITY_TERM],
+                    backend_scale=plan.backend_gradient_scale,
+                    eligible=eligible,
+                    selected_count=selected_count,
+                    local_micro_step_index=local_micro_step_index,
+                    diagnostics=diagnostics,
+                    metric_name="target_margin_contribution",
+                    metric_value=diagnostics["target_margin"],
                 )
             result = grouped_entity_transition_preference(
                 tuple(positives),
@@ -1313,7 +1374,11 @@ def _profile_admits(metadata: CalibrationEventMetadata, profile: str) -> bool:
             or metadata.local_duplicate_rejection_eligible
             or metadata.duplicate_cleaned_imitation_eligible
         )
-    if profile == "transition_only":
+    if profile in {
+        "transition_only",
+        "complete_action_pairwise",
+        "owner_conditioned_candidate",
+    }:
         return metadata.entity_transition_eligible
     if profile in {"coordinate_boundary_only", "coordinate_boundary_gate_only"}:
         return metadata.coordinate_boundary_eligible
@@ -1502,7 +1567,12 @@ def _active_selected_sites(candidate: Any, profile: str) -> tuple[Any, ...]:
             )
         )
     active_offsets: set[int] = set()
-    if profile in {"transition_only", "joint"} and candidate.entity_eligible:
+    if profile in {
+        "transition_only",
+        "complete_action_pairwise",
+        "owner_conditioned_candidate",
+        "joint",
+    } and candidate.entity_eligible:
         interval = candidate.owner_resolution_candidate_interval
         if interval is None:
             if candidate.harmful_kind == "premature_terminal":

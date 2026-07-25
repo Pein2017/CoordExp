@@ -34,6 +34,8 @@ SOURCE_CHECKPOINT_ID = sha256_json(SOURCE_CHECKPOINT)
     ("profile", "entity_weight", "coordinate_weight"),
     [
         ("transition_only", 1.0, 0.0),
+        ("complete_action_pairwise", 1.0, 0.0),
+        ("owner_conditioned_candidate", 1.0, 0.0),
         ("coordinate_boundary_only", 0.0, 1.0),
         ("coordinate_boundary_gate_only", 0.0, 0.0),
         ("joint", 0.5, 0.5),

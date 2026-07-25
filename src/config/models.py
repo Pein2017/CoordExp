@@ -321,6 +321,8 @@ class DuplicateRejectionObjectiveConfig(StrictConfigModel):
 class RolloutCalibrationConfig(StrictConfigModel):
     profile: Literal[
         "transition_only",
+        "complete_action_pairwise",
+        "owner_conditioned_candidate",
         "coordinate_boundary_only",
         "coordinate_boundary_gate_only",
         "joint",
@@ -354,6 +356,8 @@ class RolloutCalibrationConfig(StrictConfigModel):
     def _profile_has_exact_objective_weights(self) -> "RolloutCalibrationConfig":
         expected = {
             "transition_only": (1.0, 0.0, 0.0),
+            "complete_action_pairwise": (1.0, 0.0, 0.0),
+            "owner_conditioned_candidate": (1.0, 0.0, 0.0),
             "coordinate_boundary_only": (0.0, 1.0, 0.0),
             "coordinate_boundary_gate_only": (0.0, 0.0, 0.0),
             "joint": (0.5, 0.5, 0.0),

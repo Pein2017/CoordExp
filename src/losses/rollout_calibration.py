@@ -84,6 +84,22 @@ class EntityTransitionPreferenceResult:
 
 
 @dataclass(frozen=True)
+class OwnerConditionedCandidateLossResult:
+    """Summed complete-action preference over one audited candidate inventory."""
+
+    raw_loss: torch.Tensor
+    target_margin: torch.Tensor
+    positive_group_score: torch.Tensor
+    harmful_group_score: torch.Tensor
+    positive_paths: tuple[CandidatePathScore, ...]
+    harmful_paths: tuple[CandidatePathScore, ...]
+    positive_weights: tuple[float, ...]
+    harmful_weights: tuple[float, ...]
+    finite: LossFiniteDiagnostics
+    math_dtype: str = "float32"
+
+
+@dataclass(frozen=True)
 class PositivePathImitationResult:
     """Grouped exact-token continuation loss for one complete positive row."""
 
@@ -290,6 +306,104 @@ def grouped_entity_transition_preference(
             continuation_loss=continuation_loss,
             schema_description_loss=winning_detail.schema_description_loss,
             coordinate_loss=winning_detail.coordinate_loss,
+        ),
+    )
+
+
+def owner_conditioned_candidate_loss(
+    positive_paths: tuple[CandidatePath, ...],
+    harmful_paths: tuple[CandidatePath, ...],
+    *,
+    positive_weights: tuple[float, ...] | None = None,
+    harmful_weights: tuple[float, ...] | None = None,
+) -> OwnerConditionedCandidateLossResult:
+    """Prefer audited target-owner actions to confirmed harmful actions.
+
+    Every action is scored by its summed autoregressive log probability.  The
+    default weights are uniform within each group and sum to one, so merely
+    duplicating an identical alias does not increase that group's weight.
+    Actions absent from these two tuples have no direct score derivative.
+    """
+
+    if not positive_paths:
+        raise LossContractError(
+            "owner-conditioned candidate loss requires a positive action",
+            code="loss.rollout_owner_candidate_positive_empty",
+        )
+    if not harmful_paths:
+        raise LossContractError(
+            "owner-conditioned candidate loss requires a harmful action",
+            code="loss.rollout_owner_candidate_harmful_empty",
+        )
+    candidate_ids = tuple(
+        path.candidate_id for path in positive_paths + harmful_paths
+    )
+    if len(set(candidate_ids)) != len(candidate_ids):
+        raise LossContractError(
+            "owner-conditioned candidate IDs must be unique",
+            code="loss.rollout_owner_candidate_id_duplicate",
+            context={"candidate_ids": candidate_ids},
+        )
+    token_sequences = tuple(
+        path.target_token_ids for path in positive_paths + harmful_paths
+    )
+    if len(set(token_sequences)) != len(token_sequences):
+        raise LossContractError(
+            "owner-conditioned candidate token sequences must be deduplicated",
+            code="loss.rollout_owner_candidate_tokens_duplicate",
+        )
+
+    for path in positive_paths:
+        _validate_candidate_identity(path, role="positive")
+    for path in harmful_paths:
+        _validate_candidate_identity(path, role="harmful")
+    scored_positive = tuple(_score_candidate_path(path) for path in positive_paths)
+    scored_harmful = tuple(_score_candidate_path(path) for path in harmful_paths)
+    checked_positive_weights = _normalized_group_weights(
+        positive_weights,
+        count=len(scored_positive),
+        name="positive_weights",
+    )
+    checked_harmful_weights = _normalized_group_weights(
+        harmful_weights,
+        count=len(scored_harmful),
+        name="harmful_weights",
+    )
+
+    positive_scores = torch.stack(
+        tuple(item.summed_log_probability for item in scored_positive)
+    )
+    harmful_scores = torch.stack(
+        tuple(item.summed_log_probability for item in scored_harmful)
+    )
+    positive_log_weights = positive_scores.new_tensor(
+        tuple(math.log(weight) for weight in checked_positive_weights)
+    )
+    harmful_log_weights = harmful_scores.new_tensor(
+        tuple(math.log(weight) for weight in checked_harmful_weights)
+    )
+    positive_group_score = torch.logsumexp(
+        positive_scores + positive_log_weights, dim=0
+    )
+    harmful_group_score = torch.logsumexp(
+        harmful_scores + harmful_log_weights, dim=0
+    )
+    target_margin = positive_group_score - harmful_group_score
+    raw_loss = F.softplus(harmful_group_score - positive_group_score)
+    return OwnerConditionedCandidateLossResult(
+        raw_loss=raw_loss,
+        target_margin=target_margin,
+        positive_group_score=positive_group_score,
+        harmful_group_score=harmful_group_score,
+        positive_paths=scored_positive,
+        harmful_paths=scored_harmful,
+        positive_weights=checked_positive_weights,
+        harmful_weights=checked_harmful_weights,
+        finite=_finite_diagnostics(
+            raw_loss=raw_loss,
+            target_margin=target_margin,
+            positive_group_score=positive_group_score,
+            harmful_group_score=harmful_group_score,
         ),
     )
 
@@ -762,6 +876,25 @@ def _score_candidate_path(path: CandidatePath) -> CandidatePathScore:
         mean_log_probability=selected.mean(),
         token_count=len(target_ids),
     )
+
+
+def _normalized_group_weights(
+    weights: tuple[float, ...] | None,
+    *,
+    count: int,
+    name: str,
+) -> tuple[float, ...]:
+    if weights is None:
+        return tuple(1.0 / count for _ in range(count))
+    if len(weights) != count:
+        raise LossContractError(
+            f"{name} count must match its candidate group",
+            code="loss.rollout_owner_candidate_weight_count",
+            context={"name": name, "weight_count": len(weights), "candidate_count": count},
+        )
+    checked = tuple(_positive_finite_scalar(value, name=name) for value in weights)
+    total = sum(checked)
+    return tuple(value / total for value in checked)
 
 
 def _transition_path_detail(

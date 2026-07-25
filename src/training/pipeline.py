@@ -1080,7 +1080,15 @@ def _calibration_profile_event_count(
             getattr(metadata, "duplicate_cleaned_imitation_eligible", False)
         )
         if (
-            (profile == "transition_only" and entity)
+            (
+                profile
+                in {
+                    "transition_only",
+                    "complete_action_pairwise",
+                    "owner_conditioned_candidate",
+                }
+                and entity
+            )
             or (
                 profile in {"coordinate_boundary_only", "coordinate_boundary_gate_only"}
                 and coordinate
