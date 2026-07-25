@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review Convergence Loop"
-  short_description: "Iterate work and review to a bounded stop"
-  default_prompt: "Use $review-convergence-loop to run this explicitly review-gated task to a bounded stop state."

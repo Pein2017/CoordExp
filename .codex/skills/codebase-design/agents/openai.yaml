@@ -1,4 +1,0 @@
-interface:
-  display_name: "Codebase Design"
-  short_description: "Design deep research-safe interfaces"
-  default_prompt: "Use $codebase-design to place or compare the interface for this behavior."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Workflow Self-Distillation"
-  short_description: "Distill repeated work into one durable owner"
-  default_prompt: "Use $workflow-self-distillation to identify the smallest durable owner for this repeated workflow."

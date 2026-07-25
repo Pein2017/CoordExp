@@ -1,4 +1,0 @@
-interface:
-  display_name: "Infer Eval Workflow"
-  short_description: "Run current CoordExp inference and evaluation"
-  default_prompt: "Use $coordexp-infer-eval-workflow to launch, repair, validate, or summarize this current inference/evaluation run."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Model Diagnosis"
-  short_description: "Diagnose abnormal model behavior"
-  default_prompt: "Use $model-diagnosis to explain this model-behavior symptom from its exact artifacts."

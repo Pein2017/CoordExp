@@ -1,4 +1,0 @@
-interface:
-  display_name: "Public Data Provenance"
-  short_description: "Verify processed-data manifests and checksums"
-  default_prompt: "Use $coordexp-public-data-provenance to audit or update processed-data provenance, narrow JSONL checksums, active-root guardrails, and reproducible cross-node regeneration."

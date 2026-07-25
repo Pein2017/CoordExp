@@ -1,4 +1,0 @@
-interface:
-  display_name: "Detection Visualization"
-  short_description: "Render current per-row detection reviews"
-  default_prompt: "Use $detection-gt-vs-pred-visualization to render this run or comparison through the current shared renderer."
