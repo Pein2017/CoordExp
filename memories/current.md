@@ -13,7 +13,29 @@ outputs, reviewer packets, audit scratch, transcripts, memory notes, and
 temporary artifacts are provenance only and may not own the live route. The
 formal rule is recorded in `AGENTS.md` and the research graph contract.
 
-## Discussion-ready result: prefix-local owner-set training and transfer
+## Active goal: existing-checkpoint transition mechanism Phase Zero
+
+The formal live route is:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md`
+
+The user approved four no-new-training lanes: robust evaluation of the current
+transfer artifacts; same-prefix separation of continue/stop, conditional owner
+selection, and row realization; complete-action score normalization and fixed-
+budget reanalysis; and entity-level audit of all 46 gained plus 39 lost held-
+out owner references. Fixed-prefix and forced-continuation results remain
+diagnostics. The original `list all objects` prompt, one free completion, and
+final gained/retained/lost physical-owner set remain the decision-owning
+outcome.
+
+The primary forced-continuation intervention supplies exactly the canonical
+row opener at a shared prefix. Masking only the first terminal choice is a
+separate historical-comparability control. The Source-produced prefix bank is
+primary for the fixed-state comparison; treatment-produced prefixes are added
+only if state visitation becomes decision-relevant. The goal stops after all
+four lanes close and before any new training.
+
+## Predecessor result: prefix-local owner-set training and transfer
 
 The formal live route is the prefix-local unit and its updated result:
 
@@ -498,32 +520,31 @@ Rejected or held:
 
 ## Immediate next actions
 
-1. Obtain the user's final approval of the set-level multiparadigm execution
-   contract. Do not implement or launch before that approval.
-2. After approval, create one concise formal research unit owning prefix-event
-   materialization, the local, pairwise, on-policy, and hybrid paradigms, their
-   controls, the promising-to-long-run gate, and the final claim boundary.
-3. Route the experiment index and compass to that formal unit, then inspect and
-   reuse the existing StateBank, scoring, training, rollout, and owner-ledger
-   infrastructure before adding the minimum missing seams.
-4. Materialize row-local event supply, run zero-update shared-parameter gradient
-   checks, and execute short real smokes. Launch isolated nightly long runs for
-   every arm that crosses the frozen net-gain gate.
-5. Evaluate clean-greedy gained, retained, and lost owner identities plus
-   duplicates, invalid rows, geometry, stopping, and output length. Stop after
-   this comparative round for discussion; do not automatically promote 256 or
-   a final architecture.
+1. Materialize the robust development/heldout reanalysis from persisted raw,
+   scored, stop, and owner-comparison artifacts; retain all-image results and
+   report natural-stop, trimmed, leverage, owner-yield, duplicate-rate, fixed-
+   token-budget, and matching-threshold sensitivities separately.
+2. Reuse the existing exact-prefix scoring, forced-row, terminal-suppression,
+   owner matcher, and visualization surfaces for one Source/transition real
+   smoke before expanding to four to eight cases.
+3. Recompute complete-action candidate summaries as sequence sums, token means,
+   and equal-weight description/schema and coordinate group means. Keep the
+   trained sequence-sum semantics visible and use a shared singleton projection
+   across banks where available.
+4. Build an arm-blinded review packet for the 85 geometry-derived held-out
+   owner changes and record entity/category and geometry dispositions without
+   treating official unmatched output as automatic hallucination.
+5. Close the unit with observed, supported, ruled-out, unresolved, and not-
+   claimed sections. Stop for discussion before any new optimizer update,
+   replication training, or architecture work.
 
 ## Minimum reading path
 
-1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md`
-2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/unit.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md`
+1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md`
+2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/results.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
 4. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
-5. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-6. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
 
-The completed admission-census result now owns the current route. The
-consumed handoffs remain historical provenance and are excluded from the live
-reading path. The breadth and duplication documents remain bounded evidence;
-none owns the successor route.
+The existing-checkpoint unit owns the active route. The predecessor result
+owns the executed checkpoints and transfer evidence. Handoffs, review outputs,
+and memory notes remain provenance rather than live route authorities.

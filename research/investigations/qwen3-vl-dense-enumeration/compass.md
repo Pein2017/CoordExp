@@ -22,16 +22,23 @@ architecture, or an implementation contract.
 
 Fresh sessions start from these formal owners:
 
-1. the discussion-ready [prefix-local and on-policy final owner-set training
+1. the planned and authorized [existing-checkpoint transition mechanism
+   decomposition and robust-evaluation
+   unit](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md),
+   which owns the no-new-training Phase Zero route for robust evaluation,
+   same-prefix continue/stop versus owner-selection versus row-realization
+   probes, complete-action normalization and fixed-budget reanalysis, and the
+   held-out owner-churn audit;
+2. the completed [prefix-local and on-policy final owner-set training
    unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md),
    which owns event materialization, the compared objectives and controls, the
    completed long training, matched training-panel comparison, and narrow
    transition-step-36 development/held-out transfer gate;
-2. the completed [trajectory owner-set admission-census
+3. the completed [trajectory owner-set admission-census
    result](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md),
    which owns the executed `8/2,004` strict-composite finding and its bounded
    claim; and
-3. the [experiment index](experiments/index.md), which owns lifecycle routing
+4. the [experiment index](experiments/index.md), which owns lifecycle routing
    across units.
 
 The strict 248-additional-admission estimand remains blocked before entropy
@@ -50,8 +57,10 @@ predictions, 13 fewer strict duplicate candidates, and has slightly better
 common-owner geometry, so the direction is not explained by output expansion.
 Its 21 net-positive versus 17 net-negative images, one introduced length stop,
 and bootstrap interval crossing zero keep the result below robust promotion.
-The live route remains the unit and its [current results](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/results.md)
-while this evidence is discussed with the user. It is not a final mechanism,
+The user approved a four-lane existing-checkpoint Phase Zero before any new
+training. The new unit treats fixed-prefix and forced-continuation observations
+as diagnostics and retains the original free one-completion final owner set as
+the decision-owning outcome. Neither checkpoint is a final mechanism,
 architecture, or full-dataset promotion.
 
 The [weekly integrated research
