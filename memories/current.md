@@ -10,30 +10,33 @@ doc, or stable spec. Handoffs, agent-review outputs, reviewer packets, audit
 scratch, transcripts, memory notes, and temporary artifacts are provenance
 only and may not own the live route.
 
-## Current state: continuation locality and owner composition complete
+## Current state: 200-boundary terminal statistics complete
 
 The formal live route is the completed result and its frozen execution unit:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md`
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/unit.md`
+
+The preceding continuation-locality result remains required context:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md`
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/unit.md`
 
-The preceding Phase Zero result remains required context:
+The earlier Phase Zero result remains required context:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md`
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md`
 
-The new two-discriminator unit and all four preceding no-new-training lanes are
-complete. The new unit measures continuation locality over trained,
-same-image-near, and untouched boundaries, then measures sampled-reachable
-remaining-owner recovery and one-step composition over exact prefixes. The
-preceding lanes cover robust free-rollout evaluation,
-same-prefix continue/stop versus conditional row ranking versus row
-realization, full-row normalization and fixed-budget reanalysis, and blind
-review of all 85 held-out changed-owner references. The stop condition is met.
-Do not launch optimizer updates until the user discusses and approves a new or
-revised formal unit.
+The 200-boundary read-only statistical unit, the preceding two-discriminator
+unit, and all four earlier no-new-training lanes are complete. The latest unit
+characterizes panel composition, paired continuation-margin changes,
+threshold crossings, strata, correlations, overlap, and outlier sensitivity.
+The stop condition is met. Do not launch a release, optimizer update, or
+architecture change until the user discusses and approves a new or revised
+formal unit.
 
 The governing outcome remains the original task: one `list all objects`
 prompt, one free autoregressive completion, and final unique trusted physical-
@@ -41,6 +44,27 @@ owner coverage. Fixed-prefix likelihood and forced continuation are diagnostic
 proxies only.
 
 ## Decision-relevant evidence
+
+### Untouched natural-terminal boundary statistics
+
+- The fixed panel contains 200 distinct Source natural stops and 780 verified
+  remaining physical owners. Only 55 boundaries have one remaining owner;
+  145 have multiple, so any arbitrary single intended owner is misaligned as a
+  primary outcome.
+- Positive FP32 opener-minus-terminal margin sets are perfectly nested:
+  Source `2`, transition step 36 `45`, pairwise step 90 `94`, and
+  owner-conditioned step 90 `145`. Checkpoint-minus-Source deltas are strongly
+  rank-correlated, supporting one shared susceptibility ordering with
+  increasing continuation strength.
+- Mean changes versus Source are `+0.649`, `+1.897`, and `+5.204`. They are
+  broad and not driven by one boundary, but correlate much more with Source's
+  existing margin than with the number of verified remaining owners. The
+  remaining-owner-count correlations are only `+0.054`, `+0.003`, and
+  `+0.038`.
+- All historical Source actions are terminal, yet two boundaries have small
+  positive current FP32 two-token margins. A future causal release study must
+  compare native and forced-opener arms under the same current runtime and may
+  not call a positive diagnostic margin a decode flip.
 
 ### Continuation locality and exact-prefix owner composition
 
@@ -120,18 +144,20 @@ full-row failure. Length stops are the worst extremes, not the sole cause.
 
 Step 36 changes both the broad decision to continue and verified owner-row
 likelihood. Its continuation effect is not specific to trained exact prefixes.
-Within sampled-reachable cases it adds only modest released owner recovery over
-Source, with owner churn, while complete-description forcing closes most
-remaining failures for both checkpoints. One-step composition preserves
-usable second-owner reachability but is order-sensitive and is not monotone in
+Across the 200 actual Source stops, the trained checkpoints mostly strengthen
+the same boundary ordering rather than selecting specialized state
+populations, and change magnitude does not track how many owners remain.
+Within sampled-reachable cases, opener forcing adds only modest released owner
+recovery over Source, while complete-description forcing closes most remaining
+failures for both checkpoints. One-step composition preserves usable
+second-owner reachability but is order-sensitive and is not monotone in
 candidate likelihood.
 
-The strongest immediate uncertainty is the probability that forcing only the
-opener after an actual Source stop yields an intended remaining owner, another
-uncovered owner, a repeat, or an invalid/unmatched row. The current atlas has
-one released Source stop, while 200 additional terminal states were scored but
-not released. Arbitrary annotated remaining owners and broader composition
-states also remain outside the admitted sampled-positive population.
+The strongest immediate uncertainty is the paired causal probability that
+forcing only the opener after an actual Source stop yields any new verified
+uncovered owner rather than a covered repeat, unmatched or ambiguous row,
+invalid row, or immediate terminal. The current atlas has one released Source
+stop, while the fixed 200-boundary panel was scored but not released.
 
 The current evidence promotes no architecture, explicit state carrier, prompt
 change, one-row-at-a-time output contract, production forced-continuation
@@ -153,11 +179,17 @@ policy, or final training objective.
 
 ## Next discussion, not yet authorized execution
 
-The narrowest next mechanism candidate is to release one forced-opener row at
-the existing 200 untouched natural terminal boundaries and classify intended
-owner recovery, another uncovered owner, covered-owner repeat, invalid row,
-and unmatched geometry. This directly estimates the user's forced-continue
-question on an actual-stop cohort. It is not yet authorized.
+The narrowest next mechanism candidate is a paired current-runtime replay on
+all 200 untouched natural-terminal boundaries: Source native one-row release
+versus Source with only the canonical row opener forced before one-row release.
+The primary outcome is any verified uncovered physical owner produced in the
+forced arm that the paired native arm does not produce. Secondary outcomes are
+native uncovered-owner recovery, covered-owner repeat, unmatched or ambiguous
+valid row, invalid or incomplete row, and terminal behavior, reported by
+boundary, category composition, Source-margin stratum, and remaining-owner
+stratum. Restricting the study to the 45 transition-positive boundaries would
+select on the strongest observed response predictor and bias the estimate.
+This release is not yet authorized.
 
 A future 256-image cohort may explicitly mix roles:
 
@@ -178,11 +210,12 @@ report, not an automatic negative label.
 
 ## Minimum reading path
 
-1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md`
-2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/unit.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md`
-4. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-5. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
+1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md`
+2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/unit.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md`
+4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md`
+5. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
+6. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
 
 The result owns executed evidence and the claim boundary. The unit owns the
 frozen protocol. The compass owns the program-level route. Memory notes and

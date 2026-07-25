@@ -22,32 +22,39 @@ architecture, or an implementation contract.
 
 Fresh sessions start from these formal owners:
 
-1. the completed [continuation-shift locality and exact-prefix remaining-owner
+1. the completed [untouched natural-terminal boundary statistical-analysis
+   result](experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md),
+   which owns the 200-boundary composition, paired-margin, stratified, and
+   sensitivity evidence and the next release-study estimand;
+2. its frozen [execution
+   unit](experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/unit.md),
+   which owns the read-only protocol, fixed panel, and no-release stop rule;
+3. the completed [continuation-shift locality and exact-prefix remaining-owner
    compositionality
    result](experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md),
    which owns the broad-continuation, sampled-reachable owner-recovery, and
    one-step composition evidence and its claim boundary;
-2. its frozen [execution
+4. its frozen [execution
    unit](experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/unit.md),
    which owns the bounded no-training protocol and stop rule;
-3. the completed [existing-checkpoint transition mechanism decomposition and
+5. the completed [existing-checkpoint transition mechanism decomposition and
    robust-evaluation
    result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md),
    which owns the four-lane Phase Zero evidence, mixed mechanism judgment,
    claim boundary, and discussion-stage next-training recommendation;
-4. its frozen [execution
+6. its frozen [execution
    unit](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md),
    which owns the no-new-training protocol and stop rules;
-5. the completed [prefix-local and on-policy final owner-set training
+7. the completed [prefix-local and on-policy final owner-set training
    unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md),
    which owns event materialization, the compared objectives and controls, the
    completed long training, matched training-panel comparison, and narrow
    transition-step-36 development/held-out transfer gate;
-6. the completed [trajectory owner-set admission-census
+8. the completed [trajectory owner-set admission-census
    result](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md),
    which owns the executed `8/2,004` strict-composite finding and its bounded
    claim; and
-7. the [experiment index](experiments/index.md), which owns lifecycle routing
+9. the [experiment index](experiments/index.md), which owns lifecycle routing
    across units.
 
 The strict 248-additional-admission estimand remains blocked before entropy
@@ -58,16 +65,29 @@ branch is pending and not part of this route. Handoffs, agent-review outputs,
 reviewer packets, audits, and memory notes remain historical provenance only;
 none is a live route target.
 
-As of `2026-07-25`, the two-discriminator continuation-locality and exact-prefix
-owner-composition unit is complete. Continuation changes are nearly equal at
-trained, same-image-near, and untouched nonterminal boundaries; natural
+As of `2026-07-25`, the read-only statistical analysis of the 200 untouched
+natural-terminal boundaries is complete. The panel contains 780 verified
+remaining owners, and 145/200 boundaries have more than one. Positive FP32
+two-token margin sets are perfectly nested—`Source 2 < transition 45 <
+pairwise 94 < owner-conditioned 145`—and checkpoint changes share a strong
+boundary ordering. Change magnitude is effectively unrelated to the number of
+remaining owners, so the evidence supports increasing continuation strength,
+not a count-like unfinished-set readout. Two historical terminal decisions
+already have small positive diagnostic margins, requiring a future causal
+study to compare native and forced-opener releases under the same runtime. Its
+primary outcome must be recovery of any verified uncovered physical owner,
+not an arbitrary intended owner. The route is paused for user discussion; no
+release, training, or architecture is promoted.
+
+The preceding two-discriminator continuation-locality and exact-prefix
+owner-composition unit is also complete. Continuation changes are nearly equal
+at trained, same-image-near, and untouched nonterminal boundaries; natural
 terminal states attenuate but do not remove the shift. In the sampled-reachable
 400-case atlas, Source recovers `362/400` owners natively, opener forcing adds
 only the sole actual-stop recovery, and complete-description forcing reaches
 `387/400`. The 38 ordered owner pairs retain heterogeneous short-horizon
 sequential compatibility even though the second fixed candidate row usually
-becomes less likely after the first row is appended. The route is paused for
-user discussion; no training or architecture is promoted.
+becomes less likely after the first row is appended.
 
 The prior four-lane existing-checkpoint Phase Zero is also complete.
 Heldout remains `46 gained / 39 lost / +7 net` under robust token-cutoff,
