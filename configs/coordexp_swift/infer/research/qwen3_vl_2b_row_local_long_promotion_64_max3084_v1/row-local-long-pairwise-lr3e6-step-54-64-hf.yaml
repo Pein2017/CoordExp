@@ -1,0 +1,21 @@
+extends: ../qwen3_vl_2b_row_local_64_source_hf.yaml
+run:
+  name: qwen3-vl-2b-row-local-long-pairwise-lr3e6-step-54-64-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/clean-rollouts-64-long-promotion-max3084-v1
+  collision_policy: fail
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/inference-panel-pairwise-64-v2/panel.coord.jsonl
+generation:
+  batch_size: 16
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+scoring:
+  enabled: true
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-54/adapter
+  name: default
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-54/special_token_embeddings

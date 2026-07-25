@@ -1,0 +1,22 @@
+extends: qwen3_vl_2b_row_local_pairwise_lr1e5_step1_64_hf.yaml
+
+run:
+  name: qwen3-vl-2b-row-local-pairwise-lr1e5-step4-64-hf
+
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/inference-panel-pairwise-64-v2/panel.coord.jsonl
+
+generation:
+  batch_size: 16
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+
+scoring:
+  enabled: true
+adapter:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-64-short-learning-rate-1e-5-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_64_event_short_learning_rate_1e-5/checkpoints/step-4/adapter
+
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-64-short-learning-rate-1e-5-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_64_event_short_learning_rate_1e-5/checkpoints/step-4/special_token_embeddings

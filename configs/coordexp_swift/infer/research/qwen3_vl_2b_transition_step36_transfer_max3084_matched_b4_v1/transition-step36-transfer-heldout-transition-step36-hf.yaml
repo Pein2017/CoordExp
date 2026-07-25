@@ -1,0 +1,21 @@
+extends: ../qwen3_vl_2b_row_local_64_source_hf.yaml
+run:
+  name: qwen3-vl-2b-transition-step36-transfer-heldout-transition-step36-max3084-b4-hf
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/clean-rollouts-transition-step36-transfer-max3084-matched-b4-v1
+  collision_policy: fail
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/heldout.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  repetition_penalty: 1.0
+scoring:
+  enabled: true
+adapter:
+  type: dora
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36/adapter
+  name: default
+embedding_delta:
+  path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36/special_token_embeddings

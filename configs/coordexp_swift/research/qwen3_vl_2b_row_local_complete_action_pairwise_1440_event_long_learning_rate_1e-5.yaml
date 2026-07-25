@@ -1,0 +1,20 @@
+schema_version: 1
+extends: qwen3_vl_2b_row_local_complete_action_pairwise_64_event_short_learning_rate_1e-5.yaml
+
+run:
+  name: qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_1e-5
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-1e-5-v1/runs
+  collision_policy: fail
+
+rollout_calibration:
+  state_bank_manifest_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/event-bank-pairwise-1440-v1/state-bank/manifest.json
+
+training:
+  epochs: 1
+  max_steps: 90
+  effective_batch_size: 16
+
+checkpoint:
+  every_fraction: 0.1
+  steps: []
+  save_final: true
