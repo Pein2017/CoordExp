@@ -1,8 +1,87 @@
 # Current Project Memory
 
-Last verified for the active dense-enumeration route: 2026-07-24T07:16:47Z.
+Last verified for the active dense-enumeration route: 2026-07-25.
 
 Last verified for the physical-owner duplication unit: 2026-07-22T21:25:00Z.
+
+## Live-router authority rule
+
+The user established that every current, next, fresh-session, or minimum-
+reading-path pointer must target a tracked owning research unit, result,
+decision, compass or index, current doc, or stable spec. Handoffs, agent-review
+outputs, reviewer packets, audit scratch, transcripts, memory notes, and
+temporary artifacts are provenance only and may not own the live route. The
+formal rule is recorded in `AGENTS.md` and the research graph contract.
+
+## Discussion-ready result: prefix-local owner-set training and transfer
+
+The formal live route is the prefix-local unit and its updated result:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/`
+
+All four 1,440-event runs completed 90 finite applied optimizer updates. The
+governing task remains the original `list all objects` prompt followed by one
+autoregressive completion; selected-owner recovery that exchanges away another
+Source owner is not success.
+
+The 40-checkpoint 512-token dose curve shows that complete-action pairwise
+training at learning rate `1e-5` and grouped owner-conditioned training develop
+increasing output expansion with dose. Their final checkpoints have thirteen
+and twelve short-horizon length stops. The lower-rate pairwise arm stays between
+one and four, while the first-divergence transition control retains Source's
+single short-horizon stop. A 512 stop is only an early warning: Source naturally
+closes all 64 images at the 3084-token final horizon.
+
+Final comparisons must match batch policy. A same-checkpoint replay found raw
+greedy-text differences on 57 of 64 images between batch sizes 16 and 4. The
+mixed-batch owner table is rejected. Under the authoritative matched batch-4,
+3084-token, repetition-penalty-1.0 policy, Source has 389 matched owners and 64
+natural stops. Only first-divergence transition step 36 has zero treatment
+length stops. It gains 21 owners, loses 18, and is therefore only `+3` net,
+with 155 fewer predictions and 14 fewer strict duplicate candidates. Other
+evaluated checkpoints have one to ten length stops; the pairwise and grouped
+final checkpoints add roughly 2,450 predictions, so their larger apparent
+owner gains are invalid as usable set expansion.
+
+The matched comparison is:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/owner-comparisons-64-long-promotion-max3084-matched-b4-v3/`
+
+The separately approved matched transfer gate is also complete. Development
+and heldout are disjoint 256-image and 128-image cohorts. Source and transition
+step 36 use the original prompt, one completion, batch size 4, 3084 generated
+tokens, repetition penalty 1.0, scoring enabled, the same eight ranks, and an
+identical per-split shard-plan fingerprint.
+
+On development, Source has 1,452 matched owners and treatment has 1,520:
+gained/lost is `128/60`, net is `+68`, predictions are `+350`, strict duplicate
+candidates are `-14`, and length stops are `1/3`. On heldout, Source has 729
+matched owners and treatment has 736: gained/lost is `46/39`, net is `+7`,
+predictions are `-118`, strict duplicate candidates are `-13`, common-owner
+mean Intersection over Union is `+0.006447`, and length stops are `0/1`.
+Heldout has 21 net-positive images, 17 net-negative, and 90 unchanged. A post-
+hoc paired image bootstrap interval crosses zero on heldout. The correct claim
+is promising directional transfer with a favorable quality profile, not a
+robust usable-improvement or architecture-promotion result.
+
+The authoritative transfer comparison is:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/owner-comparisons-transition-step36-transfer-max3084-matched-b4-v2/`
+
+HF policy likelihood extraction was corrected to call Transformers transition
+scoring in 32-step chunks. The old batch-16 path failed on a 16.23-GiB transient
+allocation; the same 3084-step real replay now completes, and all 12 current
+HF session tests pass. This is a runtime correction, not evidence that batch
+sizes are behaviorally interchangeable.
+
+The planned zero-update influence matrix, genuine on-policy and hybrid arms,
+matched ordinary row cross-entropy, and Source-preservation-only controls remain
+incomplete. The external one-row-at-a-time or textual covered-set branch remains
+pending. No full-pool, successor-direction, or final-architecture work has been
+launched. The approved stop boundary is met: discuss whether the small and
+uncertain held-out gain warrants broader confirmation or a different mechanism.
+Detailed transfer reasoning is in
+`memories/notes/2026-07-25-transition-step36-matched-transfer-evaluation.md`.
 
 ## Closed result: physical-owner duplication
 
@@ -135,11 +214,13 @@ additional preservation, background, and matched-dose control strata. Such a
 design cannot claim that every one of the 256 images carries the same set-level
 signal.
 
-The user asked to stop after this round and discuss whether 256 means an
-arbitrary training set and whether the primary predicate is necessary. Do not
-acquire entropy or resume the 248-admission salvage sample until the user chooses
-between the exact strict design and a revised mixed signal/control design. See
-`memories/notes/2026-07-24-primary-predicate-design-scope-fork.md`.
+The user treats 256 as a total training-set size rather than 256 images that all
+satisfy the strict composite predicate and has now selected a broader prefix-
+level, multiparadigm successor direction. Do not acquire entropy or resume the
+248-admission salvage sample. That estimand remains paused because it answers
+the wrong design question. The formal current route and mixed-design boundary
+are recorded in the investigation `compass.md`; the selected successor still
+requires a new concise formal unit before execution.
 
 Stage Zero artifact:
 
@@ -282,9 +363,9 @@ The result supports route-conditioned owner redistribution, not safe final-set
 expansion. The two live alternatives are insufficient image breadth versus an
 intrinsic owner-exchange limitation of positive complete-row imitation.
 
-## Frozen current unit
+## Closed breadth-screen unit
 
-The unit is:
+The closed unit is:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/unit.md`
 
@@ -386,16 +467,16 @@ Established or bounded-supported:
 
 Tentative or unresolved:
 
-* Whether train-only adjudication or improved matcher and trusted-geometry
-  coverage would raise the censored population's primary-admission rate to the
-  15.50-percent feasibility threshold.
-* Whether the censored population shares the strict-edge and same-class
-  first-owner-alias scarcity observed in the fully adjudicable subset.
-* Whether a separately frozen exploration intervention can create enough
-  strict owner-set dominance and natural first-owner diversity without
-  weakening the primary predicate.
-* Whether native prefix state is sufficient once supervision is made more
-  set-aligned, or a compact covered-set or task-state carrier is necessary.
+* How many trusted prefix-level owner events survive row-local rather than
+  whole-trajectory censoring across the existing training artifact.
+* Whether a local owner-conditioned loss can raise an uncovered owner relative
+  to confirmed harmful actions without systematic shared-parameter suppression
+  of other valid or Source owners.
+* Whether genuine on-policy final-set utility and its hybrid with local credit
+  can produce clean-greedy net owner gain rather than another owner exchange.
+* Whether targeted train-only adjudication materially expands conclusion-
+  bearing event supply. The exact 248-admission salvage estimand is no longer
+  the immediate question.
 
 Rejected or held:
 
@@ -408,39 +489,41 @@ Rejected or held:
   admission predicate after seeing the shortfall.
 * Do not make one sampled owner, geometry-sorted owner, complete row, or
   trajectory the unique teacher target for the next treatment.
-* Do not add a second cohort, external detector, object slot, terminal
-  suppression, canonical supervised-fine-tuning mixture, or online refresh to
-  this pilot.
+* Keep the external one-row-at-a-time prompt, textual covered-set prompt, and
+  controller-assisted generation branch pending. It may be revisited as a
+  separately claimed diagnostic or teacher, but it is not the immediate route.
+* Do not reject a semantically valid paradigm merely because it requires more
+  compute. Do reject selected-owner exchange, longer output alone, or local
+  exact-prefix actuation alone as evidence of final-set improvement.
 
 ## Immediate next actions
 
-1. Treat the admission census as closed and the 256-image training promotion as
-   stopped. Dynamically select a separate successor question from the observed
-   censoring-versus-structural boundary; freeze its falsifiable contract before
-   inspecting new outcomes. Do not precommit the method merely because
-   adjudication, matcher coverage, and improved exploration are all plausible.
-2. Treat the constant-dose breadth screen as closed. Do not spend the next run
-   on more image breadth, epochs, or repetition-penalty tuning.
-3. Preserve separate-thread work by intent and verify the live worktree before
-   staging, committing, or resuming any unit.
-4. Treat the physical-owner duplication unit as closed bounded evidence; do not
-   promote the combined profile or automatically expand the current overlap
-   queue. If it is reopened, use a separate unit with more exact self-rollout
-   trajectories and row-level physical-owner review.
-5. Treat Pi Stage 0 and the stateful-thread pilot as closed; any later default-
-   route claim requires a new frozen benchmark.
+1. Obtain the user's final approval of the set-level multiparadigm execution
+   contract. Do not implement or launch before that approval.
+2. After approval, create one concise formal research unit owning prefix-event
+   materialization, the local, pairwise, on-policy, and hybrid paradigms, their
+   controls, the promising-to-long-run gate, and the final claim boundary.
+3. Route the experiment index and compass to that formal unit, then inspect and
+   reuse the existing StateBank, scoring, training, rollout, and owner-ledger
+   infrastructure before adding the minimum missing seams.
+4. Materialize row-local event supply, run zero-update shared-parameter gradient
+   checks, and execute short real smokes. Launch isolated nightly long runs for
+   every arm that crosses the frozen net-gain gate.
+5. Evaluate clean-greedy gained, retained, and lost owner identities plus
+   duplicates, invalid rows, geometry, stopping, and output length. Stop after
+   this comparative round for discussion; do not automatically promote 256 or
+   a final architecture.
 
 ## Minimum reading path
 
 1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md`
 2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/unit.md`
-3. `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-23-trajectory-owner-set-admission-census/production-v1/receipt.json`
-4. `handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
-5. `handoff/from-side-chat.md`
-6. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-7. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md`
+4. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
+5. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
+6. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md`
 
 The completed admission-census result now owns the current route. The
-comprehensive handoff remains provenance for how the question was frozen, but
-its conditional 256-image training path was not admitted. The breadth and
-duplication documents remain bounded evidence; none owns the successor route.
+consumed handoffs remain historical provenance and are excluded from the live
+reading path. The breadth and duplication documents remain bounded evidence;
+none owns the successor route.

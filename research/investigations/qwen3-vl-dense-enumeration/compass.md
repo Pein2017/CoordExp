@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-23
+updated: 2026-07-25
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -18,9 +18,41 @@ current beliefs, strongest alternatives, next discriminators, and candidate
 paper thesis. It does not own executed facts, runtime behavior, a final
 architecture, or an implementation contract.
 
-The current fresh-session synthesis and route correction is:
+## Current Live Route
 
-`/data/CoordExp/.worktrees/research-probes/handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
+Fresh sessions start from these formal owners:
+
+1. the discussion-ready [prefix-local and on-policy final owner-set training
+   unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md),
+   which owns event materialization, the compared objectives and controls, the
+   completed long training, matched training-panel comparison, and narrow
+   transition-step-36 development/held-out transfer gate;
+2. the completed [trajectory owner-set admission-census
+   result](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md),
+   which owns the executed `8/2,004` strict-composite finding and its bounded
+   claim; and
+3. the [experiment index](experiments/index.md), which owns lifecycle routing
+   across units.
+
+The strict 248-additional-admission estimand remains blocked before entropy
+because it does not answer the active broader prefix-level design. The active
+unit preserves the original `list all objects` prompt and one-completion output
+contract; the external one-row-at-a-time prompt or textual covered-set branch
+is pending and not part of this route. Handoffs, agent-review outputs, reviewer
+packets, audits, and memory notes remain historical provenance only; none is a
+live route target.
+
+As of `2026-07-25`, all four 1,440-event long runs, the matched batch-4,
+3084-token 64-image comparison, and the narrow transition-step-36 transfer gate
+are complete. Step 36 moves from `+3` net owners on the training panel to `+68`
+on development-256 and `+7` on disjoint heldout-128. Heldout uses 118 fewer
+predictions, 13 fewer strict duplicate candidates, and has slightly better
+common-owner geometry, so the direction is not explained by output expansion.
+Its 21 net-positive versus 17 net-negative images, one introduced length stop,
+and bootstrap interval crossing zero keep the result below robust promotion.
+The live route remains the unit and its [current results](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/results.md)
+while this evidence is discussed with the user. It is not a final mechanism,
+architecture, or full-dataset promotion.
 
 The [weekly integrated research
 report](2026-07-13-to-2026-07-16-weekly-research-report.md) is the compact
@@ -77,30 +109,29 @@ repetition penalty 1.0, usually without improving absolute owner count. It is a
 trajectory intervention, not a harmless duplicate-only adjustment, and must
 remain frozen and reported separately in future comparisons.
 
-The user has now corrected the next treatment boundary. The same-prefix
-single-row comparison proposed immediately after the breadth screen is a useful
-diagnostic or auxiliary loss, but it is not the primary treatment. The next
-bounded treatment must supervise the final unique physical-owner set without
-declaring one canonical next owner:
+The user has now corrected the next treatment boundary twice: first away from
+one selected row, then away from requiring every training image to satisfy the
+census's strongest natural-alias strict composite. The active unit keeps final
+unique-owner coverage as the decision-bearing outcome while comparing several
+non-exclusive credit mechanisms:
 
 ```text
 image plus an actual model-produced prefix
-  -> recover the verified covered-owner set and remaining-owner set
-  -> keep every verified uncovered owner as a valid next owner
-  -> compare candidate continuations by final unique-owner set inclusion
-  -> preserve incomparable owner-exchange trajectories as neutral alternatives
-  -> assign no negative gradient to unknown or potentially unlabeled entities
-  -> train on every valid strict owner-set dominance edge
-  -> keep nondominated or incomparable orphans neutral rather than negative
-  -> evaluate clean greedy gained, retained, and lost physical owners
+  -> recover the verified covered-owner set through that action boundary
+  -> raise one verified uncovered owner only relative to confirmed non-progress
+  -> leave other valid uncovered owners and unresolved rows out of its negatives
+  -> compare that local objective with exact-prefix pairwise training
+  -> separately optimize trusted final owner-set utility on fresh policy rollouts
+  -> combine local and final-set credit only after both pass their own checks
+  -> evaluate the original one-prompt, one-completion clean-greedy owner set
 ```
 
-This keeps a loss-only set-level treatment as the simplest live branch without
-assuming that the pretrained transformer has or lacks an explicit ledger. A
-local valid-versus-harmful row comparison may be retained only as an auxiliary
-when it does not collapse the group back to one selected owner. Object slots, a
-coverage carrier, an external detector, terminal suppression, and inference-
-time control remain unselected.
+Strict final-set edges and natural order aliases remain strong evidence strata,
+not universal event-admission requirements. Local actuation is not success: the
+promotion gate is a net gain in final trusted physical owners under the original
+prompt and completion contract. Object slots, a coverage carrier, an external
+detector, terminal suppression, textual covered-set prompting, and inference-
+time control remain unselected or pending.
 
 ## Working First-Principles Model
 
@@ -744,30 +775,28 @@ A 256-image training screen may start when all of the following are true:
    probability on uncovered objects, less probability on committed objects, or
    a smaller greedy-versus-sampled coverage gap.
 
-The screen compares frozen Source with one 256-image set-level treatment. That
-comparison measures complete-recipe efficacy, not the isolated causal effect
-of set semantics. A decision-grade component claim requires a matched-budget
-control frozen in the training unit. This is a stop-or-promote test for
-learnability, not a final model, broad hyperparameter search, or paper result.
+Current gate decision: **the exact all-positive natural-alias design is stopped,
+and the broader [prefix-local and on-policy unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md)
+has completed its long-training and matched training-panel round and is paused
+for user discussion**. The completed
+[admission census](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md)
+shows that only eight images satisfy its strict composite; that subset does not
+define the feasibility of row-local or on-policy set supervision.
 
-Current gate decision: **ready to design a new 256-image set-level treatment;
-the positive-row scale-up branch is closed**. The new screen must group multiple
-candidate continuations for the same image or rollout state, map each to its
-verified final physical-owner set, and reward strict set dominance without
-ranking incomparable owner exchanges. Unknown or potentially unlabeled
-entities remain neutral. Token-type gating may stabilize which tokens receive
-gradient, but it must not turn the objective back into exact cross-entropy on
-one selected row. Promotion to 1,024 images requires promising clean greedy
-owner-set expansion with explicit gained, retained, and lost-owner accounting,
-not merely better teacher-forced scores, longer output, or more selected-owner
-recoveries. This decision selects neither an architecture nor a final general
-replacement loss.
+The active unit compares frozen Source, ordinary row cross-entropy, Source
+preservation, local owner-conditioned candidates, exact-prefix pairwise credit,
+genuine current-policy final-set utility, and an eligible hybrid. Controls own
+causal interpretation inside each paradigm but do not impose equal floating-
+point operations, rollout counts, or wall time across paradigms. Unknown or
+potentially unlabeled entities remain neutral, and no local objective may use
+another valid uncovered owner as a negative. A short smoke promotes an arm to
+isolated long training only when the original one-prompt, one-completion clean-
+greedy policy shows coherent net owner gain not explained only by longer output
+or a duplicate or invalid-row burst.
 
-Before freezing that training unit, close a read-only admission census using
-only Source-eligible identifiers from the frozen 2,048-image training split.
-The census must reject or separately augment groups that contain only one
-maximal serialization, and it must keep unresolved entity trajectories out of
-the primary preference loss rather than treating them as negatives.
+The existing [salvage gate](experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md)
+remains blocked before entropy because its 248-admission estimand belongs only
+to the stopped exact strict design.
 
 ## Demoted or Rejected Claims
 

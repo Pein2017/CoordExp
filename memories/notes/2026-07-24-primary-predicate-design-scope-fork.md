@@ -45,11 +45,14 @@ asked to stop after this round for discussion. Therefore pause before entropy
 and discuss the exact strict design versus a mixed signal/control design. Do
 not resume the current 248-admission sample until that design choice is made.
 
-Primary evidence:
+Formal owners:
+
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md`
+
+Originating one-shot provenance, not live authority:
 
 - `handoff/from-side-chat.md`
 - `handoff/2026-07-23-qwen3-vl-dense-enumeration-comprehensive-research-flow.md`
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/unit.md`
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md`
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/stage-zero-independent-audit-v2.json`
-

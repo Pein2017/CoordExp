@@ -5,15 +5,31 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: in_progress
+implementation_status: not_authorized
 unit_id: 2026-07-23-trajectory-owner-set-adjudication-salvage-gate
 topic: qwen3-vl-dense-enumeration
-status: active
-evidence_status: frozen_contract_approved
-updated: 2026-07-23
+status: blocked
+evidence_status: partial
+updated: 2026-07-24
 ---
 
 # Frozen-Panel Image-First Owner-Ledger Adjudication Salvage Gate
+
+## Current Status Amendment — 2026-07-24
+
+Stage Zero is complete and verified: the frozen 1,622-image population is
+partitioned into 1,106 category-capacity-possible and 516 impossible cases. No
+entropy, probability sample, image review, model inference, graphics-processing
+unit work, or training has occurred.
+
+This unit is blocked before entropy and is not the execution-active successor.
+Its 248-additional-admission estimand assumes continuation of the exact strict
+all-positive natural-alias design. The originating 256-image objective did not
+require every training image to satisfy that composite predicate, so further
+execution needs an explicit decision to study the strict estimand. A mixed
+signal, preservation, background, and matched-control design requires a
+separate or explicitly revised formal unit. Review and audit artifacts remain
+provenance and do not change this lifecycle state.
 
 ## Decision Boundary
 
