@@ -1,4 +1,4 @@
 interface:
-  display_name: "Architecture Design"
-  short_description: "Review and deepen CoordExp architecture"
-  default_prompt: "Use $improve-codebase-architecture to rank evidence-backed CoordExp architecture opportunities or design an approved module interface while preserving research contracts and user-owned scientific decisions."
+  display_name: "Architecture Review"
+  short_description: "Rank evidence-backed architecture opportunities"
+  default_prompt: "Use $improve-codebase-architecture for a read-only architecture review and ranked recommendation."

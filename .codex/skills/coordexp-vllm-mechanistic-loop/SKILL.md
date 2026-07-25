@@ -1,105 +1,82 @@
 ---
 name: coordexp-vllm-mechanistic-loop
-description: Use for an experiment-first, self-driven CoordExp V-LLM mechanism loop from checkpoints and rollout artifacts when surface metrics cannot resolve hidden-state, attention, coordinate-basin, duplication, false-negative, or termination behavior.
+description: Lead a long-running CoordExp vision-language model mechanism investigation from checkpoints and artifacts when surface metrics cannot decide among hidden causal explanations.
 ---
 
-# CoordExp V-LLM Mechanistic Loop
+# CoordExp Vision-Language Mechanistic Loop
 
-## Overview
+Run an **experiment-first mechanism loop**. Use `model-diagnosis` for immediate
+symptom triage; use this skill when the user authorizes recursive probes across
+multiple turns or runs.
 
-Act as a self-driven lead investigator for CoordExp V-LLM mechanisms. The job is not to prove that a phenomenon exists or that a method is effective; it is to isolate the deepest reachable origin of behavior with artifact-backed probes, cautious interpretation, and durable research notes.
+## Start
 
-Use hypotheses first and architecture second. Keep functional requirements,
-mechanism hypotheses, experimental handles, and candidate implementations
-separate until branch-deciding evidence establishes necessity and scope.
+1. Bind the exact worktree, checkpoints, configs, artifact roots, available
+   compute authority, decision-owning outcome, and stop condition.
+2. Read current routers and the owning research unit before historical notes.
+3. Write or refine one falsifiable unit: question, strongest alternative,
+   contrast, primary observation, meaning-bearing invariants, reused
+   infrastructure, non-goals, rough cost, and reopening condition.
 
-This skill complements `model-diagnosis`. Use `model-diagnosis` for immediate symptom triage; use this skill when the user wants a long research loop that can design probes, run them, follow promising branches, and build a mechanism picture over many turns.
+Start is complete when a unit—not the conversation—owns the executable question.
 
-## Role Contract
+## Investigate
 
-- Treat rollout metrics as sample selectors and sanity checks, not as the final object of interest. Tiny mAP movement can still hide important internal behavior shaping.
-- Prefer sample-base-centered deep probes over broad analysis of normal or well-learned images. Pick representative images where checkpoint differences are large, comparable, or mechanistically revealing.
-- Stay artifact-first: start from exact checkpoints, rollout roots, configs, prompt/template surfaces, sample IDs, trace files, and prior notes before explaining.
-- Prefer probes that eliminate consequential design branches over probes that
-  merely refine a favored mechanism or move a debug metric.
-- Predeclare competing explanations, falsifiers, and outcome-dependent route
-  updates before inspecting a new result.
-- Be self-driving after the user grants permission. Choose the next promising probe, use available GPUs when explicitly allowed, and keep moving until the mechanism picture converges, directions are exhausted, or a research-meaning gate appears.
-- Branch dynamically when a path is attractive and likely to influence the final picture. A roadmap guides the loop; it must not trap the investigation away from better evidence.
-- Ask for user review when data analysis cannot choose a representative sample confidently, when the fork changes research meaning, or when a high-cost or irreversible action lacks prior permission.
-- Stop cleanly when the user asks for a break: finish the current processing slice, write the durable note, verify, commit if requested, and do not open a new branch of exploration.
+1. **Select evidence-rich cases.**
+   - Use aggregate metrics to find divergent or representative samples, then
+     inspect raw rollouts, parser state, traces, and visual evidence.
+   - Complete when selection is justified against the question rather than
+     convenience.
 
-## Start Of Run
+2. **Obtain the smallest real observation.**
+   - Reuse model loading, batching, parsing, scoring, and artifact writers.
+   - Keep the first intervention experiment-local and run a representative
+     end-to-end smoke through every conclusion-bearing consumer.
+   - Complete when the changed factor executed and the primary observation is
+     attributable.
 
-1. Bound the current lane:
-   - exact worktree and branch;
-   - whether to reuse an existing worktree or create a clean one;
-   - user-named checkpoints, adapter surfaces, artifacts, and notes;
-   - available GPUs and cost permission;
-   - stop condition.
-2. Build a compact hypothesis ledger: established facts, falsified readings, live
-   explanations, unresolved alternatives, and the expensive choice the next
-   result could change.
-3. Write the outcome map: what each major result makes more likely, less likely,
-   or unresolved. Mark handle-specific negative results explicitly.
-4. Set or refine a `/goal` for long runs with mechanism targets, contrast axes,
-   evidence surfaces, manual-review gates, and a stop condition.
-5. Load `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, relevant specs/docs,
-   `research/` notes, explicit legacy provenance, and existing analysis scripts.
-6. Use `grill-me record=local` only when the user asks to record a research
-   decision. Resolve discoverable and reversible details directly.
-7. Inventory existing probes before writing new ones.
+3. **Separate competing mechanisms.**
+   - Move from behavior and boundary/slot readouts to prefix or control
+     contrasts, representation traces, routing evidence, and finally causal
+     intervention only as needed.
+   - Keep token, span, row, trajectory, module, and free-rollout evidence at
+     their actual units. Let the owning unit choose sample scale and probe family.
+   - Complete when the leading explanations make different testable predictions
+     or the evidence is explicitly inconclusive.
 
-## Mechanistic Probe Branch
+4. **Interpret conservatively.**
+   - Separate symptom, candidate mechanism, causal handle, prevalence, useful
+     treatment, and scaling evidence.
+   - Reconcile aggregate and sample-level evidence; do not treat attention,
+     forced continuation, teacher forcing, or local token rescue as the
+     decision-owning outcome without a transfer argument.
+   - Complete when the claim boundary and strongest unresolved alternative are
+     explicit.
 
-Before comparing checkpoints or choosing a causal intervention, read
-[mechanistic-probes.md](references/mechanistic-probes.md). It owns the
-comparability matrix, probe ladder, causal escalation gate, interpretation
-rules, and failure modes.
+5. **Adapt or stop.**
+   - Continue with the cheapest discriminating probe while it can change the
+     mechanism picture. Pause for user direction on research-meaning changes or
+     material new critical-path cost.
+   - Stop when the unit's criterion is met, paths are exhausted, evidence
+     invalidates the framing, or the user asks to pause.
+   - Complete when the result, limitation, and next discriminator are durable.
 
-A branch is complete when its predeclared result is recorded, artifacts and
-producer/merger/evaluator receipts are verified, the hypothesis ledger is
-updated, and the next branch or terminal stop is explicit.
+## Evidence And Artifacts
 
-## Artifacts And Notes
+Record exact checkpoint/config/case identities, request conditions, raw output,
+parser or failure status, probe artifacts, and representative result. Preserve
+semantic alignment across image, prompt, history, token slots, geometry,
+ordering, decode, and evaluation.
 
-- Write new research knowledge under `research/`. Treat `progress/` as
-  deprecated legacy diagnostics/provenance; migrate useful old material rather
-  than adding new records there, except when the user explicitly asks to preserve
-  an older branch's format.
-- Every durable note should include scope, checkpoints, configs, artifact roots, sample IDs, commands or scripts, evidence scope, core tables/figures, interpretation, caveats, and next probe seeds.
-- Route-deciding notes also record competing hypotheses, the predeclared
-  outcome map, and the bounded architecture-posterior update.
-- Keep one-off scratch under `temp/`; promote repeated utilities to `scripts/analysis/` or `src/analysis/` with tests when they become reusable.
-- When using parallel GPU jobs, make split-run merge keys collision-safe. Include checkpoint, image/sample identity, candidate identity, source spec, history variant, slot, and mode as needed.
-- Use `handoff` when context is near exhaustion. Link exact artifacts and notes instead of duplicating large logs.
+Put durable interpretation in the owning research record and run artifacts in
+the owning output root. Keep scratch disposable. Promote shared code only after
+a stable second consumer or compatibility boundary appears.
 
-## Verification
+After an invalid run, reproduce the failure and pass the full representative
+smoke before interpreting a fresh immutable run.
 
-Pick checks that match the change:
+## Report
 
-```bash
-python -m pytest <focused-analysis-tests> -q
-python -m py_compile <touched-python-files>
-git diff --check -- <touched-files>
-```
-
-For artifact claims, also verify row counts, skipped/error counts, parser/drop status, split-run merge keys, sign conventions, and that summary tables were regenerated after bug fixes. Trust fresh command output and exact artifacts over wrapper banners or memory.
-
-Before a metric-bearing panel, prove the producer, merger, and evaluator on real
-preflight artifacts of the same schema. During long jobs, keep routine health in
-logs and report only state changes, failures, cost changes, and decision
-boundaries. Label inferred GPU-hours as estimates.
-
-## Output Contract
-
-Report:
-
-- current role, objective, worktree, and source surfaces;
-- representative samples and why they were selected;
-- executed probes and artifact roots;
-- mechanism picture so far, with evidence scope and caveats;
-- competing hypotheses and what became more likely, less likely, or unresolved;
-- next branch-deciding probe or manual-review gate, chosen by information gain;
-- conditional architecture implications only where evidence warrants them;
-- changed files, verification commands, and skipped checks.
+State objective and owner, selected evidence, executed probes and artifact
+roots, mechanism picture with claim boundary, strongest alternative, changed
+files, verification, and next gate.

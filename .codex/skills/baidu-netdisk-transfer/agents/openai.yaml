@@ -1,7 +1,4 @@
 interface:
   display_name: "Baidu Netdisk Transfer"
   short_description: "BaiduPCS-Go transfer and union sync"
-  default_prompt: "Use $baidu-netdisk-transfer for one-off BaiduPCS-Go transfer or append-only union sync. Default to non-overwrite behavior and require fresh explicit approval for any overwrite or deletion."
-
-policy:
-  allow_implicit_invocation: false
+  default_prompt: "Use $baidu-netdisk-transfer when Baidu Netdisk work needs one-off BaiduPCS-Go upload/download or append-only union sync with conflict detection."

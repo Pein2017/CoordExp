@@ -9,18 +9,25 @@ A skill exists to wrangle determinism out of a stochastic system. **Predictabili
 
 ## Invocation
 
-Two choices, trading different costs:
+Every Codex skill keeps the required `name` and `description` in `SKILL.md`.
+Implicit selection is controlled in `agents/openai.yaml`:
 
-- A **model-invoked** skill keeps a **description**, so the agent can fire it autonomously _and_ other skills can reach it (you can still type its name too). It contributes to **context load** — the description sits in the window every turn. Mechanics: omit `disable-model-invocation`, and write a model-facing description with rich trigger phrasing ("Use when the user wants…, mentions…").
-- A **user-invoked** skill strips the description from the agent's reach: only you, typing its name, can invoke it — and no other skill can. Zero context load, but it spends **cognitive load**: _you_ are the index that must remember it exists. Mechanics: set `disable-model-invocation: true`; the `description` becomes human-facing — a one-line summary, trigger lists stripped.
+- An **implicitly invocable** skill omits `policy.allow_implicit_invocation` or
+  enables it, allowing Codex to select the skill from its **description**.
+- An **explicit-only** skill sets `policy.allow_implicit_invocation: false`, so
+  the user must name it. Keep its description concise for the skill catalog.
 
-Pick model-invocation only when the agent must reach the skill on its own, or another skill must. If it only ever fires by hand, make it user-invoked and pay no context load.
+Implicit invocation spends **context load**; explicit-only invocation spends
+**cognitive load** because the user must remember the skill.
 
-When user-invoked skills multiply past what you can remember, that piled-up cognitive load is cured by a **router skill**: one user-invoked skill that names the others and when to reach for each.
+When explicit-only skills multiply past what the user can remember, use one
+**router skill** that names them and their leading triggers.
 
 ## Writing the description
 
-A model-invoked **description** does two jobs — state what the skill is, and list the **branches** that should trigger it. Every word increases **context load**, so a description earns even harder pruning than the body:
+An implicitly invocable **description** does two jobs — state what the skill is,
+and list the **branches** that should trigger it. Every word increases **context
+load**, so a description earns even harder pruning than the body:
 
 - **Front-load the skill's leading word** — the description is where it does its invocation work.
 - **One trigger per branch.** Synonyms that rename a single branch are **duplication** — "build features using TDD … asks for test-first development" is one branch written twice. Collapse them; keep only genuinely distinct branches.
@@ -46,7 +53,9 @@ Where the ladder decides _how far down_ a piece sits, **co-location** decides _w
 
 **Granularity** is how finely you divide skills, and each cut spends one of the two loads, so split only when the cut earns it. Two cuts:
 
-- **By invocation** — split off a **model-invoked** skill when you have a distinct **leading word** that should trigger it on its own, or another skill must reach it. You pay **context load** for the new always-loaded **description**, so that independent reach has to be worth it.
+- **By invocation** — split off an implicitly invocable skill when a distinct
+  **leading word** should trigger it independently. Its always-visible
+  **description** must earn the added **context load**.
 - **By sequence** — split a run of **steps** when the steps still ahead (a step's **post-completion steps**) tempt the agent to rush the one in front of it (**premature completion**). Keeping them out of view encourages the agent to do more **legwork** on the current task.
 
 ## Pruning

@@ -1,4 +1,4 @@
 interface:
   display_name: "Worktree Feature Loop"
-  short_description: "Guide a concurrent-safe CoordExp worktree lifecycle"
-  default_prompt: "Use $worktree-feature-loop when starting CoordExp feature, fix, or research work where dirty state, parallel work, experiments, or long-running artifacts make isolation useful. Decide worktree vs inplace, add worktree-local model_cache and outputs symlinks to mimic the main checkout runtime paths, initialize worktree-local CodeGraph and exact-path Serena when needed, then report path, branch, validation, merge, cleanup, and navigation-index state."
+  short_description: "Bind work to one exact checkout"
+  default_prompt: "Use $worktree-feature-loop to choose or verify the exact worktree for this task."

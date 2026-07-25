@@ -1,4 +1,4 @@
 interface:
-  display_name: "Swift Detection Visualization"
-  short_description: "Render current scored GT/pred review images"
-  default_prompt: "Use $detection-gt-vs-pred-visualization to render current CoordExp-Swift raw-plus-scored artifacts with scripts/visualize_detection.py or src.vis. Preserve row and GT identity, pixel-space handling, one PNG per sample, manifests, and the canonical green/yellow/red/purple semantics."
+  display_name: "Detection Visualization"
+  short_description: "Render current per-row detection reviews"
+  default_prompt: "Use $detection-gt-vs-pred-visualization to render this run or comparison through the current shared renderer."

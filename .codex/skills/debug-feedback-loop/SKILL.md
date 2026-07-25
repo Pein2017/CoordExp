@@ -1,60 +1,65 @@
 ---
 name: debug-feedback-loop
-description: Use when diagnosing or fixing a reproducible CoordExp code, config, CLI, runtime, integration, flake, or performance failure that needs a tight feedback loop; route model-quality, rollout, metric, or optimization symptoms to model-diagnosis.
+description: Diagnose or fix a reproducible CoordExp code, config, CLI, runtime, integration, flake, or performance failure with a tight red-to-green feedback loop.
 ---
 
 # Debug Feedback Loop
 
-Build a fast signal for the exact failure, establish the cause, and close the
-loop against the original symptom.
+Build a **tight loop** that lets reality reject the explanation. Route model
+quality, rollout, metric, or optimization symptoms to `model-diagnosis` and
+pre-launch mechanism-contract risk to `model-innovation-risk-audit`.
 
-## Mode and routing
+## Choose The Mode
 
-- `diagnose`: reproduce, minimize, identify the cause, and recommend the fix;
-  do not change production files without fix authorization.
-- `fix`: retain a regression check, make the smallest correction, and rerun the
-  original symptom.
-- `performance`: establish a repeatable baseline and measurement signal before
+- `diagnose`: reproduce, minimize, identify cause, and specify correction
+  without modifying production surfaces.
+- `fix`: retain a regression check, implement the bounded correction, and close
+  the original symptom.
+- `performance`: establish a repeatable measurement and profiler signal before
   changing code.
-
-Route model-quality, rollout, metric, repetition, train/eval divergence, or
-optimization symptoms to `model-diagnosis`; pre-launch mechanism/loss/eval trust
-questions to `model-innovation-risk-audit`; and contract review to
-`audit-review`.
 
 ## Loop
 
-1. **Reproduce.** Name one command that detects the reported symptom. Prefer a
-   focused test, config load, CLI fixture, artifact replay, known-good/bad
-   differential, or measured profiler. Use `/tmp/` only for disposable probes.
-2. **Minimize.** Remove one input, config, environment, caller, distributed, or
-   step dimension at a time. Preserve both the minimized and original
-   reproducer.
-3. **Discriminate.** Rank only plausible hypotheses and give each an observable
-   prediction. Probe one variable at a time with boundary assertions, receipts,
-   targeted logging, or runtime counters.
-4. **Classify.** Separate implementation defects, missing test/interface seams,
-   contract mismatches, and user-owned research-semantic decisions. Stop for
-   the user before changing algorithms, data meaning, objectives, metrics, or
-   statistical claims.
-5. **Fix when authorized.** Observe the regression check fail, apply the bounded
-   correction, observe it pass, then rerun the original reproducer and adjacent
-   checks selected by the impact radius.
-6. **Clean up.** Remove temporary instrumentation and report the causal chain,
-   falsified alternatives, verification scope, and residual risk.
+1. **Make the exact symptom red.**
+   - Use the narrowest real seam: focused test, config load, CLI fixture,
+     artifact replay, known-good/bad differential, disposable harness, seeded
+     flake loop, bisect, or profiler.
+   - Complete only when the signal detects the reported failure, is repeatable,
+     and can be run by the agent.
 
-The feedback signal must be symptom-specific, repeatable or probability
-measured, fast enough to iterate, agent-runnable, and scope-labeled (`unit`,
-`CLI`, `artifact replay`, `tiny`, and so on). If no such signal can be built,
-report the missing artifact/access and the smallest capture that would unblock
-it; do not call a hunch the root cause.
+2. **Minimize without leaving the path.**
+   - Reduce one dimension at a time and rerun after each cut. Preserve both the
+     minimal signal and original reproducer.
+   - Complete when remaining elements are load-bearing or another cut would
+     stop exercising the real failure.
 
-If the correct regression seam is missing, record that architecture finding
-and route it to `improve-codebase-architecture` after the immediate failure is
-understood. Do not add a shallow test that creates false confidence.
+3. **Discriminate causes.**
+   - Rank a few hypotheses from code and runtime evidence. Each must predict one
+     observable change.
+   - Instrument only the boundary that separates the leaders; change one
+     variable per probe.
+   - Complete when one cause explains the evidence or the missing discriminator
+     is explicit.
 
-## Output
+4. **Classify the correction.**
+   - Distinguish an implementation defect, missing seam, contract mismatch, and
+     a user-owned algorithm/data/objective/statistical decision.
+   - Pause before changing user-owned semantics; explain the alternatives and
+     evidence target.
+   - Complete when the fix boundary and owner are explicit.
 
-Lead with the root cause or current blocker, then give the feedback command,
-minimized evidence, correction or next probe, verification of both minimized
-and original symptoms, and any user-owned semantic decision.
+5. **Turn red green.**
+   - In `fix` mode, retain the regression check at the owning seam, apply the
+     smallest correction, rerun it, then rerun the original reproducer and
+     adjacent checks selected by impact.
+   - Remove temporary instrumentation.
+   - Complete only when both minimal and original signals close.
+
+If no credible loop can be built, stop with attempted evidence and the smallest
+capture or instrumentation needed. Do not promote a hunch to root cause.
+
+## Report
+
+State mode and symptom, loop command/result, minimized reproducer, hypotheses
+and falsification evidence, root cause, correction, regression/original-loop
+verification, cleanup, and residual risk.

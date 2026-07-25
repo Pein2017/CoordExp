@@ -1,92 +1,104 @@
 ---
 name: baidu-netdisk-transfer
-description: Use when Baidu Netdisk work needs BaiduPCS-Go one-off upload/download, browser-cookie login, tmux survival, bypy failure recovery, or append-only union sync with conflict detection.
+description: Transfer data with BaiduPCS-Go for one-off upload or download, browser-cookie login, durable tmux execution, bypy recovery, or append-only union sync with conflict detection.
 ---
 
 # Baidu Netdisk Transfer
 
-Use one skill for Baidu Netdisk operations. Pick the mode before launching
-commands because the overwrite policy is different.
+Choose the mode before launching because their overwrite semantics differ.
 
-## Mode
+- **One-off**: deliberate upload, download, replacement, login recovery, or a
+  single large transfer.
+- **Union sync**: conservative multi-machine sharing that adds missing files,
+  detects same-path/different-content conflicts, and never deletes or
+  overwrites.
 
-- `mode=one-off`: use BaiduPCS-Go for uploads/downloads, cookie login, tmux,
-  bypy failure recovery, or manual replacement.
-- `mode=union-sync`: use append-only sync for large artifact trees shared across
-  machines. Add missing files, detect conflicts, never delete, never overwrite.
+Ask before switching modes when overwrite behavior, deletion, or remote layout
+is ambiguous.
 
-Require fresh explicit user approval before any remote or local overwrite,
-replacement, or deletion. Mode selection does not carry that approval forward.
+## One-Off
 
-## One-Off Transfer
+Use the bundled `scripts/install_baidupcsgo.sh`, `scripts/upload_dir.sh`, and
+`scripts/download_dir.sh`, resolving them relative to this skill directory.
 
-Use for Ubuntu-based BaiduPCS-Go transfers, especially when `bypy` fails with
-`Slice MD5 mismatch`, `31064 file is not authorized`, app-root confusion, or
-large directory transfers.
+- BaiduPCS-Go sees the Netdisk root; bypy may expose only an app sandbox.
+- Use browser cookies when available, but never print or persist them in tracked
+  output.
+- Preserve the requested remote layout and verify account, quota, and target
+  before a large transfer.
+- Prefer conservative upload concurrency and retries. The upload helper is for
+  deliberate replacement; select its skip policy when remote preservation
+  matters. The download helper overwrites locally unless its preservation
+  option is selected.
+- Run long transfers in `tmux` and verify remote visibility rather than relying
+  only on pane output.
+- Scan generated names for characters rejected by Baidu or Windows. If a small
+  blocking set is renamed, keep a mapping manifest beside the transferred
+  artifact.
 
-Non-obvious facts:
+One-off completion requires source and destination identities, transfer exit,
+representative remote or local visibility, overwrite policy, and any rename
+mapping.
 
-- `BaiduPCS-Go` sees Netdisk root `/`; `bypy` uses an app sandbox.
-- Create remote directories under the real root before upload; ignore `31061`.
-- Preserve the intended repo-relative remote layout unless the user gives a
-  different root.
-- Upload safest default: `--norapid -p 1 -l 1 --retry 8`.
-- The helpers default to non-overwrite behavior. Use
-  `BAIDUPCS_UPLOAD_POLICY=overwrite` or `BAIDUPCS_DOWNLOAD_OVERWRITE=1` only
-  after fresh explicit approval for the named paths.
-- Large transfers should run in `tmux`.
+### Login
 
-Scripts:
+1. Resolve the installed BaiduPCS-Go binary and inspect its current `login
+   --help` before choosing a login method.
+2. Prefer the interactive or QR flow on a shared host. For browser-cookie login,
+   require a user-named local cookie file that is untracked, ignored, and
+   readable only by its owner.
+3. In a private shell with tracing disabled, read the cookie into a
+   task-specific variable, pass it through the installed version's supported
+   cookie flag, then immediately unset the variable. Never echo the command,
+   cookie, or expanded arguments. Warn that command-line cookie flags can be
+   visible to other users through process inspection.
+4. Verify the authenticated account with quota and root-listing operations
+   before transferring data. Stop on an unexpected account or root.
 
-```bash
-bash .codex/skills/baidu-netdisk-transfer/scripts/install_baidupcsgo.sh
-bash .codex/skills/baidu-netdisk-transfer/scripts/upload_dir.sh <local_dir> <remote_dir> <BaiduPCS-Go>
-bash .codex/skills/baidu-netdisk-transfer/scripts/download_dir.sh <remote_dir> <local_parent> <BaiduPCS-Go>
-```
-
-Login with browser cookies when available:
-
-```bash
-COOKIE=$(tr -d '\n' < baidu_net_cookie.txt)
-/abs/path/to/BaiduPCS-Go login --cookies="$COOKIE"
-/abs/path/to/BaiduPCS-Go quota
-/abs/path/to/BaiduPCS-Go ls /
-```
-
-Before large uploads, scan for Baidu/Windows-hostile names such as `:`, `>`,
-control characters, or visual arrows embedded in generated figure names. If a
-small set of files blocks transfer, rename them and write a mapping manifest
-near the artifact, for example `outputs/_baidu_filename_mapping/`.
+Login completes only when account, quota, and root are verified without cookie
+content appearing in tracked files or captured output.
 
 ## Union Sync
 
-For append-only multi-node synchronization, read
-[semantics.md](references/semantics.md) before running `status`, `push`, `pull`,
-`sync`, conflict recovery, or deletion maintenance. It owns the command
-semantics, manifest continuity, conflict policy, filename policy, and delete
-procedure.
+Use the bundled `scripts/baidu_union_sync.py` and
+`references/config-template.json`. Read `references/semantics.md` before
+changing conflict or deletion behavior.
 
-```bash
-python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py --help
-cp .codex/skills/baidu-netdisk-transfer/references/config-template.json temp/baidu-netdisk-transfer/config.json
-python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py --config temp/baidu-netdisk-transfer/config.json doctor
-python .codex/skills/baidu-netdisk-transfer/scripts/baidu_union_sync.py --config temp/baidu-netdisk-transfer/config.json status outputs
+The state transition is:
+
+```text
+node A + node B + remote => union of known files
 ```
 
-The preflight is complete when `doctor` passes and `status` reports no
-unresolved same-path/different-content conflict. Transfers remain dry-run until
-an authorized command includes `--apply`.
+1. Run the helper's doctor and status operations with the selected config.
+2. Use SHA-256 manifest signatures when claiming content-conflict detection;
+   size-only signatures detect only size differences and must be reported as a
+   weaker inventory check.
+3. Confirm the remote manifest set is fresh enough to represent every writer.
+   For a pre-existing remote tree with no trustworthy manifest, inventory or
+   seed it from a verified node before claiming union safety.
+4. Review the dry run; mutation requires its explicit apply flag.
+5. Pull remote-only files into staging and merge with ignore-existing behavior.
+6. Push local-only files with skip-existing behavior.
+7. Stop on conflicts unless the user explicitly authorizes manual recovery.
+
+Preserve configured legacy state names so existing nodes retain manifest
+continuity. Reject symlinks, special files, and unsafe names by default. Never
+add mirror, delete, or overwrite semantics to an automated sync. For intentional
+deletion, stop every sync loop, remove the item from each relevant surface, add
+a deny rule for old nodes, then restart.
+
+Union-sync completion requires the pre/post status, files added in each
+direction, conflicts, skipped unsafe entries, node identity, and whether any
+mutation was applied. State the signature mode and remote-manifest freshness so
+the conflict-detection claim is bounded honestly.
 
 ## Failure Triage
 
-- Upload fails after login: use `--norapid`, keep `-p 1 -l 1`, verify quota and
-  real-root path.
-- Need speed: raise `BAIDUPCS_UPLOAD_PARALLEL_FILES` before per-file threads.
-- Download completes but files are not where expected: inspect
-  account-prefixed BaiduPCS-Go staging directories.
-- Existing `bypy` files are invisible: recreate the target path under `/` and
-  transfer with BaiduPCS-Go.
-- ETA questions need live evidence: combine current shard progress, local file
-  size, and remote `BaiduPCS-Go ls` visibility rather than pane output alone.
-
-`references/config-template.json` is the portable node/root config.
+- Authorization or slice-hash failure: verify login, quota, real-root target,
+  conservative concurrency, retries, and rapid-upload settings.
+- Missing downloaded files: inspect the tool's account-prefixed staging area.
+- bypy-visible files missing in BaiduPCS-Go: recreate or locate the intended
+  path under the real Netdisk root.
+- ETA questions: combine completed bytes, current shard, local sizes, and
+  verified remote visibility.

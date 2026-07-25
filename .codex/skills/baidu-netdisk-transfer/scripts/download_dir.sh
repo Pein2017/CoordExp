@@ -14,7 +14,7 @@ Environment overrides:
   BAIDUPCS_DOWNLOAD_MODE            download mode, default: locate
   BAIDUPCS_DOWNLOAD_NOCHECK         1 disables checksum verification, default: 0
   BAIDUPCS_DOWNLOAD_MTIME           1 preserves server mtime, default: 1
-  BAIDUPCS_DOWNLOAD_OVERWRITE       1 passes --ow, default: 0
+  BAIDUPCS_DOWNLOAD_OVERWRITE       1 passes --ow, default: 1
 EOF
 }
 
@@ -32,7 +32,7 @@ DOWNLOAD_RETRY="${BAIDUPCS_DOWNLOAD_RETRY:-8}"
 DOWNLOAD_MODE="${BAIDUPCS_DOWNLOAD_MODE:-locate}"
 DOWNLOAD_NOCHECK="${BAIDUPCS_DOWNLOAD_NOCHECK:-0}"
 DOWNLOAD_MTIME="${BAIDUPCS_DOWNLOAD_MTIME:-1}"
-DOWNLOAD_OVERWRITE="${BAIDUPCS_DOWNLOAD_OVERWRITE:-0}"
+DOWNLOAD_OVERWRITE="${BAIDUPCS_DOWNLOAD_OVERWRITE:-1}"
 
 if [[ "$REMOTE_PATH" != /* ]]; then
   echo "REMOTE_PATH must be an absolute Netdisk path like /output/stage1/foo" >&2

@@ -1,4 +1,4 @@
 interface:
   display_name: "Codebase Design"
-  short_description: "Design deep modules and research-safe seams"
-  default_prompt: "Use $codebase-design to design or compare stable or repeated module interfaces, seam placement, adapters, and contract-safe testing strategies; keep a first exploratory consumer outline-first and experiment-local."
+  short_description: "Design deep research-safe interfaces"
+  default_prompt: "Use $codebase-design to place or compare the interface for this behavior."

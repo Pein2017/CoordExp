@@ -1,4 +1,4 @@
 interface:
-  display_name: "CoordExp V-LLM Mechanistic Loop"
-  short_description: "Experiment-first V-LLM mechanism research"
-  default_prompt: "Use $coordexp-vllm-mechanistic-loop to run the cheapest branch-deciding probe from live artifacts, stop at the earliest terminal result, and update hypotheses before architecture."
+  display_name: "CoordExp Vision-Language Mechanistic Loop"
+  short_description: "Investigate hidden model mechanisms"
+  default_prompt: "Use $coordexp-vllm-mechanistic-loop to continue this artifact-backed mechanism investigation."

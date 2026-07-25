@@ -1,77 +1,66 @@
 ---
 name: workflow-self-distillation
-description: Use when reviewing Codex tasks, memories, sessions, or recurring CoordExp preferences to distill durable skills, subagents, automations, docs, extensions, or deliberate skips.
+description: Distill repeated Codex work, memories, sessions, or user preferences into the smallest durable owner, or promote a validated worktree-local skill into CODEX_HOME.
 ---
 
 # Workflow Self-Distillation
 
-Turn repeated work and judgment preferences into the smallest durable agent asset.
+Turn repeated work into one **durable owner**, not another policy layer.
 
-## Evidence Order
+## Ownership
 
-1. Read the user's brief or `self-distillation.md`.
-2. Mine recent tasks, memories, and rollout summaries.
-3. Use Chronicle only when enabled, and confirm its discoveries elsewhere.
-4. Inventory skills, agent metadata, repo docs, hooks, helpers, and automations before proposing additions.
+- `$CODEX_HOME/skills` is the single authority for skills stable across
+  CoordExp worktrees.
+- A worktree-local skill is an experimental delta. Promote it only after real
+  use, structural validation, and a fresh-context positive and boundary test.
+- Promotion merges the complete self-contained skill folder into CODEX_HOME.
+  After promotion, revise the global owner; keep a local copy only while it
+  carries an explicit experimental delta.
+- Preserve official or vendor-managed ownership instead of importing historical
+  generated variants.
 
-Prefer a 30-day window unless the user gives another window. If history is shorter, say so.
+## Distill
 
-Classify each asset as personal/repo-local, official/plugin-managed,
-generated/vendor-provided, or a local wrapper. Do not remove or merge official
-or plugin-managed assets unless the user explicitly puts them in scope.
+1. **Collect current evidence.**
+   - Start with the user's brief, then recent tasks, memories, rollout summaries,
+     Git history, and existing assets. Prefer a 30-day window unless the user
+     gives another.
+   - Classify personal/repo-local, official/plugin-managed, generated/vendor,
+     and local-wrapper provenance.
+   - Complete when the candidate and its frequency have concrete handles.
 
-## Parallel Split
+2. **Find the existing owner.**
+   - Inventory skills and metadata, docs, scripts, hooks, agents, and
+     automations. Search prior consolidation or retirement decisions.
+   - Do not remove or merge official/plugin-managed assets without explicit
+     scope.
+   - Complete when overlap and the narrowest owner are known.
 
-When subagents are requested or permitted, split independent read-only evidence
-lanes: history/memory, repo/docs, asset overlap, and domain-heavy operations.
-Give each lane a self-contained scope and request evidence handles, confidence,
-recommended form, and overlap warnings. The parent synthesizes and decides.
+3. **Apply the candidate test.**
+   - Keep only work that recurs or is predictably costly, has stable inputs and a
+     checkable output or stop condition, changes behavior, and is not already
+     covered.
+   - Keep session-specific counts, model facts, or experiment conclusions in
+     their owning unit or disclosed reference.
+   - Complete when each candidate is `create`, `extend`, `script/reference`,
+     `metadata/docs`, or `skip` with a reason.
 
-## Candidate Test
+4. **Show the shortlist before editing.**
+   - Report evidence and dates, frequency/confidence, recommended form, and why
+     it earns its context or maintenance cost.
+   - Create or revise assets only after user authorization.
+   - Complete when scope and exclusions are explicit.
 
-Act only when the candidate:
+5. **Validate the behavior.**
+   - Run structural validation and forward-test one positive trigger plus one
+     near-miss in fresh context. Do not leak the intended answer.
+   - Complete when invocation, process, and boundary behavior are supported.
 
-- occurred at least twice, or is clearly likely to recur and costly;
-- has stable inputs, repeatable steps, and a clear output or stopping condition;
-- improves speed, consistency, reliability, or correctness;
-- is not already adequately covered.
+Prefer an expressive interface or executable script over repeated examples.
+Keep each meaning in one place and disclose branch-specific reference behind a
+clear pointer.
 
-Search memory for prior consolidation, retirement, or restoration decisions and
-report conflicts with the live state.
+## Report
 
-Choose the smallest form:
-
-- skill: reusable workflow or playbook;
-- custom subagent: bounded delegated role with clear inputs and output;
-- automation: recurring reminder, monitor, report, or scheduled check;
-- extend existing: when the gap belongs to a current skill;
-- docs or agent metadata: authority, delegation, communication, or role guidance;
-- skip: one-off, sensitive, ambiguous, poorly evidenced, or overlapping.
-
-When evaluating an external implementation workflow, use a benchmark only if
-it can change a durable routing or process decision. Include representative
-expansion-prone work and a lean negative control, require independent contract
-and quality adjudication, and never treat raw lines of code as adoption proof.
-
-## Output First
-
-Before creating assets, give a compact shortlist: workflow, dated evidence,
-frequency/confidence, recommended form, and why it is worth creating or skipping.
-
-Create only when explicitly asked or after approval. Put communication
-preferences in `AGENTS.md` or memory, not a new skill. Validate changed assets.
-
-## Verification
-
-For skill changes:
-
-```bash
-python .codex/skills/.system/skill-creator/scripts/quick_validate.py .codex/skills/<skill>
-python - <<'PY'
-import pathlib, yaml
-for path in pathlib.Path(".codex/skills").glob("*/agents/openai.yaml"):
-    yaml.safe_load(path.read_text())
-PY
-```
-
-Report created/extended assets, deliberate skips, unresolved evidence gaps, and commands run.
+List changed or proposed owners, deliberate skips, verification, and unresolved
+evidence gaps.

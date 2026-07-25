@@ -1,33 +1,40 @@
 ---
 name: handoff
-description: Use when the user asks for a handoff, continuation prompt, compact session summary, another-agent brief, or cross-machine execution note.
+description: Produce a compact continuation brief or cross-machine transfer that routes a fresh agent to current owning state.
 ---
 
 # Handoff
 
-Write only the state a fresh agent or another machine needs to continue correctly.
+A handoff is **transport**, not authority. Link current owners instead of
+creating a second project state.
 
-## Output Target
+## Write
 
-- If the user gives a path, write there.
-- For durable or cross-machine output, use the user-named path or an explicitly agreed stable project/shared path. Never use `mktemp` or `/tmp`.
-- Otherwise return the handoff inline in chat.
-- Read the target path before writing if it already exists.
+1. Resolve the requested destination. Return inline by default; use a named
+   repo-local path only for a real transfer or established policy.
+2. Compare the handoff with the owning result, decision or compass, current
+   operator guidance, stable contracts, and project memory. Repair
+   contradictions at the owner.
+3. Lead with:
+   - current objective and decision-owning outcome;
+   - current decision and evidence that changed it;
+   - superseded routes and reopening conditions;
+   - next action or discriminator and stop condition;
+   - minimum reading path in authority order.
+4. Add only recovery-critical checkout, dirty scope, artifact/config/checkpoint
+   paths, completed commands, evidence boundary, blockers, volatile facts to
+   reverify, and pending verification.
+5. Verify linked paths and that one current route is clear without the prior
+   conversation.
 
-## CoordExp Content
+Do not copy large logs, transcripts, metrics, plans, or artifacts. For a large
+external packet, record one path and content identity plus its decision impact.
 
-Include only relevant items:
+The handoff is complete when a fresh agent can safely continue without treating
+the handoff as scientific or current-behavior authority. Cleanup or archival
+requires separate exact authorization.
 
-- repo root, branch if relevant, and dirty-file scope;
-- exact artifact/config/checkpoint paths that matter;
-- commands already run and their outcomes;
-- unresolved decisions, blockers, and recommended next action;
-- which skills or repo docs the next agent should use;
-- verification that still needs to run.
+## Report
 
-Link exact paths instead of copying large artifacts, plans, metrics, or docs. Live repo files and artifacts remain the source of truth.
-
-For domain-specific continuation fields, follow the owning skill: use
-`coordexp-public-data-provenance` for manifests/regeneration and
-`baidu-netdisk-transfer` for transfer state, tmux/log handles, mappings, and
-post-transfer checks.
+Return the handoff location or inline brief, authority owners checked, volatile
+facts to reverify, and persistence limitations.

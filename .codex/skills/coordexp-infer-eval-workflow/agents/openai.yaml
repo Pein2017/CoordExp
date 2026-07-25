@@ -1,4 +1,4 @@
 interface:
-  display_name: "CoordExp-Swift Infer Eval"
-  short_description: "Run and validate current Swift infer/eval artifacts"
-  default_prompt: "Use $coordexp-infer-eval-workflow to run or repair the current CoordExp-Swift YAML inference and scored detection evaluator. Verify the live config, raw/scored/provenance row binding, metric-bearing status, and aggregate evaluator receipt; keep legacy MS-Swift workflows explicitly historical."
+  display_name: "Infer Eval Workflow"
+  short_description: "Run current CoordExp inference and evaluation"
+  default_prompt: "Use $coordexp-infer-eval-workflow to launch, repair, validate, or summarize this current inference/evaluation run."

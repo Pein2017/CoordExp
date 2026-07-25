@@ -98,6 +98,34 @@ an already authorized research goal to `not_authorized` merely because a new
 unit is created. Architecture promotion and stable-contract work remain
 separate decisions.
 
+## Originating Intent And Semantic Delta Gate
+
+Before a unit becomes `ready` or freezes a predicate, cohort, estimand,
+control, claim, or stop rule, compare it with the originating user brief or
+named criteria. Derived handoffs, reviews, units, and syntheses may route to
+those sources but may not silently strengthen them. Record only conditions
+that can change scientific meaning:
+
+| Condition | Source | Class | Decision effect | Disposition |
+| --- | --- | --- | --- | --- |
+| Exact behavior or requirement | User brief, evidence, or derived proposal | `scientific invariant`, `loss-conditional`, or `conservative design choice` | Cohort, estimand, control, claim, stop rule, cost, or none | Inherited, approved, proposed, or `needs user decision` |
+
+Classify a condition as a `scientific invariant` directly required by the
+originating outcome or safety semantics, `loss-conditional` when required only
+by the selected objective or implementation, or a `conservative design choice`
+when it strengthens assurance but is not necessary for the broader objective.
+
+A directly cited scientific invariant may be inherited. A loss-conditional or
+conservative condition that changes population, estimand, control, claim, stop
+rule, material cost, or successor arithmetic keeps the unit `planned` until the
+owning decision accepts it. An undefined criterion is a semantic fork, not an
+automatic `fix`, unless the originating source determines the answer.
+
+For a census, report nested counts for broad signal, safely usable signal, and
+stronger claim-specific subsets. Give separate verdicts for the selected
+design and the broader originating objective; the strictest intersection must
+not silently become the only feasibility count or successor estimand.
+
 ## Terminology and Naming Rule
 
 Every abbreviation, shortened arm name, hypothesis identifier, metric symbol,
@@ -131,31 +159,46 @@ not a production pre-registration or a speculative software interface.
 
 Require only:
 
-1. **Question**: one falsifiable question.
-2. **Competing explanation**: the strongest alternative and the control that
+1. **Decision and outcome**: the decision at stake, the behavior or capability
+   that owns it, and the unit on which that outcome is judged.
+2. **Question**: one falsifiable question.
+3. **Competing explanation**: the strongest alternative and the control that
    separates it from the working hypothesis.
-3. **Primary observation**: the smallest score, trace, visualization, or short
+4. **Primary observation**: the smallest score, trace, visualization, or short
    rollout that changes the next decision.
-4. **Outline**: expected owner surfaces, reused infrastructure, non-goals,
+5. **Alignment**: the proposed intervention or proxy unit, the final evaluation
+   surface, the transfer claim between them, behavior that must be preserved,
+   ambiguous evidence that stays neutral, and whether the data contains enough
+   correctly attributed signal.
+6. **Outline**: expected owner surfaces, reused infrastructure, non-goals,
    representative smoke, stop rule, and rough cost. Do not freeze code-level
    interfaces before runtime evidence exists.
-5. **Scope**: checkpoint, cases, changed factor, invariants, and decode or
+7. **Scope**: checkpoint, cases, changed factor, invariants, and decode or
    training semantics needed to interpret the pilot.
-6. **Artifact handle**: logical output root and the compact run receipt expected
+8. **Artifact handle**: logical output root and the compact run receipt expected
    from execution.
-7. **Terminology**: define local abbreviations and coined names once.
+9. **Terminology**: define local abbreviations and coined names once.
 
 For inference-led case or mechanism studies, prefer a few deliberately selected
 representative cases and sample-level review over population metric estimation.
 The owning domain skill may define a more specific default range.
+
+Before a unit becomes `ready`, run one real case through every
+conclusion-bearing link from source selection through intervention, emitted
+artifact, and the evaluator, visualization, or trace that owns the decision. If
+a link is bypassed or represented by a proxy, name it and narrow the claim.
+Helper-level tests alone are not this representative smoke.
 
 ### Decision-grade additions
 
 Add a frozen cohort, primary estimand, minimum meaningful effect, paired
 controls, uncertainty plan, safety gate, complete artifact identities, and an
 independent evidence audit only after the exploratory observation survives its
-control. Publication- or production-grade work may then add broader
-replication, human annotation, stable schemas, and operational hardening.
+control and the semantic-delta gate is closed. Publication- or production-grade
+work may then add broader replication, human annotation, stable schemas, and
+operational hardening. Do not use randomization journals, exhaustive source
+closures, adversarial mutation defenses, or resume machinery to make a
+pre-observation exploratory unit appear ready.
 
 After execution begins, record changes that alter scientific meaning,
 comparability, scope, or artifact attribution and use a fresh run identifier.
@@ -163,8 +206,92 @@ Ordinary implementation repairs do not require a new protocol ceremony. Never
 rewrite a declared scope after observing results; label partial execution as
 partial evidence.
 
+Before scaling a treatment, distinguish lack of signal supply, optimization
+failure, proxy-to-outcome transfer failure, and failure of the intended
+mechanism. Do not let the easiest available label, candidate, metric, or
+intermediate representation silently redefine the research objective. Use
+[Research Alignment Examples](research-alignment-examples.md) for compact
+positive and negative patterns.
+
 When closing a non-trivial unit, separate `Observed`, `Supported`, `Ruled out`,
 `Unresolved`, and `Not claimed`, then name the next discriminator.
+
+## Independent Advanced-Model Review Gate
+
+An **independent advanced-model reviewer** is an advanced model or agent outside
+the primary implementation and internal-audit chain. Pro, Fable, or any future
+model may fill this role; the provider name is not part of the research
+contract. The reviewer supplies independent scientific criticism and advice.
+The research lead remains responsible for the final decision.
+
+Use this gate when at least one of the following is true:
+
+- two or more plausible mechanisms or treatments survive a focused probe and
+  internal audit, and the choice changes scientific meaning;
+- an unresolved mathematical, statistical, or causal assumption determines an
+  expensive training launch, architecture route, scale-up, or claim promotion;
+- conclusion-critical evidence is contradictory after one bounded attempt to
+  separate the explanations; or
+- the user or research lead explicitly requests outside independent judgment.
+
+Do not use it as a substitute for a small local experiment, artifact check,
+runtime diagnosis, annotation review, or data census that can answer the
+question directly. Do not invoke it as a routine ceremony for every unit, or
+with an open-ended request to invent a new architecture before the current
+evidence gap is bounded.
+
+Apply the gate as follows:
+
+1. Freeze the decision at stake, the strongest competing explanations, and the
+   exact evidence scope. State what remains unknown and what action the review
+   may change.
+2. Run the cheapest decisive internal observation first. If that observation
+   directly answers the question, close the unit without external escalation.
+3. Prepare one frozen packet containing a decision brief, an evidence atlas,
+   exact source and receipt handles, the requested questions, excluded or
+   unavailable evidence, the expected verdict format, and the review stop
+   condition. A full chat transcript is not the primary packet.
+4. When using multiple reviewers, give them the same core packet independently
+   and do not reveal another reviewer's reasoning or verdict. Choose the model
+   dynamically for the scientific difficulty; do not hard-code a provider.
+5. Require each response to state its assumptions, strongest counterexample,
+   recommended disposition, minimal discriminating experiment, and permitted
+   claim boundary. Useful dispositions are `proceed`, `narrow`, `probe`,
+   `hold`, or `needs user decision`.
+6. Reconcile responses against executable evidence. Do not use majority vote as
+   proof. Convert material disagreement into a small discriminating experiment
+   or an explicit user decision.
+7. Treat the review as advisory unless the unit or user explicitly declared it
+   a blocking pre-launch gate. A timeout or unavailable reviewer does not
+   silently block an otherwise valid unit.
+8. Preserve the request and responses as provenance. Create or update the
+   concrete unit's `review.md` only when the review changes a claim, rerun gate,
+   launch decision, or next discriminator. Update the compass or decision only
+   if the route changes, and update project memory only when continuation state
+   changes.
+
+## Closeout Consistency Gate
+
+Close a unit from the evidence owner outward:
+
+1. freeze `results.md` or the result section in `unit.md`;
+2. update the experiment router and lifecycle status;
+3. update the investigation decision or compass only if the route changed;
+4. refresh `memories/current.md` only if continuation changed;
+5. write a durable handoff only when another session or machine needs one.
+
+These surfaces may summarize the same decision, but they must not become
+independent authorities. Keep one current frontier, link to the owning result,
+mark superseded routes explicitly, and resolve contradictions before handoff.
+
+A live route means any `current`, `next`, `start here`, fresh-session, or
+minimum-reading-path pointer in a compass, active index, decision, or project
+memory. Its target must be a tracked owning `unit.md`, `results.md`, research
+decision, compass or index, current doc, or stable spec. Handoffs, standalone
+agent-review or audit outputs, reviewer packets, transcripts, memory notes,
+scratch files, and temporary artifacts may be cited only as provenance; they
+must never own the live route. A handoff is consumed transport, not a permanent
+route authority.
 
 ## Artifact Root
 
@@ -227,6 +354,9 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
   metric symbol, or coined name.
 - Run `conda run -n ms python scripts/research/check_research_graph.py` for the
   decision layer.
+- Check for lifecycle contradictions such as a completed result whose router
+  still says `planned`, `ready`, or `running`, or a current decision that names
+  a superseded unit.
 - Verify referenced artifact receipts/hashes when available.
 - Run `git diff --check` on touched files.
 

@@ -18,10 +18,9 @@ Use these as a breadth-pass index. Prefer scoping with `--glob` or `relative_pat
 - `rg -n \"unknown_policy|semantic_fallback|use_pred_score|packing_length|duplicate_control|pred_coord_mode|bbox_format\" src tests docs configs -S`
 
 ### Current Architecture Seams
-- `rg -n \"src/train\\.py|src/infer\\.py|src/inference|detection_consumer|coordexp_swift\" docs/AGENT_INDEX.md docs/catalog.yaml docs/IMPLEMENTATION_MAP.md -S`
-- `rg -n \"TrainingPipelineRegistry|SupervisedTrainer|pack_cache|resolved_config|experiment_manifest\" src/training tests/training docs -S`
-- `rg -n \"pipeline\\.run|def run|InferenceRuntime|Backend|score_provenance|gt_vs_pred_scored\" src/infer.py src/inference tests/inference docs -S`
-- `rg -n \"evaluate_scored_detection_artifacts|detection_consumer|coco_predictions|metrics.json\" scripts/evaluate_detection.py src/eval tests/eval docs -S`
+- `rg -n \"run_pipeline|ResolvedArtifacts|resolved_config\\.path|_maybe_run_confidence_postop|_run_eval_stage\" src/infer tests docs -S`
+- `rg -n \"evaluate_and_save|EvalOptions|with_constant_scores|gt_vs_pred_scored_guarded|metrics_guarded\" src/eval tests docs -S`
+- `rg -n \"stage2_rollout_correction|Stage2RolloutCorrectionTrainer|stage2_coordination|stage2_rollout_runtime|GreedyIoUAssignment|duplicate_filter|CorrectionEvent\" src tests docs openspec configs -S`
 - `rg -n \"geometry_from_dict|transform_geometry|compute_coverage|bbox_2d|poly\" src/datasets tests docs -S`
 
 ### Research / Legacy Benchmark Scope
