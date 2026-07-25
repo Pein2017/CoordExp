@@ -10,9 +10,16 @@ doc, or stable spec. Handoffs, agent-review outputs, reviewer packets, audit
 scratch, transcripts, memory notes, and temporary artifacts are provenance
 only and may not own the live route.
 
-## Current state: 200-boundary terminal statistics complete
+## Current state: paired 200-boundary causal release complete
 
-The formal live route is the completed result and its frozen execution unit:
+The formal live route is the completed paired causal-release result and its
+frozen execution unit:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md`
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/unit.md`
+
+The preceding terminal-statistics result remains required context:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md`
 
@@ -30,13 +37,12 @@ The earlier Phase Zero result remains required context:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md`
 
-The 200-boundary read-only statistical unit, the preceding two-discriminator
-unit, and all four earlier no-new-training lanes are complete. The latest unit
-characterizes panel composition, paired continuation-margin changes,
-threshold crossings, strata, correlations, overlap, and outlier sensitivity.
-The stop condition is met. Do not launch a release, optimizer update, or
-architecture change until the user discusses and approves a new or revised
-formal unit.
+The 200-boundary paired causal release, its preceding read-only statistical
+unit, the two-discriminator unit, and all four earlier no-new-training lanes
+are complete. The latest unit re-executes the native control and forces only
+the canonical assistant row opener before one-row release. Its stop condition
+is met. Do not launch a checkpoint comparison, longer release, optimizer
+update, or architecture change until user discussion and authorization.
 
 The governing outcome remains the original task: one `list all objects`
 prompt, one free autoregressive completion, and final unique trusted physical-
@@ -44,6 +50,29 @@ owner coverage. Fixed-prefix likelihood and forced continuation are diagnostic
 proxies only.
 
 ## Decision-relevant evidence
+
+### Paired natural-terminal causal release
+
+- The current-runtime native arm recovers an uncovered owner on `1/200`
+  boundaries; the forced-opener arm does so on `45/200`. The paired primary
+  causal result is `44/200` boundaries, 44 gained physical owners, and zero
+  immediate paired losses.
+- The forced outcomes are `45` verified uncovered-owner rows, `19`
+  covered-owner repeats, `134` valid unmatched rows, and `2` invalid rows.
+  Hence forcing entry exposes real missed true positives but is not a safe
+  production policy.
+- All 44 gains are strict matches to the frozen remaining-owner ledger. Their
+  median Intersection over Union is `0.848`; `43/44` survive threshold `0.55`
+  and `41/44` survive `0.60`.
+- The 134 unmatched rows are not strict true positives barely below threshold:
+  none of their same-category candidates reaches Intersection over Union
+  `0.50`. They may mix localization failures, wrong owners, and supported
+  objects absent from the trusted ledger; they are neither verified recovery
+  nor automatically hallucination.
+- Causal recovery is `16/43` in the transition-positive-beyond-Source band but
+  remains `6/55` where every checkpoint margin is nonpositive. Diagnostic
+  continuation susceptibility enriches recovery without being necessary or
+  sufficient for conditional owner selection.
 
 ### Untouched natural-terminal boundary statistics
 
@@ -153,11 +182,13 @@ failures for both checkpoints. One-step composition preserves usable
 second-owner reachability but is order-sensitive and is not monotone in
 candidate likelihood.
 
-The strongest immediate uncertainty is the paired causal probability that
-forcing only the opener after an actual Source stop yields any new verified
-uncovered owner rather than a covered repeat, unmatched or ambiguous row,
-invalid row, or immediate terminal. The current atlas has one released Source
-stop, while the fixed 200-boundary panel was scored but not released.
+The strongest immediate uncertainty is whether transition step 36 improves
+conditional owner realization after the opener is held fixed on the same 200
+boundaries, rather than only shifting the choice to continue. A separate audit
+would be required to resolve what portion of Source's 134 unmatched forced
+rows are localization errors, wrong owners, or valid objects absent from the
+trusted ledger. Longer-trajectory preservation and final owner-set utility are
+also unresolved.
 
 The current evidence promotes no architecture, explicit state carrier, prompt
 change, one-row-at-a-time output contract, production forced-continuation
@@ -179,17 +210,13 @@ policy, or final training objective.
 
 ## Next discussion, not yet authorized execution
 
-The narrowest next mechanism candidate is a paired current-runtime replay on
-all 200 untouched natural-terminal boundaries: Source native one-row release
-versus Source with only the canonical row opener forced before one-row release.
-The primary outcome is any verified uncovered physical owner produced in the
-forced arm that the paired native arm does not produce. Secondary outcomes are
-native uncovered-owner recovery, covered-owner repeat, unmatched or ambiguous
-valid row, invalid or incomplete row, and terminal behavior, reported by
-boundary, category composition, Source-margin stratum, and remaining-owner
-stratum. Restricting the study to the 45 transition-positive boundaries would
-select on the strongest observed response predictor and bias the estimate.
-This release is not yet authorized.
+The narrowest next mechanism candidate is a same-panel forced-opener comparison
+between Source and transition step 36, with identical prefixes and the continue
+decision fixed. Its decision-owning outcome would be paired strict recovery of
+any frozen uncovered owner, while repeats, unmatched rows, geometry validity,
+and owner exchange remain explicit outcomes. This could isolate conditional
+owner selection from the already-established continue/stop effect. It is not
+yet authorized.
 
 A future 256-image cohort may explicitly mix roles:
 
@@ -210,12 +237,13 @@ report, not an automatic negative label.
 
 ## Minimum reading path
 
-1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md`
-2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/unit.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md`
-4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md`
-5. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-6. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
+1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md`
+2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/unit.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md`
+4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md`
+5. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md`
+6. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
+7. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
 
 The result owns executed evidence and the claim boundary. The unit owns the
 frozen protocol. The compass owns the program-level route. Memory notes and
