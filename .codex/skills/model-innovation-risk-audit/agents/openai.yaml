@@ -1,4 +1,0 @@
-interface:
-  display_name: "Innovation Risk Audit"
-  short_description: "Pre-launch trust gate for model changes"
-  default_prompt: "Use $model-innovation-risk-audit when a planned or newly wired CoordExp model, objective, data, tokenizer, decode, eval, or runtime mechanism needs a pre-launch or pre-interpretation trust gate before training/eval claims."

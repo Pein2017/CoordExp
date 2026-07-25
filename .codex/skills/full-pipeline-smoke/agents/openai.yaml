@@ -1,4 +1,0 @@
-interface:
-  display_name: "Full Pipeline Smoke"
-  short_description: "Production-like multi-stage CoordExp smoke"
-  default_prompt: "Use $full-pipeline-smoke when a CoordExp change needs a production-like multi-stage smoke through data, train or rollout, infer, eval, and artifact checks. Do not use it for narrow unit tests or simple config parsing."

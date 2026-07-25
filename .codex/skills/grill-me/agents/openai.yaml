@@ -1,4 +1,0 @@
-interface:
-  display_name: "Grill Me"
-  short_description: "Resolve one high-stakes decision at a time"
-  default_prompt: "Use $grill-me to pressure-test this CoordExp decision one question at a time. Do the technical homework, recommend an answer, preserve my control of algorithm/data/loss/statistical meaning, and do not implement until I confirm."

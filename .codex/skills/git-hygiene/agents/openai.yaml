@@ -1,4 +1,0 @@
-interface:
-  display_name: "Git Hygiene"
-  short_description: "Scoped commits, sync, and token-safe git"
-  default_prompt: "Use $git-hygiene when the user asks to stage, commit, split dirty work, sync, push, or use the repo HTTPS token workflow. Preserve unrelated dirty files, inspect staged diffs, run scoped verification, and avoid destructive git commands unless explicitly requested."
