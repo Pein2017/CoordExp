@@ -39,6 +39,7 @@ from src.qwen.special_token_embeddings import load_inference_embedding_delta
 
 
 ComponentsLoader = Callable[[BackendLaunch], Any]
+_POLICY_SCORE_STEP_CHUNK_SIZE = 32
 
 
 @dataclass(frozen=True)
@@ -886,23 +887,45 @@ def _policy_chosen_token_logprobs(
 ) -> torch.Tensor:
     compute_transition_scores = getattr(model, "compute_transition_scores", None)
     if callable(compute_transition_scores):
-        try:
-            values = compute_transition_scores(
-                sequences,
-                tuple(scores),
-                normalize_logits=True,
-            )
-        except Exception as exc:
-            raise RuntimeContractError(
-                "HF policy likelihood extraction failed",
-                code="hf_backend.policy_logprob_extraction",
-                context={
-                    "sequence_shape": tuple(sequences.shape),
-                    "score_steps": len(scores),
-                },
-                cause=exc,
-            ) from exc
-        result = torch.as_tensor(values)
+        prompt_width = sequences.shape[1] - len(scores)
+        chunks: list[torch.Tensor] = []
+        for start in range(0, len(scores), _POLICY_SCORE_STEP_CHUNK_SIZE):
+            end = min(start + _POLICY_SCORE_STEP_CHUNK_SIZE, len(scores))
+            chunk_scores = tuple(scores[start:end])
+            chunk_sequences = sequences[:, : prompt_width + end]
+            try:
+                values = compute_transition_scores(
+                    chunk_sequences,
+                    chunk_scores,
+                    normalize_logits=True,
+                )
+            except Exception as exc:
+                raise RuntimeContractError(
+                    "HF policy likelihood extraction failed",
+                    code="hf_backend.policy_logprob_extraction",
+                    context={
+                        "sequence_shape": tuple(sequences.shape),
+                        "score_steps": len(scores),
+                        "chunk_start": start,
+                        "chunk_end": end,
+                    },
+                    cause=exc,
+                ) from exc
+            chunk = torch.as_tensor(values)
+            expected_chunk_shape = (generated.shape[0], end - start)
+            if chunk.shape != expected_chunk_shape:
+                raise RuntimeContractError(
+                    "HF policy likelihood chunk does not align with generated ids",
+                    code="hf_backend.policy_logprob_alignment",
+                    context={
+                        "likelihood_shape": tuple(chunk.shape),
+                        "expected_shape": expected_chunk_shape,
+                        "chunk_start": start,
+                        "chunk_end": end,
+                    },
+                )
+            chunks.append(chunk)
+        result = torch.cat(chunks, dim=1)
         if result.shape != generated.shape:
             raise RuntimeContractError(
                 "HF policy likelihood shape does not align with generated ids",

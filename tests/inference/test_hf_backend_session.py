@@ -54,6 +54,7 @@ class FakeHFModel:
         self.score_steps = None if score_steps is None else tuple(score_steps)
         self.generate_kwargs: dict[str, Any] | None = None
         self.transition_scores_seen_normalized: bool | None = None
+        self.transition_score_step_counts: list[int] = []
 
     def generate(self, **kwargs: Any) -> SimpleNamespace:
         self.generate_kwargs = kwargs
@@ -70,6 +71,7 @@ class FakeHFModel:
         normalize_logits: bool,
     ) -> torch.Tensor:
         self.transition_scores_seen_normalized = normalize_logits
+        self.transition_score_step_counts.append(len(scores))
         generated = sequences[:, -len(scores) :]
         rows = []
         for step_index, step_logits in enumerate(scores):
@@ -350,6 +352,48 @@ def test_hf_session_native_batch_records_policy_and_raw_fp32_channels(
     assert performance["decode_elapsed_seconds"] > 0
     assert performance["requests_per_second"] > 0
     assert performance["generated_tokens_per_second"] > 0
+
+
+def test_policy_logprob_extraction_chunks_long_generation_scores() -> None:
+    from src.inference.hf_backend import _policy_chosen_token_logprobs
+
+    batch_size = 2
+    prompt_width = 3
+    step_count = 33
+    vocab_size = 7
+    generated = torch.tensor(
+        [[step % vocab_size for step in range(step_count)] for _ in range(batch_size)],
+        dtype=torch.long,
+    )
+    prompt = torch.zeros((batch_size, prompt_width), dtype=torch.long)
+    sequences = torch.cat((prompt, generated), dim=1)
+    scores = tuple(
+        torch.arange(batch_size * vocab_size, dtype=torch.float32).reshape(
+            batch_size, vocab_size
+        )
+        + step
+        for step in range(step_count)
+    )
+    model = FakeHFModel(sequences=sequences.tolist(), score_steps=list(scores))
+
+    observed = _policy_chosen_token_logprobs(
+        model=model,
+        sequences=sequences,
+        scores=scores,
+        generated=generated,
+    )
+    expected = torch.cat(
+        [
+            torch.log_softmax(step_scores, dim=-1).gather(
+                1, generated[:, step : step + 1]
+            )
+            for step, step_scores in enumerate(scores)
+        ],
+        dim=1,
+    )
+
+    assert model.transition_score_step_counts == [32, 1]
+    torch.testing.assert_close(observed, expected)
 
 
 def test_hf_session_forces_left_padding_for_heterogeneous_prompts(
