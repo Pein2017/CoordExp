@@ -14,17 +14,16 @@ import os
 import re
 import shlex
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 
-DEFAULT_OUTPUT_ROOT = Path("/data/CoordExp/outputs/infer/recursive_detection_ce_latest")
-DEFAULT_TEMP_DIR = Path("/data/CoordExp/temp/infer/recursive_detection_ce_latest")
+DEFAULT_OUTPUT_ROOT = Path("outputs/infer/recursive_detection_ce_latest")
+DEFAULT_TEMP_DIR = Path("temp/infer/recursive_detection_ce_latest")
 DEFAULT_GT_JSONL = Path("public_data/coco/rescale_32_1024_bbox_max60/val.coord.jsonl")
 DEFAULT_SEMANTIC_MODEL = Path("model_cache/all-MiniLM-L6-v2-local")
-DEFAULT_PYTHON = Path("/root/miniconda3/envs/ms/bin/python")
+DEFAULT_PYTHON = Path("python")
 DEFAULT_TEMPERATURE = 0.0
 DEFAULT_REPETITION_PENALTY = "1.10"
 
@@ -54,6 +53,15 @@ def _checkpoint_label(checkpoint: Path) -> str:
     if match:
         return f"ckpt{match.group(1)}"
     return _sanitize_slug(name)
+
+
+def _resolve_from_root(path: str | Path, repo_root: Path) -> Path:
+    """absolute path, resolving relative values from the selected repo root."""
+
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (repo_root / candidate).resolve()
 
 
 def _gpu_count(gpus: str) -> int:
@@ -519,16 +527,17 @@ def _collect_run_dirs(paths: Sequence[str], *, glob_pattern: str | None) -> list
 def _cmd_prepare_recursive(args: argparse.Namespace) -> int:
     """prepare recursive-detection config and launcher."""
 
+    repo_root = Path(args.repo_root).expanduser().resolve()
     spec = RecursiveInferEvalSpec(
-        repo_root=Path(args.repo_root).resolve(),
-        checkpoint=Path(args.checkpoint).resolve(),
+        repo_root=repo_root,
+        checkpoint=_resolve_from_root(args.checkpoint, repo_root),
         run_tag=args.run_tag,
         gpus=args.gpus,
         master_port=args.master_port,
-        output_root=Path(args.output_root).resolve(),
-        temp_dir=Path(args.temp_dir).resolve(),
+        output_root=_resolve_from_root(args.output_root, repo_root),
+        temp_dir=_resolve_from_root(args.temp_dir, repo_root),
         gt_jsonl=Path(args.gt_jsonl),
-        python=Path(args.python).resolve(),
+        python=Path(args.python).expanduser(),
         repetition_penalty=args.rp,
         run_prefix=args.run_prefix,
         object_ordering=args.object_ordering,
@@ -581,8 +590,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     prepare.add_argument("--gpus", required=True, help="CUDA_VISIBLE_DEVICES list, e.g. 0,1,2,3")
     prepare.add_argument("--master-port", required=True, type=int, help="distributed launch port")
-    prepare.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))
-    prepare.add_argument("--temp-dir", default=str(DEFAULT_TEMP_DIR))
+    prepare.add_argument(
+        "--output-root",
+        default=str(DEFAULT_OUTPUT_ROOT),
+        help="artifact root; relative paths resolve from --repo-root",
+    )
+    prepare.add_argument(
+        "--temp-dir",
+        default=str(DEFAULT_TEMP_DIR),
+        help="generated config/launcher directory; relative paths resolve from --repo-root",
+    )
     prepare.add_argument("--gt-jsonl", default=str(DEFAULT_GT_JSONL))
     prepare.add_argument("--python", default=str(DEFAULT_PYTHON), help="python executable for launcher")
     prepare.add_argument("--run-prefix", default="compact_full_prefix_rollin_balance2")
