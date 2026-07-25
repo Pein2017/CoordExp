@@ -1,6 +1,6 @@
 # Dynamic Subagent Model Routing
 
-Last reviewed: 2026-07-23.
+Last reviewed: 2026-07-25.
 
 This document is the living, human-readable routing guide for delegated
 CoordExp work. New sessions should read it before substantial subagent
@@ -13,16 +13,20 @@ decision; do not preserve a stale rule merely for consistency.
 
 ## Primary Decision Rule
 
-Route by two properties:
+Route by three properties:
 
 1. **Mechanical verifiability**: can a command, test, artifact receipt, exact
    path, or deterministic comparison decide whether the task succeeded?
 2. **Scientific consequence**: can the answer change the experiment's meaning,
    training objective, architecture direction, or final research claim?
+3. **Observed worker fit**: what repeated evidence exists for this worker on
+   the same task class, tool environment, and required ownership mode?
 
-Use the least expensive model and lowest reasoning effort that can satisfy the
-first property without under-serving the second. Escalate after evidence of a
-real capability mismatch, not merely because the task is important.
+Choose a worker with demonstrated or plausibly strong task fit first. Among
+suitable workers, use the least expensive model and lowest reasoning effort
+that preserve the scientific consequence and required ownership mode.
+Escalate after evidence of a real capability mismatch, not merely because the
+task is important.
 
 ## Current Model Roles
 
@@ -34,6 +38,7 @@ runtime names for extra-high and maximum reasoning effort.
 | GPT-5.6 Luna | Repository discovery, artifact lookup, executable preflight, and bounded implementation with mechanical acceptance | That maximum reasoning makes it a scientific or architecture judge |
 | GPT-5.6 Terra | Optional middle layer for cross-file integration, implementation review, experiment-contract checking, and a second independent view | That every Luna result must pass through Terra, or that Terra is the final scientific arbiter |
 | GPT-5.6 Sol | Mechanism reasoning, competing-hypothesis comparison, research design, conclusion-critical integration, and final evidence judgment | That it is automatically more reliable on exact strings, file inventory, or other mechanical details |
+| Claude Code through the installed `cc:*` bridge | A peer external worker for independent audit, engineering-focused investigation, bounded implementation, and writing when task evidence supports the route | That provider diversity makes its answer correct, that it is review-only, or that every Codex task needs a Claude pass |
 
 Observed tendencies are routing evidence, not permanent model traits.
 
@@ -89,6 +94,47 @@ chain.
 Do not use Sol at maximum reasoning for work that a deterministic test can
 settle.
 
+### Claude Code External Worker
+
+Treat Claude Code as another dynamically routed worker alongside Luna, Terra,
+and Sol, not as a mandatory approval gate. It may be the primary owner of a
+bounded audit, investigation, implementation, or writing lane. The Codex lead
+retains research interpretation, scope changes, cross-lane synthesis, and final
+judgment.
+
+Use the installed `cc:*` bridge rather than invoking the Claude command-line
+interface directly:
+
+- Prefer `cc:rescue` for independently useful investigation, implementation,
+  verification, follow-through, and writing. Use `--fresh` for a new lane and
+  `--resume` only for a concrete follow-up to the same Claude task.
+- Pass `--write` explicitly when Claude owns edits. For a read-only rescue,
+  omit `--write` and state the no-modification boundary in the task. Do not run
+  concurrent writers on the same semantic surface.
+- Use `cc:review` for ordinary read-only Git-diff review and
+  `cc:adversarial-review` for one precise design-risk or hidden-assumption
+  question. These review commands do not replace `cc:rescue` when Claude should
+  investigate, edit, test, or carry the task forward.
+- Use background tracked jobs for non-trivial work and retrieve them through
+  `cc:status` and `cc:result`. Keep the automatic turn-end review gate disabled
+  unless the user explicitly enables it for a short monitored session.
+
+The current provisional quality prior, holding task, evidence, tools, and
+execution contract comparable, is:
+
+```text
+Haiku < Claude 5 Sonnet < Claude 5 Opus < Fable
+```
+
+Within one model and task class, higher reasoning effort is also expected to
+improve quality. Route model and effort as separate axes rather than treating
+model identity as the only capability choice. This ordering is a calibration
+prior, not a permanent guarantee: task fit and observed results can override
+it. Plugin aliases such as `sonnet` and `opus` may resolve to pinned Claude 4.x
+identifiers; pass the exact full model identifier when Claude 5 Sonnet or
+Claude 5 Opus is required. Use Fable deliberately while accumulating enough
+task-class evidence to decide where its quality advantage is dependable.
+
 ## Dynamic Routing Procedure
 
 1. If success is mechanically decidable, start with Luna at medium reasoning.
@@ -101,7 +147,10 @@ settle.
    seam.
 5. Raise Sol to extra-high or maximum reasoning only after the remaining
    uncertainty has been localized to a genuine scientific contradiction.
-6. Escalate by failure type. Do not blindly repeat the same prompt with a more
+6. Consider Claude Code as an initial owner or independent lane when its
+   engineering bias, provider independence, context, or observed task-class
+   record is useful. Do not reserve it only for post-hoc review.
+7. Escalate by failure type. Do not blindly repeat the same prompt with a more
    expensive model.
 
 Typical escalation:
@@ -123,6 +172,9 @@ route-changing contradiction remains after focused evidence
 ## Ownership And Review
 
 - Give one implementation owner to each semantic surface.
+- Apply the same ownership rule to Claude Code. A `cc:rescue --write` lane is a
+  real writer/worker, not a disposable reviewer; isolate its write surface from
+  concurrent Codex or subagent writers.
 - Separate implementation ownership from independent scientific judgment when
   that distinction affects trust.
 - Do not run three duplicate implementations merely because all three model
@@ -133,6 +185,10 @@ route-changing contradiction remains after focused evidence
 - Adjudicate disagreements from tests, runtime receipts, artifacts, and claim
   boundaries rather than model prestige, majority vote, prose length, or token
   expenditure.
+- Use a fresh, bounded evidence packet for an independent Claude audit and do
+  not seed it with the lead agent's preferred conclusion. One external lane per
+  decision surface is the default; add another only when a real contradiction
+  remains or the comparison itself is the experiment.
 
 ## Context Inheritance
 
@@ -183,6 +239,11 @@ plus the bounded Pi Stage 0 worker comparison:
   science-judgment comparisons to justify promotion.
 - Terra has useful middle-layer evidence, but not enough repeated evidence to
   make it mandatory or final.
+- The `cc:*` bridge is installed and Claude Code is now an eligible peer worker,
+  but task-class calibration is still sparse. Record whether Claude finds
+  unique actionable defects, respects write and claim boundaries, completes
+  verification, and changes the final decision before strengthening its
+  defaults.
 
 Evidence handles:
 

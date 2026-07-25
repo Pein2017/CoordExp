@@ -283,8 +283,14 @@ Close a unit from the evidence owner outward:
 These surfaces may summarize the same decision, but they must not become
 independent authorities. Keep one current frontier, link to the owning result,
 mark superseded routes explicitly, and resolve contradictions before handoff.
-A handoff is a one-shot transport artifact: after consumption, the owning
-result, decision, and memory remain; the handoff must not become the permanent
+
+A live route means any `current`, `next`, `start here`, fresh-session, or
+minimum-reading-path pointer in a compass, active index, decision, or project
+memory. Its target must be a tracked owning `unit.md`, `results.md`, research
+decision, compass or index, current doc, or stable spec. Handoffs, standalone
+agent-review or audit outputs, reviewer packets, transcripts, memory notes,
+scratch files, and temporary artifacts may be cited only as provenance; they
+must never own the live route. A handoff is consumed transport, not a permanent
 route authority.
 
 ## Artifact Root

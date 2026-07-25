@@ -23,6 +23,13 @@
   living, evidence-based routing guide rather than an executable role map;
   monitor outcomes and revise its defaults when repeated task evidence changes
   the cost-quality boundary.
+- Installed external-worker bridges such as `cc:*` are eligible peer
+  delegation surfaces, not mandatory review gates. They may own bounded audit,
+  investigation, implementation, or writing lanes when dynamically selected;
+  the lead agent still owns research interpretation, scope changes, synthesis,
+  and final judgment.
+- Treat an external `--write` lane as a real writer: assign one semantic owner,
+  state its bounds and verification, and protect concurrent local changes.
 - Use a cost-efficient model when a command, test, artifact receipt, or other
   mechanical check can decide success. Use the strongest appropriate model
   when judgment can change scientific meaning, architecture, or a
@@ -125,6 +132,11 @@
 
 - Use canonical docs for current behavior and workflows, starting with `docs/AGENT_INDEX.md` and `docs/catalog.yaml`.
 - Use stable specs only for compatibility-sensitive contracts. Use active change artifacts only when the user or current task puts that change in scope.
+- Live research routers and current reading paths may target only tracked owning
+  research units, results, decisions, compasses or indexes, current docs, and
+  stable specs. Handoffs, agent-review outputs, reviewer packets, audit
+  scratch, transcripts, memory notes, and temporary artifacts may be
+  provenance, but never the current or next route target.
 - Treat historical notes, old worktrees, memories, and research writeups as evidence or idea context, not current-behavior authority. Revalidate live files before relying on them.
 - Work in the exact checkout or worktree named by the user. Do not mix facts across roots without checking the target root.
 
