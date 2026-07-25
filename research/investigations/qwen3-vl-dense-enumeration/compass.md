@@ -22,46 +22,45 @@ architecture, or an implementation contract.
 
 Fresh sessions start from these formal owners:
 
-1. the planned and authorized [existing-checkpoint transition mechanism
-   decomposition and robust-evaluation
+1. the completed [existing-checkpoint transition mechanism decomposition and
+   robust-evaluation
+   result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md),
+   which owns the four-lane Phase Zero evidence, mixed mechanism judgment,
+   claim boundary, and discussion-stage next-training recommendation;
+2. its frozen [execution
    unit](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md),
-   which owns the no-new-training Phase Zero route for robust evaluation,
-   same-prefix continue/stop versus owner-selection versus row-realization
-   probes, complete-action normalization and fixed-budget reanalysis, and the
-   held-out owner-churn audit;
-2. the completed [prefix-local and on-policy final owner-set training
+   which owns the no-new-training protocol and stop rules;
+3. the completed [prefix-local and on-policy final owner-set training
    unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md),
    which owns event materialization, the compared objectives and controls, the
    completed long training, matched training-panel comparison, and narrow
    transition-step-36 development/held-out transfer gate;
-3. the completed [trajectory owner-set admission-census
+4. the completed [trajectory owner-set admission-census
    result](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md),
    which owns the executed `8/2,004` strict-composite finding and its bounded
    claim; and
-4. the [experiment index](experiments/index.md), which owns lifecycle routing
+5. the [experiment index](experiments/index.md), which owns lifecycle routing
    across units.
 
 The strict 248-additional-admission estimand remains blocked before entropy
 because it does not answer the active broader prefix-level design. The active
-unit preserves the original `list all objects` prompt and one-completion output
-contract; the external one-row-at-a-time prompt or textual covered-set branch
-is pending and not part of this route. Handoffs, agent-review outputs, reviewer
-packets, audits, and memory notes remain historical provenance only; none is a
-live route target.
+route preserves the original `list all objects` prompt and one-completion
+output contract; the external one-row-at-a-time prompt or textual covered-set
+branch is pending and not part of this route. Handoffs, agent-review outputs,
+reviewer packets, audits, and memory notes remain historical provenance only;
+none is a live route target.
 
-As of `2026-07-25`, all four 1,440-event long runs, the matched batch-4,
-3084-token 64-image comparison, and the narrow transition-step-36 transfer gate
-are complete. Step 36 moves from `+3` net owners on the training panel to `+68`
-on development-256 and `+7` on disjoint heldout-128. Heldout uses 118 fewer
-predictions, 13 fewer strict duplicate candidates, and has slightly better
-common-owner geometry, so the direction is not explained by output expansion.
-Its 21 net-positive versus 17 net-negative images, one introduced length stop,
-and bootstrap interval crossing zero keep the result below robust promotion.
-The user approved a four-lane existing-checkpoint Phase Zero before any new
-training. The new unit treats fixed-prefix and forced-continuation observations
-as diagnostics and retains the original free one-completion final owner set as
-the decision-owning outcome. Neither checkpoint is a final mechanism,
-architecture, or full-dataset promotion.
+As of `2026-07-25`, the four-lane existing-checkpoint Phase Zero is complete.
+Heldout remains `46 gained / 39 lost / +7 net` under robust token-cutoff,
+natural-stop, leave-one-image-out, and matching-threshold checks; arm-blinded
+entity and geometry review retains `22 genuine gains / 16 genuine losses / +6`.
+On seven selected exact Source prefixes, step 36 raises continue-minus-stop on
+all seven and improves best-uncovered minus best-covered row likelihood on five
+of six comparable cases, but neither actual Source terminal state flips and
+released row realization does not improve. The complete-row arms contain owner
+signal by 256 tokens, yet their dominant failure is excessive continuation and
+output expansion rather than sum-versus-mean normalization. The route is now
+paused for user discussion; no new training or architecture is promoted.
 
 The [weekly integrated research
 report](2026-07-13-to-2026-07-16-weekly-research-report.md) is the compact
@@ -544,11 +543,11 @@ cross-row coverage.
 | Input-level spatial restriction changes one object opportunity | Bounded support under hard eligibility; the count-balanced all-keys-readable soft cross operator is now closed because both matched-owner controls fail, so its crossed arms cannot adjudicate the hard asymmetry | Hard exclusion and its abrupt phase switch may manufacture the asymmetry; the historical uniform-dose operator and current query-phase-restricted operator cannot be pooled into one trajectory | No immediate successor is active. A historical-uniform-operator `3.9060049` endpoint would require a fresh separately authorized execution; artifact-only cross-operator pooling is rejected. |
 | Safe final masked policy improves enumeration | Ruled out under the executed protocol | Equal-call full-image sampling is at least as useful after aggregation | Revisit only after a new masking mechanism avoids retention and output-expansion failures. |
 | Fixed-prefix next-object probability is fragmented across several real objects | Supported at one exact state; not population-estimated | Some other bagging rescues may still arise only from earlier trajectory divergence | Replicate only when a future route decision requires prevalence, not as the immediate discriminator. |
-| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and a matched ordering-policy pilot. Random complete-row training changes the route distribution but does not create symmetric covered-set behavior; on image `2299` it collapses to one successor. The first-wrong-coordinate Smoke B proves that a local exact-prefix boundary margin is learnable, but it does not improve free-rollout geometry or health relative to the matched gate-only control. | The state may encode geometry-conditioned route compatibility rather than semantic coverage, and a local frozen-prefix target may not control owner selection or later trajectory state. Strict owner matching, dense same-class geometry, incomplete annotation, selected-case bias, and one checkpoint per ordering policy remain alternatives. | Use actual prefix states to construct grouped set-level supervision, but do not make one row or owner the canonical target. Any explicit carrier remains a separate hypothesis rather than the default next implementation. |
+| Prefix state is an executable but fragile traversal state | Supported across order, scoring, exact same-parent interventions, and matched training. In the completed seven-case Source-prefix panel, step 36 raises continuation on all cases and improves best-uncovered versus best-covered row likelihood on five of six comparable cases, but neither terminal decision flips and released owner realization does not improve. | The selected candidates may differ through row identity and geometry rather than a prefix-relative covered-set computation; the candidate set is incomplete, selected-case bias remains, and one checkpoint cannot identify objective causality. | If training is authorized, separate continue-versus-stop calibration, conditional uncovered-versus-covered row preference, row realization, and Source preservation in matched arms. Any explicit carrier remains a separate hypothesis rather than the default implementation. |
 | Late-middle residual states implement phase-specific decisions | Bounded one-sided support: an eligible clock-description path is conditionally portable, and one same-description paired-object state after decoder block `23` switches the unrestricted geometry owner through an `x1` basin change where the trusted block-`13` control does not | The portable state may select only the first coordinate, with the emitted `x1` and native autoregressive computation recovering the rest of the box; one image and one direction do not establish a general object state | No successor is active. If separately authorized, mediate `x1` by forcing paired `x1` without replacement and forcing baseline `x1` under paired-state replacement, then compare later coordinates and final owner. |
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
-| Bagging support can be concentrated into deterministic greedy traversal | Partially supported at the route-family level, not as direct owner-wise imitation or final-set expansion. Single-route and multi-route complete-row training can recover named owners, but ordinary owners are exchanged and greater image breadth does not establish held-out final-set expansion at the fixed dose. | Bagging may expose several valid but mutually competing routes, and positive credit for one route may overwrite other useful routes instead of expanding coverage. | Run a 256-image order-independent set-level screen. Reward strict final-owner-set dominance, keep exchanged-owner trajectories incomparable, keep unknown entities neutral, and require gained-owner improvement without losing the Source owner set before larger scale. |
+| Bagging support can be concentrated into deterministic greedy traversal | Partially supported. Transition step 36 gives a small robustly directional held-out gain with fewer predictions, while complete-row arms already gain owners by 256 tokens but then expand output without additional net gain. Conditional row-ranking signal exists on a selected panel; reliable row realization and exchange-free traversal do not. | Bagging may expose several valid but mutually competing routes, and generic continuation or positive credit for one route may overwrite useful Source routes rather than expand coverage. | Discuss a mixed-cohort matched screen that separates continuation, conditional owner preference, row realization, and Source preservation. Require fixed-budget gained and retained owners, owner gain per prediction, and zero new length stops before a longer horizon; do not require every one of 256 images to satisfy the old strict composite. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -563,17 +562,25 @@ failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
 
-The positive-row sequence is now closed through the [Constant-Dose Image-
-Breadth Treatment
-Screen](experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md).
-Single-route, multiple-route, Source-preservation, and broader-image variants
-all show that selected-owner or route-family credit is learnable, but none
-defines how to expand the complete owner set without owner exchange. The user
-has therefore promoted order-independent set-level supervision from a later
-alternative to the highest-priority next treatment. The first screen must keep
-all verified uncovered owners valid, preserve nondominated trajectories, and
-use final unique-owner set inclusion rather than one selected complete row as
-the primary supervision unit.
+The immediate queue is a user discussion of the completed [transition
+mechanism Phase Zero
+result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md),
+not an automatic training launch. It separates three effects that earlier
+complete-row training conflated: the decision to continue, the relative score
+of an uncovered-owner row after continuation is fixed, and realization of that
+row's description and geometry. The first two move under transition step 36;
+the third does not improve on the selected panel.
+
+If a new training unit is authorized, its minimal discriminator is a matched
+screen that separates modest continue-versus-stop calibration, conditional
+uncovered-versus-covered owner preference, row realization, and Source-policy
+preservation. A 256-image total cohort may mix explicit signal events with
+preservation, background, and matched-control exposure; it must not claim that
+every image carries equivalent set-expansion evidence. Fixed 256- and 512-token
+free rollouts should gate longer inference by retained and gained owners, owner
+gain per prediction, duplicate and invalid rows, geometry, and zero new length
+stops. Prompt changes, one-row-at-a-time inference, and an explicit state
+carrier remain pending alternatives rather than the current route.
 
 The completed [Person 25 Dominant-Owner Commit and Persistence Closeout
 results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)
@@ -784,24 +791,22 @@ A 256-image training screen may start when all of the following are true:
    probability on uncovered objects, less probability on committed objects, or
    a smaller greedy-versus-sampled coverage gap.
 
-Current gate decision: **the exact all-positive natural-alias design is stopped,
-and the broader [prefix-local and on-policy unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md)
-has completed its long-training and matched training-panel round and is paused
-for user discussion**. The completed
+Current gate decision: **the exact all-positive natural-alias design remains
+stopped, the [existing-checkpoint Phase Zero
+result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md)
+is complete, and the program is paused for user discussion before any new
+training**. The completed
 [admission census](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md)
 shows that only eight images satisfy its strict composite; that subset does not
-define the feasibility of row-local or on-policy set supervision.
+define the feasibility of a mixed row-local signal, preservation, background,
+and matched-control cohort.
 
-The active unit compares frozen Source, ordinary row cross-entropy, Source
-preservation, local owner-conditioned candidates, exact-prefix pairwise credit,
-genuine current-policy final-set utility, and an eligible hybrid. Controls own
-causal interpretation inside each paradigm but do not impose equal floating-
-point operations, rollout counts, or wall time across paradigms. Unknown or
-potentially unlabeled entities remain neutral, and no local objective may use
-another valid uncovered owner as a negative. A short smoke promotes an arm to
-isolated long training only when the original one-prompt, one-completion clean-
-greedy policy shows coherent net owner gain not explained only by longer output
-or a duplicate or invalid-row burst.
+The next discussed screen must isolate continue-versus-stop calibration from
+conditional owner preference and row realization while preserving Source
+behavior. Unknown or potentially unlabeled entities remain neutral, no local
+objective may use another valid uncovered owner as an automatic negative, and
+owner exchange remains an outcome to report. No objective, event mix, or arm is
+authorized until a new or revised formal unit freezes the comparison.
 
 The existing [salvage gate](experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md)
 remains blocked before entropy because its 248-admission estimand belongs only

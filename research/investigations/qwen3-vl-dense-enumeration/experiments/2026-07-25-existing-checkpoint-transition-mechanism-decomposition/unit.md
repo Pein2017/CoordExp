@@ -5,15 +5,19 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: authorized_within_goal
+implementation_status: complete
 unit_id: 2026-07-25-existing-checkpoint-transition-mechanism-decomposition
 topic: qwen3-vl-dense-enumeration
-status: planned
-evidence_status: none
+status: complete_ready_for_user_discussion
+evidence_status: verified_bounded_mixed_mechanism
 updated: 2026-07-25
 ---
 
 # Existing-Checkpoint Transition Mechanism Decomposition and Robust Evaluation
+
+The four Phase Zero lanes are complete. The decision-owning evidence, claim
+boundary, and next-training recommendation are recorded in
+[results.md](results.md). This unit remains the frozen execution contract.
 
 ## Decision and Outcome
 
