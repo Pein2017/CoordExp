@@ -1,89 +1,62 @@
 ---
 name: git-hygiene
-description: Use when the user asks to stage, commit, sync, push, split dirty CoordExp work, or use the repo HTTPS token workflow.
+description: Stage, commit, split dirty work, synchronize, or push CoordExp changes while preserving unrelated edits and keeping credentials out of repository history and output.
 ---
 
 # Git Hygiene
 
-Keep commits logical and scoped. Dirty changes from parallel work are expected; never stage or revert unrelated files.
+Keep commits logical and scoped. Dirty changes from parallel work are expected;
+never stage, rewrite, or revert unrelated files.
 
 ## Preflight
 
-Run compact discovery unless exact output matters:
-
-```bash
-rtk git status --short --branch
-git branch --show-current
-git remote -v
-git check-ignore -v github_personal_token.txt
-git ls-files --error-unmatch github_personal_token.txt 2>/dev/null && echo TRACKED || true
-```
-
-Stop if secrets are tracked, remote identity is surprising, or the requested scope is ambiguous.
+1. Inspect status, current branch, worktrees, remotes, upstream, and
+   ahead/behind state.
+2. Resolve the user-authorized file set and intended publication boundary.
+3. Confirm credential sources are ignored and untracked without printing their
+   contents.
+4. Stop when remote identity, branch ownership, secret status, or requested
+   scope is ambiguous.
 
 ## Commit Loop
 
-1. Inspect `rtk git diff --stat` and `rtk git diff --name-only`.
-2. Group changes by intent: feature, fix, tests, docs, config, formatting, or generated artifacts.
-3. Stage narrowly with `git add -p` or explicit paths.
-4. Verify staged diff with `git diff --cached --stat`, `git diff --cached`, and `git diff --cached --check`.
-5. Run the smallest meaningful check for the staged scope.
-6. Commit with an imperative message; use minimal messages for mechanical config/arg/default changes.
-7. Repeat until only intentional leftovers remain.
+1. Inspect unstaged and staged diffs.
+2. Group changes by one intent: feature, fix, test, documentation, config,
+   formatting, or generated artifact.
+3. Stage interactively or by explicit paths.
+4. Reinspect the complete staged patch and run whitespace checks.
+5. Run the smallest meaningful verification for that staged scope.
+6. Commit with an imperative message, then confirm the remaining dirty set.
 
-## Stale Worktree And Cleanup Checks
+Completion requires a commit whose patch matches the stated intent, contains no
+unrelated work or secrets, and has an explicit verification receipt.
 
-Before branch deletion, worktree cleanup, grouped commits, or sync:
+## Synchronize And Push
 
-- run `git worktree list --porcelain`;
-- compare branch refs against actual directories;
-- inspect ahead/behind before deleting local refs;
-- use `git worktree prune --dry-run` before cleanup when metadata looks stale.
+Synchronization means integrate upstream changes before publication, not
+push-only.
 
-Stale `+` markers or branch lock errors are usually worktree-metadata problems, not proof that the branch is still active. Remove metadata only with explicit cleanup scope and after confirming no uncommitted work is being discarded.
+1. Confirm or establish the intended upstream.
+2. Fetch, then inspect ahead/behind/diverged state.
+3. If behind or diverged, choose rebase or merge according to branch policy and
+   user authority; preserve local work before integration.
+4. Push only when the branch is current with upstream or the user approved a
+   different integration plan.
 
-## Sync with remote
+For HTTPS personal-access-token workflows, use a temporary credential helper
+that reads an ignored local credential source. Disable terminal prompts and
+never place credentials in remotes, command arguments, commit messages, PR
+bodies, logs, or tracked files. Skip network operations that have no work.
 
-Default to the current branch. Sync means integrate remote commits, then publish local commits — not push-only.
+## Worktree And Destructive Boundaries
 
-1. Confirm upstream: `git rev-parse --abbrev-ref --symbolic-full-name @{u}` (set with `git push -u origin HEAD` when missing).
-2. Fetch and inspect: `git fetch origin` then `rtk git status --short --branch` (ahead/behind/diverged).
-3. If behind or diverged, pull first (prefer `git pull --rebase` on feature branches when history is linear).
-4. Push only after the branch is up to date with its upstream (or you have an explicit user-approved merge/rebase plan).
+- Before deleting branches or worktrees, compare metadata with real directories
+  and inspect uncommitted work plus ahead/behind state.
+- Dry-run metadata pruning before applying it.
+- A stale worktree marker or lock error is evidence to investigate, not proof
+  that deletion is safe.
+- History rewrite, force push, hard reset, destructive cleanup, and branch
+  creation require explicit user scope.
 
-CoordExp's HTTPS remote is normally:
-
-```text
-https://github.com/Pein2017/CoordExp.git
-```
-
-For one-shot PAT fetch/pull/push, use a temporary credential helper that reads the ignored local token file:
-
-```bash
-_branch="$(git branch --show-current)"
-_git_https() {
-  GIT_TERMINAL_PROMPT=0 git \
-    -c credential.helper= \
-    -c "credential.helper=!f() { if [ \"$1\" = get ]; then echo username=x-access-token; printf 'password='; tr -d '\n' < github_personal_token.txt; echo; fi; }; f" \
-    "$@"
-}
-_git_https fetch origin
-_git_https pull --rebase origin "$_branch"
-_git_https push origin HEAD
-```
-
-Skip `pull` when already up to date; skip `push` when there is nothing to publish. Never place the token in remotes, commit messages, PR bodies, shell output, or tracked files.
-
-## Guardrails
-
-- No `reset --hard`, history rewrite, `push --force`, or destructive cleanup without explicit user request.
-- Do not create a branch unless asked or required by the user's workflow.
-- If a pull/merge is needed, split local work into logical commits first when feasible.
-- Final report should include commits created, checks run, sync status (fetch/pull/push), and remaining dirty files.
-
-## CoordExp Notes
-
-- `.codex/memories/` is local-only; verify with `git ls-files .codex/memories` before any memory-related commit.
-- Before Baidu `outputs/` sync or artifact publication, align the intended branch with remote unless the user explicitly wants a local-only transfer.
-- `output_remote/` is transitional. Use `scripts/absorb_output_remote_into_outputs.py --apply` for no-overwrite absorption while active writers still use the old root.
-- For old benchmark CSV conflicts, prefer canonical `outputs/...` paths over stale `output_remote/...` strings unless the user is preserving historical evidence verbatim.
+Report commits created, checks run, fetch/integration/push status, branch and
+upstream identity, and remaining dirty files.

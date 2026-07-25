@@ -1,180 +1,62 @@
 ---
 name: model-innovation-risk-audit
-description: "Use when a decision-grade or demonstrably high-risk CoordExp mechanism, objective, loss, or evaluation path needs a pre-launch or pre-interpretation trust gate, especially for silent train/eval/config/artifact mismatch risk."
+description: Gate a high-risk or decision-grade CoordExp mechanism before launch or interpretation when silent config, data, runtime, objective, or evaluation drift could change the claim.
 ---
 
 # Model Innovation Risk Audit
 
-Default to read-only audit. This skill is a **contract and provenance gate**, not a symptom debugger. The goal is to find mismatches that do not crash, can pass smokes, and can produce normal-looking losses while changing the actual training signal or eval claim.
+Run a read-only **contract gate** for mismatches that can pass a smoke and still
+train or evaluate a different mechanism. Use `model-diagnosis` when an existing
+behavioral symptom is the main question.
 
-## Role Boundary
+Do not invoke the full gate merely because a pilot is new. For an exploratory
+first observation, protect checkpoint/config/input identity, the declared
+factor, semantic alignment, actual path execution, objective wiring when
+training, and raw output attribution. Escalate when silent drift can reverse the
+observation or the evidence is being promoted.
 
-Use this skill when the question is:
+## Gate
 
-- "Can we trust this new mechanism, config, data path, tokenizer/template, loss, decode path, eval path, or runtime integration?"
-- "Could this innovation silently train or evaluate a different contract than intended?"
-- "Before launching or interpreting a run, are schema, materialized config, data, loss, decode/eval, metrics, and artifacts aligned?"
+1. **Write the minimal contract diff.**
+   - Compare intended behavior, authored config, resolved config/schema,
+     executable data/model/loss/decode/eval objects, emitted artifacts, and
+     evidence claim.
+   - Complete when every layer is `matched`, `mismatched`, or `unproven`.
 
-Do **not** use this skill as the main tool when the user already has a concrete behavioral symptom such as a metric drop, FP/FN shift, invalid rollout spike, duplication burst, length collapse, train/eval divergence, or optimization instability. Start with `model-diagnosis` for those symptoms, then return here only if the diagnosis points to silent config/runtime/eval contract drift.
+2. **Identify executable owners.**
+   - Trace who actually controls tokenizer/template, data and collator,
+     trainable groups, forward and loss, optimizer/scheduler/distributed
+     behavior, decode/parser/eval, and artifact side effects.
+   - Inspect installed source or run a tiny executable probe when upstream owns
+     the semantics.
+   - Complete when mocks or plans are no longer standing in for the owner.
 
-Hand off to `model-diagnosis` when the contract appears wired correctly but behavior remains unproven or abnormal.
+3. **Probe the fragile seam.**
+   - Prefer one real encoded sample, collated batch, deterministic formula or
+     logits probe, resolved config, JSONL/image scan, manifest check, or targeted
+     smoke.
+   - For objectives, verify support, masks, denominators, raw and weighted
+     terms, finite precision, gradient path, and logged names only where the
+     claim depends on them.
+   - Complete when the suspected silent mismatch is proved, falsified, or
+     localized.
 
-## Exploratory Pilot Boundary
+4. **Return a launch decision.**
+   - Report `promote`, `hold`, `rerun gate`, or `needs user decision` with the
+     smallest evidence that would change it.
+   - Do not inflate severity or harden exploratory infrastructure without a
+     demonstrated conclusion-changing failure.
+   - Complete when claim scope and runtime evidence support the verdict.
 
-Do not invoke the full contract-triangulation gate merely because a mechanism
-is new. For a first exploratory pilot, use `audit-review` to protect the
-scientific contrast and run the smallest real behavior smoke. Escalate to this
-skill when there is concrete risk that a silent mismatch can reverse the
-primary observation, or before a result is used as decision-grade
-training/evaluation evidence or a launch-facing claim.
+## Report
 
-The minimum pilot gate checks only:
-
-- exact checkpoint, config, input/case, prompt, and experimental condition;
-- the declared changed factor and meaning-bearing geometry/order invariants;
-- actual model-path execution rather than a no-op or legacy fallback;
-- differentiable objective wiring when the pilot trains a new loss; and
-- raw output, parser/failure status, and request attribution.
-
-Defer exhaustive manifests, distributed-runtime assurance, broad resume and
-compatibility support, adversarial mutation testing, and full artifact
-triangulation until observed risk or evidence promotion justifies them.
-
-## Minimal Contract Diff
-
-For every decision-grade or demonstrably high-risk innovation in this skill's
-scope, produce a compact contract diff:
-
-- intended contract: design, spec, or plan;
-- authored config: YAML keys and inheritance chain;
-- resolved contract: materialized config and schema dataclass;
-- runtime contract: dataset, collator, trainer, loss, decode, and eval objects actually used;
-- artifact contract: resolved config, manifests, parser/drop counters, and metric keys;
-- evidence verdict: matched, mismatched, or unproven.
-
-Do not trust a smoke run if any row silently falls back to legacy behavior.
-
-## Contract Triangulation
-
-Extract the intended algorithm contract, then compare it across:
-
-- design intent and config schema;
-- materialized config;
-- data JSONL, geometry, ordering, image roots;
-- tokenizer/chat template, EOS/pad/stops, assistant spans;
-- dataset/collator labels, masks, sidecars, padding, offsets;
-- model forward logits, shifts, slicing, trainable groups;
-- loss support, weights, EOS/type gates, precision;
-- metrics and effective weighted contributions;
-- decode/eval/parser behavior;
-- artifacts and manifests.
-
-## Runtime Ownership Gate
-
-When upstream libraries, wrappers, launchers, or distributed runtimes can own behavior, identify the executable owner before trusting receipts or mocks.
-
-Check who owns:
-
-- optimizer and scheduler stepping;
-- gradient accumulation, scaling, clipping, skipped updates, and distributed reduction;
-- model wrapping/unwrapping, adapter visibility, trainable groups, and checkpoint payloads;
-- tokenizer, template, decode, parser, and artifact/provenance side effects.
-
-Fake wrappers, dry-run receipts, and plan artifacts prove wiring shape only. If the claim depends on installed runtime semantics, inspect installed source or run a tiny executable probe.
-
-## Config And Loss Footguns
-
-- `ConfigLoader.load_yaml_with_extends()` deep-merges dicts but replaces lists wholesale; inspect final resolved objective lists.
-- Reject legacy keys in semantic modes instead of warning or ignoring.
-- Separate monitoring-only knobs from differentiable objective weights.
-- Verify raw loss terms and effective weighted contributions are both logged.
-- Check zero-weight targets, EOS/type-gate composition, duplicate multiplicity, and teacher-token membership.
-- Use deterministic tiny-logit tests for scalar formulas before trusting training curves.
-
-## Loss/Numerics Gate
-
-For new or changed objectives, verify one authored config, one resolved config, one encoded sample, one collated batch, and one deterministic tiny-logit formula probe before trusting training curves.
-
-Report raw and weighted loss terms, valid-count denominators, mask density, zero-mask behavior, target support membership, finite checks, dtype/fp32 islands, gradient path, accumulation, distributed reduction semantics, and metric/logging names for each term. If wiring is correct but behavior is already abnormal, hand off to `model-diagnosis`.
-
-## Probes
-
-Prefer narrow evidence:
-
-- real tokenizer ids and generation config;
-- resolved config;
-- one encoded sample and one collated batch;
-- tiny logits loss calculation;
-- JSONL/image scan;
-- artifact manifest check;
-- targeted unit test or smoke command.
-
-Probe goal: prove or falsify a contract mismatch. Do not explain a metric regression from aggregate scores alone; that is `model-diagnosis` territory.
-
-## Findings-First Report
-
-Use:
-
-```text
-Findings
-Minimal Contract Diff
-Confirmed OK
-Decision Questions
-Patch Recommendations
-Unit Tests And Diagnostics
-Smoke Run Suggestions
-Residual Risks
-```
-
-Finding format:
-
-```text
-[P0/P1/P2/P3] Title
-Evidence
-Impact
-Fix direction
-Minimal test/diagnostic
-```
-
-Severity:
-
-- `P0`: current implementation likely trains/evals the wrong objective or corrupts core results.
-- `P1`: silent mismatch can plausibly alter training signal, decode behavior, or eval validity.
-- `P2`: reproducibility, diagnostics, maintainability, or edge-case risk.
-- `P3`: future-proofing or cleanup.
-
-Do not inflate severity because a finding is interesting.
-
-## Parallel Audit Split
-
-When independent surfaces exist and subagents are available, split by disjoint scope:
-
-- objective/loss;
-- dataset/collator;
-- tokenizer/template/decode;
-- config/runtime;
-- artifact/eval;
-- tests/diagnostics.
-
-## Launch/Promote Gate
-
-For high-risk model innovations, return a bounded launch/promote decision instead of an open-ended audit. For Stage-2 rollout-correction, residual-set, trie, or vLLM candidates, check:
-
-- config load and resolved pipeline namespace;
-- prepared-data versus live-rollout mode;
-- prompt/template/decode parity and vLLM adapter/token-row synchronization;
-- parser health, invalid/drop counters, and metric-bearing eval validity;
-- residual, trie, duplicate, and unlikelihood counters with scope labels;
-- `run_metadata.json`, `resolved_config.json`, `pipeline_manifest.json`, and artifact roots;
-- whether a paired baseline or ablation is required before promotion.
-
-Output one of: `promote`, `hold`, `rerun gate`, or `needs user decision`, with the smallest verification command or artifact check that would change the verdict.
-
-## References
+Lead with P0/P1/P2 findings, then the contract diff, confirmed OK checks,
+decision questions, correction or probe direction, verification, and residual
+risk. Each finding needs an evidence handle and an explicit decision impact.
 
 Load only when needed:
 
-- `references/risk-taxonomy.md`
-- `references/subagent-prompts.md`
-- `references/report-template.md`
-- `references/contract-diff.md`
+- [risk-taxonomy.md](references/risk-taxonomy.md) for failure classes;
+- [contract-diff.md](references/contract-diff.md) for a standalone contract
+  table;
+- [report-template.md](references/report-template.md) for a durable report.

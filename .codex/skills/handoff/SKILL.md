@@ -1,92 +1,40 @@
 ---
 name: handoff
-description: Use when the user asks for a handoff, continuation prompt, compact session summary, another-agent brief, or cross-machine execution note.
+description: Produce a compact continuation brief or cross-machine transfer that routes a fresh agent to current owning state.
 ---
 
 # Handoff
 
-Write a one-shot continuation document containing only the state a fresh agent
-or another machine needs. A handoff routes to current owners; it is not itself
-a scientific or current-state authority.
+A handoff is **transport**, not authority. Link current owners instead of
+creating a second project state.
 
-## Lifecycle And Output Target
+## Write
 
-Authority runs from the user's brief or named criteria to owning results,
-decisions, docs or stable specifications, then project memory. A handoff only
-routes to them; it may label a proposal but may not freeze it as user intent.
+1. Resolve the requested destination. Return inline by default; use a named
+   repo-local path only for a real transfer or established policy.
+2. Compare the handoff with the owning result, decision or compass, current
+   operator guidance, stable contracts, and project memory. Repair
+   contradictions at the owner.
+3. Lead with:
+   - current objective and decision-owning outcome;
+   - current decision and evidence that changed it;
+   - superseded routes and reopening conditions;
+   - next action or discriminator and stop condition;
+   - minimum reading path in authority order.
+4. Add only recovery-critical checkout, dirty scope, artifact/config/checkpoint
+   paths, completed commands, evidence boundary, blockers, volatile facts to
+   reverify, and pending verification.
+5. Verify linked paths and that one current route is clear without the prior
+   conversation.
 
-- If the user gives a path, write there.
-- For an ephemeral same-session or side-agent transfer, return the handoff
-  inline or use a temporary Markdown file from `mktemp -t handoff-XXXXXX.md`.
-- Use a repo-local `handoff/` path only for an actual transfer, a user-named
-  destination, or an established repository policy. Treat the directory as an
-  inbox, not an archive or source of truth.
-- For a cross-machine handoff without a named destination, use a temporary file
-  for manual transfer and state that persistence is still the user's
-  responsibility.
-- Read the target path before writing if it already exists.
+Do not copy large logs, transcripts, metrics, plans, or artifacts. For a large
+external packet, record one path and content identity plus its decision impact.
 
-After consumption, move durable state to its owners. Before cleanup, check
-tracked status, ignore rules, and live references; delete or archive only exact
-user-authorized targets, never the directory by default.
+The handoff is complete when a fresh agent can safely continue without treating
+the handoff as scientific or current-behavior authority. Cleanup or archival
+requires separate exact authorization.
 
-## Fresh-Session Contract
+## Report
 
-Lead with the state that prevents a fresh agent from restarting a superseded
-route:
-
-1. current objective and decision-owning outcome;
-2. current decision and the evidence that changed it;
-3. superseded or rejected directions, including the condition for reopening;
-4. next discriminator or executable action and its stop condition;
-5. minimum reading path in authority order.
-
-Also identify volatile facts that the fresh agent must reverify, the first safe
-command or action, and its expected success and failure signals. Do not make the
-new agent rediscover whether a process, artifact, worktree, or authorization is
-still live.
-
-For research handoffs, compare these fields with the owning result, current
-decision or compass, and project memory before writing. Resolve contradictions
-at their owner rather than explaining around them in the handoff. Treat the
-handoff as a continuation router, not a third scientific authority.
-
-## CoordExp Content
-
-Include:
-
-- repo root, branch if relevant, and dirty-file scope;
-- exact artifact/config/checkpoint paths that matter;
-- commands already run and their outcomes;
-- current evidence scope and the strongest claim that is and is not supported;
-- unresolved decisions, blockers, and recommended next action;
-- which skills or repo docs the next agent should use;
-- verification that still needs to run.
-
-Do not duplicate large artifacts, PRDs, plans, metrics, transcripts, or docs.
-Link exact paths instead; repo files, docs, and artifacts remain executable
-truth. If a large external context packet matters, include one path and content
-hash plus its distilled decision impact, not the full text.
-
-Before reporting a durable handoff complete, verify that linked local files
-exist, ignored-file behavior matches the intended persistence, and the fresh
-agent can identify one current route without reading the prior conversation.
-
-## Common CoordExp Templates
-
-Public data provenance handoff:
-
-- manifest path under `manifests/public_data_provenance/`;
-- processed root and whether it exists locally;
-- raw dataset prerequisite;
-- exact regeneration command from the manifest;
-- `python -m pytest tests/test_public_data_provenance_manifests.py -q` result or pending status;
-- reminder that routine recovery is regenerate-from-raw-plus-manifest, not Baidu sync.
-
-Baidu artifact transfer handoff:
-
-- local artifact root and intended remote `/CoordExp/outputs/...` path;
-- BaiduPCS-Go binary path and login status;
-- tmux session/log path if already running;
-- unsafe filename mapping manifest, if created;
-- post-transfer checks: shard/index/tokenizer/config files, file counts, sizes, and representative `resolved_config.json`.
+Return the handoff location or inline brief, authority owners checked, volatile
+facts to reverify, and persistence limitations.

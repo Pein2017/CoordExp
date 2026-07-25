@@ -1,4 +1,4 @@
 interface:
   display_name: "Handoff"
-  short_description: "Continuation or cross-machine state package"
-  default_prompt: "Use $handoff for a continuation or transfer. Return it inline by default, treat it as a one-shot route to owning state rather than current authority, and use a repo-local handoff only for an actual transfer or user-named path."
+  short_description: "Route a fresh agent to current state"
+  default_prompt: "Use $handoff to produce a compact continuation brief that points to current owning state."

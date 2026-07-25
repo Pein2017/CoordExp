@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Convergence Loop"
-  short_description: "Review, decide, revise, and stop"
-  default_prompt: "Use $review-convergence-loop to iterate a CoordExp task through bounded work and independent review, apply fix/narrow/drop/probe/user-decision dispositions without manufacturing requirements, and stop explicitly."
+  short_description: "Iterate work and review to a bounded stop"
+  default_prompt: "Use $review-convergence-loop to run this explicitly review-gated task to a bounded stop state."

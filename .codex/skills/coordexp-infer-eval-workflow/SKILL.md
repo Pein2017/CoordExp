@@ -1,177 +1,67 @@
 ---
 name: coordexp-infer-eval-workflow
-description: Use when launching, repairing, validating, or summarizing current CoordExp-Swift inference, scoring, and detection evaluation through HF or vLLM.
+description: Launch, repair, validate, or summarize current CoordExp-Swift inference, scoring, and detection evaluation through HF or vLLM.
 ---
 
 # CoordExp-Swift Inference And Evaluation
 
-Use YAML-first production paths. Do not invent stable CLI flags when config already captures the run.
-Treat this skill as the stable workflow guide, not a promise that one exact script path will never move.
+Use the current YAML-owned pipeline. Discover the live launcher, config family,
+backend contract, artifact writer, and evaluator from current authority and CLI
+help before launch. Load a historical inference or evaluation branch only when
+the user names it explicitly.
 
-## Entry Points
+## Run
 
-- Config: `configs/coordexp_swift/infer/`
-- Entrypoint: `python -m src.infer --config <config.yaml>`
-- Pipeline: `src/inference/pipeline.py`
-- Shared request/session contract: `src/inference/backend.py`
-- Processor-only frontend and launch projection: `src/inference/runtime.py`
-- Backends: `src/inference/hf_backend.py`, `src/inference/vllm_backend.py`
-- Execution-model materialization: `src/inference/execution_model.py`
-- Artifacts: `src/inference/artifacts.py`, `src/inference/merge.py`
-- Evaluator: `scripts/evaluate_detection.py` and
-  `src/eval/detection_consumer.py`
+1. **Resolve the contract.**
+   - Load the authored and effective config; verify input JSONL, image roots,
+     checkpoint/adapter, prompt/template, coordinate surface, decode settings,
+     output root, and distributed launch shape.
+   - Complete when the intended run and benchmark scope are explicit.
 
-Older `scripts/run_infer.py`, `src/infer/`, confidence post-op, Oracle-K,
-proxy-bundle, grammar-constrained, and Stage-2 rollout paths are historical for
-this worktree unless the user explicitly names one.
+2. **Execute the owned path.**
+   - Use the discovered current launcher and its YAML interface; do not select a
+     runner from memory.
+   - Keep HF dynamic composition first-class. Treat materialized HF as a
+     composition oracle and label vLLM precision or parity claims by their actual
+     qualification.
+   - For canonical scored inference, use deterministic decoding with one
+     completion per input (`n=1`) unless the config intentionally declares
+     another evaluation contract. This does not imply batch size one.
+   - Complete when every worker exits, rank coverage and merge order are
+     complete, and resources return.
 
-When code moves, prefer the current checked-in pipeline/config surfaces over memorized script names. First verify:
+3. **Validate artifacts before metrics.**
+   - Require terminal success plus the current run manifest and complete raw,
+     scored, provenance, trace, diagnostic, image-plan, config, and summary
+     surfaces owned by the pipeline.
+   - Bind every row to image, dimensions, GT, parser status, and coordinate
+     meaning. Predictions are pixel `xyxy`; GT coordinate bins require the
+     canonical conversion path.
+   - Failed or diagnostic-only runs may retain failure artifacts but cannot
+     publish benchmark-looking outputs.
+   - Complete when artifacts are metric-bearing or explicitly labeled
+     diagnostic.
 
-1. which config schema currently owns infer, scoring, and eval;
-2. which entrypoint actually consumes that schema;
-3. where the canonical output artifacts are written;
-4. whether the run is coord-token, raw-text, or another coordinate surface.
+4. **Evaluate the same identity.**
+   - Run the current detection evaluator against the completed artifact root.
+   - Verify benchmark eligibility, metric-bearing status, row counts, parser and
+     drop counters, and matched evaluation scope.
+   - Complete when metrics, the evaluation receipt, and evaluator sidecars point
+     back to the authoritative run manifest, config, and predictions. Use the
+     visualization skill when per-row visual evidence is required.
 
-Commands:
+## Repair
 
-```bash
-CUDA_VISIBLE_DEVICES=<ids> conda run -n ms \
-  python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml
+When a stage fails, preserve the exact failure identity, classify whether the
+owner is config, model composition, worker/runtime, parsing/scoring, merge, or
+evaluation, and rerun only the invalid stage when the contract permits it. Do
+not rerun inference merely because a downstream view changed.
 
-conda run -n ms python scripts/evaluate_detection.py \
-  --artifact-dir <run-dir> \
-  --out-dir <run-dir>/evaluation/detection
-```
+Use `model-diagnosis` when valid artifacts show abnormal model behavior and
+`model-innovation-risk-audit` when silent contract drift threatens the claim.
 
-Codex shells initialize the `ms` conda environment by default; do not add `conda run -n ms` unless working outside that initialized environment.
+## Report
 
-Wrap with `rtk` when filtered output is acceptable.
-
-## Backend And Decode Contract
-
-- `backend.type: hf` dynamically loads the base model, optional DoRA adapter,
-  and optional selected-token embedding delta. HF remains first-class.
-- `backend.type: vllm` resolves the same composition into a content-addressed
-  immutable execution model, then runs one offline vLLM engine per active
-  rank-local worker.
-- Materialized HF is a composition-fidelity oracle, not a replacement for
-  dynamic HF.
-- Use FP32 for strict HF/vLLM parity claims. BF16 vLLM is supported for
-  throughput runs but must be labeled non-parity evidence.
-
-Canonical scored inference requires `temperature: 0.0`, `top_p: 1.0`, and
-`n: 1`. Treat repetition penalty as an explicit config choice, not a hidden
-default. `generation.batch_size` is immutable per-device decode concurrency.
-
-## Current Artifact Gate
-
-Before citing a benchmark, require completed summary/manifest status, complete
-raw/scored/provenance/trace/diagnostic/image-plan artifacts, exact row/image/GT
-binding, and zero unexplained parser/drop/truncation/score failures. Non-smoke
-runs must report `benchmark_eligible: true`; the evaluator must also report
-`benchmark_metric: true`.
-
-Selected-token scores always use policy likelihood after active generation
-processors. Optional `raw_model_logprob` is diagnostic LM-head likelihood only
-and must never replace `pred[*].score`.
-
-GT boxes are norm1000 `xyxy`; parser-normalized prediction `bbox` values are
-pixel `xyxy`. Prediction `coord_bins` is source evidence and must not be drawn
-or evaluated as pixels.
-
-For distributed runs, require complete rank coverage, strict merged order,
-backend performance, worker exit, no orphan engine process, and GPU memory
-return. Failed runs may publish terminal diagnostics but not benchmark-looking
-top-level raw/scored artifacts.
-
-## Historical Addenda
-
-The remaining confidence, proxy, Oracle-K, and Stage-2 notes apply only when
-the user explicitly requests those historical/mainline workflows.
-
-## Coordinate-Surface Rules
-
-- Coord-token `xyxy`: run confidence post-op.
-- Raw-text `xyxy` norm1000: set `infer.mode: text`, `infer.pred_coord_mode: norm1000`; confidence post-op must use numeric-text alignment, not coord-token geometry.
-- `cxcy_logw_logh` or `cxcywh`: do not run confidence post-op; use deterministic constant-score compatibility only for checkpoints trained on that serialization.
-
-## Diagnostic Completion
-
-When the user wants raw rollout behavior inspected, prefer completing the rollout and preserving invalid or non-metric-bearing rows with parser metadata over aborting on the first malformed output, unless the official eval contract requires strict failure. Label diagnostic artifacts as non-metric-bearing unless strict parser, source image identity, dimensions, coordinate surface, and metric-bearing provenance all pass.
-
-Before launch, compare training-side names with infer/eval schema names. Do not pass training-only enum values into infer configs; if translation is needed, record the mapping in the generated config or run note.
-
-## Proxy Bundle
-
-For COCO + LVIS-proxy runs:
-
-1. infer once;
-2. score once;
-3. evaluate the same scored artifact under:
-   - `coco_real`: benchmark-aligned headline;
-   - `coco_real_strict`: COCO plus strict same-extent proxies;
-   - `coco_real_strict_plausible`: broad analysis view, not standard COCO.
-
-Do not compare proxy-expanded views against standard COCO baselines without the label.
-
-## Reusable Helper
-
-```bash
-HELPER=.codex/skills/coordexp-infer-eval-workflow/scripts/coordexp_infer_eval.py
-python "$HELPER" prepare-recursive --repo-root <root> --checkpoint <ckpt> --run-tag <tag> --gpus <ids> --master-port <port>
-python "$HELPER" summarize <run_dir> --format markdown
-```
-
-The helper defaults to `temperature=0.0` and `repeat_penalty=1.10`. Pass `--rp` only when intentionally overriding the default repetition penalty.
-
-Use `--dry-run` before writing and `--force` only when intentionally reusing an output directory.
-
-## Verification
-
-Before launch, check intended JSONL, image roots, checkpoint/adapter, prompt/order settings, coordinate surface, scope label, decoding knobs, entrypoint ownership, and GPU launch shape.
-
-After infer:
-
-- `summary.json`
-- `gt_vs_pred.jsonl`
-- `resolved_config.json`
-- `resolved_config.path` next to downstream artifacts when needed
-
-After scoring:
-
-- `confidence_postop_summary.json`
-- `pred_confidence.jsonl` for confidence-scored paths
-- `gt_vs_pred_scored.jsonl`
-
-After eval:
-
-- `metrics.json`, `per_image.json`
-- guarded companions when `duplicate_control.enabled`
-- proxy bundle summary when used
-
-For sharded runs, trust merged top-level summaries/manifests over shard logs.
-
-## Stage-2 Eval Validity Gate
-
-Before treating Stage-2 eval artifacts as metric-bearing, reject or repair runs where:
-
-- a row lacks real source image identity or dimensions;
-- strict parser status is replaced by diagnostic fallback or `metric_bearing=false`;
-- multi-image inputs were collapsed instead of rejected;
-- prompt-token / detection-format provenance or score fingerprints are missing;
-- `resolved_config.path` cannot recover the authoritative pipeline config.
-
-Useful debug surfaces:
-
-- `monitor_dumps/eval_phase_trace` for the last completed eval phase;
-- source-JSONL provenance and image-root metadata when archived artifacts need geometry recovery;
-- `configs/stage2/rollout_correction/smoke/compact_full_vllm_train64_val32_6steps_coco80_evaltrace.yaml` for compact-full COCO-80 evaltrace smoke coverage.
-
-## Failure Modes
-
-- `metrics: both` on COCO proxy artifacts can route into LVIS-federated assumptions; inspect `src/eval/detection.py`.
-- Missing visualization images usually means `provenance.source_jsonl_dir` or root image provenance is wrong.
-- Proxy-expanded GT count surprises should be checked against `metadata.coordexp_proxy_supervision.object_supervision`.
-- A scored raw-text collapse usually means the wrong confidence alignment path ran.
-- If a familiar script disappeared, do not force the old command shape; trace the current config owner and artifact writer first.
-- Do not re-run inference when only eval views changed.
+State config and checkpoint identity, backend and precision, data/decode scope,
+artifact root and terminal status, evaluation scope, counters, metric paths,
+verification, and limitations.

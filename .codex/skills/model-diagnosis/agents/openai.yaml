@@ -1,4 +1,4 @@
 interface:
   display_name: "Model Diagnosis"
   short_description: "Diagnose abnormal model behavior"
-  default_prompt: "Use $model-diagnosis when CoordExp model behavior is already abnormal or uncertain: metric drops, FP/FN shifts, invalid or malformed outputs, duplication bursts, length/stop/repetition changes, train/eval divergence, optimization instability, or launch-health symptoms. For pre-launch or newly wired contract-risk audits, use $model-innovation-risk-audit first."
+  default_prompt: "Use $model-diagnosis to explain this model-behavior symptom from its exact artifacts."
