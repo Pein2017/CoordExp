@@ -22,24 +22,32 @@ architecture, or an implementation contract.
 
 Fresh sessions start from these formal owners:
 
-1. the completed [existing-checkpoint transition mechanism decomposition and
+1. the completed [continuation-shift locality and exact-prefix remaining-owner
+   compositionality
+   result](experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md),
+   which owns the broad-continuation, sampled-reachable owner-recovery, and
+   one-step composition evidence and its claim boundary;
+2. its frozen [execution
+   unit](experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/unit.md),
+   which owns the bounded no-training protocol and stop rule;
+3. the completed [existing-checkpoint transition mechanism decomposition and
    robust-evaluation
    result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md),
    which owns the four-lane Phase Zero evidence, mixed mechanism judgment,
    claim boundary, and discussion-stage next-training recommendation;
-2. its frozen [execution
+4. its frozen [execution
    unit](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md),
    which owns the no-new-training protocol and stop rules;
-3. the completed [prefix-local and on-policy final owner-set training
+5. the completed [prefix-local and on-policy final owner-set training
    unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md),
    which owns event materialization, the compared objectives and controls, the
    completed long training, matched training-panel comparison, and narrow
    transition-step-36 development/held-out transfer gate;
-4. the completed [trajectory owner-set admission-census
+6. the completed [trajectory owner-set admission-census
    result](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md),
    which owns the executed `8/2,004` strict-composite finding and its bounded
    claim; and
-5. the [experiment index](experiments/index.md), which owns lifecycle routing
+7. the [experiment index](experiments/index.md), which owns lifecycle routing
    across units.
 
 The strict 248-additional-admission estimand remains blocked before entropy
@@ -50,7 +58,18 @@ branch is pending and not part of this route. Handoffs, agent-review outputs,
 reviewer packets, audits, and memory notes remain historical provenance only;
 none is a live route target.
 
-As of `2026-07-25`, the four-lane existing-checkpoint Phase Zero is complete.
+As of `2026-07-25`, the two-discriminator continuation-locality and exact-prefix
+owner-composition unit is complete. Continuation changes are nearly equal at
+trained, same-image-near, and untouched nonterminal boundaries; natural
+terminal states attenuate but do not remove the shift. In the sampled-reachable
+400-case atlas, Source recovers `362/400` owners natively, opener forcing adds
+only the sole actual-stop recovery, and complete-description forcing reaches
+`387/400`. The 38 ordered owner pairs retain heterogeneous short-horizon
+sequential compatibility even though the second fixed candidate row usually
+becomes less likely after the first row is appended. The route is paused for
+user discussion; no training or architecture is promoted.
+
+The prior four-lane existing-checkpoint Phase Zero is also complete.
 Heldout remains `46 gained / 39 lost / +7 net` under robust token-cutoff,
 natural-stop, leave-one-image-out, and matching-threshold checks; arm-blinded
 entity and geometry review retains `22 genuine gains / 16 genuine losses / +6`.
@@ -59,8 +78,7 @@ all seven and improves best-uncovered minus best-covered row likelihood on five
 of six comparable cases, but neither actual Source terminal state flips and
 released row realization does not improve. The complete-row arms contain owner
 signal by 256 tokens, yet their dominant failure is excessive continuation and
-output expansion rather than sum-versus-mean normalization. The route is now
-paused for user discussion; no new training or architecture is promoted.
+output expansion rather than sum-versus-mean normalization.
 
 The [weekly integrated research
 report](2026-07-13-to-2026-07-16-weekly-research-report.md) is the compact
