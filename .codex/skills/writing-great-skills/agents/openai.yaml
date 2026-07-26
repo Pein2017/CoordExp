@@ -1,5 +1,6 @@
 interface:
   display_name: "Writing Great Skills"
-  short_description: "Principles for predictable skills"
+  short_description: "Design concise, judgment-aware skills"
+  default_prompt: "Use $writing-great-skills to design or revise this skill around clear triggers, expressive interfaces, progressive disclosure, and tested boundaries."
 policy:
   allow_implicit_invocation: false

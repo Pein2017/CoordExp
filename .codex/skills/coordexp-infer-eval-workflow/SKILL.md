@@ -34,6 +34,9 @@ the user names it explicitly.
    - Require terminal success plus the current run manifest and complete raw,
      scored, provenance, trace, diagnostic, image-plan, config, and summary
      surfaces owned by the pipeline.
+   - Distinguish a plumbing smoke from a metric-bearing smoke. Terminal success
+     with truncation or parser failures proves the runtime path, not inference
+     quality.
    - Bind every row to image, dimensions, GT, parser status, and coordinate
      meaning. Predictions are pixel `xyxy`; GT coordinate bins require the
      canonical conversion path.

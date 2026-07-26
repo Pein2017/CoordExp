@@ -50,7 +50,9 @@
 
 ## Authority
 
-- Use canonical docs for current behavior and workflows, starting with `docs/AGENT_INDEX.md` and `docs/catalog.yaml`.
+- When the named evidence does not reveal the current owner, search
+  `docs/catalog.yaml` or `docs/AGENT_INDEX.md` for the narrowest canonical route;
+  do not load both or follow a fixed read order by default.
 - Use stable specs only for compatibility-sensitive contracts. Use active change artifacts only when the user or current task puts that change in scope.
 - Treat historical notes, old worktrees, memories, and research writeups as evidence or idea context, not current-behavior authority. Revalidate live files before relying on them.
 - Work in the exact checkout or worktree named by the user. Do not mix facts across roots without checking the target root.

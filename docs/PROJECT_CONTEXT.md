@@ -71,26 +71,19 @@ compatibility evidence. They are not current Swift entrypoints. Existing
 treated according to their catalog status and should not be presented as the
 default `main` route.
 
-## Universal read order
+## Task-local routing
 
-For a new repository question:
+For a new repository question, start from the user-named evidence. If its owner
+is not apparent:
 
-1. [`docs/AGENT_INDEX.md`](AGENT_INDEX.md) and [`docs/catalog.yaml`](catalog.yaml)
-   for retrieval routes and the machine-readable inventory.
-2. [`docs/BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for
-   checkout and branch scope.
-3. [`docs/COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) for the current implementation
-   spine and current evidence boundaries.
-4. [`docs/SYSTEM_OVERVIEW.md`](SYSTEM_OVERVIEW.md) for the end-to-end flow.
-5. [`docs/IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md) for source ownership
-   and targeted verification.
-6. The relevant domain router under `docs/`.
-7. The exact `openspec/specs/coordexp-swift-*` contract only when stable
-   compatibility semantics matter.
-8. The named `openspec/changes/<change>/` workspace when work is being carried
-   through its durable proposal/design/tasks/apply/verify/archive lifecycle.
-9. `research/` for active research interpretation, then `docs/history/` or
-   `progress/` only for explicitly historical questions.
+1. Search [`docs/catalog.yaml`](catalog.yaml) or use
+   [`docs/AGENT_INDEX.md`](AGENT_INDEX.md) to select the narrowest owner.
+2. Read branch policy, implementation maps, domain docs, code, or artifacts
+   only when that route requires them.
+3. Read an exact stable spec only for compatibility semantics and an active
+   change only when the task names it.
+4. Use `research/` for active interpretation and `docs/history/` or `progress/`
+   only for an explicitly historical question.
 
 ## Authoring and lifecycle rules
 
