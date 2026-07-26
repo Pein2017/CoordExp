@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
+import torch
 
 from scripts.research import run_continuation_locality_boundary_scoring as locality
 from scripts.research import run_exact_prefix_owner_compositionality as owner_probe
@@ -79,4 +83,113 @@ def test_binary_recovery_transitions_preserve_pairing() -> None:
         "false_to_true": 1,
         "true_to_false": 1,
         "true_to_true": 1,
+    }
+
+
+def test_owner_state_score_preserves_existing_reduction_from_token_evidence() -> None:
+    from scripts.research.run_complete_candidate_row_scoring import _score_candidate
+    from scripts.research.run_next_row_likelihood_change import terminal_boundary_score
+    from src.inference.hf_backend import HFChosenTokenEvidence
+
+    base_prompt = [101, 102]
+    prefix = [201, 202]
+    row = _complete_row([41])
+    boundary_length = len(base_prompt) + len(prefix)
+    vocab_size = 152_000
+    logits = torch.full(
+        (boundary_length + len(row) - 1, vocab_size),
+        -4.0,
+        dtype=torch.float32,
+    )
+    logits[:, 0] = 3.0
+    logits[:, 1] = 2.0
+    for index, token_id in enumerate(row):
+        logits[boundary_length + index - 1, token_id] = 1.0 + index / 10.0
+    terminal_id = 31
+    logits[boundary_length - 1, terminal_id] = 0.5
+
+    class EvidenceSession:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, ...]] = []
+
+        def extend_exact_history(
+            self,
+            history: Any,
+            token_ids: Sequence[int],
+        ) -> object:
+            values = tuple(int(value) for value in token_ids)
+            conditioning = (*history.conditioning_token_ids, *values)
+            return SimpleNamespace(
+                conditioning_token_ids=conditioning,
+                conditioning_token_ids_sha256=token_ids_sha256(conditioning),
+            )
+
+        def teacher_forced_evidence(
+            self,
+            history: Any,
+            continuation_token_ids: Sequence[int],
+        ) -> tuple[HFChosenTokenEvidence, ...]:
+            continuation = tuple(int(value) for value in continuation_token_ids)
+            self.calls.append(continuation)
+            boundary = len(history.conditioning_token_ids)
+            evidence = []
+            for index, token_id in enumerate(continuation):
+                values = logits[boundary + index - 1].float()
+                selected = values[token_id]
+                evidence.append(
+                    HFChosenTokenEvidence(
+                        token_id=token_id,
+                        raw_model_logprob=float(
+                            torch.log_softmax(values, dim=-1)[token_id].item()
+                        ),
+                        candidate_vocab_rank=int((values > selected).sum().item()) + 1,
+                    )
+                )
+            return tuple(evidence)
+
+    session = EvidenceSession()
+    base_history = SimpleNamespace(
+        conditioning_token_ids=tuple(base_prompt),
+        conditioning_token_ids_sha256=token_ids_sha256(base_prompt),
+    )
+    target = {
+        "owner_id": "225458:1234",
+        "category": "bottle",
+        "row_token_ids": row,
+    }
+
+    observed = owner_probe._score_state_target(
+        session=session,
+        base_history=base_history,
+        prefix=prefix,
+        target=target,
+        terminal_id=terminal_id,
+    )
+    expected_terminal = terminal_boundary_score(
+        logits,
+        boundary_length=boundary_length,
+        row_entry_token_id=row[0],
+        terminal_token_id=terminal_id,
+    )
+    expected_candidate = _score_candidate(
+        logits,
+        boundary_length=boundary_length,
+        row_tokens=row,
+        metadata={
+            "candidate_id": "owner-225458:1234",
+            "owner": "225458:1234",
+            "category": "bottle",
+            "role": "verified_uncovered_owner",
+            "covered": False,
+        },
+    )
+
+    assert session.calls == [(terminal_id,), tuple(row)]
+    assert observed == {
+        "prefix_token_ids_sha256": token_ids_sha256(prefix),
+        "actual_prompt_plus_prefix_token_ids_sha256": token_ids_sha256(
+            [*base_prompt, *prefix]
+        ),
+        "terminal_boundary": expected_terminal,
+        "candidate_score": expected_candidate,
     }

@@ -5,13 +5,15 @@ from __future__ import annotations
 import gc
 import hashlib
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import metadata
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
+from types import MappingProxyType, SimpleNamespace
+from typing import Any, cast
+from weakref import WeakKeyDictionary
 
 import torch
 from PIL import Image
@@ -30,6 +32,7 @@ from src.inference.backend import (
     TokenTrace,
     cuda_peak_memory_snapshot,
     synchronize_cuda_for_timing,
+    token_ids_sha256,
     update_decode_performance_receipt,
     validate_decode_results,
 )
@@ -48,6 +51,37 @@ class TeacherForcedComparison:
     max_absolute_difference: float
     atol: float
     rtol: float
+
+
+@dataclass(frozen=True, eq=False)
+class HFExactHistory:
+    """Audit-safe identity for one session-owned exact token history."""
+
+    request_id: str
+    conditioning_token_ids: tuple[int, ...]
+    conditioning_token_ids_sha256: str
+
+
+@dataclass(frozen=True)
+class HFChosenTokenEvidence:
+    """Raw evidence for one caller-selected continuation token."""
+
+    token_id: int
+    raw_model_logprob: float
+    candidate_vocab_rank: int
+
+
+@dataclass(frozen=True)
+class _HFExactHistoryState:
+    request_id: str
+    conditioning_token_ids: tuple[int, ...]
+    conditioning_token_ids_sha256: str
+    context: _HFExactHistoryContext
+
+
+@dataclass(eq=False)
+class _HFExactHistoryContext:
+    native_inputs: Mapping[str, Any] | None
 
 
 class HFBackendSession:
@@ -72,10 +106,179 @@ class HFBackendSession:
         self._tokenizer = tokenizer
         self._receipt = receipt
         self._closed = False
+        self._exact_history_states: WeakKeyDictionary[
+            HFExactHistory,
+            _HFExactHistoryState,
+        ] = WeakKeyDictionary()
 
     @property
     def receipt(self) -> BackendSessionReceipt:
         return self._receipt
+
+    @property
+    def special_token_ids(self) -> Mapping[str, int]:
+        self._require_live_session()
+        return MappingProxyType(
+            {
+                "im_end": self._im_end_token_id(),
+                "pad": self._pad_token_id(),
+            }
+        )
+
+    def prepare_exact_history(self, request: DecodeRequest) -> HFExactHistory:
+        """Materialize and retain one verified multimodal request."""
+
+        self._require_live_session()
+        (
+            native_inputs,
+            executed_prompt_ids,
+            _observed_grids,
+            _executed_media_sha256,
+        ) = self._materialize_native_inputs((request,))
+        conditioning_token_ids = self._validated_token_ids(
+            executed_prompt_ids[0],
+            field="conditioning_token_ids",
+        )
+        context = _HFExactHistoryContext(native_inputs=dict(native_inputs))
+        return self._new_exact_history(
+            request_id=request.request_id,
+            conditioning_token_ids=conditioning_token_ids,
+            context=context,
+        )
+
+    def extend_exact_history(
+        self,
+        history: HFExactHistory,
+        token_ids: Sequence[int],
+    ) -> HFExactHistory:
+        """Append literal vocabulary IDs without decoding or re-tokenizing."""
+
+        state = self._validated_exact_history(history)
+        appended = self._validated_token_ids(token_ids, field="token_ids")
+        return self._new_exact_history(
+            request_id=state.request_id,
+            conditioning_token_ids=(*state.conditioning_token_ids, *appended),
+            context=state.context,
+        )
+
+    def teacher_forced_evidence(
+        self,
+        history: HFExactHistory,
+        continuation_token_ids: Sequence[int],
+    ) -> tuple[HFChosenTokenEvidence, ...]:
+        """Observe raw FP32 evidence for one non-empty literal continuation."""
+
+        state = self._validated_exact_history(history)
+        continuation = self._validated_token_ids(
+            continuation_token_ids,
+            field="continuation_token_ids",
+        )
+        if not continuation:
+            raise RuntimeContractError(
+                "teacher-forced evidence requires a non-empty continuation",
+                code="hf_backend.teacher_forced_empty",
+            )
+        context = state.context
+        if context.native_inputs is None:
+            raise RuntimeContractError(
+                "HF exact history no longer has live multimodal context",
+                code="hf_backend.exact_history_session",
+                context={"request_id": state.request_id},
+            )
+        model = self._model
+        if model is None:
+            raise RuntimeContractError(
+                "HF exact-history evidence has no live model",
+                code="hf_backend.session_closed",
+            )
+        full_token_ids = (*state.conditioning_token_ids, *continuation)
+        device = _model_device(model)
+        input_ids = torch.tensor(
+            [full_token_ids],
+            dtype=torch.long,
+            device=device,
+        )
+        attention_mask = torch.ones_like(input_ids, dtype=torch.long)
+        image_grid_thw = context.native_inputs.get("image_grid_thw")
+        if not isinstance(image_grid_thw, torch.Tensor):
+            raise RuntimeContractError(
+                "HF exact-history evidence requires image_grid_thw",
+                code="hf_backend.exact_history_image_grid",
+                context={"request_id": state.request_id},
+            )
+        position_ids = _derive_qwen_position_ids(
+            model=model,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            image_grid_thw=image_grid_thw.to(device=device),
+            video_grid_thw=_tensor_to_device_or_none(
+                context.native_inputs.get("video_grid_thw"),
+                device=device,
+            ),
+        )
+        forward_inputs = {
+            key: value
+            for key, value in context.native_inputs.items()
+            if key
+            not in {
+                "input_ids",
+                "attention_mask",
+                "position_ids",
+                "token_type_ids",
+                "cache_position",
+                "rope_deltas",
+            }
+        }
+        forward_inputs.update(
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "position_ids": position_ids,
+                "use_cache": False,
+                "return_dict": True,
+                "logits_to_keep": 0,
+            }
+        )
+        with torch.inference_mode():
+            outputs = model(**forward_inputs)
+        logits = _require_rank_three_tensor(
+            getattr(outputs, "logits", None),
+            field="logits",
+        )
+        boundary = len(state.conditioning_token_ids) - 1
+        selected_logits = logits[
+            0,
+            boundary : boundary + len(continuation),
+            :,
+        ].detach().to(device="cpu", dtype=torch.float32).contiguous()
+        if selected_logits.shape[0] != len(continuation):
+            raise RuntimeContractError(
+                "teacher-forced logits do not cover every continuation token",
+                code="hf_backend.teacher_forced_alignment",
+                context={
+                    "continuation_steps": len(continuation),
+                    "logit_steps": int(selected_logits.shape[0]),
+                },
+            )
+        selected_ids = torch.tensor(
+            continuation,
+            dtype=torch.long,
+            device=selected_logits.device,
+        )
+        selected_values = selected_logits.gather(1, selected_ids.unsqueeze(1))
+        logprobs = F.log_softmax(selected_logits, dim=-1).gather(
+            1,
+            selected_ids.unsqueeze(1),
+        )
+        ranks = (selected_logits > selected_values).sum(dim=1) + 1
+        return tuple(
+            HFChosenTokenEvidence(
+                token_id=token_id,
+                raw_model_logprob=float(logprobs[index, 0].item()),
+                candidate_vocab_rank=int(ranks[index].item()),
+            )
+            for index, token_id in enumerate(continuation)
+        )
 
     def decode(self, requests: Sequence[DecodeRequest]) -> tuple[DecodeResult, ...]:
         if self._closed:
@@ -122,6 +325,14 @@ class HFBackendSession:
         if self._closed:
             return
         self._closed = True
+        seen_contexts: set[int] = set()
+        for state in tuple(self._exact_history_states.values()):
+            context_identity = id(state.context)
+            if context_identity in seen_contexts:
+                continue
+            seen_contexts.add(context_identity)
+            state.context.native_inputs = None
+        self._exact_history_states.clear()
         self._model = None
         self._processor = None
         self._tokenizer = None
@@ -416,6 +627,94 @@ class HFBackendSession:
             return ""
         return str(self._tokenizer.decode(list(token_ids), skip_special_tokens=False))
 
+    def _require_live_session(self) -> None:
+        if self._closed:
+            raise RuntimeContractError(
+                "HF backend session is already closed",
+                code="hf_backend.session_closed",
+            )
+
+    def _validated_token_ids(
+        self,
+        token_ids: Sequence[int],
+        *,
+        field: str,
+    ) -> tuple[int, ...]:
+        vocab_size = _model_vocabulary_size(self._model, self._tokenizer)
+        if vocab_size is None:
+            raise RuntimeContractError(
+                "HF exact-history token validation cannot establish vocabulary size",
+                code="hf_backend.vocab_size_unavailable",
+                context={"field": field},
+            )
+        validated: list[int] = []
+        for index, value in enumerate(token_ids):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 0
+                or (vocab_size is not None and value >= vocab_size)
+            ):
+                raise RuntimeContractError(
+                    "HF exact-history token ID is outside the model vocabulary",
+                    code="hf_backend.invalid_token_id",
+                    context={
+                        "field": field,
+                        "index": index,
+                        "value": value,
+                        "vocab_size": vocab_size,
+                    },
+                )
+            validated.append(int(value))
+        return tuple(validated)
+
+    def _new_exact_history(
+        self,
+        *,
+        request_id: str,
+        conditioning_token_ids: tuple[int, ...],
+        context: _HFExactHistoryContext,
+    ) -> HFExactHistory:
+        digest = token_ids_sha256(conditioning_token_ids)
+        history = HFExactHistory(
+            request_id=request_id,
+            conditioning_token_ids=conditioning_token_ids,
+            conditioning_token_ids_sha256=digest,
+        )
+        self._exact_history_states[history] = _HFExactHistoryState(
+            request_id=request_id,
+            conditioning_token_ids=conditioning_token_ids,
+            conditioning_token_ids_sha256=digest,
+            context=context,
+        )
+        return history
+
+    def _validated_exact_history(
+        self,
+        history: HFExactHistory,
+    ) -> _HFExactHistoryState:
+        self._require_live_session()
+        if not isinstance(history, HFExactHistory):
+            raise RuntimeContractError(
+                "HF exact history was not created by this live session",
+                code="hf_backend.exact_history_session",
+            )
+        state = self._exact_history_states.get(history)
+        if state is None or (
+            history.request_id != state.request_id
+            or history.conditioning_token_ids != state.conditioning_token_ids
+            or history.conditioning_token_ids_sha256
+            != state.conditioning_token_ids_sha256
+            or token_ids_sha256(history.conditioning_token_ids)
+            != state.conditioning_token_ids_sha256
+        ):
+            raise RuntimeContractError(
+                "HF exact history identity does not match live session state",
+                code="hf_backend.exact_history_session",
+                context={"request_id": getattr(history, "request_id", None)},
+            )
+        return state
+
 
 def open_hf_backend_session(
     launch: BackendLaunch,
@@ -466,6 +765,8 @@ def open_hf_backend_session(
             "text_padding_side": "left",
             "output_scores": True,
             "raw_output_logits": "per_request",
+            "observed_model_dtype": _observed_model_dtype(model),
+            "observed_attn_implementation": _observed_attn_implementation(model),
         },
         likelihood_semantics={
             "policy": POLICY_LIKELIHOOD_DEFINITION,
@@ -481,6 +782,130 @@ def open_hf_backend_session(
         tokenizer=qwen.tokenizer,
         receipt=receipt,
     )
+
+
+def _derive_qwen_position_ids(
+    *,
+    model: Any,
+    input_ids: torch.Tensor,
+    attention_mask: torch.Tensor,
+    image_grid_thw: torch.Tensor,
+    video_grid_thw: torch.Tensor | None,
+) -> torch.Tensor:
+    owner = getattr(model, "model", model)
+    get_rope_index_value = getattr(owner, "get_rope_index", None)
+    if not callable(get_rope_index_value):
+        raise RuntimeContractError(
+            "HF model does not expose Qwen get_rope_index",
+            code="hf_backend.position_ids_unavailable",
+        )
+    get_rope_index = cast(
+        Callable[..., tuple[Any, Any]],
+        get_rope_index_value,
+    )
+    try:
+        with torch.inference_mode():
+            position_ids, _rope_deltas = get_rope_index(
+                input_ids,
+                image_grid_thw,
+                video_grid_thw,
+                attention_mask=attention_mask,
+            )
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise RuntimeContractError(
+            "HF model failed to derive Qwen position IDs",
+            code="hf_backend.position_ids_invalid",
+            cause=exc,
+        ) from exc
+    if not isinstance(position_ids, torch.Tensor) or position_ids.ndim != 3:
+        raise RuntimeContractError(
+            "Qwen get_rope_index returned invalid position IDs",
+            code="hf_backend.position_ids_invalid",
+            context={
+                "value_type": type(position_ids).__name__,
+                "shape": (
+                    tuple(position_ids.shape)
+                    if isinstance(position_ids, torch.Tensor)
+                    else None
+                ),
+            },
+        )
+    return position_ids
+
+
+def _tensor_to_device_or_none(value: Any, *, device: torch.device) -> torch.Tensor | None:
+    if value is None:
+        return None
+    if not isinstance(value, torch.Tensor):
+        raise RuntimeContractError(
+            "HF native grid input is not a tensor",
+            code="hf_backend.exact_history_image_grid",
+            context={"value_type": type(value).__name__},
+        )
+    return value.to(device=device)
+
+
+def _model_vocabulary_size(model: Any, tokenizer: Any) -> int | None:
+    for method_name in ("get_output_embeddings", "get_input_embeddings"):
+        method = getattr(model, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            embedding = method()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            continue
+        weight = getattr(embedding, "weight", None)
+        shape = getattr(weight, "shape", ())
+        if shape and isinstance(shape[0], int) and shape[0] > 0:
+            return int(shape[0])
+    try:
+        tokenizer_length = len(tokenizer)
+    except (AttributeError, TypeError):
+        tokenizer_length = None
+    if (
+        isinstance(tokenizer_length, int)
+        and not isinstance(tokenizer_length, bool)
+        and tokenizer_length > 0
+    ):
+        return int(tokenizer_length)
+    for value in (
+        getattr(tokenizer, "vocab_size", None),
+        getattr(getattr(model, "config", None), "vocab_size", None),
+    ):
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return int(value)
+    return None
+
+
+def _observed_model_dtype(model: Any) -> dict[str, object] | None:
+    parameters_value = getattr(model, "parameters", None)
+    if not callable(parameters_value):
+        return None
+    parameters = cast(Callable[[], Iterable[Any]], parameters_value)
+    counter: Counter[str] = Counter()
+    try:
+        for parameter in parameters():
+            dtype = getattr(parameter, "dtype", None)
+            numel_value = getattr(parameter, "numel", None)
+            if dtype is None or not callable(numel_value):
+                return None
+            numel = cast(Callable[[], int], numel_value)
+            counter[str(dtype)] += int(numel())
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return None
+    if not counter:
+        return None
+    return {
+        "parameter_dtype_counts": dict(sorted(counter.items())),
+        "parameter_dtype_names": sorted(counter),
+    }
+
+
+def _observed_attn_implementation(model: Any) -> str | None:
+    value = getattr(getattr(model, "config", None), "_attn_implementation", None)
+    if value is None or value == "":
+        return None
+    return str(value)
 
 
 def teacher_forced_chosen_token_logprobs(

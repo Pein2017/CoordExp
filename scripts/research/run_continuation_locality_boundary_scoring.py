@@ -17,17 +17,7 @@ if __package__ in {None, ""}:
 from scripts.research.materialize_continuation_locality_owner_compositionality import (  # noqa: E402
     SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
 )
-from scripts.research.run_complete_candidate_row_scoring import (  # noqa: E402
-    OBJECT_REF_START,
-    _forward_logits,
-    _runtime_model_dtype_summary,
-)
-from scripts.research.run_native_sibling_branch_replay import (  # noqa: E402
-    _attention_implementation,
-)
-from scripts.research.run_next_row_likelihood_change import (  # noqa: E402
-    terminal_boundary_score,
-)
+from scripts.research.run_complete_candidate_row_scoring import OBJECT_REF_START  # noqa: E402
 from src.config.fingerprint import sha256_file  # noqa: E402
 from src.inference.backend import token_ids_sha256  # noqa: E402
 
@@ -145,23 +135,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     with open_backend_session(frontend.launch) as opened:
         if not isinstance(opened, HFBackendSession):
             raise RuntimeError("HF launch opened an unexpected backend session")
+        # Vision parity still requires the loaded model config; it is not part
+        # of the exact-history evidence seam.
         model = opened._model  # noqa: SLF001
-        tokenizer = opened._tokenizer  # noqa: SLF001
-        if model is None or tokenizer is None:
-            raise RuntimeError("HF session did not expose its loaded model and tokenizer")
-        model.eval()
-        terminal_id = tokenizer.eos_token_id
-        if terminal_id is None or int(terminal_id) < 0:
-            raise ValueError("tokenizer does not expose eos_token_id")
+        if model is None:
+            raise RuntimeError("HF session did not expose its loaded model")
+        terminal_id = opened.special_token_ids["im_end"]
         parity = verify_processor_model_vision_parity(
             processor_identity=frontend.qwen.processor_identity,
             model_config=model.config,
         )
         backend_receipt = opened.receipt.to_artifact_dict()
-        model_dtype = _runtime_model_dtype_summary(model)
-        attention = _attention_implementation(
-            model, config.backend.hf.attn_implementation
-        )
+        effective_settings = backend_receipt.get("effective_settings")
+        if not isinstance(effective_settings, Mapping):
+            raise RuntimeError("HF backend receipt lacks effective settings")
+        model_dtype = effective_settings.get("observed_model_dtype")
+        attention = effective_settings.get("observed_attn_implementation")
+        if not isinstance(model_dtype, Mapping) or not isinstance(attention, str):
+            raise RuntimeError("HF backend receipt lacks observed runtime settings")
+        model_dtype = dict(model_dtype)
         for item in selected:
             image_id = str(item["image_id"])
             raw = raw_by_id.get(image_id)
@@ -211,33 +203,37 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     include_raw_model_logprob=True,
                 ),
             )
-            native_inputs, executed_prompt_ids, _, _ = opened._materialize_native_inputs(  # noqa: SLF001
-                (request,)
-            )
-            if tuple(executed_prompt_ids[0]) != tuple(base_prompt):
+            history = opened.prepare_exact_history(request)
+            if history.conditioning_token_ids != tuple(base_prompt):
                 raise RuntimeError(f"{item['boundary_id']} materialized prompt mismatch")
-            image_grid_thw = native_inputs.get("image_grid_thw")
-            if not isinstance(image_grid_thw, torch.Tensor):
-                raise ValueError("native inputs lack image_grid_thw")
-            model_inputs = {
-                key: value
-                for key, value in native_inputs.items()
-                if key
-                not in {
-                    "input_ids",
-                    "attention_mask",
-                    "position_ids",
-                    "token_type_ids",
-                }
-            }
             actual_prefix = [*base_prompt, *item["prefix_token_ids"]]
-            logits = _forward_logits(model, model_inputs, actual_prefix, image_grid_thw)
-            terminal = terminal_boundary_score(
-                logits,
-                boundary_length=len(actual_prefix),
-                row_entry_token_id=OBJECT_REF_START,
-                terminal_token_id=int(terminal_id),
+            history = opened.extend_exact_history(history, item["prefix_token_ids"])
+            row_entry = opened.teacher_forced_evidence(
+                history,
+                (OBJECT_REF_START,),
+            )[0]
+            terminal_evidence = opened.teacher_forced_evidence(
+                history,
+                (terminal_id,),
+            )[0]
+            # Preserve the legacy FP32 subtraction and scalar round-trip exactly.
+            row_entry_logprob = torch.tensor(
+                row_entry.raw_model_logprob,
+                dtype=torch.float32,
             )
+            terminal_logprob = torch.tensor(
+                terminal_evidence.raw_model_logprob,
+                dtype=torch.float32,
+            )
+            terminal = {
+                "row_entry_token_id": int(OBJECT_REF_START),
+                "terminal_token_id": int(terminal_id),
+                "row_entry_log_probability": float(row_entry_logprob.item()),
+                "terminal_log_probability": float(terminal_logprob.item()),
+                "row_entry_minus_terminal": float(
+                    (row_entry_logprob - terminal_logprob).item()
+                ),
+            }
             output_records.append(
                 {
                     "boundary_id": item["boundary_id"],
