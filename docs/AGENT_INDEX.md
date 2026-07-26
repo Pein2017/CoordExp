@@ -11,23 +11,22 @@ updated: 2026-07-11
 
 # Agent Index
 
-Use this page when an AI agent works inside the repository. Start with the
-machine-readable [catalog](catalog.yaml), then read
-[Project Context](PROJECT_CONTEXT.md) before interpreting a current claim.
+Use this page only when the user-named evidence does not reveal the current
+owner. Search the machine-readable [catalog](catalog.yaml) or the query routes
+below, then load the smallest owning document, contract, code, or artifact set.
+Do not read the catalog or this index's targets wholesale.
 
-## Default read order
+## Task-local routing
 
-1. [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)
-2. [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
-3. [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md)
-4. [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md)
-5. [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
-6. the relevant domain router under `docs/`
-7. the exact stable `openspec/specs/coordexp-swift-*` contract when needed
-8. the named `openspec/changes/<change>/` workspace when work is carried
-   through its durable lifecycle
-9. `research/` for active interpretation, then `docs/history/` or `progress/`
-   only for historical evidence
+1. Inspect the exact path, artifact, config, diff, run, or question named by the
+   user.
+2. If ownership remains unclear, search [catalog.yaml](catalog.yaml) by domain,
+   path, or status, or use the query routes below.
+3. Read only the selected owner and the contracts or evidence required by the
+   task.
+4. Enter stable specs for compatibility semantics, active changes only when
+   named, `research/` for current interpretation, and history only for an
+   explicitly historical question.
 
 ## Authority quick reference
 

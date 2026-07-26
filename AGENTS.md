@@ -17,9 +17,11 @@
 
 ## Authority And Judgment
 
-- Route current behavior through `docs/AGENT_INDEX.md` and `docs/catalog.yaml`.
-  Use stable specs only for compatibility-sensitive contracts and active change
-  artifacts only when the task puts that change in scope.
+- When the named evidence does not reveal the current owner, search
+  `docs/catalog.yaml` or `docs/AGENT_INDEX.md` for the narrowest route; do not
+  load both or follow a fixed read order by default. Use stable specs only for
+  compatibility-sensitive contracts and active change artifacts only when the
+  task puts that change in scope.
 - Treat research notes, memories, handoffs, reviews, transcripts, and historical
   worktrees as evidence or routing context, never as live authority by default.
 - The user owns choices that change research meaning, compatibility, publication,
