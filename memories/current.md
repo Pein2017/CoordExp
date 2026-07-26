@@ -1,6 +1,6 @@
 # Current Project Memory
 
-Last verified for the dense-enumeration live route: 2026-07-25.
+Last verified for the dense-enumeration live route: 2026-07-26.
 
 ## Live-router authority rule
 
@@ -10,10 +10,16 @@ doc, or stable spec. Handoffs, agent-review outputs, reviewer packets, audit
 scratch, transcripts, memory notes, and temporary artifacts are provenance
 only and may not own the live route.
 
-## Current state: paired 200-boundary causal release complete
+## Current state: Source versus transition step-36 conditional selection complete
 
-The formal live route is the completed paired causal-release result and its
+The formal live route is the completed same-boundary checkpoint result and its
 frozen execution unit:
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md`
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/unit.md`
+
+The preceding paired causal-release result remains required context:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md`
 
@@ -37,12 +43,13 @@ The earlier Phase Zero result remains required context:
 
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md`
 
-The 200-boundary paired causal release, its preceding read-only statistical
-unit, the two-discriminator unit, and all four earlier no-new-training lanes
-are complete. The latest unit re-executes the native control and forces only
-the canonical assistant row opener before one-row release. Its stop condition
-is met. Do not launch a checkpoint comparison, longer release, optimizer
-update, or architecture change until user discussion and authorization.
+The same-boundary checkpoint comparison, paired causal release, preceding
+read-only statistical unit, two-discriminator unit, and all four earlier
+no-new-training lanes are complete. The latest unit compares Source and
+transition step 36 after forcing only the canonical assistant row opener and
+retains each checkpoint's native one-row arm. Its stop condition is met. Do not
+launch another checkpoint, longer release, optimizer update, prompt change, or
+architecture branch until user discussion and authorization.
 
 The governing outcome remains the original task: one `list all objects`
 prompt, one free autoregressive completion, and final unique trusted physical-
@@ -50,6 +57,30 @@ owner coverage. Fixed-prefix likelihood and forced continuation are diagnostic
 proxies only.
 
 ## Decision-relevant evidence
+
+### Source versus transition step-36 forced-opener comparison
+
+- With continuation fixed, Source and transition each recover a strict
+  uncovered owner on `45/200` boundaries. Transition has `2` gained owners,
+  `2` lost owners, `43` retained owners, no owner exchanges, and strict net
+  zero. The paired sign-test is `p=1.0`; the bootstrap interval for mean owner
+  net is `[-0.02,+0.02]` per boundary.
+- Transition's natural one-row release stops immediately on `155/200`
+  boundaries rather than Source's `198/200` and produces `16` strict uncovered
+  owners rather than one. Its main measured effect is therefore the decision
+  to continue, not aggregate conditional selection after continuation is fixed.
+- Only `62/200` forced raw rows have identical token IDs, so the aggregate null
+  is not an identity-of-decoding artifact. Transition changes many rows without
+  changing total strict owner yield.
+- Visual review confirms both strict gains are genuine improvements. Both
+  strict losses still select the same visible entity but move its box below the
+  match threshold: potted-plant Intersection over Union `0.560 -> 0.456` and
+  baseball-bat Intersection over Union `0.635 -> 0.491`.
+- In the reused random-30 Source-unmatched panel, parsed predictions change in
+  21 cases but descriptions in only two. Targeted review finds mostly small box
+  drift, no broad transition-created visually grounded recovery pattern, and
+  one conspicuous near-full-image car-box degradation. The earlier Source-side
+  latent recovery estimate is not attributable to step 36.
 
 ### Paired natural-terminal causal release
 
@@ -182,13 +213,15 @@ failures for both checkpoints. One-step composition preserves usable
 second-owner reachability but is order-sensitive and is not monotone in
 candidate likelihood.
 
-The strongest immediate uncertainty is whether transition step 36 improves
-conditional owner realization after the opener is held fixed on the same 200
-boundaries, rather than only shifting the choice to continue. A separate audit
-would be required to resolve what portion of Source's 134 unmatched forced
-rows are localization errors, wrong owners, or valid objects absent from the
-trusted ledger. Longer-trajectory preservation and final owner-set utility are
-also unresolved.
+The strongest immediate uncertainty is no longer whether step 36 improves
+aggregate conditional one-row owner realization; it does not under the strict
+paired estimand. The next material fork is between geometry-preserving
+continuation training, because step 36 shifts the gate while trading some box
+quality, and a longer-trajectory value test of whether Source's 45 latent
+one-row recoveries survive into net final owner-set gain. A full arm-hidden
+review would still be required to estimate checkpoint differences among all
+changed unmatched rows. Longer-trajectory preservation and final owner-set
+utility remain unresolved.
 
 The current evidence promotes no architecture, explicit state carrier, prompt
 change, one-row-at-a-time output contract, production forced-continuation
@@ -210,13 +243,10 @@ policy, or final training objective.
 
 ## Next discussion, not yet authorized execution
 
-The narrowest next mechanism candidate is a same-panel forced-opener comparison
-between Source and transition step 36, with identical prefixes and the continue
-decision fixed. Its decision-owning outcome would be paired strict recovery of
-any frozen uncovered owner, while repeats, unmatched rows, geometry validity,
-and owner exchange remain explicit outcomes. This could isolate conditional
-owner selection from the already-established continue/stop effect. It is not
-yet authorized.
+Discuss the completed gate-versus-selection result before opening a successor.
+The two bounded candidates are a geometry-preserving continuation treatment or
+a longer-trajectory value test of the already exposed one-row recoveries. Do
+not select or launch either automatically.
 
 A future 256-image cohort may explicitly mix roles:
 

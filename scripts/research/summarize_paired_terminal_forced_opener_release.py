@@ -353,6 +353,8 @@ def _strata(
 
 
 def summarize(args: argparse.Namespace) -> dict[str, Any]:
+    expected_unit_id = str(args.expected_unit_id)
+    expected_checkpoint_role = args.expected_checkpoint_role
     manifest_path = args.manifest.expanduser().resolve(strict=True)
     manifest = _read_json(manifest_path)
     manifest_hash = sha256_file(manifest_path)
@@ -384,13 +386,19 @@ def summarize(args: argparse.Namespace) -> dict[str, Any]:
         "source_jsonl_sha256",
         "attention_implementation",
         "forced_opener_token_id",
+        "checkpoint_contract",
     )
     for path in receipt_paths:
         receipt = _read_json(path)
         if receipt.get("schema_version") != RECEIPT_SCHEMA_VERSION:
             raise ValueError(f"unexpected receipt schema: {path}")
-        if receipt.get("unit_id") != UNIT_ID:
+        if receipt.get("unit_id") != expected_unit_id:
             raise ValueError(f"unexpected receipt unit: {path}")
+        if (
+            expected_checkpoint_role is not None
+            and receipt.get("checkpoint_role") != expected_checkpoint_role
+        ):
+            raise ValueError(f"unexpected checkpoint role: {path}")
         if receipt.get("manifest", {}).get("sha256") != manifest_hash:
             raise ValueError(f"manifest hash mismatch: {path}")
         runtime = receipt.get("runtime")
@@ -479,7 +487,8 @@ def summarize(args: argparse.Namespace) -> dict[str, Any]:
 
     result = {
         "schema_version": SCHEMA_VERSION,
-        "unit_id": UNIT_ID,
+        "unit_id": expected_unit_id,
+        "checkpoint_role": expected_checkpoint_role,
         "inputs": {
             "manifest": {"path": str(manifest_path), "sha256": manifest_hash},
             "statistics_cases": {
@@ -568,6 +577,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--statistics-cases", type=Path, required=True)
     parser.add_argument("--receipts-root", type=Path, required=True)
+    parser.add_argument("--expected-unit-id", default=UNIT_ID)
+    parser.add_argument("--expected-checkpoint-role")
     parser.add_argument("--output-root", type=Path, required=True)
     return parser
 

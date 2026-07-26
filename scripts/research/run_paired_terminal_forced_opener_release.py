@@ -42,6 +42,77 @@ COHORT = "untouched_terminal_with_remaining_owner"
 BOX_END_TOKEN_ID = 151649
 
 
+def _validated_checkpoint_contract(
+    *,
+    args: argparse.Namespace,
+    config_path: Path,
+    backend_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    role = str(args.checkpoint_role)
+    expected_values = (
+        args.expected_authored_config_sha256,
+        args.expected_adapter_path,
+        args.expected_adapter_sha256,
+        args.expected_embedding_delta_path,
+        args.expected_embedding_delta_sha256,
+    )
+    if role != "source" and not all(expected_values):
+        raise ValueError(
+            "non-Source checkpoint roles require expected config, adapter, and embedding identities"
+        )
+    config_hash = sha256_file(config_path)
+    if (
+        args.expected_authored_config_sha256
+        and config_hash != args.expected_authored_config_sha256
+    ):
+        raise ValueError("authored inference-config hash differs from expected contract")
+
+    model_identity = backend_receipt.get("model_identity")
+    if not isinstance(model_identity, Mapping):
+        raise ValueError("backend receipt lacks model identity")
+    adapter = model_identity.get("adapter")
+    embedding = model_identity.get("embedding_delta")
+    if not isinstance(adapter, Mapping) or not isinstance(embedding, Mapping):
+        raise ValueError("backend receipt lacks adapter or embedding-delta identity")
+    embedding_identity = embedding.get("identity")
+    if not isinstance(embedding_identity, Mapping):
+        raise ValueError("backend receipt lacks embedding-delta path identity")
+
+    actual_adapter = Path(str(adapter.get("adapter_path"))).resolve(strict=True)
+    actual_embedding = Path(str(embedding_identity.get("delta_path"))).resolve(strict=True)
+    if args.expected_adapter_path is not None:
+        expected_adapter = args.expected_adapter_path.expanduser().resolve(strict=True)
+        if actual_adapter != expected_adapter:
+            raise ValueError("loaded adapter path differs from expected contract")
+    if args.expected_embedding_delta_path is not None:
+        expected_embedding = args.expected_embedding_delta_path.expanduser().resolve(strict=True)
+        if actual_embedding != expected_embedding:
+            raise ValueError("loaded embedding-delta path differs from expected contract")
+
+    adapter_hash = sha256_file(actual_adapter / "adapter_model.safetensors")
+    embedding_hash = sha256_file(
+        actual_embedding / "special_token_embeddings.safetensors"
+    )
+    if args.expected_adapter_sha256 and adapter_hash != args.expected_adapter_sha256:
+        raise ValueError("loaded adapter tensor hash differs from expected contract")
+    if (
+        args.expected_embedding_delta_sha256
+        and embedding_hash != args.expected_embedding_delta_sha256
+    ):
+        raise ValueError("loaded embedding tensor hash differs from expected contract")
+    base = model_identity.get("base")
+    return {
+        "checkpoint_role": role,
+        "authored_config_sha256": config_hash,
+        "adapter_path": str(actual_adapter),
+        "adapter_tensor_sha256": adapter_hash,
+        "embedding_delta_path": str(actual_embedding),
+        "embedding_delta_tensor_sha256": embedding_hash,
+        "model_family": model_identity.get("family"),
+        "base_model_path": base.get("path") if isinstance(base, Mapping) else None,
+    }
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -122,6 +193,8 @@ def _validated_boundaries(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    unit_id = str(args.unit_id)
+    checkpoint_role = str(args.checkpoint_role)
     shard_count = int(args.shard_count)
     shard_index = int(args.shard_index)
     if shard_count <= 0 or not 0 <= shard_index < shard_count:
@@ -205,6 +278,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             model_config=model.config,
         )
         backend_receipt = opened.receipt.to_artifact_dict()
+        checkpoint_contract = _validated_checkpoint_contract(
+            args=args,
+            config_path=config_path,
+            backend_receipt=backend_receipt,
+        )
         model_dtype = _runtime_model_dtype_summary(model)
         attention = _attention_implementation(model, config.backend.hf.attn_implementation)
 
@@ -236,7 +314,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             if len(expected_grid) != 3:
                 raise ValueError(f"{boundary_id} expected image grid is not rank three")
             request = DecodeRequest(
-                request_id=f"paired-terminal-release:source:{boundary_id}",
+                request_id=f"paired-terminal-release:{checkpoint_role}:{boundary_id}",
                 chat_text=prompt_record.chat_text,
                 input_prompt_token_ids=tuple(prompt_record.input_prompt_token_ids),
                 expected_executed_prompt_token_ids=tuple(
@@ -325,8 +403,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     receipt = {
         "schema_version": RECEIPT_SCHEMA_VERSION,
-        "unit_id": UNIT_ID,
-        "checkpoint_role": "source",
+        "unit_id": unit_id,
+        "checkpoint_role": checkpoint_role,
         "manifest": {"path": str(manifest_path), "sha256": sha256_file(manifest_path)},
         "cases": output_cases,
         "runtime": {
@@ -356,6 +434,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "attention_implementation": attention,
             "processor_model_vision_parity": parity,
             "backend_session": backend_receipt,
+            "checkpoint_contract": checkpoint_contract,
             "forced_opener_token_id": OBJECT_REF_START,
         },
         "claim_boundary": (
@@ -375,6 +454,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--infer-config", type=Path, required=True)
     parser.add_argument("--source-jsonl", type=Path, required=True)
+    parser.add_argument("--unit-id", default=UNIT_ID)
+    parser.add_argument("--checkpoint-role", default="source")
+    parser.add_argument("--expected-authored-config-sha256")
+    parser.add_argument("--expected-adapter-path", type=Path)
+    parser.add_argument("--expected-adapter-sha256")
+    parser.add_argument("--expected-embedding-delta-path", type=Path)
+    parser.add_argument("--expected-embedding-delta-sha256")
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--limit", type=int)

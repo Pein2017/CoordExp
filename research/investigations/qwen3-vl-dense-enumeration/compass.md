@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-25
+updated: 2026-07-26
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -22,48 +22,56 @@ architecture, or an implementation contract.
 
 Fresh sessions start from these formal owners:
 
-1. the completed [paired natural-terminal native versus forced-opener one-row
+1. the completed [Source versus transition step-36 forced-opener owner-selection
+   result](experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md),
+   which owns the same-boundary checkpoint contrast, gate-versus-selection
+   decomposition, bounded visual review, and claim boundary;
+2. its frozen [execution
+   unit](experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/unit.md),
+   which owns the checkpoint identities, paired estimand, controls, and
+   no-training stop rule;
+3. the completed [paired natural-terminal native versus forced-opener one-row
    release
    result](experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md),
    which owns the 200-boundary causal recovery result, paired control, outcome
    audit, and claim boundary;
-2. its frozen [execution
+4. its frozen [execution
    unit](experiments/2026-07-25-paired-natural-terminal-forced-opener-release/unit.md),
    which owns the exact one-token intervention, panel, estimand, controls, and
    no-training stop rule;
-3. the completed [untouched natural-terminal boundary statistical-analysis
+5. the completed [untouched natural-terminal boundary statistical-analysis
    result](experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md),
    which owns the 200-boundary composition, paired-margin, stratified, and
    sensitivity evidence and the next release-study estimand;
-4. its frozen [execution
+6. its frozen [execution
    unit](experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/unit.md),
    which owns the read-only protocol, fixed panel, and no-release stop rule;
-5. the completed [continuation-shift locality and exact-prefix remaining-owner
+7. the completed [continuation-shift locality and exact-prefix remaining-owner
    compositionality
    result](experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md),
    which owns the broad-continuation, sampled-reachable owner-recovery, and
    one-step composition evidence and its claim boundary;
-6. its frozen [execution
+8. its frozen [execution
    unit](experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/unit.md),
    which owns the bounded no-training protocol and stop rule;
-7. the completed [existing-checkpoint transition mechanism decomposition and
+9. the completed [existing-checkpoint transition mechanism decomposition and
    robust-evaluation
    result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md),
    which owns the four-lane Phase Zero evidence, mixed mechanism judgment,
    claim boundary, and discussion-stage next-training recommendation;
-8. its frozen [execution
+10. its frozen [execution
    unit](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md),
    which owns the no-new-training protocol and stop rules;
-9. the completed [prefix-local and on-policy final owner-set training
+11. the completed [prefix-local and on-policy final owner-set training
    unit](experiments/2026-07-24-prefix-local-and-on-policy-owner-set-training/unit.md),
    which owns event materialization, the compared objectives and controls, the
    completed long training, matched training-panel comparison, and narrow
    transition-step-36 development/held-out transfer gate;
-10. the completed [trajectory owner-set admission-census
+12. the completed [trajectory owner-set admission-census
    result](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md),
    which owns the executed `8/2,004` strict-composite finding and its bounded
    claim; and
-11. the [experiment index](experiments/index.md), which owns lifecycle routing
+13. the [experiment index](experiments/index.md), which owns lifecycle routing
    across units.
 
 The strict 248-additional-admission estimand remains blocked before entropy
@@ -74,17 +82,20 @@ branch is pending and not part of this route. Handoffs, agent-review outputs,
 reviewer packets, audits, and memory notes remain historical provenance only;
 none is a live route target.
 
-As of `2026-07-25`, the paired causal release on all 200 untouched Source
-natural-terminal boundaries is complete. Relative to a re-executed native arm
-under the same current runtime, forcing only the canonical row opener produces
-a verified uncovered-owner gain on `44/200` boundaries, with zero paired owner
-losses in the immediate one-row contrast. The forced arms yield `45` verified
-uncovered owners, `19` covered-owner repeats, `134` valid unmatched rows, and
-`2` invalid rows. Premature stopping is therefore a real causal bottleneck,
-but conditional owner grounding after the continue decision remains the larger
-failure. The result does not establish a production continuation policy,
-downstream trajectory utility, checkpoint-specific post-continue improvement,
-training objective, or architecture. The route is paused for user discussion.
+As of `2026-07-26`, the same-boundary Source-versus-transition step-36
+forced-opener comparison is complete. With the continue decision fixed, both
+checkpoints recover `45/200` strict uncovered owners: transition gains two,
+loses two, retains 43, and has owner net zero. The two gains are genuine
+owner-selection or valid-geometry improvements; the two losses retain the same
+visible entity but degrade geometry below the strict match threshold.
+Transition native release nevertheless produces 16 strict owners versus
+Source native release's one and stops immediately on 155 rather than 198
+boundaries. The main measured step-36 effect is therefore a continuation-gate
+shift, not aggregate conditional-owner creation. The earlier Source-side
+visually grounded unmatched recovery cannot be attributed to recent training.
+The result does not establish a production continuation policy, downstream
+trajectory utility, new training objective, or architecture. The route is
+paused for user discussion.
 
 The preceding two-discriminator continuation-locality and exact-prefix
 owner-composition unit is also complete. Continuation changes are nearly equal
@@ -839,19 +850,24 @@ A 256-image training screen may start when all of the following are true:
 Current gate decision: **the exact all-positive natural-alias design remains
 stopped, the [existing-checkpoint Phase Zero
 result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md)
-is complete, and the program is paused for user discussion before any new
-training**. The completed
+and the [same-boundary Source-versus-transition
+result](experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md)
+are complete, and the program is paused for user discussion before any new
+training**. With continuation fixed, step 36 has zero aggregate strict owner
+gain and two same-entity geometry degradations; its clear effect is the natural
+continue gate. The completed
 [admission census](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md)
 shows that only eight images satisfy its strict composite; that subset does not
 define the feasibility of a mixed row-local signal, preservation, background,
 and matched-control cohort.
 
-The next discussed screen must isolate continue-versus-stop calibration from
-conditional owner preference and row realization while preserving Source
-behavior. Unknown or potentially unlabeled entities remain neutral, no local
-objective may use another valid uncovered owner as an automatic negative, and
-owner exchange remains an outcome to report. No objective, event mix, or arm is
-authorized until a new or revised formal unit freezes the comparison.
+Any next discussed screen must preserve geometry while changing
+continue-versus-stop calibration, conditional owner preference, or longer-horizon
+set value, and must preserve Source behavior. Unknown or potentially unlabeled
+entities remain neutral, no local objective may use another valid uncovered
+owner as an automatic negative, and owner exchange remains an outcome to report.
+No objective, event mix, or arm is authorized until a new or revised formal unit
+freezes the comparison.
 
 The existing [salvage gate](experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md)
 remains blocked before entropy because its 248-admission estimand belongs only
