@@ -11,6 +11,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
+import torch
+
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -19,9 +21,6 @@ from scripts.research.materialize_continuation_locality_owner_compositionality i
 )
 from scripts.research.run_complete_candidate_row_scoring import (  # noqa: E402
     OBJECT_REF_START,
-    _forward_logits,
-    _runtime_model_dtype_summary,
-    _score_candidate,
 )
 from scripts.research.run_local_branch_causal_value import (  # noqa: E402
     _annotate_owner_matches,
@@ -30,13 +29,7 @@ from scripts.research.run_local_branch_causal_value import (  # noqa: E402
     _single_native_inputs,
     build_positive_entity_ledger,
 )
-from scripts.research.run_native_sibling_branch_replay import (  # noqa: E402
-    _attention_implementation,
-)
-from scripts.research.run_next_row_likelihood_change import (  # noqa: E402
-    _canonical_row_phases,
-    terminal_boundary_score,
-)
+from scripts.research.run_next_row_likelihood_change import _canonical_row_phases  # noqa: E402
 from src.config.fingerprint import sha256_file  # noqa: E402
 from src.inference.backend import token_ids_sha256  # noqa: E402
 
@@ -206,41 +199,69 @@ def _annotated_release(
 
 def _score_state_target(
     *,
-    model: Any,
-    model_inputs: Mapping[str, Any],
-    image_grid_thw: Any,
-    base_prompt: Sequence[int],
+    session: Any,
+    base_history: Any,
     prefix: Sequence[int],
     target: Mapping[str, Any],
     terminal_id: int,
 ) -> dict[str, Any]:
-    actual_prefix = [*base_prompt, *prefix]
-    boundary_logits = _forward_logits(model, model_inputs, actual_prefix, image_grid_thw)
-    terminal = terminal_boundary_score(
-        boundary_logits,
-        boundary_length=len(actual_prefix),
-        row_entry_token_id=OBJECT_REF_START,
-        terminal_token_id=terminal_id,
-    )
+    history = session.extend_exact_history(base_history, prefix)
+    terminal_evidence = session.teacher_forced_evidence(history, (terminal_id,))[0]
     row_tokens = [int(item) for item in target["row_token_ids"]]
-    row_logits = _forward_logits(
-        model, model_inputs, [*actual_prefix, *row_tokens], image_grid_thw
+    row_evidence = session.teacher_forced_evidence(
+        history,
+        row_tokens,
     )
-    candidate = _score_candidate(
-        row_logits,
-        boundary_length=len(actual_prefix),
-        row_tokens=row_tokens,
-        metadata={
-            "candidate_id": f"owner-{target['owner_id']}",
-            "owner": target["owner_id"],
-            "category": target["category"],
-            "role": "verified_uncovered_owner",
-            "covered": False,
-        },
+    # Preserve the legacy FP32 reductions and scalar round-trips exactly.
+    selected = torch.tensor(
+        [item.raw_model_logprob for item in row_evidence],
+        dtype=torch.float32,
     )
+    phases = _canonical_row_phases(row_tokens)
+    candidate: dict[str, Any] = {
+        "candidate_id": f"owner-{target['owner_id']}",
+        "owner": target["owner_id"],
+        "category": target["category"],
+        "role": "verified_uncovered_owner",
+        "covered": False,
+        "row_token_ids": row_tokens,
+        "token_count": len(row_tokens),
+        "token_ids_sha256": token_ids_sha256(row_tokens),
+        "token_log_probabilities": [
+            float(value) for value in selected.detach().cpu().tolist()
+        ],
+    }
+    for phase, indices in phases.items():
+        values = selected[torch.tensor(indices, dtype=torch.long)]
+        candidate[phase] = {
+            "sum": float(values.sum().item()),
+            "mean": float(values.mean().item()),
+            "count": int(len(indices)),
+        }
+    ranks = [int(item.candidate_vocab_rank) for item in row_evidence]
+    candidate["selected_token_ranks"] = {
+        phase: [ranks[index] for index in indices]
+        for phase, indices in phases.items()
+    }
+    row_entry_logprob = selected[0]
+    terminal_logprob = torch.tensor(
+        terminal_evidence.raw_model_logprob,
+        dtype=torch.float32,
+    )
+    terminal = {
+        "row_entry_token_id": int(OBJECT_REF_START),
+        "terminal_token_id": int(terminal_id),
+        "row_entry_log_probability": float(row_entry_logprob.item()),
+        "terminal_log_probability": float(terminal_logprob.item()),
+        "row_entry_minus_terminal": float(
+            (row_entry_logprob - terminal_logprob).item()
+        ),
+    }
     return {
         "prefix_token_ids_sha256": token_ids_sha256(prefix),
-        "actual_prompt_plus_prefix_token_ids_sha256": token_ids_sha256(actual_prefix),
+        "actual_prompt_plus_prefix_token_ids_sha256": (
+            history.conditioning_token_ids_sha256
+        ),
         "terminal_boundary": terminal,
         "candidate_score": candidate,
     }
@@ -253,10 +274,7 @@ def _post_action_probe(
     target: Mapping[str, Any],
     session: Any,
     native_inputs: Mapping[str, Any],
-    model: Any,
-    model_inputs: Mapping[str, Any],
-    image_grid_thw: Any,
-    base_prompt: Sequence[int],
+    base_history: Any,
     tokenizer: Any,
     terminal_id: int,
     width: int,
@@ -268,10 +286,8 @@ def _post_action_probe(
     malformed_limit: int,
 ) -> dict[str, Any]:
     score = _score_state_target(
-        model=model,
-        model_inputs=model_inputs,
-        image_grid_thw=image_grid_thw,
-        base_prompt=base_prompt,
+        session=session,
+        base_history=base_history,
         prefix=post_prefix,
         target=target,
         terminal_id=terminal_id,
@@ -339,7 +355,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if output_path.exists():
         raise FileExistsError(f"refusing to overwrite immutable receipt: {output_path}")
 
-    import torch
     from src.config.fingerprint import sha256_json as config_sha256_json
     from src.config.inference import load_infer_config
     from src.data import load_raw_examples
@@ -376,23 +391,26 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     with open_backend_session(frontend.launch) as opened:
         if not isinstance(opened, HFBackendSession):
             raise RuntimeError("HF launch opened an unexpected backend session")
+        # Vision parity and forced-release generation remain outside the
+        # exact-history evidence seam and still require these private objects.
         model = opened._model  # noqa: SLF001
         tokenizer = opened._tokenizer  # noqa: SLF001
         if model is None or tokenizer is None:
             raise RuntimeError("HF session did not expose its loaded model and tokenizer")
-        model.eval()
-        terminal_id = tokenizer.eos_token_id
-        if terminal_id is None or int(terminal_id) < 0:
-            raise ValueError("tokenizer does not expose eos_token_id")
+        terminal_id = opened.special_token_ids["im_end"]
         parity = verify_processor_model_vision_parity(
             processor_identity=frontend.qwen.processor_identity,
             model_config=model.config,
         )
         backend_receipt = opened.receipt.to_artifact_dict()
-        model_dtype = _runtime_model_dtype_summary(model)
-        attention = _attention_implementation(
-            model, config.backend.hf.attn_implementation
-        )
+        effective_settings = backend_receipt.get("effective_settings")
+        if not isinstance(effective_settings, Mapping):
+            raise RuntimeError("HF backend receipt lacks effective settings")
+        model_dtype = effective_settings.get("observed_model_dtype")
+        attention = effective_settings.get("observed_attn_implementation")
+        if not isinstance(model_dtype, Mapping) or not isinstance(attention, str):
+            raise RuntimeError("HF backend receipt lacks observed runtime settings")
+        model_dtype = dict(model_dtype)
         for case in selected:
             image_id = str(case["image_id"])
             raw = raw_by_id.get(image_id)
@@ -442,35 +460,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                     include_raw_model_logprob=True,
                 ),
             )
+            base_history = opened.prepare_exact_history(request)
+            if base_history.conditioning_token_ids != tuple(base_prompt):
+                raise RuntimeError(f"{case['case_id']} materialized prompt mismatch")
+            # Forced-release helpers still consume native tensors and stopping
+            # behavior that are deliberately outside the evidence seam.
             native_inputs, executed_prompt_ids, _, _ = opened._materialize_native_inputs(  # noqa: SLF001
                 (request,)
             )
             if tuple(executed_prompt_ids[0]) != tuple(base_prompt):
                 raise RuntimeError(f"{case['case_id']} materialized prompt mismatch")
-            image_grid_thw = native_inputs.get("image_grid_thw")
-            if not isinstance(image_grid_thw, torch.Tensor):
-                raise ValueError("native inputs lack image_grid_thw")
-            model_inputs = {
-                key: value
-                for key, value in native_inputs.items()
-                if key
-                not in {
-                    "input_ids",
-                    "attention_mask",
-                    "position_ids",
-                    "token_type_ids",
-                }
-            }
             one_native = _single_native_inputs(native_inputs)
             ledger = build_positive_entity_ledger(raw)
             prefix = list(case["prefix_token_ids"])
             covered = [str(value) for value in case["covered_owner_ids"]]
             target = case["target"]
             state_score = _score_state_target(
-                model=model,
-                model_inputs=model_inputs,
-                image_grid_thw=image_grid_thw,
-                base_prompt=base_prompt,
+                session=opened,
+                base_history=base_history,
                 prefix=prefix,
                 target=target,
                 terminal_id=int(terminal_id),
@@ -536,10 +543,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         target=secondary,
                         session=opened,
                         native_inputs=one_native,
-                        model=model,
-                        model_inputs=model_inputs,
-                        image_grid_thw=image_grid_thw,
-                        base_prompt=base_prompt,
+                        base_history=base_history,
                         tokenizer=tokenizer,
                         terminal_id=int(terminal_id),
                         width=int(image_plan.decoded_width),
@@ -567,10 +571,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                         target=secondary,
                         session=opened,
                         native_inputs=one_native,
-                        model=model,
-                        model_inputs=model_inputs,
-                        image_grid_thw=image_grid_thw,
-                        base_prompt=base_prompt,
+                        base_history=base_history,
                         tokenizer=tokenizer,
                         terminal_id=int(terminal_id),
                         width=int(image_plan.decoded_width),
