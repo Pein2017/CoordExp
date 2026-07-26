@@ -10,7 +10,7 @@ doc, or stable spec. Handoffs, agent-review outputs, reviewer packets, audit
 scratch, transcripts, memory notes, and temporary artifacts are provenance
 only and may not own the live route.
 
-## Current state: Source versus transition step-36 conditional selection complete
+## Current state: completed evidence, architecture reset before any successor
 
 The formal live route is the completed same-boundary checkpoint result and its
 frozen execution unit:
@@ -44,12 +44,14 @@ The earlier Phase Zero result remains required context:
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/unit.md`
 
 The same-boundary checkpoint comparison, paired causal release, preceding
-read-only statistical unit, two-discriminator unit, and all four earlier
-no-new-training lanes are complete. The latest unit compares Source and
-transition step 36 after forcing only the canonical assistant row opener and
-retains each checkpoint's native one-row arm. Its stop condition is met. Do not
-launch another checkpoint, longer release, optimizer update, prompt change, or
-architecture branch until user discussion and authorization.
+read-only statistical unit, two-discriminator unit, and earlier training lanes
+are complete. The user judges the incremental local-loss route to be in a
+repeating bottleneck and has requested a fresh architecture-level analysis
+before any successor. Geometry-preserving continuation training and a longer
+forced trajectory are both held rather than selected. Do not launch another
+checkpoint, release, optimizer update, prompt change, or architecture branch
+until independent Pro/Faber analyses are compared and the user approves a new
+research question.
 
 The governing outcome remains the original task: one `list all objects`
 prompt, one free autoregressive completion, and final unique trusted physical-
@@ -200,7 +202,7 @@ and owner yields are `1,396/0.290` and `3,235/0.126`, versus Source
 `786/0.495`. Excessive continuation and output expansion are the dominant
 full-row failure. Length stops are the worst extremes, not the sole cause.
 
-## Current judgment and strongest uncertainty
+## Current judgment and architecture-reset hypothesis
 
 Step 36 changes both the broad decision to continue and verified owner-row
 likelihood. Its continuation effect is not specific to trained exact prefixes.
@@ -215,13 +217,21 @@ candidate likelihood.
 
 The strongest immediate uncertainty is no longer whether step 36 improves
 aggregate conditional one-row owner realization; it does not under the strict
-paired estimand. The next material fork is between geometry-preserving
-continuation training, because step 36 shifts the gate while trading some box
-quality, and a longer-trajectory value test of whether Source's 45 latent
-one-row recoveries survive into net final owner-set gain. A full arm-hidden
-review would still be required to estimate checkpoint differences among all
-changed unmatched rows. Longer-trajectory preservation and final owner-set
-utility remain unresolved.
+paired estimand. The architecture-reset hypothesis conceptually separates
+continue/stop, owner selection conditional on continuing, and row realization
+conditional on the owner. Existing autoregressive likelihood objectives couple
+all three, so positive row credit readily becomes broad continuation bias while
+owner routing and geometry churn. The hypothesized missing decision is a
+permutation-invariant marginal set-completion interface or objective that
+selects any visually supported uncovered owner and estimates the final-set
+value of continuing. This is not a promoted mechanism: the strongest
+alternative is that a true set-valued or final-set objective on the existing
+transformer is sufficient without an explicit module.
+
+A full arm-hidden review would still be required to estimate checkpoint
+differences among all changed unmatched rows. Longer-trajectory preservation,
+final owner-set utility, and whether explicit architecture is necessary remain
+unresolved.
 
 The current evidence promotes no architecture, explicit state carrier, prompt
 change, one-row-at-a-time output contract, production forced-continuation
@@ -243,10 +253,12 @@ policy, or final training objective.
 
 ## Next discussion, not yet authorized execution
 
-Discuss the completed gate-versus-selection result before opening a successor.
-The two bounded candidates are a geometry-preserving continuation treatment or
-a longer-trajectory value test of the already exposed one-row recoveries. Do
-not select or launch either automatically.
+Obtain independent Pro/Faber architecture analyses and compare their root-cause
+models, strongest counterexamples, architecture portfolios, and smallest
+falsifying experiments. Then discuss the synthesis with the user and freeze a
+new formal research unit only after the user chooses the question. External
+reviews and handoffs remain advisory provenance; no live router may point to
+them.
 
 A future 256-image cohort may explicitly mix roles:
 
@@ -267,14 +279,13 @@ report, not an automatic negative label.
 
 ## Minimum reading path
 
-1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md`
-2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/unit.md`
-3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-untouched-terminal-boundary-statistical-analysis/results.md`
+1. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md`
+2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/unit.md`
+3. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md`
 4. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/results.md`
 5. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md`
 6. `research/investigations/qwen3-vl-dense-enumeration/compass.md`
-7. `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
 
 The result owns executed evidence and the claim boundary. The unit owns the
-frozen protocol. The compass owns the program-level route. Memory notes and
-external reviews remain provenance only.
+frozen protocol. The compass owns the program-level route. Memory notes,
+handoffs, and external reviews remain provenance only.

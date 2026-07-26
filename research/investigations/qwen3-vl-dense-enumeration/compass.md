@@ -95,7 +95,10 @@ shift, not aggregate conditional-owner creation. The earlier Source-side
 visually grounded unmatched recovery cannot be attributed to recent training.
 The result does not establish a production continuation policy, downstream
 trajectory utility, new training objective, or architecture. The route is
-paused for user discussion.
+paused for a fresh architecture-level reassessment. The user has held both the
+geometry-preserving continuation successor and the longer forced-trajectory
+successor pending independent Pro/Faber analysis and a new discussion. Reviews
+remain advisory; no experiment follows automatically.
 
 The preceding two-discriminator continuation-locality and exact-prefix
 owner-composition unit is also complete. Continuation changes are nearly equal
@@ -852,21 +855,25 @@ stopped, the [existing-checkpoint Phase Zero
 result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md)
 and the [same-boundary Source-versus-transition
 result](experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md)
-are complete, and the program is paused for user discussion before any new
-training**. With continuation fixed, step 36 has zero aggregate strict owner
-gain and two same-entity geometry degradations; its clear effect is the natural
-continue gate. The completed
+are complete, and the program is paused for architecture-level reassessment
+before any new training**. With continuation fixed, step 36 has zero aggregate
+strict owner gain and two same-entity geometry degradations; its clear effect
+is the natural continue gate. The completed
 [admission census](experiments/2026-07-23-trajectory-owner-set-admission-census/results.md)
 shows that only eight images satisfy its strict composite; that subset does not
 define the feasibility of a mixed row-local signal, preservation, background,
 and matched-control cohort.
 
-Any next discussed screen must preserve geometry while changing
-continue-versus-stop calibration, conditional owner preference, or longer-horizon
-set value, and must preserve Source behavior. Unknown or potentially unlabeled
-entities remain neutral, no local objective may use another valid uncovered
-owner as an automatic negative, and owner exchange remains an outcome to report.
-No objective, event mix, or arm is authorized until a new or revised formal unit
+Do not assume the successor is another mixed local-loss screen. The immediate
+question is whether a true set-valued or final-set objective on the existing
+transformer can supply a permutation-invariant marginal set-completion decision,
+or whether owner selection needs an explicit coverage, set-difference, value,
+planning, or object-slot interface separated from row realization. This is a
+hypothesis portfolio for external challenge, not an architecture promotion.
+Unknown or potentially unlabeled entities remain neutral, no valid uncovered
+owner becomes an automatic negative, and owner exchange remains an outcome to
+report. No objective, event mix, or arm is authorized until external analyses
+are synthesized, the user chooses the next question, and a new formal unit
 freezes the comparison.
 
 The existing [salvage gate](experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md)
