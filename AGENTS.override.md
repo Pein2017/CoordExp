@@ -1,5 +1,5 @@
-# CoordExp shared instruction inheritance
+# CoordExp-swift worktree additions
 
-The canonical project guidance is already loaded globally from
-`/data/CoordExp/AGENTS.md` through `$CODEX_HOME/AGENTS.md`. Ignore the
-branch-local tracked `AGENTS.md`; this marker intentionally takes precedence.
+This file only appends to `/data/CoordExp/AGENTS.md`.
+
+No additional worktree-wide guidance.
