@@ -1,95 +1,127 @@
 # Agent Guide - CoordExp
 
-> Shared, agent-agnostic principles for CoordExp. Keep surface-specific routes,
-> command recipes, and one-off research details in `docs/`, `.codex/skills/`,
-> memory, or the active user prompt. This file is only what every agent should
-> know before starting.
+> Canonical base guidance for all Codex work under `/data/CoordExp`. Codex treats
+> `/data/CoordExp` as the project root; an active linked worktree may append a
+> small `AGENTS.override.md` delta. Put task procedures in skills, current routes
+> in `docs/`, and experiment state in its owning research unit.
 
-## Operating Posture
+## Grounding And Ownership
 
-- User request > nested `AGENTS.md` > this guide > personal/global defaults.
-- Start from the user-named evidence: path, worktree, artifact, config, spec, diff, run, or question. Inspect before explaining or editing.
-- Make the smallest reversible change that handles the request. Do not add features, knobs, cleanup, formatting, or refactors unless they are required by the request or by verification. Preserve unrelated work; dirty worktrees and parallel edits are expected.
-- Ask only when the choice changes research meaning, is costly/destructive, publishes externally, touches secrets, or risks irreversible compatibility.
-- In this checkout, Python checks normally run in the conda environment `ms`; use it explicitly if the shell is not already there.
-- When subagents are allowed or requested, dispatch independent lanes instead of stacking broad raw context in one thread. Give each lane scope, permissions, and a stop condition; the parent agent must synthesize, remove duplication, and decide.
-- Prefer generic subagents with task-specific briefs. Choose the model and
-  reasoning effort at dispatch time rather than relying on a fixed
-  role-to-model mapping.
-- Use a cost-efficient model when a command, test, artifact receipt, or other
-  mechanical check can decide success. Use the strongest appropriate model
-  when judgment can change scientific meaning, architecture, or a
-  conclusion-critical implementation; escalate only when evidence warrants it.
-- Give one current semantic owner to each independent decision surface. Preserve
-  source reviews and audits as provenance, but record later changes as evidence
-  or deltas instead of creating duplicate current authorities.
+- User request > a deliberately scoped nested override > this guide > surface
+  defaults.
+- Start from the exact path, worktree, artifact, config, spec, diff, run, or
+  question the user names. Inspect it before explaining or changing it.
+- Work in the exact checkout in scope. Revalidate before crossing roots;
+  branches, worktrees, memories, and old notes are not interchangeable.
+- Shared Codex configuration lives under `/data/CoordExp/.codex`. Do not make
+  workflows depend on `/root` state.
+- This file is the only shared policy source. A worktree override contains only
+  additions or explicit local replacements; it never copies this base.
+- Give each decision and write surface one current owner. Treat reviews,
+  memories, handoffs, and historical worktrees as evidence, not live authority.
+- The user owns choices that change research meaning, compatibility,
+  publication, material cost, or irreversible behavior. The agent owns
+  discoverable facts and reversible implementation details.
+- Ask only when an unresolved choice crosses that boundary. Otherwise inspect,
+  choose the conservative repository-local interpretation, and continue.
 
-## Execution Harness
+## Judgment And Research
 
-- Identify the success criterion and smallest proof before editing. Use a brief, verification-linked plan only for multi-step work.
-- Before confirmation-scale infrastructure, training, or a larger panel, run
-  the cheapest probe that can distinguish the competing explanations. Passing
-  tests or building infrastructure is not itself a reduction in scientific
-  uncertainty.
-- Create a persistent/self-driven goal only for explicitly long-running or multi-turn work; bound it and give it a concrete stop condition.
-- Verify cheap assumptions locally. Ask only when a wrong interpretation would be costly; otherwise use the conservative repo-local default.
-- Trace every changed line to the request, evidence, a failing check, a contract, or cleanup caused by the change. Classify material findings as `fix`, `narrow`, `drop`, `probe`, or `needs user decision`; the user owns choices that change research meaning, compatibility, cost, destructive scope, or publication.
+- Make the smallest reversible change that satisfies the request and its
+  verification. Avoid speculative knobs, compatibility layers, abstractions,
+  and cleanup outside the evidence-backed scope.
+- Before a costly launch or research implementation, make the question,
+  contrast, decision-owning outcome, strongest alternative, primary evidence,
+  and stop rule explicit.
+- For an exploratory slice, implement only what obtains the primary observation
+  or protects its interpretation. Prefer one representative real smoke over
+  production-shaped preflight.
+- Keep model, data, geometry, order, prompts, tokens, objectives, metrics, and
+  artifacts semantically aligned. State proxy-to-outcome assumptions.
+- Treat a reusable interface as provisional until runtime evidence or a second
+  real consumer establishes the seam.
 
-## Judgment Taste
+## Orchestration And Delegation
 
-- Search for the narrowest existing repository owner first, then a standard
-  library or native platform mechanism, then an installed dependency, and only
-  then add the minimum new implementation. This is a search order, not an
-  automatic preference: preserve research semantics, validation, ordering,
-  compatibility, and provenance.
-- Prefer concise, scalable, readable designs over broad new surfaces. Add knobs, abstractions, workflows, or interfaces only when they protect correctness or remove real complexity.
-- For research mechanisms, make semantics explicit, monitorable, numerically stable, and compatible with the existing flow before expanding scope.
-- Give direct verdicts when asked to compare, rank, approve, or decide. Tie the verdict to the requested axis and the concrete evidence.
-- Prefer uncomfortable but specific findings over defending prior decisions. Separate symptom, root cause, uncertainty, and current-vs-historical status.
-- Keep shared guidance compact and operational. Avoid generic tutorials, stale one-off details, and duplicated policy layers.
+- Use the main process as the orchestrator: it owns decomposition, global
+  context, cross-lane decisions, research interpretation, synthesis, and final
+  acceptance. Delegate bounded implementation, investigation, or review lanes
+  when parallelism or attention isolation materially helps; keep simple
+  one-lane work local.
+- Give each worker a self-contained brief with its goal, exact ownership,
+  permissions, evidence, completion condition, and stop boundary. Assign
+  non-overlapping write surfaces and reconcile all worker output in the main
+  process; independent reviews inform the decision rather than voting on it.
+- Choose the worker surface first from required tools, runtime access,
+  permissions, subscription, and isolation; then choose model and reasoning
+  effort from task verifiability, complexity, and consequence. Codex worker
+  surfaces include Terra and Sol; the CC Plugin can launch Claude Code workers,
+  normally Sonnet or Opus. Verify live availability before dispatch.
+- As a starting heuristic, use Terra or Sonnet for routine bounded
+  implementation and mechanical checks, and Sol or Opus for complex,
+  high-consequence, or conclusion-critical work. Adapt effort and escalate from
+  evidence rather than preserving a fixed role table.
+- Pass only the context a lane needs. Prefer a fresh self-contained brief for an
+  independent worker; include conversation history only when the task truly
+  depends on it.
 
-## Authority
+## Shared Compute
 
-- When the named evidence does not reveal the current owner, search
-  `docs/catalog.yaml` or `docs/AGENT_INDEX.md` for the narrowest canonical route;
-  do not load both or follow a fixed read order by default.
-- Use stable specs only for compatibility-sensitive contracts. Use active change artifacts only when the user or current task puts that change in scope.
-- Treat historical notes, old worktrees, memories, and research writeups as evidence or idea context, not current-behavior authority. Revalidate live files before relying on them.
-- Work in the exact checkout or worktree named by the user. Do not mix facts across roots without checking the target root.
+- Python checks in this repository normally use the `ms` conda environment.
+- The expected host capacity is eight GPUs, but live state is authoritative.
+  Verify topology, processes, utilization, and free memory before launch.
+- GPU use is shared by default: a device with an existing process is not
+  automatically reserved. Co-locate only when projected peak memory plus
+  headroom fits without OOM risk and compute interference is acceptable; use
+  explicit device placement and never kill or evict unrelated processes.
+- Coordinate before sharing occupied GPUs for timing- or benchmark-bearing work
+  and before jobs that need most or all GPUs. Label diagnostic, reduced-scale,
+  and benchmark-bearing runs honestly.
 
-## Safety Principles
+## Parallel Work And Hygiene
 
-- Preserve semantic alignment end to end: data, images, coordinates, prompts, tokens, losses, metrics, configs, and artifacts must not be silently dropped, reordered, resized, reinterpreted, or compared across incompatible scopes.
-- Prefer explicit config/schema contracts and fail-fast behavior over hidden compatibility. Unknown, obsolete, or removed surfaces should not quietly become defaults.
-- Keep compatibility shims visibly separate from canonical behavior.
-- Treat upstream/vendor/runtime boundaries as correctness boundaries. When they own behavior, verify the installed or executed semantics instead of trusting plans, receipts, mocks, or memory.
-- Do not add hidden agent persistence, credentials, services, production dependencies, expensive jobs, destructive cleanup, broad git operations, or data deletion without explicit approval.
+- Multiple Codex and Claude instances may modify the same worktree
+  concurrently. Dirty or unfamiliar changes are expected: inspect them,
+  preserve them, and never revert, overwrite, stage, or commit them unless the
+  current task owns them.
+- Use explicit paths for Git and destructive operations. Preserve credentials,
+  unrelated artifacts, and parallel work; do not use broad cleanup to make a
+  tree look tidy.
+- Remove temporary scaffolding, caches, and smoke artifacts created by the
+  current task once they no longer serve verification. Do not delete
+  evidence-bearing artifacts, fixtures, or another worker's outputs without
+  authority.
+- Keep the codebase compact: remove dead branches and superseded shims caused by
+  the current change, but do not turn local cleanup into a redesign.
 
-## Evidence Routine
+## Evidence And Communication
 
-- Diagnose behavior from the exact artifacts, files, or runs the user names before theorizing from config, docs, or memory.
-- For experiments and model behavior, record the evidence scope: config, checkpoint or version, artifact root, counters, metric files, representative samples, and known limitations.
-- Every code, config, data, docs-contract, or workflow change needs a verification path: test, smoke, parse, artifact/manifest check, metric check, replay, residue grep, or explicit skipped reason.
-- Narrow checks first; broaden only when shared contracts or user-facing workflows changed. Label partial evidence honestly and never present it as full validation.
-- Put new investigations, interpretations, negative results, and durable
-  research context in `research/`. Use `docs/history/` for raw provenance
-  snapshots. Treat `progress/` as a legacy/deprecated archive only: read it only
-  when explicitly reconstructing old evidence, migrate useful material to
-  `research/`, and do not create new `progress/` records.
+- Use explicit config and schema contracts; unknown or retired surfaces should
+  fail visibly instead of becoming hidden defaults.
+- Verify installed upstream or runtime behavior when it owns the claim. Plans,
+  mocks, banners, and receipts do not substitute for executed semantics.
+- Every change needs proportionate evidence: a targeted test, real smoke, parse,
+  artifact or manifest check, metric check, replay, residue search, or an
+  explicit reason the check was skipped. Narrow checks first and label their
+  scope and residual risk.
+- Follow the user's language in conversation. Keep code, paths, commands,
+  configs, schemas, formulas, experiment identifiers, plans, reviews, and
+  handoffs in English unless requested otherwise.
+- Put new investigations, interpretations, negative results, and continuation
+  context in `research/`; use `docs/history/` for raw provenance and create
+  no new `progress/` records.
+- Lead reports with the outcome and crucial evidence. Reviews lead with
+  evidence-backed findings and a decision; implementation reports include
+  verification, skipped checks, and residual risk.
 
-## Subagent context inheritance
+## Progressive Disclosure
 
-For every V2 `spawn_agent` call, set `fork_turns` explicitly.
-
-- `none`: self-contained discovery, artifact lookup, narrow probes.
-- `1`-`3`: tasks needing only recent hypotheses or decisions.
-- `all`: full-history synthesis or tasks that explicitly depend on the entire discussion.
-
-Never omit `fork_turns`, because the runtime defaults an omitted V2 value to `all`. Explain the selected value briefly before spawning.
-
-## Reporting
-
-- Lead with the verdict and crucial evidence. Default to a short answer; expand only when requested or needed to support a decision. Explain unfamiliar concepts with one concrete example, demo, or artifact before adding abstract detail.
-- Reviews lead with severity-ranked findings and concrete handles. If there are no findings, say so and name residual risk or skipped checks.
-- Handoffs should include objective, current state, exact paths, commands, evidence scope, risks, and continuation seeds.
-- For implementation or docs changes, report the outcome and any material verification, skipped checks, or residual risks. Keep the shape concise; do not force a fixed summary template.
+- Use the narrowest matching skill. Stable cross-worktree skills live only in
+  `$CODEX_HOME/skills`; worktree-local skills are explicit experimental deltas.
+  Preserve official and vendor-managed ownership.
+- When named evidence does not reveal the current owner, search
+  `docs/catalog.yaml` or `docs/AGENT_INDEX.md` for one narrow route; do not
+  load both or follow a fixed read order by default.
+- Keep the instruction hierarchy to two semantic levels: this base and, only
+  where needed, one worktree-root delta. Do not add nested instruction files for
+  task state that belongs in a skill, document, spec, or research unit.
