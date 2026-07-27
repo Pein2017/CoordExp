@@ -12,6 +12,17 @@
   the worker prompt. Spawned workers do not read this file.
 - Simple local work does not need this document or delegation.
 
+## Context Handoff
+
+- Set `fork_turns: "none"` explicitly on every Codex `spawn_agent` call and on
+  every `CC:spawn` interface that exposes it. Never omit the argument or choose a
+  conversation-history window.
+- The lead writes a self-contained brief with the goal, exact cwd and owned
+  paths, relevant current evidence, non-negotiable constraints, expected output,
+  completion condition, and stop boundary.
+- If the required context cannot be distilled without changing its meaning,
+  keep the work with the lead instead of forwarding raw history.
+
 ## Current Priors
 
 - Candidate Codex worker models include Terra and Sol. Candidate Claude Code

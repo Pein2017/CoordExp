@@ -40,8 +40,9 @@
   research interpretation, synthesis, and final acceptance. Delegate bounded
   implementation, investigation, or review lanes only when parallelism or
   attention isolation materially helps; keep simple work local.
-- Give workers self-contained briefs with exact ownership, permissions,
-  evidence, completion conditions, and stop boundaries. Keep write surfaces
+- Distill every delegation into a self-contained brief with exact ownership,
+  permissions, relevant evidence, completion conditions, and stop boundaries;
+  do not forward unfiltered conversation history. Keep write surfaces
   non-overlapping and reconcile every result in the lead.
 - The lead alone owns model and effort routing. Consult
   `.codex/MODEL_ROUTING.md` only for substantial delegation, conclusion-critical
