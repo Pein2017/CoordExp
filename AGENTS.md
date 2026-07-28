@@ -67,7 +67,7 @@
 
 - Use the narrowest matching skill. A skill owns its procedure; this guide does
   not restate it.
-- Read `.codex/MODEL_ROUTING.md` only before substantial delegation. Use
+- Read `$CODEX_HOME/MODEL_ROUTING.md` only before substantial delegation. Use
   task-specific briefs, bounded evidence, one semantic owner, and an explicit
   stop condition.
 - When `memories/config.yaml` exists and continuity matters, use
