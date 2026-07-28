@@ -67,9 +67,9 @@
 
 - Use the narrowest matching skill. A skill owns its procedure; this guide does
   not restate it.
-- Read `$CODEX_HOME/MODEL_ROUTING.md` only before substantial delegation. Use
-  task-specific briefs, bounded evidence, one semantic owner, and an explicit
-  stop condition.
+- Use `agent-routing` for substantial delegation or a material model and effort
+  choice. Use task-specific briefs, bounded evidence, one semantic owner, and
+  an explicit stop condition.
 - When `memories/config.yaml` exists and continuity matters, use
   `project-memory`; verify dynamic state before relying on it.
 - Prefer live routers, expressive scripts, schemas, tests, and artifacts over

@@ -1,6 +1,6 @@
 ---
 name: agent-routing
-description: Compose and iteratively calibrate bounded Codex and Claude Code teams by choosing whether to delegate, worker roles, surface, model, reasoning effort, verifier, escalation, joining, and stopping. Use when a lead is deciding how to delegate, selecting subagent models or effort, splitting work among scouts, builders, reviewers, judges, or planning advisers, recovering failed agent work, comparing team compositions, or updating MODEL_ROUTING from real task evidence. Skip when a task is clearly small enough to keep local with no routing decision.
+description: Compose and iteratively calibrate bounded Codex and Claude Code teams by choosing whether to delegate, worker roles, surface, model, reasoning effort, verifier, escalation, joining, and stopping. Use when a lead is deciding how to delegate, selecting subagent models or effort, splitting work among scouts, builders, reviewers, judges, or planning advisers, recovering failed agent work, comparing team compositions, or updating routing priors from real task evidence. Skip when a task is clearly small enough to keep local with no routing decision.
 ---
 
 # Agent Routing
@@ -12,9 +12,9 @@ description: Compose and iteratively calibrate bounded Codex and Claude Code tea
 
 1. Keep the active primary lead, normally Codex, responsible for global
    context, decomposition, synthesis, research meaning, and final acceptance.
-2. Read `$CODEX_HOME/MODEL_ROUTING.md` for current model availability, local
-   priors, and discriminating observations. Verify the live spawn interface
-   before selecting a non-default route.
+2. Read [references/model-priors.md](references/model-priors.md) when choosing a
+   surface, model, or effort, or when new evidence may change a prior. Verify
+   the live spawn interface before selecting a non-default route.
 3. Keep simple work in the lead. Delegate only when parallelism,
    specialization, provider independence, or attention isolation materially
    helps.
@@ -119,6 +119,6 @@ then for model spend when comparable receipts exist.
   or runtime reliability.
 - Treat one result as provisional. Change a default only after repeated
   comparable evidence; weaken it when counterevidence appears.
-- Update `$CODEX_HOME/MODEL_ROUTING.md` only when an observation changes a
-  routing decision. Edit priors in place; do not build a benchmark, profiling
-  requirement, per-task ledger, or formal routing matrix.
+- Update [references/model-priors.md](references/model-priors.md) only when an
+  observation changes a routing decision. Edit priors in place; do not build a
+  benchmark, profiling requirement, per-task ledger, or formal routing matrix.
