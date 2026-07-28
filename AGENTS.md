@@ -44,10 +44,9 @@
   permissions, relevant evidence, completion conditions, and stop boundaries;
   do not forward unfiltered conversation history. Keep write surfaces
   non-overlapping and reconcile every result in the lead.
-- The lead alone owns model and effort routing. Consult
-  `$CODEX_HOME/MODEL_ROUTING.md` only for substantial delegation,
-  conclusion-critical work, or an uncertain route; workers receive the chosen
-  route in their prompt and do not load that document.
+- The lead alone owns model and effort routing. Use the available
+  `agent-routing` skill for substantial delegation, conclusion-critical work,
+  or an uncertain route; workers receive the chosen route in their prompt.
 
 ## Runtime And Parallel Work
 
