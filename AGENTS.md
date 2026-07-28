@@ -45,9 +45,9 @@
   do not forward unfiltered conversation history. Keep write surfaces
   non-overlapping and reconcile every result in the lead.
 - The lead alone owns model and effort routing. Consult
-  `.codex/MODEL_ROUTING.md` only for substantial delegation, conclusion-critical
-  work, or an uncertain route; workers receive the chosen route in their prompt
-  and do not load that document.
+  `$CODEX_HOME/MODEL_ROUTING.md` only for substantial delegation,
+  conclusion-critical work, or an uncertain route; workers receive the chosen
+  route in their prompt and do not load that document.
 
 ## Runtime And Parallel Work
 
