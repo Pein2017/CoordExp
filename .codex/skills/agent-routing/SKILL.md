@@ -35,10 +35,13 @@ Choose in this order:
    cover the consequential failure, not merely syntax.
 4. **Surface:** choose Codex or Claude Code from required tools, runtime access,
    permissions, isolation, quota, and the value of provider independence.
-5. **Model and effort:** map the role through the current priors. Use the least
-   costly combination likely to finish reliably; increase capability or effort
-   only for demonstrated reasoning need, silent-error risk, or consequential
-   judgment.
+5. **Model and effort:** choose these jointly as a routing pair, not as a model
+   ranking followed by a monotonic "more thinking is better" knob. The same
+   effort can affect models differently, and excess effort can increase scope
+   expansion, redesign, or review churn. Map the pair through the current
+   priors and use the least costly combination likely to finish reliably;
+   increase capability or effort only for demonstrated reasoning need,
+   silent-error risk, or consequential judgment.
 
 If a judgment-shaped task can be narrowed into a mechanically checkable lane
 without changing its meaning, narrow the role and brief before up-tiering.
@@ -86,6 +89,11 @@ architecture direction. Route directly to a stronger judgment lane instead.
 - Escalate cross-file contract ambiguity to a stronger builder or reviewer.
 - Escalate competing research meanings or route-changing contradictions to an
   independent research or architecture judge.
+- When a worker is overthinking, broadening scope, or redesigning beyond the
+  brief, first tighten the lane or lower effort; raising effort usually
+  amplifies that failure mode. Raise effort when the observed failure is
+  insufficient depth on a bounded uncertainty, not merely because a task
+  failed.
 - Higher effort is not evidence of correctness, and a stronger model does not
   replace an executable check.
 
@@ -115,6 +123,9 @@ then for model spend when comparable receipts exist.
 - In a comparison, hold brief, evidence, tools, permissions, write surface,
   output contract, and verifier fixed. Change only the declared routing
   variable.
+- Treat `model type × thinking effort` as an interacting pair. To learn the
+  interaction, compare efforts within one model or models at one effort before
+  changing both; do not attribute a paired-route result to model type alone.
 - Separate worker quality from handoff quality, verifier quality, and surface
   or runtime reliability.
 - Treat one result as provisional. Change a default only after repeated

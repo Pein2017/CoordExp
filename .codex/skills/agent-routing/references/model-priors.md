@@ -29,10 +29,14 @@
 | Codex Terra | Fast scouting, stable self-contained implementation, integration, and contract review | Do not hard-code moving external snapshots; verify structural behavior |
 | Codex Sol | Research reasoning, contract and concurrency review, silent-correctness seams, and conclusion-critical synthesis | Strong reasoning does not guarantee exact mechanical details |
 
-Effort tunes depth within a model; it does not define the role. Start at low for
-straightforward verified work, medium for ordinary bounded agents, and high for
-cross-file reasoning or review. Use `xhigh` or `max` only for a localized,
-consequential uncertainty that lower effort has not resolved.
+Effort tunes depth within a model; it does not define the role or improve every
+model monotonically. Treat model and effort as an interacting route pair. Start
+at low for straightforward verified work, medium for ordinary bounded agents,
+and high for cross-file reasoning or review. Use `xhigh` or `max` only for a
+localized, consequential uncertainty that lower effort has not resolved.
+When a capable model broadens scope, redesigns unnecessarily, or turns a
+builder lane into an audit, tighten the brief or lower effort before escalating;
+that is a different failure from insufficient reasoning depth.
 
 ## Observed Differentiators
 
