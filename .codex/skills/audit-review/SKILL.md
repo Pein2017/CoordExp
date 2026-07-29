@@ -1,6 +1,6 @@
 ---
 name: audit-review
-description: Audit read-only CoordExp changes, runs, claims, launch gates, or fixed diffs when correctness, contract fidelity, or research meaning needs an evidence-backed decision.
+description: Audit read-only CoordExp changes, runs, claims, launch gates, or fixed diffs when correctness, contract fidelity, or research meaning needs an evidence-backed decision; also own review semantics and disposition inside an explicitly invoked convergence loop.
 ---
 
 # Audit Review
@@ -69,6 +69,27 @@ Use `model-diagnosis` for an existing behavioral symptom,
    - Complete when the verdict is supported or explicitly bounded by skipped
      evidence.
 
+## Explicit Iterative Review
+
+`audit-review` remains read-only. When an explicitly invoked outer workflow
+runs multiple review and revision passes on a decision-important surface:
+
+- Audit one fixed artifact version at a time, with at most one reviewer per
+  independent decision surface. Prefer a deterministic check or discriminator
+  when it can decide the question.
+- Let the lead accept, reject, or deduplicate findings using this skill's
+  severity and disposition rules. A relevant implementation skill, not the
+  auditor, applies authorized revisions.
+- Re-audit only accepted findings and materially changed evidence; do not start
+  another general review wave for reassurance.
+- Close the loop when a pass produces no new accepted P0/P1 and no decision
+  change. Another pass requires changed evidence or a localized unresolved
+  contradiction.
+
+Finish as `ready for user approval`, `approved to implement`, `implemented and
+verified`, `hold`, `probe required`, `needs user decision`, or
+`narrowed/dropped`, with residual risk and the next owner explicit.
+
 ## Report
 
 Lead with severity-ranked findings:
@@ -81,6 +102,10 @@ Each finding includes an evidence handle, impact, disposition, smallest next
 action, and verification. Then report confirmed OK checks, verdict, skipped
 checks, and residual risk. For fixed diffs, keep **Engineering Standards** and
 **Intent And Contract** findings separate.
+
+For an iterative review, also report the reviewed versions, lanes used,
+accepted and rejected findings, revisions, unresolved gates, and exact stop
+state.
 
 If no material finding remains, say so and name the residual risk rather than
 manufacturing reassurance work.

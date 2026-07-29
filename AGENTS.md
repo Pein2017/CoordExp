@@ -18,6 +18,9 @@
   publication, material cost, or irreversible behavior. Agents own discoverable
   facts and reversible implementation details; ask only when that boundary is
   unresolved.
+- When an approved route changes architecture, claim scope, material cost, or
+  stop rule, restate old versus new and obtain the owning decision before
+  proceeding.
 
 ## Research Judgment
 
@@ -26,9 +29,9 @@
 - Before a costly launch or research implementation, make the question,
   contrast, decision-owning outcome, strongest alternative, primary evidence,
   and stop rule explicit.
-- An exploratory slice should obtain the primary observation or protect its
-  interpretation, not imitate production infrastructure. A plumbing smoke is
-  not model-quality evidence.
+- An exploratory slice should follow the shortest evidence-bearing path to the
+  primary observation; keep optional optimization, hardening, and future
+  comparators detached. A plumbing smoke is not model-quality evidence.
 - Decision-bearing or cited results must be reproducible; exploratory probes
   should not be overbuilt for reproducibility.
 - Treat a reusable interface as provisional until stable semantics or a second
@@ -72,9 +75,9 @@
   than narrating the code.
 - Reuse stable semantics, not imagined variation. Small local duplication is
   preferable to a premature abstraction.
-- Performance work targets the end-to-end wall-clock of long-running training,
-  including material GPU and CPU overhead. Upgrade code or infrastructure only
-  when clearly necessary; avoid speculative optimization machinery.
+- Performance work targets time-to-primary-observation and end-to-end
+  wall-clock, including GPU idle time and CPU preparation or admission. Profile
+  the measured critical path before adding parallelism or infrastructure.
 - Remove temporary scaffolding and smoke artifacts created by the current task.
   Delete dead branches or superseded shims caused by the change without turning
   cleanup into a redesign or removing evidence owned elsewhere.

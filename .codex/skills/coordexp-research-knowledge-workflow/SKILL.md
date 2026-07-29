@@ -46,8 +46,11 @@ behavior, `coordexp-infer-eval-workflow` for run operations, and
    - Complete when one tracked unit/result/decision owns the current statement.
 
 4. **Resolve semantic deltas.**
-   - Compare the originating question with any stricter cohort, predicate,
-     estimand, control, claim, or stop rule introduced later.
+   - Compare the originating question and approved route with any later change
+     to cohort, predicate, estimand, control, claim, stop rule, critical path,
+     or material cost.
+   - Record old versus new, reason, claim/evidence/cost impact, authorization,
+     and detached work.
    - Record decision-owning outcome, intervention or proxy, final evaluation,
      transfer assumption, preservation risk, and signal supply.
    - Use [Research Alignment Examples](references/research-alignment-examples.md)

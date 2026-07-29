@@ -1,4 +1,7 @@
 interface:
-  display_name: "Review Convergence Loop"
-  short_description: "Iterate work and review to a bounded stop"
-  default_prompt: "Use $review-convergence-loop to run this explicitly review-gated task to a bounded stop state."
+  display_name: "Manual Review Convergence"
+  short_description: "Manually run an important review loop"
+  default_prompt: "Use $review-convergence-loop to run this decision-important review gate to a bounded stop state."
+
+policy:
+  allow_implicit_invocation: false
