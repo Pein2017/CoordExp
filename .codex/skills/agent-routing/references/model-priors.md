@@ -21,7 +21,7 @@
 
 | Model | Provisional fit | Important boundary |
 | --- | --- | --- |
-| Claude Haiku | Fast mechanical work, extraction, smoke tests, and bounded scans behind a verifier | Multi-turn repository work is not yet locally calibrated |
+| Claude Haiku | Fast mechanical work, extraction, smoke tests, and bounded scans behind a verifier | Its detections can be trusted behind a verifier; its narrative diagnoses cannot. Read the receipt, not the summary |
 | Claude Sonnet | Balanced bounded implementation and ordinary coding | Require structural acceptance; avoid repeating expensive real probes across tests |
 | Claude Opus | Cross-file integration, architecture seams, broad review, and source archaeology | Calibrate severity, deduplicate findings, and constrain scope |
 | Claude Fable | Core planning, architecture alternatives, and difficult decision discussion | Local task-class evidence is sparse; do not spend it on routine implementation |
@@ -40,18 +40,49 @@ that is a different failure from insufficient reasoning depth.
 
 ## Observed Differentiators
 
-- In one paired conclusion-critical audit on 2026-07-28, Sol/high was more
-  concise and calibrated on contract, concurrency, and silent-correctness
-  seams. Opus/high was broader on repository archaeology, lifecycle,
-  environment, and migration risks but needed stronger deduplication and
-  severity calibration. Both initially missed the same tool-to-protocol
-  semantic mismatch, so provider diversity did not replace lead verification.
+- Serena Light audits on 2026-07-28–29 reinforced a complementary route:
+  Sol/high-xhigh was concise on contract, concurrency, and silent-correctness,
+  including two sequential P1 freshness counterexamples; Opus/high-max was
+  broader on repository archaeology, lifecycle, environment, and runtime
+  evidence but needed tighter scope and severity calibration. This was
+  role-shaped, not a paired ranking; any HOLD blocked release, and provider
+  diversity did not replace lead verification.
 - In one matched implementation task on 2026-07-28, Sonnet/medium,
   Terra/medium, Opus/high, and Sol/high all passed focused tests initially. A
   later external-repository change exposed hard-coded snapshot assertions in
   the Terra and Sol results, while Sonnet and Opus used structural set
   assertions. Opus also found the adjacent renderer-schema seam; Sonnet was
   adequately scoped but repeated an expensive real probe across tests.
+- In one three-lane research-probe build on 2026-07-29 (Claude Code, all lanes
+  given disjoint write surfaces and a lead-owned mechanical verifier),
+  Haiku/default correctly DETECTED a real config-fingerprint mismatch but
+  attached a causal diagnosis it had not tested ("configs need synchronizing";
+  the actual delta was one derived output-path field), and shipped a module that
+  could not be imported via `spec_from_file_location`. Sonnet/default matched an
+  exact 24-cell acceptance table with no tuning and independently found a defect
+  in the LEAD's frozen contract — a join key that was not unique across
+  checkpoints — then failed closed rather than joining ambiguously. Opus/default
+  took the highest silent-error lane, deviated from the brief by reimplementing
+  a bulk logprob path (the canonical helper discards the logits its outputs
+  needed), disclosed the deviation, and validated it bitwise against the
+  canonical helper; the lead's independent recomputation agreed at exactly 0.0.
+  Routing reading: cheap lanes need their *prose* verified, not just their
+  artifacts; a strong model earned its slot by disclosing a necessary deviation
+  rather than by avoiding one.
+- In one bounded-online training-infrastructure task on 2026-07-29, role-shaped
+  routing mattered more than a simple model ranking. Terra/medium was fast and
+  useful for scoped implementation but twice left cross-owner artifact and
+  lifecycle closure to the lead; Sol/high closed those integration seams.
+  Fable/high produced useful architecture and resource estimates but missed an
+  image-plan determinant and one lifecycle detail. Sonnet/medium efficiently
+  updated profiles and authority text but needed narrow corrections to exact
+  dequeue semantics. Opus/high found launch-blocking full-horizon/cap defects
+  with an executable probe after broad tests had passed, at materially higher
+  latency. Haiku/low launched and monitored the mechanically specified W8 smoke
+  correctly but inferred fresh-loadability from file presence until the lead ran
+  the payload inspectors. Treat this as provisional task-class evidence, not a
+  paired benchmark: use cheap lanes behind exact receipts, reserve strong audit
+  lanes for silent launch risk, and keep final cross-owner closure with the lead.
 - Treat API retries, quota exhaustion, completion delay, and lifecycle failures
   as surface or runtime evidence, not model-quality evidence.
 

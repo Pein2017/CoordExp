@@ -67,6 +67,10 @@ create a review chain when one owner plus a checker is enough.
 - Provide a self-contained brief with goal, exact cwd and owned paths, relevant
   evidence, permissions and write intent, non-negotiable constraints, expected
   output, acceptance method, completion condition, and stop boundary.
+- State whether the lane needs a fresh process or continuity. Use fresh agents
+  for session, tool-registration, build, auth, or stale-runtime acceptance; use
+  follow-ups to close prior findings, but never relabel them as fresh or
+  independent evidence.
 - Include exact commands, tool recipes, or known traps only when they are
   non-obvious and material. Otherwise preserve the worker's judgment.
 - Keep work with the lead when the required context cannot be distilled without
@@ -108,6 +112,10 @@ architecture direction. Route directly to a stronger judgment lane instead.
 - Prefer a mechanical checker to an LLM judge. When judgment is unavoidable
   and independence matters, use a different model or provider from the worker;
   never decide by majority vote or model prestige.
+- Bind consequential review to an exact commit/tree, runtime identity, and
+  evidence set. Any unresolved blocker holds release; after a change, recheck
+  the affected gate at the new fixed point, using narrow confirmation when only
+  non-behavioral evidence changed.
 - Never blind-loop. Every iteration needs an out-of-band evaluator. Keep the
   best verified result, stop on first regression, and vary the angle only for
   useful diversity.
@@ -126,8 +134,9 @@ then for model spend when comparable receipts exist.
 - Treat `model type × thinking effort` as an interacting pair. To learn the
   interaction, compare efforts within one model or models at one effort before
   changing both; do not attribute a paired-route result to model type alone.
-- Separate worker quality from handoff quality, verifier quality, and surface
-  or runtime reliability.
+- Separate worker quality from handoff quality, verifier quality, client-surface
+  acceptance, and runtime reliability; client success is not implementation
+  evidence for that model.
 - Treat one result as provisional. Change a default only after repeated
   comparable evidence; weaken it when counterevidence appears.
 - Update [references/model-priors.md](references/model-priors.md) only when an
