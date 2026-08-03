@@ -388,6 +388,7 @@ def prepare_training_pack_caches(config_path: str | Path) -> dict[str, Any]:
         repo_root=repo_root,
         accelerator=None,
         rank=0,
+        verification_level="payloads",
     )
     eval_cache = _resolve_eval_pack_cache(
         config,
@@ -489,6 +490,7 @@ def _run_initialized_training(
         repo_root=repo_root,
         accelerator=accelerator,
         rank=int(accelerator.process_index),
+        verification_level="manifest",
     )
     schedule = resolve_planned_step_schedule(
         config,
@@ -676,6 +678,7 @@ def _resolve_or_build_train_pack_cache(
     repo_root: Path,
     accelerator: Any,
     rank: int = 0,
+    verification_level: str,
 ) -> dict[str, Any]:
     return _resolve_or_build_pack_cache(
         config,
@@ -686,6 +689,7 @@ def _resolve_or_build_train_pack_cache(
         split=TRAIN_SPLIT,
         accelerator=accelerator,
         rank=rank,
+        verification_level=verification_level,
         build_micro_steps=lambda workers: build_base_micro_steps(
             config,
             components,
@@ -715,6 +719,7 @@ def _resolve_eval_pack_cache(
         split="eval.forward",
         accelerator=accelerator,
         rank=rank,
+        verification_level="payloads",
         build_micro_steps=lambda workers: _build_micro_steps_for_dataset(
             config,
             components,
@@ -738,6 +743,7 @@ def _resolve_or_build_pack_cache(
     rank: int = 0,
     build_micro_steps: Callable[[int], Sequence[SupervisedMicroStep]],
     materialization_workers: int | None = None,
+    verification_level: str,
 ) -> dict[str, Any]:
     cache_root = Path(
         os.environ.get(
@@ -770,7 +776,9 @@ def _resolve_or_build_pack_cache(
     try:
         try:
             manifest = load_cache_manifest(
-                cache_dir, expected_fingerprint=fingerprint
+                cache_dir,
+                expected_fingerprint=fingerprint,
+                level=verification_level,
             )
             cache_complete_before = True
         except PackingCacheInvalidError:

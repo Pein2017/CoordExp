@@ -121,6 +121,7 @@ def _resolve(
         rank=rank,
         build_micro_steps=build_micro_steps,
         materialization_workers=1,
+        verification_level="payloads",
     )
 
 
@@ -285,9 +286,13 @@ def test_rank_zero_cache_hit_reuses_its_single_strict_manifest_read(
     successful_reads: list[Path] = []
 
     def counting_load(
-        cache_dir: Path, *, expected_fingerprint: str
+        cache_dir: Path, *, expected_fingerprint: str, level: str
     ) -> dict[str, object]:
-        manifest = real_load(cache_dir, expected_fingerprint=expected_fingerprint)
+        manifest = real_load(
+            cache_dir,
+            expected_fingerprint=expected_fingerprint,
+            level=level,
+        )
         successful_reads.append(Path(cache_dir))
         return manifest
 
@@ -414,6 +419,7 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
         SimpleNamespace(),
         repo_root=tmp_path,
         accelerator=accelerator,
+        verification_level="payloads",
     )
     evaluated = pipeline._resolve_eval_pack_cache(
         config,

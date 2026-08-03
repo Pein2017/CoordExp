@@ -29,6 +29,7 @@ PACKING_CACHE_MANIFEST = "manifest.json"
 PACKING_CACHE_CHUNK_DIR = "chunks"
 DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS = 16
 PACKING_CACHE_MATERIALIZATION_STRATEGY = "fork_process_pool"
+PACK_CACHE_VERIFICATION_LEVELS = ("manifest", "payloads")
 PACKING_CACHE_CODE_IDENTITY_FILES = {
     "augmentation_factory": "src/augmentation/factory.py",
     "augmentation_geometry": "src/augmentation/geometry.py",
@@ -173,14 +174,25 @@ def manifest_path(cache_dir: str | Path) -> Path:
 
 
 def load_cache_manifest(
-    cache_dir: str | Path, *, expected_fingerprint: str
+    cache_dir: str | Path,
+    *,
+    expected_fingerprint: str,
+    level: str,
 ) -> dict[str, Any]:
+    if level not in PACK_CACHE_VERIFICATION_LEVELS:
+        raise ValueError(
+            "packing cache verification level must be one of "
+            f"{PACK_CACHE_VERIFICATION_LEVELS}"
+        )
     try:
         manifest = _load_validated_manifest(
             Path(cache_dir), expected_fingerprint=expected_fingerprint
         )
-        for _start, _chunk_steps in _iter_validated_chunks(Path(cache_dir), manifest):
-            pass
+        if level == "payloads":
+            for _start, _chunk_steps in _iter_validated_chunks(
+                Path(cache_dir), manifest
+            ):
+                pass
         return manifest
     except PackingCacheInvalidError:
         raise
@@ -194,7 +206,9 @@ def cache_is_complete(cache_dir: str | Path, *, fingerprint: str) -> bool:
         return False
     try:
         manifest = load_cache_manifest(
-            cache_dir, expected_fingerprint=fingerprint
+            cache_dir,
+            expected_fingerprint=fingerprint,
+            level="payloads",
         )
     except PackingCacheInvalidError:
         return False
@@ -239,7 +253,9 @@ def write_micro_step_cache(
             if root.exists():
                 try:
                     existing_manifest = load_cache_manifest(
-                        root, expected_fingerprint=fingerprint
+                        root,
+                        expected_fingerprint=fingerprint,
+                        level="payloads",
                     )
                     if existing_manifest["determinants"] == dict(determinants):
                         return existing_manifest
@@ -307,7 +323,11 @@ def _publish_micro_step_cache(
             )
         # The complete manifest is the final write inside the isolated stage.
         _atomic_write_json(manifest_path(stage), manifest)
-        load_cache_manifest(stage, expected_fingerprint=fingerprint)
+        load_cache_manifest(
+            stage,
+            expected_fingerprint=fingerprint,
+            level="payloads",
+        )
         if root.exists():
             os.replace(root, backup)
         try:
@@ -732,6 +752,7 @@ __all__ = [
     "PACKING_CACHE_MANIFEST",
     "PACKING_CACHE_MATERIALIZATION_STRATEGY",
     "PACKING_CACHE_VERSION",
+    "PACK_CACHE_VERIFICATION_LEVELS",
     "build_packing_cache_materialization",
     "build_packing_cache_determinants",
     "build_packing_cache_fingerprint",

@@ -280,6 +280,7 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
     components = SimpleNamespace(token_identity=object(), tokenizer=object())
     load_model_values: list[bool] = []
     seed_phases: list[str] = []
+    train_verification_levels: list[str] = []
     train_cache = {
         "status": "complete",
         "build_status": "built",
@@ -314,8 +315,13 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
     monkeypatch.setattr(
         pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
     )
+
+    def resolve_train_cache(*args: object, **kwargs: object) -> dict[str, object]:
+        train_verification_levels.append(str(kwargs["verification_level"]))
+        return train_cache
+
     monkeypatch.setattr(
-        pipeline, "_resolve_or_build_train_pack_cache", lambda *args, **kwargs: train_cache
+        pipeline, "_resolve_or_build_train_pack_cache", resolve_train_cache
     )
     monkeypatch.setattr(
         pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
@@ -325,6 +331,7 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
 
     assert load_model_values == [False]
     assert seed_phases == ["pack_cache_preparation"]
+    assert train_verification_levels == ["payloads"]
     assert result["model_loaded"] is False
     assert result["train"]["fingerprint"] == "train-fingerprint"
     assert result["eval"]["fingerprint"] == "eval-fingerprint"
@@ -371,6 +378,7 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
         finalize=lambda **kwargs: None,
     )
     loaded_full: list[tuple[Path, str]] = []
+    train_verification_levels: list[str] = []
 
     monkeypatch.setattr(pipeline, "seed_training_runtime", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_qwen_components", lambda *args, **kwargs: components)
@@ -383,7 +391,14 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     monkeypatch.setattr(pipeline, "install_special_token_embedding_deltas", lambda model, selection, source_gate: SimpleNamespace(model=model, receipt=object()))
     monkeypatch.setattr(pipeline, "enable_training_memory_savers", lambda model: None)
     monkeypatch.setattr(pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object())
-    monkeypatch.setattr(pipeline, "_resolve_or_build_train_pack_cache", lambda *args, **kwargs: cache)
+
+    def resolve_train_cache(*args: object, **kwargs: object) -> dict[str, object]:
+        train_verification_levels.append(str(kwargs["verification_level"]))
+        return cache
+
+    monkeypatch.setattr(
+        pipeline, "_resolve_or_build_train_pack_cache", resolve_train_cache
+    )
     monkeypatch.setattr(pipeline, "resolve_planned_step_schedule", lambda *args, **kwargs: schedule)
     monkeypatch.setattr(pipeline, "load_rank_micro_steps_from_cache", lambda *args, **kwargs: train_shard)
     monkeypatch.setattr(pipeline, "_attach_image_processors_to_micro_steps", lambda steps, **kwargs: tuple(steps))
@@ -432,6 +447,7 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     )
 
     assert loaded_full == [(eval_cache["cache_dir"], "eval-fp")]
+    assert train_verification_levels == ["manifest"]
     assert full_cache != train_shard
     assert [split for split, _ in bindings] == ["train", "eval"]
     assert bindings[0][1]["semantic_fingerprint"] == "fp"

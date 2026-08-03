@@ -427,7 +427,7 @@ def test_micro_step_cache_manifest_records_default_materialization_workers(
         "workers": DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
     }
     assert load_cache_manifest(
-        cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads"
     )["materialization"] == manifest["materialization"]
 
 
@@ -469,7 +469,7 @@ def test_micro_step_cache_manifest_requires_current_provenance(
     manifest_path.write_text(json.dumps(invalid_manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match="materialization"):
-        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads")
 
 
 @pytest.mark.parametrize("augmentation", [None, {}])
@@ -518,7 +518,7 @@ def test_cache_reader_rejects_missing_or_empty_augmentation_receipt(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(PackingCacheInvalidError, match="augmentation.*non-empty"):
-        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads")
 
 
 def test_micro_step_cache_loads_exact_rank_local_training_order(tmp_path: Path) -> None:
@@ -746,7 +746,7 @@ def test_cache_manifest_rejects_invalid_current_contract(
     path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match=match):
-        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads")
 
 
 def test_cache_manifest_rejects_corrupt_json(tmp_path: Path) -> None:
@@ -760,7 +760,7 @@ def test_cache_manifest_rejects_corrupt_json(tmp_path: Path) -> None:
     (cache_dir / "manifest.json").write_text("{", encoding="utf-8")
 
     with pytest.raises(PackingCacheInvalidError):
-        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads")
 
 
 def test_cache_reader_rejects_corrupt_pickle_with_matching_declared_hash(
@@ -815,7 +815,9 @@ def test_cache_readers_normalize_state_restoration_failures(
     with pytest.raises(PackingCacheInvalidError, match="unreadable"):
         if reader == "manifest":
             load_cache_manifest(
-                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+                cache_dir,
+                expected_fingerprint=UNIT_FINGERPRINT,
+                level="payloads",
             )
         elif reader == "rank":
             load_rank_micro_steps_from_cache(
@@ -899,7 +901,7 @@ def test_cache_manifest_rejects_missing_chunk(tmp_path: Path) -> None:
     (cache_dir / "chunks" / "chunk-00000.pkl").unlink()
 
     with pytest.raises(ValueError, match="missing"):
-        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT)
+        load_cache_manifest(cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads")
 
 
 @pytest.mark.parametrize("reader", ["manifest", "rank", "all"])
@@ -927,7 +929,9 @@ def test_cache_readers_reject_mutated_determinants_with_unchanged_fingerprint(
     with pytest.raises(ValueError, match="canonical determinants"):
         if reader == "manifest":
             load_cache_manifest(
-                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+                cache_dir,
+                expected_fingerprint=UNIT_FINGERPRINT,
+                level="payloads",
             )
         elif reader == "rank":
             load_rank_micro_steps_from_cache(
@@ -968,7 +972,9 @@ def test_cache_readers_require_explicit_materialization_strategy(
     with pytest.raises(PackingCacheInvalidError, match="strategy"):
         if reader == "manifest":
             load_cache_manifest(
-                cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+                cache_dir,
+                expected_fingerprint=UNIT_FINGERPRINT,
+                level="payloads",
             )
         elif reader == "rank":
             load_rank_micro_steps_from_cache(
@@ -1139,7 +1145,7 @@ def test_cache_writer_removes_stale_stage_and_backup_siblings(tmp_path: Path) ->
     assert not stale_stage.exists()
     assert not stale_backup.exists()
     assert load_cache_manifest(
-        cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT, level="payloads"
     )["status"] == "complete"
 
 
@@ -1318,3 +1324,56 @@ def _config_with_geometry_flips(
             )
         }
     )
+
+
+def test_manifest_admission_defers_payload_work_to_one_eager_rank_load(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0), _micro_step(1)),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+        chunk_size=1,
+    )
+    corrupt_chunk = cache_dir / "chunks" / "chunk-00000.pkl"
+    corrupt_chunk.write_bytes(b"corrupted-after-preparation")
+
+    manifest = load_cache_manifest(
+        cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
+        level="manifest",
+    )
+
+    assert manifest["micro_step_count"] == 2
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        load_rank_micro_steps_from_cache(
+            cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
+            schedule=_schedule(
+                resolved_max_steps=1,
+                grad_accum_steps=1,
+                world_size=1,
+                effective_batch_size=1,
+            ),
+            rank=0,
+            world_size=1,
+        )
+
+
+def test_load_cache_manifest_requires_known_explicit_level(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+    )
+
+    with pytest.raises(ValueError, match="verification level"):
+        load_cache_manifest(
+            cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
+            level="unknown",
+        )
