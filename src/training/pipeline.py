@@ -5,13 +5,16 @@ from __future__ import annotations
 import concurrent.futures
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 import multiprocessing
 import os
 from pathlib import Path
+import pickle
+import struct
 from typing import Any
+import zlib
 
 import torch
 
@@ -93,6 +96,12 @@ from src.training.supervised_trainer import (
 TRAIN_SPLIT = "train"
 _PACK_CACHE_WORKER_CONTEXT: dict[str, Any] | None = None
 BEST_EVAL_SELECTOR_NAME = "acc_top1"
+
+_RANK_REPORT_MAGIC = b"CRG1"
+_RANK_REPORT_HEADER = struct.Struct("!4sQQIIIIQQI")
+_RANK_REPORT_MAX_PAYLOAD_BYTES = 64 * 1024
+_RANK_REPORT_FRAME_BYTES = _RANK_REPORT_HEADER.size + _RANK_REPORT_MAX_PAYLOAD_BYTES
+_RANK_REPORT_CONTROL_TIMEOUT_SECONDS = 120
 
 
 def build_repeating_micro_step_stream(
@@ -607,26 +616,39 @@ def _run_initialized_training(
             save_final=config.checkpoint.save_final,
         ),
     )
-    result = trainer.run()
-    latest = result.latest_observation
-    if writer is not None:
-        writer.finalize(
-            status="completed",
-            updated_at=datetime.now(UTC).isoformat(),
-            completed_steps=result.completed_steps,
-            consumed_packs=result.consumed_micro_steps,
-            checkpoint_event_count=result.scheduled_event_counts.get("checkpoint", 0),
-            optimizer_update_status=None if latest is None else latest.optimizer_update_status,
-            finite_status=None if latest is None else latest.finite_status,
+    try:
+        result = trainer.run()
+        latest = result.latest_observation
+        if writer is not None:
+            writer.finalize(
+                status="completed",
+                updated_at=datetime.now(UTC).isoformat(),
+                completed_steps=result.completed_steps,
+                consumed_packs=result.consumed_micro_steps,
+                checkpoint_event_count=result.scheduled_event_counts.get(
+                    "checkpoint", 0
+                ),
+                optimizer_update_status=None
+                if latest is None
+                else latest.optimizer_update_status,
+                finite_status=None if latest is None else latest.finite_status,
+            )
+        return {
+            "run_dir": str(run_directory.run_dir),
+            "run_id": run_id,
+            "resolved_config_fingerprint": resolved_config.fingerprint,
+            "completed_steps": result.completed_steps,
+            "consumed_micro_steps": result.consumed_micro_steps,
+            "scheduled_event_counts": dict(result.scheduled_event_counts),
+        }
+    finally:
+        close_rank_report_gatherer = getattr(
+            getattr(runtime, "rank_report_gatherer", None),
+            "close",
+            None,
         )
-    return {
-        "run_dir": str(run_directory.run_dir),
-        "run_id": run_id,
-        "resolved_config_fingerprint": resolved_config.fingerprint,
-        "completed_steps": result.completed_steps,
-        "consumed_micro_steps": result.consumed_micro_steps,
-        "scheduled_event_counts": dict(result.scheduled_event_counts),
-    }
+        if callable(close_rank_report_gatherer):
+            close_rank_report_gatherer()
 
 
 def build_base_micro_steps(
@@ -1481,22 +1503,292 @@ def _build_accelerator(training_precision: str) -> Any:
     return Accelerator(**kwargs)
 
 
+def _rank_report_value(report: Any, name: str, default: Any) -> Any:
+    if isinstance(report, Mapping):
+        return report.get(name, default)
+    return getattr(report, name, default)
+
+
+def _rank_report_kind(report: Any) -> str:
+    if isinstance(report, Mapping):
+        return f"mapping:{report.get('kind', 'unspecified')}"
+    report_type = type(report)
+    return f"{report_type.__module__}:{report_type.__qualname__}"
+
+
+def _rank_report_digest(value: str) -> int:
+    return int.from_bytes(
+        hashlib.blake2b(value.encode("utf-8"), digest_size=8).digest(),
+        "big",
+    )
+
+
+def _rank_report_header(
+    report: Any,
+    *,
+    sequence: int,
+    payload: bytes,
+    serialization_status: int,
+) -> bytes:
+    return _RANK_REPORT_HEADER.pack(
+        _RANK_REPORT_MAGIC,
+        int(sequence),
+        int(_rank_report_value(report, "planned_step_id", 0)),
+        int(_rank_report_value(report, "rank", 0)),
+        int(_rank_report_value(report, "world_size", 1)),
+        int(serialization_status),
+        len(payload),
+        _rank_report_digest(_rank_report_kind(report)),
+        _rank_report_digest(str(_rank_report_value(report, "split", ""))),
+        zlib.crc32(payload),
+    )
+
+
+def _unpack_rank_report_header(header: bytes) -> dict[str, int | bytes]:
+    (
+        magic,
+        sequence,
+        planned_step_id,
+        rank,
+        world_size,
+        serialization_status,
+        payload_size,
+        kind_digest,
+        split_digest,
+        payload_crc32,
+    ) = _RANK_REPORT_HEADER.unpack(header)
+    return {
+        "magic": magic,
+        "sequence": sequence,
+        "planned_step_id": planned_step_id,
+        "rank": rank,
+        "world_size": world_size,
+        "serialization_status": serialization_status,
+        "payload_size": payload_size,
+        "kind_digest": kind_digest,
+        "split_digest": split_digest,
+        "payload_crc32": payload_crc32,
+    }
+
+
+def _all_gather_cpu_bytes(
+    distributed: Any,
+    payload: bytes,
+    *,
+    width: int,
+    world_size: int,
+    group: Any | None,
+) -> tuple[bytes, ...]:
+    local = torch.zeros(width, dtype=torch.uint8, device="cpu")
+    if payload:
+        if len(payload) > width:
+            raise ValueError("payload exceeds fixed collective width")
+        local[: len(payload)] = torch.tensor(tuple(payload), dtype=torch.uint8)
+    gathered = [torch.empty_like(local) for _ in range(world_size)]
+    distributed.all_gather(gathered, local, group=group)
+    return tuple(bytes(item.tolist()) for item in gathered)
+
+
+def _validate_rank_report_headers(
+    headers: Sequence[bytes],
+    *,
+    sequence: int,
+    world_size: int,
+) -> tuple[dict[str, int | bytes], ...]:
+    unpacked = tuple(_unpack_rank_report_header(header) for header in headers)
+    if any(header["magic"] != _RANK_REPORT_MAGIC for header in unpacked):
+        raise RuntimeContractError(
+            "rank report control headers have invalid framing",
+            code="runtime.report_gather_framing",
+            context={"sequence": sequence},
+        )
+    observed_sequences = sorted({int(header["sequence"]) for header in unpacked})
+    if observed_sequences != [sequence]:
+        raise RuntimeContractError(
+            "rank report collectives entered in different sequence order",
+            code="runtime.report_gather_sequence",
+            context={
+                "expected_sequence": sequence,
+                "observed_sequences": observed_sequences,
+            },
+        )
+    observed_ranks = sorted(int(header["rank"]) for header in unpacked)
+    observed_world_sizes = sorted({int(header["world_size"]) for header in unpacked})
+    if observed_ranks != list(range(world_size)) or observed_world_sizes != [
+        world_size
+    ]:
+        raise RuntimeContractError(
+            "rank report control headers disagree on distributed identity",
+            code="runtime.report_gather_ranks",
+            context={
+                "expected_world_size": world_size,
+                "observed_ranks": observed_ranks,
+                "observed_world_sizes": observed_world_sizes,
+            },
+        )
+    identity_fields = ("planned_step_id", "kind_digest", "split_digest")
+    disagreements = {
+        field: sorted({int(header[field]) for header in unpacked})
+        for field in identity_fields
+        if len({int(header[field]) for header in unpacked}) != 1
+    }
+    if disagreements:
+        raise RuntimeContractError(
+            "rank report control headers disagree on report identity",
+            code="runtime.report_gather_identity",
+            context={"sequence": sequence, "disagreements": disagreements},
+        )
+    failed_serialization_ranks = [
+        int(header["rank"])
+        for header in unpacked
+        if int(header["serialization_status"]) != 0
+    ]
+    if failed_serialization_ranks:
+        raise RuntimeContractError(
+            "one or more ranks could not serialize a rank report",
+            code="runtime.report_serialize_failed",
+            context={
+                "sequence": sequence,
+                "failed_ranks": failed_serialization_ranks,
+            },
+        )
+    oversized_ranks = [
+        int(header["rank"])
+        for header in unpacked
+        if int(header["payload_size"]) > _RANK_REPORT_MAX_PAYLOAD_BYTES
+    ]
+    if oversized_ranks:
+        raise RuntimeContractError(
+            "rank report payload exceeds the bounded control-plane limit",
+            code="runtime.report_gather_size",
+            context={
+                "sequence": sequence,
+                "max_payload_bytes": _RANK_REPORT_MAX_PAYLOAD_BYTES,
+                "oversized_ranks": oversized_ranks,
+            },
+        )
+    return unpacked
+
+
 def _build_rank_report_gatherer(world_size: int) -> Any | None:
     if world_size <= 1:
         return None
 
-    def gather(local_report: Any) -> tuple[Any, ...]:
-        distributed = torch.distributed
+    distributed = torch.distributed
+    control_group: Any | None = None
+    control_group_ready = False
+    sequence = 0
+
+    def ensure_control_group() -> Any | None:
+        nonlocal control_group, control_group_ready
+        if control_group_ready:
+            return control_group
         if not distributed.is_available() or not distributed.is_initialized():
             raise RuntimeContractError(
                 "multi-rank finite gates require initialized torch.distributed",
                 code="runtime.distributed_gather_uninitialized",
                 context={"world_size": world_size},
             )
-        gathered: list[Any | None] = [None for _ in range(distributed.get_world_size())]
-        distributed.all_gather_object(gathered, local_report)
-        return tuple(item for item in gathered if item is not None)
+        observed_world_size = int(distributed.get_world_size())
+        if observed_world_size != world_size:
+            raise RuntimeContractError(
+                "rank report gatherer world size disagrees with torch.distributed",
+                code="runtime.report_gather_ranks",
+                context={
+                    "expected_world_size": world_size,
+                    "observed_world_size": observed_world_size,
+                },
+            )
+        backend = str(distributed.get_backend()).lower()
+        if "gloo" not in backend:
+            is_gloo_available = getattr(distributed, "is_gloo_available", None)
+            if callable(is_gloo_available) and not bool(is_gloo_available()):
+                raise RuntimeContractError(
+                    "bounded rank report gathering requires the gloo backend",
+                    code="runtime.report_gather_backend",
+                    context={"default_backend": backend},
+                )
+            control_group = distributed.new_group(
+                ranks=list(range(world_size)),
+                backend="gloo",
+                timeout=timedelta(seconds=_RANK_REPORT_CONTROL_TIMEOUT_SECONDS),
+            )
+        control_group_ready = True
+        return control_group
 
+    def gather(local_report: Any) -> tuple[Any, ...]:
+        nonlocal sequence
+        group = ensure_control_group()
+        sequence += 1
+        serialization_status = 0
+        try:
+            payload = pickle.dumps(local_report, protocol=pickle.HIGHEST_PROTOCOL)
+        except BaseException:
+            payload = b""
+            serialization_status = 1
+        local_header = _rank_report_header(
+            local_report,
+            sequence=sequence,
+            payload=payload,
+            serialization_status=serialization_status,
+        )
+        local_frame = local_header + payload[:_RANK_REPORT_MAX_PAYLOAD_BYTES]
+        gathered_frames = _all_gather_cpu_bytes(
+            distributed,
+            local_frame,
+            width=_RANK_REPORT_FRAME_BYTES,
+            world_size=world_size,
+            group=group,
+        )
+        headers = _validate_rank_report_headers(
+            tuple(frame[: _RANK_REPORT_HEADER.size] for frame in gathered_frames),
+            sequence=sequence,
+            world_size=world_size,
+        )
+        reports: list[Any] = []
+        for header, gathered_frame in zip(headers, gathered_frames, strict=True):
+            payload_size = int(header["payload_size"])
+            framed_payload = gathered_frame[
+                _RANK_REPORT_HEADER.size : _RANK_REPORT_HEADER.size + payload_size
+            ]
+            if zlib.crc32(framed_payload) != int(header["payload_crc32"]):
+                raise RuntimeContractError(
+                    "rank report payload checksum does not match its control header",
+                    code="runtime.report_gather_framing",
+                    context={
+                        "sequence": sequence,
+                        "rank": int(header["rank"]),
+                    },
+                )
+            try:
+                reports.append(pickle.loads(framed_payload))
+            except BaseException as exc:
+                raise RuntimeContractError(
+                    "rank report payload could not be decoded",
+                    code="runtime.report_gather_framing",
+                    context={
+                        "sequence": sequence,
+                        "rank": int(header["rank"]),
+                    },
+                ) from exc
+        return tuple(reports)
+
+    def close() -> None:
+        nonlocal control_group, control_group_ready
+        if (
+            control_group_ready
+            and control_group is not None
+            and distributed.is_available()
+            and distributed.is_initialized()
+        ):
+            try:
+                distributed.destroy_process_group(control_group)
+            except BaseException:
+                pass
+        control_group = None
+        control_group_ready = False
+
+    gather.close = close  # type: ignore[attr-defined]
     return gather
 
 

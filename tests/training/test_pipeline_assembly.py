@@ -393,7 +393,16 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     monkeypatch.setattr(pipeline, "build_scheduler_plan", lambda *args, **kwargs: object())
     monkeypatch.setattr(pipeline, "build_optimizer_and_scheduler", lambda *args, **kwargs: (object(), object()))
     monkeypatch.setattr(pipeline, "build_trainable_surface_receipt", lambda *args, **kwargs: object())
-    runtime = SimpleNamespace(model=object(), accelerator=_Accelerator(), is_main_process=True, world_size=1)
+    closed: list[str] = []
+    runtime = SimpleNamespace(
+        model=object(),
+        accelerator=_Accelerator(),
+        is_main_process=True,
+        world_size=1,
+        rank_report_gatherer=SimpleNamespace(
+            close=lambda: closed.append("rank-report")
+        ),
+    )
     monkeypatch.setattr(pipeline, "TrainRuntime", lambda **kwargs: runtime)
     monkeypatch.setattr(
         pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
@@ -427,6 +436,7 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     assert [split for split, _ in bindings] == ["train", "eval"]
     assert bindings[0][1]["semantic_fingerprint"] == "fp"
     assert bindings[1][1]["semantic_fingerprint"] == "eval-fp"
+    assert closed == ["rank-report"]
     assert set(bindings[1][1]) == {
         "cache_format_version", "semantic_fingerprint", "determinant_digest"
     }
