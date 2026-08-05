@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Current routing guide for the CoordExp-Swift training, inference, evaluation, and artifact infrastructure.
 tags: [coordexp-swift, training, inference, eval, routing]
-updated: 2026-07-11
+updated: 2026-08-04
 ---
 
 # CoordExp-Swift Canonical Infrastructure
@@ -101,7 +101,35 @@ single-process or DeepSpeed backend mode.
   No exact optimizer, scheduler, scaler, dataloader, iterator, or RNG training
   continuation is provided.
 - Pack cache v2 is a rebuild-only internal cache outside the run tree. The run
-  records only compact immutable train/eval materialization bindings.
+  records only compact immutable train/eval materialization bindings. Cache
+  identity is content-only: file `mtime` does not participate in the
+  fingerprint, so touching a dataset file without changing its bytes reuses
+  the existing cache. Distributed train resolution loads only the chunks a
+  rank's schedule requires (chunk-granular, rank-selective); every chunk that
+  is loaded still gets full digest and payload validation, and manifest-level
+  declaration checks (contiguity, counts, digest syntax, path existence) run
+  over every declared chunk regardless of whether that chunk is loaded.
+- Completed training-step rows additionally carry `step_duration_seconds`,
+  `input_build_seconds`, and `input_wait_seconds` (max-reduced across ranks;
+  additive fields only, never a replacement for an existing row key). For
+  end-to-end step wall-clock reading, use `step_duration_seconds`;
+  `input_build_seconds` describes CPU-only input construction under every
+  provider mode and excludes the device transfer, so it is not a substitute
+  for `step_duration_seconds` and is not comparable across changes to how
+  input construction is split into phases. A bounded, depth-one-ahead CPU
+  forward-input provider exists and is proven semantically equivalent to the
+  inline construction path, but ships disabled by default (`synchronous`);
+  single-GPU measurement has not shown a wall-clock win for the overlapped
+  mode, so it is not the shipped default.
+- Rank-sharded eval reduction (disjoint pack sharding with exact cross-rank
+  aggregation) is the shipped multi-rank default after row-exact fixture
+  coverage and an exact 8-rank wall-clock/checkpoint-selector replay. Eval
+  still falls back to replicated execution when there are fewer packs than
+  ranks or only one rank.
+  Both the forward-input-provider mode and the eval reduction mode are
+  selectable only through internal, debug/measurement-only environment
+  variables, not public YAML/CLI configuration surface — no new public knob
+  was added by these changes.
 
 Stable semantics are owned by these specs:
 
