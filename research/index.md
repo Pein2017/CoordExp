@@ -59,6 +59,7 @@ promotion when a result hardens into a stable compatibility-sensitive contract.
 
 | Question | Current belief | Decision |
 |---|---|---|
+| Should sorted detection targets use four or eight coordinates, and which top-left ordering? | Four and redundant eight-coordinate supervision were operationally near-equivalent on the tested val-200 slice. The stronger actionable signal is to sort by top-left x then y. | [Prefer x-then-y ordering for sorted detection targets](decisions/prefer-x-then-y-object-ordering.md) |
 | Can Qwen3-VL consume an object-specific visual control signal? | Yes, under bounded painted/post-scatter interventions; this is a privileged causal handle, not a final interface. | [Use visual designation as a causal teacher](decisions/use-visual-designation-as-a-causal-teacher.md) |
 | Does pure-CE serialization learn an order-free object ledger? | No evidence yet. It learns a strong order-conditioned, mostly coordinate-level transition. | [Separate selection, transcription, commit, and stop](decisions/separate-selection-transcription-commit-and-stop.md) |
 | Is a decodable proposal representation sufficient? | No. The tested bridge produced non-specific continuation and unsafe rollout behavior. | [Require target-specific causal consumption](decisions/require-target-specific-causal-consumption.md) |

@@ -7,6 +7,7 @@ or final architecture.
 
 ## Active Decisions
 
+- [Prefer x-then-y ordering for sorted detection targets](prefer-x-then-y-object-ordering.md)
 - [Use visual designation as a causal teacher](use-visual-designation-as-a-causal-teacher.md)
 - [Separate selection, transcription, commit, and stop](separate-selection-transcription-commit-and-stop.md)
 - [Require target-specific causal consumption](require-target-specific-causal-consumption.md)
