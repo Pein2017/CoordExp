@@ -52,6 +52,9 @@ resolved worker policy, with 16 CPU workers as the production default. Worker
 count MUST be recorded in the current cache manifest but MUST NOT participate
 in semantic identity or change packed order. Old-version, incomplete, corrupt,
 or mismatched caches MUST be rejected and rebuilt rather than migrated.
+Distributed train assembly MUST perform no more than one full
+digest-and-payload validation pass before forward, and that pass MUST
+preserve the exact canonical rank-local pack sequence.
 
 #### Scenario: Same template and data are relaunched
 
@@ -88,6 +91,15 @@ or mismatched caches MUST be rejected and rebuilt rather than migrated.
 - **WHEN** an otherwise complete cache uses an older payload version
 - **THEN** the reader MUST treat it as a miss
 - **AND** rebuild MUST occur before training consumes packed micro-steps.
+
+#### Scenario: Distributed rank consumes a prepared train cache
+
+- **GIVEN** a complete current-version packing cache and resolved schedule
+- **WHEN** a rank assembles its eager rank-local train tuple
+- **THEN** structural manifest admission MUST NOT decode the payload
+- **AND** the eager rank loader MUST perform exactly one full validated payload
+  pass before forward
+- **AND** the resulting sequence MUST match the canonical rank-local order.
 
 ### Requirement: Supervision Position Mapping
 

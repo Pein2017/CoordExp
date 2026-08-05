@@ -11,8 +11,25 @@ MUST additionally match every declared SHA256, restricted-unpickle every chunk,
 and validate tuple, count, and micro-step types. Preparation, cache publication,
 cache completeness, existing-cache reuse, and eager eval MUST use `payloads`.
 Distributed train resolution MAY use `manifest` only when one eager validated
-rank load immediately follows and completes before forward. Invalid caches MUST
-fail closed; no legacy migration or decoder is permitted.
+rank load immediately follows and completes before forward. Missing, partial,
+corrupt, old-version, or semantically mismatched caches MUST be treated as
+cache misses and rebuilt under the applicable verification level. Invalid
+caches MUST fail closed; no legacy migration or decoder is permitted.
+
+#### Scenario: Old cache version is discovered
+
+- **WHEN** the cache root contains a complete cache written with an older
+  format version
+- **THEN** the reader MUST reject it as a cache miss
+- **AND** the training pipeline MUST rebuild it with the current format before
+  use.
+
+#### Scenario: Cache manifest is incomplete
+
+- **WHEN** a manifest is missing chunks, contains a chunk gap, has mismatched
+  counts, or does not declare complete status
+- **THEN** the cache MUST NOT be consumed
+- **AND** rebuild MUST be the recovery path.
 
 #### Scenario: Preparation verifies payloads
 
