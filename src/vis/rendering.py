@@ -71,6 +71,9 @@ def render_comparison_png(
     title: str,
     left_label: str,
     right_label: str,
+    show_object_labels: bool = True,
+    show_duplicate_hints: bool = True,
+    legend_position: Literal["left", "upper_right"] = "left",
 ) -> None:
     canvas = _new_canvas(title)
     _draw_panel(
@@ -83,6 +86,9 @@ def render_comparison_png(
         row=row,
         match=left_match,
         mode="comparison",
+        show_object_labels=show_object_labels,
+        show_duplicate_hints=show_duplicate_hints,
+        legend_position=legend_position,
     )
     _draw_panel(
         canvas,
@@ -94,6 +100,9 @@ def render_comparison_png(
         row=right_row,
         match=right_match,
         mode="comparison",
+        show_object_labels=show_object_labels,
+        show_duplicate_hints=show_duplicate_hints,
+        legend_position=legend_position,
     )
     _save(canvas, output_path)
 
@@ -116,26 +125,42 @@ def _draw_panel(
     row: VisualRow,
     match: MatchResult,
     mode: Literal["gt", "prediction", "comparison"],
+    show_object_labels: bool = True,
+    show_duplicate_hints: bool = True,
+    legend_position: Literal["left", "upper_right"] = "left",
 ) -> None:
     draw = ImageDraw.Draw(canvas)
     stats = match.stats()
     draw.text((x, y), title, fill=BLACK, font=_font("bold", 18))
+    stats_text = (
+        f"TP={stats['tp']} FN={stats['fn']} FP={stats['fp']} "
+        f"P={stats['precision']:.2f} R={stats['recall']:.2f} "
+        f"F1={stats['f1']:.2f}"
+    )
+    if show_duplicate_hints:
+        stats_text += f" | dup-cand={len(match.duplicate_candidates)}"
     draw.text(
         (x, y + 24),
-        (
-            f"TP={stats['tp']} FN={stats['fn']} FP={stats['fp']} "
-            f"P={stats['precision']:.2f} R={stats['recall']:.2f} "
-            f"F1={stats['f1']:.2f} | dup-cand={len(match.duplicate_candidates)}"
-        ),
+        stats_text,
         fill=BLACK,
         font=_font("regular", 12),
     )
-    legend = (
-        "green=matched pred  yellow=missing GT  red=FP  purple dashed=dup hint"
-        if mode != "gt"
-        else "green=matched GT  yellow=missing GT"
-    )
-    draw.text((x, y + 42), legend, fill=BLACK, font=_font("regular", 10))
+    if legend_position == "upper_right":
+        entries = (
+            ((GREEN, "TP"), (YELLOW, "FN"), (RED, "FP"))
+            if mode != "gt"
+            else ((GREEN, "TP"), (YELLOW, "FN"))
+        )
+        _draw_color_legend(draw, right=x + width, y=y + 40, entries=entries)
+    else:
+        legend = (
+            "green=matched pred  yellow=missing GT  red=FP  purple dashed=dup hint"
+            if mode != "gt" and show_duplicate_hints
+            else "green=matched pred  yellow=missing GT  red=FP"
+            if mode != "gt"
+            else "green=matched GT  yellow=missing GT"
+        )
+        draw.text((x, y + 42), legend, fill=BLACK, font=_font("regular", 10))
 
     image = _load_image(row.image_path)
     fit, scale = _fit_image(image, max_width=width - 24, max_height=height - 72)
@@ -158,6 +183,8 @@ def _draw_panel(
             scale_x=scale_x,
             scale_y=scale_y,
             show_missing_gt=(mode == "comparison"),
+            show_object_labels=show_object_labels,
+            show_duplicate_hints=show_duplicate_hints,
         )
 
 
@@ -191,13 +218,16 @@ def _draw_prediction_panel(
     scale_x: float,
     scale_y: float,
     show_missing_gt: bool,
+    show_object_labels: bool,
+    show_duplicate_hints: bool,
 ) -> None:
     if show_missing_gt:
         for gt_index in match.missing_gt_indices:
             gt = row.gt[gt_index]
             box = _scale_box(gt.bbox_pixel_xyxy, scale_x=scale_x, scale_y=scale_y, dx=image_x, dy=image_y)
             draw.rectangle(box, outline=YELLOW, width=5)
-            _label(draw, (box[0] + 2, max(image_y, box[1] + 2)), f"MISS G{gt.index} {gt.description}", YELLOW)
+            if show_object_labels:
+                _label(draw, (box[0] + 2, max(image_y, box[1] + 2)), f"MISS G{gt.index} {gt.description}", YELLOW)
 
     match_by_pred = {pair.pred_index: pair for pair in match.matches}
     for pred in row.pred:
@@ -212,9 +242,12 @@ def _draw_prediction_panel(
             text = f"P{pred.index}->G{pair.gt_index} {pred.description} {pair.iou:.2f}"
             width = 4
         draw.rectangle(box, outline=color, width=width)
-        y = min(image_y + image_h - 14, max(image_y, box[1] - 14))
-        _label(draw, (box[0] + 2, y), text, color)
+        if show_object_labels:
+            y = min(image_y + image_h - 14, max(image_y, box[1] - 14))
+            _label(draw, (box[0] + 2, y), text, color)
 
+    if not show_duplicate_hints:
+        return
     duplicate_pred_indices = sorted(
         {
             index
@@ -229,6 +262,30 @@ def _draw_prediction_panel(
         _dashed_rect(draw, box, PURPLE, width=3)
         y = min(image_y + image_h - 28, max(image_y, box[3] + 2))
         _label(draw, (box[0] + 2, y), f"DUP? P{pred.index}", PURPLE)
+
+
+def _draw_color_legend(
+    draw: ImageDraw.ImageDraw,
+    *,
+    right: int,
+    y: int,
+    entries: tuple[tuple[tuple[int, int, int], str], ...],
+) -> None:
+    """Draw a compact color-only legend away from small object boxes."""
+
+    font = _font("regular", 11)
+    swatch = 10
+    gap = 10
+    widths = []
+    for _, label in entries:
+        bbox = draw.textbbox((0, 0), label, font=font)
+        widths.append(swatch + 4 + (bbox[2] - bbox[0]))
+    total_width = sum(widths) + gap * (len(entries) - 1)
+    x = right - total_width
+    for (color, label), width in zip(entries, widths, strict=True):
+        draw.rectangle((x, y + 1, x + swatch, y + 1 + swatch), outline=color, width=3)
+        draw.text((x + swatch + 4, y), label, fill=BLACK, font=font)
+        x += width + gap
 
 
 def _load_image(path: Path) -> Image.Image:

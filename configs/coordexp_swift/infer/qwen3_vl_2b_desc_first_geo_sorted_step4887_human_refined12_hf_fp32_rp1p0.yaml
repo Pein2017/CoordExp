@@ -1,0 +1,31 @@
+# Repetition-penalty 1.0 runtime identity for the sorted owner accessibility
+# phenotype census (2026-08-03-sorted-owner-accessibility-phenotype-census).
+#
+# The census scores exactly one stratum, rp1.0.  The inherited human-refined12
+# config carries `repetition_penalty: 1.10`, which would stamp an rp1.10
+# runtime identity onto every session receipt even though the census reads raw
+# logits; the scorer therefore fails closed unless the resolved config's
+# effective stratum is 1.0.  Model, adapter, embedding delta, data and every
+# other decoding field are identical to the frozen human-refined12
+# configuration; only the stratum and the run name differ.
+#
+# The required production-leaf runtime fields are restated verbatim because
+# `config.production_leaf_required` forbids a production leaf from inheriting
+# them silently.
+extends: qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32.yaml
+run:
+  name: qwen3-vl-2b-desc-first-geo-sorted-step4887-human-refined12-hf-fp32-rp1p0
+  artifact_root: /data/CoordExp/outputs/coordexp_swift/infer/val200
+  collision_policy: timestamp
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  # The one stratum this unit scores.
+  repetition_penalty: 1.0
+scoring:
+  enabled: true

@@ -1,0 +1,20 @@
+# Prospective image-2299 runtime leaf for the frozen owner-accessibility
+# extension.  Model/runtime/generation semantics are identical to the rp1.0
+# human-refined-12 census leaf; only the admitted source JSONL and run identity
+# change so the production loader can resolve image 2299.
+extends: qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32.yaml
+run:
+  name: qwen3-vl-2b-desc-first-geo-sorted-step4887-human-refined13-hf-fp32-rp1p0
+  artifact_root: /data/CoordExp/outputs/coordexp_swift/infer/val200
+  collision_policy: timestamp
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-04-sorted-prospective-13-image-panel-admission/evaluation-inputs/human-refined-13.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+scoring:
+  enabled: true

@@ -1,0 +1,18 @@
+# Image-2299 matched-checkpoint mechanism contrast. The only model change from
+# the completed sorted prospective slice is the original random-order step-4887
+# adapter and selected-token embedding delta inherited below.
+extends: qwen3_vl_2b_desc_first_random_step4887_human_refined12_hf_fp32.yaml
+run:
+  name: qwen3-vl-2b-desc-first-random-step4887-human-refined13-hf-fp32-rp1p0
+  collision_policy: timestamp
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-04-sorted-prospective-13-image-panel-admission/evaluation-inputs/human-refined-13.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+scoring:
+  enabled: true

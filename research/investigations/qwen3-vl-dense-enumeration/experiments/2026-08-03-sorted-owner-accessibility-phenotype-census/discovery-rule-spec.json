@@ -1,0 +1,31 @@
+{
+  "rule_id": "crowded-same-description-queue-v1",
+  "bound": "u",
+  "view": "primary_first_non_loop_minimal_abs_frontier",
+  "stratum": {
+    "native_true_positive": false,
+    "greedy_eligible": true,
+    "frontier_tested": true
+  },
+  "conditions": [
+    {
+      "feature": "same_description_owners_ahead_of_frontier",
+      "direction": "at_least",
+      "threshold": 8,
+      "rationale": "Discovery-only evidence: persistent-no-tested-localization-support owners are enriched in long same-description queues at the score-blind minimal-frontier context (29/38 versus 19/54 resolved-support owners), with the direction consistent across all six discovery images. Threshold 8 lies on a stable threshold-sweep plateau between the two stratum medians and above the native-TP calibration median."
+    }
+  ],
+  "phenotype_when_all_conditions_hold": "crowded_same_description_queue",
+  "phenotype_otherwise": "sparse_same_description_queue",
+  "provenance": {
+    "constructed_after_inspecting": [
+      "phases/discovery/owner-summaries.jsonl sha256=3ca71a00c9e5b047949e3f39e5054c583d108a7cd4b35d3a86b68e3daa90cb76",
+      "phases/discovery/support-calibration.json calibration_sha256=9dd6d7646fc55db6155124dc4bbfa46642b32b006d39758bd2e24d1ca97058c5",
+      "phases/discovery/discovery-distributions.json sha256=e33bf76b850b071a46f3455a65c75a7a7fc753c96bcfcf4e7d75bf0323481128",
+      "phases/discovery/merge-receipt.json receipt_content_sha256=d1e46eb32d0e295b327a3d935845d95ca9eba25e6437ae3db31b1cd71ae8c527"
+    ],
+    "selection_note": "The score-derived owner competition margin was rejected as a rule condition because it is quasi-circular with calibrated peak_lift (discovery Pearson r approximately 0.935). Category routing, gate, raw score, and image-level context-count cuts were also rejected.",
+    "independent_review": "claude-fable-5 xhigh read-only discovery audit",
+    "causal_claim_asserted": false
+  }
+}

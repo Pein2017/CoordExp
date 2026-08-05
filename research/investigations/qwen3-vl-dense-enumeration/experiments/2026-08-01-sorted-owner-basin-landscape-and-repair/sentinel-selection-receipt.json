@@ -1,0 +1,74 @@
+{
+  "schema_version": "sorted-owner-basin-sentinel-selection-receipt.v1",
+  "selection_status": "lead_reviewed_and_frozen_before_landscape_scoring",
+  "review_date_utc": "2026-08-01",
+  "claim_scope": "outcome_selected_case_studies_only_no_prevalence",
+  "anti_leakage_contract": {
+    "landscape_scores_used_for_selection": false,
+    "post_selection_changes": "forbidden_without_a_new_receipt_and_registry_version",
+    "selection_outcome": "fixed before owner-conditioned landscape scoring"
+  },
+  "source_artifacts": {
+    "human_refined_panel_sha256": "cfe4f693133287f9e6c561fc094710c642f049aec3d50f44dea98b764ba2aa85",
+    "matched_rp_1_0_greedy_sha256": "6d7f1128856953d7055b9bd25aef5916f695e64b4837182eafed2bd19c61093a",
+    "matched_rp_1_0_sampled_shard_0_sha256": "72bb97089abfcdea89d93a5ac876a7594dbfdbcefe09133fc3ec83124049b520",
+    "matched_rp_1_0_sampled_shard_1_sha256": "9f123c036470a3f9545e917f78485ef60620908bbee240350c7f0d2b48d66037",
+    "task0_census_artifact_manifest_sha256": "18689d65bac86c09c0fab13c53ba93562ed1b2e37e8f194741a169fd5d9fa2ce"
+  },
+  "visual_review": {
+    "image_id": "13923",
+    "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000013923.jpg",
+    "image_sha256": "c5c32b9999259b6041e92815693b975f8ee2291b29a6577d983685b6d486796f",
+    "review_statement": "Lead visual inspection confirms that the three frozen bowl annotations are three distinct wall-mounted bowl-or-plate-like physical objects on the right wall.",
+    "owners": [
+      {
+        "gt_owner_id": "gt:13923:0",
+        "original_annotation_index": 0,
+        "description": "bowl",
+        "bbox_xyxy": [1104, 67, 1202, 240]
+      },
+      {
+        "gt_owner_id": "gt:13923:3",
+        "original_annotation_index": 3,
+        "description": "bowl",
+        "bbox_xyxy": [1035, 228, 1094, 361]
+      },
+      {
+        "gt_owner_id": "gt:13923:4",
+        "original_annotation_index": 4,
+        "description": "bowl",
+        "bbox_xyxy": [1189, 250, 1247, 443]
+      }
+    ]
+  },
+  "deterministic_far_person_selection": {
+    "image_id": "7511",
+    "image_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+    "image_sha256": "2843c07959515a93d2791183c998462d76b34100185e57a258d8949f112296e7",
+    "selection_rule": "Select the three smallest-area person owners in image 7511 having zero semantic-compatible positive spatial overlap across the registered RP=1.0 greedy and K16 natural trajectories.",
+    "tie_break": "ascending area_pixels, then ascending original_annotation_index",
+    "owners": [
+      {
+        "gt_owner_id": "gt:7511:6",
+        "original_annotation_index": 6,
+        "description": "person",
+        "bbox_xyxy": [5, 474, 10, 484],
+        "area_pixels": 50
+      },
+      {
+        "gt_owner_id": "gt:7511:4",
+        "original_annotation_index": 4,
+        "description": "person",
+        "bbox_xyxy": [0, 471, 6, 480],
+        "area_pixels": 54
+      },
+      {
+        "gt_owner_id": "gt:7511:10",
+        "original_annotation_index": 10,
+        "description": "person",
+        "bbox_xyxy": [290, 479, 297, 487],
+        "area_pixels": 56
+      }
+    ]
+  }
+}

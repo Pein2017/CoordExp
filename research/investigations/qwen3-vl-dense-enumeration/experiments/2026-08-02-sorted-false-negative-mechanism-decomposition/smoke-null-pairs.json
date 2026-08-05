@@ -1,0 +1,62 @@
+[
+  {
+    "pair_id": "wit-16228-46-a",
+    "image_id": "16228",
+    "is_mechanical": false,
+    "review_status": "reviewed",
+    "target_gt_owner_id": "gt:16228:46",
+    "baseline": {
+      "decode_mode": "sampled",
+      "seed": 21005
+    },
+    "covering": {
+      "pred_row_id": "pred:sorted:sampled:21005:16228:9",
+      "gt_owner_id": "gt:16228:37"
+    },
+    "foil": {
+      "pred_row_id": "pred:sorted:sampled:21005:16228:12",
+      "gt_owner_id": "gt:16228:22"
+    },
+    "target_release_pred_row_id": "pred:sorted:sampled:21005:16228:20"
+  },
+  {
+    "pair_id": "wit-5001-6-a",
+    "image_id": "5001",
+    "is_mechanical": true,
+    "review_status": "reviewed",
+    "target_gt_owner_id": "gt:5001:6",
+    "baseline": {
+      "decode_mode": "sampled",
+      "seed": 21015
+    },
+    "covering": {
+      "pred_row_id": "pred:sorted:sampled:21015:5001:4",
+      "gt_owner_id": "gt:5001:4"
+    },
+    "foil": {
+      "pred_row_id": "pred:sorted:sampled:21015:5001:5",
+      "gt_owner_id": "gt:5001:9"
+    },
+    "target_release_pred_row_id": "pred:sorted:sampled:21015:5001:6"
+  },
+  {
+    "pair_id": "wit-4134-35-a",
+    "image_id": "4134",
+    "is_mechanical": false,
+    "review_status": "reviewed",
+    "target_gt_owner_id": "gt:4134:35",
+    "baseline": {
+      "decode_mode": "sampled",
+      "seed": 21008
+    },
+    "covering": {
+      "pred_row_id": "pred:sorted:sampled:21008:4134:28",
+      "gt_owner_id": "gt:4134:31"
+    },
+    "foil": {
+      "pred_row_id": "pred:sorted:sampled:21008:4134:29",
+      "gt_owner_id": "gt:4134:33"
+    },
+    "target_release_pred_row_id": "pred:sorted:sampled:21008:4134:30"
+  }
+]

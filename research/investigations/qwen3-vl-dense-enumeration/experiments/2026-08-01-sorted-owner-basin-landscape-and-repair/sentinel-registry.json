@@ -1,0 +1,125 @@
+{
+  "schema_version": "sorted-owner-basin-sentinel-registry.v2",
+  "selection_status": "lead_frozen_before_scoring_and_reconfirmed_against_final_task0_v2",
+  "claim_scope": "outcome_selected_case_studies_only_no_prevalence",
+  "selection_receipt": {
+    "path": "sentinel-selection-receipt.json",
+    "sha256": "2af9a0575e0d11ed4b04a78b7c217e8c5dfd9843a96f14974fa37fdaea8458a8"
+  },
+  "selection_confirmation_receipt": {
+    "path": "sentinel-selection-confirmation-receipt.json",
+    "sha256": "76d3f24abe3857d18968c1c6c039bc27a48df6d4bda975b16755e3b154dc410f"
+  },
+  "selection_rule": {
+    "wall_bowls": "the three wall-mounted bowl owners explicitly identified in the prior manual review discussion",
+    "far_persons": "the three smallest-area person owners in image 7511 with zero semantic-compatible spatial overlap in the matched RP=1.0 greedy plus K16 natural census",
+    "post_selection_changes": "forbidden_without_new_registry_version_and_invalidation_of_prior_sentinel_results"
+  },
+  "source_digests": {
+    "human_refined_panel_sha256": "cfe4f693133287f9e6c561fc094710c642f049aec3d50f44dea98b764ba2aa85",
+    "matched_rp_1_0_greedy_sha256": "6d7f1128856953d7055b9bd25aef5916f695e64b4837182eafed2bd19c61093a",
+    "matched_rp_1_0_sampled_shard_0_sha256": "72bb97089abfcdea89d93a5ac876a7594dbfdbcefe09133fc3ec83124049b520",
+    "matched_rp_1_0_sampled_shard_1_sha256": "9f123c036470a3f9545e917f78485ef60620908bbee240350c7f0d2b48d66037",
+    "task0_v2_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-01-sorted-owner-basin-task0-v2-global-ambiguity-neutral-final",
+    "task0_census_artifact_manifest_sha256": "37adf55a4ef4dbca6b6ccd055f627b60b3b554fb791013b01873e7f648238a5d",
+    "task0_execution_receipt_content_sha256": "b165e4047dd5f1c57fd9e28edd90bccb6059840eb162c3930f2eb58e9def810c",
+    "task0_execution_receipt_file_sha256": "8bb04eb9c2a3bdd8cf289982a620d757ef7e6fe5ccd2f066011acba699c6f840",
+    "task0_owner_ledger_sha256": "80357539069ac04c12522a211bb70a0bc6841b54a32627e993aeaa75574bd8a0",
+    "task0_owner_trajectory_matrix_sha256": "13ea01fd799232ccd99d4c78a2237f2e5dfa60af1ec5a3e36885b816926872de"
+  },
+  "prior_non_recovery_contract": {
+    "checkpoint": "qwen3-vl-2b-desc-first-geo-sorted-pure-ce-typegate-dora-r16a32-step4887",
+    "primary_policy": {
+      "repetition_penalty": 1.0,
+      "greedy_seed": 0,
+      "sample_temperature": 0.4,
+      "sample_top_p": 0.95,
+      "sample_seeds": [
+        21001,
+        21002,
+        21003,
+        21004,
+        21005,
+        21006,
+        21007,
+        21008,
+        21009,
+        21010,
+        21011,
+        21012,
+        21013,
+        21014,
+        21015,
+        21016
+      ],
+      "max_new_tokens": 3084
+    },
+    "required_status": "no_strict_hit_and_no_semantic_compatible_positive_overlap_in_any_registered_primary_natural_trajectory",
+    "production_rp_1_10_status": "record_separately_as_positive_evidence_when_available"
+  },
+  "sentinels": [
+    {
+      "sentinel_id": "sentinel:wall-bowl:13923:0",
+      "sentinel_kind": "wall_bowl",
+      "gt_owner_id": "gt:13923:0",
+      "image_id": "13923",
+      "original_annotation_index": 0,
+      "description": "bowl",
+      "bbox_xyxy": [1104, 67, 1202, 240],
+      "prior_non_recovery_status": "verified_primary_natural_zero_spatial_support"
+    },
+    {
+      "sentinel_id": "sentinel:wall-bowl:13923:3",
+      "sentinel_kind": "wall_bowl",
+      "gt_owner_id": "gt:13923:3",
+      "image_id": "13923",
+      "original_annotation_index": 3,
+      "description": "bowl",
+      "bbox_xyxy": [1035, 228, 1094, 361],
+      "prior_non_recovery_status": "verified_primary_natural_zero_spatial_support"
+    },
+    {
+      "sentinel_id": "sentinel:wall-bowl:13923:4",
+      "sentinel_kind": "wall_bowl",
+      "gt_owner_id": "gt:13923:4",
+      "image_id": "13923",
+      "original_annotation_index": 4,
+      "description": "bowl",
+      "bbox_xyxy": [1189, 250, 1247, 443],
+      "prior_non_recovery_status": "verified_primary_natural_zero_spatial_support"
+    },
+    {
+      "sentinel_id": "sentinel:far-person:7511:6",
+      "sentinel_kind": "far_person",
+      "gt_owner_id": "gt:7511:6",
+      "image_id": "7511",
+      "original_annotation_index": 6,
+      "description": "person",
+      "bbox_xyxy": [5, 474, 10, 484],
+      "area_pixels": 50,
+      "prior_non_recovery_status": "verified_primary_natural_zero_spatial_support"
+    },
+    {
+      "sentinel_id": "sentinel:far-person:7511:4",
+      "sentinel_kind": "far_person",
+      "gt_owner_id": "gt:7511:4",
+      "image_id": "7511",
+      "original_annotation_index": 4,
+      "description": "person",
+      "bbox_xyxy": [0, 471, 6, 480],
+      "area_pixels": 54,
+      "prior_non_recovery_status": "verified_primary_natural_zero_spatial_support"
+    },
+    {
+      "sentinel_id": "sentinel:far-person:7511:10",
+      "sentinel_kind": "far_person",
+      "gt_owner_id": "gt:7511:10",
+      "image_id": "7511",
+      "original_annotation_index": 10,
+      "description": "person",
+      "bbox_xyxy": [290, 479, 297, 487],
+      "area_pixels": 56,
+      "prior_non_recovery_status": "verified_primary_natural_zero_spatial_support"
+    }
+  ]
+}

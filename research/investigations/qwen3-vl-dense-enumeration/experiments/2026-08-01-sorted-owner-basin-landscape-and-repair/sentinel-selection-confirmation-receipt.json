@@ -1,0 +1,83 @@
+{
+  "schema_version": "sorted-owner-basin-sentinel-selection-confirmation-receipt.v2",
+  "confirmation_status": "lead_reconfirmed_against_final_task0_v2_before_landscape_scoring",
+  "confirmation_date_utc": "2026-08-01",
+  "claim_scope": "outcome_selected_case_studies_only_no_prevalence",
+  "anti_leakage_contract": {
+    "landscape_scores_used_for_original_selection": false,
+    "landscape_scores_used_for_v2_confirmation": false,
+    "selection_membership_changed": false,
+    "confirmation_purpose": "bridge the original pre-scoring selection receipt to the final ambiguity-neutral Task0-v2 census without reselection"
+  },
+  "original_selection_receipt": {
+    "path": "sentinel-selection-receipt.json",
+    "sha256": "2af9a0575e0d11ed4b04a78b7c217e8c5dfd9843a96f14974fa37fdaea8458a8"
+  },
+  "final_task0_v2": {
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-01-sorted-owner-basin-task0-v2-global-ambiguity-neutral-final",
+    "artifact_manifest_sha256": "37adf55a4ef4dbca6b6ccd055f627b60b3b554fb791013b01873e7f648238a5d",
+    "execution_receipt_content_sha256": "b165e4047dd5f1c57fd9e28edd90bccb6059840eb162c3930f2eb58e9def810c",
+    "execution_receipt_file_sha256": "8bb04eb9c2a3bdd8cf289982a620d757ef7e6fe5ccd2f066011acba699c6f840",
+    "owner_ledger_sha256": "80357539069ac04c12522a211bb70a0bc6841b54a32627e993aeaa75574bd8a0",
+    "owner_trajectory_matrix_sha256": "13ea01fd799232ccd99d4c78a2237f2e5dfa60af1ec5a3e36885b816926872de",
+    "decision_bearing_greedy": {
+      "true_positive_owners": 141,
+      "eligible_owners": 343,
+      "neutral_owners": 3
+    },
+    "decision_bearing_paired_k16": {
+      "hit_owners": 204,
+      "eligible_owners": 343,
+      "strict_rescued_owners": 64
+    }
+  },
+  "confirmation_rule": {
+    "required_owner_eligibility": "all six original sentinel owners remain decision-eligible and carry no ambiguity receipt",
+    "required_primary_trajectory_set": "RP=1.00 greedy seed 0 plus sampled seeds 21001 through 21016",
+    "required_non_recovery": "zero strict matches and max semantic-compatible IoU exactly 0.0 in every registered primary trajectory"
+  },
+  "confirmed_sentinels": [
+    {
+      "gt_owner_id": "gt:13923:0",
+      "trajectory_count": 17,
+      "max_semantic_compatible_iou": 0.0,
+      "strict_match_count": 0,
+      "decision_eligible": true
+    },
+    {
+      "gt_owner_id": "gt:13923:3",
+      "trajectory_count": 17,
+      "max_semantic_compatible_iou": 0.0,
+      "strict_match_count": 0,
+      "decision_eligible": true
+    },
+    {
+      "gt_owner_id": "gt:13923:4",
+      "trajectory_count": 17,
+      "max_semantic_compatible_iou": 0.0,
+      "strict_match_count": 0,
+      "decision_eligible": true
+    },
+    {
+      "gt_owner_id": "gt:7511:6",
+      "trajectory_count": 17,
+      "max_semantic_compatible_iou": 0.0,
+      "strict_match_count": 0,
+      "decision_eligible": true
+    },
+    {
+      "gt_owner_id": "gt:7511:4",
+      "trajectory_count": 17,
+      "max_semantic_compatible_iou": 0.0,
+      "strict_match_count": 0,
+      "decision_eligible": true
+    },
+    {
+      "gt_owner_id": "gt:7511:10",
+      "trajectory_count": 17,
+      "max_semantic_compatible_iou": 0.0,
+      "strict_match_count": 0,
+      "decision_eligible": true
+    }
+  ]
+}

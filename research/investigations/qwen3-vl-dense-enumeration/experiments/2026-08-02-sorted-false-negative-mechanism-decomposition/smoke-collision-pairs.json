@@ -1,0 +1,40 @@
+[
+  {
+    "pair_id": "collision-16228-30",
+    "image_id": "16228",
+    "review_status": "reviewed",
+    "target_gt_owner_id": "gt:16228:30",
+    "baseline": {
+      "decode_mode": "sampled",
+      "seed": 21005,
+      "cut_before_pred_row_id": "pred:sorted:sampled:21005:16228:9"
+    },
+    "covering": {
+      "pred_row_id": "pred:sorted:sampled:21005:16228:9",
+      "gt_owner_id": "gt:16228:37"
+    },
+    "foil": {
+      "pred_row_id": "pred:sorted:sampled:21005:16228:12",
+      "gt_owner_id": "gt:16228:22"
+    }
+  },
+  {
+    "pair_id": "collision-2685-15",
+    "image_id": "2685",
+    "review_status": "reviewed",
+    "target_gt_owner_id": "gt:2685:15",
+    "baseline": {
+      "decode_mode": "sampled",
+      "seed": 21007,
+      "cut_before_pred_row_id": "pred:sorted:sampled:21007:2685:16"
+    },
+    "covering": {
+      "pred_row_id": "pred:sorted:sampled:21007:2685:16",
+      "gt_owner_id": "gt:2685:17"
+    },
+    "foil": {
+      "pred_row_id": "pred:sorted:sampled:21007:2685:19",
+      "gt_owner_id": "gt:2685:22"
+    }
+  }
+]

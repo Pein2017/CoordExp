@@ -1,0 +1,304 @@
+{
+  "schema_version": "sorted-owner-basin-foil-geometry-review.v1",
+  "status": "lead_reviewed_and_frozen_before_landscape_scoring",
+  "review_date_utc": "2026-08-01",
+  "claim_scope": "candidate_bank_geometry_only_no_owner_outcome_or_threshold_selection",
+  "anti_leakage_contract": {
+    "landscape_scores_used_for_selection": false,
+    "forced_continuation_scores_used_for_selection": false,
+    "selection_basis": "source-image visual review plus frozen owner geometry and sorted-order semantics",
+    "post_freeze_change_rule": "any geometry change requires a new review artifact version and invalidates downstream candidate and score receipts"
+  },
+  "coordinate_contract": {
+    "space": "normalized_coordinate_bins_0_999",
+    "box_order": [
+      "x1",
+      "y1",
+      "x2",
+      "y2"
+    ],
+    "background_rule": "same width and height as the frozen target owner in a visually unsupported source-image region",
+    "scan_rule": "same width and height as the frozen target owner at a visually unsupported later sorted-scan position",
+    "covered_rule": "frozen whole-owner GT geometry of a distinct reviewed same-description physical owner already present in the B2 self-prefix"
+  },
+  "sources": {
+    "human_refined_panel": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl",
+      "sha256": "cfe4f693133287f9e6c561fc094710c642f049aec3d50f44dea98b764ba2aa85"
+    },
+    "final_task0_v2": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-01-sorted-owner-basin-task0-v2-global-ambiguity-neutral-final",
+      "artifact_manifest_sha256": "37adf55a4ef4dbca6b6ccd055f627b60b3b554fb791013b01873e7f648238a5d",
+      "owner_ledger_sha256": "80357539069ac04c12522a211bb70a0bc6841b54a32627e993aeaa75574bd8a0"
+    },
+    "images": [
+      {
+        "image_id": "7511",
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000007511.jpg",
+        "width": 1152,
+        "height": 864,
+        "sha256": "2843c07959515a93d2791183c998462d76b34100185e57a258d8949f112296e7"
+      },
+      {
+        "image_id": "13923",
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000013923.jpg",
+        "width": 1248,
+        "height": 832,
+        "sha256": "c5c32b9999259b6041e92815693b975f8ee2291b29a6577d983685b6d486796f"
+      },
+      {
+        "image_id": "16228",
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/val2017/000000016228.jpg",
+        "width": 1216,
+        "height": 832,
+        "sha256": "5aade4c6e9dbdbf3bd64072e813bae02975a342b84c312efc91983ac63300d49"
+      }
+    ]
+  },
+  "reviewed_geometries": [
+    {
+      "source_row_id": "foil-review:gt:7511:4:background",
+      "gt_owner_id": "gt:7511:4",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [500, 100, 505, 110],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:4:scan",
+      "gt_owner_id": "gt:7511:4",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [20, 700, 25, 710],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:6:background",
+      "gt_owner_id": "gt:7511:6",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [520, 120, 525, 131],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:6:scan",
+      "gt_owner_id": "gt:7511:6",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [40, 700, 45, 711],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:10:background",
+      "gt_owner_id": "gt:7511:10",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [540, 140, 546, 150],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:10:scan",
+      "gt_owner_id": "gt:7511:10",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [250, 700, 256, 710],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:15:background",
+      "gt_owner_id": "gt:7511:15",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [560, 100, 569, 137],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:15:scan",
+      "gt_owner_id": "gt:7511:15",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [350, 700, 359, 737],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:17:background",
+      "gt_owner_id": "gt:7511:17",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [580, 120, 590, 138],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:17:scan",
+      "gt_owner_id": "gt:7511:17",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [420, 700, 430, 718],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:22:background",
+      "gt_owner_id": "gt:7511:22",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [600, 80, 614, 125],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:22:scan",
+      "gt_owner_id": "gt:7511:22",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [450, 700, 464, 745],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:26:background",
+      "gt_owner_id": "gt:7511:26",
+      "image_id": "7511",
+      "bank_name": "background",
+      "box": [620, 100, 632, 131],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in open sky with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:26:scan",
+      "gt_owner_id": "gt:7511:26",
+      "image_id": "7511",
+      "bank_name": "scan",
+      "box": [470, 700, 482, 731],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground sand."
+    },
+    {
+      "source_row_id": "foil-review:gt:7511:26:covered:gt:7511:22",
+      "gt_owner_id": "gt:7511:26",
+      "image_id": "7511",
+      "bank_name": "covered",
+      "box": [817, 575, 831, 620],
+      "identity_gt_owner_id": "gt:7511:22",
+      "extent_submode": "same_description_whole",
+      "review_statement": "Frozen whole-owner box of the distinct same-description person already present in the B2 prefix."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:0:background",
+      "gt_owner_id": "gt:13923:0",
+      "image_id": "13923",
+      "bank_name": "background",
+      "box": [160, 50, 238, 259],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies on the upper-left wall and ceiling area with no bowl support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:0:scan",
+      "gt_owner_id": "gt:13923:0",
+      "image_id": "13923",
+      "bank_name": "scan",
+      "box": [300, 700, 378, 909],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies across floor and furniture with no bowl support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:3:background",
+      "gt_owner_id": "gt:13923:3",
+      "image_id": "13923",
+      "bank_name": "background",
+      "box": [250, 50, 298, 210],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies on the upper wall and upper window-frame area with no bowl support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:3:scan",
+      "gt_owner_id": "gt:13923:3",
+      "image_id": "13923",
+      "bank_name": "scan",
+      "box": [200, 700, 248, 860],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies across floor and furniture with no bowl support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:4:background",
+      "gt_owner_id": "gt:13923:4",
+      "image_id": "13923",
+      "bank_name": "background",
+      "box": [160, 40, 206, 273],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies on the upper-left wall and ceiling area with no bowl support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:4:scan",
+      "gt_owner_id": "gt:13923:4",
+      "image_id": "13923",
+      "bank_name": "scan",
+      "box": [100, 700, 146, 933],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies across floor and furniture with no bowl support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:5:background",
+      "gt_owner_id": "gt:13923:5",
+      "image_id": "13923",
+      "bank_name": "background",
+      "box": [200, 50, 241, 192],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies on the upper-left wall and ceiling area with no potted-plant support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:5:scan",
+      "gt_owner_id": "gt:13923:5",
+      "image_id": "13923",
+      "bank_name": "scan",
+      "box": [300, 700, 341, 842],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies across floor and furniture with no potted-plant support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:11:background",
+      "gt_owner_id": "gt:13923:11",
+      "image_id": "13923",
+      "bank_name": "background",
+      "box": [250, 50, 296, 212],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies on the upper wall and upper window-frame area with no potted-plant support."
+    },
+    {
+      "source_row_id": "foil-review:gt:13923:11:scan",
+      "gt_owner_id": "gt:13923:11",
+      "image_id": "13923",
+      "bank_name": "scan",
+      "box": [400, 700, 446, 862],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies across floor and furniture with no potted-plant support."
+    },
+    {
+      "source_row_id": "foil-review:gt:16228:47:background",
+      "gt_owner_id": "gt:16228:47",
+      "image_id": "16228",
+      "bank_name": "background",
+      "box": [450, 50, 520, 203],
+      "extent_submode": "equal_size_background",
+      "review_statement": "Equal-size box lies in the upper sky and distant foliage with no person support."
+    },
+    {
+      "source_row_id": "foil-review:gt:16228:47:scan",
+      "gt_owner_id": "gt:16228:47",
+      "image_id": "16228",
+      "bank_name": "scan",
+      "box": [100, 700, 170, 853],
+      "extent_submode": "sorted_scan",
+      "review_statement": "Equal-size later-y scan box lies on empty foreground road."
+    }
+  ]
+}

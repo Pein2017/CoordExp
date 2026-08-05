@@ -286,6 +286,7 @@ def _build_requests(config: Any, frontend: Any, raw_examples: Sequence[Any]) -> 
             processor=frontend.qwen.processor,
             row_index=index,
             merged_visual_tokens=row.merged_visual_tokens,
+            object_order_seed=config.template.object_order_seed,
         )
         from src.inference.backend import DecodeRequest, GenerationPolicy
 

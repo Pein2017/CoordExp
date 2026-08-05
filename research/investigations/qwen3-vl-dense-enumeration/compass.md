@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-07-26
+updated: 2026-08-04
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -20,7 +20,41 @@ architecture, or an implementation contract.
 
 ## Current Live Route
 
-Fresh sessions start from these formal owners:
+As of `2026-08-04`, the current evidence owner is the completed [Sorted
+Crossing Matched-Length Neutral-Row Insertion Control
+result](experiments/2026-08-04-sorted-crossing-matched-length-neutral-row-insertion-control/results.md).
+Its implementation and runtime gates pass, but the frozen scientific route is
+`neutral_row_not_neutral_inconclusive`: the selected covered-row control is
+material on `8/12` specificity owners, above the absolute failure threshold of
+four. It cannot adjudicate content-specific versus generic insertion
+sensitivity.
+
+The independent audit found that this failure is structured. All seven
+N-nonmaterial owners have `rows_back_distance <= 3`, while thirteen of
+fourteen N-material owners have `rows_back_distance >= 5`; one owner is the
+exception, and the post-hoc Spearman association is `-0.7511`. The strongest
+remaining alternative is therefore disruption of a learned monotone sorted
+route by duplicate backward insertion, not undifferentiated sensitivity to any
+added row. This is a post-hoc descriptive narrowing, not a causal route.
+
+A frozen-ledger feasibility screen finds a lower-regression neutral row for
+only `5/12` specificity owners and `5/9` voting owners, so no second insertion
+capture is active. The separate [prospective thirteen-image
+panel admission](experiments/2026-08-04-sorted-prospective-13-image-panel-admission/unit.md)
+is CPU-verified and adds training-authority image `2299` without changing any
+completed denominator; future results must report the legacy twelve and image
+`2299` side by side before any pooled summary.
+
+The invalid full-canvas density route remains closed. The parallel owner-
+commit/typed-binding/InfoNCE training design is a complexity ceiling and a
+possible future treatment, not an explanation selected by current evidence.
+No commit token, binding loss, slot, detector, training objective, or
+architecture is promoted.
+
+Fresh sessions start from the neutral-row result and final review, then the
+geometry result and review, completed crossing-boundary result, prevalence
+result, and invalid full-canvas result. The following
+older formal owners remain useful for the broader history:
 
 1. the completed [Source versus transition step-36 forced-opener owner-selection
    result](experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md),
@@ -607,6 +641,11 @@ cross-row coverage.
 | Early coordinate choice establishes a stable complete-object owner | Rejected as a universal rule. In one primary bowl case, a one-bin `x1` branch and later `x2` difference reshape `y2`; in a nearby-person control, shared `x1` remains ambiguous and ownership separates through `y1` and `x2`; one small-person case instead keeps the same owner after a bad `y1`. The older dense-chair transport result still shows that early coordinates can strongly constrain later boundaries. | Coordinate generation mixes box grammar, visual boundary evidence, route state, and instance ownership; the dominant component changes by scene and coordinate slot. | If separately authorized, use on-support same-object coordinate perturbations and coherent full-row alternatives. Do not infer an owner from one coordinate or average coordinate marginals across neighboring instances. |
 | Incomplete dense annotations teach conservative omission and premature termination | Plausible | Sequence-mode concentration or weak visual evidence is the dominant cause | Compare exhaustive labels with original labels and controlled thinning on the same images. |
 | Bagging support can be concentrated into deterministic greedy traversal | Partially supported. Transition step 36 gives a small robustly directional held-out gain with fewer predictions, while complete-row arms already gain owners by 256 tokens but then expand output without additional net gain. Conditional row-ranking signal exists on a selected panel; reliable row realization and exchange-free traversal do not. | Bagging may expose several valid but mutually competing routes, and generic continuation or positive credit for one route may overwrite useful Source routes rather than expand coverage. | Discuss a mixed-cohort matched screen that separates continuation, conditional owner preference, row realization, and Source preservation. Require fixed-budget gained and retained owners, owner gain per prediction, and zero new length stops before a longer horizon; do not require every one of 256 images to satisfy the old strict composite. |
+| Native false negatives are a single visual-recognition failure class | Ruled out on the frozen twelve-image census: `114/202` eligible misses retain tested category-conditioned localization support, `72/202` do not under the fixed bank/interface, and `16/202` are ambiguity-bound flips. Within the 114 supported misses, gate-open is `113`, category-top-three `106`, and owner-rank-one `72`. | A broader spatial bank may expose some of the 72 persistent owners; among the supported cohort, favorable any-context support may still occur before the owner is due and does not imply natural row release. | Keep supported and persistent-no-tested-support cohorts separate. For the supported cohort, run the 26-owner exact crossing-boundary release/realization probe; no training or architecture follows from cohort membership. |
+| Exact crossing failures are primarily within-category owner displacement | Supported under the frozen branch rule but fragile: `17/24` interpretable owners are displaced. The geometry successor finds `9/26` material C/E rows. The matched-length covered-row control closes inconclusive because N is material on `8/12` specificity owners. | The N effect is strongly associated post hoc with sorted-route regression distance, so duplicate backward-route disruption is stronger than a generic-any-row explanation; local identity, extent, insertion, position, and recency remain joined. Strict-unmatched E rows remain unknown-neutral. | Close the repeated-covered-row insertion line. Before training, define one suffix-preserving skipped-owner recovery contrast that separates recovering C from retaining later owners; no second N, threshold retuning, or relaxed candidate predicates. |
+| Same-description queue crowding explains persistent no-tested support | Weak directional evidence only: discovery enrichment attenuates on held-out confirmation (`RR=1.45`, one-sided `p=0.124`) and does not separate held-out persons | Apparent owner scale, image identity, and category composition explain the discovery association | Do not train on the `>=8` rule. Prospectively match person owners within image and manipulate visual resolution separately from the readout interface. |
+| Apparent object scale limits category-field localization support | The prospectively frozen full-canvas doubled-budget capture is artifact-valid but scientifically invalid: resolved-support retention fell to `86/114 = 0.754`, so nominal `14/63` overall and `11/51` person recoveries are void and the full-canvas density route is closed under this interface | Scale may still proxy blur, occlusion, crowding, annotation extent, or a category-to-coordinate interface failure; preservation failure prevents a calibrated density effect estimate | Do not add a third scale, crops, bank widening, threshold retuning, scale-targeted training, or architecture from this arm. Reopen visual-resolution interventions only under a new representation and preservation contract. |
+| Image `2299` confirms the legacy visual-support fraction | **Withheld.** Native strict recall is `19/46`, but only `14/19` native-TP controls clear the imported due-boundary support rule, below the frozen `0.8` transfer-validity floor. Mechanical application gives `16/27` resolved-like and `11/27` persistent-like FN rows, but those are noninterpretable raw sensitivities, not a `59.3%` visual-recoverability estimate. | Legacy per-image TP-control rates already range `65%..100%` with `3/12` below `0.8`; discovery contained no tie controls. Ordinary image variation, category-incomplete calibration, and candidate-population effects remain joined. | Preserve the valid legacy `114/202 = 56.4%` result and the image-2299 withholding side by side. Do not pool thirteen images or open S2/S3 on the raw 16 rows. Any new image-2299 support estimate requires a separately frozen transfer-validity instrument. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -621,25 +660,37 @@ failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
 
-The immediate queue is a user discussion of the completed [transition
-mechanism Phase Zero
-result](experiments/2026-07-25-existing-checkpoint-transition-mechanism-decomposition/results.md),
-not an automatic training launch. It separates three effects that earlier
-complete-row training conflated: the decision to continue, the relative score
-of an uncovered-owner row after continuation is fixed, and realization of that
-row's description and geometry. The first two move under transition step 36;
-the third does not improve on the selected panel.
+The [Sorted Crossing Matched-Length Neutral-Row Insertion Control
+result](experiments/2026-08-04-sorted-crossing-matched-length-neutral-row-insertion-control/results.md)
+is complete and independently verified. Gates one through five pass, but the
+specificity gate fails because N is material on `8/12` C-nonmaterial owners.
+Neither frozen scientific route is interpreted. Post-hoc, N damage closely
+tracks how far backward the duplicate row regresses the sorted trajectory.
 
-If a new training unit is authorized, its minimal discriminator is a matched
-screen that separates modest continue-versus-stop calibration, conditional
-uncovered-versus-covered owner preference, row realization, and Source-policy
-preservation. A 256-image total cohort may mix explicit signal events with
-preservation, background, and matched-control exposure; it must not claim that
-every image carries equivalent set-expansion evidence. Fixed 256- and 512-token
-free rollouts should gate longer inference by retained and gained owners, owner
-gain per prediction, duplicate and invalid rows, geometry, and zero new length
-stops. Prompt changes, one-row-at-a-time inference, and an explicit state
-carrier remain pending alternatives rather than the current route.
+The insertion-control line is closed. A lower-regression sibling is not
+feasible under the frozen predicates (`5/12` specificity and `5/9` voting
+owners), and relaxing those predicates after seeing the result would change
+the estimand. The program must not duplicate the already completed `114`-owner
+reachability prevalence census.
+
+The next decision-bearing proposal, if authorized, should test a
+suffix-preserving skipped-owner recovery target: recover skipped owner `C`
+from an exact native self-prefix while measuring gained, retained, and lost
+later owners under the same deployment-bounded completion. It must separate
+the value of adding `C` from damage to the downstream suffix and compare
+before-skip and after-skip recovery contexts. The exact objective, cohort, and
+whether this is score-only or a small training screen remain unselected;
+training and architecture stay closed until a new unit freezes that contrast.
+
+The [prospective image-2299 mechanism extension](experiments/2026-08-04-sorted-image2299-prospective-mechanism-extension/results.md)
+is complete as a separately reported thirteenth-image slice. It adds image
+`2299` only from
+`/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl`,
+whose sealed row contains `46` owners: `38` persons and `8` ties. The completed
+twelve-image denominators never change. The imported owner-accessibility rule
+does not meet its image-2299 transfer-validity floor (`14/19 < 0.8` native-TP
+controls), so all 27 FN dispositions are withheld; the raw `16/11` split is
+diagnostic only and never becomes a pooled thirteen-image rate.
 
 The completed [Person 25 Dominant-Owner Commit and Persistence Closeout
 results](experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md)

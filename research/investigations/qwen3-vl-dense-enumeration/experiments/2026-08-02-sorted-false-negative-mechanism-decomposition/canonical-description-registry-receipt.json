@@ -1,0 +1,22 @@
+{
+  "schema_version": "sorted-fn-canonical-description-registry-receipt.v1",
+  "status": "frozen_before_successor_scoring",
+  "registry_path": "canonical-description-registry.json",
+  "registry_file_sha256": "9608ab238985a515f76708d638da6a010aa000c6f24efb40e9b2629a49793331",
+  "source_runtime_identity_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-01-sorted-owner-basin-landscape-and-repair/runtime-identity.json",
+  "source_runtime_identity_file_sha256": "e1bd8f5f4cf78b071358aad4714cdf32db752357daf49c121a1a6a9d5d391a9c",
+  "tokenizer_path": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+  "tokenizer_identity_sha256": "8edf6678e814c2d7417010effa42d99915f377b9e1d312a600aa9fa502241b27",
+  "tokenization": {
+    "add_special_tokens": false,
+    "local_files_only": true,
+    "trust_remote_code": true
+  },
+  "schema_token_ids": {
+    "object_ref_start": 151646,
+    "object_ref_end": 151647,
+    "box_start": 151648
+  },
+  "descriptions": ["bottle", "kite", "wine glass"],
+  "score_derived": false
+}

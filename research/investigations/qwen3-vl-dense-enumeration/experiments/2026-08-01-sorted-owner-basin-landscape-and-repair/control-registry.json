@@ -1,0 +1,1651 @@
+{
+  "schema_version": "sorted-owner-basin-control-registry.v2",
+  "status": "lead_frozen_before_scoring_and_resealed_to_final_task0_v2",
+  "source_digests": {
+    "task0_v2_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-01-sorted-owner-basin-task0-v2-global-ambiguity-neutral-final",
+    "task0_census_artifact_manifest_sha256": "37adf55a4ef4dbca6b6ccd055f627b60b3b554fb791013b01873e7f648238a5d",
+    "task0_execution_receipt_content_sha256": "b165e4047dd5f1c57fd9e28edd90bccb6059840eb162c3930f2eb58e9def810c",
+    "task0_execution_receipt_file_sha256": "8bb04eb9c2a3bdd8cf289982a620d757ef7e6fe5ccd2f066011acba699c6f840",
+    "owner_ledger_sha256": "80357539069ac04c12522a211bb70a0bc6841b54a32627e993aeaa75574bd8a0",
+    "owner_trajectory_matrix_sha256": "13ea01fd799232ccd99d4c78a2237f2e5dfa60af1ec5a3e36885b816926872de",
+    "sentinel_selection_confirmation_receipt_sha256": "76d3f24abe3857d18968c1c6c039bc27a48df6d4bda975b16755e3b154dc410f",
+    "candidate_bank_foil_review_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a"
+  },
+  "selection_rules": {
+    "representative_smoke": "same-image tiny-person controls in image 7511, frozen from Task0 natural receipts before any landscape score; selected over the much larger image-2685 pair to preserve the same strict/B1/B2 contrast at a bounded full-interior anchor cost",
+    "far_person_calibration": "same-image same-description controls in image 7511, with strict-visible, loose-only, and strict-rescued roles",
+    "wall_bowl_calibration": "predeclared fallback hierarchy: same-image similar-size visible/rescued controls first, then global similar-size crowded B1 control; category mismatch remains explicit",
+    "no_c_outcome_use": true
+  },
+  "controls": [
+    {
+      "control_id": "control:smoke:strict-visible:7511:22",
+      "role": "strict_visible_true_positive",
+      "gt_owner_id": "gt:7511:22",
+      "image_id": "7511",
+      "description": "person",
+      "matched_pred_row_id": "pred:sorted:greedy:0:7511:3",
+      "area_pixels": 624,
+      "strata": [
+        "representative_smoke",
+        "far_person_calibration"
+      ]
+    },
+    {
+      "control_id": "control:smoke:b1:7511:26",
+      "role": "b1_loose_only",
+      "gt_owner_id": "gt:7511:26",
+      "image_id": "7511",
+      "description": "person",
+      "area_pixels": 338,
+      "max_registered_semantic_compatible_iou": 0.2619047619047619,
+      "strata": [
+        "representative_smoke",
+        "far_person_calibration"
+      ]
+    },
+    {
+      "control_id": "control:smoke:b2:7511:22-to-26",
+      "role": "b2_distinct_same_description_pair",
+      "covering_gt_owner_id": "gt:7511:22",
+      "target_gt_owner_id": "gt:7511:26",
+      "image_id": "7511",
+      "description": "person",
+      "covering_pred_row_id": "pred:sorted:greedy:0:7511:3",
+      "ground_truth_iou": 0.05714285714285714,
+      "physical_identity_review": "distinct_people_confirmed_by_lead_visual_inspection",
+      "strata": [
+        "representative_smoke",
+        "far_person_calibration"
+      ]
+    },
+    {
+      "control_id": "control:far-person:b1:7511:15",
+      "role": "b1_loose_only",
+      "gt_owner_id": "gt:7511:15",
+      "image_id": "7511",
+      "description": "person",
+      "area_pixels": 352,
+      "max_registered_semantic_compatible_iou": 0.36860068259385664,
+      "strata": [
+        "far_person_calibration"
+      ]
+    },
+    {
+      "control_id": "control:far-person:strict-rescued:7511:17",
+      "role": "strict_rescued",
+      "gt_owner_id": "gt:7511:17",
+      "image_id": "7511",
+      "description": "person",
+      "area_pixels": 192,
+      "strata": [
+        "far_person_calibration"
+      ]
+    },
+    {
+      "control_id": "control:wall-bowl:strict-visible:13923:5",
+      "role": "strict_visible_true_positive",
+      "gt_owner_id": "gt:13923:5",
+      "image_id": "13923",
+      "description": "potted plant",
+      "matched_pred_row_id": "pred:sorted:greedy:0:13923:3",
+      "area_pixels": 6018,
+      "fallback_level": "same_image_similar_size",
+      "strata": [
+        "wall_bowl_fallback_calibration"
+      ]
+    },
+    {
+      "control_id": "control:wall-bowl:b1:16228:47",
+      "role": "b1_loose_only",
+      "gt_owner_id": "gt:16228:47",
+      "image_id": "16228",
+      "description": "person",
+      "area_pixels": 10795,
+      "max_registered_semantic_compatible_iou": 0.447911886186324,
+      "fallback_level": "global_similar_size_crowded",
+      "strata": [
+        "wall_bowl_fallback_calibration"
+      ]
+    },
+    {
+      "control_id": "control:wall-bowl:strict-rescued:13923:11",
+      "role": "strict_rescued",
+      "gt_owner_id": "gt:13923:11",
+      "image_id": "13923",
+      "description": "potted plant",
+      "area_pixels": 7638,
+      "fallback_level": "same_image_similar_size",
+      "strata": [
+        "wall_bowl_fallback_calibration"
+      ]
+    }
+  ],
+  "candidate_bank_review": {
+    "path": "candidate-bank-foil-review.json",
+    "sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+    "status": "lead_reviewed_and_frozen_before_landscape_scoring"
+  },
+  "candidate_bank_members": [
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:B2:control:smoke:b2:7511:22-to-26:B2_after",
+      "bank_name": "background",
+      "box": [
+        620,
+        100,
+        632,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:B2:control:smoke:b2:7511:22-to-26:B2_after",
+      "bank_name": "covered",
+      "box": [
+        817,
+        575,
+        831,
+        620
+      ],
+      "identity_kind": "gt_owner",
+      "identity_id": "gt:7511:22",
+      "extent_submode": "same_description_whole",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:covered:gt:7511:22"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:B2:control:smoke:b2:7511:22-to-26:B2_after",
+      "bank_name": "scan",
+      "box": [
+        470,
+        700,
+        482,
+        731
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:B2:control:smoke:b2:7511:22-to-26:B2_before",
+      "bank_name": "background",
+      "box": [
+        620,
+        100,
+        632,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:B2:control:smoke:b2:7511:22-to-26:B2_before",
+      "bank_name": "covered",
+      "box": [
+        817,
+        575,
+        831,
+        620
+      ],
+      "identity_kind": "gt_owner",
+      "identity_id": "gt:7511:22",
+      "extent_submode": "same_description_whole",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:covered:gt:7511:22"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:B2:control:smoke:b2:7511:22-to-26:B2_before",
+      "bank_name": "scan",
+      "box": [
+        470,
+        700,
+        482,
+        731
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:11",
+      "context_id": "ctx:control-owner:gt:13923:11:natural_stop",
+      "bank_name": "background",
+      "box": [
+        250,
+        50,
+        296,
+        212
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:11:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:11:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:11",
+      "context_id": "ctx:control-owner:gt:13923:11:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        400,
+        700,
+        446,
+        862
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:11:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:11:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:11",
+      "context_id": "ctx:control-owner:gt:13923:11:root",
+      "bank_name": "background",
+      "box": [
+        250,
+        50,
+        296,
+        212
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:11:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:11:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:11",
+      "context_id": "ctx:control-owner:gt:13923:11:root",
+      "bank_name": "scan",
+      "box": [
+        400,
+        700,
+        446,
+        862
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:11:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:11:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:5",
+      "context_id": "ctx:control-owner:gt:13923:5:natural_stop",
+      "bank_name": "background",
+      "box": [
+        200,
+        50,
+        241,
+        192
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:5:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:5:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:5",
+      "context_id": "ctx:control-owner:gt:13923:5:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        300,
+        700,
+        341,
+        842
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:5:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:5:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:5",
+      "context_id": "ctx:control-owner:gt:13923:5:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        200,
+        50,
+        241,
+        192
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:5:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:5:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:5",
+      "context_id": "ctx:control-owner:gt:13923:5:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        300,
+        700,
+        341,
+        842
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:5:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:5:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:5",
+      "context_id": "ctx:control-owner:gt:13923:5:root",
+      "bank_name": "background",
+      "box": [
+        200,
+        50,
+        241,
+        192
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:5:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:5:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:5",
+      "context_id": "ctx:control-owner:gt:13923:5:root",
+      "bank_name": "scan",
+      "box": [
+        300,
+        700,
+        341,
+        842
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:5:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:5:scan"
+      }
+    },
+    {
+      "owner_id": "gt:16228:47",
+      "context_id": "ctx:control-owner:gt:16228:47:natural_stop",
+      "bank_name": "background",
+      "box": [
+        450,
+        50,
+        520,
+        203
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:16228:47:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:16228:47:background"
+      }
+    },
+    {
+      "owner_id": "gt:16228:47",
+      "context_id": "ctx:control-owner:gt:16228:47:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        100,
+        700,
+        170,
+        853
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:16228:47:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:16228:47:scan"
+      }
+    },
+    {
+      "owner_id": "gt:16228:47",
+      "context_id": "ctx:control-owner:gt:16228:47:root",
+      "bank_name": "background",
+      "box": [
+        450,
+        50,
+        520,
+        203
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:16228:47:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:16228:47:background"
+      }
+    },
+    {
+      "owner_id": "gt:16228:47",
+      "context_id": "ctx:control-owner:gt:16228:47:root",
+      "bank_name": "scan",
+      "box": [
+        100,
+        700,
+        170,
+        853
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:16228:47:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:16228:47:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:15",
+      "context_id": "ctx:control-owner:gt:7511:15:natural_stop",
+      "bank_name": "background",
+      "box": [
+        560,
+        100,
+        569,
+        137
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:15:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:15:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:15",
+      "context_id": "ctx:control-owner:gt:7511:15:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        350,
+        700,
+        359,
+        737
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:15:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:15:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:15",
+      "context_id": "ctx:control-owner:gt:7511:15:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        560,
+        100,
+        569,
+        137
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:15:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:15:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:15",
+      "context_id": "ctx:control-owner:gt:7511:15:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        350,
+        700,
+        359,
+        737
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:15:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:15:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:15",
+      "context_id": "ctx:control-owner:gt:7511:15:root",
+      "bank_name": "background",
+      "box": [
+        560,
+        100,
+        569,
+        137
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:15:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:15:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:15",
+      "context_id": "ctx:control-owner:gt:7511:15:root",
+      "bank_name": "scan",
+      "box": [
+        350,
+        700,
+        359,
+        737
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:15:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:15:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:17",
+      "context_id": "ctx:control-owner:gt:7511:17:natural_stop",
+      "bank_name": "background",
+      "box": [
+        580,
+        120,
+        590,
+        138
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:17:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:17:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:17",
+      "context_id": "ctx:control-owner:gt:7511:17:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        420,
+        700,
+        430,
+        718
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:17:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:17:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:17",
+      "context_id": "ctx:control-owner:gt:7511:17:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        580,
+        120,
+        590,
+        138
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:17:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:17:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:17",
+      "context_id": "ctx:control-owner:gt:7511:17:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        420,
+        700,
+        430,
+        718
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:17:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:17:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:17",
+      "context_id": "ctx:control-owner:gt:7511:17:root",
+      "bank_name": "background",
+      "box": [
+        580,
+        120,
+        590,
+        138
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:17:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:17:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:17",
+      "context_id": "ctx:control-owner:gt:7511:17:root",
+      "bank_name": "scan",
+      "box": [
+        420,
+        700,
+        430,
+        718
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:17:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:17:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:22",
+      "context_id": "ctx:control-owner:gt:7511:22:natural_stop",
+      "bank_name": "background",
+      "box": [
+        600,
+        80,
+        614,
+        125
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:22:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:22:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:22",
+      "context_id": "ctx:control-owner:gt:7511:22:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        450,
+        700,
+        464,
+        745
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:22:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:22:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:22",
+      "context_id": "ctx:control-owner:gt:7511:22:root",
+      "bank_name": "background",
+      "box": [
+        600,
+        80,
+        614,
+        125
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:22:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:22:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:22",
+      "context_id": "ctx:control-owner:gt:7511:22:root",
+      "bank_name": "scan",
+      "box": [
+        450,
+        700,
+        464,
+        745
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:22:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:22:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:control-owner:gt:7511:26:natural_stop",
+      "bank_name": "background",
+      "box": [
+        620,
+        100,
+        632,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:control-owner:gt:7511:26:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        470,
+        700,
+        482,
+        731
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:control-owner:gt:7511:26:root",
+      "bank_name": "background",
+      "box": [
+        620,
+        100,
+        632,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:26",
+      "context_id": "ctx:control-owner:gt:7511:26:root",
+      "bank_name": "scan",
+      "box": [
+        470,
+        700,
+        482,
+        731
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:26:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:26:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:10",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:10:natural_stop",
+      "bank_name": "background",
+      "box": [
+        540,
+        140,
+        546,
+        150
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:10:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:10:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:10",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:10:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        250,
+        700,
+        256,
+        710
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:10:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:10:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:10",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:10:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        540,
+        140,
+        546,
+        150
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:10:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:10:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:10",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:10:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        250,
+        700,
+        256,
+        710
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:10:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:10:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:10",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:10:root",
+      "bank_name": "background",
+      "box": [
+        540,
+        140,
+        546,
+        150
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:10:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:10:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:10",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:10:root",
+      "bank_name": "scan",
+      "box": [
+        250,
+        700,
+        256,
+        710
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:10:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:10:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:4",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:4:natural_stop",
+      "bank_name": "background",
+      "box": [
+        500,
+        100,
+        505,
+        110
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:4:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:4:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:4",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:4:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        20,
+        700,
+        25,
+        710
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:4:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:4:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:4",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:4:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        500,
+        100,
+        505,
+        110
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:4:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:4:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:4",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:4:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        20,
+        700,
+        25,
+        710
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:4:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:4:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:4",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:4:root",
+      "bank_name": "background",
+      "box": [
+        500,
+        100,
+        505,
+        110
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:4:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:4:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:4",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:4:root",
+      "bank_name": "scan",
+      "box": [
+        20,
+        700,
+        25,
+        710
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:4:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:4:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:6",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:6:natural_stop",
+      "bank_name": "background",
+      "box": [
+        520,
+        120,
+        525,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:6:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:6:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:6",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:6:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        40,
+        700,
+        45,
+        711
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:6:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:6:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:6",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:6:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        520,
+        120,
+        525,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:6:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:6:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:6",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:6:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        40,
+        700,
+        45,
+        711
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:6:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:6:scan"
+      }
+    },
+    {
+      "owner_id": "gt:7511:6",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:6:root",
+      "bank_name": "background",
+      "box": [
+        520,
+        120,
+        525,
+        131
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:6:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:6:background"
+      }
+    },
+    {
+      "owner_id": "gt:7511:6",
+      "context_id": "ctx:sentinel:sentinel:far-person:7511:6:root",
+      "bank_name": "scan",
+      "box": [
+        40,
+        700,
+        45,
+        711
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:7511:6:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:7511:6:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:0",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:0:natural_stop",
+      "bank_name": "background",
+      "box": [
+        160,
+        50,
+        238,
+        259
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:0:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:0:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:0",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:0:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        300,
+        700,
+        378,
+        909
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:0:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:0:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:0",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:0:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        160,
+        50,
+        238,
+        259
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:0:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:0:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:0",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:0:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        300,
+        700,
+        378,
+        909
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:0:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:0:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:0",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:0:root",
+      "bank_name": "background",
+      "box": [
+        160,
+        50,
+        238,
+        259
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:0:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:0:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:0",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:0:root",
+      "bank_name": "scan",
+      "box": [
+        300,
+        700,
+        378,
+        909
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:0:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:0:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:3",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:3:natural_stop",
+      "bank_name": "background",
+      "box": [
+        250,
+        50,
+        298,
+        210
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:3:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:3:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:3",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:3:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        200,
+        700,
+        248,
+        860
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:3:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:3:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:3",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:3:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        250,
+        50,
+        298,
+        210
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:3:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:3:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:3",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:3:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        200,
+        700,
+        248,
+        860
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:3:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:3:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:3",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:3:root",
+      "bank_name": "background",
+      "box": [
+        250,
+        50,
+        298,
+        210
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:3:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:3:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:3",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:3:root",
+      "bank_name": "scan",
+      "box": [
+        200,
+        700,
+        248,
+        860
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:3:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:3:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:4",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:4:natural_stop",
+      "bank_name": "background",
+      "box": [
+        160,
+        40,
+        206,
+        273
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:4:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:4:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:4",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:4:natural_stop",
+      "bank_name": "scan",
+      "box": [
+        100,
+        700,
+        146,
+        933
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:4:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:4:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:4",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:4:reference_scan_position",
+      "bank_name": "background",
+      "box": [
+        160,
+        40,
+        206,
+        273
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:4:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:4:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:4",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:4:reference_scan_position",
+      "bank_name": "scan",
+      "box": [
+        100,
+        700,
+        146,
+        933
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:4:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:4:scan"
+      }
+    },
+    {
+      "owner_id": "gt:13923:4",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:4:root",
+      "bank_name": "background",
+      "box": [
+        160,
+        40,
+        206,
+        273
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:4:background",
+      "extent_submode": "equal_size_background",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:4:background"
+      }
+    },
+    {
+      "owner_id": "gt:13923:4",
+      "context_id": "ctx:sentinel:sentinel:wall-bowl:13923:4:root",
+      "bank_name": "scan",
+      "box": [
+        100,
+        700,
+        146,
+        933
+      ],
+      "identity_kind": "owner_neutral_foil_geometry",
+      "identity_id": "foil-geometry:gt:13923:4:scan",
+      "extent_submode": "sorted_scan",
+      "review_status": "reviewed_explicit_geometry",
+      "provenance": {
+        "artifact_path": "candidate-bank-foil-review.json",
+        "artifact_sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "source_row_id": "foil-review:gt:13923:4:scan"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "bottle": {
+    "text": "bottle",
+    "text_sha256": "bf394d5be6acbf22b578fb04d255fd9f4367e49a1ff6ed7048fd1328f12c545b",
+    "token_ids": [65, 62118],
+    "token_ids_sha256": "6f7e7dcd069d8a0da28518b353c8ea860ba65f1db1b822710b27ac462af1394f",
+    "forced_row_prefix_through_box_start_token_ids": [151646, 65, 62118, 151647, 151648],
+    "forced_row_prefix_through_box_start_sha256": "c6b54ce8457338d10cd11e449a4cb4305b5dfe6c0e1ba2a3e889b5cbb45df868"
+  },
+  "kite": {
+    "text": "kite",
+    "text_sha256": "c5e6e7d6486ad35cca89c3b64d5d0cae86ab76a8d2f7da9e63d56ca09f64db7d",
+    "token_ids": [74, 632],
+    "token_ids_sha256": "926547fd802580e7b5328a0796020d8ed12e3f57fa9097605d28079812050ee6",
+    "forced_row_prefix_through_box_start_token_ids": [151646, 74, 632, 151647, 151648],
+    "forced_row_prefix_through_box_start_sha256": "b69f2c6242e9336cc3063a253666c39f2e080e28d549be9f45fad3d54fa896ed"
+  },
+  "wine glass": {
+    "text": "wine glass",
+    "text_sha256": "e43add41813ca672c24a0139df9863bd2356fd6f65c26cd5727037d05df7d23e",
+    "token_ids": [71437, 8991],
+    "token_ids_sha256": "bf16b402068faf665cd7408186526302be1ab9da9c19226aea59dd0d28573c19",
+    "forced_row_prefix_through_box_start_token_ids": [151646, 71437, 8991, 151647, 151648],
+    "forced_row_prefix_through_box_start_sha256": "d6e3af9c0a4ab25dbbbfa481f85872b3c70844856553262dac31fafa6fd07442"
+  }
+}

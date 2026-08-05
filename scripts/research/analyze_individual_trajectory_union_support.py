@@ -68,6 +68,7 @@ _REVIEW_ENTITY_STATUSES = frozenset(
 _COORD_RE = re.compile(r"coord_(\d+)")
 _ALLOWED_IDENTITY_KNOBS = frozenset(
     {
+        "device",
         "decode_mode",
         "do_sample",
         "sampling_enabled",
