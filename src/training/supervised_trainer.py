@@ -6,7 +6,8 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 import inspect
 import os
-from typing import Any, Protocol
+import time
+from typing import TYPE_CHECKING, Any, Protocol
 
 import torch
 
@@ -18,6 +19,9 @@ from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
 from src.runtime.finite_gates import GateDecision
 from src.supervision import TokenSequence
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
+
+if TYPE_CHECKING:
+    from src.training.forward_input_provider import ForwardInputProvider
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,9 @@ class CompletedStepObservation:
     optimizer_update_status: str
     finite_status: str
     scheduler_artifact: Mapping[str, Any] = field(default_factory=dict)
+    step_duration_seconds: float | None = None
+    input_build_seconds: float | None = None
+    input_wait_seconds: float | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +62,9 @@ class CompletedStepObservation:
             "optimizer_update_status": self.optimizer_update_status,
             "finite_status": self.finite_status,
             "scheduler": dict(self.scheduler_artifact),
+            "step_duration_seconds": self.step_duration_seconds,
+            "input_build_seconds": self.input_build_seconds,
+            "input_wait_seconds": self.input_wait_seconds,
         }
 
 
@@ -111,7 +121,17 @@ class RuntimeBoundary(Protocol):
 
 
 class LossRunnerBoundary(Protocol):
-    def compute(self, contexts: Sequence[Any]) -> Any: ...
+    def prepare_planned_step(
+        self, micro_steps_or_sequences: Sequence[Any], **kwargs: Any
+    ) -> Any: ...
+
+    def compute_micro_step(
+        self, context: Any, plan: Any, *, local_micro_step_index: int
+    ) -> Any: ...
+
+    def finalize_planned_step(
+        self, micro_loss_artifacts: Sequence[Any], plan: Any
+    ) -> Any: ...
 
 
 QwenForwardFn = Callable[[Any, SupervisedMicroStep], Any]
@@ -135,7 +155,30 @@ class SupervisedTrainer:
         on_eval: ScheduledStepHandler | None = None,
         on_checkpoint: ScheduledStepHandler | None = None,
         on_final: ScheduledStepHandler | None = None,
+        forward_input_provider: "ForwardInputProvider | None" = None,
     ) -> None:
+        if not all(
+            callable(getattr(loss_runner, name, None))
+            for name in (
+                "prepare_planned_step",
+                "compute_micro_step",
+                "finalize_planned_step",
+            )
+        ):
+            raise RuntimeContractError(
+                "SupervisedTrainer requires a streaming-capable loss runner "
+                "(prepare_planned_step/compute_micro_step/finalize_planned_step); "
+                "the non-streaming batch loss path has been removed",
+                code="trainer.loss_runner_requires_streaming_protocol",
+                context={"loss_runner": type(loss_runner).__name__},
+            )
+        if forward_input_provider is not None and qwen_forward is not None:
+            raise RuntimeContractError(
+                "forward_input_provider and a custom qwen_forward cannot be combined: "
+                "the provider path calls run_qwen_forward directly and would silently "
+                "ignore the custom qwen_forward callable",
+                code="trainer.forward_input_provider_conflicts_with_custom_qwen_forward",
+            )
         self.model = model
         self.schedule = schedule
         self.pack_stream = iter(pack_stream)
@@ -147,6 +190,7 @@ class SupervisedTrainer:
         self.on_eval = on_eval
         self.on_checkpoint = on_checkpoint
         self.on_final = on_final
+        self.forward_input_provider = forward_input_provider
 
     def run(self) -> SupervisedTrainingResult:
         latest_observation: CompletedStepObservation | None = None
@@ -159,81 +203,11 @@ class SupervisedTrainer:
         )
 
         for planned_step_id in range(1, self.schedule.resolved_max_steps + 1):
-            if _supports_streaming_loss(self.loss_runner):
-                observation, consumed_count = self._run_streaming_planned_step(
-                    planned_step_id=planned_step_id,
-                    micro_steps_per_planned_step=micro_steps_per_planned_step,
-                )
-                consumed_micro_steps += consumed_count
-                latest_observation = observation
-                self._notify_completed_step(observation)
-                self._trigger_scheduled_events(
-                    planned_step_id=planned_step_id,
-                    observation=observation,
-                    scheduled_event_counts=scheduled_event_counts,
-                )
-                continue
-
-            contexts: list[Any] = []
-            for local_micro_step_index in range(micro_steps_per_planned_step):
-                micro_step = self._next_micro_step(
-                    planned_step_id=planned_step_id,
-                    local_micro_step_index=local_micro_step_index,
-                )
-                consumed_micro_steps += 1
-                micro_step = self.runtime.move_micro_step(
-                    micro_step,
-                    planned_step_id=planned_step_id,
-                    local_micro_step_index=local_micro_step_index,
-                )
-                forward_result = self.qwen_forward(
-                    _runtime_model(self.runtime, self.model),
-                    micro_step,
-                )
-                contexts.append(
-                    self.loss_context_factory(micro_step, forward_result)
-                )
-                del forward_result, micro_step
-
-            loss_bundle = self.loss_runner.compute(tuple(contexts))
-            pre_decision = self.runtime.pre_backward(
-                loss_bundle,
+            observation, consumed_count = self._run_streaming_planned_step(
                 planned_step_id=planned_step_id,
+                micro_steps_per_planned_step=micro_steps_per_planned_step,
             )
-            post_decision: GateDecision | None = None
-            optimizer_update_status = pre_decision.optimizer_update_status
-            finite_status = pre_decision.finite_status
-
-            if pre_decision.should_call_backward:
-                self.runtime.backward(
-                    _total_loss(loss_bundle),
-                    planned_step_id=planned_step_id,
-                    sync_gradients=True,
-                )
-                post_decision = self.runtime.post_backward(
-                    planned_step_id=planned_step_id,
-                )
-                optimizer_update_status = post_decision.optimizer_update_status
-                finite_status = post_decision.finite_status
-                if post_decision.should_call_optimizer_step:
-                    self.runtime.clip_gradients(planned_step_id=planned_step_id)
-                    self.runtime.optimizer_step(planned_step_id=planned_step_id)
-                    optimizer_update_status = "applied"
-
-            scheduler_artifact = _optional_artifact(
-                self.runtime.scheduler_step(planned_step_id=planned_step_id)
-            )
-            self.runtime.zero_gradients(planned_step_id=planned_step_id)
-
-            observation = CompletedStepObservation(
-                planned_step_id=planned_step_id,
-                micro_step_count=len(contexts),
-                loss_bundle_artifact=_artifact(loss_bundle),
-                optimizer_update_status=optimizer_update_status,
-                finite_status=finite_status,
-                scheduler_artifact=scheduler_artifact,
-            )
-            del contexts, loss_bundle, pre_decision, post_decision, scheduler_artifact
+            consumed_micro_steps += consumed_count
             latest_observation = observation
             self._notify_completed_step(observation)
             self._trigger_scheduled_events(
@@ -255,6 +229,8 @@ class SupervisedTrainer:
         planned_step_id: int,
         micro_steps_per_planned_step: int,
     ) -> tuple[CompletedStepObservation, int]:
+        step_start_monotonic = time.monotonic()
+        input_build_seconds = 0.0
         moved_micro_steps: list[SupervisedMicroStep] = []
         for local_micro_step_index in range(micro_steps_per_planned_step):
             micro_step = self._next_micro_step(
@@ -269,89 +245,118 @@ class SupervisedTrainer:
                 )
             )
 
-        plan = _prepare_streaming_loss_plan(
-            self.loss_runner,
-            tuple(moved_micro_steps),
-            runtime=self.runtime,
-            schedule=self.schedule,
-            planned_step_id=planned_step_id,
-        )
-        micro_loss_artifacts: list[Mapping[str, Any]] = []
-        pre_decision: GateDecision | None = None
-        post_decision: GateDecision | None = None
-        optimizer_update_status = "not_started"
-        finite_status = "unavailable"
-
-        for local_micro_step_index, micro_step in enumerate(moved_micro_steps):
-            sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
-            with self.runtime.accumulation_context(sync_gradients=sync_gradients):
-                _sync_device_if_requested(micro_step.forward_device)
-                forward_result = self.qwen_forward(
-                    _runtime_model(self.runtime, self.model),
-                    micro_step,
-                )
-                _sync_forward_result_if_requested(forward_result)
-                _sync_forward_result_if_requested(forward_result)
-                context = self.loss_context_factory(micro_step, forward_result)
-                _sync_forward_result_if_requested(forward_result)
-                _sync_forward_result_if_requested(forward_result)
-                loss_bundle = self.loss_runner.compute_micro_step(
-                    context,
-                    plan,
-                    local_micro_step_index=local_micro_step_index,
-                )
-                _sync_loss_bundle_if_requested(loss_bundle)
-                micro_loss_artifact = _artifact(loss_bundle)
-                micro_loss_artifacts.append(micro_loss_artifact)
-                pre_decision = self.runtime.pre_backward(
-                    loss_bundle,
-                    planned_step_id=planned_step_id,
-                )
-                optimizer_update_status = pre_decision.optimizer_update_status
-                finite_status = pre_decision.finite_status
-                if not pre_decision.should_call_backward:
-                    break
-                _sync_loss_bundle_if_requested(loss_bundle)
-                self.runtime.backward(
-                    _total_loss(loss_bundle),
-                    planned_step_id=planned_step_id,
-                    sync_gradients=sync_gradients,
-                )
-                _sync_loss_bundle_if_requested(loss_bundle)
-            del loss_bundle, context, forward_result
-
-        if pre_decision is None:
-            raise RuntimeContractError(
-                "streaming planned step did not produce any micro-step decisions",
-                code="trainer.streaming_empty_step",
-                context={"planned_step_id": planned_step_id},
-            )
-
-        loss_bundle_artifact = self.loss_runner.finalize_planned_step(
-            tuple(micro_loss_artifacts),
-            plan,
-        )
-        if len(micro_loss_artifacts) != len(moved_micro_steps):
-            loss_bundle_artifact = _partial_loss_artifact(
-                loss_bundle_artifact,
-                processed_micro_step_count=len(micro_loss_artifacts),
-                planned_micro_step_count=len(moved_micro_steps),
-            )
-        if pre_decision.should_call_backward:
-            post_decision = self.runtime.post_backward(
+        provider = self.forward_input_provider
+        if provider is not None:
+            provider.begin_planned_step(planned_step_id, tuple(moved_micro_steps))
+        try:
+            plan = _prepare_streaming_loss_plan(
+                self.loss_runner,
+                tuple(moved_micro_steps),
+                runtime=self.runtime,
+                schedule=self.schedule,
                 planned_step_id=planned_step_id,
             )
-            optimizer_update_status = post_decision.optimizer_update_status
-            finite_status = post_decision.finite_status
-            if post_decision.should_call_optimizer_step:
-                self.runtime.clip_gradients(planned_step_id=planned_step_id)
-                self.runtime.optimizer_step(planned_step_id=planned_step_id)
-                optimizer_update_status = "applied"
+            micro_loss_artifacts: list[Mapping[str, Any]] = []
+            pre_decision: GateDecision | None = None
+            post_decision: GateDecision | None = None
+            optimizer_update_status = "not_started"
+            finite_status = "unavailable"
+            input_wait_seconds = 0.0
 
-        scheduler_artifact = _optional_artifact(
-            self.runtime.scheduler_step(planned_step_id=planned_step_id)
-        )
-        self.runtime.zero_gradients(planned_step_id=planned_step_id)
+            for local_micro_step_index, micro_step in enumerate(moved_micro_steps):
+                sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
+                with self.runtime.accumulation_context(sync_gradients=sync_gradients):
+                    _sync_device_if_requested(micro_step.forward_device)
+                    if provider is not None:
+                        forward_inputs = provider.take(local_micro_step_index, micro_step)
+                        input_wait_seconds += provider.last_take_wait_seconds
+                        forward_result = run_qwen_forward(
+                            _runtime_model(self.runtime, self.model),
+                            forward_inputs,
+                            expected_vocab_size=micro_step.expected_vocab_size,
+                            extra_model_kwargs=micro_step.extra_model_kwargs,
+                            fa2_branch_evidence=micro_step.fa2_branch_evidence,
+                            fa2_model_dtype=micro_step.fa2_model_dtype,
+                            capture_fa2_branch=micro_step.capture_fa2_branch,
+                            require_fa2_branch_proof=micro_step.require_fa2_branch_proof,
+                        )
+                    else:
+                        forward_result = self.qwen_forward(
+                            _runtime_model(self.runtime, self.model),
+                            micro_step,
+                        )
+                    input_build_seconds += _input_build_seconds_from_receipt(
+                        getattr(forward_result, "receipt", None)
+                    )
+                    _sync_forward_result_if_requested(forward_result)
+                    context = self.loss_context_factory(micro_step, forward_result)
+                    _sync_forward_result_if_requested(forward_result)
+                    loss_bundle = self.loss_runner.compute_micro_step(
+                        context,
+                        plan,
+                        local_micro_step_index=local_micro_step_index,
+                    )
+                    _sync_loss_bundle_if_requested(loss_bundle)
+                    micro_loss_artifact = _artifact(loss_bundle)
+                    micro_loss_artifacts.append(micro_loss_artifact)
+                    pre_decision = self.runtime.pre_backward(
+                        loss_bundle,
+                        planned_step_id=planned_step_id,
+                    )
+                    optimizer_update_status = pre_decision.optimizer_update_status
+                    finite_status = pre_decision.finite_status
+                    if not pre_decision.should_call_backward:
+                        break
+                    _sync_loss_bundle_if_requested(loss_bundle)
+                    self.runtime.backward(
+                        _total_loss(loss_bundle),
+                        planned_step_id=planned_step_id,
+                        sync_gradients=sync_gradients,
+                    )
+                    _sync_loss_bundle_if_requested(loss_bundle)
+                del loss_bundle, context, forward_result
+
+            if pre_decision is None:
+                raise RuntimeContractError(
+                    "streaming planned step did not produce any micro-step decisions",
+                    code="trainer.streaming_empty_step",
+                    context={"planned_step_id": planned_step_id},
+                )
+
+            loss_bundle_artifact = self.loss_runner.finalize_planned_step(
+                tuple(micro_loss_artifacts),
+                plan,
+            )
+            if len(micro_loss_artifacts) != len(moved_micro_steps):
+                loss_bundle_artifact = _partial_loss_artifact(
+                    loss_bundle_artifact,
+                    processed_micro_step_count=len(micro_loss_artifacts),
+                    planned_micro_step_count=len(moved_micro_steps),
+                )
+            if pre_decision.should_call_backward:
+                post_decision = self.runtime.post_backward(
+                    planned_step_id=planned_step_id,
+                )
+                optimizer_update_status = post_decision.optimizer_update_status
+                finite_status = post_decision.finite_status
+                if post_decision.should_call_optimizer_step:
+                    self.runtime.clip_gradients(planned_step_id=planned_step_id)
+                    self.runtime.optimizer_step(planned_step_id=planned_step_id)
+                    optimizer_update_status = "applied"
+
+            scheduler_artifact = _optional_artifact(
+                self.runtime.scheduler_step(planned_step_id=planned_step_id)
+            )
+            self.runtime.zero_gradients(planned_step_id=planned_step_id)
+            # Stop the boundary here, immediately after gradient zeroing and
+            # before provider teardown: `end_planned_step()` (cancellation,
+            # queue drain, bounded thread join) is cleanup, not part of the
+            # normative compute/optimizer boundary, and must not inflate
+            # `step_duration_seconds`.
+            step_duration_seconds = time.monotonic() - step_start_monotonic
+        finally:
+            if provider is not None:
+                provider.end_planned_step()
 
         consumed_count = len(moved_micro_steps)
         observation = CompletedStepObservation(
@@ -361,6 +366,9 @@ class SupervisedTrainer:
             optimizer_update_status=optimizer_update_status,
             finite_status=finite_status,
             scheduler_artifact=scheduler_artifact,
+            step_duration_seconds=step_duration_seconds,
+            input_build_seconds=input_build_seconds,
+            input_wait_seconds=input_wait_seconds,
         )
         del moved_micro_steps, micro_loss_artifacts, plan
         del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact
@@ -472,17 +480,6 @@ def _default_qwen_forward(model: Any, micro_step: SupervisedMicroStep) -> Any:
 
 def _runtime_model(runtime: RuntimeBoundary, fallback_model: Any) -> Any:
     return getattr(runtime, "model", fallback_model)
-
-
-def _supports_streaming_loss(loss_runner: Any) -> bool:
-    return all(
-        callable(getattr(loss_runner, name, None))
-        for name in (
-            "prepare_planned_step",
-            "compute_micro_step",
-            "finalize_planned_step",
-        )
-    )
 
 
 def _prepare_streaming_loss_plan(
@@ -613,6 +610,29 @@ def _sync_device_if_requested(device: torch.device | str | None) -> None:
     torch_device = torch.device(device)
     if torch_device.type == "cuda" and torch.cuda.is_available():
         torch.cuda.synchronize(torch_device)
+
+
+def _input_build_seconds_from_receipt(receipt: Any) -> float:
+    """Honest CPU input-build time from the existing Qwen forward receipt.
+
+    Reuses `QwenForwardReceipt.timings_ns["total_build_inputs_ns"]`, which is
+    always populated by `build_qwen_forward_inputs` (not gated behind the
+    debug sync-profiling flag). Returns 0.0 for any receipt shape that does
+    not carry it (e.g. test doubles) rather than inventing a value.
+    """
+
+    timings_ns = getattr(receipt, "timings_ns", None)
+    if timings_ns is None and isinstance(receipt, Mapping):
+        timings_ns = receipt.get("timings_ns")
+    if not isinstance(timings_ns, Mapping):
+        return 0.0
+    value = timings_ns.get("total_build_inputs_ns")
+    if value is None:
+        return 0.0
+    try:
+        return max(0.0, float(value) / 1_000_000_000.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _artifact(value: Any) -> Mapping[str, Any]:

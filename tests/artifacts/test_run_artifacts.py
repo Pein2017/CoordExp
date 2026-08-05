@@ -112,6 +112,26 @@ def test_schedule_can_be_bound_once_after_early_initialization(tmp_path: Path) -
     assert exc_info.value.code == "run_writer.schedule_already_bound"
 
 
+@pytest.mark.parametrize("mode", ["overlapped", "synchronous"])
+def test_forward_input_provider_mode_can_be_bound_once_per_mode(
+    tmp_path: Path, mode: str
+) -> None:
+    writer = _writer(tmp_path)
+    assert writer.read_run()["forward_input_provider_mode"] is None
+    writer.bind_forward_input_provider_mode(mode)
+    assert writer.read_run()["forward_input_provider_mode"] == mode
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.bind_forward_input_provider_mode(mode)
+    assert exc_info.value.code == "run_writer.forward_input_provider_mode_already_bound"
+
+
+def test_forward_input_provider_mode_rejects_unknown_values(tmp_path: Path) -> None:
+    writer = _writer(tmp_path)
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.bind_forward_input_provider_mode("bogus")
+    assert exc_info.value.code == "run_writer.invalid_forward_input_provider_mode"
+
+
 def test_initialize_failure_leaves_no_partial_run_tree(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

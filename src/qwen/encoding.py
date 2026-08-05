@@ -431,6 +431,13 @@ def _token_indices_for_char_range(
     example_id: str,
     span_text: str,
 ) -> tuple[int, ...]:
+    # Must stay a full linear scan, not a bisect/binary search: zero-width
+    # special-token offsets (e.g. (0, 0)) can appear non-monotonically inside
+    # offset_mapping, which would silently break a sorted-search shortcut.
+    # See openspec/changes/streamline-coordexp-swift-base-infrastructure/
+    # implementation-notes.md "M5a" and
+    # test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisect
+    # for the concrete counterexample.
     indices: list[int] = []
     for index, (token_start, token_end) in enumerate(offset_mapping):
         if token_end <= char_start or token_start >= char_end:

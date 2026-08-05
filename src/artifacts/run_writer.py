@@ -88,6 +88,7 @@ class RunWriter:
                 "terminal_error": None,
                 "warning_counts": {},
                 "materializations": {},
+                "forward_input_provider_mode": None,
             },
             )
             staging_writer.logging_path.touch(exist_ok=False)
@@ -185,6 +186,24 @@ class RunWriter:
                 code="run_writer.schedule_already_bound",
             )
         state["resolved_max_steps"] = resolved_max_steps
+        self._write_json_atomic(self.run_path, state)
+
+    def bind_forward_input_provider_mode(self, mode: str) -> None:
+        """Record the resolved forward-input provider mode exactly once."""
+        if mode not in {"overlapped", "synchronous"}:
+            raise ArtifactContractError(
+                "forward input provider mode must be 'overlapped' or 'synchronous'",
+                code="run_writer.invalid_forward_input_provider_mode",
+                context={"mode": mode},
+            )
+        state = self.read_run()
+        current = state.get("forward_input_provider_mode")
+        if current is not None:
+            raise ArtifactContractError(
+                "forward input provider mode is immutable",
+                code="run_writer.forward_input_provider_mode_already_bound",
+            )
+        state["forward_input_provider_mode"] = mode
         self._write_json_atomic(self.run_path, state)
 
     def finalize(

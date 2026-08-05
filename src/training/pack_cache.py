@@ -142,7 +142,6 @@ def build_packing_cache_determinants(
             "path": str(dataset_path),
             "sample_limit": dataset.sample_limit,
             "size_bytes": int(stat.st_size),
-            "mtime_ns": int(stat.st_mtime_ns),
             "sha256": _file_sha256(dataset_path),
         },
         "template": config.template.model_dump(mode="json"),
@@ -356,7 +355,15 @@ def load_rank_micro_steps_from_cache(
     schedule: ResolvedStepSchedule,
     rank: int,
     world_size: int,
+    _force_full_chunk_pass: bool = False,
 ) -> tuple[SupervisedMicroStep, ...]:
+    """Load one rank's required micro-steps, skipping unneeded chunks.
+
+    `_force_full_chunk_pass` is an internal, test/benchmark-only control for
+    the M2 paired A/B (rank-selective vs. full-pass loading on the same
+    code/config/cache); it is not a public YAML/CLI compatibility surface.
+    """
+
     if world_size <= 0:
         raise ValueError("world_size must be positive")
     if rank < 0 or rank >= world_size:
@@ -375,9 +382,14 @@ def load_rank_micro_steps_from_cache(
             world_size=world_size,
             micro_step_count=micro_step_count,
         )
-        required = set(indices)
+        required = frozenset(indices)
         selected: dict[int, SupervisedMicroStep] = {}
-        for start, chunk_steps in _iter_validated_chunks(root, manifest):
+        for start, chunk_steps in _iter_required_chunks(
+            root,
+            manifest,
+            required=required,
+            force_full_pass=_force_full_chunk_pass,
+        ):
             for offset, micro_step in enumerate(chunk_steps):
                 absolute_index = start + offset
                 if absolute_index in required:
@@ -504,20 +516,52 @@ def _iter_validated_chunks(
     cache_dir: Path, manifest: Mapping[str, Any]
 ) -> Iterator[tuple[int, tuple[SupervisedMicroStep, ...]]]:
     for chunk in manifest["chunks"]:
-        chunk_path = _safe_chunk_path(cache_dir, chunk["path"])
-        _validate_chunk_sha256(chunk_path, expected_sha256=chunk["sha256"])
-        try:
-            with chunk_path.open("rb") as handle:
-                chunk_steps = _RestrictedCacheUnpickler(handle).load()
-        except _INVALID_CACHE_ERRORS as exc:
-            raise ValueError(f"packing cache chunk payload is unreadable: {chunk_path}") from exc
-        if not isinstance(chunk_steps, tuple):
-            raise ValueError("packing cache chunk payload must be a tuple")
-        if len(chunk_steps) != chunk["count"]:
-            raise ValueError("packing cache chunk payload length must match declared count")
-        if not all(isinstance(step, SupervisedMicroStep) for step in chunk_steps):
-            raise ValueError("packing cache chunk payload must contain supervised micro-steps")
-        yield chunk["start"], chunk_steps
+        yield _load_validated_chunk(cache_dir, chunk)
+
+
+def _iter_required_chunks(
+    cache_dir: Path,
+    manifest: Mapping[str, Any],
+    *,
+    required: frozenset[int],
+    force_full_pass: bool,
+) -> Iterator[tuple[int, tuple[SupervisedMicroStep, ...]]]:
+    """Yield only chunks whose declared `[start, end)` intersects `required`.
+
+    Every chunk declaration was already structurally validated (contiguity,
+    counts, digest syntax, path safety, file existence) by
+    `_load_validated_manifest` before this runs, so skipping a chunk here
+    never skips that manifest-level check. A skipped chunk's payload bytes
+    are never read or digest-verified; every chunk that IS yielded still
+    goes through the exact same digest-and-payload validation as a full
+    pass (`_load_validated_chunk`).
+    """
+
+    for chunk in manifest["chunks"]:
+        start = int(chunk["start"])
+        end = int(chunk["end"])
+        if not force_full_pass and not any(start <= index < end for index in required):
+            continue
+        yield _load_validated_chunk(cache_dir, chunk)
+
+
+def _load_validated_chunk(
+    cache_dir: Path, chunk: Mapping[str, Any]
+) -> tuple[int, tuple[SupervisedMicroStep, ...]]:
+    chunk_path = _safe_chunk_path(cache_dir, chunk["path"])
+    _validate_chunk_sha256(chunk_path, expected_sha256=chunk["sha256"])
+    try:
+        with chunk_path.open("rb") as handle:
+            chunk_steps = _RestrictedCacheUnpickler(handle).load()
+    except _INVALID_CACHE_ERRORS as exc:
+        raise ValueError(f"packing cache chunk payload is unreadable: {chunk_path}") from exc
+    if not isinstance(chunk_steps, tuple):
+        raise ValueError("packing cache chunk payload must be a tuple")
+    if len(chunk_steps) != chunk["count"]:
+        raise ValueError("packing cache chunk payload length must match declared count")
+    if not all(isinstance(step, SupervisedMicroStep) for step in chunk_steps):
+        raise ValueError("packing cache chunk payload must contain supervised micro-steps")
+    return chunk["start"], chunk_steps
 
 
 def _safe_chunk_path(cache_dir: Path, value: Any) -> Path:

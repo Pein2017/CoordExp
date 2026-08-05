@@ -39,7 +39,7 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
         pack_stream=_micro_steps(4, log),
         qwen_forward=_forward(log),
         loss_context_factory=_loss_context(log),
-        loss_runner=FakeLossRunner(log),
+        loss_runner=StreamingFakeLossRunner(log),
         runtime=FakeRuntime(log),
         on_completed_step=observations.append,
     )
@@ -51,7 +51,7 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
     assert [item.planned_step_id for item in observations] == [1, 2]
     assert observations[0].micro_step_count == 2
     assert observations[0].optimizer_update_status == "applied"
-    assert observations[0].loss_bundle_artifact == {"total_loss": 1.0}
+    assert observations[0].loss_bundle_artifact["total_loss"] == 1.0
     assert observations[0].scheduler_artifact == {
         "scheduler_step_count": 1,
         "learning_rates": [{"group_index": 0, "lr": 0.01}],
@@ -65,15 +65,23 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
     assert log == [
         "stream:0",
         "runtime.move:1:0",
-        "forward:0",
-        "context:0",
         "stream:1",
         "runtime.move:1:1",
+        "streaming.prepare:2",
+        "runtime.accumulation:False:enter",
+        "forward:0",
+        "context:0",
+        "streaming.loss:0",
+        "runtime.pre:1",
+        "runtime.backward:0.5:sync=False",
+        "runtime.accumulation:False:exit",
+        "runtime.accumulation:True:enter",
         "forward:1",
         "context:1",
-        "loss:2",
+        "streaming.loss:1",
         "runtime.pre:1",
-        "runtime.backward:1.0:sync=True",
+        "runtime.backward:0.5:sync=True",
+        "runtime.accumulation:True:exit",
         "runtime.post:1",
         "runtime.clip:1",
         "runtime.optimizer:1",
@@ -81,15 +89,23 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
         "runtime.zero:1",
         "stream:2",
         "runtime.move:2:0",
-        "forward:2",
-        "context:2",
         "stream:3",
         "runtime.move:2:1",
+        "streaming.prepare:2",
+        "runtime.accumulation:False:enter",
+        "forward:2",
+        "context:2",
+        "streaming.loss:0",
+        "runtime.pre:2",
+        "runtime.backward:0.5:sync=False",
+        "runtime.accumulation:False:exit",
+        "runtime.accumulation:True:enter",
         "forward:3",
         "context:3",
-        "loss:2",
+        "streaming.loss:1",
         "runtime.pre:2",
-        "runtime.backward:1.0:sync=True",
+        "runtime.backward:0.5:sync=True",
+        "runtime.accumulation:True:exit",
         "runtime.post:2",
         "runtime.clip:2",
         "runtime.optimizer:2",
@@ -121,7 +137,7 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
         pack_stream=_micro_steps(2),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
         on_eval=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
         on_checkpoint=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
@@ -166,7 +182,7 @@ def test_supervised_trainer_runs_same_step_eval_before_checkpoint() -> None:
         pack_stream=_micro_steps(1),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
         on_eval=lambda event, _observation: scheduled_calls.append(event.event),
         on_checkpoint=lambda event, _observation: scheduled_calls.append(event.event),
@@ -200,7 +216,7 @@ def test_completed_callback_precedes_direct_same_step_handlers() -> None:
         pack_stream=_micro_steps(1),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
         on_completed_step=lambda observation: calls.append(
             ("completed", observation.planned_step_id)
@@ -236,7 +252,7 @@ def test_supervised_training_result_is_bounded_independent_of_step_count(
         pack_stream=_micro_steps(step_count),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
     )
 
@@ -270,7 +286,7 @@ def test_supervised_trainer_rejects_required_scheduled_event_without_handler() -
         pack_stream=_micro_steps(1),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
     )
 
@@ -300,7 +316,7 @@ def test_supervised_trainer_allows_optional_unhandled_scheduled_events() -> None
         pack_stream=_micro_steps(1),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
     )
 
@@ -326,7 +342,7 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
         pack_stream=_micro_steps(1, log),
         qwen_forward=_forward(log),
         loss_context_factory=_loss_context(log),
-        loss_runner=FakeLossRunner(log),
+        loss_runner=StreamingFakeLossRunner(log),
         runtime=FakeRuntime(log, unsafe_pre_steps={1}),
     )
 
@@ -348,7 +364,7 @@ def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_upd
         pack_stream=_micro_steps(1, log),
         qwen_forward=_forward(log),
         loss_context_factory=_loss_context(log),
-        loss_runner=FakeLossRunner(log),
+        loss_runner=StreamingFakeLossRunner(log),
         runtime=FakeRuntime(log, unsafe_post_steps={1}),
     )
 
@@ -408,7 +424,7 @@ def test_default_qwen_forward_uses_runtime_selected_forward_device(monkeypatch) 
         schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
         pack_stream=_micro_steps(1, log),
         loss_context_factory=_loss_context(log),
-        loss_runner=FakeLossRunner(log),
+        loss_runner=StreamingFakeLossRunner(log),
         runtime=FakeRuntime(log, forward_device="cuda:7"),
     )
 
@@ -437,7 +453,7 @@ def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
         pack_stream=_micro_steps(1),
         qwen_forward=qwen_forward,
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=RuntimeWithPreparedModel([], prepared_model),
     )
 
@@ -467,7 +483,7 @@ def test_supervised_trainer_runs_with_accelerate_prepared_runtime_model() -> Non
         pack_stream=_micro_steps(1),
         qwen_forward=qwen_forward,
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=runtime,
     )
 
@@ -485,7 +501,7 @@ def test_supervised_training_result_contains_no_live_tensors() -> None:
         pack_stream=_micro_steps(1),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
     )
 
@@ -518,7 +534,7 @@ def test_supervised_trainer_fails_if_pack_stream_cannot_fill_planned_window() ->
         pack_stream=_micro_steps(1),
         qwen_forward=_forward([]),
         loss_context_factory=_loss_context([]),
-        loss_runner=FakeLossRunner([]),
+        loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
     )
 
@@ -623,6 +639,323 @@ def test_streaming_completion_callback_does_not_expose_micro_or_gate_events() ->
     assert observations[0].micro_step_count == 2
 
 
+def test_streaming_step_records_input_build_seconds_from_forward_receipt() -> None:
+    def qwen_forward(_model: object, micro_step: SupervisedMicroStep) -> FakeForwardResult:
+        pack_index = int(str(micro_step.pack).split("-")[1])
+        return FakeForwardResult(
+            pack_index=pack_index,
+            logits=torch.zeros(1, 2, 3),
+            receipt={"timings_ns": {"total_build_inputs_ns": 250_000_000}},
+        )
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2),
+        qwen_forward=qwen_forward,
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    result = trainer.run()
+
+    observation = result.latest_observation
+    assert observation is not None
+    # Two micro-steps, each contributing 0.25s of honest input-build time
+    # from the existing Qwen forward receipt (never invented GPU time).
+    assert observation.input_build_seconds == pytest.approx(0.5)
+    assert observation.input_wait_seconds == 0.0
+    assert observation.step_duration_seconds >= 0.0
+    assert observation.to_artifact_dict()["input_build_seconds"] == pytest.approx(0.5)
+
+
+def test_streaming_step_duration_excludes_completed_step_and_scheduled_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A monotonically incrementing fake clock (one fixed tick unit per call,
+    # regardless of caller) is shared by the trainer's own boundary timing
+    # AND by the completed-step/scheduled handlers below, which each
+    # explicitly consume one tick of their own. If the compute/optimizer
+    # boundary wrongly extended to include handler time, the measured
+    # `step_duration_seconds` would inflate to a larger, precisely
+    # predictable wrong value (asserted against explicitly below) rather
+    # than merely raising on a finite iterator.
+    tick_count = 0
+
+    def fake_monotonic() -> float:
+        nonlocal tick_count
+        value = float(tick_count)
+        tick_count += 1
+        return value
+
+    monkeypatch.setattr(trainer_module.time, "monotonic", fake_monotonic)
+
+    observations: list[CompletedStepObservation] = []
+    calls: list[str] = []
+
+    def on_completed_step(observation: CompletedStepObservation) -> None:
+        trainer_module.time.monotonic()  # consumes a tick; must not count toward the boundary
+        observations.append(observation)
+        calls.append(f"completed:{observation.planned_step_id}")
+
+    def on_eval(event: StepScheduleEvent, observation: CompletedStepObservation) -> None:
+        del event, observation
+        trainer_module.time.monotonic()  # consumes a tick; must not count toward the boundary
+        calls.append("eval")
+
+    def on_checkpoint(event: StepScheduleEvent, observation: CompletedStepObservation) -> None:
+        del event, observation
+        trainer_module.time.monotonic()  # consumes a tick; must not count toward the boundary
+        calls.append("checkpoint")
+
+    schedule = _schedule(
+        resolved_max_steps=2,
+        grad_accum_steps=1,
+        events={
+            "eval.forward": (_event(1, "eval.forward", ("explicit_step",)),),
+            "checkpoint": (_event(2, "checkpoint", ("save_final",)),),
+            "final": (),
+        },
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=schedule,
+        pack_stream=_micro_steps(2),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        on_completed_step=on_completed_step,
+        on_eval=on_eval,
+        on_checkpoint=on_checkpoint,
+    )
+
+    trainer.run()
+
+    assert calls == ["completed:1", "eval", "completed:2", "checkpoint"]
+    # Each step's own compute/optimizer boundary consumes exactly the two
+    # ticks bracketing it (start, end): a fixed 1-tick duration per step,
+    # regardless of how many ticks the intervening handlers consumed.
+    assert [obs.step_duration_seconds for obs in observations] == pytest.approx(
+        [1.0, 1.0]
+    )
+    # Explicitly rule out the boundary-inclusive-of-handlers bug: had the
+    # timer wrongly captured its end tick after on_completed_step/on_eval
+    # ran, step 1's duration would read 3.0 (3 intervening ticks), not 1.0.
+    assert observations[0].step_duration_seconds != pytest.approx(3.0)
+
+
+def test_streaming_planned_step_uses_forward_input_provider_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeForwardInputProvider(wait_seconds_sequence=[0.01, 0.02])
+    observed_forward_inputs: list[str] = []
+
+    def fake_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> FakeForwardResult:
+        del model, kwargs
+        observed_forward_inputs.append(forward_inputs)
+        pack_index = int(forward_inputs.split("-")[-1])
+        return FakeForwardResult(
+            pack_index=pack_index,
+            logits=torch.zeros(1, 2, 3),
+            receipt={"timings_ns": {"total_build_inputs_ns": 100_000_000}},
+        )
+
+    monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        forward_input_provider=provider,
+    )
+
+    result = trainer.run()
+
+    assert provider.calls == ["begin", "take:0", "take:1", "end"]
+    assert provider.begin_args[0][0] == 1
+    assert observed_forward_inputs == ["forward-inputs-0", "forward-inputs-1"]
+    observation = result.latest_observation
+    assert observation is not None
+    assert observation.input_wait_seconds == pytest.approx(0.03)
+    assert observation.input_build_seconds == pytest.approx(0.2)
+    assert provider.closed is False  # trainer does not own close(); pipeline does
+
+
+def test_streaming_planned_step_ends_provider_cleanly_on_finite_gate_early_break(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeForwardInputProvider()
+
+    def fake_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> FakeForwardResult:
+        del model, kwargs
+        pack_index = int(forward_inputs.split("-")[-1])
+        return FakeForwardResult(pack_index=pack_index, logits=torch.zeros(1, 2, 3), receipt={})
+
+    monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([], unsafe_pre_steps={1}),
+        forward_input_provider=provider,
+    )
+
+    result = trainer.run()
+
+    # Finite-gate early break stops after ordinal 0: provider never sees
+    # ordinal 1, and end_planned_step still runs to discard prepared work.
+    assert provider.calls == ["begin", "take:0", "end"]
+    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+
+
+def test_streaming_planned_step_ends_provider_on_consumer_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeForwardInputProvider()
+
+    def failing_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> Any:
+        del model, forward_inputs, kwargs
+        raise RuntimeError("consumer forward boom")
+
+    monkeypatch.setattr(trainer_module, "run_qwen_forward", failing_run_qwen_forward)
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        forward_input_provider=provider,
+    )
+
+    with pytest.raises(RuntimeError, match="consumer forward boom"):
+        trainer.run()
+
+    # end_planned_step must still run (bounded join / cancellation-aware
+    # cleanup) even though the consumer raised mid-step.
+    assert provider.calls == ["begin", "take:0", "end"]
+
+
+def test_forward_input_provider_rejects_combination_with_custom_qwen_forward() -> None:
+    provider = FakeForwardInputProvider()
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        SupervisedTrainer(
+            model=object(),
+            schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+            pack_stream=_micro_steps(1),
+            qwen_forward=_forward([]),
+            loss_context_factory=_loss_context([]),
+            loss_runner=StreamingFakeLossRunner([]),
+            runtime=FakeRuntime([]),
+            forward_input_provider=provider,
+        )
+
+    assert (
+        exc_info.value.code
+        == "trainer.forward_input_provider_conflicts_with_custom_qwen_forward"
+    )
+    # No lifecycle calls happened at all: the trainer never got constructed.
+    assert provider.calls == []
+
+
+def test_supervised_trainer_rejects_non_streaming_loss_runner() -> None:
+    # The non-streaming batch loss path has been deleted: construction must
+    # fail closed for any loss runner lacking the streaming protocol,
+    # regardless of whether a forward_input_provider is present.
+    with pytest.raises(RuntimeContractError) as exc_info:
+        SupervisedTrainer(
+            model=object(),
+            schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+            pack_stream=_micro_steps(1),
+            loss_context_factory=_loss_context([]),
+            loss_runner=FakeLossRunner([]),  # non-streaming: only .compute
+            runtime=FakeRuntime([]),
+        )
+
+    assert exc_info.value.code == "trainer.loss_runner_requires_streaming_protocol"
+
+
+def test_forward_input_provider_rejects_non_streaming_loss_runner() -> None:
+    provider = FakeForwardInputProvider()
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        SupervisedTrainer(
+            model=object(),
+            schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+            pack_stream=_micro_steps(1),
+            loss_context_factory=_loss_context([]),
+            loss_runner=FakeLossRunner([]),  # non-streaming: only .compute
+            runtime=FakeRuntime([]),
+            forward_input_provider=provider,
+        )
+
+    assert exc_info.value.code == "trainer.loss_runner_requires_streaming_protocol"
+    assert provider.calls == []
+
+
+def test_streaming_planned_step_duration_excludes_provider_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Same incrementing-fake-clock technique as the completed-step/scheduled
+    # handler boundary test: the provider's end_planned_step() (teardown)
+    # consumes its own extra ticks, so a boundary that wrongly extended
+    # through teardown would read a precisely wrong, explicitly asserted
+    # value here.
+    tick_count = 0
+
+    def fake_monotonic() -> float:
+        nonlocal tick_count
+        value = float(tick_count)
+        tick_count += 1
+        return value
+
+    monkeypatch.setattr(trainer_module.time, "monotonic", fake_monotonic)
+
+    def fake_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> FakeForwardResult:
+        del model, kwargs
+        pack_index = int(forward_inputs.split("-")[-1])
+        return FakeForwardResult(pack_index=pack_index, logits=torch.zeros(1, 2, 3), receipt={})
+
+    monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
+
+    class SlowTeardownProvider(FakeForwardInputProvider):
+        def end_planned_step(self) -> None:
+            super().end_planned_step()
+            trainer_module.time.monotonic()  # consumes a tick; must not count toward the boundary
+            trainer_module.time.monotonic()  # a second tick, for emphasis
+
+    provider = SlowTeardownProvider()
+    observations: list[CompletedStepObservation] = []
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        on_completed_step=observations.append,
+        forward_input_provider=provider,
+    )
+
+    trainer.run()
+
+    # Ticks 0 (boundary start) through the end of zero_gradients define a
+    # fixed, explicitly asserted duration; the two teardown ticks consumed
+    # by end_planned_step() must not be included.
+    assert observations[0].step_duration_seconds == pytest.approx(1.0)
+    assert observations[0].step_duration_seconds != pytest.approx(3.0)
+
+
 def test_trainer_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(trainer_module.torch.cuda, "is_available", lambda: True)
@@ -676,6 +1009,40 @@ class FakeForwardResult:
     pack_index: int
     logits: torch.Tensor
     receipt: Any
+
+
+class FakeForwardInputProvider:
+    """Trainer-wiring test double: records lifecycle calls, never builds
+    real Qwen tensors. Paired with a monkeypatched `run_qwen_forward` in
+    tests that exercise the provider-driven trainer branch."""
+
+    def __init__(self, wait_seconds_sequence: list[float] | None = None) -> None:
+        self.calls: list[str] = []
+        self.begin_args: list[tuple[int, tuple[Any, ...]]] = []
+        self.take_args: list[tuple[int, Any]] = []
+        self._wait_seconds_sequence = list(wait_seconds_sequence or [])
+        self.last_take_wait_seconds = 0.0
+        self.closed = False
+
+    def begin_planned_step(
+        self, planned_step_id: int, moved_micro_steps: tuple[Any, ...]
+    ) -> None:
+        self.calls.append("begin")
+        self.begin_args.append((planned_step_id, tuple(moved_micro_steps)))
+
+    def take(self, ordinal: int, micro_step: Any) -> str:
+        self.calls.append(f"take:{ordinal}")
+        self.take_args.append((ordinal, micro_step))
+        self.last_take_wait_seconds = (
+            self._wait_seconds_sequence.pop(0) if self._wait_seconds_sequence else 0.0
+        )
+        return f"forward-inputs-{ordinal}"
+
+    def end_planned_step(self) -> None:
+        self.calls.append("end")
+
+    def close(self) -> None:
+        self.closed = True
 
 
 @dataclass(frozen=True)

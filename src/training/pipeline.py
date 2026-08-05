@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import hashlib
@@ -40,6 +40,12 @@ from src.config.paths import resolve_run_directory
 from src.config.resolve import resolve_qwen_runtime_controls
 from src.data import load_raw_examples
 from src.eval import ForwardEvalRunner
+from src.eval.forward import (
+    EVAL_REDUCTION_DISJOINT_SHARD,
+    EVAL_REDUCTION_REPLICATED,
+    partition_eval_micro_steps_for_rank,
+    resolve_active_eval_reduction_mode,
+)
 from src.losses import LossRunner, build_token_vocabulary_groups
 from src.optim import (
     build_optimizer_and_scheduler,
@@ -86,6 +92,10 @@ from src.training.pack_cache import (
     manifest_path,
     write_micro_step_cache,
 )
+from src.training.forward_input_provider import (
+    build_forward_input_provider,
+    resolve_forward_input_provider_mode,
+)
 from src.training.supervised_trainer import (
     CompletedStepObservation,
     SupervisedMicroStep,
@@ -102,44 +112,6 @@ _RANK_REPORT_HEADER = struct.Struct("!4sQQIIIIQQI")
 _RANK_REPORT_MAX_PAYLOAD_BYTES = 64 * 1024
 _RANK_REPORT_FRAME_BYTES = _RANK_REPORT_HEADER.size + _RANK_REPORT_MAX_PAYLOAD_BYTES
 _RANK_REPORT_CONTROL_TIMEOUT_SECONDS = 120
-
-
-def build_repeating_micro_step_stream(
-    base_micro_steps: Sequence[SupervisedMicroStep],
-    schedule: ResolvedStepSchedule,
-    *,
-    rank: int = 0,
-    world_size: int = 1,
-) -> Iterator[SupervisedMicroStep]:
-    if not base_micro_steps:
-        raise ValueError("base_micro_steps must contain at least one micro-step")
-    if world_size <= 0:
-        raise ValueError("world_size must be positive")
-    if rank < 0 or rank >= world_size:
-        raise ValueError("rank must be inside world_size")
-    if schedule.runtime_batch.world_size != world_size:
-        raise ValueError("stream world_size must match schedule runtime_batch")
-    total_rank_local_micro_steps = (
-        schedule.resolved_max_steps
-        * schedule.runtime_batch.resolved_grad_accum_steps
-    )
-
-    def iter_repeated() -> Iterator[SupervisedMicroStep]:
-        for index in range(total_rank_local_micro_steps):
-            planned_step_index = (
-                index // schedule.runtime_batch.resolved_grad_accum_steps
-            )
-            local_accum_index = (
-                index % schedule.runtime_batch.resolved_grad_accum_steps
-            )
-            global_micro_step_index = (
-                planned_step_index * schedule.runtime_batch.effective_batch_size
-                + local_accum_index * world_size
-                + rank
-            )
-            yield base_micro_steps[global_micro_step_index % len(base_micro_steps)]
-
-    return iter_repeated()
 
 
 def _scheduler_lr_metrics(scheduler_artifact: Any) -> dict[str, float]:
@@ -235,13 +207,23 @@ def _train_logging_handler(
         )
         loss_bundle = dict(observation.loss_bundle_artifact)
         metrics = loss_bundle.get("metrics", {})
+        accuracy_stats = loss_bundle.get("accuracy_stats")
         scalar_metrics = _scheduler_lr_metrics(observation.scheduler_artifact)
         if isinstance(metrics, Mapping):
             scalar_metrics.update({str(name): value for name, value in metrics.items()})
+        timing_fields = {
+            "step_duration_seconds": observation.step_duration_seconds,
+            "input_build_seconds": observation.input_build_seconds,
+            "input_wait_seconds": observation.input_wait_seconds,
+        }
+        scalar_metrics.update(
+            {name: float(value) for name, value in timing_fields.items() if value is not None}
+        )
         gathered = runtime.gather_metrics(
             scalar_metrics,
             planned_step_id=observation.planned_step_id,
             split=TRAIN_SPLIT,
+            accuracy_stats=accuracy_stats if isinstance(accuracy_stats, Mapping) else None,
         )
         reduced = gathered.get("metrics") if isinstance(gathered, Mapping) else None
         if not isinstance(reduced, Mapping):
@@ -560,8 +542,22 @@ def _run_initialized_training(
         accelerator=accelerator,
         rank=int(accelerator.process_index),
     )
+    eval_pack_count_for_consensus: int | None
     if eval_cache is None:
+        # Train-reuse-as-eval fallback: `eval_micro_steps` is already this
+        # rank's own train shard, not a canonical replicated eval set, so
+        # disjoint sharding (which requires a shared canonical pack order
+        # every rank can partition identically) does not apply here. Any
+        # scheduled eval in this configuration is already rejected before
+        # training starts (config/schedule validation requires an explicit
+        # eval source), so this branch never actually drives a live eval
+        # invocation; it is left byte-identical to pre-Wave-4 behavior.
+        # `pack_count` has no canonical cross-rank meaning here (each rank's
+        # train shard size legitimately differs), so the consensus check
+        # below only validates `reduction_mode` identity for this branch.
         eval_micro_steps = train_micro_steps
+        eval_reduction_mode = EVAL_REDUCTION_REPLICATED
+        eval_pack_count_for_consensus = None
     else:
         eval_micro_steps = load_all_micro_steps_from_cache(
             eval_cache["cache_dir"],
@@ -573,7 +569,33 @@ def _run_initialized_training(
         )
         if writer is not None:
             _bind_cache_materialization(writer, "eval", eval_cache)
+        eval_reduction_mode = resolve_active_eval_reduction_mode(
+            pack_count=len(eval_micro_steps),
+            world_size=int(accelerator.num_processes),
+        )
+        eval_pack_count_for_consensus = len(eval_micro_steps)
+    # Opus HOLD P2-B: every world rank calls this SAME consensus collective
+    # unconditionally, before any mode-dependent branching (the sharding
+    # filter below, and eval.forward's own conditional denominator-gather
+    # collective). If ranks somehow disagree on reduction_mode (config
+    # drift, a resolution bug), some ranks would otherwise call the
+    # disjoint-shard denominator gather while others never call it at all --
+    # a silent collective deadlock discovered only much later, if ever. This
+    # check fails closed immediately instead, using the exact same bounded
+    # rank-report gatherer as every other collective (no new framework).
+    runtime.validate_eval_reduction_consensus(
+        reduction_mode=eval_reduction_mode,
+        pack_count=eval_pack_count_for_consensus,
+    )
+    if eval_reduction_mode == EVAL_REDUCTION_DISJOINT_SHARD:
+        eval_micro_steps = partition_eval_micro_steps_for_rank(
+            eval_micro_steps,
+            rank=int(accelerator.process_index),
+            world_size=int(accelerator.num_processes),
+        )
     eval_micro_steps = _apply_fa2_branch_proof_policy(eval_micro_steps, config)
+    forward_input_provider_mode = resolve_forward_input_provider_mode()
+    forward_input_provider = build_forward_input_provider(forward_input_provider_mode)
     checkpoint_writer = CheckpointWriter(run_directory.run_dir)
     eval_by_step: dict[int, dict[str, Any]] = {}
     committed_checkpoint_steps: set[int] = set()
@@ -611,13 +633,21 @@ def _run_initialized_training(
                 if config.data.eval is not None
                 else None,
                 eval_by_step=eval_by_step,
+                reduction_mode=eval_reduction_mode,
             ),
         on_final=_final_handler(
             checkpoint_handler=checkpoint_handler,
             committed_steps=committed_checkpoint_steps,
             save_final=config.checkpoint.save_final,
         ),
+        forward_input_provider=forward_input_provider,
     )
+    # Bind only after the trainer accepted the provider: `SupervisedTrainer`
+    # fails closed (P2-G) if the provider is paired with a non-streaming
+    # loss runner (production-dead, Wave-5-deletion-bound), so the run
+    # record never claims a provider mode that turned out to be unused.
+    if writer is not None:
+        writer.bind_forward_input_provider_mode(forward_input_provider_mode)
     try:
         result = trainer.run()
         latest = result.latest_observation
@@ -644,13 +674,16 @@ def _run_initialized_training(
             "scheduled_event_counts": dict(result.scheduled_event_counts),
         }
     finally:
-        close_rank_report_gatherer = getattr(
-            getattr(runtime, "rank_report_gatherer", None),
-            "close",
-            None,
-        )
-        if callable(close_rank_report_gatherer):
-            close_rank_report_gatherer()
+        try:
+            forward_input_provider.close()
+        finally:
+            close_rank_report_gatherer = getattr(
+                getattr(runtime, "rank_report_gatherer", None),
+                "close",
+                None,
+            )
+            if callable(close_rank_report_gatherer):
+                close_rank_report_gatherer()
 
 
 def build_base_micro_steps(
@@ -907,7 +940,7 @@ def _apply_fa2_branch_proof_policy(
     micro_steps: Sequence[SupervisedMicroStep],
     config: Any,
 ) -> tuple[SupervisedMicroStep, ...]:
-    policy = getattr(config.model, "fa2_branch_proof", "every_forward")
+    policy = config.model.fa2_branch_proof
     configured: list[SupervisedMicroStep] = []
     for local_index, micro_step in enumerate(micro_steps):
         capture = policy == "every_forward" or (
@@ -1273,23 +1306,6 @@ def _checkpoint_handler(
     return handle
 
 
-def _template_identity(config: Any) -> dict[str, Any]:
-    template = config.template
-    if hasattr(template, "model_dump"):
-        return dict(template.model_dump(mode="json"))
-    return dict(template)
-
-
-def _unwrap_checkpoint_model(model: Any, *, runtime: Any | None) -> Any:
-    if runtime is None:
-        return model
-    accelerator = getattr(runtime, "accelerator", None)
-    unwrap_model = getattr(accelerator, "unwrap_model", None)
-    if callable(unwrap_model):
-        return unwrap_model(model)
-    return model
-
-
 def _eval_forward_handler(
     *,
     model: Any,
@@ -1299,6 +1315,7 @@ def _eval_forward_handler(
     writer: RunWriter | None,
     eval_source: dict[str, Any] | None,
     eval_by_step: dict[int, dict[str, Any]],
+    reduction_mode: str = EVAL_REDUCTION_REPLICATED,
 ) -> Any:
     def handle(scheduled_event: Any, observation: CompletedStepObservation) -> None:
         result = ForwardEvalRunner(
@@ -1307,6 +1324,9 @@ def _eval_forward_handler(
             loss_runner=loss_runner,
             eval_source=eval_source,
             runtime=runtime,
+            reduction_mode=reduction_mode,
+            world_size=int(getattr(runtime, "world_size", 1)),
+            rank=int(getattr(runtime, "rank", 0)),
         ).run(
             planned_step_id=scheduled_event.planned_step_id,
             trigger_reasons=scheduled_event.trigger_reasons,
@@ -1417,37 +1437,6 @@ def _resolve_shared_run_directory(
         run_dir=Path(str(shared["run_dir"])),
         collision_policy=str(shared["collision_policy"]),
     )
-
-
-def _loss_plan_artifact(config: Any, vocab_groups_artifact: dict[str, Any]) -> dict[str, Any]:
-    term_order = ["base_ce", "token_type_gate"]
-    if config.losses.protected.coord_gaussian_rps.weight > 0.0:
-        term_order.append("coord_gaussian_rps")
-    return {
-        "normalizer": config.losses.normalizer,
-        "objective_dtype": "float32_selected_logits",
-        "protected": config.losses.protected.model_dump(mode="json"),
-        "term_order": term_order,
-        "vocabulary_groups": vocab_groups_artifact,
-        "finite_policy": {
-            "pre_backward_scalar_gate": "all_rank_consensus",
-            "post_backward_gradient_gate": "all_rank_consensus",
-        },
-        "metric_definitions": {
-            "top_level": ["acc_top1", "acc_top5"],
-            "weighted_losses": [
-                *(f"loss/{term_name}" for term_name in term_order),
-                "loss/total",
-            ],
-            "counts": [
-                "count/supervised_atoms",
-                "count/eligible_segments",
-                "count/skipped_segments",
-                "count/packs",
-                "count/examples",
-            ],
-        },
-    }
 
 
 def _encoded_examples_for_pack(

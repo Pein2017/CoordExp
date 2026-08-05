@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 import torch
 
@@ -26,7 +28,12 @@ from src.packing.planner import PackedSegment
 from src.supervision import TokenAtom, TokenSequence
 
 
-def test_loss_runner_returns_weighted_metrics_and_top_level_accuracy() -> None:
+def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_level_accuracy() -> None:
+    # Streaming equivalent of the deleted batch `LossRunner.compute`: proves
+    # the three-call streaming protocol (prepare/compute_micro_step/finalize)
+    # reproduces the exact planned-step numeric oracle computed independently
+    # from the low-level segment-balanced reducer, over unequal per-context
+    # atom counts and micro-step ordering (2 vs 1 atoms across two packs).
     contexts = (
         _context(
             _logits(
@@ -60,7 +67,17 @@ def test_loss_runner_returns_weighted_metrics_and_top_level_accuracy() -> None:
     )
     runner = _runner(base_ce_weight=2.0, token_type_gate_weight=0.5)
 
-    bundle = runner.compute(contexts)
+    plan = runner.prepare_planned_step(
+        tuple(context.token_sequence for context in contexts)
+    )
+    micro_bundles = tuple(
+        runner.compute_micro_step(context, plan, local_micro_step_index=local_index)
+        for local_index, context in enumerate(contexts)
+    )
+    bundle = runner.finalize_planned_step(
+        tuple(micro_bundle.to_artifact_dict() for micro_bundle in micro_bundles),
+        plan,
+    )
 
     expected_base = reduce_segment_balanced_planned_step(
         tuple(
@@ -84,109 +101,96 @@ def test_loss_runner_returns_weighted_metrics_and_top_level_accuracy() -> None:
     )
     expected_total = expected_base.loss * 2.0 + expected_gate.loss * 0.5
 
-    assert torch.allclose(bundle.total_loss, expected_total)
-    assert bundle.term_by_name("base_ce").weight == 2.0
-    assert torch.allclose(bundle.term_by_name("base_ce").raw_loss, expected_base.loss)
-    assert torch.allclose(
-        bundle.term_by_name("base_ce").weighted_loss,
-        expected_base.loss * 2.0,
-    )
-    assert bundle.metrics["loss/total"] == pytest.approx(float(expected_total.detach()))
-    assert bundle.metrics["loss/base_ce"] == pytest.approx(
+    base_term = next(term for term in bundle["terms"] if term["name"] == "base_ce")
+    gate_term = next(term for term in bundle["terms"] if term["name"] == "token_type_gate")
+
+    assert bundle["total_loss"] == pytest.approx(float(expected_total.detach()))
+    assert base_term["weight"] == 2.0
+    assert base_term["raw_loss"] == pytest.approx(float(expected_base.loss.detach()))
+    assert base_term["weighted_loss"] == pytest.approx(
         float((expected_base.loss * 2.0).detach())
     )
-    assert bundle.metrics["loss/token_type_gate"] == pytest.approx(
+    assert bundle["metrics"]["loss/total"] == pytest.approx(float(expected_total.detach()))
+    assert bundle["metrics"]["loss/base_ce"] == pytest.approx(
+        float((expected_base.loss * 2.0).detach())
+    )
+    assert bundle["metrics"]["loss/token_type_gate"] == pytest.approx(
         float((expected_gate.loss * 0.5).detach())
     )
-    assert bundle.term_by_name("token_type_gate").diagnostics[
-        "selected_count_by_token_type"
-    ] == {
+    assert gate_term["diagnostics"]["selected_count_by_token_type"] == {
         "desc_text": 1,
         "schema": 0,
         "coordinate": 1,
         "eos": 1,
     }
-    assert "acc_top1/base_ce" not in bundle.metrics
-    assert "acc_top5/base_ce" not in bundle.metrics
-    assert bundle.metrics["acc_top1"] == pytest.approx(2 / 3)
-    assert bundle.metrics["acc_top5"] == pytest.approx(1.0)
-    assert bundle.counts["count/supervised_atoms"] == 3
-    assert bundle.counts["count/eligible_segments"] == 3
-    assert bundle.counts["count/skipped_segments"] == 0
-    assert bundle.counts["count/packs"] == 2
-    assert bundle.metrics["count/supervised_atoms"] == 3.0
-    assert bundle.finite_status["total_loss"] == "finite"
-    assert bundle.finite_status["terms"]["base_ce"] == "finite"
+    assert "acc_top1/base_ce" not in bundle["metrics"]
+    assert "acc_top5/base_ce" not in bundle["metrics"]
+    assert bundle["metrics"]["acc_top1"] == pytest.approx(2 / 3)
+    assert bundle["metrics"]["acc_top5"] == pytest.approx(1.0)
+    assert bundle["counts"]["count/supervised_atoms"] == 3
+    assert bundle["counts"]["count/eligible_segments"] == 3
+    assert bundle["counts"]["count/skipped_segments"] == 0
+    assert bundle["counts"]["count/packs"] == 2
+    assert bundle["metrics"]["count/supervised_atoms"] == 3.0
+    assert bundle["finite_status"]["total_loss"] == "finite"
+    assert bundle["finite_status"]["terms"]["base_ce"] == "finite"
+    # Rank-local sufficient statistics (exact integers): summing the
+    # per-micro-step stats over unequal atom counts (2 vs 1) reproduces the
+    # same integers as computing accuracy over the concatenated contexts.
+    assert bundle["accuracy_stats"]["accuracy_atom_count"] == 3
+    assert isinstance(bundle["accuracy_stats"]["top1_correct"], int)
+    assert isinstance(bundle["accuracy_stats"]["top5_correct"], int)
 
 
-def test_loss_runner_streaming_micro_contributions_match_planned_step_compute() -> None:
-    contexts = (
-        _context(
-            _logits(
-                (
-                    (0.0, 8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
-                    (0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 1.0),
-                    (0.0, 0.0, 0.0, 1.0, 5.0, 7.0, 0.0, 2.0),
-                    (0.0, 0.0, 0.0, 0.0, 0.0, 7.0, 0.0, 1.0),
-                ),
-                requires_grad=True,
-            ),
+def _single_micro_step_plan_and_artifact() -> tuple[LossRunner, Any, dict]:
+    context = _context(
+        _logits(
             (
-                _segment(0, 0, 2),
-                _segment(1, 2, 4),
-            ),
-            (
-                _atom(segment_index=0, target_position=1, token_id=7),
-                _atom(segment_index=1, target_position=3, token_id=5, token_type="eos"),
-            ),
+                (0.0, 8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                (0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 1.0),
+            )
         ),
-        _context(
-            _logits(
-                (
-                    (0.0, 0.0, 0.0, 7.0, 0.0, 0.0, 0.0, 1.0),
-                    (0.0, 0.0, 0.0, 1.0, 6.0, 0.0, 0.0, 2.0),
-                ),
-                requires_grad=True,
-            ),
-            (_segment(0, 0, 2),),
-            (_atom(segment_index=0, target_position=1, token_id=3, token_type="coordinate"),),
-            pack_index=1,
-        ),
+        (_segment(0, 0, 2),),
+        (_atom(segment_index=0, target_position=1, token_id=7),),
     )
-    runner = _runner(base_ce_weight=2.0, token_type_gate_weight=0.5)
-    full = runner.compute(contexts)
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    return runner, plan, bundle.to_artifact_dict()
 
-    plan = runner.prepare_planned_step(
-        tuple(context.token_sequence for context in contexts)
-    )
-    micro_bundles = tuple(
-        runner.compute_micro_step(
-            context,
-            plan,
-            local_micro_step_index=local_index,
-        )
-        for local_index, context in enumerate(contexts)
-    )
-    streaming_total = sum(
-        (bundle.total_loss for bundle in micro_bundles),
-        full.total_loss.new_zeros(()),
-    )
-    artifact = runner.finalize_planned_step(
-        tuple(bundle.to_artifact_dict() for bundle in micro_bundles),
-        plan,
-    )
 
-    assert torch.allclose(streaming_total, full.total_loss)
-    assert artifact["total_loss"] == pytest.approx(full.metrics["loss/total"])
-    assert artifact["metrics"]["loss/base_ce"] == pytest.approx(
-        full.metrics["loss/base_ce"]
-    )
-    assert artifact["metrics"]["loss/token_type_gate"] == pytest.approx(
-        full.metrics["loss/token_type_gate"]
-    )
-    assert artifact["metrics"]["acc_top1"] == pytest.approx(full.metrics["acc_top1"])
-    assert artifact["metrics"]["acc_top5"] == pytest.approx(full.metrics["acc_top5"])
-    assert artifact["counts"] == full.counts
+def test_loss_runner_finalize_rejects_micro_artifact_missing_accuracy_stats() -> None:
+    runner, plan, artifact = _single_micro_step_plan_and_artifact()
+    del artifact["accuracy_stats"]
+
+    with pytest.raises(LossContractError) as exc_info:
+        runner.finalize_planned_step((artifact,), plan)
+    assert exc_info.value.code == "loss.accuracy_stats_missing"
+
+
+def test_loss_runner_finalize_rejects_micro_artifact_malformed_accuracy_field() -> None:
+    runner, plan, artifact = _single_micro_step_plan_and_artifact()
+    artifact["accuracy_stats"] = {
+        **artifact["accuracy_stats"],
+        "top1_correct": -1,
+    }
+
+    with pytest.raises(LossContractError) as exc_info:
+        runner.finalize_planned_step((artifact,), plan)
+    assert exc_info.value.code == "loss.accuracy_stats_field_type"
+
+
+def test_loss_runner_finalize_rejects_micro_artifact_correct_exceeding_atoms() -> None:
+    runner, plan, artifact = _single_micro_step_plan_and_artifact()
+    artifact["accuracy_stats"] = {
+        "top1_correct": 5,
+        "top5_correct": 0,
+        "accuracy_atom_count": 1,
+    }
+
+    with pytest.raises(LossContractError) as exc_info:
+        runner.finalize_planned_step((artifact,), plan)
+    assert exc_info.value.code == "loss.accuracy_stats_correct_exceeds_atoms"
 
 
 def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
@@ -347,7 +351,9 @@ def test_loss_runner_keeps_objective_differentiable_but_metrics_detached() -> No
         (_atom(segment_index=0, target_position=1, token_id=7),),
     )
 
-    bundle = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1).compute((context,))
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
 
     assert bundle.total_loss.requires_grad
     assert bundle.term_by_name("base_ce").weighted_loss.requires_grad
@@ -370,7 +376,9 @@ def test_loss_runner_records_non_finite_status_without_raising() -> None:
         (_atom(segment_index=0, target_position=1, token_id=3, token_type="coordinate"),),
     )
 
-    bundle = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1).compute((context,))
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
 
     assert bundle.finite_status["total_loss"] == "non_finite"
     assert bundle.finite_status["terms"]["base_ce"] == "non_finite"
@@ -402,7 +410,8 @@ def test_loss_runner_filters_token_type_gate_groups() -> None:
         token_type_gate_groups=("eos",),
     )
 
-    bundle = runner.compute((context,))
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
 
     gate = bundle.term_by_name("token_type_gate")
     assert gate.selected_count == 1
@@ -416,7 +425,7 @@ def test_loss_runner_filters_token_type_gate_groups() -> None:
         token_type_gate_groups=("coordinate",),
     )
     with pytest.raises(LossContractError) as exc_info:
-        no_coordinate.compute((context,))
+        no_coordinate.prepare_planned_step((context.token_sequence,))
     assert exc_info.value.code == "loss.segment_balanced_zero_eligible"
 
 
@@ -437,7 +446,9 @@ def test_loss_runner_preserves_compact_logits_positions_when_filtering_gate_grou
         logits_position_ids=(1, 2),
     )
 
-    bundle = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1).compute((context,))
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
 
     assert bundle.counts["count/supervised_atoms"] == 2
     assert bundle.term_by_name("base_ce").selected_count == 2

@@ -8,6 +8,7 @@ run:
 model:
   base_model: /data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
   attn_implementation: flash_attention_2
+  fa2_branch_proof: every_forward
   logits_memory_budget_bytes: 4000000000
   processor:
     do_resize: false

@@ -5,12 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 import src.training.pipeline as pipeline
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
-from src.training.supervised_trainer import CompletedStepObservation
+from src.losses import LossContext, LossRunner, TokenVocabularyGroups
+from src.packing.planner import PackedSegment
+from src.supervision import TokenAtom, TokenSequence
+from src.training.supervised_trainer import CompletedStepObservation, SupervisedMicroStep
 
 
 class _Accelerator:
@@ -156,10 +160,76 @@ def test_train_logging_uses_all_rank_reduced_scalars_and_preserves_nonfinite(
 
     pipeline._train_logging_handler(writer, {}, Runtime())(_observation(1))
     row = json.loads(writer.logging_path.read_text())
-    assert calls == [{"lr/group_0": 1e-5, "loss/total": 1.0, "acc_top1": 0.5, "acc_top5": 1.0}]
+    # _observation() does not measure timing (production-dead batch-path
+    # shape): the timing fields must be entirely absent, not fabricated 0.0.
+    assert calls == [
+        {
+            "lr/group_0": 1e-5,
+            "loss/total": 1.0,
+            "acc_top1": 0.5,
+            "acc_top5": 1.0,
+        }
+    ]
     assert row["loss/total"] == 2.0
     assert row["acc_top1"] is None
     assert row["non_finite_fields"] == ["acc_top1"]
+
+
+def test_train_row_carries_timing_fields_additively(tmp_path: Path) -> None:
+    writer = _writer(tmp_path)
+    observation = CompletedStepObservation(
+        planned_step_id=1,
+        micro_step_count=2,
+        loss_bundle_artifact={"metrics": {"loss/total": 1.0, "acc_top1": 0.5, "acc_top5": 1.0}},
+        optimizer_update_status="applied",
+        finite_status="finite",
+        step_duration_seconds=0.42,
+        input_build_seconds=0.11,
+        input_wait_seconds=0.0,
+    )
+
+    class Runtime(_Runtime):
+        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
+            return {"metrics": dict(metrics)}  # type: ignore[arg-type]
+
+    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+    row = json.loads(writer.logging_path.read_text())
+
+    # Presence: the three new timing scalars appear in the row.
+    assert row["step_duration_seconds"] == pytest.approx(0.42)
+    assert row["input_build_seconds"] == pytest.approx(0.11)
+    assert row["input_wait_seconds"] == pytest.approx(0.0)
+    # Additive-only: every pre-existing field is still present, unrenamed.
+    assert row["loss/total"] == 1.0
+    assert row["acc_top1"] == 0.5
+    assert row["acc_top5"] == 1.0
+    assert row["step"] == 1
+    assert row["split"] == "train"
+
+
+def test_train_row_normalizes_non_finite_timing_fields(tmp_path: Path) -> None:
+    writer = _writer(tmp_path)
+    observation = CompletedStepObservation(
+        planned_step_id=1,
+        micro_step_count=1,
+        loss_bundle_artifact={"metrics": {"loss/total": 1.0, "acc_top1": 0.5, "acc_top5": 1.0}},
+        optimizer_update_status="applied",
+        finite_status="finite",
+        step_duration_seconds=float("inf"),
+        input_build_seconds=0.1,
+        input_wait_seconds=0.0,
+    )
+
+    class Runtime(_Runtime):
+        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
+            return {"metrics": dict(metrics)}  # type: ignore[arg-type]
+
+    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+    row = json.loads(writer.logging_path.read_text())
+
+    assert row["step_duration_seconds"] is None
+    assert "step_duration_seconds" in row["non_finite_fields"]
+    assert row["input_build_seconds"] == pytest.approx(0.1)
 
 
 def test_rank_zero_logging_failure_is_broadcast_as_shared_named_error(
@@ -372,13 +442,20 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     }
     schedule = SimpleNamespace(resolved_max_steps=1, runtime_batch=object())
     bindings: list[tuple[str, dict[str, object]]] = []
+    provider_modes: list[str] = []
     writer = SimpleNamespace(
         bind_schedule=lambda **kwargs: None,
         bind_materialization=lambda split, **kwargs: bindings.append((split, kwargs)),
+        bind_forward_input_provider_mode=lambda mode: provider_modes.append(mode),
         finalize=lambda **kwargs: None,
     )
     loaded_full: list[tuple[Path, str]] = []
     train_verification_levels: list[str] = []
+    accelerator = SimpleNamespace(
+        is_main_process=True,
+        num_processes=2,
+        process_index=0,
+    )
 
     monkeypatch.setattr(pipeline, "seed_training_runtime", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "load_qwen_components", lambda *args, **kwargs: components)
@@ -409,14 +486,17 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     monkeypatch.setattr(pipeline, "build_optimizer_and_scheduler", lambda *args, **kwargs: (object(), object()))
     monkeypatch.setattr(pipeline, "build_trainable_surface_receipt", lambda *args, **kwargs: object())
     closed: list[str] = []
+    consensus_calls: list[dict[str, object]] = []
+    partition_calls: list[tuple[tuple[object, ...], int, int]] = []
     runtime = SimpleNamespace(
         model=object(),
-        accelerator=_Accelerator(),
+        accelerator=accelerator,
         is_main_process=True,
-        world_size=1,
+        world_size=2,
         rank_report_gatherer=SimpleNamespace(
             close=lambda: closed.append("rank-report")
         ),
+        validate_eval_reduction_consensus=lambda **kwargs: consensus_calls.append(kwargs),
     )
     monkeypatch.setattr(pipeline, "TrainRuntime", lambda **kwargs: runtime)
     monkeypatch.setattr(
@@ -428,6 +508,14 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
         return full_cache
 
     monkeypatch.setattr(pipeline, "load_all_micro_steps_from_cache", load_full)
+    monkeypatch.setattr(
+        pipeline,
+        "partition_eval_micro_steps_for_rank",
+        lambda steps, *, rank, world_size: (
+            partition_calls.append((tuple(steps), rank, world_size))
+            or tuple(steps)[rank::world_size]
+        ),
+    )
     monkeypatch.setattr(pipeline, "CheckpointWriter", lambda run_dir: object())
     result = SimpleNamespace(
         completed_steps=1, consumed_micro_steps=1,
@@ -439,7 +527,7 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
         repo_root=tmp_path,
         resolved_config=SimpleNamespace(entry_config_path=tmp_path / "config.yaml", fingerprint="config-fp"),
         config=config,
-        accelerator=_Accelerator(),
+        accelerator=accelerator,
         run_directory=RunDirectory("run", tmp_path, tmp_path / "run", "created"),
         run_id="run",
         writer=writer,
@@ -456,3 +544,201 @@ def test_same_dataset_eval_resolves_distinct_full_cache_and_binding(
     assert set(bindings[1][1]) == {
         "cache_format_version", "semantic_fingerprint", "determinant_digest"
     }
+    assert provider_modes == ["synchronous"]
+    assert consensus_calls == [
+        {"reduction_mode": "disjoint_shard", "pack_count": 2}
+    ]
+    assert partition_calls == [(full_cache, 0, 2)]
+
+
+def _fake_micro_step() -> SupervisedMicroStep:
+    return SupervisedMicroStep(
+        pack="pack",
+        encoded_examples=(),
+        position_inputs="positions",
+        token_sequence="tokens",
+        vocab_groups="vocab",
+        fa2_branch_evidence={"stale": True},
+        capture_fa2_branch=False,
+        require_fa2_branch_proof=False,
+        fa2_branch_proof_policy=None,
+    )
+
+
+def test_fa2_branch_proof_policy_first_micro_step_captures_only_first_step() -> None:
+    steps = (_fake_micro_step(), _fake_micro_step(), _fake_micro_step())
+    config = SimpleNamespace(model=SimpleNamespace(fa2_branch_proof="first_micro_step"))
+
+    configured = pipeline._apply_fa2_branch_proof_policy(steps, config)
+
+    assert [step.capture_fa2_branch for step in configured] == [True, False, False]
+    assert [step.require_fa2_branch_proof for step in configured] == [True, False, False]
+    assert all(step.fa2_branch_proof_policy == "first_micro_step" for step in configured)
+    assert all(step.fa2_branch_evidence is None for step in configured)
+
+
+def test_fa2_branch_proof_policy_every_forward_captures_every_step() -> None:
+    steps = (_fake_micro_step(), _fake_micro_step())
+    config = SimpleNamespace(model=SimpleNamespace(fa2_branch_proof="every_forward"))
+
+    configured = pipeline._apply_fa2_branch_proof_policy(steps, config)
+
+    assert [step.capture_fa2_branch for step in configured] == [True, True]
+    assert [step.require_fa2_branch_proof for step in configured] == [True, True]
+    assert all(step.fa2_branch_proof_policy == "every_forward" for step in configured)
+
+
+def _real_loss_context() -> LossContext:
+    logits = torch.tensor(
+        [
+            [
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            ]
+        ],
+        dtype=torch.float32,
+    )
+    segment = PackedSegment(
+        pack_index=0, segment_index=0, example_index=0, example_id="ex-0", start=0, end=2
+    )
+    atom = TokenAtom(
+        pack_index=0,
+        segment_index=0,
+        example_index=0,
+        example_id="ex-0",
+        target_position=1,
+        token_id=7,
+        token_type="desc_text",
+        text="x",
+        logical_target_position=1,
+    )
+    return LossContext(
+        logits=logits,
+        token_sequence=TokenSequence(
+            pack_index=0,
+            input_ids=(0, 0),
+            segments=(segment,),
+            atoms=(atom,),
+            spans=(),
+        ),
+        vocab_groups=TokenVocabularyGroups(
+            vocab_size=8, desc_text=(7,), schema=(1, 2), coordinate=(3, 4), eos=(5,), blocked=(0, 6)
+        ),
+        logits_position_ids=None,
+    )
+
+
+def test_train_logging_forwards_real_loss_runner_accuracy_stats_without_leaking_to_row(
+    tmp_path: Path,
+) -> None:
+    # Production wiring, end to end with the real LossRunner (no fakes):
+    # LossRunner.finalize_planned_step -> CompletedStepObservation ->
+    # _train_logging_handler -> runtime.gather_metrics. Proves accuracy_stats
+    # is forwarded as the exact integers LossRunner computed, and that it
+    # never leaks into the durable logging row.
+    context = _real_loss_context()
+    runner = LossRunner(
+        base_ce_weight=1.0,
+        token_type_gate_weight=0.1,
+        token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
+    )
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    micro_bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    artifact = runner.finalize_planned_step((micro_bundle.to_artifact_dict(),), plan)
+
+    assert artifact["accuracy_stats"] == {
+        "top1_correct": 1,
+        "top5_correct": 1,
+        "accuracy_atom_count": 1,
+    }
+
+    writer = _writer(tmp_path)
+    calls: list[dict[str, object]] = []
+
+    class Runtime(_Runtime):
+        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
+            calls.append({"metrics": dict(metrics), **kwargs})
+            return {"metrics": dict(metrics)}
+
+    observation = CompletedStepObservation(
+        planned_step_id=1,
+        micro_step_count=1,
+        loss_bundle_artifact=artifact,
+        optimizer_update_status="applied",
+        finite_status="finite",
+    )
+    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+
+    assert calls[0]["accuracy_stats"] == artifact["accuracy_stats"]
+    row = json.loads(writer.logging_path.read_text())
+    assert row["acc_top1"] == pytest.approx(1.0)
+    assert "accuracy_stats" not in row
+    assert "top1_correct" not in row
+    assert "top5_correct" not in row
+    assert "accuracy_atom_count" not in row
+
+
+def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_never_leaks_accuracy_stats(
+    tmp_path: Path,
+) -> None:
+    """Frozen key-set proof, driven through the real production handler and
+    a real `LossRunner` artifact (not a hardcoded literal key list, which
+    would be brittle against loss-runner-owned metric names the row schema
+    contract does not itself own): capture the row's key set with timing
+    fields unmeasured (the pre-existing baseline this row producer already
+    wrote before task 1.3), then again with real timing values supplied,
+    and assert the ONLY difference is the three additive timing keys -- no
+    other key appears, disappears, or is renamed, and `accuracy_stats`
+    (an internal reduction-only kwarg) never becomes a row key in either
+    case.
+    """
+
+    context = _real_loss_context()
+    runner = LossRunner(
+        base_ce_weight=1.0,
+        token_type_gate_weight=0.1,
+        token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
+    )
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    micro_bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    artifact = runner.finalize_planned_step((micro_bundle.to_artifact_dict(),), plan)
+
+    class Runtime(_Runtime):
+        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
+            return {"metrics": dict(metrics)}  # type: ignore[arg-type]
+
+    baseline_writer = _writer(tmp_path / "baseline")
+    baseline_observation = CompletedStepObservation(
+        planned_step_id=1,
+        micro_step_count=1,
+        loss_bundle_artifact=artifact,
+        optimizer_update_status="applied",
+        finite_status="finite",
+        # step_duration_seconds/input_build_seconds/input_wait_seconds left
+        # at their default (unmeasured, `None`) -- the pre-timing-fields
+        # baseline shape this row producer already wrote.
+    )
+    pipeline._train_logging_handler(baseline_writer, {}, Runtime())(baseline_observation)
+    baseline_row = json.loads(baseline_writer.logging_path.read_text())
+
+    timed_writer = _writer(tmp_path / "timed")
+    timed_observation = CompletedStepObservation(
+        planned_step_id=1,
+        micro_step_count=1,
+        loss_bundle_artifact=artifact,
+        optimizer_update_status="applied",
+        finite_status="finite",
+        step_duration_seconds=0.42,
+        input_build_seconds=0.11,
+        input_wait_seconds=0.03,
+    )
+    pipeline._train_logging_handler(timed_writer, {}, Runtime())(timed_observation)
+    timed_row = json.loads(timed_writer.logging_path.read_text())
+
+    timing_keys = {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
+    assert timing_keys.isdisjoint(baseline_row)
+    assert set(timed_row) == set(baseline_row) | timing_keys
+    for key in baseline_row:
+        assert baseline_row[key] == timed_row[key]
+    assert "accuracy_stats" not in baseline_row
+    assert "accuracy_stats" not in timed_row

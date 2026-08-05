@@ -253,6 +253,28 @@ def test_train_order_defaults_to_source_order_and_rejects_shuffle(tmp_path: Path
     assert "shuffle" in str(exc_info.value)
 
 
+def test_fa2_branch_proof_omitted_resolves_to_first_micro_step(tmp_path: Path) -> None:
+    default_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    assert "fa2_branch_proof" not in payload["model"]
+    _write_yaml(default_path, payload)
+
+    resolved = load_train_config(default_path)
+
+    assert resolved.config.model.fa2_branch_proof == "first_micro_step"
+
+
+def test_fa2_branch_proof_explicit_every_forward_stays_explicit(tmp_path: Path) -> None:
+    config_path = tmp_path / "every_forward.yaml"
+    payload = _minimal_config()
+    payload["model"]["fa2_branch_proof"] = "every_forward"
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.model.fa2_branch_proof == "every_forward"
+
+
 def test_geometry_flip_augmentation_defaults_disabled(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     payload = _minimal_config()

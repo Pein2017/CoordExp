@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import math
 from types import SimpleNamespace
 from typing import Any
 
@@ -255,7 +256,556 @@ def test_multirank_metrics_are_reduced_to_deterministic_mean() -> None:
         split="eval",
     )
     assert result["metrics"] == {"acc": 0.5, "loss": 2.0}
-    assert result["reduction"] == "all_rank_mean"
+    assert result["reduction"] == "all_rank_mixed"
+
+
+def test_multirank_accuracy_reduction_sums_integer_stats_for_unequal_atom_counts() -> None:
+    # Rank 0 (local): 1/3 correct; rank 1 (peer): 1/6 correct. Unequal
+    # per-rank atom counts (3 vs 6): the pooled ratio MUST be the sum of
+    # integer correct counts over the sum of integer atom counts, not the
+    # plain mean of the two ratios.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"acc_top1": 1 / 6, "acc_top5": 2 / 6},
+            peer_mutation={
+                "accuracy_stats": {
+                    "top1_correct": 1,
+                    "top5_correct": 2,
+                    "accuracy_atom_count": 6,
+                }
+            },
+        ),
+    )
+    result = runtime.gather_metrics(
+        {"acc_top1": 1 / 3, "acc_top5": 2 / 3},
+        planned_step_id=4,
+        split="train",
+        accuracy_stats={
+            "top1_correct": 1,
+            "top5_correct": 2,
+            "accuracy_atom_count": 3,
+        },
+    )
+    reduced = result["metrics"]
+    assert reduced["acc_top1"] == pytest.approx((1 + 1) / (3 + 6))
+    assert reduced["acc_top5"] == pytest.approx((2 + 2) / (3 + 6))
+
+    # Anti-pattern (rejected): weighting per-rank accuracies by an
+    # already-global merged count degenerates to the plain mean of ratios
+    # because that weight is identical on every rank. This is the exact
+    # defect Seam D fixes and MUST NOT match the reduced value here.
+    plain_mean_acc_top1 = ((1 / 3) + (1 / 6)) / 2
+    assert reduced["acc_top1"] != pytest.approx(plain_mean_acc_top1)
+
+
+def test_multirank_accuracy_reduction_rejects_rounded_ratio_reconstruction() -> None:
+    # Rank-local exact stats: rank 0 has 333 atoms with 111 correct (ratio
+    # exactly 1/3); rank 1 has 3 atoms with 1 correct (ratio exactly 1/3).
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"acc_top1": 1 / 3},
+            peer_mutation={
+                "accuracy_stats": {
+                    "top1_correct": 1,
+                    "top5_correct": 1,
+                    "accuracy_atom_count": 3,
+                }
+            },
+        ),
+    )
+    result = runtime.gather_metrics(
+        {"acc_top1": 111 / 333},
+        planned_step_id=9,
+        split="train",
+        accuracy_stats={
+            "top1_correct": 111,
+            "top5_correct": 111,
+            "accuracy_atom_count": 333,
+        },
+    )
+    reduced_acc_top1 = result["metrics"]["acc_top1"]
+    assert reduced_acc_top1 == pytest.approx(1.0 / 3.0)
+
+    # Anti-pattern (rejected): report each rank's ratio at 2-decimal
+    # precision and reconstruct an integer correct-count from it before
+    # pooling. This is NOT equivalent to carrying the true integers:
+    # rounding rank 0's ratio (0.3333...) to "0.33" and multiplying back by
+    # its 333 atoms reconstructs 110 correct, not the true 111.
+    reconstructed_rank0 = round(round(111 / 333, 2) * 333)
+    reconstructed_rank1 = round(round(1 / 3, 2) * 3)
+    assert reconstructed_rank0 == 110
+    anti_pattern_value = (reconstructed_rank0 + reconstructed_rank1) / (333 + 3)
+    assert anti_pattern_value != pytest.approx(reduced_acc_top1)
+
+
+def test_single_rank_accuracy_stats_degenerate_to_rank_local_value() -> None:
+    runtime = _runtime()
+    result = runtime.gather_metrics(
+        {"acc_top1": 0.5, "acc_top5": 0.75},
+        planned_step_id=1,
+        split="train",
+        accuracy_stats={
+            "top1_correct": 5,
+            "top5_correct": 7,
+            "accuracy_atom_count": 10,
+        },
+    )
+    assert result["metrics"] == {"acc_top1": 0.5, "acc_top5": 0.75}
+    assert result["reduction"] == "single_rank"
+
+
+def test_single_rank_accuracy_stats_reject_correct_exceeding_atom_count() -> None:
+    runtime = _runtime()
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"acc_top1": 0.5, "acc_top5": 0.75},
+            planned_step_id=1,
+            split="train",
+            accuracy_stats={
+                "top1_correct": 11,
+                "top5_correct": 7,
+                "accuracy_atom_count": 10,
+            },
+        )
+    assert exc_info.value.code == "runtime.accuracy_stats_correct_exceeds_atoms"
+
+
+def test_multirank_accuracy_metric_rejects_local_correct_exceeding_atom_count() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"acc_top1": 0.5},
+            peer_mutation={
+                "accuracy_stats": {
+                    "top1_correct": 1,
+                    "top5_correct": 1,
+                    "accuracy_atom_count": 2,
+                }
+            },
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"acc_top1": 0.5},
+            planned_step_id=4,
+            split="train",
+            accuracy_stats={
+                "top1_correct": 4,
+                "top5_correct": 3,
+                "accuracy_atom_count": 3,
+            },
+        )
+    assert exc_info.value.code == "runtime.accuracy_stats_correct_exceeds_atoms"
+
+
+def test_multirank_accuracy_metric_rejects_peer_correct_exceeding_atom_count() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"acc_top1": 0.5},
+            peer_mutation={
+                "accuracy_stats": {
+                    "top1_correct": 9,
+                    "top5_correct": 1,
+                    "accuracy_atom_count": 2,
+                }
+            },
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"acc_top1": 0.5},
+            planned_step_id=4,
+            split="train",
+            accuracy_stats={
+                "top1_correct": 3,
+                "top5_correct": 3,
+                "accuracy_atom_count": 3,
+            },
+        )
+    assert exc_info.value.code == "runtime.accuracy_stats_correct_exceeds_atoms"
+
+
+def test_multirank_accuracy_metric_without_local_accuracy_stats_fails_closed() -> None:
+    # acc_top1 is present in the gathered metric payload but the local rank
+    # omitted accuracy_stats: this MUST fail closed rather than silently
+    # degrade to a plain rank mean (the exact defect Seam D fixes).
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"acc_top1": 0.5}),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics({"acc_top1": 0.5}, planned_step_id=4, split="eval")
+    assert exc_info.value.code == "runtime.accuracy_stats_missing"
+
+
+def test_multirank_accuracy_metric_local_missing_peer_present_fails_closed() -> None:
+    # Asymmetric case: the peer DOES carry real accuracy_stats but the local
+    # rank omitted them. The local omission alone MUST fail closed before
+    # any peer data is even consulted.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"acc_top1": 0.5},
+            peer_mutation={
+                "accuracy_stats": {
+                    "top1_correct": 3,
+                    "top5_correct": 4,
+                    "accuracy_atom_count": 6,
+                }
+            },
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics({"acc_top1": 0.5}, planned_step_id=4, split="eval")
+    assert exc_info.value.code == "runtime.accuracy_stats_missing"
+
+
+def test_multirank_accuracy_metric_without_peer_accuracy_stats_fails_closed() -> None:
+    # Local rank supplies accuracy_stats but a peer omits them entirely
+    # (peer_mutation removes the key inherited from the local report): this
+    # MUST fail closed, never silently drop to a plain mean.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"acc_top1": 0.5},
+            peer_mutation={"accuracy_stats": None},
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"acc_top1": 0.5},
+            planned_step_id=4,
+            split="eval",
+            accuracy_stats={
+                "top1_correct": 5,
+                "top5_correct": 5,
+                "accuracy_atom_count": 10,
+            },
+        )
+    assert exc_info.value.code == "runtime.accuracy_stats_missing"
+
+
+def test_multirank_metrics_without_accuracy_keys_never_require_accuracy_stats() -> None:
+    # A caller genuinely gathering a metric set with no acc_top1/acc_top5
+    # keys (e.g. timing-only) is unaffected by the accuracy-stats
+    # requirement, with or without accuracy_stats supplied.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"loss/total": 3.0}),
+    )
+    result = runtime.gather_metrics(
+        {"loss/total": 1.0}, planned_step_id=4, split="eval"
+    )
+    assert result["metrics"] == {"loss/total": 2.0}
+
+
+def test_multirank_timing_fields_reduce_to_all_rank_maximum_not_mean() -> None:
+    # The slowest rank owns the distributed critical path: unequal per-rank
+    # timings MUST reduce to the maximum, never the mean.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={
+                "step_duration_seconds": 0.9,
+                "input_build_seconds": 0.05,
+                "input_wait_seconds": 0.0,
+                "loss/total": 3.0,
+            }
+        ),
+    )
+    result = runtime.gather_metrics(
+        {
+            "step_duration_seconds": 0.4,
+            "input_build_seconds": 0.2,
+            "input_wait_seconds": 0.1,
+            "loss/total": 1.0,
+        },
+        planned_step_id=4,
+        split="train",
+    )
+    reduced = result["metrics"]
+    assert reduced["step_duration_seconds"] == pytest.approx(0.9)
+    assert reduced["input_build_seconds"] == pytest.approx(0.2)
+    assert reduced["input_wait_seconds"] == pytest.approx(0.1)
+    # Non-timing keys keep their existing plain-mean reduction, unaffected.
+    assert reduced["loss/total"] == pytest.approx(2.0)
+
+
+def test_eval_disjoint_shard_sum_keys_sum_rank_local_counts_not_mean() -> None:
+    # example_count/pack_count/count-family keys are rank-local counts over
+    # a disjoint shard: the correct global value is a sum, never a mean
+    # (which would silently halve the true total at world_size=2).
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={
+                "example_count": 3.0,
+                "pack_count": 1.0,
+                "count/packs": 1.0,
+                "count/examples": 2.0,
+                "loss/base_ce/token_weighted_diag": 4.0,
+                "loss/base_ce/token_weighted_diag/__weight__": 2.0,
+            }
+        ),
+    )
+    reduced = runtime.gather_metrics(
+        {
+            "example_count": 2.0,
+            "pack_count": 2.0,
+            "count/packs": 2.0,
+            "count/examples": 3.0,
+            "loss/base_ce/token_weighted_diag": 6.0,
+            "loss/base_ce/token_weighted_diag/__weight__": 3.0,
+        },
+        planned_step_id=4,
+        split="eval",
+        reduction_mode="disjoint_shard",
+    )["metrics"]
+    assert reduced["example_count"] == pytest.approx(5.0)
+    assert reduced["pack_count"] == pytest.approx(3.0)
+    assert reduced["count/packs"] == pytest.approx(3.0)
+    assert reduced["count/examples"] == pytest.approx(5.0)
+    assert reduced["loss/base_ce/token_weighted_diag"] == pytest.approx(10.0)
+    assert reduced["loss/base_ce/token_weighted_diag/__weight__"] == pytest.approx(5.0)
+
+
+def test_eval_disjoint_shard_identical_keys_require_exact_cross_rank_agreement() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={
+                "count/supervised_atoms": 7.0,
+                "loss/base_ce/segment_count": 4.0,
+            }
+        ),
+    )
+    reduced = runtime.gather_metrics(
+        {"count/supervised_atoms": 7.0, "loss/base_ce/segment_count": 4.0},
+        planned_step_id=4,
+        split="eval",
+        reduction_mode="disjoint_shard",
+    )["metrics"]
+    # Already-global fields are emitted once, not rank-summed (a sum would
+    # wrongly double the true value at world_size=2).
+    assert reduced["count/supervised_atoms"] == pytest.approx(7.0)
+    assert reduced["loss/base_ce/segment_count"] == pytest.approx(4.0)
+
+
+def test_eval_disjoint_shard_identical_key_mismatch_fails_closed() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"count/supervised_atoms": 8.0},
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"count/supervised_atoms": 7.0},
+            planned_step_id=4,
+            split="eval",
+            reduction_mode="disjoint_shard",
+        )
+    assert exc_info.value.code == "runtime.eval_identical_metric_mismatch"
+
+
+def test_eval_disjoint_shard_sum_key_rejects_non_integer_count() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"pack_count": 1.5}),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"pack_count": 1.0},
+            planned_step_id=4,
+            split="eval",
+            reduction_mode="disjoint_shard",
+        )
+    assert exc_info.value.code == "runtime.eval_count_metric_invalid"
+
+
+def test_eval_disjoint_shard_token_weighted_diag_sum_propagates_nonfinite() -> None:
+    # The raw pre-weighted product key is an ordinary loss-like float (not
+    # a count): non-finite contributions must propagate through the sum
+    # naturally, per the unchanged finite/nonfinite handling contract.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"loss/base_ce/token_weighted_diag": float("nan")}
+        ),
+    )
+    reduced = runtime.gather_metrics(
+        {"loss/base_ce/token_weighted_diag": 1.0},
+        planned_step_id=4,
+        split="eval",
+        reduction_mode="disjoint_shard",
+    )["metrics"]
+    assert math.isnan(reduced["loss/base_ce/token_weighted_diag"])
+
+
+def test_eval_disjoint_shard_reduction_mode_mismatch_across_ranks_fails_closed() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={"loss/total": 1.0},
+            peer_mutation={"reduction_mode": None},
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"loss/total": 1.0},
+            planned_step_id=4,
+            split="eval",
+            reduction_mode="disjoint_shard",
+        )
+    assert exc_info.value.code == "runtime.metric_gather_reduction_mode"
+
+
+def test_eval_disjoint_shard_finite_keys_reduce_by_and_not_mean() -> None:
+    # Opus HOLD P1-1: one rank finite (1.0), the other non-finite (0.0) must
+    # reduce to 0.0 (logical AND / min) -- the replicated reference is 0.0
+    # whenever any contribution to the underlying scalar is non-finite. A
+    # plain mean would silently produce 0.5, a meaningless fractional value.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={
+                "finite/total_loss": 0.0,
+                "finite/base_ce": 1.0,
+                "loss/total": float("nan"),
+            }
+        ),
+    )
+    reduced = runtime.gather_metrics(
+        {
+            "finite/total_loss": 1.0,
+            "finite/base_ce": 1.0,
+            "loss/total": 2.0,
+        },
+        planned_step_id=4,
+        split="eval",
+        reduction_mode="disjoint_shard",
+    )["metrics"]
+    assert reduced["finite/total_loss"] == 0.0
+    assert reduced["finite/total_loss"] != pytest.approx(0.5)
+    # Keys where both ranks agree stay at the agreed value.
+    assert reduced["finite/base_ce"] == 1.0
+
+
+def test_eval_disjoint_shard_finite_key_rejects_malformed_value() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"finite/total_loss": 0.5}),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.gather_metrics(
+            {"finite/total_loss": 1.0},
+            planned_step_id=4,
+            split="eval",
+            reduction_mode="disjoint_shard",
+        )
+    assert exc_info.value.code == "runtime.eval_finite_metric_invalid"
+
+
+def test_eval_replicated_mode_never_activates_new_finite_and_reducer() -> None:
+    # Without an explicit reduction_mode, finite/* keeps the pre-existing
+    # plain-mean reducer, byte-identical to pre-Wave-4 behavior (harmless in
+    # replicated mode since every rank computes the identical value).
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"finite/total_loss": 0.0}),
+    )
+    reduced = runtime.gather_metrics(
+        {"finite/total_loss": 1.0}, planned_step_id=4, split="eval"
+    )["metrics"]
+    assert reduced["finite/total_loss"] == pytest.approx(0.5)
+
+
+def test_eval_replicated_mode_never_activates_new_sum_or_identical_reducers() -> None:
+    # Without an explicit reduction_mode (the replicated eval path and every
+    # train call), example_count/pack_count-shaped keys keep the existing
+    # plain-mean reducer, byte-identical to pre-Wave-4 behavior.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(peer_metrics={"pack_count": 5.0}),
+    )
+    reduced = runtime.gather_metrics(
+        {"pack_count": 3.0}, planned_step_id=4, split="eval"
+    )["metrics"]
+    assert reduced["pack_count"] == pytest.approx(4.0)
+
+
+def test_eval_reduction_consensus_passes_when_ranks_agree() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={},
+            peer_mutation={"reduction_mode": "disjoint_shard", "pack_count": 5},
+        ),
+    )
+    # No exception: the real bounded gather path is exercised end to end.
+    runtime.validate_eval_reduction_consensus(
+        reduction_mode="disjoint_shard", pack_count=5
+    )
+
+
+def test_eval_reduction_consensus_allows_matching_none_pack_count() -> None:
+    # The eval-cache-is-None fallback branch: no canonical cross-rank
+    # pack_count exists, so both ranks pass None and that must be accepted.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={},
+            peer_mutation={"reduction_mode": "replicated", "pack_count": None},
+        ),
+    )
+    runtime.validate_eval_reduction_consensus(
+        reduction_mode="replicated", pack_count=None
+    )
+
+
+def test_eval_reduction_consensus_fails_closed_on_mode_mismatch() -> None:
+    # Opus HOLD P2-B: this must be caught HERE, before either rank could
+    # otherwise reach the mode-dependent denominator-gather collective that
+    # only a disjoint_shard rank calls -- a divergence there would hang a
+    # replicated peer forever instead of failing closed.
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={},
+            peer_mutation={"reduction_mode": "replicated", "pack_count": 5},
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.validate_eval_reduction_consensus(
+            reduction_mode="disjoint_shard", pack_count=5
+        )
+    assert exc_info.value.code == "runtime.eval_reduction_consensus_mode_mismatch"
+
+
+def test_eval_reduction_consensus_fails_closed_on_pack_count_mismatch() -> None:
+    runtime = _runtime(
+        world_size=2,
+        gatherer=MetricReportGatherer(
+            peer_metrics={},
+            peer_mutation={"reduction_mode": "disjoint_shard", "pack_count": 9},
+        ),
+    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runtime.validate_eval_reduction_consensus(
+            reduction_mode="disjoint_shard", pack_count=5
+        )
+    assert exc_info.value.code == "runtime.eval_reduction_consensus_pack_count_mismatch"
+
+
+def test_eval_reduction_consensus_is_noop_at_world_size_one() -> None:
+    runtime = _runtime()  # world_size=1, no gatherer configured
+    # Must not raise and must not require a rank_report_gatherer.
+    runtime.validate_eval_reduction_consensus(
+        reduction_mode="disjoint_shard", pack_count=1
+    )
 
 
 @pytest.mark.parametrize(

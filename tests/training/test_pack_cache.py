@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 import gc
 import hashlib
@@ -17,7 +18,6 @@ import pytest
 
 from src.config.loader import load_train_config
 from src.config.models import RuntimeBatchResolution
-from src.training.pipeline import build_repeating_micro_step_stream
 from src.training import pack_cache
 from src.training.pack_cache import (
     DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
@@ -63,6 +63,48 @@ def write_micro_step_cache(*args: Any, **kwargs: Any) -> dict[str, Any]:
     kwargs.setdefault("augmentation", DISABLED_AUGMENTATION)
     kwargs.setdefault("materialization", build_packing_cache_materialization())
     return _write_micro_step_cache(*args, **kwargs)
+
+
+def build_repeating_micro_step_stream(
+    base_micro_steps: Sequence[SupervisedMicroStep],
+    schedule: ResolvedStepSchedule,
+    *,
+    rank: int = 0,
+    world_size: int = 1,
+) -> Iterator[SupervisedMicroStep]:
+    """Reference oracle: the rank-local training presentation order a live
+    pack stream would produce, used to prove rank-selective cache loading
+    (`load_rank_micro_steps_from_cache`) matches it exactly."""
+
+    if not base_micro_steps:
+        raise ValueError("base_micro_steps must contain at least one micro-step")
+    if world_size <= 0:
+        raise ValueError("world_size must be positive")
+    if rank < 0 or rank >= world_size:
+        raise ValueError("rank must be inside world_size")
+    if schedule.runtime_batch.world_size != world_size:
+        raise ValueError("stream world_size must match schedule runtime_batch")
+    total_rank_local_micro_steps = (
+        schedule.resolved_max_steps
+        * schedule.runtime_batch.resolved_grad_accum_steps
+    )
+
+    def iter_repeated() -> Iterator[SupervisedMicroStep]:
+        for index in range(total_rank_local_micro_steps):
+            planned_step_index = (
+                index // schedule.runtime_batch.resolved_grad_accum_steps
+            )
+            local_accum_index = (
+                index % schedule.runtime_batch.resolved_grad_accum_steps
+            )
+            global_micro_step_index = (
+                planned_step_index * schedule.runtime_batch.effective_batch_size
+                + local_accum_index * world_size
+                + rank
+            )
+            yield base_micro_steps[global_micro_step_index % len(base_micro_steps)]
+
+    return iter_repeated()
 
 
 def _overlap_writer_process(
@@ -172,7 +214,7 @@ def test_packing_cache_fingerprint_tracks_data_template_and_encoding_only(
     assert changed_prompt != baseline
 
 
-def test_packing_cache_fingerprint_tracks_jsonl_content_not_only_stat(
+def test_packing_cache_fingerprint_is_timestamp_independent_and_tracks_content(
     tmp_path: Path,
 ) -> None:
     dataset = tmp_path / "train.coord.jsonl"
@@ -198,6 +240,33 @@ def test_packing_cache_fingerprint_tracks_jsonl_content_not_only_stat(
         dataset=config.data.train,
         split="train",
     )
+    baseline_determinants = build_packing_cache_determinants(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    assert "mtime_ns" not in baseline_determinants["dataset"]
+
+    # Touch: only the modification time changes (content and size identical).
+    # The semantic fingerprint MUST remain identical (dataset timestamps are
+    # not semantic identity).
+    future_ns = int((time.time() + 5) * 1_000_000_000)
+    os.utime(dataset, ns=(future_ns, future_ns))
+    assert dataset.stat().st_mtime_ns != stat.st_mtime_ns
+    assert dataset.stat().st_size == stat.st_size
+
+    touched = build_packing_cache_fingerprint(
+        config,
+        components,
+        dataset=config.data.train,
+        split="train",
+    )
+    assert touched == baseline
+
+    # Byte content change MUST change the fingerprint, independent of the
+    # timestamp (forced back to the original value here to isolate the
+    # effect to content alone).
     dataset.write_text('{"example_id":"ex-b"}\n', encoding="utf-8")
     os.utime(dataset, ns=(stat.st_atime_ns, stat.st_mtime_ns))
 
@@ -990,7 +1059,7 @@ def test_cache_readers_require_explicit_materialization_strategy(
             )
 
 
-def test_rank_reader_validates_unselected_chunks(tmp_path: Path) -> None:
+def test_rank_reader_skips_corrupt_chunk_outside_required_set(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     write_micro_step_cache(
         cache_dir,
@@ -999,6 +1068,8 @@ def test_rank_reader_validates_unselected_chunks(tmp_path: Path) -> None:
         determinants={"purpose": "unit-test"},
         chunk_size=2,
     )
+    # chunk-00001.pkl covers indices [2, 4); the rank below requires only
+    # index 0, so this corrupt chunk must never be read or decoded.
     (cache_dir / "chunks" / "chunk-00001.pkl").write_bytes(b"corrupt")
     schedule = _schedule(
         resolved_max_steps=1,
@@ -1007,14 +1078,19 @@ def test_rank_reader_validates_unselected_chunks(tmp_path: Path) -> None:
         effective_batch_size=1,
     )
 
-    with pytest.raises(ValueError, match="checksum mismatch"):
-        load_rank_micro_steps_from_cache(
-            cache_dir,
-            expected_fingerprint=UNIT_FINGERPRINT,
-            schedule=schedule,
-            rank=0,
-            world_size=1,
-        )
+    selected = load_rank_micro_steps_from_cache(
+        cache_dir,
+        expected_fingerprint=UNIT_FINGERPRINT,
+        schedule=schedule,
+        rank=0,
+        world_size=1,
+    )
+
+    assert [step.metadata["pack_id"] for step in selected] == [0]
+
+
+# A corrupted REQUIRED chunk still failing closed is covered by
+# test_micro_step_cache_rejects_corrupt_required_chunk below.
 
 
 def test_rank_reader_releases_validated_unselected_steps(
@@ -1055,7 +1131,82 @@ def test_rank_reader_releases_validated_unselected_steps(
 
     assert selected[0].metadata["pack_id"] == 0
     assert loaded_refs[0]() is selected[0]
-    assert all(loaded_refs[index]() is None for index in (1, 2, 3))
+    # Index 1 shares chunk-00000 with the required index 0, so it is still
+    # decoded (chunk-level granularity) and released once unselected.
+    assert loaded_refs[1]() is None
+    # Indices 2 and 3 live in chunk-00001, which does not intersect the
+    # rank's required set ({0}) and is never read or decoded at all.
+    assert 2 not in loaded_refs
+    assert 3 not in loaded_refs
+
+
+@pytest.mark.parametrize(
+    ("resolved_max_steps", "grad_accum_steps", "world_size"),
+    [
+        (1, 1, 1),
+        (2, 3, 1),
+        (3, 2, 4),
+        (2, 5, 3),
+    ],
+)
+def test_rank_selective_loading_matches_full_pass_and_repeating_stream_oracle(
+    tmp_path: Path,
+    resolved_max_steps: int,
+    grad_accum_steps: int,
+    world_size: int,
+) -> None:
+    total_micro_steps = 17
+    micro_steps = tuple(_micro_step(index) for index in range(total_micro_steps))
+    cache_dir = tmp_path / "cache"
+    write_micro_step_cache(
+        cache_dir,
+        micro_steps,
+        fingerprint=UNIT_FINGERPRINT,
+        determinants={"purpose": "unit-test"},
+        chunk_size=3,
+    )
+    schedule = _schedule(
+        resolved_max_steps=resolved_max_steps,
+        grad_accum_steps=grad_accum_steps,
+        world_size=world_size,
+        effective_batch_size=grad_accum_steps * world_size,
+    )
+    oracle_all = load_all_micro_steps_from_cache(
+        cache_dir, expected_fingerprint=UNIT_FINGERPRINT
+    )
+
+    for rank in range(world_size):
+        rank_selective = load_rank_micro_steps_from_cache(
+            cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
+            schedule=schedule,
+            rank=rank,
+            world_size=world_size,
+        )
+        full_pass = load_rank_micro_steps_from_cache(
+            cache_dir,
+            expected_fingerprint=UNIT_FINGERPRINT,
+            schedule=schedule,
+            rank=rank,
+            world_size=world_size,
+            _force_full_chunk_pass=True,
+        )
+        oracle = tuple(
+            build_repeating_micro_step_stream(
+                oracle_all, schedule, rank=rank, world_size=world_size
+            )
+        )
+        rank_selective_ids = [step.metadata["pack_id"] for step in rank_selective]
+        full_pass_ids = [step.metadata["pack_id"] for step in full_pass]
+        oracle_ids = [step.metadata["pack_id"] for step in oracle]
+
+        # Rank-selective chunk skipping (the new default) MUST produce the
+        # exact same sequence as a full validated digest-and-payload pass
+        # (the internal force-full-pass control, reachable post-Wave-2 only
+        # through this test/benchmark-only kwarg) and as the independent
+        # repeating-stream oracle.
+        assert rank_selective_ids == full_pass_ids
+        assert rank_selective_ids == oracle_ids
 
 
 @pytest.mark.parametrize("payload_kind", ["list", "wrong-length-tuple"])

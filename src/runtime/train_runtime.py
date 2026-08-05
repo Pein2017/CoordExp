@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
+import math
 from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 import torch
@@ -22,6 +23,33 @@ from src.runtime.seeding import seed_training_runtime
 
 if TYPE_CHECKING:
     from src.training.supervised_trainer import SupervisedMicroStep
+
+# Reducer semantics per key are a fixed declared mapping, not a framework:
+# plain mean is the default; these keys override it.
+_ACCURACY_METRIC_CORRECT_FIELDS: dict[str, str] = {
+    "acc_top1": "top1_correct",
+    "acc_top5": "top5_correct",
+}
+_ACCURACY_ATOM_COUNT_FIELD = "accuracy_atom_count"
+_MAX_REDUCED_METRIC_KEYS = frozenset(
+    {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
+)
+
+# Sharded eval.forward reduction (design Seam C): a compact, mode-explicit
+# extension of the same metric collective above, never inferred from payload
+# shape. Only active when the caller's `reduction_mode` matches this literal
+# string (the replicated eval path, and every train call, never set it and
+# therefore reach the unchanged reducers above unmodified).
+EVAL_DISJOINT_SHARD_REDUCTION_MODE = "disjoint_shard"
+_EVAL_SUM_METRIC_KEY_NAMES = frozenset(
+    {"example_count", "pack_count", "count/packs", "count/examples"}
+)
+_EVAL_IDENTICAL_METRIC_KEY_NAMES = frozenset(
+    {"count/supervised_atoms", "count/eligible_segments", "count/skipped_segments"}
+)
+_TOKEN_WEIGHTED_DIAG_SUFFIX = "/token_weighted_diag"
+_TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX = "/token_weighted_diag/__weight__"
+_FINITE_METRIC_KEY_PREFIX = "finite/"
 
 
 def validate_accelerator_runtime(
@@ -232,8 +260,11 @@ class TrainRuntime:
         *,
         planned_step_id: int,
         split: str,
+        accuracy_stats: Mapping[str, int] | None = None,
+        reduction_mode: str | None = None,
     ) -> dict[str, Any]:
         values = {str(key): float(metrics[key]) for key in sorted(metrics)}
+        checked_accuracy_stats = _checked_accuracy_stats(accuracy_stats)
         if self.world_size > 1:
             values = self._reduce_metric_reports(
                 {
@@ -243,6 +274,8 @@ class TrainRuntime:
                     "rank": self.rank,
                     "world_size": self.world_size,
                     "metrics": values,
+                    "accuracy_stats": checked_accuracy_stats,
+                    "reduction_mode": reduction_mode,
                 }
             )
         return {
@@ -251,7 +284,7 @@ class TrainRuntime:
             "rank": self.rank,
             "world_size": self.world_size,
             "metrics": values,
-            "reduction": "single_rank" if self.world_size == 1 else "all_rank_mean",
+            "reduction": "single_rank" if self.world_size == 1 else "all_rank_mixed",
         }
 
     def gather_loss_denominators(
@@ -305,6 +338,105 @@ class TrainRuntime:
                 }
             )
         return tuple(gathered)
+
+    def validate_eval_reduction_consensus(
+        self,
+        *,
+        reduction_mode: str,
+        pack_count: int | None,
+    ) -> None:
+        """One-time pipeline-assembly consensus check (Opus HOLD P2-B).
+
+        Every world rank MUST call this before any mode-dependent branching
+        (sharding the eval micro-step sequence, or eval.forward's own
+        conditional `gather_loss_denominators` collective). Unlike the
+        per-invocation `reduction_mode` identity check inside
+        `_reduce_metric_reports`, this runs unconditionally on every rank
+        regardless of what each rank's own locally-resolved mode is, so a
+        divergence is caught here -- before it could otherwise leave one
+        rank waiting forever on a collective a diverged peer never joins.
+        """
+
+        if self.world_size <= 1:
+            return
+        local_report = {
+            "kind": "eval_reduction_consensus",
+            "planned_step_id": 0,
+            "split": "consensus",
+            "rank": self.rank,
+            "world_size": self.world_size,
+            "reduction_mode": str(reduction_mode),
+            "pack_count": None if pack_count is None else int(pack_count),
+        }
+        reports = self._gather_rank_reports(local_report)
+        if len(reports) != self.world_size:
+            raise RuntimeContractError(
+                "eval reduction consensus gather must return exactly one "
+                "report per world rank",
+                code="runtime.eval_reduction_consensus_count",
+                context={
+                    "expected_report_count": self.world_size,
+                    "observed_report_count": len(reports),
+                },
+            )
+        ranks_seen: set[int] = set()
+        modes: set[str] = set()
+        pack_counts: set[int | None] = set()
+        for report_index, report in enumerate(reports):
+            if not isinstance(report, Mapping):
+                raise RuntimeContractError(
+                    "eval reduction consensus gatherer must return mapping reports",
+                    code="runtime.eval_reduction_consensus_invalid",
+                    context={
+                        "report_index": report_index,
+                        "value_type": type(report).__name__,
+                    },
+                )
+            try:
+                report_rank = int(report["rank"])
+                report_mode = str(report["reduction_mode"])
+                report_pack_count = report["pack_count"]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RuntimeContractError(
+                    "eval reduction consensus report is missing required identity fields",
+                    code="runtime.eval_reduction_consensus_invalid",
+                    context={"report_index": report_index},
+                ) from exc
+            if report_rank < 0 or report_rank >= self.world_size or report_rank in ranks_seen:
+                raise RuntimeContractError(
+                    "eval reduction consensus must contain one unique report per world rank",
+                    code="runtime.eval_reduction_consensus_ranks",
+                    context={"report_index": report_index, "rank": report_rank},
+                )
+            ranks_seen.add(report_rank)
+            modes.add(report_mode)
+            pack_counts.add(
+                None if report_pack_count is None else int(report_pack_count)
+            )
+        if ranks_seen != set(range(self.world_size)):
+            raise RuntimeContractError(
+                "eval reduction consensus must contain every world rank",
+                code="runtime.eval_reduction_consensus_ranks",
+                context={"observed_ranks": sorted(ranks_seen)},
+            )
+        if len(modes) != 1:
+            raise RuntimeContractError(
+                "eval reduction mode diverged across ranks before sharding; the "
+                "active mode must be identical on every rank before any "
+                "mode-dependent collective is attempted",
+                code="runtime.eval_reduction_consensus_mode_mismatch",
+                context={"observed_modes": sorted(modes)},
+            )
+        if len(pack_counts) != 1:
+            raise RuntimeContractError(
+                "eval pack_count diverged across ranks before sharding",
+                code="runtime.eval_reduction_consensus_pack_count_mismatch",
+                context={
+                    "observed_pack_counts": sorted(
+                        (-1 if value is None else value) for value in pack_counts
+                    )
+                },
+            )
 
     def _validate_runtime_contract(
         self,
@@ -398,7 +530,10 @@ class TrainRuntime:
         expected_step = int(local_report["planned_step_id"])
         expected_split = str(local_report["split"])
         expected_keys = tuple(local_report["metrics"])
+        expected_reduction_mode = local_report.get("reduction_mode")
+        local_accuracy_stats = local_report.get("accuracy_stats")
         reports_by_rank: dict[int, Mapping[str, Any]] = {}
+        accuracy_stats_by_rank: dict[int, Mapping[str, Any] | None] = {}
         for report_index, report in enumerate(reports):
             if not isinstance(report, Mapping):
                 raise RuntimeContractError(
@@ -446,6 +581,18 @@ class TrainRuntime:
                         "observed_split": report_split,
                     },
                 )
+            report_reduction_mode = report.get("reduction_mode")
+            if report_reduction_mode != expected_reduction_mode:
+                raise RuntimeContractError(
+                    "metric gather reports disagree on the explicit reduction mode; the "
+                    "active mode must never be inferred ambiguously from payload shape",
+                    code="runtime.metric_gather_reduction_mode",
+                    context={
+                        "rank": report_rank,
+                        "expected_reduction_mode": expected_reduction_mode,
+                        "observed_reduction_mode": report_reduction_mode,
+                    },
+                )
             if not isinstance(report_metrics, Mapping):
                 raise RuntimeContractError(
                     "metric gather report metrics must be a mapping",
@@ -464,17 +611,244 @@ class TrainRuntime:
                     },
                 )
             reports_by_rank[report_rank] = report_metrics
+            accuracy_stats_by_rank[report_rank] = report.get("accuracy_stats")
         if tuple(sorted(reports_by_rank)) != tuple(range(self.world_size)):
             raise RuntimeContractError(
                 "metric gather must contain every world rank",
                 code="runtime.metric_gather_ranks",
                 context={"observed_ranks": sorted(reports_by_rank)},
             )
-        return {
-            key: sum(float(reports_by_rank[rank][key]) for rank in range(self.world_size))
-            / self.world_size
-            for key in expected_keys
-        }
+        accuracy_keys_present = tuple(
+            key for key in expected_keys if key in _ACCURACY_METRIC_CORRECT_FIELDS
+        )
+        if accuracy_keys_present and local_accuracy_stats is None:
+            raise RuntimeContractError(
+                "accuracy metric reduction requires local accuracy_stats whenever "
+                "acc_top1/acc_top5 are present in the gathered metric payload; a "
+                "plain rank mean must never silently substitute for the exact "
+                "summed-integer ratio",
+                code="runtime.accuracy_stats_missing",
+                context={"metrics": list(accuracy_keys_present)},
+            )
+        eval_sharded = expected_reduction_mode == EVAL_DISJOINT_SHARD_REDUCTION_MODE
+        reduced: dict[str, float] = {}
+        for key in expected_keys:
+            correct_field = _ACCURACY_METRIC_CORRECT_FIELDS.get(key)
+            if correct_field is not None:
+                reduced[key] = self._reduce_accuracy_metric(
+                    key,
+                    correct_field=correct_field,
+                    accuracy_stats_by_rank=accuracy_stats_by_rank,
+                )
+            elif key in _MAX_REDUCED_METRIC_KEYS:
+                reduced[key] = max(
+                    float(reports_by_rank[rank][key]) for rank in range(self.world_size)
+                )
+            elif eval_sharded and _is_eval_sum_metric_key(key):
+                reduced[key] = self._reduce_eval_sum_metric(key, reports_by_rank)
+            elif eval_sharded and _is_eval_identical_metric_key(key):
+                reduced[key] = self._reduce_eval_identical_metric(key, reports_by_rank)
+            elif eval_sharded and key.startswith(_FINITE_METRIC_KEY_PREFIX):
+                reduced[key] = self._reduce_eval_finite_metric(key, reports_by_rank)
+            else:
+                reduced[key] = sum(
+                    float(reports_by_rank[rank][key]) for rank in range(self.world_size)
+                ) / self.world_size
+        return reduced
+
+    def _reduce_eval_sum_metric(
+        self, key: str, reports_by_rank: Mapping[int, Mapping[str, Any]]
+    ) -> float:
+        # Disjoint per-rank shards make a plain sum exact: an example or pack
+        # belongs to exactly one rank's shard, and the token-weighted-diag
+        # keys already carry pre-weighted (value * local selected_count)
+        # products / their companion weights, summed here and divided back
+        # into an exact global weighted average by the eval caller.
+        count_like = not key.endswith(_TOKEN_WEIGHTED_DIAG_SUFFIX)
+        total = 0.0
+        for rank in range(self.world_size):
+            value = float(reports_by_rank[rank][key])
+            if count_like:
+                _checked_eval_count_value(value, key=key, rank=rank)
+            total += value
+        return total
+
+    def _reduce_eval_identical_metric(
+        self, key: str, reports_by_rank: Mapping[int, Mapping[str, Any]]
+    ) -> float:
+        # These fields are already global (derived from the merged
+        # cross-rank denominator gathered once in prepare_planned_step), so
+        # every rank must report the identical value; summing them again
+        # would multiply the true value by world_size.
+        observed: dict[float, int] = {}
+        for rank in range(self.world_size):
+            value = float(reports_by_rank[rank][key])
+            _checked_eval_count_value(value, key=key, rank=rank)
+            observed.setdefault(value, rank)
+        if len(observed) != 1:
+            raise RuntimeContractError(
+                "eval sharded reduction requires an already-global field to be "
+                "identical across ranks; it must be emitted once, not rank-summed",
+                code="runtime.eval_identical_metric_mismatch",
+                context={"key": key, "observed_values": sorted(observed)},
+            )
+        return next(iter(observed))
+
+    def _reduce_eval_finite_metric(
+        self, key: str, reports_by_rank: Mapping[int, Mapping[str, Any]]
+    ) -> float:
+        # `finite/*` flags are per-rank binary indicators (1.0 finite, 0.0
+        # not) computed from each rank's own LOCAL contribution. The
+        # replicated evaluator's reference value is 0.0 whenever ANY
+        # contribution to the underlying scalar is non-finite (NaN/Inf
+        # propagates through the sum that derives it) -- so the correct
+        # cross-rank reducer is a logical AND, implemented as `min` over the
+        # 0.0/1.0 values. A plain mean would silently report a fractional,
+        # meaningless value (e.g. 0.5 for two ranks split finite/non-finite)
+        # instead of the correct binary 0.0.
+        result = 1.0
+        for rank in range(self.world_size):
+            value = float(reports_by_rank[rank][key])
+            _checked_eval_finite_flag(value, key=key, rank=rank)
+            result = min(result, value)
+        return result
+
+    def _reduce_accuracy_metric(
+        self,
+        key: str,
+        *,
+        correct_field: str,
+        accuracy_stats_by_rank: Mapping[int, Mapping[str, Any] | None],
+    ) -> float:
+        correct_total = 0
+        atom_total = 0
+        for rank in range(self.world_size):
+            stats = accuracy_stats_by_rank.get(rank)
+            if not isinstance(stats, Mapping):
+                raise RuntimeContractError(
+                    "accuracy metric reduction requires accuracy_stats from every rank",
+                    code="runtime.accuracy_stats_missing",
+                    context={"metric": key, "rank": rank},
+                )
+            rank_correct = _checked_stat_int(stats, correct_field, metric=key, rank=rank)
+            rank_atoms = _checked_stat_int(
+                stats, _ACCURACY_ATOM_COUNT_FIELD, metric=key, rank=rank
+            )
+            _check_correct_within_atom_count(
+                rank_correct, rank_atoms, field=correct_field, metric=key, rank=rank
+            )
+            correct_total += rank_correct
+            atom_total += rank_atoms
+        if atom_total <= 0:
+            raise RuntimeContractError(
+                "accuracy metric reduction requires a positive summed atom count",
+                code="runtime.accuracy_stats_zero_atoms",
+                context={"metric": key},
+            )
+        return float(correct_total) / float(atom_total)
+
+
+def _is_eval_sum_metric_key(key: str) -> bool:
+    return (
+        key in _EVAL_SUM_METRIC_KEY_NAMES
+        or key.endswith(_TOKEN_WEIGHTED_DIAG_SUFFIX)
+        or key.endswith(_TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX)
+    )
+
+
+def _is_eval_identical_metric_key(key: str) -> bool:
+    return key in _EVAL_IDENTICAL_METRIC_KEY_NAMES or key.endswith("/segment_count")
+
+
+def _checked_eval_count_value(value: float, *, key: str, rank: int) -> None:
+    if key.endswith(_TOKEN_WEIGHTED_DIAG_SUFFIX):
+        return
+    if not math.isfinite(value) or value < 0.0 or value != math.floor(value):
+        raise RuntimeContractError(
+            "eval sharded reduction count field must be a finite non-negative integer",
+            code="runtime.eval_count_metric_invalid",
+            context={"key": key, "rank": rank, "value": value},
+        )
+
+
+def _checked_eval_finite_flag(value: float, *, key: str, rank: int) -> None:
+    if value not in (0.0, 1.0):
+        raise RuntimeContractError(
+            "eval sharded reduction finite/* field must be exactly 0.0 or 1.0",
+            code="runtime.eval_finite_metric_invalid",
+            context={"key": key, "rank": rank, "value": value},
+        )
+
+
+def _checked_accuracy_stats(
+    accuracy_stats: Mapping[str, int] | None,
+) -> dict[str, int] | None:
+    if accuracy_stats is None:
+        return None
+    required_fields = (
+        *_ACCURACY_METRIC_CORRECT_FIELDS.values(),
+        _ACCURACY_ATOM_COUNT_FIELD,
+    )
+    checked: dict[str, int] = {}
+    for field_name in required_fields:
+        if field_name not in accuracy_stats:
+            raise RuntimeContractError(
+                "accuracy_stats payload is missing a required sufficient-statistic field",
+                code="runtime.accuracy_stats_field_missing",
+                context={
+                    "field": field_name,
+                    "available_fields": sorted(accuracy_stats),
+                },
+            )
+        checked[field_name] = _checked_stat_int(
+            accuracy_stats, field_name, metric="accuracy_stats", rank=-1
+        )
+    atom_count = checked[_ACCURACY_ATOM_COUNT_FIELD]
+    for correct_field in _ACCURACY_METRIC_CORRECT_FIELDS.values():
+        _check_correct_within_atom_count(
+            checked[correct_field],
+            atom_count,
+            field=correct_field,
+            metric="accuracy_stats",
+            rank=-1,
+        )
+    return checked
+
+
+def _checked_stat_int(
+    stats: Mapping[str, Any], field_name: str, *, metric: str, rank: int
+) -> int:
+    value = stats.get(field_name)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RuntimeContractError(
+            "accuracy metric reduction stat field must be a non-negative integer",
+            code="runtime.accuracy_stats_field_type",
+            context={
+                "metric": metric,
+                "rank": rank,
+                "field": field_name,
+                "value": value,
+            },
+        )
+    return value
+
+
+def _check_correct_within_atom_count(
+    correct: int, atom_count: int, *, field: str, metric: str, rank: int
+) -> None:
+    if correct > atom_count:
+        raise RuntimeContractError(
+            "accuracy metric reduction stat field cannot exceed the atom count",
+            code="runtime.accuracy_stats_correct_exceeds_atoms",
+            context={
+                "metric": metric,
+                "rank": rank,
+                "field": field,
+                "correct": correct,
+                "accuracy_atom_count": atom_count,
+            },
+        )
+
 
 def _accelerator_overflow(accelerator: Any) -> bool:
     scaler = getattr(accelerator, "scaler", None)
@@ -547,6 +921,7 @@ def _float_scalar(value: Any) -> float:
 
 
 __all__ = [
+    "EVAL_DISJOINT_SHARD_REDUCTION_MODE",
     "TrainRuntime",
     "validate_accelerator_runtime",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -17,7 +17,6 @@ from src.losses.coord_gaussian_rps import CoordGaussianRPSLoss
 from src.losses.normalizers import (
     PlannedStepLossSlice,
     SegmentBalancedDenominator,
-    reduce_segment_balanced_planned_step,
     segment_balanced_contribution,
 )
 from src.losses.token_type_gate import TokenTypeGateLoss
@@ -65,6 +64,7 @@ class LossBundle:
     counts: dict[str, int]
     diagnostics: dict[str, Any]
     finite_status: dict[str, Any]
+    accuracy_stats: dict[str, int] = field(default_factory=dict)
 
     def term_by_name(self, name: str) -> LossTermResult:
         for term in self.terms:
@@ -84,6 +84,7 @@ class LossBundle:
             "counts": dict(self.counts),
             "diagnostics": self.diagnostics,
             "finite_status": self.finite_status,
+            "accuracy_stats": dict(self.accuracy_stats),
         }
 
 
@@ -146,65 +147,6 @@ class LossRunner:
             token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
             coord_gaussian_rps_weight=coord_cfg.weight,
             coord_gaussian_rps=coord_term,
-        )
-
-    def compute(self, contexts: Sequence[LossContext]) -> LossBundle:
-        checked_contexts = _checked_contexts(contexts)
-        base_result = _compute_token_term(
-            name="base_ce",
-            contexts=checked_contexts,
-            weight=self.base_ce_weight,
-            term=BaseTokenCE(),
-            token_types=None,
-        )
-        gate_result = _compute_token_term(
-            name="token_type_gate",
-            contexts=checked_contexts,
-            weight=self.token_type_gate_weight,
-            term=TokenTypeGateLoss(),
-            token_types=self.token_type_gate_groups,
-        )
-        terms_list = [base_result, gate_result]
-        if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is not None:
-            terms_list.append(
-                _compute_token_term(
-                    name="coord_gaussian_rps",
-                    contexts=checked_contexts,
-                    weight=self.coord_gaussian_rps_weight,
-                    term=self.coord_gaussian_rps,
-                    token_types=("coordinate",),
-                )
-            )
-        terms = tuple(terms_list)
-        total_loss = sum(
-            (term.weighted_loss for term in terms),
-            terms[0].weighted_loss.new_zeros(()),
-        )
-        counts = _build_counts(checked_contexts, base_result.denominator)
-        metrics = _build_metrics(
-            total_loss=total_loss,
-            terms=terms,
-            contexts=checked_contexts,
-            counts=counts,
-        )
-        finite_status = _build_finite_status(total_loss=total_loss, terms=terms)
-        metrics["finite/total_loss"] = _finite_metric(total_loss)
-        for term in terms:
-            metrics[f"finite/{term.name}"] = _finite_metric(term.weighted_loss)
-        diagnostics = {
-            "normalizer": "segment_balanced",
-            "term_order": [term.name for term in terms],
-            "term_denominators": {
-                term.name: term.denominator.to_artifact_dict() for term in terms
-            },
-        }
-        return LossBundle(
-            total_loss=total_loss,
-            terms=terms,
-            metrics=metrics,
-            counts=counts,
-            diagnostics=diagnostics,
-            finite_status=finite_status,
         )
 
     def prepare_planned_step(
@@ -327,7 +269,7 @@ class LossRunner:
             terms[0].weighted_loss.new_zeros(()),
         )
         counts = _build_micro_counts(context, base_result)
-        metrics = _build_metrics(
+        metrics, accuracy_stats = _build_metrics(
             total_loss=total_loss,
             terms=terms,
             contexts=(context,),
@@ -359,6 +301,7 @@ class LossRunner:
             counts=counts,
             diagnostics=diagnostics,
             finite_status=finite_status,
+            accuracy_stats=accuracy_stats,
         )
 
     def finalize_planned_step(
@@ -375,10 +318,15 @@ class LossRunner:
             )
         terms = _merge_term_artifacts(artifacts, plan)
         total_loss = sum(float(term["weighted_loss"]) for term in terms)
+        accuracy_stats = _merge_accuracy_stats(artifacts)
         metrics = {
             "loss/total": total_loss,
-            "acc_top1": _merge_accuracy_metric(artifacts, "acc_top1"),
-            "acc_top5": _merge_accuracy_metric(artifacts, "acc_top5"),
+            "acc_top1": _ratio_or_raise(
+                accuracy_stats["top1_correct"], accuracy_stats["accuracy_atom_count"]
+            ),
+            "acc_top5": _ratio_or_raise(
+                accuracy_stats["top5_correct"], accuracy_stats["accuracy_atom_count"]
+            ),
         }
         for term in terms:
             name = str(term["name"])
@@ -422,76 +370,8 @@ class LossRunner:
                 },
             },
             "finite_status": finite_status,
+            "accuracy_stats": accuracy_stats,
         }
-
-
-def _compute_token_term(
-    *,
-    name: str,
-    contexts: tuple[LossContext, ...],
-    weight: float,
-    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss,
-    token_types: tuple[str, ...] | None,
-) -> LossTermResult:
-    slices: list[PlannedStepLossSlice] = []
-    term_diagnostics: list[dict[str, Any]] = []
-    for local_index, context in enumerate(contexts):
-        term_context = (
-            context
-            if token_types is None
-            else _filter_context_by_token_types(context, token_types=token_types)
-        )
-        if term_context.atoms:
-            per_atom_losses = term.per_atom_loss(term_context)
-            diagnostics_payload = getattr(term, "last_diagnostics", None)
-            if diagnostics_payload is not None:
-                term_diagnostics.append(
-                    {
-                        "local_micro_step_index": local_index,
-                        **dict(diagnostics_payload),
-                    }
-                )
-        else:
-            per_atom_losses = term_context.logits.new_empty((0,), dtype=torch.float32)
-        slices.append(
-            PlannedStepLossSlice(
-                term_name=name,
-                context=term_context,
-                per_atom_losses=per_atom_losses,
-                local_micro_step_index=local_index,
-            )
-        )
-    reduced = reduce_segment_balanced_planned_step(tuple(slices))
-    weighted = reduced.loss * float(weight)
-    segment_mean_numerator = (
-        reduced.loss.detach() * float(reduced.denominator.eligible_segment_count)
-    )
-    diagnostics = {
-        "denominator_scope": reduced.denominator_scope,
-        "context_count": reduced.context_count,
-    }
-    if token_types is not None:
-        diagnostics["configured_token_types"] = list(token_types)
-        diagnostics["selected_count_by_token_type"] = _selected_count_by_token_type(
-            tuple(slices),
-            token_types=token_types,
-        )
-    if term_diagnostics:
-        diagnostics["term_diagnostics"] = term_diagnostics
-    return LossTermResult(
-        name=name,
-        raw_loss=reduced.loss,
-        weighted_loss=weighted,
-        weight=float(weight),
-        segment_mean_numerator=segment_mean_numerator,
-        denominator=reduced.denominator,
-        reducer_name="segment_balanced",
-        selected_count=reduced.selected_atom_count,
-        skipped_count=reduced.skipped_segment_count,
-        math_dtype="float32",
-        token_weighted_diagnostic=reduced.token_balanced_diagnostic,
-        diagnostics=diagnostics,
-    )
 
 
 def _compute_token_term_contribution(
@@ -564,18 +444,6 @@ def _compute_token_term_contribution(
         token_weighted_diagnostic=token_weighted,
         diagnostics=diagnostics,
     )
-
-
-def _selected_count_by_token_type(
-    slices: tuple[PlannedStepLossSlice, ...],
-    *,
-    token_types: tuple[str, ...],
-) -> dict[str, int]:
-    counts = {token_type: 0 for token_type in token_types}
-    for item in slices:
-        for atom in item.context.atoms:
-            counts[atom.token_type] = counts.get(atom.token_type, 0) + 1
-    return counts
 
 
 def _filter_context_by_token_types(
@@ -1092,21 +960,81 @@ def _finite_diagnostic_value(name: str, key: str, value: Any) -> float:
     return parsed
 
 
-def _merge_accuracy_metric(
-    artifacts: tuple[dict[str, Any], ...],
-    name: str,
-) -> float:
-    weighted_values = []
-    for artifact in artifacts:
-        metrics = artifact.get("metrics", {})
-        counts = artifact.get("counts", {})
-        weighted_values.append(
-            (
-                float(metrics.get(name, 0.0)),
-                int(counts.get("count/supervised_atoms", 0)),
+def _merge_accuracy_stats(artifacts: tuple[dict[str, Any], ...]) -> dict[str, int]:
+    """Sum exact rank-local-step integer sufficient statistics across micro-steps.
+
+    Never reconstructs counts from rounded float ratios; summing the exact
+    integers here (rather than weight-averaging the per-micro-step ratios)
+    keeps the planned-step total exact by construction. Every micro-step
+    artifact MUST carry valid `accuracy_stats`; a missing or malformed entry
+    fails closed rather than silently contributing zero (which would
+    undercount the planned-step total).
+    """
+
+    top1_correct = 0
+    top5_correct = 0
+    accuracy_atom_count = 0
+    for micro_step_index, artifact in enumerate(artifacts):
+        stats = artifact.get("accuracy_stats")
+        if not isinstance(stats, Mapping):
+            raise LossContractError(
+                "streaming micro-step artifact is missing accuracy_stats",
+                code="loss.accuracy_stats_missing",
+                context={"micro_step_index": micro_step_index},
             )
+        micro_top1 = _checked_micro_accuracy_stat(
+            stats, "top1_correct", micro_step_index=micro_step_index
         )
-    return _weighted_average(weighted_values)
+        micro_top5 = _checked_micro_accuracy_stat(
+            stats, "top5_correct", micro_step_index=micro_step_index
+        )
+        micro_atoms = _checked_micro_accuracy_stat(
+            stats, "accuracy_atom_count", micro_step_index=micro_step_index
+        )
+        if micro_top1 > micro_atoms or micro_top5 > micro_atoms:
+            raise LossContractError(
+                "streaming micro-step accuracy_stats correct count cannot "
+                "exceed the atom count",
+                code="loss.accuracy_stats_correct_exceeds_atoms",
+                context={
+                    "micro_step_index": micro_step_index,
+                    "top1_correct": micro_top1,
+                    "top5_correct": micro_top5,
+                    "accuracy_atom_count": micro_atoms,
+                },
+            )
+        top1_correct += micro_top1
+        top5_correct += micro_top5
+        accuracy_atom_count += micro_atoms
+    return {
+        "top1_correct": top1_correct,
+        "top5_correct": top5_correct,
+        "accuracy_atom_count": accuracy_atom_count,
+    }
+
+
+def _checked_micro_accuracy_stat(
+    stats: Mapping[str, Any], field: str, *, micro_step_index: int
+) -> int:
+    if field not in stats:
+        raise LossContractError(
+            "streaming micro-step accuracy_stats is missing a required field",
+            code="loss.accuracy_stats_field_missing",
+            context={"micro_step_index": micro_step_index, "field": field},
+        )
+    value = stats[field]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise LossContractError(
+            "streaming micro-step accuracy_stats field must be a "
+            "non-negative integer",
+            code="loss.accuracy_stats_field_type",
+            context={
+                "micro_step_index": micro_step_index,
+                "field": field,
+                "value": value,
+            },
+        )
+    return value
 
 
 def _weighted_average(values_and_weights: Iterable[tuple[float, int]]) -> float:
@@ -1120,53 +1048,22 @@ def _weighted_average(values_and_weights: Iterable[tuple[float, int]]) -> float:
     return numerator / float(denominator)
 
 
-def _checked_contexts(contexts: Sequence[LossContext]) -> tuple[LossContext, ...]:
-    checked = tuple(contexts)
-    if not checked:
-        raise LossContractError(
-            "LossRunner requires at least one planned-step context",
-            code="loss.runner_empty_contexts",
-            context={},
-        )
-    for index, context in enumerate(checked):
-        if not isinstance(context, LossContext):
-            raise LossContractError(
-                "LossRunner contexts must be LossContext records",
-                code="loss.runner_context_type",
-                context={"index": index, "value_type": type(context).__name__},
-            )
-    return checked
-
-
-def _build_counts(
-    contexts: tuple[LossContext, ...],
-    base_denominator: SegmentBalancedDenominator,
-) -> dict[str, int]:
-    example_ids = {
-        segment.example_id
-        for context in contexts
-        for segment in context.token_sequence.segments
-    }
-    return {
-        "count/supervised_atoms": base_denominator.selected_atom_count,
-        "count/eligible_segments": base_denominator.eligible_segment_count,
-        "count/skipped_segments": base_denominator.skipped_segment_count,
-        "count/packs": len(contexts),
-        "count/examples": len(example_ids),
-    }
-
-
 def _build_metrics(
     *,
     total_loss: torch.Tensor,
     terms: tuple[LossTermResult, ...],
     contexts: tuple[LossContext, ...],
     counts: dict[str, int],
-) -> dict[str, float]:
+) -> tuple[dict[str, float], dict[str, int]]:
+    accuracy_stats = _accuracy_stats(contexts)
     metrics = {
         "loss/total": _float_value(total_loss),
-        "acc_top1": _accuracy(contexts, k=1),
-        "acc_top5": _accuracy(contexts, k=5),
+        "acc_top1": _ratio_or_raise(
+            accuracy_stats["top1_correct"], accuracy_stats["accuracy_atom_count"]
+        ),
+        "acc_top5": _ratio_or_raise(
+            accuracy_stats["top5_correct"], accuracy_stats["accuracy_atom_count"]
+        ),
     }
     for term in terms:
         metrics[f"loss/{term.name}"] = _float_value(term.weighted_loss)
@@ -1178,29 +1075,44 @@ def _build_metrics(
         )
     for name, value in counts.items():
         metrics[name] = float(value)
-    return metrics
+    return metrics, accuracy_stats
 
 
-def _accuracy(contexts: tuple[LossContext, ...], *, k: int) -> float:
+def _accuracy_stats(contexts: tuple[LossContext, ...]) -> dict[str, int]:
+    """Exact integer top-1/top-5 correct counts and the shared atom count.
+
+    These are the rank-local sufficient statistics: cross-rank accuracy
+    reduction sums them before forming the ratio (never weights per-rank
+    ratios by an already-global count, never reconstructs counts from
+    rounded ratios).
+    """
+
     with torch.no_grad():
-        correct = 0
+        top1_correct = 0
+        top5_correct = 0
         total = 0
         for context in contexts:
             if not context.atoms:
                 continue
             selected = context.logits[0].index_select(0, context.logits_positions)
             targets = context.target_ids
-            if k == 1:
-                predictions = torch.argmax(selected, dim=1)
-                correct += int(predictions.eq(targets).sum().item())
-            else:
-                topk = torch.topk(
-                    selected,
-                    k=min(k, int(selected.shape[1])),
-                    dim=1,
-                ).indices
-                correct += int(topk.eq(targets.unsqueeze(1)).any(dim=1).sum().item())
+            predictions = torch.argmax(selected, dim=1)
+            top1_correct += int(predictions.eq(targets).sum().item())
+            topk = torch.topk(
+                selected,
+                k=min(5, int(selected.shape[1])),
+                dim=1,
+            ).indices
+            top5_correct += int(topk.eq(targets.unsqueeze(1)).any(dim=1).sum().item())
             total += int(targets.numel())
+    return {
+        "top1_correct": top1_correct,
+        "top5_correct": top5_correct,
+        "accuracy_atom_count": total,
+    }
+
+
+def _ratio_or_raise(correct: int, total: int) -> float:
     if total == 0:
         raise LossContractError(
             "accuracy metrics require at least one supervised atom",

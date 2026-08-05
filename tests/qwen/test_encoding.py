@@ -11,7 +11,7 @@ from PIL import Image
 from src.common.errors import EncodingContractError
 from src.config.loader import load_train_config
 from src.data import load_raw_examples
-from src.qwen.encoding import encode_rendered_example
+from src.qwen.encoding import _token_indices_for_char_range, encode_rendered_example
 from src.qwen.loading import QwenProcessorIdentity
 from src.qwen.loading import load_qwen_components
 from src.templates import render_example
@@ -170,6 +170,32 @@ def test_tokenizer_offset_crossing_span_boundary_fails() -> None:
         )
 
     assert exc_info.value.code == "qwen.span_token_boundary"
+
+
+def test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisect() -> None:
+    """Permanent regression guard for the Wave 5 (task 5.3) rejected bisect
+    candidate: `_token_indices_for_char_range` MUST stay a full linear scan.
+    A bisect/binary-search shortcut over `offset_mapping` silently assumes
+    monotonically non-decreasing token offsets, but a zero-width
+    special-token-like `(0, 0)` entry can appear mid-sequence, breaking that
+    assumption. Here, querying `[5, 15)` against
+    `[(0, 5), (5, 10), (0, 0), (10, 15)]` must resolve to the two real
+    overlapping tokens at indices (1, 3), correctly skipping the mid-sequence
+    `(0, 0)` entry (its `token_end=0 <= char_start=5`), with no spurious
+    `qwen.span_token_coverage` error. See `implementation-notes.md` "M5a" for
+    the full rejected-bisect writeup."""
+
+    offset_mapping = [(0, 5), (5, 10), (0, 0), (10, 15)]
+
+    indices = _token_indices_for_char_range(
+        offset_mapping,
+        char_start=5,
+        char_end=15,
+        example_id="ex",
+        span_text="x",
+    )
+
+    assert indices == (1, 3)
 
 
 class FakeComponents:
