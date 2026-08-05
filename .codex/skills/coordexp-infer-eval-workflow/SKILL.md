@@ -16,6 +16,12 @@ the user names it explicitly.
    - Load the authored and effective config; verify input JSONL, image roots,
      checkpoint/adapter, prompt/template, coordinate surface, decode settings,
      output root, and distributed launch shape.
+   - For canonical production inference, treat these as the default decode
+     contract and verify them in the effective YAML: per-device
+     `generation.batch_size: 4`, `generation.max_new_tokens: 3084`, and
+     `generation.repetition_penalty: 1.10`. Do not inject or silently override
+     these values when an explicitly authored smoke or diagnostic config
+     declares a different envelope.
    - Complete when the intended run and benchmark scope are explicit.
 
 2. **Execute the owned path.**
@@ -25,8 +31,9 @@ the user names it explicitly.
      composition oracle and label vLLM precision or parity claims by their actual
      qualification.
    - For canonical scored inference, use deterministic decoding with one
-     completion per input (`n=1`) unless the config intentionally declares
-     another evaluation contract. This does not imply batch size one.
+     completion per input (`n=1`) and the default decode contract above unless
+     the config intentionally declares another evaluation contract. This does
+     not imply batch size one.
    - Complete when every worker exits, rank coverage and merge order are
      complete, and resources return.
 
