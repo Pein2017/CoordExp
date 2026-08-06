@@ -1,4 +1,4 @@
 interface:
   display_name: "CoordExp Research Knowledge"
-  short_description: "Preserve and synthesize research knowledge"
-  default_prompt: "Use $coordexp-research-knowledge-workflow to give this research knowledge one durable owner with explicit provenance."
+  short_description: "Preserve research knowledge without validity conflation"
+  default_prompt: "Use $coordexp-research-knowledge-workflow to close this research record while separating scientific evidence, technical validity, and infrastructure follow-up."

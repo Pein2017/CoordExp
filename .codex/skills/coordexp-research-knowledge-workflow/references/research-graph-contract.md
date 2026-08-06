@@ -12,6 +12,7 @@ record, decision update, or mechanism promotion.
 | `research/investigations/` | Competing explanations and synthesis across units | Implementation authorization |
 | `research/decisions/` | Current evidence-backed route choice and next discriminator | Mechanism truth or product contract |
 | `research/mechanisms/` | Reusable bounded explanations supported across independent units | Single-probe correlations |
+| Named infrastructure source, tests, and change | Reusable execution, instrumentation, identity, persistence, recovery, and mechanical acceptance | Cohorts, interventions, estimands, thresholds, scientific outcomes, or claims |
 | `openspec/` | Stable reusable implementation and compatibility contracts | Hypotheses, cohorts, thresholds, or scientific verdicts |
 
 ## Recommended Investigation Layout
@@ -98,6 +99,23 @@ an already authorized research goal to `not_authorized` merely because a new
 unit is created. Architecture promotion and stable-contract work remain
 separate decisions.
 
+## Research And Infrastructure Axes
+
+Track a research unit and its supporting infrastructure independently:
+
+| Observation | Research disposition | Infrastructure disposition |
+| --- | --- | --- |
+| Mechanical path is invalid before an affected contrast is durably recorded | The question is unanswered for that contrast; keep the result neutral and the evidence `none` or `partial` | Preserve the failed run receipt and route the defect to the named infrastructure owner |
+| Mechanical path is accepted and the declared contrast yields a null effect | Admit bounded negative evidence if denominator, controls, and uncertainty are satisfied | Record mechanics as accepted without claiming scientific meaning |
+| Infrastructure is repaired after a failed run | Keep the old run technically invalid and scientifically unusable for the affected contrast | Validate the repair independently and require a fresh immutable run identifier |
+| Conditioning, population, estimand, control, or stop rule changes | Apply the semantic-delta gate and obtain any owning decision; use a new unit when the question changed | Do not disguise the semantic change as an implementation repair |
+
+A technically invalid run is immutable provenance; it does not automatically
+invalidate the research unit. Recoverable arm evidence may support only an
+unaffected declared contrast. Infrastructure validation can unblock execution
+but cannot complete a research unit, promote a mechanism, or rehabilitate
+missing evidence.
+
 ## Originating Intent And Semantic Delta Gate
 
 Before a unit becomes `ready` or freezes a predicate, cohort, estimand,
@@ -155,6 +173,23 @@ it next to the path.
 Match detail to the evidence tier. An exploratory unit is an executable outline,
 not a production pre-registration or a speculative software interface.
 
+### Scientific interpretation gate
+
+Before accepting a positive, negative, or null scientific result:
+
+- report nested source-population, eligible, executed, mechanically valid, and
+  analyzable denominators rather than silently using the strictest subset as
+  the originating population;
+- distinguish natural behavior from oracle, forced-prefix, teacher-forced, or
+  retrieval-conditioned behavior, and distinguish precondition or admission
+  from realization after the condition is supplied;
+- keep technical-invalid, unexecuted, missing-support, unknown, and unmatched
+  cases neutral unless the frozen protocol explicitly defines one as the
+  scientific outcome; and
+- state the transfer needed when an intermediate intervention, proxy, or readout
+  differs from the final evaluation surface. Evidence supports the exact
+  observed surface until that transfer survives its declared control.
+
 ### Exploratory outline
 
 Require only:
@@ -183,11 +218,18 @@ For inference-led case or mechanism studies, prefer a few deliberately selected
 representative cases and sample-level review over population metric estimation.
 The owning domain skill may define a more specific default range.
 
-Before a unit becomes `ready`, run one real case through every
-conclusion-bearing link from source selection through intervention, emitted
-artifact, and the evaluator, visualization, or trace that owns the decision. If
-a link is bypassed or represented by a proxy, name it and narrow the claim.
-Helper-level tests alone are not this representative smoke.
+Before costly or expanded execution, first make every CPU-discoverable receipt,
+serialization, identity, and write-read failure fail before accelerator work.
+Then run one minimal real case through every conclusion-bearing mechanical link
+from source selection through intervention, durable artifact finalization and
+readback, and the evaluator, visualization, or trace that owns the decision. A
+helper-level test or in-memory result is not this end-to-end mechanics smoke,
+and the smoke proves mechanics rather than model quality.
+
+Only after that smoke passes, run the smallest scientific pilot whose declared
+contrast can change the next decision. Expand support, cohorts, replications,
+or mechanism matrices only after both gates pass. If a link is bypassed or
+represented by a proxy, name it and narrow the claim.
 
 ### Decision-grade additions
 
@@ -205,6 +247,11 @@ comparability, scope, or artifact attribution and use a fresh run identifier.
 Ordinary implementation repairs do not require a new protocol ceremony. Never
 rewrite a declared scope after observing results; label partial execution as
 partial evidence.
+
+Record an ordinary implementation repair in the run lineage with its exact
+mechanical acceptance. Reuse the unit only when its scientific question and
+frozen semantics are unchanged; always use a new run identifier. A repair does
+not convert a prior technical failure into scientific evidence.
 
 Before scaling a treatment, distinguish lack of signal supply, optimization
 failure, proxy-to-outcome transfer failure, and failure of the intended

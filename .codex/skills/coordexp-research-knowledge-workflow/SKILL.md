@@ -1,6 +1,6 @@
 ---
 name: coordexp-research-knowledge-workflow
-description: Preserve, migrate, synthesize, or close CoordExp research knowledge while keeping raw provenance, active interpretation, and formal authority distinct.
+description: Preserve, migrate, synthesize, or close CoordExp research knowledge while separating scientific evidence, technical validity, infrastructure follow-up, raw provenance, active interpretation, and formal authority.
 ---
 
 # CoordExp Research Knowledge Workflow
@@ -14,14 +14,19 @@ current-behavior documentation, production code, or an ordinary audit.
 - Stable specifications own compatibility-sensitive contracts.
 - The active research record owns ideas, investigations, mechanisms,
   decisions, negative results, and continuation context.
+- The research unit owns its question, contrast, population, conditioning,
+  estimand, evidence, claim, and stop rule. A named infrastructure owner owns
+  reusable runtime, instrumentation, identity, persistence, and recovery
+  behavior. Neither owner's acceptance closes the other.
 - Historical records are provenance; legacy progress archives receive no new
   records.
 - Reviews, handoffs, packets, and memory route to owners but do not become
   authority.
 
 Use `audit-review` for correctness findings, `model-diagnosis` for abnormal
-behavior, `coordexp-infer-eval-workflow` for run operations, and
-`git-hygiene` for repository publication.
+behavior, `debug-feedback-loop` for a reproducible mechanical failure,
+`coordexp-infer-eval-workflow` for run operations, and `git-hygiene` for
+repository publication.
 
 ## Work
 
@@ -29,6 +34,9 @@ behavior, `coordexp-infer-eval-workflow` for run operations, and
    - Record exact roots, worktrees, date window, globs, artifacts, and whether
      the result is raw intake, migration, synthesis, a research unit, or a
      decision packet.
+   - Classify the requested product as research knowledge, infrastructure
+     behavior, or a linked pair. Give a linked pair two explicit owners rather
+     than one blended status.
    - Complete when scope cannot silently expand.
 
 2. **Preserve provenance before interpretation.**
@@ -41,6 +49,8 @@ behavior, `coordexp-infer-eval-workflow` for run operations, and
    - Build a reading path rather than mirroring raw notes.
    - Separate planned protocol, executed evidence, interpretation, decision,
      mechanism promotion, and implementation authorization.
+   - For executed work, state scientific disposition separately from
+     mechanical validity and infrastructure follow-up.
    - For research units, apply
      [Research Graph and Unit Contract](references/research-graph-contract.md).
    - Complete when one tracked unit/result/decision owns the current statement.
@@ -53,22 +63,47 @@ behavior, `coordexp-infer-eval-workflow` for run operations, and
      and detached work.
    - Record decision-owning outcome, intervention or proxy, final evaluation,
      transfer assumption, preservation risk, and signal supply.
+   - Compare natural versus forced or teacher-forced conditioning,
+     precondition or admission versus conditional realization, and source
+     population versus eligible, executed, and analyzable denominators.
    - Use [Research Alignment Examples](references/research-alignment-examples.md)
      only when the boundary is unclear.
    - Complete when derived constraints are either authorized or explicitly
      labeled proposals.
 
-5. **Close routing once.**
+5. **Gate evidence on both axes.**
+   - On the research axis, verify the declared question, contrast, denominator,
+     conditioning, evaluation surface, and permitted claim.
+   - On the infrastructure axis, verify inputs, geometry and token boundaries,
+     runtime identity, intervention consumption, serialization, persistence,
+     and readback required by that contrast.
+   - Treat oracle, forced-prefix, teacher-forced, retrieval, and mechanics-smoke
+     observations as evidence only for their exact surface. Do not promote them
+     to natural behavior or trainability without an explicit transfer test.
+   - Keep technical-invalid, unexecuted, missing-support, unknown, and unmatched
+     cases neutral unless the frozen protocol explicitly makes one a scientific
+     outcome. A technical failure blocks the affected contrast; an
+     infrastructure repair enables a fresh immutable run but cannot revive old
+     evidence. A green infrastructure check proves mechanics only.
+   - Complete when every verdict names both the accepted mechanical path and
+     the evidence-bearing scientific contrast, or states that one is absent.
+
+6. **Close routing once.**
    - When evidence changes the route, update the owning result/unit, experiment
      index, and current decision or compass. Refresh project memory only if
      continuation state changed; create a handoff only for a real transfer.
+   - Route a reusable technical deficiency to its infrastructure owner with the
+     exact failure and acceptance boundary. Link it from the research unit, but
+     do not move cohort, intervention, estimand, threshold, or claim ownership
+     into infrastructure.
    - Promote current behavior to operator guidance or stable contracts only
      through their own authorized change.
    - Complete when no live router points at superseded transport or provenance.
 
-6. **Verify the product.**
+7. **Verify the product.**
    - Check tracked scope, links, source counts, lifecycle state, artifact
-     attribution, and that the verdict does not exceed its evidence.
+     attribution, nested denominators, technical-failure accounting, and that
+     the verdict does not exceed its evidence.
    - Complete when the reading path is coherent and the authority boundary is
      explicit.
 
@@ -82,9 +117,13 @@ behavior, `coordexp-infer-eval-workflow` for run operations, and
   research routers and light frontmatter; avoid app-specific wiki structure.
 - For executed units, keep durable artifacts under the owning output root and
   record immutable run identity once comparison requires it.
+- Before support expansion or a mechanism matrix, require CPU-discoverable
+  receipt/write-read checks, one minimal real end-to-end mechanics smoke, and
+  then the smallest decision-bearing scientific pilot. Do not let in-memory
+  outputs or helper-only tests stand in for durable end-to-end evidence.
 
 ## Report
 
 State source boundary, created or updated owners, raw versus synthesized
-material, authority caveats, verification, unresolved gaps, and next
-continuation point.
+material, scientific disposition, infrastructure disposition, authority
+caveats, verification, unresolved gaps, and next continuation point.
