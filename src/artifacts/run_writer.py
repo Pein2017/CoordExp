@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.artifacts.json_values import strict_json_text
 from src.common.errors import ArtifactContractError
 
 
@@ -120,7 +121,7 @@ class RunWriter:
 
     def append_logging_row(self, row: Mapping[str, Any]) -> Path:
         normalized = _normalize_logging_row(row)
-        encoded = _strict_json_dumps(normalized, compact=True)
+        encoded = _run_writer_json_text(normalized, compact=True)
         with self.logging_path.open("a", encoding="utf-8") as handle:
             # Serialize completely before opening and issue one append write per row.
             handle.write(encoded + "\n")
@@ -482,7 +483,7 @@ class RunWriter:
 
     @staticmethod
     def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
-        encoded = _strict_json_dumps(payload) + "\n"
+        encoded = _run_writer_json_text(payload) + "\n"
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         try:
@@ -572,7 +573,7 @@ def _replace_non_finite(value: Any, *, path: str, fields: list[str]) -> Any:
         return None
     if isinstance(value, Mapping):
         return {
-            str(key): _replace_non_finite(
+            key: _replace_non_finite(
                 item, path=f"{path}.{key}" if path else str(key), fields=fields
             )
             for key, item in value.items()
@@ -599,16 +600,12 @@ def _reject_non_finite(value: Any) -> None:
             _reject_non_finite(item)
 
 
-def _strict_json_dumps(payload: Any, *, compact: bool = False) -> str:
+def _run_writer_json_text(payload: Any, *, compact: bool = False) -> str:
+    """Keep the established run-writer error code while sharing validation."""
+
     try:
-        return json.dumps(
-            payload,
-            allow_nan=False,
-            ensure_ascii=True,
-            sort_keys=True,
-            separators=(",", ":") if compact else None,
-        )
-    except (TypeError, ValueError) as exc:
+        return strict_json_text(payload, compact=compact)
+    except ArtifactContractError as exc:
         raise ArtifactContractError(
             "artifact payload is not strict-JSON serializable",
             code="run_writer.not_json_serializable",

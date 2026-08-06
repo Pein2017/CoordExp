@@ -26,6 +26,11 @@ from src.inference.artifacts import (
 )
 from src.inference.backend import DecodeResult, LikelihoodPair, TokenTrace
 from src.inference.data_parallel import DataParallelPlan, RankShardPlan, plan_data_parallel_shards
+from src.inference.execution_context import (
+    EXECUTION_CONTEXT_ARTIFACT_NAME,
+    materialize_execution_context_artifact,
+    publish_rank_local_execution_context_copy,
+)
 from src.inference.parsing import parse_compact_object_box_closed
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT
 
@@ -702,6 +707,401 @@ def test_strict_merge_rejects_empty_vllm_execution_identity(tmp_path: Path) -> N
     )
 
 
+def test_strict_merge_accepts_pre_change_shaped_no_context_shard_family(
+    tmp_path: Path,
+) -> None:
+    """A shard family shaped exactly like pre-change output (the
+    ``execution_context`` key entirely absent from summary, manifest, and
+    provenance on every shard) must still merge successfully, and the merged
+    output must preserve that same absent-field shape rather than injecting
+    an explicit null.
+    """
+
+    from src.inference.merge import merge_shard_artifacts
+
+    row_ids = ("row-0", "row-1")
+    plan = _plan(row_ids)
+    shard_dirs = _write_plan_shards(tmp_path, plan)
+
+    for shard_dir in shard_dirs:
+        for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME, SUMMARY_NAME):
+            payload = _read_json(shard_dir / artifact_name)
+            assert "execution_context" not in payload
+
+    paths = merge_shard_artifacts(
+        output_dir=tmp_path,
+        shard_dirs=shard_dirs,
+        expected_row_ids=row_ids,
+        metadata=_merge_metadata(plan),
+        plan=plan,
+    )
+
+    summary = _read_json(paths.summary_json)
+    manifest = _read_json(paths.run_manifest_json)
+    provenance = _read_json(paths.provenance_json)
+    assert "execution_context" not in summary
+    assert "execution_context" not in manifest
+    assert "execution_context" not in provenance
+    assert not (tmp_path / EXECUTION_CONTEXT_ARTIFACT_NAME).exists()
+
+
+def test_strict_merge_rejects_asymmetric_execution_context_surface_presence(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-surface-asymmetry"
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        # Rank-0's manifest carries an execution_context field while its
+        # provenance and summary stay in the pre-change absent shape.
+        _rewrite_json(
+            shard_dirs[0] / MANIFEST_NAME,
+            lambda payload: {
+                **payload,
+                "execution_context": {
+                    "locator": "/tmp/execution_context.json",
+                    "relative_path": "execution_context.json",
+                    "file_sha256": "a" * 64,
+                    "value_fingerprint": "b" * 64,
+                    "journal_plan_reference": None,
+                },
+            },
+        )
+
+    _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.execution_context_surface_presence_mismatch",
+    )
+
+
+def test_strict_merge_rejects_non_object_execution_context_identity(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-invalid-identity"
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        del plan
+        for shard_dir in shard_dirs:
+            for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME, SUMMARY_NAME):
+                _rewrite_json(
+                    shard_dir / artifact_name,
+                    lambda payload: {**payload, "execution_context": "not-an-object"},
+                )
+
+    _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="inference.execution_context_identity_invalid",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": "not-an-object",
+        },
+        expect_terminal=False,
+    )
+
+
+def test_strict_merge_rejects_non_object_journal_reference_and_removes_stale_eval(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-invalid-plan-reference"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        identity = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        invalid = {**identity, "journal_plan_reference": []}
+        captured["identity"] = invalid
+        for shard_dir in shard_dirs:
+            for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME, SUMMARY_NAME):
+                _rewrite_json(
+                    shard_dir / artifact_name,
+                    lambda payload: {**payload, "execution_context": invalid},
+                )
+
+    _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="inference.execution_context_plan_reference_invalid",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+        expect_terminal=False,
+    )
+
+
+def test_strict_merge_preserves_matching_execution_context_sidecar(
+    tmp_path: Path,
+) -> None:
+    from src.inference.merge import merge_shard_artifacts
+
+    row_ids = ("row-0", "row-1")
+    plan = _plan(row_ids)
+    shard_dirs = _write_plan_shards(tmp_path, plan)
+    identity = _write_execution_context_into_shards(
+        run_dir=tmp_path,
+        shard_dirs=shard_dirs,
+        context={"probe_worker_note": "unit"},
+    )
+    metadata = _merge_metadata(plan)
+    metadata["execution_context"] = identity
+
+    paths = merge_shard_artifacts(
+        output_dir=tmp_path,
+        shard_dirs=shard_dirs,
+        expected_row_ids=row_ids,
+        metadata=metadata,
+        plan=plan,
+    )
+
+    manifest = _read_json(paths.run_manifest_json)
+    provenance = _read_json(paths.provenance_json)
+    top_level_sidecar = tmp_path / EXECUTION_CONTEXT_ARTIFACT_NAME
+    assert manifest["execution_context"] == identity
+    assert provenance["execution_context"] == identity
+    assert top_level_sidecar.is_file()
+    assert sha256_file(top_level_sidecar) == identity["file_sha256"]
+
+
+@pytest.mark.parametrize("mismatched_field", ["locator", "file_sha256", "value_fingerprint"])
+def test_strict_merge_rejects_execution_context_identity_mismatch(
+    tmp_path: Path,
+    mismatched_field: str,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-mismatch"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        identity = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        captured["identity"] = identity
+        drifted = dict(identity)
+        drifted[mismatched_field] = f"drifted-{mismatched_field}"
+        for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME, SUMMARY_NAME):
+            _rewrite_json(
+                shard_dirs[1] / artifact_name,
+                lambda payload: {**payload, "execution_context": drifted},
+            )
+
+    _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.identity_mismatch",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+    )
+
+
+def test_strict_merge_rejects_execution_context_bytes_tamper(tmp_path: Path) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-bytes-tamper"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        captured["identity"] = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        (shard_dirs[1] / EXECUTION_CONTEXT_ARTIFACT_NAME).write_text(
+            json.dumps({"tampered": True}, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+    exc = _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.execution_context_bytes_mismatch",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+    )
+    assert exc.context["shard_dir"] == str(output_dir / "shards" / "rank-001")
+
+
+def test_strict_merge_rejects_missing_controller_execution_context_source(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-controller-missing"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        captured["identity"] = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        (output_dir / EXECUTION_CONTEXT_ARTIFACT_NAME).unlink()
+
+    exc = _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.controller_execution_context_missing",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+        expect_terminal=False,
+    )
+    assert exc.context["path"] == str(
+        (output_dir / EXECUTION_CONTEXT_ARTIFACT_NAME).resolve()
+    )
+
+
+def test_strict_merge_rejects_tampered_controller_execution_context_source(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-controller-tampered"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        captured["identity"] = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        # Tamper the controller-owned top-level source only; rank-local
+        # copies remain byte-identical to the originally declared identity.
+        (output_dir / EXECUTION_CONTEXT_ARTIFACT_NAME).write_text(
+            json.dumps({"tampered": True}, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+    _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.controller_execution_context_bytes_mismatch",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+        expect_terminal=False,
+    )
+
+
+def test_strict_merge_rejects_controller_execution_context_locator_drift(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-locator-drift"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        identity = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        drifted = {**identity, "locator": "/not/the/output/dir/execution_context.json"}
+        captured["identity"] = drifted
+        for shard_dir in shard_dirs:
+            for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME, SUMMARY_NAME):
+                _rewrite_json(
+                    shard_dir / artifact_name,
+                    lambda payload: {**payload, "execution_context": drifted},
+                )
+
+    exc = _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.controller_execution_context_locator_mismatch",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+        expect_terminal=False,
+    )
+    assert exc.context["declared_locator"] == "/not/the/output/dir/execution_context.json"
+    assert exc.context["expected_locator"] == str(
+        (output_dir / EXECUTION_CONTEXT_ARTIFACT_NAME).resolve()
+    )
+
+
+def test_strict_merge_rejects_shard_summary_execution_context_drift(
+    tmp_path: Path,
+) -> None:
+    row_ids = ("row-0", "row-1")
+    output_dir = tmp_path / "execution-context-summary-drift"
+    captured: dict[str, Any] = {}
+
+    def mutate(shard_dirs: tuple[Path, ...], plan: DataParallelPlan) -> None:
+        captured["identity"] = _write_execution_context_into_shards(
+            run_dir=output_dir,
+            shard_dirs=shard_dirs,
+            context={"probe_worker_note": "unit"},
+        )
+        # Drift only the rank-1 shard's own summary; its manifest and
+        # provenance remain the correctly declared identity.
+        _rewrite_json(
+            shard_dirs[1] / SUMMARY_NAME,
+            lambda payload: {**payload, "execution_context": None},
+        )
+
+    exc = _assert_merge_failure(
+        output_dir,
+        row_ids=row_ids,
+        mutate=mutate,
+        expected_code="merge.summary_execution_context_mismatch",
+        metadata_transform=lambda metadata: {
+            **metadata,
+            "execution_context": captured["identity"],
+        },
+    )
+    assert exc.context["shard_dir"] == str(output_dir / "shards" / "rank-001")
+
+
+def _write_execution_context_into_shards(
+    *,
+    run_dir: Path,
+    shard_dirs: tuple[Path, ...],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    artifact = materialize_execution_context_artifact(
+        run_dir=run_dir,
+        execution_context=context,
+    )
+    assert artifact is not None
+    identity = artifact.identity()
+    for shard_dir in shard_dirs:
+        publish_rank_local_execution_context_copy(
+            payload=artifact.payload,
+            destination_dir=shard_dir,
+            expected_file_sha256=artifact.file_sha256,
+        )
+        for artifact_name in (MANIFEST_NAME, PROVENANCE_NAME, SUMMARY_NAME):
+            _rewrite_json(
+                shard_dir / artifact_name,
+                lambda payload, identity=identity: {
+                    **payload,
+                    "execution_context": identity,
+                },
+            )
+    return identity
+
+
 def test_strict_merge_rejects_missing_replay_and_duplicate_token_trace_keys(tmp_path: Path) -> None:
     row_ids = ("row-0", "row-1")
 
@@ -953,6 +1353,7 @@ def _assert_merge_failure(
     worker_statuses: dict[int, str] | None = None,
     metadata_transform: Any | None = None,
     raw_model_logprob_enabled: bool = False,
+    expect_terminal: bool = True,
 ) -> ArtifactContractError:
     from src.inference.merge import merge_shard_artifacts
 
@@ -989,10 +1390,15 @@ def _assert_merge_failure(
             worker_statuses=worker_statuses,
         )
     assert exc_info.value.code == expected_code
-    assert (output_dir / SUMMARY_NAME).is_file()
-    assert (output_dir / MANIFEST_NAME).is_file()
-    assert _read_json(output_dir / SUMMARY_NAME)["benchmark_eligible"] is False
-    assert _read_json(output_dir / MANIFEST_NAME)["terminal_status"] == "failed"
+    if expect_terminal:
+        assert (output_dir / SUMMARY_NAME).is_file()
+        assert (output_dir / MANIFEST_NAME).is_file()
+        assert _read_json(output_dir / SUMMARY_NAME)["benchmark_eligible"] is False
+        assert _read_json(output_dir / MANIFEST_NAME)["terminal_status"] == "failed"
+    else:
+        assert not (output_dir / SUMMARY_NAME).exists()
+        assert not (output_dir / MANIFEST_NAME).exists()
+        assert "terminal_publication_failure" in exc_info.value.context
     assert not (output_dir / RAW_NAME).exists()
     assert not (output_dir / SCORED_NAME).exists()
     assert not stale_eval_dir.exists()

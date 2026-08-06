@@ -8,12 +8,15 @@ import math
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.artifacts.json_values import canonical_json_bytes
 from src.common.errors import ArtifactContractError
 from src.inference.backend import DecodeResult
+from src.inference.execution_context import verify_local_execution_context_artifact
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT, score_prediction
 
 
@@ -56,6 +59,11 @@ def write_inference_artifacts(
     metadata: dict[str, Any],
 ) -> InferenceArtifactPaths:
     output_dir.mkdir(parents=True, exist_ok=True)
+    verify_local_execution_context_artifact(
+        output_dir=output_dir,
+        identity=metadata.get("execution_context"),
+        require_local_locator=_requires_local_execution_context_locator(metadata),
+    )
     paths = InferenceArtifactPaths(
         output_dir=output_dir,
         raw_jsonl=output_dir / RAW_NAME,
@@ -123,7 +131,7 @@ def write_inference_artifacts(
                             "object_span_id": prediction.get("object_span_id"),
                             "diagnostic_type": "scoring",
                             "code": exc.code,
-                            "context": exc.context,
+                            "context": stringify_mapping_keys(exc.context),
                         }
                     )
                     continue
@@ -174,6 +182,7 @@ def write_inference_artifacts(
                 metadata.get("likelihood_semantics") or {}
             ),
             "raw_model_logprob_status": _raw_model_logprob_status(metadata),
+            **_execution_context_field(metadata),
             **dict(metadata.get("pipeline_counters") or {}),
             "score_failure_count": score_failure_count,
         }
@@ -204,6 +213,11 @@ def write_terminal_status_artifacts(
     summary: dict[str, Any],
 ) -> InferenceArtifactPaths:
     output_dir.mkdir(parents=True, exist_ok=True)
+    verify_local_execution_context_artifact(
+        output_dir=output_dir,
+        identity=metadata.get("execution_context"),
+        require_local_locator=_requires_local_execution_context_locator(metadata),
+    )
     paths = InferenceArtifactPaths(
         output_dir=output_dir,
         raw_jsonl=output_dir / RAW_NAME,
@@ -224,6 +238,7 @@ def write_terminal_status_artifacts(
         "trace_row_count": 0,
         "scored_artifact_materialized": False,
         "benchmark_eligible": False,
+        **_execution_context_field(metadata),
         **dict(summary),
     }
     staging_dir = Path(tempfile.mkdtemp(prefix=".terminal-status-", dir=output_dir))
@@ -498,6 +513,25 @@ def _raw_model_logprob_status(metadata: dict[str, Any]) -> str:
     return "available" if enabled else "disabled"
 
 
+def _execution_context_field(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Bind ``execution_context`` only when a caller actually supplied one.
+
+    Pre-change artifact families never carried this key. Omitting it when no
+    context is present (rather than writing an explicit ``null``) keeps the
+    no-context artifact schema byte-for-byte compatible with every artifact
+    family written before this capability existed.
+    """
+
+    value = metadata.get("execution_context")
+    return {} if value is None else {"execution_context": value}
+
+
+def _requires_local_execution_context_locator(metadata: dict[str, Any]) -> bool:
+    parallelism = metadata.get("parallelism")
+    mode = parallelism.get("execution_mode") if isinstance(parallelism, Mapping) else None
+    return mode != "rank_local_shard"
+
+
 def _provenance(
     *,
     metadata: dict[str, Any],
@@ -517,6 +551,7 @@ def _provenance(
         "backend_session": dict(metadata.get("backend_session") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "execution_model_identity": metadata.get("execution_model_identity"),
+        **_execution_context_field(metadata),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": _raw_model_logprob_status(metadata),
         "media_identity": dict(metadata.get("media_identity") or {}),
@@ -570,6 +605,7 @@ def _manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> dict[str,
         "backend_session": dict(metadata.get("backend_session") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "execution_model_identity": metadata.get("execution_model_identity"),
+        **_execution_context_field(metadata),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": _raw_model_logprob_status(metadata),
         "media_identity": dict(metadata.get("media_identity") or {}),
@@ -612,6 +648,7 @@ def _terminal_manifest(*, metadata: dict[str, Any], summary: dict[str, Any]) -> 
         "backend_session": dict(metadata.get("backend_session") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "execution_model_identity": metadata.get("execution_model_identity"),
+        **_execution_context_field(metadata),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": (
             "failed"
@@ -699,13 +736,14 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row_index, row in enumerate(rows):
             try:
+                normalized = _json_safe(row)
                 line = json.dumps(
-                    _json_safe(row),
+                    normalized,
                     sort_keys=True,
                     separators=(",", ":"),
                     allow_nan=False,
                 )
-            except (TypeError, ValueError) as exc:
+            except (ArtifactContractError, TypeError, ValueError) as exc:
                 raise ArtifactContractError(
                     "artifact JSONL row is not strict JSON serializable",
                     code="artifacts.strict_json_failed",
@@ -717,8 +755,9 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     try:
-        text = json.dumps(_json_safe(payload), sort_keys=True, indent=2, allow_nan=False)
-    except (TypeError, ValueError) as exc:
+        normalized = _json_safe(payload)
+        text = json.dumps(normalized, sort_keys=True, indent=2, allow_nan=False)
+    except (ArtifactContractError, TypeError, ValueError) as exc:
         raise ArtifactContractError(
             "artifact JSON is not strict JSON serializable",
             code="artifacts.strict_json_failed",
@@ -733,7 +772,61 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def _json_safe(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=str, allow_nan=False))
+    return json.loads(canonical_json_bytes(value))
+
+
+def stringify_mapping_keys(value: Any) -> Any:
+    """Project diagnostic containers into explicit strict-JSON values.
+
+    Diagnostic error context may carry an int/float/bool/None-keyed mapping
+    (for example a rank-indexed return-code table) that the standard JSON
+    encoder has always coerced to a string key automatically. Strict
+    canonical JSON requires string keys explicitly, so this performs that one
+    narrow, lossless key projection without stringifying any value.
+    """
+
+    if isinstance(value, Mapping):
+        projected: dict[str, Any] = {}
+        for key, nested in value.items():
+            if isinstance(key, str):
+                string_key = key
+            elif key is True:
+                string_key = "true"
+            elif key is False:
+                string_key = "false"
+            elif key is None:
+                string_key = "null"
+            elif isinstance(key, int):
+                string_key = str(key)
+            elif isinstance(key, float):
+                if not math.isfinite(key):
+                    raise ArtifactContractError(
+                        "diagnostic context mapping key must be finite",
+                        code="artifacts.diagnostic_key_unsupported",
+                        context={"key_type": type(key).__name__},
+                    )
+                string_key = repr(key)
+            else:
+                raise ArtifactContractError(
+                    "diagnostic context mapping key is not a JSON-representable"
+                    " scalar",
+                    code="artifacts.diagnostic_key_unsupported",
+                    context={"key_type": type(key).__name__},
+                )
+            if string_key in projected:
+                raise ArtifactContractError(
+                    "diagnostic context mapping keys collide after string"
+                    " projection",
+                    code="artifacts.diagnostic_key_collision",
+                    context={"projected_key": string_key},
+                )
+            projected[string_key] = stringify_mapping_keys(nested)
+        return projected
+    if isinstance(value, list):
+        return [stringify_mapping_keys(item) for item in value]
+    if isinstance(value, tuple):
+        return [stringify_mapping_keys(item) for item in value]
+    return value
 
 
 def _replace_final_artifacts(staged: InferenceArtifactPaths, final: InferenceArtifactPaths) -> None:

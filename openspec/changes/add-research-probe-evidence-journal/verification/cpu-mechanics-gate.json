@@ -1,0 +1,16 @@
+{
+  "claim_boundary": "CPU execution-evidence mechanics only; not model quality, accelerator behavior, scientific validity, or a research result",
+  "date_utc": "2026-08-06",
+  "exact_failure_shape": {
+    "command": "conda run -n ms pytest -q tests/artifacts/test_evidence_journal.py -k exact_cpu_gate",
+    "result": "1 passed",
+    "verified_behavior": [
+      "a live callback is rejected before the journal root exists",
+      "an authored strict callback receipt is persisted and reloaded from plan.json",
+      "a terminal publication failure preserves both completed item records",
+      "a successor attempt reloads the exact completed set and publishes terminal completion"
+    ]
+  },
+  "schema_version": 1,
+  "status": "pass"
+}

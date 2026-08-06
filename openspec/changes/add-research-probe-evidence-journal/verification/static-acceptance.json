@@ -1,0 +1,92 @@
+{
+  "baseline_commit": "af7b50177",
+  "claim_boundary": "Static, CPU, and one explicitly authorized single-GPU mechanics smoke only; not model quality, accelerator throughput, causal evidence, scientific validity, support expansion, or cohort execution",
+  "date_utc": "2026-08-06",
+  "format": {
+    "new_files": "ruff format --check: all five new source and test files are formatted",
+    "touched_existing_files": "9 files remain nonconformant to bare ruff-format defaults, exactly the same count and paths as baseline; they were not mass-reformatted"
+  },
+  "independent_audits": {
+    "audited_aggregate_sha256": "e60e93a5e3923d350946018cbef6f376336035a2722f9c11dba76d55c0d99afb",
+    "audited_source_and_test_sha256": {
+      "src/artifacts/__init__.py": "a3ec9b19b56009e1166cf91ac79627832d22b1d79b8a9d1ec218e94e189a0f40",
+      "src/artifacts/evidence_journal.py": "0346ea7042d389b5a9916a9d7e5d35d668b77cbd34816061bd0bdb1a49101ef6",
+      "src/artifacts/json_values.py": "e05baa06cb0652f5d5113ccfc7e9f8229673e14e4ead7ed67146f9a98a83dce6",
+      "src/artifacts/run_writer.py": "d5f732281ef68048ea9450b5513659a4fb8348dadd290cf10770ccad977405c9",
+      "src/inference/artifacts.py": "50681a1cbd8bcff1c42faae111c4f5913ed5ea9bb164d7b6e05033b0f1370e63",
+      "src/inference/execution_context.py": "54deac24ddcaf04d73a69cd7babadc568845246da6cf185fc3703ac142e16d5f",
+      "src/inference/merge.py": "ac898ba536e7f4b015644f67f58349db2e584b720f93596410f0b6a5ec86ea53",
+      "src/inference/pipeline.py": "c9db29034d40dd911cd91f91414ed34eb2a24349431512e6e009f581e9640ba9",
+      "src/inference/worker.py": "f3a77b5f8fc17619c54aa37b6681781534498c3db6e99a8e74237e8e85644c71",
+      "tests/artifacts/test_evidence_journal.py": "a997812b9368f75dd3e477f5283ec4278db84d932f24bceb76202bf343333efd",
+      "tests/artifacts/test_execution_evidence_research_vocabulary_residue.py": "7c5c63f5aabec62f8d4c63783cb2bc94f3a703b8b93e90ceedb564ac2167f2b6",
+      "tests/artifacts/test_run_artifacts.py": "1f972fca5a04c648bc548424e28bcdcf4203f839bdf9c26f1c465c26b125e495",
+      "tests/inference/test_artifacts.py": "76958b86fede7202b284ce3d04bcce8f0bfeb8c8b6f174b68c2662fcc7c13bbd",
+      "tests/inference/test_data_parallel_merge.py": "c2671f725776433e920989b4f146a76b437bb4f6f12e7eefaaecec53ce1275a3",
+      "tests/inference/test_pipeline.py": "5a923ef7495d872289a72e0332021292d594316ec53ea2444a97d89d4dbc157c",
+      "tests/inference/test_worker_runtime.py": "ab5465e09680991506a168cee29381c97f02def92b88bd3ee9ce4b448af2ef19"
+    },
+    "engineering_standards": {
+      "result": "PASS; no P0 or P1",
+      "route": "Claude Opus 5 / high / read-only"
+    },
+    "research_infrastructure_boundary": {
+      "result": "PASS; no P0 or P1",
+      "route": "Codex gpt-5.6-sol / high / read-only"
+    },
+    "scope": "The audited aggregate is the exact implementation, tests, and pre-audit receipts. Later changes are limited to administrative task checks, recording the audit outcomes, the explicitly authorized task-5.5 mechanics receipt, and regenerating the self-describing manifest; implementation and tests remain byte-identical."
+  },
+  "gpu_mechanics_smoke": {
+    "authorization": "The user explicitly authorized up to 8 GPUs; the bounded gate used only physical GPU 0",
+    "receipt": "gpu-mechanics-smoke.json",
+    "result": "pass: one real row completed plan preflight, HF SDPA inference, durable record publication, terminal publication, context-sidecar binding, and fresh-process readback in 18.414984763 seconds"
+  },
+  "lint": {
+    "command": "conda run -n ms ruff check <all touched source and test files>",
+    "result": "pass"
+  },
+  "openspec": {
+    "command": "openspec validate add-research-probe-evidence-journal --strict",
+    "result": "valid"
+  },
+  "pytest": {
+    "artifacts": "78 passed",
+    "focused_cross_owner": {
+      "command": "conda run rtk pytest -q tests/artifacts/test_evidence_journal.py tests/inference/test_artifacts.py tests/inference/test_data_parallel_merge.py tests/inference/test_pipeline.py tests/inference/test_worker_runtime.py",
+      "result": "211 passed"
+    },
+    "focused_inference": "all touched inference test files passed inside the 211-test cross-owner gate",
+    "full_inference_baseline": "434 passed, 35 failed",
+    "full_inference_current": "478 passed, 35 failed",
+    "full_inference_disposition": "same 35 pre-existing failures; 44 additional passing tests and no added failure",
+    "p1_counterexample_gate": {
+      "commands": [
+        "conda run rtk pytest -q tests/artifacts/test_evidence_journal.py -k persisted_envelopes_reject",
+        "conda run rtk pytest -q tests/inference/test_artifacts.py -k 'terminal_writer_refuses_to_bind_unverified_execution_context or terminal_writer_rejects_nonlocal_direct_context_locator'",
+        "conda run rtk pytest -q tests/inference/test_data_parallel_merge.py -k 'non_object_journal_reference or missing_controller_execution_context_source or tampered_controller_execution_context_source or controller_execution_context_locator_drift'",
+        "conda run rtk pytest -q tests/inference/test_pipeline.py -k 'non_object_journal_plan_reference or corrupt_post_publication_context'",
+        "conda run rtk pytest -q tests/artifacts/test_evidence_journal.py -k 'attempt_surfaces_reject_freeform or attempt_failure_rejects_rehashed'"
+      ],
+      "result": "21 passed: 10 exact-envelope/schema counterexamples, 3 terminal sidecar counterexamples, 4 merge controller/reference counterexamples, 2 pipeline typed/recovery counterexamples, and 2 attempt mechanics-only boundary counterexamples"
+    }
+  },
+  "research_vocabulary_residue": {
+    "commands": [
+      "conda run rtk pytest -q tests/artifacts/test_execution_evidence_research_vocabulary_residue.py",
+      "conda run rtk pytest -q tests/artifacts/test_evidence_journal.py -k research_shaped_values"
+    ],
+    "result": "1 lexical residue test and 1 opaque research-shaped round-trip behavior test passed"
+  },
+  "schema_version": 1,
+  "status": "pass_with_baseline_debt",
+  "type_check": {
+    "command": "conda run -n ms python -m basedpyright --level error <touched files>",
+    "new_source_and_test_files": "0 errors",
+    "touched_existing_source_files": "10 errors current and 10 errors at baseline",
+    "touched_existing_test_files": "54 errors current versus 82 errors at baseline"
+  },
+  "whitespace": {
+    "command": "git diff --check",
+    "result": "pass"
+  }
+}
