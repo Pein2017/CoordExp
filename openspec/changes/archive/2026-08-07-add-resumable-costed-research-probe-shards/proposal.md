@@ -26,7 +26,9 @@ legacy receipt partitions consumed by the merger.
   `shard_index` solely as receipt-partition identity.
 - Deterministically materialize the existing support-completion shard receipt
   schema from validated journal records, regrouped by legacy receipt shard, so
-  the current merger and analyzer retain their scientific semantics.
+  the current merger retains its receipt contract and the current analyzer
+  retains its separate census-v3 scientific contract. Do not repair or
+  reinterpret a pre-existing ledger-to-census bridge defect.
 - Add mechanics-only attempt, process-exit, signal, and last-durable-record
   diagnostics. Do not automatically retry, classify scientific outcomes, or
   treat a mechanics receipt as research evidence.
@@ -70,7 +72,7 @@ legacy receipt partitions consumed by the merger.
 - The adapter targets the current consumer bytes
   `sha256:9ade7ad861e7c822458f65fbdb39ddda702648d62339533a3faf5e0dd37a52b3`
   and current merger bytes
-  `sha256:a816e0618672ad0d44f328efb7f1278d38bc1c97cfa1226c36d5599b90ff702c`.
+  `sha256:9eb7534641be4c87768698719ed84c2f84119959d9fa324b0fc5a72f7cd5edf1`.
 - No new model, checkpoint, tokenizer, research-input, support-policy, merger,
   analyzer, training, or automatic-retry dependency is introduced.
 - Existing journal directories remain readable; the journal disk schema stays

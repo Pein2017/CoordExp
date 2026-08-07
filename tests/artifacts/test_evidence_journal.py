@@ -9,7 +9,7 @@ import pytest
 import torch
 
 import src.artifacts.evidence_journal as journal_module
-from src.artifacts.evidence_journal import ExecutionEvidenceJournal
+from src.artifacts.evidence_journal import ExecutionEvidenceJournal, JOURNAL_SCHEMA_VERSION
 from src.artifacts.json_values import (
     LocalFileSystemOps,
     canonical_json_bytes,
@@ -264,6 +264,66 @@ def test_research_shaped_values_round_trip_opaquely_while_terminal_stays_mechani
         "content_sha256",
     }
     journal.close()
+
+
+def test_diagnostics_project_validated_records_attempts_and_last_durable_immutably(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "journal"
+    journal = _create(root)
+    first = journal.start_attempt()
+    journal.append_record(
+        work_item_id="first",
+        payload={"status": "unmatched", "nested": ["opaque"]},
+        attempt_id=first,
+    )
+    journal.record_attempt_failure(
+        attempt_id=first,
+        failure_code="process.interrupted",
+        failure_message="operator stopped worker",
+    )
+    journal.close()
+
+    continued = _open(root)
+    second = continued.start_attempt()
+    continued.close()
+    diagnostics = ExecutionEvidenceJournal.inspect_diagnostics(root)
+
+    assert JOURNAL_SCHEMA_VERSION == 1
+    assert diagnostics.last_durable_record == diagnostics.records[0]
+    assert diagnostics.records[0].sequence == 0
+    assert diagnostics.records[0].work_item_id == "first"
+    assert diagnostics.records[0].attempt_id == first
+    assert diagnostics.records[0].payload["status"] == "unmatched"
+    assert diagnostics.records[0].payload_fingerprint == json_sha256(
+        {"status": "unmatched", "nested": ["opaque"]}
+    )
+    by_id = {attempt.attempt_id: attempt for attempt in diagnostics.attempts}
+    assert by_id[first].status == "failed"
+    assert by_id[second].status == "unfinished"
+    with pytest.raises(TypeError):
+        diagnostics.records[0].payload["status"] = "mutated"
+    with pytest.raises(TypeError):
+        by_id[first].failure["code"] = "mutated"  # type: ignore[index]
+
+
+def test_diagnostics_rejects_corrupt_persisted_record_before_projecting(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "journal"
+    journal = _create(root)
+    attempt = journal.start_attempt()
+    record_path = journal.append_record(
+        work_item_id="first", payload={"value": 1}, attempt_id=attempt
+    )
+    journal.close()
+    corrupted = load_canonical_json(record_path)
+    corrupted["payload_fingerprint"] = "0" * 64
+    _rewrite_content_digest(record_path, corrupted)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        ExecutionEvidenceJournal.inspect_diagnostics(root)
+    assert exc_info.value.code == "journal.invalid_persisted_evidence"
 
 
 def test_attempt_surfaces_reject_freeform_research_mappings(

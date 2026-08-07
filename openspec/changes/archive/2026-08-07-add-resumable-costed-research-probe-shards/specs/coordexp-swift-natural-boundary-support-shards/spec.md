@@ -86,9 +86,15 @@ receipt `shard_index` and materialize the existing
 Within each receipt, observations MUST follow the order expected by the sealed
 plan. Receipt publication MUST be write-once and bind canonical content.
 
-The current merger and analyzer MUST accept the materialized receipts without
-code changes. Attempt identifiers, process exits, physical slot assignments,
-and continuation history MUST remain outside the scientific shard receipt.
+The current merger MUST accept the materialized receipts without code changes.
+The current analyzer's separate census-v3 regression contract MUST remain
+unchanged and pass on its owned accepted inputs; shard receipts MUST NOT be
+misrepresented as direct analyzer inputs. A pre-existing incompatibility in a
+prior-support-ledger to census-v3 bridge MUST be reported separately and MUST
+NOT be hidden by rewriting old records or weakening the merger, census, or
+analyzer contract. Attempt identifiers, process exits, physical slot
+assignments, and continuation history MUST remain outside the scientific shard
+receipt.
 
 #### Scenario: Physical and legacy partitions differ
 - **WHEN** cost-aware physical slots contain contexts from several legacy

@@ -28,8 +28,8 @@ load falls from 13,867 to 9,689 without changing any context.
 - Make one support context the only durability and continuation unit.
 - Use all eight physical slots with deterministic declared-cost balance while
   leaving the sealed plan and legacy receipt partition untouched.
-- Preserve the existing merger/analyzer surface by materializing the same
-  terminal shard receipt schema from journal payloads.
+- Preserve the existing merger receipt surface and the analyzer's separate
+  census-v3 surface without changing either scientific contract.
 - Make interruption diagnosis mechanical and sufficient to answer which
   attempt exited and which record was last durable.
 - Deliver a self-contained, fixed worktree commit and an explicit adoption
@@ -139,6 +139,15 @@ as the existing `shard_contexts` contract expects and construct the current
 receipt schema. Run the existing merger validator unchanged before publishing
 write-once receipt bytes.
 
+The analyzer is not a direct shard-receipt consumer: it reads census-v3. Run
+its existing regression contract unchanged, but do not claim that a shard
+receipt is analyzer input. During implementation, the unchanged merger accepted
+all eight deterministic receipts and emitted 220 records; the next unchanged
+census-v3 materializer rejected an older prior-support row that already omitted
+its newer required sealed fields. That pre-existing bridge incompatibility is
+recorded separately and is not repaired by changing a prior scientific ledger,
+the new receipts, or the analyzer.
+
 Do not copy physical slot, attempt, exit, or resume counters into the legacy
 receipt. Those values are path-dependent mechanics. The materialized receipt
 contains only stable plan bindings, observations, denominators, lineage, and
@@ -212,15 +221,29 @@ with open_slot_journal(
         slot.append_context(observation, attempt_id=attempt)
 
 receipts = materialize_legacy_shard_receipts(
-    logical_plan=logical_plan,
+    plan=logical_plan,
     schedule=schedule,
-    slot_journals=slot_journal_roots,
+    slot_roots=slot_journal_roots,
+    execution_identity=exact_execution_identity,
+    census_binding=validated_census_binding,
+    receipt_set_validator=lambda receipt_set: unchanged_merger.merge_support_receipts(
+        logical_plan.raw,
+        receipt_set,
+        prior_support=prior_support,
+        h0_source=h0_source,
+        input_plan_sha256=logical_plan.file_sha256,
+        input_census_binding=validated_census_binding,
+    ),
+    output_root=legacy_receipt_root,
 )
 ```
 
 The adoption patch supplies the glue from the named runner's current context
-scoring loop into this interface. It does not copy the experiment's support
-rule into stable infrastructure.
+scoring loop and digest-bound unchanged merger into this interface. The adapter
+itself owns the exact legacy receipt builder, validates each slot journal against
+its scheduled denominator, and does not publish any receipt until the complete
+set passes the merger callback. It does not copy the experiment's support rule
+into stable infrastructure.
 
 ## Risks / Trade-offs
 
@@ -253,8 +276,10 @@ rule into stable infrastructure.
    freeze a deterministic schedule receipt for the accepted 200-context plan.
 3. Add per-slot journal execution and explicit continuation with fake scorers;
    verify no accepted context is re-executed.
-4. Add pure legacy receipt materialization and run the unchanged merger and
-   analyzer contract tests against its output.
+4. Add pure legacy receipt materialization, run the unchanged merger contract
+   against its output, run the analyzer regression contract on its owned
+   census-v3 surface, and record any pre-existing bridge incompatibility
+   separately.
 5. Produce an exact-digest-bound patch or consumer example for the active
    runner without editing that worktree.
 6. Pass focused CPU tests, full deterministic uninterrupted-versus-resumed

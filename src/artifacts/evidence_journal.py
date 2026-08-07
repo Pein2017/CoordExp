@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from src.artifacts.json_values import (
@@ -83,9 +84,44 @@ class JournalSnapshot:
     execution_id: str
     execution_identity_fingerprint: str
     plan_fingerprint: str
+    expected_work_item_ids: tuple[str, ...]
+    context_fingerprint: str
     completed_work_item_ids: tuple[str, ...]
     temporary_paths: tuple[Path, ...]
     terminal: Mapping[str, Any] | None
+
+
+@dataclass(frozen=True)
+class JournalRecordView:
+    """A validated, immutable projection of one accepted opaque record."""
+
+    sequence: int
+    work_item_id: str
+    attempt_id: str
+    payload: Any
+    payload_fingerprint: str
+    record_digest: str
+
+
+@dataclass(frozen=True)
+class JournalAttemptView:
+    """A validated mechanical attempt projection; never an OS-exit verdict."""
+
+    attempt_id: str
+    status: str
+    start_digest: str
+    failure: Mapping[str, Any] | None
+    outcome_digest: str | None
+
+
+@dataclass(frozen=True)
+class JournalInspection:
+    """Validated read-only diagnostics for a complete journal root."""
+
+    snapshot: JournalSnapshot
+    records: tuple[JournalRecordView, ...]
+    attempts: tuple[JournalAttemptView, ...]
+    last_durable_record: JournalRecordView | None
 
 
 class ExecutionEvidenceJournal:
@@ -254,6 +290,40 @@ class ExecutionEvidenceJournal:
     def inspect(cls, root: Path) -> JournalSnapshot:
         snapshot, _, _ = _inspect(root.resolve())
         return snapshot
+
+    @classmethod
+    def inspect_diagnostics(cls, root: Path) -> JournalInspection:
+        """Return validated record/attempt facts without authorizing any action.
+
+        This deliberately shares ``_inspect`` with journal reload before it
+        projects values.  Callers cannot use this view to infer a scientific
+        outcome or operating-system exit status.
+        """
+
+        resolved = root.resolve()
+        snapshot, plan, records = _inspect(resolved)
+        record_views = tuple(
+            JournalRecordView(
+                sequence=record["sequence"],
+                work_item_id=record["work_item_id"],
+                attempt_id=record["attempt_id"],
+                payload=_freeze_json_value(record["payload"]),
+                payload_fingerprint=record["payload_fingerprint"],
+                record_digest=record["content_sha256"],
+            )
+            for record in records
+        )
+        attempt_views = _inspect_attempt_views(resolved, plan)
+        return JournalInspection(
+            snapshot=snapshot,
+            records=record_views,
+            attempts=attempt_views,
+            last_durable_record=record_views[-1] if record_views else None,
+        )
+
+    # A short compatibility alias keeps callers from reaching into private
+    # record-file helpers while naming the operation as an inspection.
+    inspect_records = inspect_diagnostics
 
     @property
     def execution_id(self) -> str:
@@ -570,6 +640,8 @@ def _inspect(
         execution_id=plan["execution_id"],
         execution_identity_fingerprint=plan["execution_identity_fingerprint"],
         plan_fingerprint=plan["plan_fingerprint"],
+        expected_work_item_ids=tuple(plan["expected_work_item_ids"]),
+        context_fingerprint=plan["context_fingerprint"],
         completed_work_item_ids=completed,
         temporary_paths=temporary_paths,
         terminal=terminal,
@@ -668,6 +740,67 @@ def _validate_attempts(
                 _strict_mapping(failure, field="attempt_failure")
             )
     return attempt_ids, orphan_attempt_dirs
+
+
+def _inspect_attempt_views(
+    root: Path, plan: Mapping[str, Any]
+) -> tuple[JournalAttemptView, ...]:
+    """Project only final, fully validated attempt evidence.
+
+    ``_inspect`` has already performed the authoritative complete-root
+    validation.  Re-validating the selected attempt envelopes here keeps this
+    helper independently safe if its call order is ever changed.
+    """
+
+    views: list[JournalAttemptView] = []
+    attempts_dir = root / "attempts"
+    for attempt_dir in sorted(path for path in attempts_dir.iterdir() if path.is_dir()):
+        attempt_id = attempt_dir.name
+        start_path = attempt_dir / "start.json"
+        if not start_path.is_file():
+            continue
+        start = load_canonical_json(start_path)
+        _validate_attempt(start, plan, attempt_id)
+        outcome_path = attempt_dir / "outcome.json"
+        if not outcome_path.exists():
+            views.append(
+                JournalAttemptView(
+                    attempt_id=attempt_id,
+                    status="unfinished",
+                    start_digest=start["content_sha256"],
+                    failure=None,
+                    outcome_digest=None,
+                )
+            )
+            continue
+        outcome = load_canonical_json(outcome_path)
+        if not isinstance(outcome, Mapping):
+            _invalid_journal("attempt outcome must be a mapping")
+        _verify_content_digest(outcome)
+        _require_exact_envelope(
+            outcome, expected_keys=_ATTEMPT_OUTCOME_KEYS, envelope="attempt outcome"
+        )
+        _require_journal_schema_version(outcome, envelope="attempt outcome")
+        if (
+            outcome.get("execution_id") != plan["execution_id"]
+            or outcome.get("plan_fingerprint") != plan["plan_fingerprint"]
+            or outcome.get("attempt_id") != attempt_id
+            or outcome.get("status") != "failed"
+            or not isinstance(outcome.get("failure"), Mapping)
+        ):
+            _invalid_journal("attempt outcome does not bind this plan")
+        failure = _strict_mapping(outcome["failure"], field="attempt_failure")
+        _validate_mechanical_failure(failure)
+        views.append(
+            JournalAttemptView(
+                attempt_id=attempt_id,
+                status="failed",
+                start_digest=start["content_sha256"],
+                failure=_freeze_json_value(failure),
+                outcome_digest=outcome["content_sha256"],
+            )
+        )
+    return tuple(views)
 
 
 def _validate_plan(plan: Mapping[str, Any]) -> None:
@@ -866,6 +999,16 @@ def _strict_mapping(value: Any, *, field: str) -> dict[str, Any]:
     result = dict(value)
     validate_json_value(result)
     return result
+
+
+def _freeze_json_value(value: Any) -> Any:
+    """Return a recursively immutable defensive copy of a JSON value."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze_json_value(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_json_value(item) for item in value)
+    return value
 
 
 def _expected_ids(value: Sequence[str]) -> list[str]:
