@@ -1,5 +1,5 @@
 # research-probe-infras worktree additions
 
-This file only appends to `/data/CoordExp/AGENTS.md`.
+This file appends to the local AGENTS.md. Keep only stable worktree-specific differences.
 
 No additional worktree-wide guidance.
