@@ -1,0 +1,19 @@
+{
+  "schema_version": "research_probe_admission.nonmutation_verification.v1",
+  "kind": "post_gpu_nonmutation_verification",
+  "infra_head": "24dd7f808dc33850828831307cefc9dcae0bb0c2",
+  "infra_status_sha256_before_gpu": "2daa7acff1f01bd0a52a182715a068c819c9ebd82cfc382a4da09ea641110242",
+  "infra_status_sha256_after_gpu": "2daa7acff1f01bd0a52a182715a068c819c9ebd82cfc382a4da09ea641110242",
+  "sibling_head_before_gpu": "c4282b2ebba70b78e0331aa7c16d27be2d79dc35",
+  "sibling_head_after_gpu": "c4282b2ebba70b78e0331aa7c16d27be2d79dc35",
+  "sibling_status_sha256_before_gpu": "bd2c97d56d063a28d8d2413516433e7f6046201828b03e25f578d9791eeb9d55",
+  "sibling_status_sha256_after_gpu": "bd2c97d56d063a28d8d2413516433e7f6046201828b03e25f578d9791eeb9d55",
+  "active_sibling_modified_by_gate": false,
+  "sealed_roots_modified_by_gate": false,
+  "gpu_processes_after_completion": 0,
+  "commit_created": false,
+  "pushed": false,
+  "archived": false,
+  "merged_into_active_research_probes": false,
+  "claim_boundary": "filesystem_and_git_state_only_no_scientific_claim"
+}

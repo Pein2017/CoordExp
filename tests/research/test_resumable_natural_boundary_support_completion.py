@@ -109,7 +109,7 @@ def test_adapter_refuses_symlink_inputs_and_uses_canonical_exclusive_output(tmp_
 def test_nonmutation_recheck_consumes_source_binding_read_only(tmp_path: Path) -> None:
     receipt = adapter.verify_active_nonmutation(
         source_bindings_path=Path(
-            "openspec/changes/add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json"
+            "openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json"
         ),
         output_path=tmp_path / "nonmutation.json",
     )
@@ -228,12 +228,15 @@ def test_parent_launcher_publishes_exit_diagnostics_without_retry(tmp_path: Path
         command=[sys.executable, "-c", "raise SystemExit(3)"],
         journal_root=root, mechanics_receipt_path=tmp_path / "exit.json", physical_slot_index=0,
         logical_plan_file_sha256=plan.file_sha256, schedule_sha256=schedule["content_sha256"],
-        expected_context_count=4,
+        expected_context_count=4, cwd=tmp_path,
     )
     assert receipt["return_code"] == 3
     assert receipt["accepted_context_count"] == 0
     assert receipt["missing_context_count"] == 4
     assert receipt["attempt_id"] is None
+    assert receipt["cwd"] == str(tmp_path.resolve())
+    assert receipt["executable"]["path"] == str(Path(sys.executable).resolve())
+    assert receipt["executable"]["raw_sha256"] == adapter.file_sha256(sys.executable)
     assert (tmp_path / "exit.json").is_file()
 
 

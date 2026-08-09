@@ -701,6 +701,7 @@ def launch_slot_worker(
     logical_plan_file_sha256: str,
     schedule_sha256: str,
     expected_context_count: int,
+    cwd: str | Path | None = None,
     terminate_after_first_durable_record: bool = False,
     poll_seconds: float = 0.05,
     timeout_seconds: float = 300.0,
@@ -717,6 +718,25 @@ def launch_slot_worker(
 
     if not command or any(not isinstance(item, str) or not item for item in command):
         raise SupportShardAdapterError("launcher command must be a nonempty string sequence")
+    executable_argument = Path(command[0])
+    if not executable_argument.is_absolute():
+        raise SupportShardAdapterError("launcher executable must be an absolute path")
+    try:
+        executable = executable_argument.resolve(strict=True)
+        executable_metadata = executable.lstat()
+    except OSError as exc:
+        raise SupportShardAdapterError("launcher executable cannot be resolved") from exc
+    if executable.is_symlink() or not executable.is_file() or not os.access(executable, os.X_OK):
+        raise SupportShardAdapterError(
+            "launcher executable must resolve to an executable regular file"
+        )
+    launch_cwd = Path.cwd() if cwd is None else Path(cwd).expanduser()
+    try:
+        launch_cwd = launch_cwd.resolve(strict=True)
+    except OSError as exc:
+        raise SupportShardAdapterError("launcher cwd cannot be resolved") from exc
+    if launch_cwd.is_symlink() or not launch_cwd.is_dir():
+        raise SupportShardAdapterError("launcher cwd must be a non-symlink directory")
     if isinstance(physical_slot_index, bool) or not isinstance(physical_slot_index, int) or physical_slot_index < 0:
         raise SupportShardAdapterError("physical_slot_index is invalid")
     if poll_seconds <= 0:
@@ -731,7 +751,7 @@ def launch_slot_worker(
     if root_existed:
         before = ExecutionEvidenceJournal.inspect_diagnostics(root)
         before_attempts = {item.attempt_id for item in before.attempts}
-    child = subprocess.Popen(list(command), start_new_session=True)
+    child = subprocess.Popen(list(command), cwd=launch_cwd, start_new_session=True)
     signal_sent: int | None = None
     deadline = time.monotonic() + timeout_seconds
     terminate_deadline: float | None = None
@@ -787,6 +807,12 @@ def launch_slot_worker(
         "kind": "worker_exit",
         "physical_slot_index": physical_slot_index,
         "command": list(command),
+        "cwd": str(launch_cwd),
+        "executable": {
+            "path": str(executable),
+            "raw_sha256": file_sha256(executable),
+            "byte_count": executable_metadata.st_size,
+        },
         "child_pid": child.pid,
         "attempt_id": new_attempts[0].attempt_id if new_attempts else None,
         "return_code": return_code,

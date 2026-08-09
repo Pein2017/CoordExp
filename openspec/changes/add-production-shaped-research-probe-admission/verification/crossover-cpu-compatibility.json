@@ -1,0 +1,25 @@
+{
+  "schema_version": "research_probe_admission.verification_reference.v1",
+  "kind": "crossover_cpu_compatibility_reference",
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research-probe-infras/2026-08-09-production-shaped-admission-inputs-v3/crossover-cpu-compatibility.json",
+    "raw_sha256": "aaa4eb1ac4c5ad2ba3be2d8a8ffe7141f3cfd187984cce0affaef81d5076c501",
+    "content_sha256": "ac3584bb309ed1fdd61e65bfa838922ef38387b504556f895f222b7c1931c821",
+    "byte_count": 7365
+  },
+  "command_pass_counts": {
+    "source_preflight_validator": 1,
+    "model_free_finalizer": 1,
+    "downstream_validator": 1
+  },
+  "real_preflight_to_current_sealer_deep_validation": true,
+  "full_runtime_event_count": 11,
+  "selected_event_count": 3,
+  "runner_bound": true,
+  "sealer_bound": true,
+  "generator_sha256": "1f687f4a4dcc170d9eb0ed2310ba1c7f12dab0dc504b6ab22b3397e78e2c6830",
+  "model_loaded": false,
+  "gpu_used": false,
+  "scientific_interpretation": false,
+  "claim_boundary": "cpu_source_preflight_and_synthetic_finalizer_fixture_only_no_model_or_crossover_scientific_claim"
+}

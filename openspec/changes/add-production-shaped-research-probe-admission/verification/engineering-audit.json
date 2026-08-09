@@ -1,0 +1,36 @@
+{
+  "schema_version": "research_probe_admission.fixed_tree_audit.v1",
+  "kind": "independent_engineering_audit",
+  "reviewed_manifest": {
+    "path": "verification/fixed-tree-manifest-preaudit.json",
+    "content_sha256": "7cb401c56d638e9828f63b05bd140d88cb7abf4e81be252bfd43998fdfe04dac",
+    "entry_count": 39
+  },
+  "reviewer_route": {
+    "model": "gpt-5.6-sol",
+    "effort": "xhigh",
+    "role": "fixed_tree_engineering_auditor"
+  },
+  "verdict": "PASS",
+  "finding_counts": {
+    "P0": 0,
+    "P1": 0,
+    "P2": 0
+  },
+  "checks": {
+    "all_entries_regular_non_symlink_and_hash_exact": true,
+    "manifest_entry_count_verified": 39,
+    "all_frozen_json_canonical": 50,
+    "top_level_content_hashes_verified": 36,
+    "raw_snapshot_pairs_byte_identical": 6,
+    "support_cpu_and_vertical_stages_complete": true,
+    "support_mechanically_admitted": true,
+    "crossover_cpu_only_and_not_admitted": true,
+    "focused_cpu_tests_exit_zero": true,
+    "strict_openspec_validation_passed": true,
+    "git_diff_check_passed": true,
+    "gpu_rerun_by_auditor": false
+  },
+  "claim_boundary": "engineering_and_mechanics_acceptance_only_no_scientific_validity_or_bulk_launch_authority",
+  "reviewer_modified_files": false
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": "research_probe_admission.verification_reference.v1",
+  "kind": "support_cpu_compatibility_reference",
+  "receipt": {
+    "path": "/data/CoordExp/outputs/research-probe-infras/2026-08-09-production-shaped-admission-inputs-v3/support-cpu-compatibility.json",
+    "raw_sha256": "a358d3102c0b38713a70bc790b1e6a1ff594468dbf327577811b36e7f96d3f62",
+    "content_sha256": "52f65b6893c1bbc2277e471a7165f6d7d0b3f8bcdbd5ca9000103b3cdf0dc29e",
+    "byte_count": 7387
+  },
+  "command_pass_counts": {
+    "consumer_validator": 10,
+    "model_free_finalizer": 1,
+    "downstream_validator": 1
+  },
+  "connected_materializer_to_unchanged_merger_chain": true,
+  "adapter_sha256": "c0280e7c076b77c74f4e255eba2e9a240a5f89e3d7bd6680e1e8d8b51178310e",
+  "adapter_test_sha256": "b14cb911d8915480b4b4194d1d1fc78d8c76b41a713865bef6f16e326e73292a",
+  "generator_sha256": "1f687f4a4dcc170d9eb0ed2310ba1c7f12dab0dc504b6ab22b3397e78e2c6830",
+  "model_loaded": false,
+  "gpu_used": false,
+  "scientific_interpretation": false,
+  "claim_boundary": "cpu_mechanics_compatibility_only_no_model_or_support_scientific_claim"
+}
