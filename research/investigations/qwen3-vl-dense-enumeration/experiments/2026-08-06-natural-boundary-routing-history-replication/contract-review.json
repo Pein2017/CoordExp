@@ -1,0 +1,30 @@
+{
+  "schema_version": "natural_boundary_routing_history_contract_review.v1",
+  "unit_id": "2026-08-06-natural-boundary-routing-history-replication",
+  "reviews": {
+    "claude_independent_contract_review": {
+      "agent": "/root/s_primary_unit_review",
+      "model": "Claude Opus 5",
+      "reasoning_effort": "high",
+      "role": "independent_read_only_contract_reviewer",
+      "initial_disposition": "do_not_seal_as_drafted",
+      "scope": "prior seeded-opener semantics, S authority, dynamic grammar interpretation, support denominator, K14/H actuation, code identity, task ordering, and unmatched/tau semantics",
+      "blocker_count": 15,
+      "resolution": "all blockers incorporated or explicitly bounded before the final seal audit"
+    },
+    "codex_final_semantic_seal_audit": {
+      "agent": "/root/semantic_seam_audit",
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "max",
+      "role": "independent_read_only_final_semantic_auditor",
+      "disposition": "pass",
+      "remaining_blocker_count": 0,
+      "scope": "B1-B15 resolution, 200-context denominator, plan-before-GPU order, admission-mode invariants, K14 receipts, D10 grammar scope, unconditional S-gate H matrix, and deterministic expanded-H gate"
+    }
+  },
+  "lead_disposition": {
+    "contract_status": "ready_to_seal",
+    "gpu_status": "held_until_implementation_tests_plan_and_code_hash_launch_receipt",
+    "training_status": "not_authorized"
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "audit_id": "2026-08-06-prior-evidence-semantic-audit",
+  "audit_document_sha256": "e2deba73d895c946674a3c1bd17911b5aadc097b05f844608e665703dd347974",
+  "audit_document_path": "prior-evidence-semantic-audit.md",
+  "canonicalization": "UTF-8 JSON with fixed key order and one trailing newline; self hash is intentionally omitted",
+  "checks": {
+    "contract_review": {
+      "disposition": "pass",
+      "path": "contract-review.json",
+      "remaining_blocker_count": 0,
+      "review_status": "ready_to_seal"
+    },
+    "old_crossover": {
+      "descriptive_matched_tau": 0,
+      "source_specific_crossover_status": "unqualified",
+      "unmatched_primary_cells": [
+        "Y10.horizon_1",
+        "Y10.horizon_3",
+        "Y11.horizon_1",
+        "Y11.horizon_3"
+      ]
+    },
+    "s_hold": {
+      "actuators_called": false,
+      "event_id": "S/gt:5001:15",
+      "matrix_status": "eligible_pre_actuator_hold",
+      "status": "technical_hold_not_model_null"
+    }
+  },
+  "evidence": {
+    "a_event_id": "A/gt:2299:2",
+    "a_event_raw_sha256": "75bce59a9611041893aa30b33691f7fd5584a133aa46359152f7a2c96e89545b",
+    "d10": {
+      "conditional_one_row_owner": "gt:2299:0",
+      "conditional_three_row": {
+        "gained": [
+          "gt:2299:0",
+          "gt:2299:3",
+          "gt:2299:4"
+        ],
+        "lost": [
+          "gt:2299:1"
+        ],
+        "net": 2
+      },
+      "opener_log_probability": -6.812887191772461,
+      "opener_minus_native_terminal": 4.498218536376953,
+      "opener_vs_best_margin": -1.5919432640075684,
+      "best_competing_token_id": 152195,
+      "scope": "pre_opener_row_entry_grammar_plus_seeded_conditional_identity_null"
+    },
+    "d20": {
+      "conditional_one_row_owner": "gt:2299:0",
+      "conditional_three_row": {
+        "gained": [
+          "gt:2299:0",
+          "gt:2299:3",
+          "gt:2299:4"
+        ],
+        "lost": [
+          "gt:2299:1"
+        ],
+        "net": 2
+      },
+      "opener_log_probability": -2.35585355758667,
+      "opener_minus_native_terminal": 7.766333103179932,
+      "opener_vs_best_margin": 2.593808174133301,
+      "best_competing_token_id": 151647,
+      "scope": "pre_opener_row_entry_grammar_plus_seeded_conditional_identity_null"
+    },
+    "k10": {
+      "baseline_owner": "gt:2299:0",
+      "conditional_target_owner": "gt:2299:2",
+      "endpoint_complete": true,
+      "endpoint_stop_reason": "commit",
+      "generated_suffix_token_count": 9,
+      "opener_token_id": 151646,
+      "scope": "post_opener_conditional_oracle_routing_sufficiency",
+      "target_physical_match": true
+    },
+    "native_d00": {
+      "opener_log_probability": -0.0002530493075028062,
+      "opener_minus_native_terminal": 15.794962882995605,
+      "opener_vs_best_margin": 10.179125460213982
+    },
+    "s_event_raw_sha256": "08f7c404e3e9895563dcecc68ce72900261d5e00e9fb4acdce2670eb0a192c8c"
+  },
+  "inputs": {
+    "contract_review_sha256": "fb33cbb93543cc86989f1c29299286c061c03bf788d3054fe533650ad869a9d1",
+    "new_unit_sha256": "29501c79d322b1f2ae409dd00d027e7ecc8cd966620315e7d6b3a62100414a49",
+    "old_result_sha256": "06a0a65bf7021695c5722e05a6fc8543c07ea1a5798306e9528295edf49d2a7a",
+    "old_unit_sha256": "da7cd13cfe83990647a68fca45f7f00ecf65fbd87e61856dcf53e1b7fe701513",
+    "prior_aggregate_summary_sha256": "c33ccce86dbb9f09569fb05eae4fc6ba9f1e02f51d827b25699bee5f608faa88",
+    "prior_evidence_bundle_receipt_sha256": "b674107babd9848a71b6b9c1236a2bb8040a14d28af2a8df423064b1731fd609",
+    "prior_evidence_bundle_sha256": "2126d35cf517e0bc0256dae32a534e7ce67816fb4efafb2edfaccb4576697ca9",
+    "prior_raw_event_evidence_sha256": "326a50f5ed5989be2a961adee96bcab2e03fa83ffdf79900241586cc05cbd68a"
+  },
+  "route": {
+    "a3_role": "optional_secondary_after_S_matrix",
+    "active_unit_id": "2026-08-06-natural-boundary-routing-history-replication",
+    "no_training_route_selected": true,
+    "s_role": "primary_current_production_substrate",
+    "static_threshold_owner": "S",
+    "stop_rule": "below_S_threshold_or_case_only_evidence_stays_hold"
+  },
+  "schema_version": "prior_evidence_semantic_audit.v1",
+  "status": "complete_verified_bounded_narrowing",
+  "unit_id": "2026-08-06-natural-boundary-routing-history-replication"
+}

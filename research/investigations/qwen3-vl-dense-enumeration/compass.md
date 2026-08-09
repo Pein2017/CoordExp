@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-08-04
+updated: 2026-08-07
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -20,41 +20,101 @@ architecture, or an implementation contract.
 
 ## Current Live Route
 
-As of `2026-08-04`, the current evidence owner is the completed [Sorted
-Crossing Matched-Length Neutral-Row Insertion Control
+As of `2026-08-06`, the completed no-training [Static-Dynamic Owner Interface
+Crossover result](experiments/2026-08-05-static-dynamic-owner-interface-crossover/results.md)
+is retained with a bounded S technical HOLD and the [prior-evidence semantic
+audit](experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md).
+Its A3 step-2445 `gt:2299:2` K10 switch is narrowed to
+`post_opener_conditional_oracle_routing_sufficiency`: the target-exclusive
+query-to-image arm releases target owner `2` after a supplied row opener, but
+does not test spontaneous admission or STOP. D10/D20 pre-opener scalar changes
+are row-entry grammar effects; their seeded conditional owner identity is
+null. The old Y10/Y11 rows are parser-valid but physical-owner unmatched, so
+the source-specific crossover is unqualified and any matched `tau=0` is
+descriptive and non-authoritative.
+
+As of `2026-08-07`, the current evidence owner is the completed [S K10-H20
+Natural Crossover result](experiments/2026-08-07-s-k10-h20-natural-crossover/results.md),
+standing on the completed [S-Primary Natural-Boundary Static Routing and
+History Admission Replication result](experiments/2026-08-06-natural-boundary-routing-history-replication/results.md).
+S four-coordinate `geo_sorted_xy` step-2444 remains the only decision-owning
+substrate.
+
+The 2026-08-06 unit completed after its serialization-only successor. Gate v3
+ran on `gt:5001:15` across all fifteen arms, and the K/N/H cohort executed over
+eight shards and was sealed. Over `11` events and `8` images, K10 hard
+B-exclusive target release is `4/11` on `4` images, which clears the frozen
+checkpoint floor and qualifies the static direction as **oracle routing and
+target transcription sufficiency only**. H20 is `9/11` factor-qualified and
+`2/11` grammar-disruptive; H10, N10, and N20 are `0/11` qualified; no native
+STOP occurs in any arm of any event; K14 finite salience qualifies on `1` event
+and `1` image and is `HOLD`. `training_claim_status` is `hold`. The immutable
+v1/v2 `gt:5001:15` failures remain technical, not admission, STOP, routing,
+history, or owner-selection nulls.
+
+The 2026-08-07 crossover unit executed once and completed. Its evidence is
+artifact-valid but the source-specific crossover is `unqualified`, and formal
+aggregate `tau` and both utility horizons are **null, not zero**. It is
+conditional case-level evidence on `3` events and `3` images selected as the
+K10-positive, H20-qualified, non-degenerate intersection; it is not checkpoint
+crossover prevalence or effect. The fresh implementation reproduced `9/9`
+source `K01`/`K10`/`H20` endpoint vectors, so its K10 target release `3/3` is
+deterministic cross-implementation replication of the selection condition, not
+efficacy and not a base rate. C11 reproduces K10's target release at `2/3` and
+is endpoint-vector-identical to C10 there; at `gt:2299:29` it suppresses
+natural admission — first token `291`, opener rank 4 at log-probability
+`-6.34561` — so no row starts. That is a single-event admission interaction,
+not a checkpoint-level history route. A non-null aggregate tau was structurally
+impossible before launch because the source baseline and K10 unmatched counts
+were already known; this is recorded as a retrospective design and power
+failure, with no retry.
+
+A3 step-2445 remains optional secondary evidence, is `DO NOT RUN`, and does not
+inherit decision authority: S's `row_contract` has `commit_token_id: null`, so
+no commit-wrapper-specific attribution question exists. P4 is `DO NOT RUN`. No
+sweep, retry, re-selection, or new crossover is authorized.
+
+No probe GPU is active. Training, A2, wrapper/token changes, architecture
+promotion, decoding changes, and production launch remain unauthorized. Any
+training route remains a separate later decision.
+
+Both S natural-boundary units are closed and **documentation-certified**. A
+read-only formal scientific audit returned `PASS` on evidence integrity with an
+initial `HOLD` on unit closure; its documentation-only remediation was applied
+and the independent Fable post-remediation re-review returned `PASS`. The
+2026-08-06 support-completion lineage received a separate read-only audit
+returning `PASS` (`P0 = 0`, `P1 = 2`, `P2 = 5`): `200` frozen native-FN
+contexts, eight shards with exact assignment and order, realized `= expected =
+77,428` scalar forwards with `resumed = 0`, `support-merge-v6` authoritative,
+and `14` verified native-FN owners narrowing to the `11` admitted events by a
+support-blind geometry predicate. Shard-6's earlier roots are unattested
+transport deaths, so its user-authorized supervised rerun consumed no exact
+scientific repair allowance. Two field-scope traps carry forward: read
+`verified_S_count = 14` rather than a disposition tally, and note that `14` is
+native-FN-scoped while the census holds `26` S owners with verified support.
+None of this promotes any mechanism.
+
+The immediately preceding evidence owner was the completed [Sorted Crossing
+Matched-Length Neutral-Row Insertion Control
 result](experiments/2026-08-04-sorted-crossing-matched-length-neutral-row-insertion-control/results.md).
-Its implementation and runtime gates pass, but the frozen scientific route is
-`neutral_row_not_neutral_inconclusive`: the selected covered-row control is
-material on `8/12` specificity owners, above the absolute failure threshold of
-four. It cannot adjudicate content-specific versus generic insertion
-sensitivity.
+Its frozen route was `neutral_row_not_neutral_inconclusive`: the selected
+covered-row control was material on `8/12` specificity owners, and the damage
+tracked sorted-route regression distance. A lower-regression control was
+feasible for only `5/12` specificity owners, so that insertion line is closed
+and retained as historical evidence, not the current treatment.
 
-The independent audit found that this failure is structured. All seven
-N-nonmaterial owners have `rows_back_distance <= 3`, while thirteen of
-fourteen N-material owners have `rows_back_distance >= 5`; one owner is the
-exception, and the post-hoc Spearman association is `-0.7511`. The strongest
-remaining alternative is therefore disruption of a learned monotone sorted
-route by duplicate backward insertion, not undifferentiated sensitivity to any
-added row. This is a post-hoc descriptive narrowing, not a causal route.
-
-A frozen-ledger feasibility screen finds a lower-regression neutral row for
-only `5/12` specificity owners and `5/9` voting owners, so no second insertion
-capture is active. The separate [prospective thirteen-image
-panel admission](experiments/2026-08-04-sorted-prospective-13-image-panel-admission/unit.md)
-is CPU-verified and adds training-authority image `2299` without changing any
-completed denominator; future results must report the legacy twelve and image
-`2299` side by side before any pooled summary.
-
-The invalid full-canvas density route remains closed. The parallel owner-
-commit/typed-binding/InfoNCE training design is a complexity ceiling and a
-possible future treatment, not an explanation selected by current evidence.
-No commit token, binding loss, slot, detector, training objective, or
-architecture is promoted.
-
-Fresh sessions start from the neutral-row result and final review, then the
-geometry result and review, completed crossing-boundary result, prevalence
-result, and invalid full-canvas result. The following
-older formal owners remain useful for the broader history:
+Fresh sessions start from the completed crossover [result](experiments/2026-08-07-s-k10-h20-natural-crossover/results.md),
+[unit](experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md), and
+[review](experiments/2026-08-07-s-k10-h20-natural-crossover/review.md), then the
+completed S-primary [result](experiments/2026-08-06-natural-boundary-routing-history-replication/results.md)
+and frozen [unit](experiments/2026-08-06-natural-boundary-routing-history-replication/unit.md),
+its [prior-evidence semantic audit](experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md),
+and the completed static-dynamic [result](experiments/2026-08-05-static-dynamic-owner-interface-crossover/results.md)
+and [unit](experiments/2026-08-05-static-dynamic-owner-interface-crossover/unit.md) as bounded lineage, then its transport [handoff](2026-08-05-static-dynamic-owner-interface-probe-handoff.md), the
+prospective thirteen-image admission, the neutral-row result/review, geometry
+result/review, crossing-boundary result, prevalence result, and invalid full-
+canvas result. The following older formal owners remain useful for the broader
+history:
 
 1. the completed [Source versus transition step-36 forced-opener owner-selection
    result](experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md),
@@ -563,6 +623,32 @@ Markdown links, rather than this diagram, are the durable graph edges.
   block-`13` control does not switch. The teacher-forced effect is almost
   entirely at `x1`, supporting bounded one-way first-coordinate geometry-basin
   portability rather than a portable full-box object representation.
+- On S `geo_sorted_xy` step-2444 at the exact natural pre-opener boundary, hard
+  B-exclusive image-key restriction supplied from ground truth releases the
+  strict physical target owner on `4/11` cohort events over `4` images, which
+  clears the frozen checkpoint floor. This establishes **oracle routing and
+  target transcription sufficiency only**. It is not a natural owner slot, an
+  owner field, a covered-set pointer, or a trainable soft routing mechanism.
+  Target selection and general owner grounding stay distinct: in the
+  three-event crossover follow-up every K10 cell carried exactly two
+  physical-owner-unmatched rows and matched count fell in `2/3` events.
+- Natural-boundary history ablation on this substrate is factor-qualified only
+  for the latest completed row (H20, `9/11`); H10, N10, and N20 are `0/11`
+  qualified and predominantly grammar-disruptive. H20 degrades opener
+  confidence at every event of the three-event follow-up and flips the opener
+  at none. Its owner effect varies in sign, and at `2/3` of those events the
+  latest row is the entire admitted history, so recency-only attribution rests
+  on a single event.
+- Simultaneous `K10 ∧ H20` at the natural boundary produces no separable
+  routing effect: it is endpoint-vector-identical to K10 alone at `2/3` events,
+  with an identically zero componentwise contrast there. Its only divergence is
+  an admission failure at one event, where the opener falls to rank 4 and no
+  row starts. This is a single-event admission interaction at `n=1`, not a
+  checkpoint-level history route, and the formal source-specific crossover is
+  `unqualified` with tau null.
+- Finite soft salience (K14) qualifies on `1` event and `1` image in the
+  `11`-event cohort, below its checkpoint floor. It is held, and no graded or
+  trainable soft routing mechanism is established.
 
 ### Still speculative or unresolved
 
@@ -586,6 +672,18 @@ Markdown links, rather than this diagram, are the durable graph edges.
   prefixes, and both donor directions, and whether any causal information
   persists beyond the first coordinate rather than acting only through the
   emitted `x1` token.
+- Whether physical-owner-unmatched rows at the S natural boundary are genuinely
+  unsupported boxes or failures of the owner-matching instrument. This is now
+  the binding uncertainty on this thread: in the three-event crossover, `9` of
+  `12` cells are unmatched, including the untreated K01 baseline at `2/3`
+  events. Until it is settled on existing artifacts, no crossover contrast on
+  this event family can qualify regardless of the operators.
+- How often `K10 ∧ H20`, or any static-by-history composition, disrupts natural
+  admission rather than routing. The one observed admission collapse is `n=1`
+  and was selected into the cohort on conditions unrelated to admission.
+- Whether hard-oracle target release has any counterpart under an operator the
+  model could learn. Every qualified static result on this substrate uses
+  ground-truth-supplied attention restriction.
 - Long prefix length alone causes the cumulative-policy failure.
 - Incomplete dense labels are the dominant cause of conservative termination.
 - Whether physical batch sensitivity comes from low-margin Brain Floating
@@ -646,6 +744,8 @@ cross-row coverage.
 | Same-description queue crowding explains persistent no-tested support | Weak directional evidence only: discovery enrichment attenuates on held-out confirmation (`RR=1.45`, one-sided `p=0.124`) and does not separate held-out persons | Apparent owner scale, image identity, and category composition explain the discovery association | Do not train on the `>=8` rule. Prospectively match person owners within image and manipulate visual resolution separately from the readout interface. |
 | Apparent object scale limits category-field localization support | The prospectively frozen full-canvas doubled-budget capture is artifact-valid but scientifically invalid: resolved-support retention fell to `86/114 = 0.754`, so nominal `14/63` overall and `11/51` person recoveries are void and the full-canvas density route is closed under this interface | Scale may still proxy blur, occlusion, crowding, annotation extent, or a category-to-coordinate interface failure; preservation failure prevents a calibrated density effect estimate | Do not add a third scale, crops, bank widening, threshold retuning, scale-targeted training, or architecture from this arm. Reopen visual-resolution interventions only under a new representation and preservation contract. |
 | Image `2299` confirms the legacy visual-support fraction | **Withheld.** Native strict recall is `19/46`, but only `14/19` native-TP controls clear the imported due-boundary support rule, below the frozen `0.8` transfer-validity floor. Mechanical application gives `16/27` resolved-like and `11/27` persistent-like FN rows, but those are noninterpretable raw sensitivities, not a `59.3%` visual-recoverability estimate. | Legacy per-image TP-control rates already range `65%..100%` with `3/12` below `0.8`; discovery contained no tie controls. Ordinary image variation, category-incomplete calibration, and candidate-population effects remain joined. | Preserve the valid legacy `114/202 = 56.4%` result and the image-2299 withholding side by side. Do not pool thirteen images or open S2/S3 on the raw 16 rows. Any new image-2299 support estimate requires a separately frozen transfer-validity instrument. |
+| Hard oracle image-key routing carries owner selection at the natural boundary | Qualified as oracle routing and target transcription sufficiency only: K10 releases the strict target on `4/11` cohort events over `4` images, clearing the checkpoint floor. It does not carry general grounding — in the three-event crossover every K10 cell has exactly two physical-owner-unmatched rows, matched count falls in `2/3`, and the unmatched boxes are near-identical small boxes clustered on the target region. | Hard-oracle target selection with regional grounding collapse: the restriction may transcribe one target box while destroying the remaining budget, rather than selecting an owner. The owner-matching instrument may also be the limiting factor, since the untreated baseline is unmatched at `2/3` events. | Settle owner-matching and grounding validity on existing artifacts before any further routing contrast. Do not call this an owner slot, owner field, or trainable soft routing, and do not open training from it. |
+| Natural pre-opener history and static routing are separable factors | Not supported at the endpoint level. Simultaneous `K10 ∧ H20` is endpoint-vector-identical to K10 alone at `2/3` events with an identically zero contrast; the formal source-specific crossover is `unqualified` and tau is null, not zero. The single divergence is an admission failure at `gt:2299:29`, where the opener falls to rank 4 and no row starts. | Event-specific grammar and admission disruption, not a history route: the interaction lives in the admission channel at `n=1`, and at `2/3` events H20's latest row is the entire admitted history, so recency is confounded with total history. | Nothing is queued. A non-null aggregate tau was structurally impossible before that launch, so a repeat of the same design shape would be uninformative; any successor must first fix baseline qualifiability and the matcher question. |
 | A persistent ledger, object slot, or external detector is necessary | Unsupported and not authorized | Native prefix state plus better data and transition training may suffice | Consider only after transition shaping fails despite reliable object support and complete labels. |
 
 The completed [Fixed-Prefix Complete-Box Coherence and Progressive Coordinate-
@@ -659,6 +759,28 @@ changes the next-row category, proving cross-row state sensitivity while
 failing to establish correct uncovered-object redistribution.
 
 ## Current Discriminator Queue
+
+The S natural-boundary thread is the current front. The completed
+[S K10-H20 Natural Crossover result](experiments/2026-08-07-s-k10-h20-natural-crossover/results.md)
+routes its own next discriminator from realized outcomes: `9` of `12` cells are
+physical-owner `unmatched`, including the untreated K01 baseline at `2/3`
+events, so the routed discriminator is an **owner-matching and grounding
+validity check on existing artifacts** — are the unmatched boxes genuinely
+unsupported, or matcher failures? The single `invalid_token_grammar` cell routes
+to admission and token diagnosis at the natural boundary; the two `matched`
+cells license bounded component contrasts only, inside case-level scope. **None
+of this is authorized or executed; it is a later user-owned decision.**
+
+Three constraints bind any successor on this thread. First, that unit's
+aggregate tau was structurally impossible before launch because the source
+baseline and K10 unmatched counts were already known, so repeating the same
+design shape would be uninformative. Second, per the update rule below, this
+thread has now had three consecutive units with four or fewer cases, so the
+next unit must estimate how common the effect is, compare a standing checkpoint
+or ordering control, or test a concrete training change — not another small-n
+crossover. Third, no training route is proposed: training is `HOLD`, A3 is
+`DO NOT RUN` because S's `row_contract` has `commit_token_id: null`, P4 is
+`DO NOT RUN`, and no sweep, retry, or re-selection is authorized.
 
 The [Sorted Crossing Matched-Length Neutral-Row Insertion Control
 result](experiments/2026-08-04-sorted-crossing-matched-length-neutral-row-insertion-control/results.md)
@@ -969,6 +1091,27 @@ to the stopped exact strict design.
   pointer or proof that unrestricted visual competition dominates low recall.
 - Strong dose-dependent regional likelihood movement without owner reversal is
   not evidence that a uniform soft attention bias solves object binding.
+- A hard ground-truth-supplied attention restriction that releases the target
+  owner is not a natural owner slot, an owner field, a covered-set pointer, or
+  a trainable soft routing mechanism; it is oracle routing and target
+  transcription sufficiency, and it coexists with two unmatched rows in every
+  cell where it was measured.
+- A target release rate observed on events that were selected because they
+  released the target is not an efficacy result or a base rate. The `3/3`
+  figure in the crossover unit is deterministic cross-implementation
+  replication of its own selection condition.
+- Endpoint-vector identity between a composed operator and one of its factors is
+  not evidence of a separable second factor; it is evidence that the second
+  factor did nothing at that endpoint.
+- One admission collapse under a composed operator is not a checkpoint-level
+  history route, and it cannot be compared with any seeded post-opener result,
+  because a supplied opener structurally removes the channel in which it occurs.
+- A `duplicates` count of zero is not evidence against degenerate repetition
+  when the field counts strict physical-owner identity repeats only; a
+  byte-identical unmatched row pair is invisible to it.
+- A sealed CPU-only pre-GPU runtime identity embedded in an execution-root
+  document is not executed-GPU provenance, even when it sits beside a
+  `completed` status.
 - Slots, a persistent ledger, a cursor renderer, and a final architecture are
   not selected.
 
