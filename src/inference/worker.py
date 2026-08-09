@@ -26,6 +26,10 @@ from src.inference.data_parallel import (
     DecodeBatchBlock,
     RankShardPlan,
 )
+from src.inference.execution_context import (
+    load_and_verify_execution_context_artifact,
+    publish_rank_local_execution_context_copy,
+)
 from src.inference.execution_model import load_execution_model_receipt
 
 
@@ -151,6 +155,10 @@ def launch_worker_subprocess(
     shard_plan_json: str | Path,
     output_dir: str | Path,
     execution_model_json: str | Path | None = None,
+    execution_context_json: str | Path | None = None,
+    execution_context_file_sha256: str | None = None,
+    execution_context_value_fingerprint: str | None = None,
+    execution_context_journal_plan_reference: Mapping[str, Any] | None = None,
     base_env: Mapping[str, str] | None = None,
 ) -> subprocess.Popen[Any]:
     runtime_cache_root = Path(
@@ -171,6 +179,12 @@ def launch_worker_subprocess(
                 shard_plan_json=shard_plan_json,
                 output_dir=output_dir,
                 execution_model_json=execution_model_json,
+                execution_context_json=execution_context_json,
+                execution_context_file_sha256=execution_context_file_sha256,
+                execution_context_value_fingerprint=execution_context_value_fingerprint,
+                execution_context_journal_plan_reference=(
+                    execution_context_journal_plan_reference
+                ),
             ),
             env=env,
             start_new_session=True,
@@ -435,6 +449,10 @@ def build_worker_command(
     shard_plan_json: str | Path,
     output_dir: str | Path,
     execution_model_json: str | Path | None = None,
+    execution_context_json: str | Path | None = None,
+    execution_context_file_sha256: str | None = None,
+    execution_context_value_fingerprint: str | None = None,
+    execution_context_journal_plan_reference: Mapping[str, Any] | None = None,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -455,6 +473,52 @@ def build_worker_command(
     ]
     if execution_model_json is not None:
         command.extend(["--execution-model-json", str(execution_model_json)])
+    if execution_context_json is not None:
+        if (
+            execution_context_file_sha256 is None
+            or execution_context_value_fingerprint is None
+        ):
+            raise RuntimeContractError(
+                "execution-context worker transport requires both digests",
+                code="inference.worker_execution_context_digest_missing",
+                context={
+                    "execution_context_file_sha256": execution_context_file_sha256,
+                    "execution_context_value_fingerprint": (
+                        execution_context_value_fingerprint
+                    ),
+                },
+            )
+        command.extend(
+            [
+                "--execution-context-json",
+                str(execution_context_json),
+                "--execution-context-file-sha256",
+                str(execution_context_file_sha256),
+                "--execution-context-value-fingerprint",
+                str(execution_context_value_fingerprint),
+            ]
+        )
+        if execution_context_journal_plan_reference is not None:
+            command.extend(
+                [
+                    "--execution-context-journal-plan-reference",
+                    json.dumps(
+                        execution_context_journal_plan_reference,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                ]
+            )
+    elif execution_context_journal_plan_reference is not None:
+        raise RuntimeContractError(
+            "a journal plan reference requires an execution-context transport",
+            code="inference.worker_execution_context_reference_without_context",
+            context={
+                "execution_context_journal_plan_reference": (
+                    execution_context_journal_plan_reference
+                ),
+            },
+        )
     return command
 
 
@@ -467,8 +531,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--shard-plan-json", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--execution-model-json")
+    parser.add_argument("--execution-context-json")
+    parser.add_argument("--execution-context-file-sha256")
+    parser.add_argument("--execution-context-value-fingerprint")
+    parser.add_argument("--execution-context-journal-plan-reference")
     args = parser.parse_args(argv)
     resolved = load_resolved_infer_config_artifact(args.resolved_config_json)
+    if args.execution_context_json is not None and (
+        args.execution_context_file_sha256 is None
+        or args.execution_context_value_fingerprint is None
+    ):
+        raise RuntimeContractError(
+            "worker execution-context transport requires both digests",
+            code="inference.worker_execution_context_digest_missing",
+            context={
+                "execution_context_file_sha256": args.execution_context_file_sha256,
+                "execution_context_value_fingerprint": (
+                    args.execution_context_value_fingerprint
+                ),
+            },
+        )
+    if (
+        args.execution_context_json is None
+        and args.execution_context_journal_plan_reference is not None
+    ):
+        raise RuntimeContractError(
+            "a journal plan reference requires an execution-context transport",
+            code="inference.worker_execution_context_reference_without_context",
+        )
     if resolved.config.backend.type == "hf" and args.execution_model_json is not None:
         raise RuntimeContractError(
             "HF workers must not receive a vLLM execution-model receipt",
@@ -511,10 +601,30 @@ def main(argv: list[str] | None = None) -> int:
         if args.execution_model_json is None
         else load_execution_model_receipt(args.execution_model_json)
     )
+    execution_context_identity: dict[str, Any] | None = None
+    if args.execution_context_json is not None:
+        expected_journal_plan_reference = (
+            None
+            if args.execution_context_journal_plan_reference is None
+            else json.loads(args.execution_context_journal_plan_reference)
+        )
+        execution_context_artifact = load_and_verify_execution_context_artifact(
+            locator=args.execution_context_json,
+            expected_file_sha256=args.execution_context_file_sha256,
+            expected_value_fingerprint=args.execution_context_value_fingerprint,
+            expected_journal_plan_reference=expected_journal_plan_reference,
+        )
+        publish_rank_local_execution_context_copy(
+            payload=execution_context_artifact.payload,
+            destination_dir=Path(args.output_dir),
+            expected_file_sha256=execution_context_artifact.file_sha256,
+        )
+        execution_context_identity = execution_context_artifact.identity()
     pipeline.run_shard(
         resolved=resolved,
         output_dir=Path(args.output_dir),
         row_indices=rank_plan.row_indices,
+        execution_context_identity=execution_context_identity,
         worker_metadata={
             "shard_plan_fingerprint": plan.fingerprint,
             "rank": runtime_metadata["rank"],

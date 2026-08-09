@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.common.errors import ArtifactContractError
+from src.artifacts.json_values import canonical_json_bytes, json_sha256, load_canonical_json
+from src.common.errors import ArtifactContractError, CoordExpError
 from src.inference.artifacts import (
     IMAGE_PLAN_NAME,
     MANIFEST_NAME,
@@ -25,10 +26,13 @@ from src.inference.artifacts import (
     InferenceArtifactPaths,
     recompute_scores_from_artifacts,
     sha256_file,
+    stringify_mapping_keys,
     validate_scored_artifact_set,
     write_terminal_status_artifacts,
 )
 from src.inference.data_parallel import DataParallelPlan, RankShardPlan
+from src.inference.execution_context import EXECUTION_CONTEXT_ARTIFACT_NAME
+from src.inference.execution_context import validate_execution_context_identity
 from src.inference.scoring import PRED_SCORE_VERSION, SCORE_POLICY_FINGERPRINT
 
 
@@ -169,6 +173,11 @@ def merge_identity_vector(
             manifest.get("execution_model_identity")
             if "execution_model_identity" in manifest
             else provenance.get("execution_model_identity")
+        ),
+        "execution_context": (
+            manifest.get("execution_context")
+            if "execution_context" in manifest
+            else provenance.get("execution_context")
         ),
         "frontend_identity": manifest.get("frontend_identity")
         or provenance.get("frontend_identity"),
@@ -327,6 +336,9 @@ def _merge_shard_artifacts(
             context={"missing_ranks": missing_ranks},
         )
     if identity is not None:
+        identity["execution_context"] = validate_execution_context_identity(
+            identity.get("execution_context")
+        )
         metadata = _metadata_with_shard_owned_identity(
             metadata=metadata,
             shard_identity=identity,
@@ -334,6 +346,14 @@ def _merge_shard_artifacts(
         _require_controller_identity_match(
             shard_identity=identity,
             controller_identity=_controller_identity_vector(metadata),
+        )
+        _require_controller_execution_context_source(
+            output_dir=output_dir,
+            execution_context_identity=identity.get("execution_context"),
+        )
+        _require_execution_context_shard_bytes(
+            shard_dirs=shard_dirs,
+            execution_context_identity=identity.get("execution_context"),
         )
 
     expected_index_by_row_id = {row_id: index for index, row_id in enumerate(expected_row_ids)}
@@ -478,6 +498,12 @@ def _load_validated_shard(
     manifest = _read_json(shard_dir / MANIFEST_NAME)
     provenance = _read_json(shard_dir / PROVENANCE_NAME)
     rank = _rank_from_manifest_or_path(manifest=manifest, shard_dir=shard_dir)
+    _require_execution_context_surface_consistency(
+        shard_dir=shard_dir,
+        manifest=manifest,
+        provenance=provenance,
+        rank=rank,
+    )
     summary_status = _summary_status(shard_dir)
     worker_status = str(worker_statuses.get(rank, summary_status))
     if summary_status != "completed":
@@ -1683,6 +1709,7 @@ def _controller_identity_vector(metadata: dict[str, Any]) -> dict[str, Any]:
         "backend_session": metadata.get("backend_session"),
         "likelihood_semantics": metadata.get("likelihood_semantics"),
         "execution_model_identity": metadata.get("execution_model_identity"),
+        "execution_context": metadata.get("execution_context"),
         "frontend_identity": metadata.get("frontend_identity"),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         "template_identity": metadata.get("template_identity"),
@@ -1716,6 +1743,209 @@ def _require_controller_identity_match(
                     "field": field,
                     "controller": controller_value,
                     "shard": shard_value,
+                },
+            )
+
+
+def _require_execution_context_surface_consistency(
+    *,
+    shard_dir: Path,
+    manifest: dict[str, Any],
+    provenance: dict[str, Any],
+    rank: int,
+) -> None:
+    """Verify execution_context presence/value agrees across summary/manifest/provenance.
+
+    Pre-change artifact families never carried this key, so a shard where all
+    three surfaces omit it is treated as the compatible "no context" shape,
+    not a contract violation. Presence in only some surfaces, or disagreeing
+    values where present, still fails closed.
+    """
+
+    summary = _read_json(shard_dir / SUMMARY_NAME)
+    surfaces = {"summary": summary, "manifest": manifest, "provenance": provenance}
+    present = {name: ("execution_context" in payload) for name, payload in surfaces.items()}
+    if not any(present.values()):
+        return
+    if not all(present.values()):
+        raise ArtifactContractError(
+            "rank-local shard carries execution-context evidence in only"
+            " some artifact surfaces",
+            code="merge.execution_context_surface_presence_mismatch",
+            context={"shard_dir": str(shard_dir), "rank": rank, "present": present},
+        )
+    values = {name: payload["execution_context"] for name, payload in surfaces.items()}
+    if values["summary"] != values["manifest"] or values["summary"] != values["provenance"]:
+        raise ArtifactContractError(
+            "rank-local shard summary execution-context disagrees with"
+            " manifest or provenance",
+            code="merge.summary_execution_context_mismatch",
+            context={
+                "shard_dir": str(shard_dir),
+                "rank": rank,
+                "summary": values["summary"],
+                "manifest": values["manifest"],
+                "provenance": values["provenance"],
+            },
+        )
+
+
+def _require_controller_execution_context_source(
+    *,
+    output_dir: Path,
+    execution_context_identity: dict[str, Any] | None,
+) -> None:
+    """Verify the controller-owned top-level context source before publication.
+
+    Rank-local agreement alone is not sufficient: a tampered or missing
+    controller source must fail merge even when every shard copy still
+    matches the declared digest.
+    """
+
+    expected_path = (output_dir / EXECUTION_CONTEXT_ARTIFACT_NAME).resolve()
+    exists = expected_path.is_file()
+    if execution_context_identity is None:
+        if exists:
+            raise ArtifactContractError(
+                "controller output directory has an execution-context artifact"
+                " but no controller-declared execution context",
+                code="merge.controller_execution_context_unexpected",
+                context={"path": str(expected_path)},
+            )
+        return
+    expected_locator = str(expected_path)
+    declared_locator = execution_context_identity["locator"]
+    if declared_locator != expected_locator:
+        raise ArtifactContractError(
+            "controller-declared execution-context locator disagrees with the"
+            " output directory's own sidecar path",
+            code="merge.controller_execution_context_locator_mismatch",
+            context={
+                "expected_locator": expected_locator,
+                "declared_locator": declared_locator,
+            },
+        )
+    if not exists:
+        raise ArtifactContractError(
+            "controller output directory is missing the declared"
+            " execution-context source artifact",
+            code="merge.controller_execution_context_missing",
+            context={"path": str(expected_path)},
+        )
+    observed_file_sha256 = sha256_file(expected_path)
+    expected_file_sha256 = execution_context_identity["file_sha256"]
+    if observed_file_sha256 != expected_file_sha256:
+        raise ArtifactContractError(
+            "controller execution-context source bytes disagree with the"
+            " declared file digest",
+            code="merge.controller_execution_context_bytes_mismatch",
+            context={
+                "path": str(expected_path),
+                "expected_file_sha256": expected_file_sha256,
+                "observed_file_sha256": observed_file_sha256,
+            },
+        )
+    payload = load_canonical_json(expected_path)
+    observed_value_fingerprint = json_sha256(payload)
+    expected_value_fingerprint = execution_context_identity["value_fingerprint"]
+    if observed_value_fingerprint != expected_value_fingerprint:
+        raise ArtifactContractError(
+            "controller execution-context source value disagrees with the"
+            " declared value fingerprint",
+            code="merge.controller_execution_context_value_fingerprint_mismatch",
+            context={
+                "path": str(expected_path),
+                "expected_value_fingerprint": expected_value_fingerprint,
+                "observed_value_fingerprint": observed_value_fingerprint,
+            },
+        )
+    if (
+        payload.get("journal_plan_reference")
+        != execution_context_identity["journal_plan_reference"]
+    ):
+        raise ArtifactContractError(
+            "controller execution-context source journal plan reference"
+            " disagrees with the declared identity",
+            code="merge.controller_execution_context_reference_mismatch",
+            context={"path": str(expected_path)},
+        )
+
+
+def _require_execution_context_shard_bytes(
+    *,
+    shard_dirs: tuple[Path, ...],
+    execution_context_identity: dict[str, Any] | None,
+) -> None:
+    """Verify every rank-local execution-context copy matches the declared digest.
+
+    Checks locator/file-digest/value-fingerprint agreement (already enforced by
+    the manifest-level identity comparison), then independently re-derives the
+    value fingerprint from each shard's actual on-disk bytes and cross-compares
+    the decoded context value and journal plan reference across shards, so
+    agreement never rests on a single digest match alone.
+    """
+
+    reference_payload: dict[str, Any] | None = None
+    reference_shard_dir: Path | None = None
+    for shard_dir in shard_dirs:
+        path = shard_dir / EXECUTION_CONTEXT_ARTIFACT_NAME
+        exists = path.is_file()
+        if execution_context_identity is None:
+            if exists:
+                raise ArtifactContractError(
+                    "rank-local shard has an execution-context artifact but no"
+                    " controller-declared execution context",
+                    code="merge.execution_context_unexpected",
+                    context={"shard_dir": str(shard_dir)},
+                )
+            continue
+        if not exists:
+            raise ArtifactContractError(
+                "rank-local shard is missing the declared execution-context artifact",
+                code="merge.execution_context_missing",
+                context={"shard_dir": str(shard_dir)},
+            )
+        observed_file_sha256 = sha256_file(path)
+        expected_file_sha256 = execution_context_identity["file_sha256"]
+        if observed_file_sha256 != expected_file_sha256:
+            raise ArtifactContractError(
+                "rank-local execution-context bytes disagree with the"
+                " controller-declared file digest",
+                code="merge.execution_context_bytes_mismatch",
+                context={
+                    "shard_dir": str(shard_dir),
+                    "expected_file_sha256": expected_file_sha256,
+                    "observed_file_sha256": observed_file_sha256,
+                },
+            )
+        payload = load_canonical_json(path)
+        observed_value_fingerprint = json_sha256(payload)
+        expected_value_fingerprint = execution_context_identity["value_fingerprint"]
+        if observed_value_fingerprint != expected_value_fingerprint:
+            raise ArtifactContractError(
+                "rank-local execution-context value disagrees with the"
+                " controller-declared value fingerprint",
+                code="merge.execution_context_value_fingerprint_mismatch",
+                context={
+                    "shard_dir": str(shard_dir),
+                    "expected_value_fingerprint": expected_value_fingerprint,
+                    "observed_value_fingerprint": observed_value_fingerprint,
+                },
+            )
+        if reference_payload is None:
+            reference_payload = payload
+            reference_shard_dir = shard_dir
+        elif (
+            payload.get("context") != reference_payload.get("context")
+            or payload.get("journal_plan_reference")
+            != reference_payload.get("journal_plan_reference")
+        ):
+            raise ArtifactContractError(
+                "rank-local execution-context value disagrees with a prior shard",
+                code="merge.execution_context_value_mismatch",
+                context={
+                    "shard_dir": str(shard_dir),
+                    "reference_shard_dir": str(reference_shard_dir),
                 },
             )
 
@@ -2650,6 +2880,19 @@ def _merged_parallelism(
     }
 
 
+def _execution_context_field(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Bind ``execution_context`` only when a caller actually supplied one.
+
+    Pre-change merged artifact families never carried this key. Omitting it
+    when no context is present keeps the no-context merged schema
+    byte-for-byte compatible with every merged artifact family written
+    before this capability existed.
+    """
+
+    value = metadata.get("execution_context")
+    return {} if value is None else {"execution_context": value}
+
+
 def _merged_provenance(
     *,
     metadata: dict[str, Any],
@@ -2670,6 +2913,7 @@ def _merged_provenance(
         "backend_session": dict(metadata.get("backend_session") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "execution_model_identity": metadata.get("execution_model_identity"),
+        **_execution_context_field(metadata),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         "prompt_trace": list(metadata.get("prompt_trace") or []),
@@ -2727,6 +2971,7 @@ def _merged_summary(
         "generation_policy": dict(metadata.get("generation_policy") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
+        **_execution_context_field(metadata),
         "decode_success_count": len(raw_rows),
         "parser_failure_count": parser_failure_count,
         "dropped_prediction_count": sum(
@@ -2780,6 +3025,7 @@ def _merged_manifest(
         "backend_session": dict(metadata.get("backend_session") or {}),
         "likelihood_semantics": dict(metadata.get("likelihood_semantics") or {}),
         "execution_model_identity": metadata.get("execution_model_identity"),
+        **_execution_context_field(metadata),
         "frontend_identity": dict(metadata.get("frontend_identity") or {}),
         "raw_model_logprob_status": metadata.get("raw_model_logprob_status"),
         "prompt_trace": list(metadata.get("prompt_trace") or []),
@@ -2811,20 +3057,34 @@ def _write_merge_failure_terminal_status(
     parallelism = dict(failure_metadata.get("parallelism") or {})
     parallelism["merge_status"] = "failed"
     failure_metadata["parallelism"] = parallelism
-    write_terminal_status_artifacts(
-        output_dir=output_dir,
-        metadata=failure_metadata,
-        summary={
-            "terminal_status": "failed",
-            "failure_class": "merge_failure",
-            "merge_failure_count": 1,
-            "error": {
-                "code": error.code,
-                "message": error.message,
-                "context": error.context,
+    try:
+        validated_context = validate_execution_context_identity(
+            failure_metadata.get("execution_context")
+        )
+        failure_metadata["execution_context"] = validated_context
+        _require_controller_execution_context_source(
+            output_dir=output_dir,
+            execution_context_identity=validated_context,
+        )
+        write_terminal_status_artifacts(
+            output_dir=output_dir,
+            metadata=failure_metadata,
+            summary={
+                "terminal_status": "failed",
+                "failure_class": "merge_failure",
+                "merge_failure_count": 1,
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                    "context": stringify_mapping_keys(error.context),
+                },
             },
-        },
-    )
+        )
+    except CoordExpError as terminal_error:
+        error.context["terminal_publication_failure"] = {
+            "code": terminal_error.code,
+            "message": terminal_error.message,
+        }
 
 
 def _remove_benchmark_artifacts(output_dir: Path) -> None:
@@ -3007,7 +3267,7 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def _json_safe(value: Any) -> Any:
-    return json.loads(json.dumps(value, default=str, allow_nan=False))
+    return json.loads(canonical_json_bytes(value))
 
 
 def _sha256_json(value: Any) -> str:

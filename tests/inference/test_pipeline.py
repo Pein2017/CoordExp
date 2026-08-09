@@ -3,15 +3,18 @@ from __future__ import annotations
 import ast
 import json
 import math
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import torch
 import yaml
 from PIL import Image
 
+from src.artifacts.json_values import canonical_json_bytes
 from src.common.errors import (
     ArtifactContractError,
     ConfigContractError,
@@ -20,6 +23,7 @@ from src.common.errors import (
 )
 from src.inference.backend import (
     BackendLaunch,
+    DecodeRequest,
     BackendSessionReceipt,
     DecodeResult,
     LikelihoodPair,
@@ -160,11 +164,13 @@ class FakeBackend:
             },
         )
 
-    def decode(self, requests: list[Any]) -> list[DecodeResult]:
+    def decode(self, requests: Sequence[DecodeRequest]) -> Sequence[DecodeResult]:
         results: list[DecodeResult] = []
         for start in range(0, len(requests), self.launch.batch_size):
             results.extend(
-                self.generate_batch(requests[start : start + self.launch.batch_size])
+                self.generate_batch(
+                    list(requests[start : start + self.launch.batch_size])
+                )
             )
         return results
 
@@ -282,6 +288,426 @@ def test_pipeline_orchestrates_batched_decode_and_artifact_writing(tmp_path: Pat
             == prompt_trace["backend_executed_prompt_token_count"]
         )
     assert raw_rows[0]["decode_stop_reason"] == "length"
+
+
+def test_pipeline_no_execution_context_omits_field_from_summary_and_manifest(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=3, row_count=3)
+
+    result = pipeline.run(
+        config_path=config_path,
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
+    )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    provenance = json.loads(
+        (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result == 0
+    # Pre-change artifact families never carried this key; the no-context
+    # path must keep omitting it rather than writing an explicit null.
+    assert "execution_context" not in summary
+    assert "execution_context" not in manifest
+    assert "execution_context" not in provenance
+    assert not (run_dir / "execution_context.json").exists()
+
+
+def test_pipeline_no_execution_context_omits_field_from_terminal_status(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    class BadTraceBackend(FakeBackend):
+        def generate_batch(self, requests: list[Any], **kwargs: Any) -> list[DecodeResult]:
+            self.calls.append([request.request_id for request in requests])
+            bad = _decode_result(
+                requests[0].request_id,
+                prompt_token_ids=list(requests[0].prompt_token_ids),
+            )
+            bad_trace = list(bad.token_trace)
+            bad_trace[4] = replace(
+                bad_trace[4],
+                likelihood=LikelihoodPair(
+                    policy_logprob=float("nan"),
+                    raw_model_logprob=None,
+                ),
+            )
+            return [replace(bad, token_trace=tuple(bad_trace))]
+
+    with pytest.raises(RuntimeContractError):
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: BadTraceBackend([], launch=launch),
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+
+    assert summary["terminal_status"] == "failed"
+    assert "execution_context" not in summary
+    assert "execution_context" not in manifest
+    assert not (run_dir / "execution_context.json").exists()
+
+
+def test_pipeline_terminal_projects_tuple_error_context_to_json_array(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    def failing_frontend_factory(*args: Any, **kwargs: Any) -> Any:
+        del args, kwargs
+        raise RuntimeContractError(
+            "synthetic tuple-shaped diagnostic",
+            code="inference.synthetic_tuple_context",
+            context={"shape": (1, 2), "nested": ((3, 4),)},
+        )
+
+    with pytest.raises(RuntimeContractError):
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=failing_frontend_factory,
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert summary["error"]["context"] == {
+        "shape": [1, 2],
+        "nested": [[3, 4]],
+    }
+
+
+def test_pipeline_rejects_invalid_execution_context_before_run_dir_creation(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    with pytest.raises(ArtifactContractError):
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            execution_context={"bad": float("nan")},
+        )
+
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_pipeline_rejects_journal_plan_reference_without_context(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            execution_context=None,
+            journal_plan_reference={
+                "journal_schema_version": 1,
+                "execution_id": "exec-1",
+                "plan_fingerprint": "a" * 64,
+                "plan_file_sha256": "b" * 64,
+            },
+        )
+
+    assert exc_info.value.code == "inference.execution_context_reference_without_context"
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_pipeline_rejects_non_object_journal_plan_reference_with_typed_error(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            execution_context={},
+            journal_plan_reference=cast(Any, []),
+        )
+
+    assert exc_info.value.code == "inference.execution_context_plan_reference_invalid"
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_pipeline_preserves_execution_context_in_summary_and_manifest(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=3, row_count=3)
+
+    result = pipeline.run(
+        config_path=config_path,
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
+        execution_context={"probe_worker_note": "unit", "nested": {"a": [1, 2, 3]}},
+    )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    provenance = json.loads(
+        (run_dir / "gt_vs_pred_scored.jsonl.provenance.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    sidecar_path = run_dir / "execution_context.json"
+
+    assert result == 0
+    assert sidecar_path.is_file()
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert sidecar["context"] == {
+        "probe_worker_note": "unit",
+        "nested": {"a": [1, 2, 3]},
+    }
+    assert summary["execution_context"]["relative_path"] == "execution_context.json"
+    assert summary["execution_context"] == manifest["execution_context"]
+    assert summary["execution_context"] == provenance["execution_context"]
+    assert manifest["execution_context"]["file_sha256"] == _sha256_bytes(
+        sidecar_path.read_bytes()
+    )
+
+
+def test_pipeline_preserves_execution_context_through_terminal_failure(
+    tmp_path: Path,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    class BadTraceBackend(FakeBackend):
+        def generate_batch(self, requests: list[Any], **kwargs: Any) -> list[DecodeResult]:
+            self.calls.append([request.request_id for request in requests])
+            bad = _decode_result(
+                requests[0].request_id,
+                prompt_token_ids=list(requests[0].prompt_token_ids),
+            )
+            bad_trace = list(bad.token_trace)
+            bad_trace[4] = replace(
+                bad_trace[4],
+                likelihood=LikelihoodPair(
+                    policy_logprob=float("nan"),
+                    raw_model_logprob=None,
+                ),
+            )
+            return [replace(bad, token_trace=tuple(bad_trace))]
+
+    with pytest.raises(RuntimeContractError):
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: BadTraceBackend([], launch=launch),
+            execution_context={"probe_worker_note": "unit"},
+        )
+
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    sidecar_path = run_dir / "execution_context.json"
+
+    assert sidecar_path.is_file()
+    assert summary["terminal_status"] == "failed"
+    assert summary["execution_context"] is not None
+    assert summary["execution_context"] == manifest["execution_context"]
+    assert summary["execution_context"]["file_sha256"] == _sha256_bytes(
+        sidecar_path.read_bytes()
+    )
+
+
+def test_pipeline_post_publication_context_failure_binds_recoverable_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    def publish_then_fail(*, run_dir: Path, payload: Any) -> None:
+        path = run_dir / "execution_context.json"
+        path.write_bytes(canonical_json_bytes(payload))
+        raise ArtifactContractError(
+            "synthetic containing-directory sync failure",
+            code="artifact.publish_failed",
+            context={"path": str(path), "published_before_failure": True},
+        )
+
+    monkeypatch.setattr(
+        pipeline,
+        "publish_execution_context_artifact",
+        publish_then_fail,
+    )
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            execution_context={"probe_worker_note": "unit"},
+        )
+
+    assert exc_info.value.code == "artifact.publish_failed"
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    sidecar = run_dir / "execution_context.json"
+    assert summary["terminal_status"] == "failed"
+    assert summary["execution_context"] == manifest["execution_context"]
+    assert summary["execution_context"]["file_sha256"] == _sha256_bytes(
+        sidecar.read_bytes()
+    )
+
+
+def test_pipeline_corrupt_post_publication_context_preserves_owning_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import pipeline
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+
+    def publish_corrupt_then_fail(*, run_dir: Path, payload: Any) -> None:
+        del payload
+        path = run_dir / "execution_context.json"
+        path.write_bytes(b"not-json")
+        raise ArtifactContractError(
+            "synthetic containing-directory sync failure",
+            code="artifact.publish_failed",
+            context={"path": str(path), "published_before_failure": True},
+        )
+
+    monkeypatch.setattr(
+        pipeline,
+        "publish_execution_context_artifact",
+        publish_corrupt_then_fail,
+    )
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run(
+            config_path=config_path,
+            frontend_factory=_frontend_factory(),
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+            execution_context={"probe_worker_note": "unit"},
+        )
+
+    assert exc_info.value.code == "artifact.publish_failed"
+    assert exc_info.value.context["execution_context_recovery_failure"]["code"] in {
+        "artifact.invalid_json_file",
+        "inference.execution_context_schema_invalid",
+        "artifact.noncanonical_json_file",
+    }
+    assert exc_info.value.context["terminal_publication_failure"]["code"] == (
+        "inference.execution_context_local_unexpected"
+    )
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    assert not (run_dir / "summary.json").exists()
+    assert not (run_dir / "run_manifest.json").exists()
+
+
+def test_run_data_parallel_shards_propagates_execution_context_to_each_shard(
+    tmp_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import data_parallel, pipeline
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=2)
+    resolved = load_infer_config(config_path)
+    plan = data_parallel.plan_data_parallel_shards(
+        row_ids=("row-0", "row-1"),
+        per_device_batch_size=1,
+        visible_cuda_tokens=("0", "1"),
+    )
+    run_dir = tmp_path / "outputs" / "wave6-pipeline"
+    run_dir.mkdir(parents=True)
+    artifact = materialize_execution_context_artifact(
+        run_dir=run_dir,
+        execution_context={"probe_worker_note": "unit"},
+    )
+    assert artifact is not None
+
+    result = pipeline.run_data_parallel_shards(
+        resolved=resolved,
+        run_dir=run_dir,
+        plan=plan,
+        frontend_factory=_frontend_factory(),
+        session_opener=lambda launch: FakeBackend([], launch=launch),
+        execution_context_identity=artifact.identity(),
+    )
+
+    assert result.shard_dirs
+    for shard_dir in result.shard_dirs:
+        sidecar = shard_dir / "execution_context.json"
+        assert sidecar.is_file()
+        manifest = json.loads((shard_dir / "run_manifest.json").read_text(encoding="utf-8"))
+        assert manifest["execution_context"] == artifact.identity()
+
+
+def test_run_shard_rejects_missing_rank_local_execution_context_before_frontend(
+    tmp_path: Path,
+) -> None:
+    from src.config.inference import load_infer_config
+    from src.inference import pipeline
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    config_path = _write_config(tmp_path, batch_size=1, row_count=1)
+    resolved = load_infer_config(config_path)
+    controller_dir = tmp_path / "controller"
+    artifact = materialize_execution_context_artifact(
+        run_dir=controller_dir,
+        execution_context={"probe_worker_note": "unit"},
+    )
+    assert artifact is not None
+    frontend_called = False
+
+    def frontend_factory(*args: Any, **kwargs: Any) -> Any:
+        nonlocal frontend_called
+        frontend_called = True
+        return _frontend_factory()(*args, **kwargs)
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        pipeline.run_shard(
+            resolved=resolved,
+            output_dir=tmp_path / "shards" / "rank-000",
+            row_indices=(0,),
+            execution_context_identity=artifact.identity(),
+            frontend_factory=frontend_factory,
+            session_opener=lambda launch: FakeBackend([], launch=launch),
+        )
+
+    assert exc_info.value.code == "artifact.invalid_json_file"
+    assert frontend_called is False
+
+
+def _sha256_bytes(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
 
 
 def test_pipeline_keeps_tiny_non_smoke_run_out_of_benchmark_scope(

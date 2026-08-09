@@ -1,0 +1,37 @@
+{
+  "schema_version": "research_probe_admission.fixed_tree_audit.v1",
+  "kind": "independent_intent_contract_audit",
+  "reviewed_manifest": {
+    "path": "verification/fixed-tree-manifest-preaudit.json",
+    "content_sha256": "7cb401c56d638e9828f63b05bd140d88cb7abf4e81be252bfd43998fdfe04dac",
+    "entry_count": 39
+  },
+  "reviewer_route": {
+    "model": "gpt-5.6-terra",
+    "effort": "high",
+    "role": "intent_contract_auditor"
+  },
+  "verdict": "PASS",
+  "finding_counts": {
+    "P0": 0,
+    "P1": 0,
+    "P2": 1
+  },
+  "accepted_p2": {
+    "finding": "preaudit manifest algorithm label conflated per-file identities with the manifest content hash",
+    "impact": "metadata_wording_only_leaf_hashes_remained_exact",
+    "resolution": "final_manifest_uses_separate_entry_identity_entry_set_and_manifest_content_hash_algorithms"
+  },
+  "checks": {
+    "stable_owner_mechanics_only": true,
+    "scientific_semantics_remain_consumer_owned": true,
+    "support_single_context_scope_preserved": true,
+    "crossover_cpu_only_and_not_admitted": true,
+    "legacy_merger_closed": false,
+    "scientific_interpretation": false,
+    "bulk_launch_authorized": false,
+    "active_sibling_nonmutation_verified": true
+  },
+  "claim_boundary": "intent_and_contract_acceptance_only_no_scientific_result_or_launch_authority",
+  "reviewer_modified_files": false
+}

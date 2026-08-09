@@ -11,7 +11,7 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
-from src.common.errors import RuntimeContractError
+from src.common.errors import ArtifactContractError, RuntimeContractError
 
 
 def test_worker_environment_narrows_cuda_visible_devices_and_isolates_runtime_cache(
@@ -635,6 +635,339 @@ def test_worker_revalidates_execution_model_before_running_shard(
             ]
         )
     assert run_called is False
+
+
+def _patch_worker_for_execution_context(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    calls: dict[str, Any],
+) -> None:
+    from src.inference import data_parallel, worker
+
+    plan = data_parallel.plan_data_parallel_shards(
+        row_ids=("row-0",),
+        per_device_batch_size=1,
+        visible_cuda_tokens=("0",),
+    )
+    resolved = SimpleNamespace(
+        config=SimpleNamespace(name="unit", backend=SimpleNamespace(type="hf")),
+        fingerprint="infer-fp",
+    )
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setattr(worker, "load_resolved_infer_config_artifact", lambda path: resolved)
+    monkeypatch.setattr(worker, "load_data_parallel_plan_artifact", lambda path: plan)
+    monkeypatch.setattr(
+        worker,
+        "build_worker_runtime_metadata",
+        lambda **kwargs: {
+            "rank": kwargs["rank"],
+            "world_size": kwargs["world_size"],
+            "parent_visible_device_token": kwargs["parent_visible_device_token"],
+            "worker_cuda_visible_devices": kwargs["parent_visible_device_token"],
+            "cuda_device_count": 1,
+            "cuda_current_device": 0,
+            "logical_device": "cuda:0",
+            "model_first_parameter_device": "cuda:0",
+        },
+    )
+
+    def fake_run_shard(**kwargs: Any) -> int:
+        calls.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(worker.pipeline, "run_shard", fake_run_shard)
+
+
+def _worker_argv(
+    tmp_path: Path,
+    *,
+    execution_context_json: str | None = None,
+    execution_context_file_sha256: str | None = None,
+    execution_context_value_fingerprint: str | None = None,
+    execution_context_journal_plan_reference: str | None = None,
+) -> list[str]:
+    argv = [
+        "--rank",
+        "0",
+        "--world-size",
+        "1",
+        "--parent-visible-device-token",
+        "0",
+        "--resolved-config-json",
+        str(tmp_path / "resolved.json"),
+        "--shard-plan-json",
+        str(tmp_path / "plan.json"),
+        "--output-dir",
+        str(tmp_path / "shards" / "rank-000"),
+    ]
+    if execution_context_json is not None:
+        argv.extend(["--execution-context-json", execution_context_json])
+    if execution_context_file_sha256 is not None:
+        argv.extend(["--execution-context-file-sha256", execution_context_file_sha256])
+    if execution_context_value_fingerprint is not None:
+        argv.extend(
+            ["--execution-context-value-fingerprint", execution_context_value_fingerprint]
+        )
+    if execution_context_journal_plan_reference is not None:
+        argv.extend(
+            [
+                "--execution-context-journal-plan-reference",
+                execution_context_journal_plan_reference,
+            ]
+        )
+    return argv
+
+
+def test_worker_main_verifies_copies_and_forwards_execution_context(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import worker
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    calls: dict[str, Any] = {}
+    _patch_worker_for_execution_context(monkeypatch, calls=calls)
+
+    reference = {
+        "journal_schema_version": 1,
+        "execution_id": "exec-1",
+        "plan_fingerprint": "a" * 64,
+        "plan_file_sha256": "b" * 64,
+    }
+    artifact = materialize_execution_context_artifact(
+        run_dir=tmp_path / "controller",
+        execution_context={"probe_worker_note": "unit"},
+        journal_plan_reference=reference,
+    )
+    assert artifact is not None
+
+    result = worker.main(
+        _worker_argv(
+            tmp_path,
+            execution_context_json=artifact.locator,
+            execution_context_file_sha256=artifact.file_sha256,
+            execution_context_value_fingerprint=artifact.value_fingerprint,
+            execution_context_journal_plan_reference=json.dumps(reference, sort_keys=True),
+        )
+    )
+
+    assert result == 0
+    assert calls["execution_context_identity"] == artifact.identity()
+    rank_local_copy = tmp_path / "shards" / "rank-000" / "execution_context.json"
+    assert rank_local_copy.is_file()
+    assert rank_local_copy.read_bytes() == artifact.path.read_bytes()
+
+
+def test_worker_main_rejects_execution_context_journal_plan_reference_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import worker
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    calls: dict[str, Any] = {}
+    _patch_worker_for_execution_context(monkeypatch, calls=calls)
+
+    artifact = materialize_execution_context_artifact(
+        run_dir=tmp_path / "controller",
+        execution_context={"probe_worker_note": "unit"},
+        journal_plan_reference={
+            "journal_schema_version": 1,
+            "execution_id": "exec-1",
+            "plan_fingerprint": "a" * 64,
+            "plan_file_sha256": "b" * 64,
+        },
+    )
+    assert artifact is not None
+    drifted_reference = {
+        "journal_schema_version": 1,
+        "execution_id": "exec-DIFFERENT",
+        "plan_fingerprint": "a" * 64,
+        "plan_file_sha256": "b" * 64,
+    }
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        worker.main(
+            _worker_argv(
+                tmp_path,
+                execution_context_json=artifact.locator,
+                execution_context_file_sha256=artifact.file_sha256,
+                execution_context_value_fingerprint=artifact.value_fingerprint,
+                execution_context_journal_plan_reference=json.dumps(
+                    drifted_reference, sort_keys=True
+                ),
+            )
+        )
+
+    assert exc_info.value.code == "inference.execution_context_plan_reference_mismatch"
+    assert calls == {}
+    assert not (tmp_path / "shards" / "rank-000" / "execution_context.json").exists()
+
+
+def test_worker_main_rejects_malformed_execution_context_digest_format(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import worker
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    calls: dict[str, Any] = {}
+    _patch_worker_for_execution_context(monkeypatch, calls=calls)
+
+    artifact = materialize_execution_context_artifact(
+        run_dir=tmp_path / "controller",
+        execution_context={"probe_worker_note": "unit"},
+    )
+    assert artifact is not None
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        worker.main(
+            _worker_argv(
+                tmp_path,
+                execution_context_json=artifact.locator,
+                execution_context_file_sha256="not-a-sha256-digest",
+                execution_context_value_fingerprint=artifact.value_fingerprint,
+            )
+        )
+
+    assert exc_info.value.code == "inference.execution_context_digest_format_invalid"
+    assert calls == {}
+
+
+def test_worker_main_rejects_execution_context_payload_schema_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from src.artifacts.json_values import canonical_json_bytes, json_sha256
+    from src.inference import worker
+
+    calls: dict[str, Any] = {}
+    _patch_worker_for_execution_context(monkeypatch, calls=calls)
+
+    tampered_payload = {
+        "execution_context_schema_version": 1,
+        "context": {"probe_worker_note": "unit"},
+        # "context_fingerprint" key is missing entirely: schema tamper.
+        "journal_plan_reference": None,
+    }
+    path = tmp_path / "tampered_execution_context.json"
+    encoded = canonical_json_bytes(tampered_payload)
+    path.write_bytes(encoded)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        worker.main(
+            _worker_argv(
+                tmp_path,
+                execution_context_json=str(path),
+                execution_context_file_sha256=hashlib.sha256(encoded).hexdigest(),
+                execution_context_value_fingerprint=json_sha256(tampered_payload),
+            )
+        )
+
+    assert exc_info.value.code == "inference.execution_context_schema_invalid"
+    assert calls == {}
+
+
+def test_worker_main_rejects_boolean_execution_context_schema_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from src.artifacts.json_values import canonical_json_bytes, json_sha256
+    from src.inference import worker
+
+    calls: dict[str, Any] = {}
+    _patch_worker_for_execution_context(monkeypatch, calls=calls)
+    context = {"probe_worker_note": "unit"}
+    payload = {
+        "execution_context_schema_version": True,
+        "context": context,
+        "context_fingerprint": json_sha256(context),
+        "journal_plan_reference": None,
+    }
+    path = tmp_path / "boolean-schema-execution-context.json"
+    encoded = canonical_json_bytes(payload)
+    path.write_bytes(encoded)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        worker.main(
+            _worker_argv(
+                tmp_path,
+                execution_context_json=str(path.resolve()),
+                execution_context_file_sha256=hashlib.sha256(encoded).hexdigest(),
+                execution_context_value_fingerprint=json_sha256(payload),
+            )
+        )
+
+    assert exc_info.value.code == "inference.execution_context_schema_invalid"
+    assert calls == {}
+
+
+def test_worker_main_rejects_execution_context_inner_fingerprint_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+
+    from src.artifacts.json_values import canonical_json_bytes, json_sha256
+    from src.inference import worker
+
+    calls: dict[str, Any] = {}
+    _patch_worker_for_execution_context(monkeypatch, calls=calls)
+
+    tampered_payload = {
+        "execution_context_schema_version": 1,
+        "context": {"probe_worker_note": "unit"},
+        "context_fingerprint": "0" * 64,  # deliberately wrong for this context
+        "journal_plan_reference": None,
+    }
+    path = tmp_path / "tampered_execution_context.json"
+    encoded = canonical_json_bytes(tampered_payload)
+    path.write_bytes(encoded)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        worker.main(
+            _worker_argv(
+                tmp_path,
+                execution_context_json=str(path),
+                execution_context_file_sha256=hashlib.sha256(encoded).hexdigest(),
+                execution_context_value_fingerprint=json_sha256(tampered_payload),
+            )
+        )
+
+    assert exc_info.value.code == "inference.execution_context_inner_fingerprint_mismatch"
+    assert calls == {}
+
+
+def test_worker_command_binds_journal_plan_reference_in_launch_contract(
+    tmp_path: Path,
+) -> None:
+    from src.inference.worker import build_worker_command
+
+    reference = {
+        "journal_schema_version": 1,
+        "execution_id": "exec-1",
+        "plan_fingerprint": "a" * 64,
+        "plan_file_sha256": "b" * 64,
+    }
+    command = build_worker_command(
+        rank=0,
+        world_size=1,
+        parent_visible_device_token="0",
+        resolved_config_json=tmp_path / "resolved.json",
+        shard_plan_json=tmp_path / "plan.json",
+        output_dir=tmp_path / "shards" / "rank-000",
+        execution_context_json=tmp_path / "execution_context.json",
+        execution_context_file_sha256="c" * 64,
+        execution_context_value_fingerprint="d" * 64,
+        execution_context_journal_plan_reference=reference,
+    )
+
+    index = command.index("--execution-context-journal-plan-reference")
+    assert json.loads(command[index + 1]) == reference
 
 
 def test_worker_source_does_not_import_multiprocessing_or_request_fork_context() -> None:

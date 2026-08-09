@@ -1,0 +1,76 @@
+{
+  "authorization": {
+    "authorized_scope": "The user explicitly authorized continued use of up to 8 GPUs",
+    "actual_scope": "One GPU only: physical GPU 0 exposed as the sole visible device",
+    "cuda_visible_devices": "0"
+  },
+  "claim_boundary": "Mechanics-only; not model quality, accelerator throughput, causal evidence, scientific validity, support expansion, cohort execution, or scientific interpretation",
+  "command": "CUDA_VISIBLE_DEVICES=0 conda run -n ms python /tmp/coordexp_task_5_5_gpu_smoke.py",
+  "date_utc": "2026-08-06",
+  "execution_identity": {
+    "audited_implementation_aggregate_sha256": "e60e93a5e3923d350946018cbef6f376336035a2722f9c11dba76d55c0d99afb",
+    "config_file_sha256": "0ca0002b1d71834d0f6914947571ec4d07e157716b0e7276c88dad67c4ac964d",
+    "config_path": "/data/CoordExp/.worktrees/research-probe-infras/configs/coordexp_swift/infer/wave7_real_base_single_smoke.yaml",
+    "final_pre_runtime_tree_aggregate_sha256": "b5fabd5b6da3cf7f9a86da9b9129e320a959cc4db210e4a73cc3dba14c3e23cb",
+    "input_jsonl": {
+      "file_sha256": "8827611a2b9ec8cea43d2d0921f0f9547f676025418e17ce5a32510e13440184",
+      "path": "/data/CoordExp/.worktrees/research-probe-infras/tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.single.jsonl"
+    },
+    "model": {
+      "identity_files": {
+        "config.json": "c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de",
+        "generation_config.json": "4d9818c3d27895c0058828a5f68bc7a4de80c3ae1bcdac90936ce24178063f59",
+        "preprocessor_config.json": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+        "tokenizer_config.json": "d30ea64dbc6941e97cefa9de22d913364cd8126a16ef1957f400e84cd4bcaf60"
+      },
+      "path": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent"
+    },
+    "runtime_policy": {
+      "attention_implementation": "sdpa",
+      "backend": "hf",
+      "batch_size": 1,
+      "max_new_tokens": 32,
+      "smoke": true
+    }
+  },
+  "fresh_process_readback": {
+    "completed_work_item_ids": [
+      "single-real-inference"
+    ],
+    "record_digest_count": 1,
+    "temporary_paths": [],
+    "terminal_present": true,
+    "terminal_status": "completed"
+  },
+  "inference_artifacts": {
+    "benchmark_eligible": false,
+    "execution_context_file_sha256": "c677d1c793525e8e8fd1d8e7d46f5b1ce9bcc1e36c3473bc964c70baea7af6cf",
+    "execution_context_identity_matches_summary_and_manifest": true,
+    "row_count": 1,
+    "run_dir": "/data/CoordExp/.worktrees/research-probe-infras/outputs/coordexp_swift/infer/wave7_real_smokes/wave7-real-base-single-smoke",
+    "run_manifest_file_sha256": "d4693f135fae69b838a338b550a8b002bf569020fe53ac7b9b59a96095d5e250",
+    "summary_file_sha256": "acd2f2b683237ae378c0c8803a6bdad5467c2b5647212c56547022b7c9b2e26b",
+    "terminal_status": "completed"
+  },
+  "journal": {
+    "execution_id": "task-5-5-48f580bfedf14538a6ffc0c41527bc64",
+    "journal_root": "/data/CoordExp/.worktrees/research-probe-infras/outputs/coordexp_swift/evidence_journal_task_5_5/task-5-5-48f580bfedf14538a6ffc0c41527bc64",
+    "plan_file_sha256": "183383beef64c598eed2cd72a54fb9f181202276a337e7a1ce2f2f284e2d95ae",
+    "plan_fingerprint": "71237b0f2e0c9d22039bce61db0cdf1799285968a6a60a28538e51213f890389",
+    "record_content_sha256": "ff78699ec2dce03fe49dd08aceac8ee7367d8d0f56d32a28a8ed443fd429bf70",
+    "record_payload_fingerprint": "2630368ce93d8fd3627588411f749fe2dbf993a0afc45e67c8ef632ddd8688ad",
+    "terminal_content_sha256": "c66c815b1d2b1066731d77e67a827ead79f0b1b8412d231bef816b75906b90b0",
+    "terminal_file_sha256": "edd3dda0a14bb244ea90e4911bc6504bba424a449ecb3c8fd2082540b1f6337a"
+  },
+  "nonblocking_runtime_warnings": [
+    "Transformers reported that torch_dtype is deprecated in favor of dtype",
+    "Transformers reported that sampling flags may be ignored for deterministic generation"
+  ],
+  "result": {
+    "elapsed_wall_seconds": 18.414984763,
+    "exit_code": 0,
+    "status": "pass"
+  },
+  "schema_version": 1,
+  "verification_wrapper_sha256": "c540d40f3a53b3911183abded12b0e1fcb7e8f9aaeb7c21f86a89de3916a7db9"
+}

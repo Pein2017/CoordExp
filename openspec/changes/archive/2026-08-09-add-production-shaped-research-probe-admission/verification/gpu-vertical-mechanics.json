@@ -1,0 +1,57 @@
+{
+  "schema_version": "research_probe_admission.gpu_vertical_verification.v1",
+  "kind": "bounded_single_gpu_admission_mechanics_verification",
+  "acceptance_root": "/data/CoordExp/outputs/research-probe-infras/2026-08-09-production-shaped-admission-v1",
+  "mechanics_receipt": {
+    "raw_sha256": "31ca56dede41811c668c9ba9facb35fa93231483cbb9f728391e6d7bda4b8bc2",
+    "content_sha256": "52ab987c450e022b58ec6ab6950d0f167cfaa10aee3bb21c050604cfc6334c7b",
+    "byte_count": 1925
+  },
+  "support_admission": {
+    "raw_sha256": "ee3a3e1cf010078b76510e5ac868537a93e90dbb11e582c45f9eba8c07646896",
+    "content_sha256": "24177523c71b20c7833d4a124a169a3556a991469363f41ef5db67231a4deefc",
+    "status": "mechanically_admitted"
+  },
+  "binding_manifest_fingerprint": "ccc80a4d313f3c7ffe336dd0a5099092c7310ff66ab81f43ef500bc3f3b7f1cf",
+  "execution_identity_fingerprint": "aa03d6bd29ac7738878d057b73ca44c65454b84322416d7a7eb21bf23c825555",
+  "physical_gpu": "0",
+  "cuda_visible_devices": "0",
+  "logical_device": "cuda:0",
+  "context_ids": [
+    "ctx:0a055737dcb38ca92bb8bce5"
+  ],
+  "context_count": 1,
+  "scalar_equivalent_forward_count": 17,
+  "worker_exit": {
+    "raw_sha256": "20498758c270bfb89287f102808849046553a3fd5745b60aac5988a3ac94ddbc",
+    "content_sha256": "eef83373931f2f52ea149708a6eeb6ec2520d299e987db7b1724e13965dc6887",
+    "return_code": 0,
+    "terminating_signal": null,
+    "external_signal_sent": null,
+    "accepted_context_count": 1,
+    "missing_context_count": 0,
+    "journal_terminal": true
+  },
+  "bounded_terminal": {
+    "raw_sha256": "fc765d72cbf8023010ae8973ff4c129453997b72f70f0916829e05275a242c6f",
+    "content_sha256": "ab18588ccbe855aa24726dcc137360a13952a2fd5433dd9f15d92a25d4698c03"
+  },
+  "runtime_receipt": {
+    "raw_sha256": "0b146a54d30fbfbc462662ffaf8c3774b384ddced94a466c632819f50f12128f",
+    "content_sha256": "c4c4a0e2b92ea957e26bac57df76075ad5be609fdede818a9e2c8041d074588c",
+    "runtime_source_aggregate_sha256": "4ae4db30c9088d2f3557c2e9d95c723225e96b44aa4463539444bccdc4b53520",
+    "checkpoint": "S",
+    "config_fingerprint": "a5ba21ab3e495fa22770ae5d156372d7894fec61f4ac905553db52540b8ead12",
+    "device": "cuda:0"
+  },
+  "durable_record": {
+    "raw_sha256": "b0e3a7af42a9b2b4132f8537cdf5164019c4685f82354c0ec12ef3ff87df0287",
+    "content_sha256": "ed77ebd80c4ab2d33d79328c826f422f7b113de6d2adaa6c00c2d8be09d84880",
+    "sequence": 0
+  },
+  "gpu_processes_after_completion": 0,
+  "legacy_merger_closed": false,
+  "scientific_interpretation": false,
+  "bulk_launch_authorized": false,
+  "claim_boundary": "bounded_admission_mechanics_only_no_scientific_or_launch_authority"
+}

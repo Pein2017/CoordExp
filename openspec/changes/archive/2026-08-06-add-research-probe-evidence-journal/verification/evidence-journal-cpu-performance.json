@@ -1,0 +1,80 @@
+{
+  "claim_boundary": "CPU filesystem mechanics only; not model quality, accelerator throughput, or scientific evidence",
+  "decision": {
+    "reason": "After redesign, 1000 independently durable appends completed in 0.598211 seconds; one full fresh validation and terminalization each remained below 0.1 seconds. This is not a material primary-observation bottleneck for the expected hundreds to low thousands of work items.",
+    "status": "pass_after_redesign"
+  },
+  "environment": {
+    "python": "3.12.11",
+    "runtime": "ms conda environment",
+    "worktree": "/data/CoordExp/.worktrees/research-probe-infras"
+  },
+  "measurement_date_utc": "2026-08-06",
+  "post_audit_p1_sanity": {
+    "append_mean_ms": 0.571,
+    "append_total_seconds": 0.571,
+    "record_count": 1000,
+    "result": "pass; post-publication writer poisoning and orphan-attempt recovery did not regress the optimized append path"
+  },
+  "post_redesign_lead_recheck": [
+    {
+      "append_mean_ms": 0.4734,
+      "append_p50_ms": 0.4675,
+      "append_p95_ms": 0.4994,
+      "append_total_seconds": 0.094672,
+      "completed_count": 200,
+      "directory_count": 3,
+      "file_count": 204,
+      "plan_seconds": 0.002734,
+      "record_count": 200,
+      "reload_seconds": 0.014392,
+      "terminal_seconds": 0.014516,
+      "total_bytes": 125991
+    },
+    {
+      "append_mean_ms": 0.5982,
+      "append_p50_ms": 0.5729,
+      "append_p95_ms": 0.7584,
+      "append_total_seconds": 0.598211,
+      "completed_count": 1000,
+      "directory_count": 3,
+      "file_count": 1004,
+      "plan_seconds": 0.006619,
+      "record_count": 1000,
+      "reload_seconds": 0.091752,
+      "terminal_seconds": 0.09671,
+      "total_bytes": 626995
+    }
+  ],
+  "pre_redesign_lead_measurement": [
+    {
+      "append_mean_ms": 22.3354,
+      "append_p50_ms": 25.7906,
+      "append_p95_ms": 36.1901,
+      "append_total_seconds": 4.467074,
+      "completed_count": 200,
+      "directory_count": 3,
+      "file_count": 204,
+      "plan_seconds": 0.00244,
+      "record_count": 200,
+      "reload_seconds": 0.012951,
+      "terminal_seconds": 0.025865,
+      "total_bytes": 125583
+    },
+    {
+      "append_mean_ms": 109.4343,
+      "append_p50_ms": 108.6625,
+      "append_p95_ms": 217.1635,
+      "append_total_seconds": 109.434276,
+      "completed_count": 1000,
+      "directory_count": 3,
+      "file_count": 1004,
+      "plan_seconds": 0.004694,
+      "record_count": 1000,
+      "reload_seconds": 0.065866,
+      "terminal_seconds": 0.132023,
+      "total_bytes": 624987
+    }
+  ],
+  "schema_version": 1
+}

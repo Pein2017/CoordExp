@@ -93,6 +93,18 @@ def test_logging_rejects_non_json_values_without_appending_partial_row(
     assert writer.logging_path.read_bytes() == b""
 
 
+def test_logging_rejects_non_string_mapping_keys_without_projection(
+    tmp_path: Path,
+) -> None:
+    writer = _writer(tmp_path)
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.append_logging_row(
+            {"step": 1, "split": "train", "metrics": {1: "invalid"}}
+        )
+    assert exc_info.value.code == "run_writer.not_json_serializable"
+    assert writer.logging_path.read_bytes() == b""
+
+
 def test_warning_counts_are_grouped_and_bounded_without_contexts(
     tmp_path: Path,
 ) -> None:

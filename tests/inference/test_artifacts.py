@@ -4,6 +4,7 @@ import json
 import math
 from dataclasses import replace
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -818,3 +819,196 @@ def test_trace_recomputation_fails_when_selected_generated_token_row_mismatches(
         )
 
     assert exc_info.value.code == "artifacts.generated_trace_mismatch"
+
+
+def test_stringify_mapping_keys_projects_int_keys_to_json_string_form() -> None:
+    from src.inference.artifacts import stringify_mapping_keys
+
+    assert stringify_mapping_keys({0: "a", 1: "b"}) == {"0": "a", "1": "b"}
+    assert stringify_mapping_keys({True: "x", False: "y", None: "z"}) == {
+        "true": "x",
+        "false": "y",
+        "null": "z",
+    }
+    assert stringify_mapping_keys({"nested": {2: [{-3: "deep"}]}}) == {
+        "nested": {"2": [{"-3": "deep"}]}
+    }
+    assert stringify_mapping_keys({"shape": (1, 2), "nested": ({3: "x"},)}) == {
+        "shape": [1, 2],
+        "nested": [{"3": "x"}],
+    }
+
+
+def test_stringify_mapping_keys_rejects_projection_collisions() -> None:
+    from src.inference.artifacts import stringify_mapping_keys
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        stringify_mapping_keys({1: "int-key", "1": "str-key"})
+
+    assert exc_info.value.code == "artifacts.diagnostic_key_collision"
+
+
+@pytest.mark.parametrize("key", [math.nan, math.inf, -math.inf])
+def test_stringify_mapping_keys_rejects_nonfinite_float_keys(key: float) -> None:
+    from src.inference.artifacts import stringify_mapping_keys
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        stringify_mapping_keys({key: "invalid"})
+
+    assert exc_info.value.code == "artifacts.diagnostic_key_unsupported"
+
+
+def test_strict_json_value_fails_before_any_artifact_is_published(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    row = _raw_row("row-1", 0)
+    row["gt"] = [{"unsupported": object()}]
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[row],
+            decode_results={"row-1": _decode_result("row-1")},
+            image_plan_rows=[_image_plan_row("row-1", 0)],
+            metadata=_metadata(),
+        )
+
+    assert exc_info.value.code == "artifact.invalid_json_value"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_no_execution_context_keeps_artifact_schema_compatible(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[_image_plan_row("row-1", 0)],
+        metadata=_metadata(),
+    )
+
+    summary = json.loads(paths.summary_json.read_text(encoding="utf-8"))
+    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
+    provenance = json.loads(paths.provenance_json.read_text(encoding="utf-8"))
+
+    # Pre-change artifact families never carried this key; omitting it
+    # (rather than writing an explicit null) keeps the no-context schema
+    # byte-for-byte compatible with artifacts written before this capability
+    # existed.
+    assert "execution_context" not in summary
+    assert "execution_context" not in manifest
+    assert "execution_context" not in provenance
+    assert not (tmp_path / "execution_context.json").exists()
+
+
+def test_artifact_writer_normalizes_valid_abstract_mapping_values(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+
+    metadata = {
+        **_metadata(),
+        "adapter_identity": MappingProxyType({"name": "adapter-a"}),
+    }
+    paths = write_inference_artifacts(
+        output_dir=tmp_path,
+        rows=[_raw_row("row-1", 0)],
+        decode_results={"row-1": _decode_result("row-1")},
+        image_plan_rows=[_image_plan_row("row-1", 0)],
+        metadata=metadata,
+    )
+
+    manifest = json.loads(paths.run_manifest_json.read_text(encoding="utf-8"))
+    assert manifest["adapter_identity"] == {"name": "adapter-a"}
+
+
+def test_artifact_writer_rejects_tampered_local_execution_context_before_success(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_inference_artifacts
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    artifact = materialize_execution_context_artifact(
+        run_dir=tmp_path,
+        execution_context={"probe": "unit"},
+    )
+    assert artifact is not None
+    artifact.path.write_text('{"tampered":true}', encoding="utf-8")
+    metadata = {**_metadata(), "execution_context": artifact.identity()}
+
+    with pytest.raises((ArtifactContractError, RuntimeContractError)) as exc_info:
+        write_inference_artifacts(
+            output_dir=tmp_path,
+            rows=[_raw_row("row-1", 0)],
+            decode_results={"row-1": _decode_result("row-1")},
+            image_plan_rows=[_image_plan_row("row-1", 0)],
+            metadata=metadata,
+        )
+
+    assert exc_info.value.code in {
+        "artifact.noncanonical_json_file",
+        "inference.execution_context_digest_mismatch",
+        "inference.execution_context_schema_invalid",
+    }
+    assert not (tmp_path / "summary.json").exists()
+
+
+@pytest.mark.parametrize("sidecar_state", ["missing", "tampered"])
+def test_terminal_writer_refuses_to_bind_unverified_execution_context(
+    tmp_path: Path,
+    sidecar_state: str,
+) -> None:
+    from src.inference.artifacts import write_terminal_status_artifacts
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    artifact = materialize_execution_context_artifact(
+        run_dir=tmp_path,
+        execution_context={"probe": "unit"},
+    )
+    assert artifact is not None
+    if sidecar_state == "missing":
+        artifact.path.unlink()
+    else:
+        artifact.path.write_text('{"tampered":true}', encoding="utf-8")
+
+    with pytest.raises((ArtifactContractError, RuntimeContractError)):
+        write_terminal_status_artifacts(
+            output_dir=tmp_path,
+            metadata={**_metadata(), "execution_context": artifact.identity()},
+            summary={
+                "terminal_status": "failed",
+                "failure_class": "unit",
+            },
+        )
+
+    assert not (tmp_path / "summary.json").exists()
+    assert not (tmp_path / "run_manifest.json").exists()
+
+
+def test_terminal_writer_rejects_nonlocal_direct_context_locator(
+    tmp_path: Path,
+) -> None:
+    from src.inference.artifacts import write_terminal_status_artifacts
+    from src.inference.execution_context import materialize_execution_context_artifact
+
+    artifact = materialize_execution_context_artifact(
+        run_dir=tmp_path,
+        execution_context={"probe": "unit"},
+    )
+    assert artifact is not None
+    drifted_identity = {**artifact.identity(), "locator": "/nonexistent/context.json"}
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        write_terminal_status_artifacts(
+            output_dir=tmp_path,
+            metadata={**_metadata(), "execution_context": drifted_identity},
+            summary={"terminal_status": "failed", "failure_class": "unit"},
+        )
+
+    assert exc_info.value.code == "inference.execution_context_local_locator_mismatch"
+    assert not (tmp_path / "summary.json").exists()

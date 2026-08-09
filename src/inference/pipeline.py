@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +32,7 @@ from src.data import RawExample, load_raw_examples
 from src.inference.artifacts import (
     RAW_NAME,
     benchmark_scope_eligible,
+    stringify_mapping_keys,
     write_inference_artifacts,
     write_terminal_status_artifacts,
 )
@@ -49,6 +50,15 @@ from src.inference.data_parallel import (
     plan_data_parallel_shards,
     require_visible_cuda_for_inference,
     sort_rows_by_index,
+)
+from src.inference.execution_context import (
+    load_and_verify_execution_context_artifact,
+    prepare_execution_context_payload,
+    publish_execution_context_artifact,
+    publish_rank_local_execution_context_copy,
+    recover_published_execution_context_artifact,
+    validate_execution_context_identity,
+    verify_local_execution_context_artifact,
 )
 from src.inference.execution_model import (
     resolve_execution_model,
@@ -81,7 +91,16 @@ def run(
     frontend_factory: FrontendFactory | None = None,
     session_opener: BackendSessionOpener | None = None,
     worker_launcher: WorkerLauncher | None = None,
+    execution_context: Mapping[str, Any] | None = None,
+    journal_plan_reference: Mapping[str, Any] | None = None,
 ) -> int:
+    # Validate the caller-owned context before any run-dir, resolved-config,
+    # or terminal-failure artifact is published. This step has no filesystem
+    # side effect, so an invalid context never leaves partial evidence behind.
+    execution_context_payload = prepare_execution_context_payload(
+        execution_context=execution_context,
+        journal_plan_reference=journal_plan_reference,
+    )
     resolved = load_infer_config(config_path)
     run_dir = resolve_infer_run_directory(
         resolved.config,
@@ -95,6 +114,15 @@ def run(
         return 0
 
     try:
+        execution_context_artifact = publish_execution_context_artifact(
+            run_dir=run_dir,
+            payload=execution_context_payload,
+        )
+        metadata["execution_context"] = (
+            None
+            if execution_context_artifact is None
+            else execution_context_artifact.identity()
+        )
         if (
             frontend_factory is None
             and session_opener is None
@@ -130,6 +158,24 @@ def run(
         if execution_model is not None:
             metadata["execution_model"] = execution_model
     except CoordExpError as exc:
+        if (
+            metadata.get("execution_context") is None
+            and isinstance(exc, ArtifactContractError)
+            and exc.context.get("published_before_failure") is True
+        ):
+            try:
+                recovered_context = recover_published_execution_context_artifact(
+                    run_dir=run_dir,
+                    payload=execution_context_payload,
+                )
+            except CoordExpError as recovery_error:
+                exc.context["execution_context_recovery_failure"] = {
+                    "code": recovery_error.code,
+                    "message": recovery_error.message,
+                }
+                recovered_context = None
+            if recovered_context is not None:
+                metadata["execution_context"] = recovered_context.identity()
         _write_terminal_contract_failure(
             output_dir=run_dir,
             metadata=metadata,
@@ -171,11 +217,19 @@ def run_shard(
     frontend_factory: FrontendFactory | None = None,
     session_opener: BackendSessionOpener | None = None,
     execution_model: dict[str, Any] | None = None,
+    execution_context_identity: dict[str, Any] | None = None,
 ) -> int:
     if frontend_factory is None and session_opener is None:
         validate_infer_input_paths(resolved, fields=("data.input_jsonl",))
     raw_examples = list(load_raw_examples(resolved.config.data.input_jsonl))
     metadata = _base_metadata(resolved=resolved)
+    metadata["execution_context"] = validate_execution_context_identity(
+        execution_context_identity
+    )
+    verify_local_execution_context_artifact(
+        output_dir=output_dir,
+        identity=metadata["execution_context"],
+    )
     metadata["benchmark_eligible"] = _benchmark_scope_eligible(
         config=resolved.config,
         row_count=len(raw_examples),
@@ -224,17 +278,39 @@ def run_data_parallel_shards(
     frontend_factory: FrontendFactory | None = None,
     session_opener: BackendSessionOpener | None = None,
     execution_model: dict[str, Any] | None = None,
+    execution_context_identity: dict[str, Any] | None = None,
 ) -> DataParallelShardRunResult:
     if resolved.config.backend.type == "vllm":
         raise RuntimeContractError(
             "vLLM shards must run through fresh rank-local worker processes",
             code="pipeline.vllm_in_process_forbidden",
         )
+    validated_execution_context_identity = validate_execution_context_identity(
+        execution_context_identity
+    )
+    execution_context_source = None
+    if validated_execution_context_identity is not None:
+        execution_context_source = load_and_verify_execution_context_artifact(
+            locator=validated_execution_context_identity["locator"],
+            expected_file_sha256=validated_execution_context_identity["file_sha256"],
+            expected_value_fingerprint=validated_execution_context_identity[
+                "value_fingerprint"
+            ],
+            expected_journal_plan_reference=validated_execution_context_identity[
+                "journal_plan_reference"
+            ],
+        )
     shard_dirs: list[Path] = []
     raw_rows: list[dict[str, Any]] = []
     for rank_plan in plan.ranks:
         shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
         shard_dirs.append(shard_dir)
+        if execution_context_source is not None:
+            publish_rank_local_execution_context_copy(
+                payload=execution_context_source.payload,
+                destination_dir=shard_dir,
+                expected_file_sha256=execution_context_source.file_sha256,
+            )
         run_shard(
             resolved=resolved,
             output_dir=shard_dir,
@@ -256,6 +332,7 @@ def run_data_parallel_shards(
             frontend_factory=frontend_factory,
             session_opener=session_opener,
             execution_model=execution_model,
+            execution_context_identity=validated_execution_context_identity,
         )
         raw_rows.extend(_read_jsonl(shard_dir / RAW_NAME))
     return DataParallelShardRunResult(
@@ -283,6 +360,7 @@ def _execute_controller_worker_path(
         run_dir=run_dir,
         execution_model=execution_model,
     )
+    execution_context_identity = metadata.get("execution_context")
     launched: list[tuple[RankShardPlan, Any]] = []
     try:
         for rank_plan in plan.ranks:
@@ -295,6 +373,26 @@ def _execute_controller_worker_path(
                 shard_plan_json=plan_json,
                 output_dir=shard_dir,
                 execution_model_json=execution_model_json,
+                execution_context_json=(
+                    None
+                    if execution_context_identity is None
+                    else execution_context_identity["locator"]
+                ),
+                execution_context_file_sha256=(
+                    None
+                    if execution_context_identity is None
+                    else execution_context_identity["file_sha256"]
+                ),
+                execution_context_value_fingerprint=(
+                    None
+                    if execution_context_identity is None
+                    else execution_context_identity["value_fingerprint"]
+                ),
+                execution_context_journal_plan_reference=(
+                    None
+                    if execution_context_identity is None
+                    else execution_context_identity["journal_plan_reference"]
+                ),
             )
             launched.append((rank_plan, process))
     except BaseException as cause:
@@ -477,16 +575,23 @@ def _execute_indexed_rows_with_terminal_status(
             session_opener=session_opener,
         )
     except EncodingContractError as exc:
-        write_terminal_status_artifacts(
-            output_dir=output_dir,
-            metadata=metadata,
-            summary={
-                "terminal_status": "failed",
-                "failure_class": "image_validation_failure",
-                "image_validation_failure_count": 1,
-                "error": {"code": exc.code, "message": exc.message, "context": exc.context},
-            },
-        )
+        try:
+            write_terminal_status_artifacts(
+                output_dir=output_dir,
+                metadata=metadata,
+                summary={
+                    "terminal_status": "failed",
+                    "failure_class": "image_validation_failure",
+                    "image_validation_failure_count": 1,
+                    "error": {
+                        "code": exc.code,
+                        "message": exc.message,
+                        "context": stringify_mapping_keys(exc.context),
+                    },
+                },
+            )
+        except CoordExpError as terminal_error:
+            _bind_terminal_publication_failure(exc, terminal_error)
         raise
     except CoordExpError as exc:
         _write_terminal_contract_failure(
@@ -828,16 +933,35 @@ def _write_terminal_contract_failure(
     error: CoordExpError,
 ) -> None:
     failure_class = _failure_class(error)
-    write_terminal_status_artifacts(
-        output_dir=output_dir,
-        metadata=metadata,
-        summary={
-            "terminal_status": "failed",
-            "failure_class": failure_class,
-            f"{failure_class}_count": 1,
-            "error": {"code": error.code, "message": error.message, "context": error.context},
-        },
-    )
+    try:
+        write_terminal_status_artifacts(
+            output_dir=output_dir,
+            metadata=metadata,
+            summary={
+                "terminal_status": "failed",
+                "failure_class": failure_class,
+                f"{failure_class}_count": 1,
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                    "context": stringify_mapping_keys(error.context),
+                },
+            },
+        )
+    except CoordExpError as terminal_error:
+        _bind_terminal_publication_failure(error, terminal_error)
+
+
+def _bind_terminal_publication_failure(
+    original_error: CoordExpError,
+    terminal_error: CoordExpError,
+) -> None:
+    """Preserve the owning failure when its evidence family cannot be truthful."""
+
+    original_error.context["terminal_publication_failure"] = {
+        "code": terminal_error.code,
+        "message": terminal_error.message,
+    }
 
 
 def _failure_class(error: CoordExpError) -> str:
@@ -854,20 +978,25 @@ def _write_terminal_unhandled_failure(
     error_code: str,
     error: Exception,
 ) -> None:
-    write_terminal_status_artifacts(
-        output_dir=output_dir,
-        metadata=metadata,
-        summary={
-            "terminal_status": "failed",
-            "failure_class": failure_class,
-            f"{failure_class}_count": 1,
-            "error": {
-                "code": error_code,
-                "message": str(error),
-                "context": {"exception_type": type(error).__name__},
+    try:
+        write_terminal_status_artifacts(
+            output_dir=output_dir,
+            metadata=metadata,
+            summary={
+                "terminal_status": "failed",
+                "failure_class": failure_class,
+                f"{failure_class}_count": 1,
+                "error": {
+                    "code": error_code,
+                    "message": str(error),
+                    "context": {"exception_type": type(error).__name__},
+                },
             },
-        },
-    )
+        )
+    except CoordExpError:
+        # The original non-contract exception remains the owning failure. A
+        # terminal family that cannot verify its sidecar must stay absent.
+        return
 
 
 def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
@@ -903,7 +1032,7 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
         ),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "dataset_identity": {
-            "input_jsonl": resolved.config.data.input_jsonl,
+            "input_jsonl": str(resolved.config.data.input_jsonl),
         },
         "backend": resolved.config.backend.type,
         "backend_mode": (

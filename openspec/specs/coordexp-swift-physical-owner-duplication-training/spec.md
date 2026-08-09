@@ -122,4 +122,3 @@ The system SHALL record the source and replay provenance, owner-review exclusion
 #### Scenario: Checkpoint returns to ordinary inference
 - **WHEN** a trained checkpoint is loaded for evaluation
 - **THEN** ordinary greedy inference requires no StateBank, duplicate controller, or custom decoding component
-
