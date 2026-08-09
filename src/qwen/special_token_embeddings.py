@@ -16,12 +16,22 @@ from torch import nn
 
 from src.common.errors import RuntimeContractError
 from src.config.models import SpecialTokenEmbeddingsConfig
-from src.config.models import SpecialTokenEmbeddingGroupsConfig
 from src.qwen.tokens import (
     DEFAULT_COORDINATE_TOKENS,
     DEFAULT_WRAPPER_TOKENS,
     QwenTokenIdentity,
 )
+
+
+COMMIT_TOKEN = "<|commit|>"
+COMMIT_WRAPPER_TOKENS = (*DEFAULT_WRAPPER_TOKENS, COMMIT_TOKEN)
+DEFAULT_WRAPPER_TOKEN_GROUP = "default_object_box_wrappers"
+COMMIT_WRAPPER_TOKEN_GROUP = "default_object_box_commit_wrappers"
+WRAPPER_TOKEN_GROUPS: dict[str, tuple[str, ...]] = {
+    DEFAULT_WRAPPER_TOKEN_GROUP: DEFAULT_WRAPPER_TOKENS,
+    COMMIT_WRAPPER_TOKEN_GROUP: COMMIT_WRAPPER_TOKENS,
+}
+_COORDINATE_TOKEN_SET = frozenset(DEFAULT_COORDINATE_TOKENS)
 
 
 SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS = "special_token_embeddings.safetensors"
@@ -37,6 +47,10 @@ DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(
     "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
+)
+OWNER_COMMIT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(
+    "outputs/probes/coordexp_swift/"
+    "special_token_embeddings_roundtrip_owner_commit/receipt.json"
 )
 
 
@@ -61,7 +75,12 @@ class SpecialTokenSelection:
         return len(self.token_ids)
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        coord_ids = self.token_ids[len(DEFAULT_WRAPPER_TOKENS) :]
+        wrapper_count = len(self.token_strings)
+        for index, token in enumerate(self.token_strings):
+            if token in _COORDINATE_TOKEN_SET:
+                wrapper_count = index
+                break
+        coord_ids = self.token_ids[wrapper_count:]
         coord_contiguous = bool(coord_ids) and coord_ids == tuple(
             range(coord_ids[0], coord_ids[-1] + 1)
         )
@@ -72,8 +91,8 @@ class SpecialTokenSelection:
             "wrapper_token_ids": {
                 token: token_id
                 for token, token_id in zip(
-                    self.token_strings[: len(DEFAULT_WRAPPER_TOKENS)],
-                    self.token_ids[: len(DEFAULT_WRAPPER_TOKENS)],
+                    self.token_strings[:wrapper_count],
+                    self.token_ids[:wrapper_count],
                     strict=True,
                 )
             },
@@ -125,10 +144,15 @@ class SpecialTokenEmbeddingSourceGateEvidence:
 
 def load_default_special_token_embedding_source_gate_evidence(
     repo_root: str | Path,
+    selection: SpecialTokenSelection | None = None,
 ) -> SpecialTokenEmbeddingSourceGateEvidence:
     root = Path(repo_root).expanduser().resolve()
     source_study_path = root / DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH
-    probe_receipt_path = root / DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH
+    probe_receipt_path = root / (
+        OWNER_COMMIT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH
+        if selection is not None and COMMIT_TOKEN in selection.token_strings
+        else DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH
+    )
     source_study_passed = _special_token_embedding_source_study_is_passed(
         source_study_path
     )
@@ -137,7 +161,10 @@ def load_default_special_token_embedding_source_gate_evidence(
     )
     return SpecialTokenEmbeddingSourceGateEvidence(
         source_study_passed=source_study_passed,
-        roundtrip_probe_passed=_special_token_embedding_probe_is_passed(probe_receipt),
+        roundtrip_probe_passed=_special_token_embedding_probe_is_passed(
+            probe_receipt,
+            expected_selection=selection,
+        ),
         probe_receipt=probe_receipt,
     )
 
@@ -631,20 +658,26 @@ def load_inference_embedding_delta(
             "inference embedding-delta loading requires Qwen token identity",
             code="special_token_embeddings.runtime_token_identity_missing",
         )
-    selection = build_default_special_token_selection(
-        SpecialTokenEmbeddingsConfig(
-            groups=SpecialTokenEmbeddingGroupsConfig(
-                coordinate_tokens="default_coord_0_999",
-                wrapper_tokens="default_object_box_wrappers",
-            )
-        ),
-        token_identity,
+    metadata = identity_receipt["metadata"]
+    selection = _selection_for_runtime_metadata(metadata, qwen=qwen)
+    configured_source_gate_root = getattr(
+        config.embedding_delta,
+        "source_gate_root",
+        None,
+    )
+    effective_source_gate_root = (
+        source_gate_root
+        if source_gate_root is not None
+        else configured_source_gate_root
     )
     install_result = install_special_token_embedding_deltas(
         model,
         selection,
         source_gate=load_default_special_token_embedding_source_gate_evidence(
-            Path.cwd() if source_gate_root is None else source_gate_root
+            Path.cwd()
+            if effective_source_gate_root is None
+            else effective_source_gate_root,
+            selection,
         ),
     )
     payload_dir = _inference_delta_payload_dir(Path(config.embedding_delta.path))
@@ -738,11 +771,15 @@ def build_default_special_token_selection(
     config: SpecialTokenEmbeddingsConfig,
     token_identity: QwenTokenIdentity,
 ) -> SpecialTokenSelection:
-    if config.groups.wrapper_tokens != "default_object_box_wrappers":
+    wrapper_tokens = WRAPPER_TOKEN_GROUPS.get(config.groups.wrapper_tokens)
+    if wrapper_tokens is None:
         raise RuntimeContractError(
             "unsupported special-token wrapper group",
             code="special_token_embeddings.wrapper_group_unsupported",
-            context={"wrapper_tokens": config.groups.wrapper_tokens},
+            context={
+                "wrapper_tokens": config.groups.wrapper_tokens,
+                "supported_groups": sorted(WRAPPER_TOKEN_GROUPS),
+            },
         )
     if config.groups.coordinate_tokens != "default_coord_0_999":
         raise RuntimeContractError(
@@ -750,14 +787,32 @@ def build_default_special_token_selection(
             code="special_token_embeddings.coord_group_unsupported",
             context={"coordinate_tokens": config.groups.coordinate_tokens},
         )
-    return SpecialTokenSelection(
-        token_strings=(*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS),
-        token_ids=(
-            tuple(
-                token_identity.wrapper_token_ids[token]
-                for token in DEFAULT_WRAPPER_TOKENS
+    if COMMIT_TOKEN in wrapper_tokens:
+        commit_token_id = getattr(token_identity, "commit_token_id", None)
+        if commit_token_id is None:
+            raise RuntimeContractError(
+                "commit wrapper group requires a commit-profile token identity",
+                code="special_token_embeddings.commit_token_identity_missing",
+                context={"wrapper_tokens": config.groups.wrapper_tokens},
             )
-            + token_identity.coordinate_token_ids
+        wrapper_token_ids = {
+            **token_identity.wrapper_token_ids,
+            COMMIT_TOKEN: int(commit_token_id),
+        }
+    else:
+        wrapper_token_ids = token_identity.wrapper_token_ids
+    try:
+        token_ids = tuple(wrapper_token_ids[token] for token in wrapper_tokens)
+    except KeyError as exc:
+        raise RuntimeContractError(
+            "special-token wrapper group is missing from runtime token identity",
+            code="special_token_embeddings.wrapper_token_identity_missing",
+            context={"token": str(exc.args[0])},
+        ) from exc
+    return SpecialTokenSelection(
+        token_strings=(*wrapper_tokens, *DEFAULT_COORDINATE_TOKENS),
+        token_ids=(
+            token_ids + token_identity.coordinate_token_ids
         ),
     )
 
@@ -980,6 +1035,18 @@ def _validate_source_gate(
                 "actual_selected_count": selected_count,
             },
         )
+    if COMMIT_TOKEN in selection.token_strings:
+        expected_hash = _special_token_selection_sha256(selection)
+        actual_hash = receipt.get("token_selection_sha256")
+        if actual_hash != expected_hash:
+            raise RuntimeContractError(
+                "commit-profile source gate token selection identity mismatch",
+                code="special_token_embeddings.source_gate_selection_identity",
+                context={
+                    "expected_token_selection_sha256": expected_hash,
+                    "actual_token_selection_sha256": actual_hash,
+                },
+            )
 
 
 def _special_token_embedding_source_study_is_passed(path: Path) -> bool:
@@ -1008,19 +1075,43 @@ def _load_probe_receipt(path: Path) -> Mapping[str, Any]:
 
 def _special_token_embedding_probe_is_passed(
     probe_receipt: Mapping[str, Any] | None,
+    *,
+    expected_selection: SpecialTokenSelection | None = None,
 ) -> bool:
     if probe_receipt is None:
         return False
     payload = probe_receipt.get("payload")
+    expected_count = 1004 if expected_selection is None else len(expected_selection)
+    selection_identity_ok = True
+    if expected_selection is not None and COMMIT_TOKEN in expected_selection.token_strings:
+        selection_identity_ok = (
+            probe_receipt.get("token_profile") == "owner_commit"
+            and probe_receipt.get("token_selection_sha256")
+            == _special_token_selection_sha256(expected_selection)
+        )
     return (
         probe_receipt.get("ok") is True
         and probe_receipt.get("semantics") == SPECIAL_TOKEN_EMBEDDING_SEMANTICS
-        and probe_receipt.get("num_selected_tokens") == 1004
+        and probe_receipt.get("num_selected_tokens") == expected_count
+        and selection_identity_ok
         and probe_receipt.get("runtime_tied_input_lm_head_identity") is True
         and isinstance(payload, Mapping)
         and payload.get("safetensors") is not None
         and payload.get("metadata") is not None
     )
+
+
+def _special_token_selection_sha256(selection: SpecialTokenSelection) -> str:
+    payload = json.dumps(
+        {
+            "token_strings": list(selection.token_strings),
+            "token_ids": list(selection.token_ids),
+        },
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _input_embedding(model: nn.Module) -> nn.Embedding:
@@ -1179,15 +1270,7 @@ def _validate_inference_delta_metadata(
     )
     token_identity = _qwen_token_identity(qwen)
     if token_identity is not None:
-        expected_selection = build_default_special_token_selection(
-            SpecialTokenEmbeddingsConfig(
-                groups=SpecialTokenEmbeddingGroupsConfig(
-                    coordinate_tokens="default_coord_0_999",
-                    wrapper_tokens="default_object_box_wrappers",
-                )
-            ),
-            token_identity,
-        )
+        expected_selection = _selection_for_runtime_metadata(metadata, qwen=qwen)
         if metadata.get("token_strings") != list(expected_selection.token_strings):
             raise RuntimeContractError(
                 "special-token embedding metadata token strings do not match runtime tokenizer",
@@ -1200,6 +1283,88 @@ def _validate_inference_delta_metadata(
                 code="special_token_embeddings.identity_mismatch",
                 context={"field": "token_ids"},
             )
+
+
+def _selection_for_runtime_metadata(
+    metadata: Mapping[str, Any],
+    *,
+    qwen: Any,
+) -> SpecialTokenSelection:
+    token_strings = metadata.get("token_strings")
+    token_ids = metadata.get("token_ids")
+    if not isinstance(token_strings, list) or not isinstance(token_ids, list):
+        raise RuntimeContractError(
+            "special-token embedding metadata must expose token selection lists",
+            code="special_token_embeddings.inference_identity_missing",
+        )
+    commit_profile = COMMIT_TOKEN in token_strings
+    expected_strings = (
+        (*COMMIT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS)
+        if commit_profile
+        else (*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS)
+    )
+    if tuple(token_strings) != expected_strings:
+        raise RuntimeContractError(
+            "special-token embedding metadata uses an unsupported token profile",
+            code="special_token_embeddings.token_profile_mismatch",
+            context={
+                "expected_token_count": len(expected_strings),
+                "actual_token_count": len(token_strings),
+                "commit_profile": commit_profile,
+            },
+        )
+    if commit_profile:
+        commit_id = _runtime_token_id(qwen, COMMIT_TOKEN)
+        if commit_id != 151669:
+            raise RuntimeContractError(
+                "owner-commit tokenizer must expose the approved commit token id",
+                code="special_token_embeddings.commit_token_id",
+                context={"expected": 151669, "actual": commit_id},
+            )
+    identity = _qwen_token_identity(qwen)
+    if identity is None:
+        raise RuntimeContractError(
+            "runtime Qwen token identity is required for embedding selection",
+            code="special_token_embeddings.runtime_token_identity_missing",
+        )
+    runtime_ids = tuple(_runtime_token_id(qwen, token) for token in token_strings)
+    if tuple(token_ids) != runtime_ids:
+        raise RuntimeContractError(
+            "special-token embedding metadata token ids do not match runtime tokenizer",
+            code="special_token_embeddings.identity_mismatch",
+            context={"field": "token_ids", "expected": list(runtime_ids), "actual": token_ids},
+        )
+    return SpecialTokenSelection(token_strings=token_strings, token_ids=runtime_ids)
+
+
+def _runtime_token_id(qwen: Any, token: str) -> int:
+    identity = _qwen_token_identity(qwen)
+    if identity is not None:
+        wrapper_id = identity.wrapper_token_ids.get(token)
+        if wrapper_id is not None:
+            return int(wrapper_id)
+        for coord_token, coord_id in zip(
+            DEFAULT_COORDINATE_TOKENS,
+            identity.coordinate_token_ids,
+            strict=True,
+        ):
+            if coord_token == token:
+                return int(coord_id)
+    tokenizer = getattr(qwen, "tokenizer", None)
+    if tokenizer is None:
+        raise RuntimeContractError(
+            "runtime tokenizer is unavailable for special-token identity",
+            code="special_token_embeddings.runtime_tokenizer_missing",
+            context={"token": token},
+        )
+    token_id = tokenizer.convert_tokens_to_ids(token)
+    if token_id is None or isinstance(token_id, list) or int(token_id) < 0:
+        raise RuntimeContractError(
+            "runtime tokenizer is missing a required special token",
+            code="special_token_embeddings.runtime_token_missing",
+            context={"token": token, "token_id": token_id},
+        )
+    return int(token_id)
 
 
 def _validate_runtime_sha_field(

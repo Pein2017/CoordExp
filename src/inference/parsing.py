@@ -13,6 +13,9 @@ from src.data.geometry import coord_bins_to_pixel_xyxy, parse_coord_token
 from src.templates.renderer import (
     BOX_END_TOKEN,
     BOX_START_TOKEN,
+    CLOSED_ASSISTANT_FORMAT,
+    COMMIT_ASSISTANT_FORMAT,
+    COMMIT_TOKEN,
     IM_END_TOKEN,
     OBJECT_REF_END_TOKEN,
     OBJECT_REF_START_TOKEN,
@@ -21,6 +24,8 @@ from src.templates.renderer import (
 
 PARSER_ID = "compact-object-box-closed-v1"
 PARSER_POLICY = "compact_object_box_closed_only"
+COMMIT_PARSER_ID = "compact-object-box-commit-v1"
+COMMIT_PARSER_POLICY = "compact_object_box_commit_only"
 _OBJECT_RE = re.compile(
     r"^" + re.escape(OBJECT_REF_START_TOKEN)
     + r"(?P<description>.*?)"
@@ -53,6 +58,27 @@ class ParseRow:
     def dropped_prediction_count(self) -> int:
         return len(self.dropped_predictions)
 
+    @property
+    def commit_counts(self) -> dict[str, int]:
+        if self.parser_policy != COMMIT_PARSER_POLICY:
+            return {}
+        reasons = [str(item.get("reason", "")) for item in self.dropped_predictions]
+        classified = {
+            "valid_commit_count": len(self.predictions),
+            "missing_commit_count": reasons.count("missing_commit"),
+            "premature_commit_count": reasons.count("premature_commit"),
+            "repeated_commit_count": reasons.count("repeated_commit"),
+        }
+        classified["other_parser_drop_count"] = len(reasons) - sum(
+            classified[key]
+            for key in (
+                "missing_commit_count",
+                "premature_commit_count",
+                "repeated_commit_count",
+            )
+        )
+        return classified
+
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "row_id": self.row_id,
@@ -65,6 +91,7 @@ class ParseRow:
             "dropped_prediction_count": self.dropped_prediction_count,
             "predictions": self.predictions,
             "dropped_predictions": self.dropped_predictions,
+            **self.commit_counts,
         }
 
 
@@ -75,6 +102,99 @@ def parse_compact_object_box_closed(
     row_index: int,
     image_width: int,
     image_height: int,
+) -> ParseRow:
+    return _parse_compact_object_box(
+        text,
+        row_id=row_id,
+        row_index=row_index,
+        image_width=image_width,
+        image_height=image_height,
+        parser_id=PARSER_ID,
+        parser_policy=PARSER_POLICY,
+        require_commit=False,
+    )
+
+
+def parse_compact_object_box_commit(
+    text: str,
+    *,
+    row_id: str,
+    row_index: int,
+    image_width: int,
+    image_height: int,
+) -> ParseRow:
+    return _parse_compact_object_box(
+        text,
+        row_id=row_id,
+        row_index=row_index,
+        image_width=image_width,
+        image_height=image_height,
+        parser_id=COMMIT_PARSER_ID,
+        parser_policy=COMMIT_PARSER_POLICY,
+        require_commit=True,
+    )
+
+
+def parse_compact_object_box(
+    text: str,
+    *,
+    assistant_format: str,
+    row_id: str,
+    row_index: int,
+    image_width: int,
+    image_height: int,
+) -> ParseRow:
+    parsers = {
+        CLOSED_ASSISTANT_FORMAT: parse_compact_object_box_closed,
+        COMMIT_ASSISTANT_FORMAT: parse_compact_object_box_commit,
+    }
+    parser = parsers.get(assistant_format)
+    if parser is None:
+        raise DataContractError(
+            "inference assistant format has no strict compact parser",
+            code="inference.parser_assistant_format",
+            context={
+                "assistant_format": assistant_format,
+                "supported_assistant_formats": sorted(parsers),
+            },
+        )
+    return parser(
+        text,
+        row_id=row_id,
+        row_index=row_index,
+        image_width=image_width,
+        image_height=image_height,
+    )
+
+
+def parser_policy_for_assistant_format(assistant_format: str) -> str:
+    policies = {
+        CLOSED_ASSISTANT_FORMAT: PARSER_POLICY,
+        COMMIT_ASSISTANT_FORMAT: COMMIT_PARSER_POLICY,
+    }
+    policy = policies.get(assistant_format)
+    if policy is None:
+        raise DataContractError(
+            "inference assistant format has no parser policy",
+            code="inference.parser_assistant_format",
+            context={
+                "assistant_format": assistant_format,
+                "supported_assistant_formats": sorted(policies),
+            },
+        )
+    return policy
+
+
+def _parse_compact_object_box(
+    text: str,
+    *,
+    row_id: str,
+    row_index: int,
+    image_width: int,
+    image_height: int,
+    parser_id: str,
+    parser_policy: str,
+    require_commit: bool,
 ) -> ParseRow:
     stripped = text.strip()
     if stripped.startswith("{") or stripped.startswith("["):
@@ -95,6 +215,8 @@ def parse_compact_object_box_closed(
                     char_end=len(text),
                 )
             ],
+            parser_id=parser_id,
+            parser_policy=parser_policy,
         )
 
     predictions: list[dict[str, Any]] = []
@@ -105,13 +227,18 @@ def parse_compact_object_box_closed(
                 candidate["text"],
                 allow_terminal_stop=False,
             ):
+                unmatched_reason = (
+                    "premature_commit"
+                    if require_commit and COMMIT_TOKEN in candidate["text"]
+                    else "unmatched_text"
+                )
                 dropped.append(
                     _drop(
                         row_id=row_id,
                         row_index=row_index,
                         object_span_id=f"{row_id}:unmatched-{len(dropped)}",
                         generated_order=None,
-                        reason="unmatched_text",
+                        reason=unmatched_reason,
                         raw_text=candidate["text"],
                         char_start=candidate["char_start"],
                         char_end=candidate["char_end"],
@@ -124,13 +251,22 @@ def parse_compact_object_box_closed(
         object_span_id = f"{row_id}:span-{order}"
         match = _OBJECT_RE.match(candidate["text"])
         if match is None:
+            reason = "malformed_object_span"
+            if require_commit:
+                commit_start = candidate["text"].find(COMMIT_TOKEN)
+                box_end_start = candidate["text"].find(BOX_END_TOKEN)
+                if commit_start >= 0 and (
+                    box_end_start < 0
+                    or commit_start < box_end_start + len(BOX_END_TOKEN)
+                ):
+                    reason = "premature_commit"
             dropped.append(
                 _drop(
                     row_id=row_id,
                     row_index=row_index,
                     object_span_id=object_span_id,
                     generated_order=order,
-                    reason="malformed_object_span",
+                    reason=reason,
                     raw_text=candidate["text"],
                     char_start=candidate["char_start"],
                     char_end=candidate["char_end"],
@@ -145,6 +281,37 @@ def parse_compact_object_box_closed(
         span_char_start = candidate["char_start"]
         span_char_end = span_char_start + len(raw_span_text)
         trailing = candidate["text"][len(raw_span_text) :]
+        trailing_char_start = span_char_end
+        dropped_span_text = raw_span_text
+        dropped_span_char_end = span_char_end
+        if require_commit:
+            commit_failure = _commit_failure_reason(
+                candidate["text"],
+                canonical_span=raw_span_text,
+                trailing=trailing,
+            )
+            if commit_failure is not None:
+                dropped.append(
+                    _drop(
+                        row_id=row_id,
+                        row_index=row_index,
+                        object_span_id=object_span_id,
+                        generated_order=order,
+                        reason=commit_failure,
+                        raw_text=candidate["text"],
+                        char_start=candidate["char_start"],
+                        char_end=candidate["char_end"],
+                        evidence=_span_evidence(
+                            candidate["text"],
+                            absolute_start=candidate["char_start"],
+                        ),
+                    )
+                )
+                continue
+            trailing = trailing[len(COMMIT_TOKEN) :]
+            trailing_char_start += len(COMMIT_TOKEN)
+            dropped_span_text += COMMIT_TOKEN
+            dropped_span_char_end += len(COMMIT_TOKEN)
         description = match.group("description").strip()
         if not description:
             dropped.append(
@@ -154,10 +321,13 @@ def parse_compact_object_box_closed(
                     object_span_id=object_span_id,
                     generated_order=order,
                     reason="empty_description",
-                    raw_text=raw_span_text,
+                    raw_text=dropped_span_text,
                     char_start=span_char_start,
-                    char_end=span_char_end,
-                    evidence=_span_evidence(raw_span_text, absolute_start=span_char_start),
+                    char_end=dropped_span_char_end,
+                    evidence=_span_evidence(
+                        dropped_span_text,
+                        absolute_start=span_char_start,
+                    ),
                 )
             )
             _append_unmatched_drop(
@@ -165,7 +335,7 @@ def parse_compact_object_box_closed(
                 row_id=row_id,
                 row_index=row_index,
                 raw_text=trailing,
-                char_start=span_char_end,
+                char_start=trailing_char_start,
             )
             continue
         try:
@@ -188,12 +358,15 @@ def parse_compact_object_box_closed(
                     object_span_id=object_span_id,
                     generated_order=order,
                     reason="geometry_invalid",
-                    raw_text=raw_span_text,
+                    raw_text=dropped_span_text,
                     char_start=span_char_start,
-                    char_end=span_char_end,
+                    char_end=dropped_span_char_end,
                     code=exc.code,
                     context=exc.context,
-                    evidence=_span_evidence(raw_span_text, absolute_start=span_char_start),
+                    evidence=_span_evidence(
+                        dropped_span_text,
+                        absolute_start=span_char_start,
+                    ),
                 )
             )
             _append_unmatched_drop(
@@ -201,7 +374,7 @@ def parse_compact_object_box_closed(
                 row_id=row_id,
                 row_index=row_index,
                 raw_text=trailing,
-                char_start=span_char_end,
+                char_start=trailing_char_start,
             )
             continue
         evidence = _span_evidence(raw_span_text, absolute_start=span_char_start)
@@ -225,7 +398,7 @@ def parse_compact_object_box_closed(
             row_id=row_id,
             row_index=row_index,
             raw_text=trailing,
-            char_start=span_char_end,
+            char_start=trailing_char_start,
         )
 
     if predictions and dropped:
@@ -242,7 +415,29 @@ def parse_compact_object_box_closed(
         status=status,
         predictions=predictions,
         dropped=dropped,
+        parser_id=parser_id,
+        parser_policy=parser_policy,
     )
+
+
+def _commit_failure_reason(
+    candidate_text: str,
+    *,
+    canonical_span: str,
+    trailing: str,
+) -> str | None:
+    # The canonical row is complete only at box_end. Any commit inside that
+    # span is premature even if another commit follows later.
+    if COMMIT_TOKEN in canonical_span:
+        return "premature_commit"
+    if not trailing.startswith(COMMIT_TOKEN):
+        if COMMIT_TOKEN in candidate_text[: len(canonical_span)]:
+            return "premature_commit"
+        return "missing_commit"
+    after_first = trailing[len(COMMIT_TOKEN) :]
+    if COMMIT_TOKEN in after_first:
+        return "repeated_commit"
+    return None
 
 
 def _object_candidates(text: str) -> list[dict[str, Any]]:
@@ -320,6 +515,7 @@ def _span_evidence(raw_span_text: str, *, absolute_start: int) -> dict[str, Any]
         OBJECT_REF_END_TOKEN,
         BOX_START_TOKEN,
         BOX_END_TOKEN,
+        COMMIT_TOKEN,
     ):
         relative_start = raw_span_text.find(token)
         if relative_start >= 0:
@@ -369,24 +565,45 @@ def _row(
     status: str,
     predictions: list[dict[str, Any]],
     dropped: list[dict[str, Any]],
+    parser_id: str,
+    parser_policy: str,
 ) -> ParseRow:
     metric_bearing = bool(predictions)
+    commit_counts: dict[str, int] = {}
+    if parser_policy == COMMIT_PARSER_POLICY:
+        reasons = [str(item.get("reason", "")) for item in dropped]
+        commit_counts = {
+            "valid_commit_count": len(predictions),
+            "missing_commit_count": reasons.count("missing_commit"),
+            "premature_commit_count": reasons.count("premature_commit"),
+            "repeated_commit_count": reasons.count("repeated_commit"),
+        }
+        commit_counts["other_parser_drop_count"] = len(reasons) - sum(
+            commit_counts[key]
+            for key in (
+                "missing_commit_count",
+                "premature_commit_count",
+                "repeated_commit_count",
+            )
+        )
     diagnostics = [
         {
             "row_id": row_id,
             "row_index": row_index,
-            "parser_id": PARSER_ID,
+            "parser_id": parser_id,
+            "parser_policy": parser_policy,
             "parse_status": status,
             "valid_prediction_count": len(predictions),
             "dropped_prediction_count": len(dropped),
             "dropped_predictions": dropped,
+            **commit_counts,
         }
     ]
     return ParseRow(
         row_id=row_id,
         row_index=row_index,
-        parser_id=PARSER_ID,
-        parser_policy=PARSER_POLICY,
+        parser_id=parser_id,
+        parser_policy=parser_policy,
         metric_bearing=metric_bearing,
         parse_status=status,
         predictions=predictions,

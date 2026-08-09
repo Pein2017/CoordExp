@@ -11,6 +11,7 @@ from safetensors.torch import save_file
 from torch import nn
 
 from src.common.errors import RuntimeContractError
+from src.config.inference import load_infer_config, validate_infer_input_paths
 from src.config.models import (
     SpecialTokenEmbeddingGroupsConfig,
     SpecialTokenEmbeddingsConfig,
@@ -86,6 +87,69 @@ def test_source_gate_explicit_root_passes_and_wrong_root_fails(tmp_path: Path) -
     assert invalid.source_study_passed is False
     assert invalid.roundtrip_probe_passed is False
     assert invalid.probe_receipt is None
+
+
+def test_owner_commit_source_gate_uses_explicit_root_and_1005_profile(
+    tmp_path: Path,
+) -> None:
+    owner_root = Path("/data/CoordExp/.worktrees/owner-commit-binding")
+    selection = SpecialTokenSelection(
+        token_strings=(
+            *DEFAULT_WRAPPER_TOKENS,
+            "<|commit|>",
+            *DEFAULT_COORDINATE_TOKENS,
+        ),
+        token_ids=(
+            151646,
+            151647,
+            151648,
+            151649,
+            151669,
+            *range(151670, 152670),
+        ),
+    )
+    evidence = load_default_special_token_embedding_source_gate_evidence(
+        owner_root,
+        selection,
+    )
+    assert evidence.source_study_passed is True
+    assert evidence.roundtrip_probe_passed is True
+    assert evidence.probe_receipt is not None
+    assert evidence.probe_receipt["token_profile"] == "owner_commit"
+    assert evidence.probe_receipt["num_selected_tokens"] == 1005
+    assert evidence.probe_receipt["token_selection_sha256"] == (
+        "ae47fc5faee929bbcedd0eaacd7cd491e65226aefc6b22481d79f11a9f6b3321"
+    )
+
+    installed = install_special_token_embedding_deltas(
+        TinyTiedQwenModel(vocab_size=152671, hidden_size=4),
+        selection,
+        source_gate=evidence,
+    )
+    assert len(installed.receipt.token_selection.token_ids) == 1005
+
+    wrong_root = load_default_special_token_embedding_source_gate_evidence(
+        tmp_path,
+        selection,
+    )
+    assert wrong_root.source_study_passed is False
+    assert wrong_root.roundtrip_probe_passed is False
+    assert wrong_root.probe_receipt is None
+
+
+def test_a3_leaf_binds_owner_source_gate_root() -> None:
+    resolved = load_infer_config(
+        "configs/coordexp_swift/infer/"
+        "qwen3_vl_2b_static_dynamic_owner_interface_a3_step2445_h0.yaml"
+    )
+    assert resolved.config.embedding_delta is not None
+    assert resolved.config.embedding_delta.source_gate_root == (
+        "/data/CoordExp/.worktrees/owner-commit-binding"
+    )
+    validate_infer_input_paths(
+        resolved,
+        fields=("embedding_delta.source_gate_root",),
+    )
 
 
 def test_special_token_embedding_install_requires_source_gate() -> None:

@@ -56,7 +56,10 @@ from src.inference.execution_model import (
 )
 from src.inference.image_plan import plan_image_batch, verify_processor_model_vision_parity
 from src.inference.merge import merge_shard_artifacts
-from src.inference.parsing import PARSER_POLICY, parse_compact_object_box_closed
+from src.inference.parsing import (
+    parse_compact_object_box,
+    parser_policy_for_assistant_format,
+)
 from src.inference.prompt import TEMPLATE_ID, build_prompt_record, verify_prompt_token_parity
 from src.inference.runtime import InferenceFrontend, assemble_frontend
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT
@@ -675,6 +678,7 @@ def _execute_indexed_rows(
             raw_example=raw_example,
             row_index=row_index,
             decode_result=decode_results[raw_example.example_id],
+            assistant_format=resolved.config.template.assistant_format,
         )
         for row_index, raw_example in indexed_raw_examples
     ]
@@ -773,9 +777,11 @@ def _artifact_input_row(
     raw_example: RawExample,
     row_index: int,
     decode_result: Any,
+    assistant_format: str,
 ) -> dict[str, Any]:
-    parse_row = parse_compact_object_box_closed(
+    parse_row = parse_compact_object_box(
         decode_result.parser_text,
+        assistant_format=assistant_format,
         row_id=raw_example.example_id,
         row_index=row_index,
         image_width=raw_example.image.width,
@@ -892,7 +898,9 @@ def _base_metadata(*, resolved: ResolvedInferConfig) -> dict[str, Any]:
             "object_order_seed": resolved.config.template.object_order_seed,
             "assistant_format": resolved.config.template.assistant_format,
         },
-        "parser_policy": PARSER_POLICY,
+        "parser_policy": parser_policy_for_assistant_format(
+            resolved.config.template.assistant_format
+        ),
         "score_policy_fingerprint": SCORE_POLICY_FINGERPRINT,
         "dataset_identity": {
             "input_jsonl": resolved.config.data.input_jsonl,

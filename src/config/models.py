@@ -49,7 +49,10 @@ class ProcessorConfig(StrictConfigModel):
 
 class SpecialTokenEmbeddingGroupsConfig(StrictConfigModel):
     coordinate_tokens: Literal["default_coord_0_999"]
-    wrapper_tokens: Literal["default_object_box_wrappers"]
+    wrapper_tokens: Literal[
+        "default_object_box_wrappers",
+        "default_object_box_commit_wrappers",
+    ]
 
 
 class SpecialTokenEmbeddingsConfig(StrictConfigModel):
@@ -214,8 +217,13 @@ class TemplatePromptConfig(StrictConfigModel):
 
 class TemplateConfig(StrictConfigModel):
     object_field_order: Literal["desc_first", "geometry_first"]
-    object_ordering: Literal["source_order", "geo_sorted", "random"]
-    assistant_format: Literal["object_box_closed"]
+    object_ordering: Literal[
+        "source_order",
+        "geo_sorted",
+        "geo_sorted_xy",
+        "random",
+    ]
+    assistant_format: Literal["object_box_closed", "object_box_commit"]
     prompt: TemplatePromptConfig
 
 

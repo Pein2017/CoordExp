@@ -24,6 +24,7 @@ INFER_PATH_FIELDS = (
     "data.input_jsonl",
     "adapter.path",
     "embedding_delta.path",
+    "embedding_delta.source_gate_root",
 )
 
 
@@ -52,6 +53,7 @@ class InferAdapterConfig(StrictConfigModel):
 
 class InferEmbeddingDeltaConfig(StrictConfigModel):
     path: str
+    source_gate_root: str | None = None
 
 
 class InferDataConfig(StrictConfigModel):
@@ -65,9 +67,14 @@ class InferTemplatePromptConfig(StrictConfigModel):
 
 class InferTemplateConfig(StrictConfigModel):
     object_field_order: Literal["desc_first", "geometry_first"]
-    object_ordering: Literal["source_order", "geo_sorted", "random"]
+    object_ordering: Literal[
+        "source_order",
+        "geo_sorted",
+        "geo_sorted_xy",
+        "random",
+    ]
     object_order_seed: int | None = None
-    assistant_format: Literal["object_box_closed"]
+    assistant_format: Literal["object_box_closed", "object_box_commit"]
     prompt: InferTemplatePromptConfig
 
     @model_validator(mode="after")
@@ -154,6 +161,15 @@ class InferConfig(StrictConfigModel):
     debug: InferDebugConfig = Field(default_factory=InferDebugConfig)
     adapter: InferAdapterConfig | None = None
     embedding_delta: InferEmbeddingDeltaConfig | None = None
+
+    @model_validator(mode="after")
+    def _commit_format_requires_embedding_delta(self) -> "InferConfig":
+        if self.template.assistant_format == "object_box_commit" and self.embedding_delta is None:
+            raise ConfigContractError(
+                "object_box_commit inference requires a commit-profile embedding delta",
+                code="config.commit_embedding_delta_required",
+            )
+        return self
 
     @model_validator(mode="after")
     def _production_batch_size_must_exceed_one(self) -> "InferConfig":
@@ -314,6 +330,7 @@ def validate_infer_input_paths(
         "data.input_jsonl": "file",
         "adapter.path": "directory",
         "embedding_delta.path": "directory",
+        "embedding_delta.source_gate_root": "directory",
     }
     selected = tuple(expected_kinds) if fields is None else fields
     unknown = sorted(set(selected).difference(expected_kinds))

@@ -36,6 +36,8 @@ APPROVED_SCHEMA_TOKENS = frozenset(
         "<|object_ref_end|>",
         "<|box_start|>",
         "<|box_end|>",
+        # Row-final owner address; only the compact owner-commit format emits it.
+        "<|commit|>",
     }
 )
 APPROVED_EOS_TOKEN = "<|im_end|>"

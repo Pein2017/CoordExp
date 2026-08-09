@@ -22,6 +22,7 @@ from src.templates import (
     render_example,
     validate_rendered_spans,
 )
+from src.templates.renderer import COMMIT_TOKEN
 
 
 FIXTURE = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack")
@@ -103,6 +104,25 @@ def test_geometry_first_renders_box_before_description() -> None:
         f"{BOX_START_TOKEN}<|coord_319|><|coord_72|><|coord_718|><|coord_830|>{BOX_END_TOKEN}"
         f"{OBJECT_REF_START_TOKEN}potted plant{OBJECT_REF_END_TOKEN}"
     )
+
+
+def test_owner_commit_format_emits_commit_schema_token_and_requires_desc_first() -> None:
+    resolved = load_train_config(FIXTURE / "config.yaml")
+    first = load_raw_examples(resolved.config.data.train)[0]
+    config = resolved.config.template.model_copy(
+        update={"assistant_format": "object_box_commit"}
+    )
+    rendered = render_example(first, config)
+    assert rendered.assistant_format == "object_box_commit"
+    assert rendered.assistant_content_text.count(COMMIT_TOKEN) == len(first.objects)
+    assert any(span.text == COMMIT_TOKEN and span.kind == "schema_token" for span in rendered.spans)
+
+    with pytest.raises(TemplateContractError) as exc_info:
+        render_example(
+            first,
+            config.model_copy(update={"object_field_order": "geometry_first"}),
+        )
+    assert exc_info.value.code == "template.commit_object_field_order"
 
 
 def test_no_inserted_separator_between_objects_or_coordinate_tokens() -> None:

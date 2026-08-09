@@ -18,16 +18,22 @@ from src.coordinate_targets import (
     coordinate_target_to_artifact,
 )
 from src.data import RawExample, RawObject
-from src.templates.spans import RenderedSpan, validate_rendered_spans
+from src.templates.spans import RenderedSpan, RenderedSpanKind, validate_rendered_spans
 
 
 OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
 OBJECT_REF_END_TOKEN = "<|object_ref_end|>"
 BOX_START_TOKEN = "<|box_start|>"
 BOX_END_TOKEN = "<|box_end|>"
+COMMIT_TOKEN = "<|commit|>"
 IM_END_TOKEN = "<|im_end|>"
 IM_END_SUFFIX = "<|im_end|>\n"
 IMAGE_PLACEHOLDER = {"type": "image"}
+
+CLOSED_ASSISTANT_FORMAT = "object_box_closed"
+COMMIT_ASSISTANT_FORMAT = "object_box_commit"
+SUPPORTED_ASSISTANT_FORMATS = (CLOSED_ASSISTANT_FORMAT, COMMIT_ASSISTANT_FORMAT)
+COMMIT_FIELD = "owner_commit"
 
 UNSAFE_DESCRIPTION_SUBSTRINGS = (
     OBJECT_REF_START_TOKEN,
@@ -76,9 +82,10 @@ class RenderedExample:
     object_ordering: str
     object_order_seed: int | None = None
     object_order_seed_source: str | None = None
+    assistant_format: str = CLOSED_ASSISTANT_FORMAT
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "example_id": self.example_id,
             "messages": self.messages,
             "prompt_text": self.prompt_text,
@@ -93,6 +100,9 @@ class RenderedExample:
             "object_order_seed": self.object_order_seed,
             "object_order_seed_source": self.object_order_seed_source,
         }
+        if self.assistant_format != CLOSED_ASSISTANT_FORMAT:
+            payload["assistant_format"] = self.assistant_format
+        return payload
 
 
 def _rendered_span_artifact(span: RenderedSpan) -> dict[str, Any]:
@@ -123,11 +133,21 @@ def render_example(
             code="template.raw_example_type",
             context={"value_type": type(raw_example).__name__},
         )
-    if template_config.assistant_format != "object_box_closed":
+    if template_config.assistant_format not in SUPPORTED_ASSISTANT_FORMATS:
         raise TemplateContractError(
             "unsupported assistant format",
             code="template.assistant_format",
             context={"assistant_format": template_config.assistant_format},
+        )
+    emit_commit = template_config.assistant_format == COMMIT_ASSISTANT_FORMAT
+    if emit_commit and template_config.object_field_order != "desc_first":
+        raise TemplateContractError(
+            "compact owner-commit format requires desc_first object field order",
+            code="template.commit_object_field_order",
+            context={
+                "assistant_format": template_config.assistant_format,
+                "object_field_order": template_config.object_field_order,
+            },
         )
 
     ordered_objects, order_seed_source = _ordered_objects(
@@ -138,6 +158,7 @@ def render_example(
     assistant_content, spans, object_order = _render_objects(
         ordered_objects,
         object_field_order=template_config.object_field_order,
+        emit_commit=emit_commit,
     )
     supervised_response_text = assistant_content + IM_END_SUFFIX
     _validate_assistant_suffix(assistant_content, supervised_response_text)
@@ -162,6 +183,7 @@ def render_example(
         object_ordering=template_config.object_ordering,
         object_order_seed=object_order_seed,
         object_order_seed_source=order_seed_source,
+        assistant_format=template_config.assistant_format,
     )
 
 
@@ -175,12 +197,28 @@ def _ordered_objects(
     if object_ordering == "source_order":
         return indexed, None
     if object_ordering == "geo_sorted":
-        unsorted = _first_unsorted_top_left_pair(indexed)
+        unsorted = _first_unsorted_anchor_pair(indexed, anchor_order="y_then_x")
         if unsorted is not None:
             prev_index, curr_index, prev_anchor, curr_anchor = unsorted
             raise TemplateContractError(
                 "geo_sorted object ordering requires top-to-bottom then left-to-right rows",
                 code="template.geo_sorted_order",
+                context={
+                    "example_id": raw_example.example_id,
+                    "previous_index": prev_index,
+                    "current_index": curr_index,
+                    "previous_anchor": list(prev_anchor),
+                    "current_anchor": list(curr_anchor),
+                },
+            )
+        return indexed, None
+    if object_ordering == "geo_sorted_xy":
+        unsorted = _first_unsorted_anchor_pair(indexed, anchor_order="x_then_y")
+        if unsorted is not None:
+            prev_index, curr_index, prev_anchor, curr_anchor = unsorted
+            raise TemplateContractError(
+                "geo_sorted_xy object ordering requires left-to-right then top-to-bottom rows",
+                code="template.geo_sorted_xy_order",
                 context={
                     "example_id": raw_example.example_id,
                     "previous_index": prev_index,
@@ -210,15 +248,17 @@ def _ordered_objects(
     )
 
 
-def _first_unsorted_top_left_pair(
+def _first_unsorted_anchor_pair(
     indexed_objects: Sequence[tuple[int, RawObject]],
+    *,
+    anchor_order: Literal["y_then_x", "x_then_y"],
 ) -> tuple[int, int, tuple[int, int], tuple[int, int]] | None:
     if len(indexed_objects) < 2:
         return None
     previous_index, previous_object = indexed_objects[0]
-    previous_anchor = _top_left_anchor(previous_object)
+    previous_anchor = _top_left_anchor(previous_object, anchor_order=anchor_order)
     for current_index, current_object in indexed_objects[1:]:
-        current_anchor = _top_left_anchor(current_object)
+        current_anchor = _top_left_anchor(current_object, anchor_order=anchor_order)
         if current_anchor < previous_anchor:
             return previous_index, current_index, previous_anchor, current_anchor
         previous_index = current_index
@@ -226,15 +266,20 @@ def _first_unsorted_top_left_pair(
     return None
 
 
-def _top_left_anchor(obj: RawObject) -> tuple[int, int]:
+def _top_left_anchor(
+    obj: RawObject,
+    *,
+    anchor_order: Literal["y_then_x", "x_then_y"],
+) -> tuple[int, int]:
     x1, y1, _x2, _y2 = obj.bbox
-    return y1, x1
+    return (y1, x1) if anchor_order == "y_then_x" else (x1, y1)
 
 
 def _render_objects(
     ordered_objects: Sequence[tuple[int, RawObject]],
     *,
     object_field_order: Literal["desc_first", "geometry_first"],
+    emit_commit: bool = False,
 ) -> tuple[str, list[RenderedSpan], list[RenderedObjectOrder]]:
     parts: list[str] = []
     spans: list[RenderedSpan] = []
@@ -273,6 +318,10 @@ def _render_objects(
                 code="template.object_field_order",
                 context={"object_field_order": object_field_order},
             )
+        if emit_commit:
+            spans.append(_span("schema_token", cursor, COMMIT_TOKEN, obj, COMMIT_FIELD))
+            parts.append(COMMIT_TOKEN)
+            cursor += len(COMMIT_TOKEN)
         object_text = "".join(parts)[object_start:cursor]
         spans.append(
             RenderedSpan(
