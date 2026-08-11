@@ -1,0 +1,62 @@
+{
+  "seed_version": 1,
+  "policy_epoch": "2026-08-09-v1",
+  "roles": {
+    "read_only_scout": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-luna", "effort": "medium"},
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-luna", "effort": "high"},
+        {"active": true, "route_epoch": "2026-08-09", "surface": "claude-code", "model": "haiku", "effort": "medium"}
+      ]
+    },
+    "bounded_builder": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-terra", "effort": "high"},
+        {"active": true, "route_epoch": "2026-08-09", "surface": "claude-code", "model": "sonnet", "effort": "high"},
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-terra", "effort": "medium"}
+      ]
+    },
+    "semantic_builder": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-sol", "effort": "high"},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""}
+      ]
+    },
+    "lifecycle_builder": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "claude-code", "model": "opus", "effort": "high"},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""}
+      ]
+    },
+    "semantic_reviewer": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-sol", "effort": "xhigh"},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""}
+      ]
+    },
+    "lifecycle_reviewer": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "claude-code", "model": "opus", "effort": "xhigh"},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""},
+        {"active": false, "route_epoch": "", "surface": "", "model": "", "effort": ""}
+      ]
+    },
+    "major_decision": {
+      "baseline_slot": 0,
+      "routes": [
+        {"active": true, "route_epoch": "2026-08-09", "surface": "codex", "model": "gpt-5.6-sol", "effort": "max"},
+        {"active": true, "route_epoch": "2026-08-09", "surface": "claude-code", "model": "fable", "effort": "xhigh"},
+        {"active": true, "route_epoch": "2026-08-09", "surface": "claude-code", "model": "fable", "effort": "max"}
+      ]
+    }
+  }
+}
