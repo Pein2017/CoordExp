@@ -100,9 +100,13 @@ is not apparent:
 - Keep architecture proposals and one-time project plans non-normative. They
   may record design reasoning and sequencing, but they do not authorize
   implementation or override code/spec evidence. The canonical architecture
-  snapshot does not own dynamic program state.
+  snapshot does not own dynamic program state. Installed Superpowers plans are
+  included in this category: they may discipline execution for a current change
+  but never replace its OpenSpec authority.
 - PWSG is sequencing discipline inside an OpenSpec change, not a docs
-  directory: Program/change, Wave/task group, Slice/task, Gate (verify + audit).
+  directory: Program/change, Wave/task group, Slice/task, Gate (lead-owned
+  executable verification, plus one independent audit only for a frozen
+  high-risk or decision-bearing target).
 - Preserve old proposals and plans as evidence. Mark them historical or
   superseded, and route completed material to `docs/history/` when it can be
   moved without breaking provenance links.

@@ -11,9 +11,18 @@ context: |
   that benefit from durable proposal, design, tasks, implementation,
   verification, and archive state.
 
+  When Superpowers is explicitly invoked, it owns execution planning, TDD,
+  debugging, commit checkpoints, code review, and fresh verification. OpenSpec
+  remains the authority for scope, semantics, compatibility, and completion.
+  Superpowers artifacts must link the active change and remain derivative
+  execution plans; they never replace or independently advance its authoritative
+  proposal, design, specs, or task state.
+
   PWSG is sequencing discipline inside a change: Program is the change, Wave
   is a task group, Slice is a small dependency-ordered task, and Gate is
-  verification plus an independent audit. Detail only the active wave.
+  lead-owned executable verification. Require independent audit only for a
+  frozen, conclusion-bearing or high-risk integration target, not every slice
+  or routine wave. Detail only the active wave.
 
   Protect semantic alignment across data, images, geometry, ordering,
   templates, tokens, packing, forward behavior, losses, metrics, configs,
@@ -29,7 +38,7 @@ rules:
   proposal:
     - State the user-visible problem, intended outcome, scope, non-goals, protected semantics, and expected contract impact.
     - Separate current evidence, proposed behavior, implementation direction, and deferred work.
-    - Do not use historical blueprints, decision logs, lifecycle registries, super-power plans, or archived changes as current authority.
+    - Do not use historical blueprints, decision logs, lifecycle registries, legacy repo-local super-power plans, or archived changes as current authority; installed Superpowers artifacts remain non-normative execution aids.
     - Name user-owned decisions only when they alter research meaning, compatibility, supported runtime behavior, or significant cost.
   specs:
     - Encode only verifiable stable behavior changes using capability-named specs and concrete scenarios.
@@ -41,8 +50,11 @@ rules:
     - For consequential seams, compare meaningfully different designs before selecting one.
     - Keep historical implementation machinery and compatibility paths visibly separate from canonical behavior.
   tasks:
+    - Split a change when pending work spans independently testable subsystems; each resulting change must leave working, verifiable software on its own.
     - Use dependency-ordered tracer-bullet slices that each leave a verifiable working state; use expand-contract only for genuinely wide mechanical refactors.
+    - Make the first implementation wave retire the top conclusion-changing execution risks through the smallest real-entry and production-shaped vertical slice.
+    - For distributed, cache, artifact, or long-running work, declare measurable bounds for calls, passes, collectives, wall time, RSS, workers, payload size, finalization, and recovery before scaling.
     - Add or identify the interface-level failing test or executed probe before changing production behavior when feasible.
     - Include replacement and deletion tasks so old caller knowledge and superseded paths do not remain layered underneath the new design.
-    - End each wave with targeted tests, relevant runtime or performance probes, OpenSpec validation, residue checks, and separate standards and intent-contract audit verdicts.
+    - End routine waves with targeted tests, relevant runtime or performance probes, OpenSpec validation, and residue checks. Use at most one independent auditor for a frozen decision-bearing surface; after accepted fixes, re-review only those findings and materially changed evidence.
     - Do not begin the next wave while the current gate has unresolved P0 or P1 findings.

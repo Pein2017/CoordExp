@@ -1,4 +1,4 @@
 interface:
   display_name: "Full Pipeline Smoke"
-  short_description: "Production-like multi-stage CoordExp smoke"
-  default_prompt: "Use $full-pipeline-smoke to validate a change through a production-like data, train-or-rollout, checkpoint, inference, evaluation, and artifact smoke."
+  short_description: "Retire production-shape risk early and at freeze"
+  default_prompt: "Use $full-pipeline-smoke to retire the top production-shape risks before broad implementation or verify the final frozen pipeline."

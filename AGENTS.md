@@ -28,6 +28,23 @@
   model-quality evidence. Decision-bearing or cited results must be reproducible;
   do not overbuild exploratory probes.
 
+## Development
+
+- When Superpowers executes an OpenSpec-owned change, OpenSpec remains the sole
+  authority for scope, research meaning, compatibility, and completion.
+  Superpowers artifacts are execution-only and must link rather than restate
+  the owning change.
+- Before broad implementation or a costly launch, retire the smallest set of
+  conclusion-changing execution risks with a production-shaped vertical slice.
+  Leaf tests and mocks do not close real-entry, distributed, scale, persistence,
+  finalization, or downstream-consumer risk.
+- Before scaling data, ranks, or GPUs, declare and measure the relevant bounds
+  for model forwards, collective order, cache or materialization passes, wall
+  time, RSS, workers, artifact payload, and finalizer or consumer behavior.
+- At design-to-implementation and fixed-implementation-to-launch or recovery
+  boundaries, prefer a fresh task with a compact handoff when inherited
+  conversation state is no longer required.
+
 ## Runtime
 
 - Run Python through the default `ms` Conda environment:

@@ -1,6 +1,6 @@
 ---
 name: model-innovation-risk-audit
-description: Gate a high-risk or decision-grade CoordExp mechanism before launch or interpretation when silent config, data, runtime, objective, or evaluation drift could change the claim.
+description: Use when a high-risk or decision-grade CoordExp mechanism could silently fail at config, data, execution topology, scale, artifact, activation, objective, decode, or evaluation before costly implementation, launch, or interpretation.
 ---
 
 # Model Innovation Risk Audit
@@ -14,6 +14,20 @@ first observation, protect checkpoint/config/input identity, the declared
 factor, semantic alignment, actual path execution, objective wiring when
 training, and raw output attribution. Escalate when silent drift can reverse the
 observation or the evidence is being promoted.
+
+## Gate Timing
+
+Run one risk gate before broad costly implementation. Repeat it on a frozen
+pre-launch target only when implementation materially changes an unresolved
+risk, the execution shape, or the evidence claim. Do not run a full risk audit
+for every routine wave or after a localized fix whose owning risk and evidence
+did not change.
+
+Before tracing the full contract, name the smallest set of risks that could
+invalidate the architecture, the cheapest production-shaped discriminator for
+each, and the first irreversible boundary. If the primary predicate or execution
+shape is structurally impossible, stop there instead of hardening the rest of
+the system.
 
 ## Gate
 

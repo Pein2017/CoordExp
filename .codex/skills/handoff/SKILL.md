@@ -1,12 +1,20 @@
 ---
 name: handoff
-description: Produce a compact continuation brief or cross-machine transfer that routes a fresh agent to current owning state.
+description: Use when a fresh agent or task must continue current work, especially at design-to-implementation, fixed-implementation-to-launch, recovery, or cross-machine boundaries.
 ---
 
 # Handoff
 
 A handoff is **transport**, not authority. Link current owners instead of
 creating a second project state.
+
+## Phase Boundaries
+
+Prefer a fresh non-forked task when moving from approved design to
+implementation, or from fixed implementation to costly launch or recovery, and
+the prior transcript is no longer needed to act safely. The handoff carries
+only the state required by the next phase; it never inherits launch, recovery,
+or research authority from the previous task.
 
 ## Write
 
@@ -23,7 +31,10 @@ creating a second project state.
    - minimum reading path in authority order.
 4. Add only recovery-critical checkout, dirty scope, artifact/config/checkpoint
    paths, completed commands, evidence boundary, blockers, volatile facts to
-   reverify, and pending verification.
+   reverify, and pending verification. At a phase boundary, include the exact
+   tree or commit, owning OpenSpec change, closed and open execution risks,
+   production-shaped smoke receipts, authorized next phase, consumed or unused
+   claims, and stop rule.
 5. Verify linked paths and that one current route is clear without the prior
    conversation.
 

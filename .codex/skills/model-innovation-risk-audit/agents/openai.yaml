@@ -1,4 +1,4 @@
 interface:
   display_name: "Innovation Risk Audit"
-  short_description: "Gate silent model-contract risk"
-  default_prompt: "Use $model-innovation-risk-audit to decide whether this mechanism is trustworthy enough to launch or interpret."
+  short_description: "Gate silent model and execution risks"
+  default_prompt: "Use $model-innovation-risk-audit to retire conclusion-changing model and execution risks before costly implementation, launch, or interpretation."

@@ -52,11 +52,16 @@ New architecture proposals, designs, tasks, and implementation state belong in
 a named `openspec/changes/<change>/` workspace. Accepted outcomes are reflected
 back into current docs and stable specs; the change is then archived by
 OpenSpec. Older blueprint, decision-log, lifecycle-registry, refactoring-program,
-and super-power material is retained only under [`../history/`](../history/README.md)
-for explicit historical reconstruction.
+and legacy repo-local super-power material is retained only under
+[`../history/`](../history/README.md) for explicit historical reconstruction.
+The installed Superpowers plugin remains available as non-normative execution
+discipline for a current change; its plans do not replace OpenSpec or accepted
+architecture authority.
 
 PWSG is sequencing discipline inside a named OpenSpec change, not a directory
-under `docs/`: Program/change, Wave/task group, Slice/task, Gate (verify + audit).
+under `docs/`: Program/change, Wave/task group, Slice/task, Gate (lead-owned
+executable verification, plus one independent audit only for a frozen high-risk
+or decision-bearing target).
 The stable architecture snapshot contains no active implementation state.
 
 ## Historical material

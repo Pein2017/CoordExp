@@ -273,3 +273,66 @@ Check artifacts include:
 Danger sign:
 
 - adapter checkpoint is cited without its expanded-vocab base model bundle.
+
+## 12. Execution Topology Risk
+
+Audit behavior that can be locally correct while the real process graph hangs,
+double-reduces, skips mutation, or diverges by rank.
+
+Check:
+
+- wrapped versus unwrapped model calls;
+- model forward counts per sample, pack, segment, and rank;
+- collective sequence when ranks have intentionally different local work;
+- autograd-hook order, activation recomputation, and no-sync boundaries;
+- optimizer mutation relative to finite/error consensus;
+- pre- and post-process-group work, including rank-zero-only materialization;
+- parent, worker, and child-process ownership on exit or interruption.
+
+Diagnostics:
+
+- a real two-process asymmetric-work smoke through the production wrapper;
+- per-rank forward and collective receipts;
+- an injected rank-local failure before optimizer mutation;
+- process-tree and exit-status verification.
+
+A single-rank or leaf-helper test cannot close this risk.
+
+## 13. Scale And Resource Risk
+
+Audit paths whose correctness survives small tests but whose complexity makes
+production execution impractical or changes the effective behavior.
+
+Declare and measure:
+
+- full model forwards per sample, pack, segment, and rank;
+- complete cache or materialization passes and representative bytes;
+- I/O amplification and repeated deserialization;
+- wall time, peak RSS, workers, queues, and concurrency caps;
+- artifact bytes before and after rank aggregation;
+- representative-scale extrapolation and the bound that rejects promotion.
+
+Danger signs:
+
+- a full-data pass is repeated only to reprove unchanged content;
+- validation materializes full objects when a content-bound attestation exists;
+- a branch grows with segments, ranks, or samples without a declared ceiling;
+- timeout increases substitute for a complexity diagnosis.
+
+## 14. Artifact And Activation Lifecycle Risk
+
+Treat artifact production and activation as runtime protocols, not logging or
+operator ceremony.
+
+Exercise:
+
+- non-empty canonical serialization and finite-value validation;
+- hashing, byte-size bounds, rank transport, and atomic publication;
+- fresh reload through the production-owned downstream consumer;
+- target-bound attestations and invalidation after source or config drift;
+- intent publication, process/run identity binding, and terminal receipts;
+- at-most-once claim consumption, partial activation, and uncertain outcome;
+- append-only parent-linked recovery with a fresh attempt identity and ceiling.
+
+Run the complete canonicalize-to-consume path before expensive broad execution.
+Never retry an uncertain activation merely because no final artifact appeared.

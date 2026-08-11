@@ -44,8 +44,12 @@ Do not read the catalog or this index's targets wholesale.
   when a current doc or stable spec exists.
 - Architecture proposals and one-time project plans are non-normative. They
   describe reasoning and sequencing, not implementation authorization.
+- Superpowers design and execution plans are non-normative sequencing artifacts.
+  For an OpenSpec-owned change, they link to rather than replace its authority.
 - When an OpenSpec change uses PWSG, it is internal sequencing discipline:
-  Program/change, Wave/task group, Slice/task, Gate (verify + audit).
+  Program/change, Wave/task group, Slice/task, Gate (lead-owned executable
+  verification, plus one independent audit only for a frozen high-risk or
+  decision-bearing target).
 
 ## Current Swift route
 
@@ -98,8 +102,10 @@ pre-promotion spec path to make a link look normative.
 
 `docs/history/`, `progress/`, archived OpenSpec changes, and old worktrees may explain why a
 direction exists. They do not establish current behavior. Preserve their
-provenance, label their scope, and do not revive the removed super-power
-workflow or turn a proposal into a runtime framework.
+provenance, label their scope, and do not revive the removed legacy repo-local
+super-power workflow or turn a proposal into a runtime framework. This does not
+prohibit the installed Superpowers plugin when explicitly invoked as
+non-normative execution discipline for a current change.
 
 ## High-signal searches
 
