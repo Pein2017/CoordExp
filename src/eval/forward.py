@@ -36,7 +36,9 @@ EVAL_FORWARD_SPLIT = "eval"
 # statistics through the same bounded gatherer used by training.
 EVAL_REDUCTION_REPLICATED = "replicated"
 EVAL_REDUCTION_DISJOINT_SHARD = EVAL_DISJOINT_SHARD_REDUCTION_MODE
-_EVAL_REDUCTION_MODES = frozenset({EVAL_REDUCTION_REPLICATED, EVAL_REDUCTION_DISJOINT_SHARD})
+_EVAL_REDUCTION_MODES = frozenset(
+    {EVAL_REDUCTION_REPLICATED, EVAL_REDUCTION_DISJOINT_SHARD}
+)
 
 _EVAL_REDUCTION_CONTROL_ENV = "COORDEXP_SWIFT_EVAL_REDUCTION_MODE"
 _EVAL_REDUCTION_CONTROL_AUTO = "auto"
@@ -178,14 +180,21 @@ class ForwardEvalObservation:
     example_count: int
     pack_count: int
     scalars: Mapping[str, float | None]
+    accuracy_stats: Mapping[str, int] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "scalars", MappingProxyType(dict(self.scalars)))
+        if self.accuracy_stats is not None:
+            object.__setattr__(
+                self,
+                "accuracy_stats",
+                MappingProxyType(dict(self.accuracy_stats)),
+            )
 
     def to_logging_row(self) -> dict[str, Any]:
         """Return writer input without normalizing non-finite scalar values."""
 
-        return {
+        row = {
             "step": self.planned_step_id,
             "split": self.split,
             "trigger_reasons": list(self.trigger_reasons),
@@ -193,6 +202,9 @@ class ForwardEvalObservation:
             "pack_count": self.pack_count,
             **self.scalars,
         }
+        if self.accuracy_stats is not None:
+            row["accuracy_stats"] = dict(self.accuracy_stats)
+        return row
 
 
 class ForwardEvalRunner:
@@ -286,8 +298,8 @@ class ForwardEvalRunner:
             if callable(eval_method):
                 eval_method()
             with torch.no_grad():
-                example_count, pack_count, scalars = self._run_forward_only(
-                    planned_step_id=planned_step_id
+                example_count, pack_count, scalars, accuracy_stats = (
+                    self._run_forward_only(planned_step_id=planned_step_id)
                 )
         finally:
             if was_training is not None and callable(train_method):
@@ -300,11 +312,12 @@ class ForwardEvalRunner:
             example_count=example_count,
             pack_count=pack_count,
             scalars=scalars,
+            accuracy_stats=accuracy_stats,
         )
 
     def _run_forward_only(
         self, *, planned_step_id: int
-    ) -> tuple[int, int, dict[str, float | None]]:
+    ) -> tuple[int, int, dict[str, float | None], dict[str, int] | None]:
         micro_steps = tuple(self.micro_step_stream)
         if not micro_steps:
             raise RuntimeContractError(
@@ -369,14 +382,14 @@ class ForwardEvalRunner:
                 example_count=example_count,
                 pack_count=pack_count,
             )
-        gathered = self._gather_scalars(
+        gathered, global_accuracy_stats = self._gather_scalars(
             scalars, planned_step_id=planned_step_id, accuracy_stats=accuracy_stats
         )
         if sharded:
             gathered, example_count, pack_count = _finalize_disjoint_shard_scalars(
                 gathered
             )
-        return example_count, pack_count, gathered
+        return example_count, pack_count, gathered, global_accuracy_stats
 
     def _move_micro_step(
         self,
@@ -399,10 +412,10 @@ class ForwardEvalRunner:
         *,
         planned_step_id: int,
         accuracy_stats: Mapping[str, int] | None = None,
-    ) -> dict[str, float | None]:
+    ) -> tuple[dict[str, float | None], dict[str, int] | None]:
         gather = getattr(self.runtime, "gather_metrics", None)
         if not callable(gather):
-            return dict(scalars)
+            return dict(scalars), _strict_accuracy_stats_or_none(accuracy_stats)
         finite_or_nonfinite = {
             name: float(value) for name, value in scalars.items() if value is not None
         }
@@ -421,11 +434,58 @@ class ForwardEvalRunner:
                 code="eval_forward.metric_reduction",
                 context={"planned_step_id": planned_step_id},
             )
+        gathered_accuracy_stats = (
+            gathered.get("accuracy_stats") if isinstance(gathered, Mapping) else None
+        )
+        if accuracy_stats is not None and not isinstance(
+            gathered_accuracy_stats, Mapping
+        ):
+            raise RuntimeContractError(
+                "eval.forward runtime metric reduction returned no global accuracy_stats",
+                code="eval_forward.accuracy_stats_reduction",
+                context={"planned_step_id": planned_step_id},
+            )
+        checked_accuracy_stats = _strict_accuracy_stats_or_none(gathered_accuracy_stats)
         result = {str(name): _optional_float(value) for name, value in reduced.items()}
         for name, value in scalars.items():
             if value is None:
                 result.setdefault(name, None)
-        return result
+        return result, checked_accuracy_stats
+
+
+def _strict_accuracy_stats_or_none(
+    accuracy_stats: Mapping[str, Any] | None,
+) -> dict[str, int] | None:
+    if accuracy_stats is None:
+        return None
+    expected_fields = {"top1_correct", "top5_correct", "atom_count"}
+    if set(accuracy_stats) != expected_fields:
+        raise RuntimeContractError(
+            "eval.forward accuracy_stats must contain exactly the declared fields",
+            code="eval_forward.accuracy_stats_fields",
+            context={
+                "expected_fields": sorted(expected_fields),
+                "observed_fields": sorted(str(field) for field in accuracy_stats),
+            },
+        )
+    checked: dict[str, int] = {}
+    for field_name in sorted(expected_fields):
+        value = accuracy_stats[field_name]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RuntimeContractError(
+                "eval.forward accuracy_stats fields must be non-negative integers",
+                code="eval_forward.accuracy_stats_field_type",
+                context={"field": field_name, "value": value},
+            )
+        checked[field_name] = value
+    atom_count = checked["atom_count"]
+    if checked["top1_correct"] > atom_count or checked["top5_correct"] > atom_count:
+        raise RuntimeContractError(
+            "eval.forward accuracy correct counts cannot exceed atom_count",
+            code="eval_forward.accuracy_stats_correct_exceeds_atoms",
+            context=checked,
+        )
+    return checked
 
 
 def _runtime_model(runtime: EvalRuntimeBoundary | None, fallback_model: Any) -> Any:

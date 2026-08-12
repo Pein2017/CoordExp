@@ -69,8 +69,9 @@ schema from an archived YAML file or an old plan.
   `resolved_config.json`, and `logging.jsonl`; `src/artifacts/checkpoints.py`
   owns synchronized staged PEFT adapter and optional selected-token delta
   payloads plus `final.json` and `best.json`.
-- `src/training/pack_cache.py` owns rebuild-only cache v2 outside the run tree;
-  the run retains only compact materialization bindings.
+- `src/training/pack_cache.py` owns immutable cache v3 outside the run tree;
+  `rebuild` publishes only to a previously absent semantic fingerprint target,
+  while the run retains compact materialization bindings.
 - `src/inference/backend.py` owns backend-neutral requests, results, dual
   likelihood semantics, validation, and session lifecycle.
 - `src/inference/hf_backend.py` owns dynamic HF composition and generation;

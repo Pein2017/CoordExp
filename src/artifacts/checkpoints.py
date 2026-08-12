@@ -5,13 +5,16 @@ from __future__ import annotations
 import os
 import shutil
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from safetensors import safe_open
 
+from src.artifacts.checkpoint_payload import (
+    write_inference_checkpoint_payload_manifest,
+)
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import ArtifactContractError
 from src.qwen.special_token_embeddings import (
@@ -54,8 +57,9 @@ class CheckpointWriter:
         run_writer: RunWriter | None = None,
         is_final: bool = False,
         best_candidate: Mapping[str, Any] | None = None,
+        exact_training_state_callback: Callable[[Path], None] | None = None,
     ) -> CheckpointWriteResult:
-        """Save a step atomically and synchronize one bounded outcome to all ranks."""
+        """Save inference state, optional exact state, then aliases in rank-safe order."""
         if isinstance(step, bool) or not isinstance(step, int) or step <= 0:
             raise ArtifactContractError(
                 "checkpoint step must be a positive integer",
@@ -111,11 +115,17 @@ class CheckpointWriter:
                         base_config_sha256=base_config_sha256,
                         tokenizer_sha256=tokenizer_sha256,
                     )
+                write_inference_checkpoint_payload_manifest(
+                    staging_dir,
+                    expected_base_model_path=base_model_path,
+                    expected_base_config_sha256=base_config_sha256,
+                    expected_tokenizer_sha256=tokenizer_sha256,
+                )
                 os.replace(staging_dir, checkpoint_dir)
                 committed_this_call = True
                 _fsync_directory(checkpoints_dir)
 
-                if run_writer is not None:
+                if run_writer is not None and exact_training_state_callback is None:
                     if is_final:
                         run_writer.write_final(step=step)
                         final_updated = True
@@ -146,17 +156,211 @@ class CheckpointWriter:
 
         status = _broadcast_status(accelerator, status)
         if not status.get("ok"):
-            raise ArtifactContractError(
-                f"checkpoint save failed on rank zero: {status.get('error')}",
-                code="checkpoint.save_failed",
-                context={"step": step},
+            _raise_checkpoint_save_failed(status, step=step, rank_zero=True)
+
+        if exact_training_state_callback is not None:
+            callback_status = _run_exact_training_state_callback(
+                accelerator=accelerator,
+                checkpoint_dir=checkpoint_dir,
+                callback=exact_training_state_callback,
             )
+            if not callback_status["ok"]:
+                _raise_checkpoint_save_failed(callback_status, step=step)
+
+            alias_status: dict[str, Any] = {
+                "ok": True,
+                "error": None,
+                "final_updated": False,
+                "best_updated": False,
+            }
+            if is_main:
+                try:
+                    if run_writer is not None:
+                        if is_final:
+                            run_writer.write_final(step=step)
+                            final_updated = True
+                        if best_candidate is not None:
+                            best_updated = _write_best_if_eligible(
+                                run_writer=run_writer,
+                                step=step,
+                                candidate=best_candidate,
+                            )
+                    alias_status.update(
+                        final_updated=final_updated,
+                        best_updated=best_updated,
+                    )
+                except BaseException as exc:
+                    rollback_errors: tuple[str, ...] = ()
+                    try:
+                        _restore_aliases(checkpoints_dir, alias_backups)
+                    except BaseException as rollback_exc:
+                        rollback_errors = (
+                            f"alias_restore={_bounded_error(rollback_exc)}",
+                        )
+                    alias_status = {
+                        "ok": False,
+                        "error": _bounded_failure(exc, rollback_errors),
+                        "final_updated": False,
+                        "best_updated": False,
+                    }
+            alias_status = _broadcast_alias_status(accelerator, alias_status)
+            if not alias_status["ok"]:
+                _raise_checkpoint_save_failed(alias_status, step=step, rank_zero=True)
+            if is_main:
+                final_updated = alias_status["final_updated"]
+                best_updated = alias_status["best_updated"]
         return CheckpointWriteResult(
             step=step,
             checkpoint_dir=checkpoint_dir,
             final_updated=final_updated if is_main else False,
             best_updated=best_updated if is_main else False,
         )
+
+
+def _run_exact_training_state_callback(
+    *,
+    accelerator: Any,
+    checkpoint_dir: Path,
+    callback: Callable[[Path], None],
+) -> dict[str, Any]:
+    rank, world_size = _distributed_identity(accelerator)
+    local_status: dict[str, Any] = {
+        "ok": True,
+        "rank": rank,
+        "world_size": world_size,
+        "error": None,
+    }
+    try:
+        result = callback(checkpoint_dir)
+        if result is not None:
+            raise ArtifactContractError(
+                "exact training-state callback must return None",
+                code="checkpoint.exact_state_callback_result",
+                context={"result_type": type(result).__name__},
+            )
+    except BaseException as exc:
+        local_status.update(ok=False, error=_bounded_error(exc))
+
+    try:
+        reports = _gather_callback_statuses(
+            accelerator,
+            local_status,
+            world_size=world_size,
+        )
+        validated = _validate_callback_statuses(reports, world_size=world_size)
+    except BaseException as exc:
+        return {
+            "ok": False,
+            "error": (
+                "exact training-state callback status is invalid: "
+                f"{_bounded_error(exc)}"
+            )[:_MAX_COLLECTIVE_ERROR_CHARS],
+        }
+
+    failures = [report for report in validated if not report["ok"]]
+    if not failures:
+        return {"ok": True, "error": None}
+    errors = "; ".join(
+        f"rank {report['rank']}: {report['error']}" for report in failures
+    )
+    failed_ranks = [report["rank"] for report in failures]
+    return {
+        "ok": False,
+        "error": (
+            f"exact training-state callback failed on ranks {failed_ranks}: {errors}"
+        )[:_MAX_COLLECTIVE_ERROR_CHARS],
+    }
+
+
+def _distributed_identity(accelerator: Any) -> tuple[int, int]:
+    rank = getattr(accelerator, "process_index", 0)
+    world_size = getattr(accelerator, "num_processes", 1)
+    if (
+        isinstance(rank, bool)
+        or not isinstance(rank, int)
+        or isinstance(world_size, bool)
+        or not isinstance(world_size, int)
+        or world_size <= 0
+        or rank < 0
+        or rank >= world_size
+    ):
+        raise ArtifactContractError(
+            "exact training-state callback has invalid distributed identity",
+            code="checkpoint.exact_state_callback_identity",
+            context={"rank": rank, "world_size": world_size},
+        )
+    return rank, world_size
+
+
+def _gather_callback_statuses(
+    accelerator: Any,
+    local_status: Mapping[str, Any],
+    *,
+    world_size: int,
+) -> Sequence[Any]:
+    values = [dict(local_status)]
+    if world_size == 1:
+        return values
+    gather = getattr(accelerator, "gather_object", None)
+    if callable(gather):
+        return gather(values)
+
+    from accelerate.utils import gather_object
+
+    return gather_object(values)
+
+
+def _validate_callback_statuses(
+    reports: Sequence[Any], *, world_size: int
+) -> tuple[dict[str, Any], ...]:
+    if isinstance(reports, (str, bytes)) or len(reports) != world_size:
+        raise ArtifactContractError(
+            "exact training-state callback rank inventory has the wrong size",
+            code="checkpoint.exact_state_callback_status",
+            context={"expected": world_size, "observed": len(reports)},
+        )
+    validated: list[dict[str, Any]] = []
+    for report in reports:
+        if not isinstance(report, Mapping):
+            raise ArtifactContractError(
+                "exact training-state callback returned a malformed rank status",
+                code="checkpoint.exact_state_callback_status",
+            )
+        ok = report.get("ok")
+        rank = report.get("rank")
+        reported_world_size = report.get("world_size")
+        error = report.get("error")
+        if (
+            not isinstance(ok, bool)
+            or isinstance(rank, bool)
+            or not isinstance(rank, int)
+            or isinstance(reported_world_size, bool)
+            or not isinstance(reported_world_size, int)
+            or reported_world_size != world_size
+            or rank < 0
+            or rank >= world_size
+            or (ok and error is not None)
+            or (not ok and (not isinstance(error, str) or not error))
+        ):
+            raise ArtifactContractError(
+                "exact training-state callback returned a malformed rank status",
+                code="checkpoint.exact_state_callback_status",
+            )
+        validated.append(
+            {
+                "ok": ok,
+                "rank": rank,
+                "world_size": reported_world_size,
+                "error": error,
+            }
+        )
+    validated.sort(key=lambda item: item["rank"])
+    if [item["rank"] for item in validated] != list(range(world_size)):
+        raise ArtifactContractError(
+            "exact training-state callback rank inventory is incomplete or duplicated",
+            code="checkpoint.exact_state_callback_status",
+        )
+    return tuple(validated)
 
 
 def _validate_adapter_payload(adapter_dir: Path) -> None:
@@ -175,7 +379,9 @@ def _validate_adapter_payload(adapter_dir: Path) -> None:
         if "embed_tokens" in key
         or "word_embeddings" in key
         or "lm_head" in key
-        or not any(token in key for token in ("lora_A", "lora_B", "lora_magnitude_vector"))
+        or not any(
+            token in key for token in ("lora_A", "lora_B", "lora_magnitude_vector")
+        )
     ]
     required = {
         "lora_A": any("lora_A" in key for key in keys),
@@ -233,6 +439,34 @@ def _broadcast_status(accelerator: Any, status: dict[str, Any]) -> dict[str, Any
     return dict(received)
 
 
+def _broadcast_alias_status(accelerator: Any, status: dict[str, Any]) -> dict[str, Any]:
+    received = _broadcast_status(accelerator, status)
+    if not isinstance(received.get("final_updated"), bool) or not isinstance(
+        received.get("best_updated"), bool
+    ):
+        raise ArtifactContractError(
+            "checkpoint alias status collective returned an invalid descriptor",
+            code="checkpoint.invalid_collective_status",
+        )
+    if not received["ok"] and (received["final_updated"] or received["best_updated"]):
+        raise ArtifactContractError(
+            "failed checkpoint alias status cannot report updated aliases",
+            code="checkpoint.invalid_collective_status",
+        )
+    return received
+
+
+def _raise_checkpoint_save_failed(
+    status: Mapping[str, Any], *, step: int, rank_zero: bool = False
+) -> None:
+    owner = " on rank zero" if rank_zero else ""
+    raise ArtifactContractError(
+        f"checkpoint save failed{owner}: {status.get('error')}",
+        code="checkpoint.save_failed",
+        context={"step": step},
+    )
+
+
 def _capture_aliases(checkpoints_dir: Path) -> dict[str, bytes | None]:
     return {
         name: (path.read_bytes() if path.exists() else None)
@@ -241,7 +475,9 @@ def _capture_aliases(checkpoints_dir: Path) -> dict[str, bytes | None]:
     }
 
 
-def _restore_aliases(checkpoints_dir: Path, backups: Mapping[str, bytes | None]) -> None:
+def _restore_aliases(
+    checkpoints_dir: Path, backups: Mapping[str, bytes | None]
+) -> None:
     for name, content in backups.items():
         path = checkpoints_dir / name
         if content is None:
@@ -300,7 +536,10 @@ def _alias_selects_step(checkpoints_dir: Path, *, step: int) -> bool:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except BaseException:
             return True
-        if payload.get("step") == step or payload.get("checkpoint_path") == expected_path:
+        if (
+            payload.get("step") == step
+            or payload.get("checkpoint_path") == expected_path
+        ):
             return True
     return False
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -11,18 +10,17 @@ import pytest
 
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
-from src.training import pipeline
+from src.training import pack_cache, pipeline
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
+    cache_dir_for_fingerprint,
     load_all_micro_steps_from_cache,
-    load_rank_micro_steps_from_cache,
     write_micro_step_cache,
 )
 from src.training.supervised_trainer import SupervisedMicroStep
 
 
-DETERMINANTS = {"purpose": "resolver-integration"}
 AUGMENTATION_RECEIPT = {
     "split": "train",
     "mode": "disabled",
@@ -38,15 +36,50 @@ MATERIALIZATION = {
     "strategy": PACKING_CACHE_MATERIALIZATION_STRATEGY,
     "workers": 1,
 }
-FINGERPRINT = hashlib.sha256(
-    json.dumps(
-        DETERMINANTS,
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-).hexdigest()
+
+
+def _synthetic_registry_determinants(
+    purpose: str, *, split: str = "train"
+) -> dict[str, object]:
+    semantic: dict[str, object] = {
+        "version": PACKING_CACHE_VERSION,
+        "split": split,
+        "dataset": {"purpose": purpose},
+        "template": {"purpose": purpose},
+        "packing": {"purpose": purpose},
+        "processor": {"purpose": purpose},
+        "ordering": {"purpose": purpose},
+        "augmentation": {**AUGMENTATION_RECEIPT, "split": split},
+        "qwen": {
+            "processor_identity": {"purpose": purpose},
+            "token_identity": {"purpose": purpose},
+            "encoding_identity": {"purpose": purpose},
+            "model_config_assets": {"purpose": purpose},
+            "processor_assets": {"purpose": purpose},
+            "tokenizer_assets": {"purpose": purpose},
+        },
+        "realized_vocab_groups": {"purpose": purpose},
+        "micro_step_runtime_config": {
+            "fa2_model_dtype": "no",
+            "capture_fa2_branch": False,
+            "require_fa2_branch_proof": False,
+        },
+        "micro_step_schema": pack_cache._supervised_micro_step_schema_identity(),
+    }
+    entries = pack_cache._build_determinant_entries(semantic)
+    return {
+        **semantic,
+        "registry_schema_version": (
+            pack_cache.PACKING_CACHE_DETERMINANT_REGISTRY_VERSION
+        ),
+        "determinants": entries,
+        "aggregate_fingerprint": pack_cache._registry_entries_fingerprint(entries),
+        "code_identity": pack_cache._registry_code_identity(entries),
+    }
+
+
+DETERMINANTS = _synthetic_registry_determinants("resolver-integration")
+FINGERPRINT = str(DETERMINANTS["aggregate_fingerprint"])
 
 
 def _micro_step(index: int) -> SupervisedMicroStep:
@@ -126,18 +159,20 @@ def _resolve(
 
 
 @pytest.mark.parametrize("damage", ["old_version", "checksum_corruption"])
-def test_rank_zero_rebuilds_invalid_cache_and_subsequent_all_read_succeeds(
+def test_rank_zero_rejects_occupied_invalid_cache_without_rebuilding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str
 ) -> None:
     cache_root = tmp_path / "cache-root"
     _install_resolver_identity(monkeypatch, cache_root)
-    cache_dir = cache_root / FINGERPRINT
+    cache_dir = cache_dir_for_fingerprint(cache_root, FINGERPRINT)
     write_micro_step_cache(
         cache_dir,
         (_micro_step(0),),
+        cache_root=cache_root,
         fingerprint=FINGERPRINT,
         determinants=DETERMINANTS,
         materialization=MATERIALIZATION,
+        determinant_revalidator=lambda: DETERMINANTS,
         augmentation=AUGMENTATION_RECEIPT,
     )
     manifest_path = cache_dir / "manifest.json"
@@ -148,39 +183,35 @@ def test_rank_zero_rebuilds_invalid_cache_and_subsequent_all_read_succeeds(
     else:
         chunk_path = cache_dir / manifest["chunks"][0]["path"]
         chunk_path.write_bytes(chunk_path.read_bytes() + b"corrupt")
+    before = {
+        path.relative_to(cache_dir): path.read_bytes()
+        for path in cache_dir.rglob("*")
+        if path.is_file()
+    }
 
     builds: list[int] = []
-    result = _resolve(
-        tmp_path,
-        rank=0,
-        build_micro_steps=lambda workers: builds.append(workers)
-        or (_micro_step(10), _micro_step(11)),
-    )
+    with pytest.raises(RuntimeContractError) as exc_info:
+        _resolve(
+            tmp_path,
+            rank=0,
+            build_micro_steps=lambda workers: builds.append(workers)
+            or (_micro_step(10), _micro_step(11)),
+        )
 
-    assert builds == [1]
-    assert result["build_status"] == "built"
-    assert result["format_version"] == PACKING_CACHE_VERSION
-    loaded = load_all_micro_steps_from_cache(
-        result["cache_dir"], expected_fingerprint=FINGERPRINT
-    )
-    assert [step.metadata["pack_id"] for step in loaded] == [10, 11]
-    rank_loaded = load_rank_micro_steps_from_cache(
-        result["cache_dir"],
-        expected_fingerprint=FINGERPRINT,
-        schedule=SimpleNamespace(
-            resolved_max_steps=1,
-            runtime_batch=SimpleNamespace(
-                world_size=1,
-                resolved_grad_accum_steps=1,
-                effective_batch_size=1,
-            ),
-        ),
-        rank=0,
-        world_size=1,
-    )
-    assert [step.metadata["pack_id"] for step in rank_loaded] == [10]
-    assert not list(cache_root.glob(f".{FINGERPRINT}.stage-*"))
-    assert not list(cache_root.glob(f".{FINGERPRINT}.backup-*"))
+    assert exc_info.value.code == "training.pack_cache_immutable_collision"
+    assert exc_info.value.context["cache_root"] == str(cache_root)
+    assert exc_info.value.context["expected_cache_target"] == str(cache_dir)
+    assert exc_info.value.context["cache_version"] == PACKING_CACHE_VERSION
+    assert exc_info.value.context["fingerprint"] == FINGERPRINT
+    assert exc_info.value.context["automatic_recovery"] == "unavailable"
+    assert "preparation_command" not in exc_info.value.context
+    assert builds == []
+    after = {
+        path.relative_to(cache_dir): path.read_bytes()
+        for path in cache_dir.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
 
 
 def test_preparation_publishes_cache_before_distributed_peer_strict_read(
@@ -207,9 +238,46 @@ def test_preparation_publishes_cache_before_distributed_peer_strict_read(
     assert peer_result["build_status"] == "waited"
     assert peer_result["manifest_sha256"] == main_result["manifest_sha256"]
     loaded = load_all_micro_steps_from_cache(
-        peer_result["cache_dir"], expected_fingerprint=FINGERPRINT
+        peer_result["cache_dir"],
+        cache_root=tmp_path / "cache-root",
+        expected_fingerprint=FINGERPRINT,
     )
     assert [step.metadata["pack_id"] for step in loaded] == [20]
+
+
+def test_preparation_revalidates_determinants_after_build_before_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_root = tmp_path / "cache-root"
+    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+    determinant_state = {"purpose": "before-build"}
+
+    def determinants(*args: object, **kwargs: object) -> dict[str, object]:
+        return _synthetic_registry_determinants(determinant_state["purpose"])
+
+    monkeypatch.setattr(pipeline, "build_packing_cache_determinants", determinants)
+    initial_determinants = determinants()
+    initial_fingerprint = str(initial_determinants["aggregate_fingerprint"])
+    canonical_target = cache_dir_for_fingerprint(cache_root, initial_fingerprint)
+
+    def mutate_determinant_during_build(
+        workers: int,
+    ) -> tuple[SupervisedMicroStep, ...]:
+        assert workers == 1
+        determinant_state["purpose"] = "dataset-image-or-asset-mutated-during-build"
+        return (_micro_step(21),)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        _resolve(
+            tmp_path,
+            rank=0,
+            build_micro_steps=mutate_determinant_during_build,
+        )
+
+    assert exc_info.value.code == "training.pack_cache_resolution_failed"
+    assert not canonical_target.exists()
+    assert not list(canonical_target.parent.glob(f".{canonical_target.name}.stage-*"))
 
 
 def test_distributed_cache_miss_fails_fast_with_preparation_command(
@@ -238,11 +306,13 @@ def test_shared_cache_hit_descriptor_releases_peer_for_strict_read(
     cache_root = tmp_path / "cache-root"
     _install_resolver_identity(monkeypatch, cache_root)
     write_micro_step_cache(
-        cache_root / FINGERPRINT,
+        cache_dir_for_fingerprint(cache_root, FINGERPRINT),
         (_micro_step(25),),
+        cache_root=cache_root,
         fingerprint=FINGERPRINT,
         determinants=DETERMINANTS,
         materialization=MATERIALIZATION,
+        determinant_revalidator=lambda: DETERMINANTS,
         augmentation=AUGMENTATION_RECEIPT,
     )
     collective = _SharedCollective()
@@ -275,21 +345,28 @@ def test_rank_zero_cache_hit_reuses_its_single_strict_manifest_read(
     cache_root = tmp_path / "cache-root"
     _install_resolver_identity(monkeypatch, cache_root)
     write_micro_step_cache(
-        cache_root / FINGERPRINT,
+        cache_dir_for_fingerprint(cache_root, FINGERPRINT),
         (_micro_step(30),),
+        cache_root=cache_root,
         fingerprint=FINGERPRINT,
         determinants=DETERMINANTS,
         materialization=MATERIALIZATION,
+        determinant_revalidator=lambda: DETERMINANTS,
         augmentation=AUGMENTATION_RECEIPT,
     )
     real_load = pipeline.load_cache_manifest
     successful_reads: list[Path] = []
 
     def counting_load(
-        cache_dir: Path, *, expected_fingerprint: str, level: str
+        cache_dir: Path,
+        *,
+        cache_root: Path,
+        expected_fingerprint: str,
+        level: str,
     ) -> dict[str, object]:
         manifest = real_load(
             cache_dir,
+            cache_root=cache_root,
             expected_fingerprint=expected_fingerprint,
             level=level,
         )
@@ -306,7 +383,7 @@ def test_rank_zero_cache_hit_reuses_its_single_strict_manifest_read(
     )
 
     assert result["build_status"] == "hit"
-    assert successful_reads == [cache_root / FINGERPRINT]
+    assert successful_reads == [cache_dir_for_fingerprint(cache_root, FINGERPRINT)]
 
 
 def test_resolver_binding_is_self_contained_after_physical_cache_deletion(
@@ -356,24 +433,13 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
     fingerprints: dict[str, str] = {}
 
     def determinants(*args: object, split: str, **kwargs: object) -> dict[str, object]:
-        return {"purpose": "resolver-role-integration", "split": split}
-
-    def fingerprint(*args: object, split: str, **kwargs: object) -> str:
-        payload = determinants(split=split)
-        digest = hashlib.sha256(
-            json.dumps(
-                payload,
-                allow_nan=False,
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode("utf-8")
-        ).hexdigest()
-        fingerprints[split] = digest
-        return digest
+        payload = _synthetic_registry_determinants(
+            "resolver-role-integration", split=split
+        )
+        fingerprints[split] = str(payload["aggregate_fingerprint"])
+        return payload
 
     monkeypatch.setattr(pipeline, "build_packing_cache_determinants", determinants)
-    monkeypatch.setattr(pipeline, "build_packing_cache_fingerprint", fingerprint)
     train_receipt = {
         **AUGMENTATION_RECEIPT,
         "mode": "static_stochastic_view",

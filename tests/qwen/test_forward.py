@@ -93,7 +93,9 @@ def test_forward_receipt_records_json_safe_timing_schema() -> None:
     } <= set(timings)
 
 
-def test_forward_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_forward_profile_sync_helper_is_exact_env_gated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     monkeypatch.setattr(qwen_forward_module.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
@@ -110,6 +112,30 @@ def test_forward_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.Monk
     qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
 
     assert calls == ["cuda:0"]
+
+
+def test_forward_profile_sync_policy_is_frozen_against_environment_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(qwen_forward_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        qwen_forward_module.torch.cuda,
+        "synchronize",
+        lambda device: calls.append(str(device)),
+    )
+    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+
+    qwen_forward_module.set_profile_sync_timing_policy(False)
+    try:
+        qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
+        monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "0")
+        qwen_forward_module.set_profile_sync_timing_policy(True)
+        qwen_forward_module._sync_device_if_requested(torch.device("cuda:1"))
+    finally:
+        qwen_forward_module.set_profile_sync_timing_policy(None)
+
+    assert calls == ["cuda:1"]
 
 
 def test_forward_inputs_accept_explicit_logits_to_keep_positions() -> None:
@@ -136,7 +162,9 @@ def test_forward_inputs_accept_explicit_logits_to_keep_positions() -> None:
     assert artifact["output_logits_shape"] == [1, 3, 17]
 
 
-def test_forward_runner_rejects_manual_logits_to_keep_override_with_owned_path_hint() -> None:
+def test_forward_runner_rejects_manual_logits_to_keep_override_with_owned_path_hint() -> (
+    None
+):
     examples = _fake_examples()
     pack = plan_packed_sequences(examples, global_max_length=32)[0]
     positions = build_qwen_position_inputs(pack, examples)
@@ -165,8 +193,14 @@ def test_forward_runner_rejects_manual_logits_to_keep_override_with_owned_path_h
         ({"use_cache": 1}, "qwen.forward_use_cache"),
         ({"logits_to_keep": 1}, "qwen.forward_logits_to_keep"),
         ({"pixel_values_videos": torch.zeros((1, 8))}, "qwen.forward_video_payload"),
-        ({"video_grid_thw": torch.zeros((1, 3), dtype=torch.long)}, "qwen.forward_video_payload"),
-        ({"input_ids": torch.zeros((1, 2), dtype=torch.long)}, "qwen.forward_boundary_override"),
+        (
+            {"video_grid_thw": torch.zeros((1, 3), dtype=torch.long)},
+            "qwen.forward_video_payload",
+        ),
+        (
+            {"input_ids": torch.zeros((1, 2), dtype=torch.long)},
+            "qwen.forward_boundary_override",
+        ),
         (
             {"position_ids": torch.zeros((4, 1, 2), dtype=torch.long)},
             "qwen.forward_boundary_override",
@@ -284,7 +318,9 @@ def test_forward_inputs_batch_materializes_lazy_qwen_images(tmp_path: Path) -> N
     )
 
 
-def test_real_smoke_forward_inputs_use_encoded_visual_payloads_without_model_load() -> None:
+def test_real_smoke_forward_inputs_use_encoded_visual_payloads_without_model_load() -> (
+    None
+):
     resolved = load_train_config(FIXTURE_CONFIG)
     components = load_qwen_components(resolved.config, load_model=False)
     examples = []
@@ -379,7 +415,9 @@ class FakeQwenModel:
         seq_length: int | None = None,
         loss: torch.Tensor | None = None,
     ) -> None:
-        self.config = SimpleNamespace(text_config=SimpleNamespace(vocab_size=vocab_size))
+        self.config = SimpleNamespace(
+            text_config=SimpleNamespace(vocab_size=vocab_size)
+        )
         self.vocab_size = vocab_size
         self.seq_length = seq_length
         self.loss = loss

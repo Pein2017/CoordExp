@@ -1,6 +1,6 @@
-"""Bounded depth-one CPU forward-input lookahead for supervised training.
+"""Explicit forward-input preparation modes for supervised training.
 
-Two implementations of the same planned-step-scoped lifecycle protocol:
+Two providers implement the same planned-step-scoped lifecycle protocol:
 `SynchronousForwardInputProvider` (reference semantic path, no thread) and
 `OverlappedForwardInputProvider` (one producer thread, `queue.Queue(maxsize=1)`
 plus a `threading.Semaphore(1)` build slot, CPU-only producer work; device
@@ -12,6 +12,9 @@ shows up inside the caller's `step_duration_seconds`, never inside
 `input_build_seconds` or `input_wait_seconds` (queue-wait only). The
 provider owns preparation; the trainer owns step boundaries by calling
 `begin_planned_step` / `take` / `end_planned_step` / `close` explicitly.
+The third strict mode, `legacy_fused`, deliberately builds no provider: a
+`None` disposition leaves the existing trainer-owned fused device-direct
+construction path active.
 
 The build slot enforces the true depth-one bound: the producer must acquire
 it before starting a build and it is released by the consumer immediately
@@ -19,32 +22,109 @@ after dequeuing (before the H2D move), so the producer can never have a
 second fully-built item in existence while the first sits unconsumed — the
 `queue.Queue(maxsize=1)` alone does not prevent that, since a fast producer
 could otherwise finish building item k+1 while item k is still queued.
+Before queue publication, the producer enforces both the exact logical bytes
+of its CPU Qwen tensor payload and the current process lifetime max RSS. The
+logical payload observable stays available for precise ownership accounting;
+the process max-RSS check owns the separate 64-GiB Wave 5 stop contract,
+including allocator and other process-resident memory.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 import os
 import queue
 import threading
 import time
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import torch
 
+from src.artifacts.resources import collect_resource_snapshot
 from src.common.errors import RuntimeContractError
+from src.config.models import ForwardInputProviderMode
 from src.qwen.forward import QwenForwardInputs, build_qwen_forward_inputs
-from src.training.supervised_trainer import _logits_positions_to_keep as _logits_to_keep_positions
+from src.training.supervised_trainer import (
+    _logits_positions_to_keep as _logits_to_keep_positions,
+)
 
 
 _QUEUE_POLL_SECONDS = 0.05
 _JOIN_TIMEOUT_SECONDS = 30.0
+DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES = 64 * 1024**3
+DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES = 64 * 1024**3
 
 _FORWARD_INPUT_PROVIDER_MODE_ENV = "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE"
+LEGACY_FUSED_MODE = "legacy_fused"
 OVERLAPPED_MODE = "overlapped"
 SYNCHRONOUS_MODE = "synchronous"
-_FORWARD_INPUT_PROVIDER_MODES = frozenset({OVERLAPPED_MODE, SYNCHRONOUS_MODE})
+_FORWARD_INPUT_PROVIDER_MODES = frozenset(
+    {LEGACY_FUSED_MODE, OVERLAPPED_MODE, SYNCHRONOUS_MODE}
+)
+
+ForwardInputProviderModeSource = Literal[
+    "strict_config", "deprecated_environment_override"
+]
+
+
+@dataclass(frozen=True)
+class ResolvedForwardInputProviderMode:
+    """Strict mode plus the complete source needed by the run receipt."""
+
+    configured_mode: ForwardInputProviderMode
+    resolved_mode: ForwardInputProviderMode
+    source: ForwardInputProviderModeSource
+    environment_variable: str | None = None
+
+    @property
+    def is_semantic_override(self) -> bool:
+        return self.resolved_mode != self.configured_mode
+
+    @property
+    def provider_disposition(self) -> Literal["none", "synchronous", "overlapped"]:
+        if self.resolved_mode == LEGACY_FUSED_MODE:
+            return "none"
+        return self.resolved_mode
+
+    @property
+    def input_build_owner(
+        self,
+    ) -> Literal[
+        "trainer_fused_device_direct",
+        "provider_consumer_cpu",
+        "provider_producer_cpu",
+    ]:
+        if self.resolved_mode == LEGACY_FUSED_MODE:
+            return "trainer_fused_device_direct"
+        if self.resolved_mode == SYNCHRONOUS_MODE:
+            return "provider_consumer_cpu"
+        return "provider_producer_cpu"
+
+    @property
+    def device_transfer_owner(
+        self,
+    ) -> Literal["trainer_fused_build", "provider_consumer"]:
+        if self.resolved_mode == LEGACY_FUSED_MODE:
+            return "trainer_fused_build"
+        return "provider_consumer"
+
+    @property
+    def lookahead_depth(self) -> Literal[0, 1]:
+        return 1 if self.resolved_mode == OVERLAPPED_MODE else 0
+
+    def to_receipt_dict(self) -> dict[str, object]:
+        return {
+            "configured_mode": self.configured_mode,
+            "resolved_mode": self.resolved_mode,
+            "source": self.source,
+            "environment_variable": self.environment_variable,
+            "is_semantic_override": self.is_semantic_override,
+            "provider_disposition": self.provider_disposition,
+            "input_build_owner": self.input_build_owner,
+            "device_transfer_owner": self.device_transfer_owner,
+            "lookahead_depth": self.lookahead_depth,
+        }
 
 
 class ForwardInputProvider(Protocol):
@@ -63,41 +143,68 @@ class ForwardInputProvider(Protocol):
     def close(self) -> None: ...
 
 
-def resolve_forward_input_provider_mode() -> str:
-    """Debug-only mode switch (env var, not YAML); default is synchronous.
+def resolve_forward_input_provider_mode(
+    configured_mode: ForwardInputProviderMode,
+) -> ResolvedForwardInputProviderMode:
+    """Resolve strict config plus the one bounded deprecated environment source.
 
-    Overlap is implemented and semantically proven equivalent (see
-    `tasks.md` 3.1-3.4), but is not the shipped default: the world_size=1
-    M3 evidence collected against the depth-one-corrected code was
-    inconclusive (2/5 repetitions favored overlap; see
-    `implementation-notes.md` "M3"), so the stop rule keeps the
-    synchronous reference path as the default until the exact 8-rank
-    harness confirms a real win. `overlapped` remains selectable through
-    this switch for measurement.
+    Callers must persist ``to_receipt_dict()`` rather than only the resolved
+    string.  This makes a diagnostic environment override visible and prevents
+    production assembly from silently treating it as authored strict config.
     """
 
+    configured_mode = _validate_mode(configured_mode, source="strict_config")
     raw = os.environ.get(_FORWARD_INPUT_PROVIDER_MODE_ENV)
     if raw is None:
-        return SYNCHRONOUS_MODE
-    if raw not in _FORWARD_INPUT_PROVIDER_MODES:
-        raise RuntimeContractError(
-            "forward input provider mode override must be 'overlapped' or 'synchronous'",
-            code="training.forward_input_provider_mode_invalid",
-            context={"value": raw, "env_var": _FORWARD_INPUT_PROVIDER_MODE_ENV},
+        return ResolvedForwardInputProviderMode(
+            configured_mode=configured_mode,
+            resolved_mode=configured_mode,
+            source="strict_config",
         )
-    return raw
+    resolved_mode = _validate_mode(
+        raw,
+        source="deprecated_environment_override",
+        environment_variable=_FORWARD_INPUT_PROVIDER_MODE_ENV,
+    )
+    return ResolvedForwardInputProviderMode(
+        configured_mode=configured_mode,
+        resolved_mode=resolved_mode,
+        source="deprecated_environment_override",
+        environment_variable=_FORWARD_INPUT_PROVIDER_MODE_ENV,
+    )
 
 
-def build_forward_input_provider(mode: str) -> ForwardInputProvider:
+def _validate_mode(
+    mode: str,
+    *,
+    source: ForwardInputProviderModeSource,
+    environment_variable: str | None = None,
+) -> ForwardInputProviderMode:
+    if mode not in _FORWARD_INPUT_PROVIDER_MODES:
+        raise RuntimeContractError(
+            "forward input provider mode must be 'legacy_fused', 'overlapped', or "
+            "'synchronous'",
+            code="training.forward_input_provider_mode_invalid",
+            context={
+                "value": mode,
+                "source": source,
+                "environment_variable": environment_variable,
+            },
+        )
+    return mode  # type: ignore[return-value]
+
+
+def build_forward_input_provider(
+    mode: ForwardInputProviderMode,
+) -> ForwardInputProvider | None:
+    mode = _validate_mode(mode, source="strict_config")
+    if mode == LEGACY_FUSED_MODE:
+        return None
     if mode == SYNCHRONOUS_MODE:
         return SynchronousForwardInputProvider()
     if mode == OVERLAPPED_MODE:
         return OverlappedForwardInputProvider()
-    raise RuntimeContractError(
-        "forward input provider mode must be 'overlapped' or 'synchronous'",
-        code="training.forward_input_provider_mode_invalid",
-        context={"value": mode},
-    )
+    raise AssertionError(f"unhandled validated forward input provider mode: {mode}")
 
 
 @dataclass(frozen=True)
@@ -105,6 +212,8 @@ class _PreparedItem:
     ordinal: int
     forward_inputs: QwenForwardInputs | None
     error: BaseException | None
+    resident_cpu_tensor_payload_bytes: int
+    process_max_rss_bytes: int | None
 
 
 class _StepBoundState:
@@ -132,7 +241,9 @@ class _StepBoundState:
                 code="training.forward_input_provider_not_active",
                 context={"ordinal": ordinal},
             )
-        if ordinal != self.next_ordinal or not (0 <= ordinal < len(self.moved_micro_steps)):
+        if ordinal != self.next_ordinal or not (
+            0 <= ordinal < len(self.moved_micro_steps)
+        ):
             raise RuntimeContractError(
                 "forward input provider take called with an unexpected ordinal",
                 code="training.forward_input_provider_ordinal_skew",
@@ -204,6 +315,142 @@ def _build_forward_inputs(
     )
 
 
+def _resident_cpu_tensor_payload_bytes(
+    forward_inputs: QwenForwardInputs,
+) -> int:
+    """Return exact logical bytes for provider-owned Qwen tensor payloads.
+
+    This is deliberately narrower than process RSS: it accounts only the
+    tensors owned by ``QwenForwardInputs`` that the provider may retain while
+    preparing lookahead. Receipt metadata, Python-object overhead, allocator
+    overhead, and consumer-owned tensors are outside this observable.
+    """
+
+    tensors = (
+        ("input_ids", forward_inputs.input_ids),
+        ("position_ids", forward_inputs.position_ids),
+        ("pixel_values", forward_inputs.pixel_values),
+        ("image_grid_thw", forward_inputs.image_grid_thw),
+        (
+            "fa2_varlen_plan.cu_seq_lens_q",
+            forward_inputs.fa2_varlen_plan.cu_seq_lens_q,
+        ),
+        (
+            "fa2_varlen_plan.cu_seq_lens_k",
+            forward_inputs.fa2_varlen_plan.cu_seq_lens_k,
+        ),
+    )
+    total_bytes = 0
+    for field_path, tensor in tensors:
+        total_bytes += _cpu_tensor_payload_bytes(tensor, field_path=field_path)
+    if isinstance(forward_inputs.logits_to_keep, torch.Tensor):
+        total_bytes += _cpu_tensor_payload_bytes(
+            forward_inputs.logits_to_keep,
+            field_path="logits_to_keep",
+        )
+    return total_bytes
+
+
+def _cpu_tensor_payload_bytes(tensor: torch.Tensor, *, field_path: str) -> int:
+    if tensor.device.type != "cpu":
+        raise RuntimeContractError(
+            "forward input provider producer may retain only CPU tensor payloads",
+            code="training.forward_input_provider_producer_tensor_device_invalid",
+            context={
+                "field": field_path,
+                "device_type": tensor.device.type,
+            },
+        )
+    return int(tensor.numel()) * int(tensor.element_size())
+
+
+def _validate_resident_cpu_tensor_payload_ceiling(
+    forward_inputs: QwenForwardInputs,
+    *,
+    ordinal: int,
+    ceiling_bytes: int,
+) -> int:
+    payload_bytes = _resident_cpu_tensor_payload_bytes(forward_inputs)
+    if payload_bytes > ceiling_bytes:
+        raise RuntimeContractError(
+            "forward input provider prepared CPU tensor payload exceeds its bounded ceiling",
+            code="training.forward_input_provider_host_tensor_payload_ceiling_exceeded",
+            context={
+                "ordinal": ordinal,
+                "pack_index": int(forward_inputs.pack_index),
+                "payload_bytes": payload_bytes,
+                "ceiling_bytes": ceiling_bytes,
+            },
+        )
+    return payload_bytes
+
+
+def _read_current_process_max_rss_bytes() -> object:
+    """Read the canonical current-process lifetime max RSS measurement."""
+
+    snapshot = collect_resource_snapshot(cuda_api=None)
+    cpu = snapshot.get("cpu")
+    if not isinstance(cpu, Mapping):
+        return {"status": "unavailable", "reason": "resource_cpu_snapshot_invalid"}
+    return cpu.get(
+        "max_rss_bytes",
+        {"status": "unavailable", "reason": "resource_max_rss_missing"},
+    )
+
+
+def _validate_process_max_rss_ceiling(
+    *,
+    ordinal: int,
+    pack_index: int,
+    ceiling_bytes: int,
+    reader: Callable[[], object],
+) -> int:
+    try:
+        observed = reader()
+    except Exception as exc:
+        raise RuntimeContractError(
+            "forward input provider cannot enforce its current-process max-RSS ceiling",
+            code="training.forward_input_provider_process_max_rss_unavailable",
+            context={
+                "ordinal": ordinal,
+                "pack_index": pack_index,
+                "ceiling_bytes": ceiling_bytes,
+                "reason": "reader_error",
+                "error_type": type(exc).__name__,
+            },
+        ) from exc
+
+    if isinstance(observed, bool) or not isinstance(observed, int) or observed < 0:
+        reason = "invalid_measurement"
+        if isinstance(observed, Mapping):
+            status = observed.get("status")
+            observed_reason = observed.get("reason")
+            if status == "unavailable" and isinstance(observed_reason, str):
+                reason = observed_reason
+        raise RuntimeContractError(
+            "forward input provider cannot enforce its current-process max-RSS ceiling",
+            code="training.forward_input_provider_process_max_rss_unavailable",
+            context={
+                "ordinal": ordinal,
+                "pack_index": pack_index,
+                "ceiling_bytes": ceiling_bytes,
+                "reason": reason,
+            },
+        )
+    if observed > ceiling_bytes:
+        raise RuntimeContractError(
+            "forward input provider current-process max RSS exceeds its bounded ceiling",
+            code="training.forward_input_provider_process_max_rss_ceiling_exceeded",
+            context={
+                "ordinal": ordinal,
+                "pack_index": pack_index,
+                "process_max_rss_bytes": observed,
+                "ceiling_bytes": ceiling_bytes,
+            },
+        )
+    return observed
+
+
 def _move_forward_inputs_to_device(
     forward_inputs: QwenForwardInputs, device: torch.device | str | None
 ) -> QwenForwardInputs:
@@ -233,6 +480,9 @@ def _move_forward_inputs_to_device(
 
 class SynchronousForwardInputProvider:
     """Reference semantic path: builds forward inputs on demand, no thread."""
+
+    lookahead_depth = 0
+    max_prepared_items = 0
 
     def __init__(self) -> None:
         self._state = _StepBoundState()
@@ -315,6 +565,9 @@ def _produce_forward_inputs(
     item_queue: "queue.Queue[_PreparedItem]",
     cancel_event: threading.Event,
     build_slot: threading.Semaphore,
+    resident_cpu_tensor_payload_ceiling_bytes: int,
+    process_max_rss_ceiling_bytes: int,
+    process_max_rss_reader: Callable[[], object],
 ) -> None:
     for ordinal, micro_step in enumerate(moved_micro_steps):
         if cancel_event.is_set():
@@ -331,27 +584,93 @@ def _produce_forward_inputs(
             return
         try:
             forward_inputs = _build_forward_inputs(micro_step, device=None)
+            resident_cpu_tensor_payload_bytes = (
+                _validate_resident_cpu_tensor_payload_ceiling(
+                    forward_inputs,
+                    ordinal=ordinal,
+                    ceiling_bytes=resident_cpu_tensor_payload_ceiling_bytes,
+                )
+            )
+            process_max_rss_bytes = _validate_process_max_rss_ceiling(
+                ordinal=ordinal,
+                pack_index=int(forward_inputs.pack_index),
+                ceiling_bytes=process_max_rss_ceiling_bytes,
+                reader=process_max_rss_reader,
+            )
         except BaseException as exc:  # noqa: BLE001 - poison item preserves original type
             _cancellation_aware_put(
                 item_queue,
-                _PreparedItem(ordinal=ordinal, forward_inputs=None, error=exc),
+                _PreparedItem(
+                    ordinal=ordinal,
+                    forward_inputs=None,
+                    error=exc,
+                    resident_cpu_tensor_payload_bytes=0,
+                    process_max_rss_bytes=None,
+                ),
                 cancel_event,
             )
             return
         if not _cancellation_aware_put(
             item_queue,
-            _PreparedItem(ordinal=ordinal, forward_inputs=forward_inputs, error=None),
+            _PreparedItem(
+                ordinal=ordinal,
+                forward_inputs=forward_inputs,
+                error=None,
+                resident_cpu_tensor_payload_bytes=resident_cpu_tensor_payload_bytes,
+                process_max_rss_bytes=process_max_rss_bytes,
+            ),
             cancel_event,
         ):
             return
 
 
 class OverlappedForwardInputProvider:
-    """Depth-one CPU lookahead: one producer thread per planned step."""
+    """Depth-one, payload- and process-RSS-bounded CPU lookahead."""
 
-    def __init__(self) -> None:
+    lookahead_depth = 1
+    max_prepared_items = 1
+
+    def __init__(
+        self,
+        *,
+        _resident_cpu_tensor_payload_ceiling_bytes: int | None = None,
+        _process_max_rss_ceiling_bytes: int | None = None,
+        _process_max_rss_reader: Callable[[], object] | None = None,
+    ) -> None:
+        payload_ceiling_bytes = (
+            DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES
+            if _resident_cpu_tensor_payload_ceiling_bytes is None
+            else _resident_cpu_tensor_payload_ceiling_bytes
+        )
+        if isinstance(payload_ceiling_bytes, bool) or not isinstance(
+            payload_ceiling_bytes, int
+        ):
+            raise TypeError("resident CPU tensor payload ceiling must be an integer")
+        if payload_ceiling_bytes <= 0:
+            raise ValueError("resident CPU tensor payload ceiling must be positive")
+        process_rss_ceiling_bytes = (
+            DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES
+            if _process_max_rss_ceiling_bytes is None
+            else _process_max_rss_ceiling_bytes
+        )
+        if isinstance(process_rss_ceiling_bytes, bool) or not isinstance(
+            process_rss_ceiling_bytes, int
+        ):
+            raise TypeError("process max-RSS ceiling must be an integer")
+        if process_rss_ceiling_bytes <= 0:
+            raise ValueError("process max-RSS ceiling must be positive")
+        process_max_rss_reader = (
+            _read_current_process_max_rss_bytes
+            if _process_max_rss_reader is None
+            else _process_max_rss_reader
+        )
+        if not callable(process_max_rss_reader):
+            raise TypeError("process max-RSS reader must be callable")
         self._state = _StepBoundState()
         self._closed = False
+        self.resident_cpu_tensor_payload_ceiling_bytes = payload_ceiling_bytes
+        self.process_max_rss_ceiling_bytes = process_rss_ceiling_bytes
+        self._process_max_rss_reader = process_max_rss_reader
         self._queue: "queue.Queue[_PreparedItem] | None" = None
         self._cancel_event: threading.Event | None = None
         self._build_slot: threading.Semaphore | None = None
@@ -369,7 +688,15 @@ class OverlappedForwardInputProvider:
         build_slot = threading.Semaphore(1)
         thread = threading.Thread(
             target=_produce_forward_inputs,
-            args=(self._state.moved_micro_steps, item_queue, cancel_event, build_slot),
+            args=(
+                self._state.moved_micro_steps,
+                item_queue,
+                cancel_event,
+                build_slot,
+                self.resident_cpu_tensor_payload_ceiling_bytes,
+                self.process_max_rss_ceiling_bytes,
+                self._process_max_rss_reader,
+            ),
             name="coordexp-forward-input-provider",
             daemon=True,
         )
@@ -453,9 +780,13 @@ class OverlappedForwardInputProvider:
 
 
 __all__ = [
+    "DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES",
+    "DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES",
     "ForwardInputProvider",
+    "LEGACY_FUSED_MODE",
     "OVERLAPPED_MODE",
     "OverlappedForwardInputProvider",
+    "ResolvedForwardInputProviderMode",
     "SYNCHRONOUS_MODE",
     "SynchronousForwardInputProvider",
     "build_forward_input_provider",

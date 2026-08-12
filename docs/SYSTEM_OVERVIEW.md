@@ -123,8 +123,10 @@ zero stages and publishes the payload. Inference artifacts are written by
 The checkpoint payload is a standard PEFT adapter plus an optional separate
 selected-token embedding delta, both loaded by explicit inference paths. It is
 not an exact optimizer/scheduler/scaler/dataloader/iterator/RNG resume contract.
-Pack cache v2 remains outside the run tree and is rebuilt when invalid; only
-compact train/eval cache bindings are retained in `run.json`.
+Pack cache v3 remains outside the run tree. Preparation publishes only to a
+previously absent version/fingerprint target; it does not repair, replace,
+delete, or garbage-collect an existing cache. Only compact train/eval cache
+bindings are retained in `run.json`.
 
 ## Authority and historical boundary
 

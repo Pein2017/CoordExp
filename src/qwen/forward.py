@@ -13,6 +13,7 @@ import torch
 from src.common.errors import QwenForwardContractError
 from src.packing.planner import PackedSequence
 from src.qwen.fa2 import (
+    Fa2AttentionProofEvidence,
     Fa2VarlenBranchProof,
     Fa2VarlenPlan,
     build_fa2_varlen_plan,
@@ -97,7 +98,9 @@ class QwenForwardReceipt:
                 ),
             },
             "output_logits_shape": (
-                None if self.output_logits_shape is None else list(self.output_logits_shape)
+                None
+                if self.output_logits_shape is None
+                else list(self.output_logits_shape)
             ),
             "model_loss_present": self.model_loss_present,
             "model_loss_ignored": self.model_loss_ignored,
@@ -184,10 +187,14 @@ def build_qwen_forward_inputs(
             context={"value_type": type(position_inputs).__name__},
         )
     examples_by_id = _examples_by_id(encoded_examples)
-    if position_inputs.pack_index != pack.pack_index or position_inputs.position_ids.shape != (
-        4,
-        1,
-        pack.length,
+    if (
+        position_inputs.pack_index != pack.pack_index
+        or position_inputs.position_ids.shape
+        != (
+            4,
+            1,
+            pack.length,
+        )
     ):
         raise QwenForwardContractError(
             "Qwen position inputs must match the packed sequence",
@@ -195,7 +202,9 @@ def build_qwen_forward_inputs(
             context={
                 "pack_index": pack.pack_index,
                 "position_pack_index": position_inputs.pack_index,
-                "position_shape": [int(item) for item in position_inputs.position_ids.shape],
+                "position_shape": [
+                    int(item) for item in position_inputs.position_ids.shape
+                ],
                 "pack_length": pack.length,
             },
         )
@@ -208,8 +217,12 @@ def build_qwen_forward_inputs(
         validate_fa2_varlen_plan_matches_pack(fa2_varlen_plan, pack)
     timings_ns["fa2_plan_ns"] = _elapsed_ns(fa2_start_ns)
     tensor_start_ns = time.perf_counter_ns()
-    input_ids = torch.tensor([list(pack.input_ids)], dtype=torch.long, device=torch_device)
-    position_ids = position_inputs.position_ids.to(device=torch_device, dtype=torch.long)
+    input_ids = torch.tensor(
+        [list(pack.input_ids)], dtype=torch.long, device=torch_device
+    )
+    position_ids = position_inputs.position_ids.to(
+        device=torch_device, dtype=torch.long
+    )
     _sync_device_if_requested(torch_device)
     timings_ns["text_tensorize_ns"] = _elapsed_ns(tensor_start_ns)
 
@@ -231,7 +244,9 @@ def build_qwen_forward_inputs(
                 },
             )
         image_encoding = getattr(example, "image_encoding", None)
-        image_grid = _image_grid_thw(image_encoding, example_id=segment_summary.example_id)
+        image_grid = _image_grid_thw(
+            image_encoding, example_id=segment_summary.example_id
+        )
         if image_grid != segment_summary.image_grid_thw:
             raise QwenForwardContractError(
                 "encoded image grid must match the position input grid",
@@ -245,7 +260,7 @@ def build_qwen_forward_inputs(
         image_encodings.append(image_encoding)
         image_grids.append(image_grid)
         placeholder_count = _count_token_id(
-            pack.input_ids[segment_summary.start:segment_summary.end],
+            pack.input_ids[segment_summary.start : segment_summary.end],
             segment_summary.image_token_id,
         )
         expected_visual_tokens = _merged_visual_tokens(
@@ -342,7 +357,7 @@ def run_qwen_forward(
     *,
     expected_vocab_size: int | None = None,
     extra_model_kwargs: Mapping[str, Any] | None = None,
-    fa2_branch_evidence: Mapping[str, Any] | None = None,
+    fa2_branch_evidence: Fa2AttentionProofEvidence | Mapping[str, Any] | None = None,
     fa2_model_dtype: str | None = None,
     capture_fa2_branch: bool = False,
     require_fa2_branch_proof: bool = False,
@@ -360,8 +375,14 @@ def run_qwen_forward(
     model_kwargs.update(overrides)
     _sync_model_inputs_if_requested(model_kwargs)
     model_start_ns = time.perf_counter_ns()
-    if capture_fa2_branch and fa2_branch_evidence is None:
-        with capture_fa2_varlen_branch() as fa2_capture:
+    if capture_fa2_branch and fa2_branch_evidence is not None:
+        raise QwenForwardContractError(
+            "FA2 branch capture cannot be combined with supplied evidence",
+            code="qwen.fa2_capture_conflict",
+            context={"evidence_type": type(fa2_branch_evidence).__name__},
+        )
+    if capture_fa2_branch:
+        with capture_fa2_varlen_branch(model) as fa2_capture:
             output = model(**model_kwargs)
         fa2_branch_evidence = fa2_capture.evidence_for_plan(
             forward_inputs.fa2_varlen_plan
@@ -392,10 +413,15 @@ def run_qwen_forward(
         fa2_branch_proof = validate_fa2_varlen_branch_evidence(
             forward_inputs.fa2_varlen_plan,
             fa2_branch_evidence,
-            resolved_attention_implementation="flash_attention_2",
             model_dtype=fa2_model_dtype or _model_dtype(model),
+            expected_device=_fa2_expected_device(
+                model, forward_inputs.input_ids.device
+            ),
         )
-    elif require_fa2_branch_proof and forward_inputs.fa2_varlen_plan.branch_evidence_required:
+    elif (
+        require_fa2_branch_proof
+        and forward_inputs.fa2_varlen_plan.branch_evidence_required
+    ):
         raise QwenForwardContractError(
             "required FA2 branch proof was not observed during Qwen forward",
             code="qwen.fa2_branch_evidence_missing",
@@ -424,13 +450,22 @@ def run_qwen_forward(
 
 
 def _reject_unsafe_overrides(overrides: Mapping[str, Any]) -> None:
-    protected_keys = sorted(key for key in overrides if key in _PROTECTED_FORWARD_OVERRIDE_KEYS)
+    protected_keys = sorted(
+        key for key in overrides if key in _PROTECTED_FORWARD_OVERRIDE_KEYS
+    )
     if protected_keys:
-        if protected_keys == ["attention_mask"] and overrides.get("attention_mask") is not None:
+        if (
+            protected_keys == ["attention_mask"]
+            and overrides.get("attention_mask") is not None
+        ):
             raise QwenForwardContractError(
                 "packed FA2 forward must not rely on an ordinary attention_mask",
                 code="qwen.forward_attention_mask",
-                context={"attention_mask_type": type(overrides.get("attention_mask")).__name__},
+                context={
+                    "attention_mask_type": type(
+                        overrides.get("attention_mask")
+                    ).__name__
+                },
             )
         raise QwenForwardContractError(
             "V1 Qwen forward boundary tensors and cache state cannot be overridden",
@@ -564,13 +599,19 @@ def _pixel_values(image_encoding: Any, *, example_id: str) -> torch.Tensor:
         raise QwenForwardContractError(
             "encoded image payload must expose tensor pixel_values",
             code="qwen.forward_pixel_values",
-            context={"example_id": example_id, "value_type": type(pixel_values).__name__},
+            context={
+                "example_id": example_id,
+                "value_type": type(pixel_values).__name__,
+            },
         )
     if pixel_values.ndim != 2:
         raise QwenForwardContractError(
             "encoded image pixel_values must have shape [patch_rows, width]",
             code="qwen.forward_pixel_values_shape",
-            context={"example_id": example_id, "shape": [int(item) for item in pixel_values.shape]},
+            context={
+                "example_id": example_id,
+                "shape": [int(item) for item in pixel_values.shape],
+            },
         )
     return pixel_values
 
@@ -625,6 +666,31 @@ def _model_dtype(model: Any) -> str:
         code="qwen.forward_model_dtype",
         context={"model_type": type(model).__name__},
     )
+
+
+def _fa2_expected_device(
+    model: Any,
+    forward_input_device: torch.device | str,
+) -> torch.device:
+    expected_device = torch.device(forward_input_device)
+    parameters = getattr(model, "parameters", None)
+    if not callable(parameters):
+        return expected_device
+    try:
+        first_parameter = next(parameters())
+    except StopIteration:
+        return expected_device
+    model_device = torch.device(first_parameter.device)
+    if model_device != expected_device:
+        raise QwenForwardContractError(
+            "FA2 proof requires model and forward inputs on the same device",
+            code="qwen.forward_model_device",
+            context={
+                "model_device": str(model_device),
+                "forward_input_device": str(expected_device),
+            },
+        )
+    return expected_device
 
 
 def _validate_logits_shape(
@@ -686,7 +752,24 @@ def _elapsed_ns(start_ns: int) -> int:
     return max(0, time.perf_counter_ns() - int(start_ns))
 
 
+_PROFILE_SYNC_TIMING_POLICY: bool | None = None
+
+
+def set_profile_sync_timing_policy(enabled: bool | None) -> None:
+    """Freeze or clear the run-owned synchronization-timing policy."""
+
+    global _PROFILE_SYNC_TIMING_POLICY
+    if enabled is not None and not isinstance(enabled, bool):
+        raise QwenForwardContractError(
+            "profile synchronization timing policy must be boolean or None",
+            code="qwen.profile_sync_policy_invalid",
+        )
+    _PROFILE_SYNC_TIMING_POLICY = enabled
+
+
 def _profile_sync_enabled() -> bool:
+    if _PROFILE_SYNC_TIMING_POLICY is not None:
+        return _PROFILE_SYNC_TIMING_POLICY
     return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
 
 
@@ -713,4 +796,5 @@ __all__ = [
     "QwenForwardResult",
     "build_qwen_forward_inputs",
     "run_qwen_forward",
+    "set_profile_sync_timing_policy",
 ]

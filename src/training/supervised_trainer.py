@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 import inspect
 import os
 import time
@@ -147,6 +147,7 @@ class SupervisedTrainer:
         model: Any,
         schedule: ResolvedStepSchedule,
         pack_stream: Iterable[SupervisedMicroStep],
+        start_planned_step_id: int = 1,
         qwen_forward: QwenForwardFn | None = None,
         loss_context_factory: LossContextFactory | None = None,
         loss_runner: LossRunnerBoundary,
@@ -179,8 +180,23 @@ class SupervisedTrainer:
                 "ignore the custom qwen_forward callable",
                 code="trainer.forward_input_provider_conflicts_with_custom_qwen_forward",
             )
+        if (
+            isinstance(start_planned_step_id, bool)
+            or not isinstance(start_planned_step_id, int)
+            or start_planned_step_id < 1
+            or start_planned_step_id > schedule.resolved_max_steps
+        ):
+            raise RuntimeContractError(
+                "trainer start planned-step id must be inside the resolved schedule",
+                code="trainer.start_planned_step_invalid",
+                context={
+                    "start_planned_step_id": start_planned_step_id,
+                    "resolved_max_steps": schedule.resolved_max_steps,
+                },
+            )
         self.model = model
         self.schedule = schedule
+        self.start_planned_step_id = start_planned_step_id
         self.pack_stream = iter(pack_stream)
         self.qwen_forward = qwen_forward or _default_qwen_forward
         self.loss_context_factory = loss_context_factory or _default_loss_context
@@ -191,18 +207,23 @@ class SupervisedTrainer:
         self.on_checkpoint = on_checkpoint
         self.on_final = on_final
         self.forward_input_provider = forward_input_provider
+        self._fa2_first_micro_step_admitted = False
 
     def run(self) -> SupervisedTrainingResult:
+        # Admission is scoped to this trainer run.  It must not become part of
+        # a cached micro-step or survive when a trainer instance is reused.
+        self._fa2_first_micro_step_admitted = False
         latest_observation: CompletedStepObservation | None = None
-        scheduled_event_counts = {
-            name: 0 for name in sorted(self.schedule.events)
-        }
+        scheduled_event_counts = {name: 0 for name in sorted(self.schedule.events)}
         consumed_micro_steps = 0
         micro_steps_per_planned_step = (
             self.schedule.runtime_batch.resolved_grad_accum_steps
         )
 
-        for planned_step_id in range(1, self.schedule.resolved_max_steps + 1):
+        for planned_step_id in range(
+            self.start_planned_step_id,
+            self.schedule.resolved_max_steps + 1,
+        ):
             observation, consumed_count = self._run_streaming_planned_step(
                 planned_step_id=planned_step_id,
                 micro_steps_per_planned_step=micro_steps_per_planned_step,
@@ -267,24 +288,37 @@ class SupervisedTrainer:
                 sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
                 with self.runtime.accumulation_context(sync_gradients=sync_gradients):
                     _sync_device_if_requested(micro_step.forward_device)
+                    effective_micro_step, fa2_admission_armed = (
+                        self._effective_fa2_proof_micro_step(micro_step)
+                    )
                     if provider is not None:
-                        forward_inputs = provider.take(local_micro_step_index, micro_step)
+                        forward_inputs = provider.take(
+                            local_micro_step_index, micro_step
+                        )
                         input_wait_seconds += provider.last_take_wait_seconds
                         forward_result = run_qwen_forward(
                             _runtime_model(self.runtime, self.model),
                             forward_inputs,
-                            expected_vocab_size=micro_step.expected_vocab_size,
-                            extra_model_kwargs=micro_step.extra_model_kwargs,
-                            fa2_branch_evidence=micro_step.fa2_branch_evidence,
-                            fa2_model_dtype=micro_step.fa2_model_dtype,
-                            capture_fa2_branch=micro_step.capture_fa2_branch,
-                            require_fa2_branch_proof=micro_step.require_fa2_branch_proof,
+                            expected_vocab_size=effective_micro_step.expected_vocab_size,
+                            extra_model_kwargs=effective_micro_step.extra_model_kwargs,
+                            fa2_branch_evidence=effective_micro_step.fa2_branch_evidence,
+                            fa2_model_dtype=effective_micro_step.fa2_model_dtype,
+                            capture_fa2_branch=effective_micro_step.capture_fa2_branch,
+                            require_fa2_branch_proof=(
+                                effective_micro_step.require_fa2_branch_proof
+                            ),
                         )
                     else:
                         forward_result = self.qwen_forward(
                             _runtime_model(self.runtime, self.model),
-                            micro_step,
+                            effective_micro_step,
                         )
+                    self._complete_fa2_admission(
+                        forward_result,
+                        armed=fa2_admission_armed,
+                        planned_step_id=planned_step_id,
+                        local_micro_step_index=local_micro_step_index,
+                    )
                     input_build_seconds += _input_build_seconds_from_receipt(
                         getattr(forward_result, "receipt", None)
                     )
@@ -373,6 +407,72 @@ class SupervisedTrainer:
         del moved_micro_steps, micro_loss_artifacts, plan
         del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact
         return observation, consumed_count
+
+    def _effective_fa2_proof_micro_step(
+        self,
+        micro_step: SupervisedMicroStep,
+    ) -> tuple[SupervisedMicroStep, bool]:
+        policy = micro_step.fa2_branch_proof_policy
+        capture = bool(micro_step.capture_fa2_branch)
+        require = bool(micro_step.require_fa2_branch_proof)
+        armed = False
+
+        if policy == "disabled":
+            capture = False
+            require = False
+        elif policy == "every_forward":
+            capture = True
+            require = True
+        elif policy == "first_micro_step":
+            if self._fa2_first_micro_step_admitted:
+                capture = False
+                require = False
+            else:
+                # The immutable producer marks the admission candidate.  Do
+                # not turn an ordinary later micro-step into a proof call.
+                armed = capture or require
+
+        if (
+            capture == micro_step.capture_fa2_branch
+            and require == micro_step.require_fa2_branch_proof
+        ):
+            return micro_step, armed
+        return (
+            replace(
+                micro_step,
+                capture_fa2_branch=capture,
+                require_fa2_branch_proof=require,
+            ),
+            armed,
+        )
+
+    def _complete_fa2_admission(
+        self,
+        forward_result: Any,
+        *,
+        armed: bool,
+        planned_step_id: int,
+        local_micro_step_index: int,
+    ) -> None:
+        if not armed:
+            return
+        receipt = getattr(forward_result, "receipt", None)
+        if isinstance(receipt, Mapping):
+            proof = receipt.get("fa2_branch_proof")
+        else:
+            proof = getattr(receipt, "fa2_branch_proof", None)
+        if proof is None:
+            raise RuntimeContractError(
+                "armed first-micro-step FA2 admission did not return a validated proof",
+                code="trainer.fa2_first_micro_step_proof_missing",
+                context={
+                    "planned_step_id": int(planned_step_id),
+                    "local_micro_step_index": int(local_micro_step_index),
+                    "policy": "first_micro_step",
+                    "receipt_type": type(receipt).__name__,
+                },
+            )
+        self._fa2_first_micro_step_admitted = True
 
     def _next_micro_step(
         self,
@@ -523,7 +623,12 @@ def _runtime_loss_denominator_gatherer(
     *,
     planned_step_id: int,
     world_size: int,
-) -> Callable[[Mapping[str, Mapping[str, Any]]], Sequence[Mapping[str, Mapping[str, Any]]]] | None:
+) -> (
+    Callable[
+        [Mapping[str, Mapping[str, Any]]], Sequence[Mapping[str, Mapping[str, Any]]]
+    ]
+    | None
+):
     gather_loss_denominators = getattr(runtime, "gather_loss_denominators", None)
     if callable(gather_loss_denominators):
         return lambda payload: gather_loss_denominators(
@@ -567,13 +672,13 @@ def _default_loss_context(
     )
 
 
-def _logits_positions_to_keep(micro_step: SupervisedMicroStep) -> tuple[int, ...] | None:
+def _logits_positions_to_keep(
+    micro_step: SupervisedMicroStep,
+) -> tuple[int, ...] | None:
     atoms = getattr(micro_step.token_sequence, "atoms", None)
     if atoms is None:
         return None
-    positions = tuple(
-        sorted({int(atom.causal_logits_position) for atom in atoms})
-    )
+    positions = tuple(sorted({int(atom.causal_logits_position) for atom in atoms}))
     return positions or None
 
 
@@ -588,7 +693,24 @@ def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
     return total_loss
 
 
+_PROFILE_SYNC_TIMING_POLICY: bool | None = None
+
+
+def set_profile_sync_timing_policy(enabled: bool | None) -> None:
+    """Freeze or clear the run-owned synchronization-timing policy."""
+
+    global _PROFILE_SYNC_TIMING_POLICY
+    if enabled is not None and not isinstance(enabled, bool):
+        raise RuntimeContractError(
+            "profile synchronization timing policy must be boolean or None",
+            code="trainer.profile_sync_policy_invalid",
+        )
+    _PROFILE_SYNC_TIMING_POLICY = enabled
+
+
 def _profile_sync_enabled() -> bool:
+    if _PROFILE_SYNC_TIMING_POLICY is not None:
+        return _PROFILE_SYNC_TIMING_POLICY
     return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
 
 
@@ -661,9 +783,7 @@ def _partial_loss_artifact(
     result = dict(artifact)
     diagnostics_value = result.get("diagnostics")
     diagnostics = (
-        dict(diagnostics_value)
-        if isinstance(diagnostics_value, Mapping)
-        else {}
+        dict(diagnostics_value) if isinstance(diagnostics_value, Mapping) else {}
     )
     diagnostics.update(
         {

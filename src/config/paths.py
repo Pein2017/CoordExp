@@ -15,6 +15,7 @@ PATH_FIELDS = (
     "adapter.path",
     "data.train.path",
     "data.eval.path",
+    "resume.checkpoint_dir",
 )
 
 

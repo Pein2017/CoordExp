@@ -5,7 +5,7 @@ doc_type: reference
 status: canonical
 domain: data
 summary: Current CoordExp-Swift packing and pack-cache routing guide.
-updated: 2026-07-11
+updated: 2026-08-12
 ---
 
 # Packing Policy
@@ -26,17 +26,28 @@ and
   `src/packing/supervision.py`.
 - A sample whose atomic sequence cannot satisfy the configured hard cap fails
   through the current contract; it is not silently truncated or reordered.
-- Pack-cache manifests record the resolved determinants, code identity,
-  materialization metadata, chunks, and hashes. Worker count is provenance, not
-  semantic cache identity.
-- Cache fingerprints include the renderer, Qwen encoding/position/forward,
-  packing planner, and supervision-token construction code identities where the
-  stable spec requires them.
-- Multi-GPU launches use a two-phase lifecycle. Run
-  `python -m src.prepare_train_cache --config <path>` once before
-  `accelerate launch`; preparation loads no model weights and validates train
-  and eval caches. Distributed ranks are cache consumers only and fail fast on
-  a cache miss instead of waiting in a long-lived collective.
+- Pack-cache v3 manifests record the resolved determinant registry, source-code
+  identities, materialization metadata, chunks, and hashes. Worker count is
+  provenance, not semantic cache identity.
+- Cache fingerprints bind raw/image content, tokenizer/processor front-end
+  assets, realized vocabulary groups, serialized micro-step runtime fields, and
+  the declared renderer/parser/geometry/Qwen/packing/supervision/schema/
+  serializer owners. Inventory sizes are bounded and fail closed.
+- Each cache is published immutably at
+  `<cache-root>/coordexp-swift-pack-cache-v3/<fingerprint>`. `Rebuild` resolves a
+  new identity and publishes only to an absent target; preparation does not
+  repair, replace, delete, or garbage-collect existing cache directories.
+- Required chunks are opened without following symlinks, authenticated as one
+  bounded stable byte snapshot, and restricted-decoded from those exact bytes.
+- Multi-GPU launches use a model-free admission lifecycle. Run the preparation
+  subprocess with `CUBLAS_WORKSPACE_CONFIG=:4096:8` and
+  `FLASH_ATTENTION_DETERMINISTIC=1` already present in its child environment;
+  the preparation entrypoint verifies but never synthesizes those values. Run
+  it once before
+  `accelerate launch`; startup validates the current rank's required train
+  payloads and every eval payload before constructing Accelerate or loading
+  model weights. Distributed ranks are cache consumers only and fail fast on a
+  cache miss.
 
 ## Ownership map
 
@@ -54,13 +65,16 @@ Use the targeted packing and cache tests before a broader training smoke:
 
 - `tests/packing/`
 - `tests/training/test_pack_cache.py`
+- `tests/training/test_pack_cache_determinant_registry.py`
+- `tests/training/test_pack_cache_runtime_constructor.py`
+- `tests/training/test_pipeline_cache_preflight.py`
 - `tests/training/test_pipeline_assembly.py`
 - `tests/qwen/` for position/forward assumptions that affect packed inputs
 
 For a production config, attest the startup boundary directly before launch:
 
 ```bash
-python -m src.prepare_train_cache --config configs/coordexp_swift/prod/<config>.yaml
+CUBLAS_WORKSPACE_CONFIG=:4096:8 FLASH_ATTENTION_DETERMINISTIC=1 python -m src.prepare_train_cache --config configs/coordexp_swift/prod/<config>.yaml
 ```
 
 When a change affects packing determinants, update the stable OpenSpec contract

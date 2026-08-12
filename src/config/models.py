@@ -12,6 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 CONFIG_LOADER_VERSION = "coordexp-swift-config-v1"
 
+ForwardInputProviderMode = Literal["synchronous", "overlapped", "legacy_fused"]
+PackingPolicy = Literal[
+    "source_order_next_fit",
+    "window_binpack",
+    "online_window_binpack",
+]
+
 
 class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -76,7 +83,9 @@ class ModelConfig(StrictConfigModel):
 
 class AdapterConfig(StrictConfigModel):
     type: Literal["dora"]
-    seed_mode: Literal["initialize_new", "load_existing", "warm_start_expand_dora"] | None = None
+    seed_mode: (
+        Literal["initialize_new", "load_existing", "warm_start_expand_dora"] | None
+    ) = None
     path: str | None = None
     source_adapter_path: str | None = None
     repaired_embedding_payload_path: str | None = None
@@ -91,7 +100,9 @@ class AdapterConfig(StrictConfigModel):
     @classmethod
     def _type_uses_public_v1_dora_name(cls, value: object) -> object:
         if value == "dlora":
-            raise ValueError("V1 uses adapter.type: dora; adapter.type: dlora is unsupported")
+            raise ValueError(
+                "V1 uses adapter.type: dora; adapter.type: dlora is unsupported"
+            )
         return value
 
     @field_validator("target_towers")
@@ -109,29 +120,44 @@ class AdapterConfig(StrictConfigModel):
     def _seed_mode_contract(self) -> "AdapterConfig":
         seed_mode = self.seed_mode
         if seed_mode is None:
-            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+            if (
+                self.source_adapter_path is not None
+                or self.repaired_embedding_payload_path is not None
+            ):
                 raise ValueError(
                     "adapter source/payload seed paths require adapter.seed_mode: warm_start_expand_dora"
                 )
             return self
         if seed_mode == "initialize_new":
             if self.path is not None:
-                raise ValueError("adapter.seed_mode=initialize_new must not set adapter.path")
-            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter.seed_mode=initialize_new must not set adapter.path"
+                )
+            if (
+                self.source_adapter_path is not None
+                or self.repaired_embedding_payload_path is not None
+            ):
                 raise ValueError(
                     "adapter.seed_mode=initialize_new must not set warm-start source paths"
                 )
             return self
         if seed_mode == "load_existing":
             if self.path is None:
-                raise ValueError("adapter.seed_mode=load_existing requires adapter.path")
-            if self.source_adapter_path is not None or self.repaired_embedding_payload_path is not None:
+                raise ValueError(
+                    "adapter.seed_mode=load_existing requires adapter.path"
+                )
+            if (
+                self.source_adapter_path is not None
+                or self.repaired_embedding_payload_path is not None
+            ):
                 raise ValueError(
                     "adapter.seed_mode=load_existing must not set warm-start source paths"
                 )
             return self
         if self.path is not None:
-            raise ValueError("adapter.seed_mode=warm_start_expand_dora must not set adapter.path")
+            raise ValueError(
+                "adapter.seed_mode=warm_start_expand_dora must not set adapter.path"
+            )
         if self.source_adapter_path is None:
             raise ValueError(
                 "adapter.seed_mode=warm_start_expand_dora requires adapter.source_adapter_path"
@@ -202,6 +228,48 @@ class TemplateConfig(StrictConfigModel):
 
 class PackingConfig(StrictConfigModel):
     global_max_length: int = Field(gt=0)
+    policy: PackingPolicy = "source_order_next_fit"
+    window_size: int | None = Field(default=None, gt=0, strict=True)
+    lookahead: int | None = Field(default=None, gt=0, strict=True)
+    seed: int = Field(default=0, strict=True)
+    worker_count: int = Field(default=1, gt=0, strict=True)
+    cursor_byte_budget: int = Field(default=65_536, gt=0, strict=True)
+    max_packs_per_fragment: int | None = Field(default=None, gt=0, strict=True)
+    fragment_item_budget: int = Field(default=1_024, gt=0, strict=True)
+    fragment_byte_budget: int = Field(default=4_194_304, gt=0, strict=True)
+
+    @model_validator(mode="after")
+    def _policy_parameters_are_exact(self) -> "PackingConfig":
+        if self.policy == "source_order_next_fit":
+            if (
+                self.window_size is not None
+                or self.lookahead is not None
+                or self.max_packs_per_fragment is not None
+            ):
+                raise ValueError(
+                    "source_order_next_fit does not accept window, lookahead, "
+                    "or fragment-pack parameters"
+                )
+            return self
+        if self.policy == "window_binpack":
+            if self.window_size is None:
+                raise ValueError("window_binpack requires packing.window_size")
+            if self.lookahead is not None or self.max_packs_per_fragment is not None:
+                raise ValueError(
+                    "window_binpack does not accept lookahead or fragment-pack parameters"
+                )
+            return self
+        if self.window_size is not None:
+            raise ValueError(
+                "online_window_binpack does not accept packing.window_size"
+            )
+        if self.lookahead is None:
+            raise ValueError("online_window_binpack requires packing.lookahead")
+        if self.max_packs_per_fragment is None:
+            raise ValueError(
+                "online_window_binpack requires packing.max_packs_per_fragment"
+            )
+        return self
 
 
 class WeightedLossConfig(StrictConfigModel):
@@ -325,10 +393,18 @@ class TrainingConfig(StrictConfigModel):
     effective_batch_size: int = Field(gt=0)
     precision: Literal["bf16", "fp16"]
     max_grad_norm: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
+    forward_input_provider_mode: ForwardInputProviderMode = "synchronous"
+
+
+class RuntimeDeterminismConfig(StrictConfigModel):
+    mode: Literal["legacy", "strict_cuda_replay_v1"] = "legacy"
 
 
 class RuntimeConfig(StrictConfigModel):
     seed: int = 17
+    determinism: RuntimeDeterminismConfig = Field(
+        default_factory=RuntimeDeterminismConfig
+    )
 
 
 class EvalForwardConfig(CadenceConfig):
@@ -348,6 +424,19 @@ class CheckpointConfig(CadenceConfig):
     save_final: bool = True
 
 
+class ResumeConfig(StrictConfigModel):
+    mode: Literal["disabled", "exact_same_world_size"] = "disabled"
+    checkpoint_dir: str | None = None
+
+    @model_validator(mode="after")
+    def _disabled_mode_has_no_checkpoint(self) -> "ResumeConfig":
+        if self.mode == "disabled" and self.checkpoint_dir is not None:
+            raise ValueError(
+                "resume.checkpoint_dir requires resume.mode: exact_same_world_size"
+            )
+        return self
+
+
 class TrainConfig(StrictConfigModel):
     schema_version: Literal[1]
     run: RunConfig
@@ -362,6 +451,19 @@ class TrainConfig(StrictConfigModel):
     runtime: RuntimeConfig
     eval: EvalConfig
     checkpoint: CheckpointConfig
+    resume: ResumeConfig = Field(default_factory=ResumeConfig)
+
+    @model_validator(mode="after")
+    def _exact_resume_requires_strict_cuda_replay(self) -> "TrainConfig":
+        if (
+            self.resume.mode == "exact_same_world_size"
+            and self.runtime.determinism.mode != "strict_cuda_replay_v1"
+        ):
+            raise ValueError(
+                "resume.mode=exact_same_world_size requires "
+                "runtime.determinism.mode=strict_cuda_replay_v1"
+            )
+        return self
 
 
 @dataclass(frozen=True)

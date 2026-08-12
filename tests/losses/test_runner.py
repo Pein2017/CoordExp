@@ -24,11 +24,14 @@ from src.losses import (
     TokenVocabularyGroups,
     reduce_segment_balanced_planned_step,
 )
+from src.losses.normalizers import segment_balanced_contribution
 from src.packing.planner import PackedSegment
 from src.supervision import TokenAtom, TokenSequence
 
 
-def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_level_accuracy() -> None:
+def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_level_accuracy() -> (
+    None
+):
     # Streaming equivalent of the deleted batch `LossRunner.compute`: proves
     # the three-call streaming protocol (prepare/compute_micro_step/finalize)
     # reproduces the exact planned-step numeric oracle computed independently
@@ -61,7 +64,14 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
                 )
             ),
             (_segment(0, 0, 2),),
-            (_atom(segment_index=0, target_position=1, token_id=3, token_type="coordinate"),),
+            (
+                _atom(
+                    segment_index=0,
+                    target_position=1,
+                    token_id=3,
+                    token_type="coordinate",
+                ),
+            ),
             pack_index=1,
         ),
     )
@@ -102,7 +112,9 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
     expected_total = expected_base.loss * 2.0 + expected_gate.loss * 0.5
 
     base_term = next(term for term in bundle["terms"] if term["name"] == "base_ce")
-    gate_term = next(term for term in bundle["terms"] if term["name"] == "token_type_gate")
+    gate_term = next(
+        term for term in bundle["terms"] if term["name"] == "token_type_gate"
+    )
 
     assert bundle["total_loss"] == pytest.approx(float(expected_total.detach()))
     assert base_term["weight"] == 2.0
@@ -110,7 +122,9 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
     assert base_term["weighted_loss"] == pytest.approx(
         float((expected_base.loss * 2.0).detach())
     )
-    assert bundle["metrics"]["loss/total"] == pytest.approx(float(expected_total.detach()))
+    assert bundle["metrics"]["loss/total"] == pytest.approx(
+        float(expected_total.detach())
+    )
     assert bundle["metrics"]["loss/base_ce"] == pytest.approx(
         float((expected_base.loss * 2.0).detach())
     )
@@ -137,7 +151,11 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
     # Rank-local sufficient statistics (exact integers): summing the
     # per-micro-step stats over unequal atom counts (2 vs 1) reproduces the
     # same integers as computing accuracy over the concatenated contexts.
-    assert bundle["accuracy_stats"]["accuracy_atom_count"] == 3
+    assert bundle["accuracy_stats"] == {
+        "top1_correct": 2,
+        "top5_correct": 3,
+        "atom_count": 3,
+    }
     assert isinstance(bundle["accuracy_stats"]["top1_correct"], int)
     assert isinstance(bundle["accuracy_stats"]["top5_correct"], int)
 
@@ -180,12 +198,27 @@ def test_loss_runner_finalize_rejects_micro_artifact_malformed_accuracy_field() 
     assert exc_info.value.code == "loss.accuracy_stats_field_type"
 
 
+@pytest.mark.parametrize("malformed_value", [1.0, True])
+def test_loss_runner_finalize_rejects_non_integer_accuracy_stat(
+    malformed_value: Any,
+) -> None:
+    runner, plan, artifact = _single_micro_step_plan_and_artifact()
+    artifact["accuracy_stats"] = {
+        **artifact["accuracy_stats"],
+        "top5_correct": malformed_value,
+    }
+
+    with pytest.raises(LossContractError) as exc_info:
+        runner.finalize_planned_step((artifact,), plan)
+    assert exc_info.value.code == "loss.accuracy_stats_field_type"
+
+
 def test_loss_runner_finalize_rejects_micro_artifact_correct_exceeding_atoms() -> None:
     runner, plan, artifact = _single_micro_step_plan_and_artifact()
     artifact["accuracy_stats"] = {
         "top1_correct": 5,
         "top5_correct": 0,
-        "accuracy_atom_count": 1,
+        "atom_count": 1,
     }
 
     with pytest.raises(LossContractError) as exc_info:
@@ -234,15 +267,134 @@ def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
     bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
 
     term = bundle.term_by_name("base_ce")
+    gate_term = bundle.term_by_name("token_type_gate")
+    gate_reference = _reference_raw_token_term(
+        context,
+        term_name="token_type_gate",
+        term=TokenTypeGateLoss(),
+        denominator=plan.denominators["token_type_gate"],
+        backend_gradient_scale=plan.backend_gradient_scale,
+    )
     assert plan.denominator_scope == "planned_step_global"
     assert plan.backend_gradient_scale == 2.0
     assert term.denominator.denominator_scope == "planned_step_global"
     assert term.denominator.eligible_segment_count == 4
     assert torch.allclose(term.raw_loss, local_base_loss / 4.0 * 2.0)
     assert term.diagnostics["backend_gradient_scale"] == 2.0
+    assert gate_term.denominator.denominator_scope == "planned_step_global"
+    assert gate_term.denominator.eligible_segment_count == 4
+    assert gate_term.denominator.selected_atom_count == 4
+    assert gate_term.denominator.context_count == 4
+    assert torch.equal(gate_term.raw_loss, gate_reference.detach())
+    assert not gate_term.raw_loss.requires_grad
+    assert gate_term.raw_loss.grad_fn is None
+    assert not gate_term.weighted_loss.requires_grad
+    assert gate_term.weighted_loss.grad_fn is None
 
 
-def test_loss_runner_streaming_finalization_preserves_coord_gaussian_rps_diagnostics() -> None:
+def test_zero_weight_gate_preserves_unequal_streaming_diagnostics() -> None:
+    contexts = (
+        _context(
+            _logits(
+                (
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0),
+                    (0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                ),
+                requires_grad=True,
+            ),
+            (
+                _segment(0, 0, 2),
+                _segment(1, 2, 4),
+                _segment(2, 4, 6),
+            ),
+            (
+                _atom(segment_index=0, target_position=1, token_id=7),
+                _atom(segment_index=1, target_position=3, token_id=5, token_type="eos"),
+            ),
+        ),
+        _context(
+            _logits(
+                (
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 4.0, 1.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+                ),
+                requires_grad=True,
+            ),
+            (_segment(0, 0, 4),),
+            (
+                _atom(
+                    segment_index=0,
+                    target_position=2,
+                    token_id=3,
+                    token_type="coordinate",
+                ),
+            ),
+            pack_index=1,
+        ),
+    )
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.0)
+    plan = runner.prepare_planned_step(
+        tuple(context.token_sequence for context in contexts)
+    )
+
+    assert plan.denominators["token_type_gate"].eligible_segment_count == 3
+    assert plan.denominators["token_type_gate"].selected_atom_count == 3
+    assert plan.denominators["token_type_gate"].skipped_segment_count == 1
+    assert plan.denominators["token_type_gate"].context_count == 2
+
+    reference_raws = tuple(
+        _reference_raw_token_term(
+            context,
+            term_name="token_type_gate",
+            term=TokenTypeGateLoss(),
+            denominator=plan.denominators["token_type_gate"],
+            backend_gradient_scale=plan.backend_gradient_scale,
+            local_micro_step_index=local_index,
+        )
+        for local_index, context in enumerate(contexts)
+    )
+    bundles = tuple(
+        runner.compute_micro_step(context, plan, local_micro_step_index=local_index)
+        for local_index, context in enumerate(contexts)
+    )
+
+    for bundle, reference_raw in zip(bundles, reference_raws, strict=True):
+        gate_term = bundle.term_by_name("token_type_gate")
+        assert torch.equal(gate_term.raw_loss, reference_raw.detach())
+        assert not gate_term.raw_loss.requires_grad
+        assert gate_term.raw_loss.grad_fn is None
+        assert not gate_term.weighted_loss.requires_grad
+        assert gate_term.weighted_loss.grad_fn is None
+        assert torch.equal(
+            bundle.total_loss, bundle.term_by_name("base_ce").weighted_loss
+        )
+
+    finalized = runner.finalize_planned_step(
+        tuple(bundle.to_artifact_dict() for bundle in bundles),
+        plan,
+    )
+    finalized_gate = next(
+        term for term in finalized["terms"] if term["name"] == "token_type_gate"
+    )
+    assert finalized_gate["raw_loss"] == pytest.approx(
+        sum(float(raw.detach()) for raw in reference_raws)
+    )
+    assert finalized_gate["weighted_loss"] == 0.0
+    assert (
+        finalized_gate["denominator"]
+        == plan.denominators["token_type_gate"].to_artifact_dict()
+    )
+
+
+def test_loss_runner_streaming_finalization_preserves_coord_gaussian_rps_diagnostics() -> (
+    None
+):
     context = _context(
         _logits(
             (
@@ -357,10 +509,219 @@ def test_loss_runner_keeps_objective_differentiable_but_metrics_detached() -> No
 
     assert bundle.total_loss.requires_grad
     assert bundle.term_by_name("base_ce").weighted_loss.requires_grad
+    gate_term = bundle.term_by_name("token_type_gate")
+    assert gate_term.raw_loss.requires_grad
+    assert gate_term.weighted_loss.requires_grad
+    assert gate_term.raw_loss.grad_fn is not None
+    assert gate_term.weighted_loss.grad_fn is not None
+    gate_gradient = torch.autograd.grad(
+        gate_term.weighted_loss,
+        logits,
+        retain_graph=True,
+    )[0]
+    assert torch.count_nonzero(gate_gradient) > 0
     assert all(isinstance(value, float) for value in bundle.metrics.values())
     bundle.total_loss.backward()
     assert logits.grad is not None
     assert torch.isfinite(logits.grad).all()
+
+
+def test_zero_weight_gate_preserves_raw_diagnostic_without_objective_graph() -> None:
+    projection_calls = 0
+    features = torch.tensor(
+        (((1.0, -0.5), (0.25, 2.0)),),
+        dtype=torch.float32,
+    )
+    weight = torch.linspace(-0.4, 0.6, steps=16).reshape(2, 8).requires_grad_()
+    bias = torch.linspace(0.3, -0.2, steps=8).requires_grad_()
+
+    def project_logits() -> torch.Tensor:
+        nonlocal projection_calls
+        projection_calls += 1
+        return features @ weight + bias
+
+    logits = project_logits()
+    context = _context(
+        logits,
+        (_segment(0, 0, 2),),
+        (_atom(segment_index=0, target_position=1, token_id=7),),
+    )
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.0)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+
+    reference_per_atom = TokenTypeGateLoss().per_atom_loss(context)
+    reference_raw = segment_balanced_contribution(
+        PlannedStepLossSlice(
+            term_name="token_type_gate",
+            context=context,
+            per_atom_losses=reference_per_atom,
+        ),
+        denominator=plan.denominators["token_type_gate"],
+    )
+    reference_raw = reference_raw * plan.backend_gradient_scale
+
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    base_term = bundle.term_by_name("base_ce")
+    gate_term = bundle.term_by_name("token_type_gate")
+
+    assert gate_term.raw_loss.dtype == torch.float32
+    assert torch.isfinite(gate_term.raw_loss)
+    assert torch.equal(gate_term.raw_loss, reference_raw.detach())
+    assert gate_term.denominator == plan.denominators["token_type_gate"]
+    assert not gate_term.raw_loss.requires_grad
+    assert gate_term.raw_loss.grad_fn is None
+    assert torch.equal(gate_term.weighted_loss, gate_term.raw_loss.new_zeros(()))
+    assert not gate_term.weighted_loss.requires_grad
+    assert gate_term.weighted_loss.grad_fn is None
+    assert not gate_term.segment_mean_numerator.requires_grad
+    assert gate_term.segment_mean_numerator.grad_fn is None
+    assert not gate_term.token_weighted_diagnostic.requires_grad
+    assert gate_term.token_weighted_diagnostic.grad_fn is None
+    assert torch.equal(bundle.total_loss, base_term.weighted_loss)
+
+    optimized_gradients = torch.autograd.grad(
+        bundle.total_loss,
+        (weight, bias),
+        retain_graph=True,
+    )
+    base_only_gradients = torch.autograd.grad(
+        base_term.weighted_loss,
+        (weight, bias),
+    )
+    for optimized, base_only in zip(
+        optimized_gradients,
+        base_only_gradients,
+        strict=True,
+    ):
+        assert torch.equal(optimized, base_only)
+    assert projection_calls == 1
+
+
+def test_nonzero_gate_matches_reference_values_and_all_gradients() -> None:
+    projection_calls = 0
+    features = torch.tensor(
+        (((0.75, -1.25), (1.5, 0.5)),),
+        dtype=torch.float32,
+    )
+    weight = torch.linspace(-0.6, 0.8, steps=16).reshape(2, 8).requires_grad_()
+    bias = torch.linspace(-0.25, 0.35, steps=8).requires_grad_()
+
+    def project_logits() -> torch.Tensor:
+        nonlocal projection_calls
+        projection_calls += 1
+        return features @ weight + bias
+
+    logits = project_logits()
+    context = _context(
+        logits,
+        (_segment(0, 0, 2),),
+        (_atom(segment_index=0, target_position=1, token_id=7),),
+    )
+    runner = _runner(base_ce_weight=1.3, token_type_gate_weight=0.4)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    reference_base_raw = _reference_raw_token_term(
+        context,
+        term_name="base_ce",
+        term=BaseTokenCE(),
+        denominator=plan.denominators["base_ce"],
+        backend_gradient_scale=plan.backend_gradient_scale,
+    )
+    reference_gate_raw = _reference_raw_token_term(
+        context,
+        term_name="token_type_gate",
+        term=TokenTypeGateLoss(),
+        denominator=plan.denominators["token_type_gate"],
+        backend_gradient_scale=plan.backend_gradient_scale,
+    )
+    reference_total = reference_base_raw * 1.3 + reference_gate_raw * 0.4
+
+    bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+    base_term = bundle.term_by_name("base_ce")
+    gate_term = bundle.term_by_name("token_type_gate")
+
+    assert projection_calls == 1
+    assert torch.equal(base_term.raw_loss, reference_base_raw)
+    assert torch.equal(base_term.weighted_loss, reference_base_raw * 1.3)
+    assert torch.equal(gate_term.raw_loss, reference_gate_raw)
+    assert torch.equal(gate_term.weighted_loss, reference_gate_raw * 0.4)
+    assert torch.equal(bundle.total_loss, reference_total)
+    assert gate_term.raw_loss.requires_grad
+    assert gate_term.raw_loss.grad_fn is not None
+    assert gate_term.weighted_loss.requires_grad
+    assert gate_term.weighted_loss.grad_fn is not None
+
+    observed_gradients = torch.autograd.grad(
+        bundle.total_loss,
+        (weight, bias),
+        retain_graph=True,
+    )
+    reference_gradients = torch.autograd.grad(
+        reference_total,
+        (weight, bias),
+    )
+    for observed, reference in zip(
+        observed_gradients,
+        reference_gradients,
+        strict=True,
+    ):
+        assert torch.equal(observed, reference)
+
+
+def test_zero_weight_gate_saves_only_base_objective_tensors() -> None:
+    features = torch.tensor(
+        (((1.0, -0.5), (0.25, 2.0)),),
+        dtype=torch.float32,
+    )
+    weight = torch.linspace(-0.4, 0.6, steps=16).reshape(2, 8).requires_grad_()
+    bias = torch.linspace(0.3, -0.2, steps=8).requires_grad_()
+    logits = features @ weight + bias
+    context = _context(
+        logits,
+        (_segment(0, 0, 2),),
+        (_atom(segment_index=0, target_position=1, token_id=7),),
+    )
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.0)
+    plan = runner.prepare_planned_step((context.token_sequence,))
+    reference_saved: list[tuple[tuple[int, ...], str, bool]] = []
+    observed_saved: list[tuple[tuple[int, ...], str, bool]] = []
+
+    def capture_saved(signatures):
+        def pack(tensor):
+            signatures.append(
+                (
+                    tuple(int(item) for item in tensor.shape),
+                    str(tensor.dtype),
+                    tensor.requires_grad,
+                )
+            )
+            return tensor
+
+        return pack
+
+    with torch.autograd.graph.saved_tensors_hooks(
+        capture_saved(reference_saved),
+        lambda tensor: tensor,
+    ):
+        reference_total = _reference_raw_token_term(
+            context,
+            term_name="base_ce",
+            term=BaseTokenCE(),
+            denominator=plan.denominators["base_ce"],
+            backend_gradient_scale=plan.backend_gradient_scale,
+        )
+
+    with torch.autograd.graph.saved_tensors_hooks(
+        capture_saved(observed_saved),
+        lambda tensor: tensor,
+    ):
+        bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
+
+    assert observed_saved == reference_saved
+    assert observed_saved
+    assert torch.equal(bundle.total_loss, reference_total)
+    gate_term = bundle.term_by_name("token_type_gate")
+    assert gate_term.raw_loss.grad_fn is None
+    assert gate_term.weighted_loss.grad_fn is None
 
 
 def test_loss_runner_records_non_finite_status_without_raising() -> None:
@@ -373,7 +734,11 @@ def test_loss_runner_records_non_finite_status_without_raising() -> None:
     context = _context(
         logits,
         (_segment(0, 0, 2),),
-        (_atom(segment_index=0, target_position=1, token_id=3, token_type="coordinate"),),
+        (
+            _atom(
+                segment_index=0, target_position=1, token_id=3, token_type="coordinate"
+            ),
+        ),
     )
 
     runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.1)
@@ -429,7 +794,9 @@ def test_loss_runner_filters_token_type_gate_groups() -> None:
     assert exc_info.value.code == "loss.segment_balanced_zero_eligible"
 
 
-def test_loss_runner_preserves_compact_logits_positions_when_filtering_gate_groups() -> None:
+def test_loss_runner_preserves_compact_logits_positions_when_filtering_gate_groups() -> (
+    None
+):
     context = _context(
         _logits(
             (
@@ -440,7 +807,9 @@ def test_loss_runner_preserves_compact_logits_positions_when_filtering_gate_grou
         (_segment(0, 0, 4),),
         (
             _atom(segment_index=0, target_position=2, token_id=7),
-            _atom(segment_index=0, target_position=3, token_id=3, token_type="coordinate"),
+            _atom(
+                segment_index=0, target_position=3, token_id=3, token_type="coordinate"
+            ),
         ),
         pack_length=4,
         logits_position_ids=(1, 2),
@@ -516,6 +885,28 @@ def _runner(
         token_type_gate_weight=token_type_gate_weight,
         token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
     )
+
+
+def _reference_raw_token_term(
+    context: LossContext,
+    *,
+    term_name: str,
+    term: BaseTokenCE | TokenTypeGateLoss,
+    denominator: Any,
+    backend_gradient_scale: float,
+    local_micro_step_index: int = 0,
+) -> torch.Tensor:
+    per_atom_losses = term.per_atom_loss(context)
+    raw = segment_balanced_contribution(
+        PlannedStepLossSlice(
+            term_name=term_name,
+            context=context,
+            per_atom_losses=per_atom_losses,
+            local_micro_step_index=local_micro_step_index,
+        ),
+        denominator=denominator,
+    )
+    return raw * float(backend_gradient_scale)
 
 
 def _logits(

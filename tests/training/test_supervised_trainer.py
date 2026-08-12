@@ -12,7 +12,10 @@ import torch
 import src.training.supervised_trainer as trainer_module
 from src.common.errors import RuntimeContractError
 from src.config.models import RuntimeBatchResolution
+from src.losses import LossRunner, TokenVocabularyGroups
+from src.packing.planner import PackedSegment
 from src.runtime import GateDecision
+from src.supervision import TokenAtom, TokenSequence
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
 from src.training.supervised_trainer import (
     CompletedStepObservation,
@@ -114,21 +117,17 @@ def test_supervised_trainer_orchestrates_accumulation_and_runtime_boundaries() -
     ]
 
 
-def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events() -> None:
+def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events() -> (
+    None
+):
     scheduled_calls: list[tuple[str, int, tuple[str, ...], str]] = []
     schedule = _schedule(
         resolved_max_steps=2,
         grad_accum_steps=1,
         events={
-            "eval.forward": (
-                _event(1, "eval.forward", ("explicit_step",)),
-            ),
-            "checkpoint": (
-                _event(2, "checkpoint", ("save_final",)),
-            ),
-            "final": (
-                _event(2, "final", ("final",), required=True),
-            ),
+            "eval.forward": (_event(1, "eval.forward", ("explicit_step",)),),
+            "checkpoint": (_event(2, "checkpoint", ("save_final",)),),
+            "final": (_event(2, "final", ("final",), required=True),),
         },
     )
     trainer = SupervisedTrainer(
@@ -139,9 +138,15 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
         loss_context_factory=_loss_context([]),
         loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
-        on_eval=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
-        on_checkpoint=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
-        on_final=lambda event, observation: scheduled_calls.append(_scheduled_tuple(event, observation)),
+        on_eval=lambda event, observation: scheduled_calls.append(
+            _scheduled_tuple(event, observation)
+        ),
+        on_checkpoint=lambda event, observation: scheduled_calls.append(
+            _scheduled_tuple(event, observation)
+        ),
+        on_final=lambda event, observation: scheduled_calls.append(
+            _scheduled_tuple(event, observation)
+        ),
     )
 
     result = trainer.run()
@@ -159,21 +164,82 @@ def test_supervised_trainer_triggers_scheduled_eval_checkpoint_and_final_events(
     ]
 
 
+def test_supervised_trainer_resume_starts_at_exact_global_planned_step() -> None:
+    observations: list[int] = []
+    scheduled_calls: list[tuple[str, int]] = []
+    schedule = _schedule(
+        resolved_max_steps=3,
+        grad_accum_steps=1,
+        events={
+            "eval.forward": (_event(1, "eval.forward", ("before_resume",)),),
+            "checkpoint": (_event(2, "checkpoint", ("resume_segment",)),),
+            "final": (_event(3, "final", ("final",), required=True),),
+        },
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=schedule,
+        pack_stream=_micro_steps(2),
+        start_planned_step_id=2,
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        on_completed_step=lambda observation: observations.append(
+            observation.planned_step_id
+        ),
+        on_eval=lambda event, _observation: scheduled_calls.append(
+            (event.event, event.planned_step_id)
+        ),
+        on_checkpoint=lambda event, _observation: scheduled_calls.append(
+            (event.event, event.planned_step_id)
+        ),
+        on_final=lambda event, _observation: scheduled_calls.append(
+            (event.event, event.planned_step_id)
+        ),
+    )
+
+    result = trainer.run()
+
+    assert observations == [2, 3]
+    assert result.completed_steps == 3
+    assert result.consumed_micro_steps == 2
+    assert result.scheduled_event_counts == {
+        "checkpoint": 1,
+        "eval.forward": 0,
+        "final": 1,
+    }
+    assert scheduled_calls == [("checkpoint", 2), ("final", 3)]
+
+
+@pytest.mark.parametrize("start_planned_step_id", (0, 4))
+def test_supervised_trainer_rejects_resume_step_outside_schedule(
+    start_planned_step_id: int,
+) -> None:
+    with pytest.raises(RuntimeContractError) as exc_info:
+        SupervisedTrainer(
+            model=object(),
+            schedule=_schedule(resolved_max_steps=3, grad_accum_steps=1),
+            pack_stream=_micro_steps(3),
+            start_planned_step_id=start_planned_step_id,
+            qwen_forward=_forward([]),
+            loss_context_factory=_loss_context([]),
+            loss_runner=StreamingFakeLossRunner([]),
+            runtime=FakeRuntime([]),
+        )
+
+    assert exc_info.value.code == "trainer.start_planned_step_invalid"
+
+
 def test_supervised_trainer_runs_same_step_eval_before_checkpoint() -> None:
     scheduled_calls: list[str] = []
     schedule = _schedule(
         resolved_max_steps=1,
         grad_accum_steps=1,
         events={
-            "checkpoint": (
-                _event(1, "checkpoint", ("every_fraction:1.0",)),
-            ),
-            "eval.forward": (
-                _event(1, "eval.forward", ("explicit_step",)),
-            ),
-            "final": (
-                _event(1, "final", ("final",), required=True),
-            ),
+            "checkpoint": (_event(1, "checkpoint", ("every_fraction:1.0",)),),
+            "eval.forward": (_event(1, "eval.forward", ("explicit_step",)),),
+            "final": (_event(1, "final", ("final",), required=True),),
         },
     )
     trainer = SupervisedTrainer(
@@ -334,7 +400,9 @@ def test_supervised_trainer_has_no_generic_scheduled_event_dispatch_residue() ->
     assert "training." + "logging" not in inspect.getsource(trainer_module)
 
 
-def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe() -> None:
+def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe() -> (
+    None
+):
     log: list[str] = []
     trainer = SupervisedTrainer(
         model=object(),
@@ -348,7 +416,9 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
 
     result = trainer.run()
 
-    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    assert (
+        result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    )
     assert not any(item.startswith("runtime.backward:1.0") for item in log)
     assert "runtime.post:1" not in log
     assert "runtime.optimizer:1" not in log
@@ -356,7 +426,9 @@ def test_supervised_trainer_skips_backward_and_update_when_scalar_gate_is_unsafe
     assert log[-2:] == ["runtime.scheduler:1", "runtime.zero:1"]
 
 
-def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_update() -> None:
+def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_update() -> (
+    None
+):
     log: list[str] = []
     trainer = SupervisedTrainer(
         model=object(),
@@ -370,7 +442,10 @@ def test_supervised_trainer_advances_scheduler_when_post_backward_gate_skips_upd
 
     result = trainer.run()
 
-    assert result.latest_observation.optimizer_update_status == "skipped_gradient_or_overflow"
+    assert (
+        result.latest_observation.optimizer_update_status
+        == "skipped_gradient_or_overflow"
+    )
     assert "runtime.backward:1.0:sync=True" in log
     assert "runtime.optimizer:1" not in log
     assert log[-3:] == ["runtime.post:1", "runtime.scheduler:1", "runtime.zero:1"]
@@ -439,7 +514,9 @@ def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
     prepared_model = object()
     observed_models: list[object] = []
 
-    def qwen_forward(model: object, micro_step: SupervisedMicroStep) -> FakeForwardResult:
+    def qwen_forward(
+        model: object, micro_step: SupervisedMicroStep
+    ) -> FakeForwardResult:
         observed_models.append(model)
         return FakeForwardResult(
             pack_index=int(str(micro_step.pack).split("-")[1]),
@@ -469,7 +546,9 @@ def test_supervised_trainer_runs_with_accelerate_prepared_runtime_model() -> Non
     runtime = RuntimeWithPreparedModel([], prepared_model)
     observed_models: list[object] = []
 
-    def qwen_forward(observed_model: object, _micro_step: SupervisedMicroStep) -> FakeForwardResult:
+    def qwen_forward(
+        observed_model: object, _micro_step: SupervisedMicroStep
+    ) -> FakeForwardResult:
         observed_models.append(observed_model)
         return FakeForwardResult(
             pack_index=0,
@@ -546,7 +625,9 @@ def test_supervised_trainer_fails_if_pack_stream_cannot_fill_planned_window() ->
     assert exc_info.value.context["local_micro_step_index"] == 1
 
 
-def test_supervised_trainer_streams_backward_before_next_forward_when_supported() -> None:
+def test_supervised_trainer_streams_backward_before_next_forward_when_supported() -> (
+    None
+):
     log: list[str] = []
     trainer = SupervisedTrainer(
         model=object(),
@@ -598,6 +679,132 @@ def test_supervised_trainer_streams_backward_before_next_forward_when_supported(
     ]
 
 
+def test_supervised_trainer_zero_weight_gate_passes_base_only_objective() -> None:
+    projection = _real_loss_projection()
+    forward_calls = 0
+
+    def qwen_forward(
+        model: torch.nn.Module,
+        _micro_step: SupervisedMicroStep,
+    ) -> RealLossForwardResult:
+        nonlocal forward_calls
+        forward_calls += 1
+        features = torch.tensor(
+            (((1.0, -0.5), (0.25, 2.0)),),
+            dtype=torch.float32,
+        )
+        return RealLossForwardResult(
+            logits=model(features),
+            receipt={"pack_index": 0},
+        )
+
+    runtime = RealLossRuntime(
+        [],
+        parameters=tuple(projection.parameters()),
+        gate_weight=0.0,
+    )
+    trainer = SupervisedTrainer(
+        model=projection,
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=(_real_loss_micro_step(),),
+        qwen_forward=qwen_forward,
+        loss_runner=LossRunner(
+            base_ce_weight=1.0,
+            token_type_gate_weight=0.0,
+            token_type_gate_groups=("desc_text",),
+        ),
+        runtime=runtime,
+    )
+
+    result = trainer.run()
+
+    assert forward_calls == 1
+    assert result.completed_steps == 1
+    assert result.consumed_micro_steps == 1
+    assert result.latest_observation.micro_step_count == 1
+    assert runtime.bundle is not None
+    assert runtime.backward_loss is runtime.bundle.total_loss
+    base_term = runtime.bundle.term_by_name("base_ce")
+    gate_term = runtime.bundle.term_by_name("token_type_gate")
+    assert torch.equal(runtime.backward_loss, base_term.weighted_loss)
+    assert torch.equal(runtime.backward_loss, runtime.reference_objective)
+    assert gate_term.raw_loss.dtype == torch.float32
+    assert not gate_term.raw_loss.requires_grad
+    assert gate_term.raw_loss.grad_fn is None
+    assert not gate_term.weighted_loss.requires_grad
+    assert gate_term.weighted_loss.grad_fn is None
+    assert not gate_term.segment_mean_numerator.requires_grad
+    assert gate_term.segment_mean_numerator.grad_fn is None
+    assert not gate_term.token_weighted_diagnostic.requires_grad
+    assert gate_term.token_weighted_diagnostic.grad_fn is None
+    for parameter, expected_gradient in zip(
+        projection.parameters(),
+        runtime.reference_gradients,
+        strict=True,
+    ):
+        assert parameter.grad is not None
+        assert torch.equal(parameter.grad, expected_gradient)
+
+
+def test_supervised_trainer_nonzero_gate_keeps_differentiable_objective() -> None:
+    projection = _real_loss_projection()
+    forward_calls = 0
+
+    def qwen_forward(
+        model: torch.nn.Module,
+        _micro_step: SupervisedMicroStep,
+    ) -> RealLossForwardResult:
+        nonlocal forward_calls
+        forward_calls += 1
+        features = torch.tensor(
+            (((0.75, -1.25), (1.5, 0.5)),),
+            dtype=torch.float32,
+        )
+        return RealLossForwardResult(
+            logits=model(features),
+            receipt={"pack_index": 0},
+        )
+
+    runtime = RealLossRuntime(
+        [],
+        parameters=tuple(projection.parameters()),
+        gate_weight=0.4,
+    )
+    trainer = SupervisedTrainer(
+        model=projection,
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=(_real_loss_micro_step(),),
+        qwen_forward=qwen_forward,
+        loss_runner=LossRunner(
+            base_ce_weight=1.0,
+            token_type_gate_weight=0.4,
+            token_type_gate_groups=("desc_text",),
+        ),
+        runtime=runtime,
+    )
+
+    result = trainer.run()
+
+    assert forward_calls == 1
+    assert result.consumed_micro_steps == 1
+    assert result.latest_observation.micro_step_count == 1
+    assert runtime.bundle is not None
+    assert runtime.backward_loss is runtime.bundle.total_loss
+    gate_term = runtime.bundle.term_by_name("token_type_gate")
+    assert gate_term.raw_loss.requires_grad
+    assert gate_term.raw_loss.grad_fn is not None
+    assert gate_term.weighted_loss.requires_grad
+    assert gate_term.weighted_loss.grad_fn is not None
+    assert torch.equal(runtime.backward_loss, runtime.reference_objective)
+    for parameter, expected_gradient in zip(
+        projection.parameters(),
+        runtime.reference_gradients,
+        strict=True,
+    ):
+        assert parameter.grad is not None
+        assert torch.equal(parameter.grad, expected_gradient)
+
+
 def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> None:
     log: list[str] = []
     trainer = SupervisedTrainer(
@@ -613,9 +820,12 @@ def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> No
     result = trainer.run()
 
     assert result.completed_steps == 1
-    assert result.latest_observation.loss_bundle_artifact["diagnostics"][
-        "denominator_scope"
-    ] == "planned_step_global"
+    assert (
+        result.latest_observation.loss_bundle_artifact["diagnostics"][
+            "denominator_scope"
+        ]
+        == "planned_step_global"
+    )
     assert "runtime.gather_denominators:1" in log
     assert "streaming.prepare_global:1:2:0:3" in log
 
@@ -640,7 +850,9 @@ def test_streaming_completion_callback_does_not_expose_micro_or_gate_events() ->
 
 
 def test_streaming_step_records_input_build_seconds_from_forward_receipt() -> None:
-    def qwen_forward(_model: object, micro_step: SupervisedMicroStep) -> FakeForwardResult:
+    def qwen_forward(
+        _model: object, micro_step: SupervisedMicroStep
+    ) -> FakeForwardResult:
         pack_index = int(str(micro_step.pack).split("-")[1])
         return FakeForwardResult(
             pack_index=pack_index,
@@ -699,12 +911,16 @@ def test_streaming_step_duration_excludes_completed_step_and_scheduled_handlers(
         observations.append(observation)
         calls.append(f"completed:{observation.planned_step_id}")
 
-    def on_eval(event: StepScheduleEvent, observation: CompletedStepObservation) -> None:
+    def on_eval(
+        event: StepScheduleEvent, observation: CompletedStepObservation
+    ) -> None:
         del event, observation
         trainer_module.time.monotonic()  # consumes a tick; must not count toward the boundary
         calls.append("eval")
 
-    def on_checkpoint(event: StepScheduleEvent, observation: CompletedStepObservation) -> None:
+    def on_checkpoint(
+        event: StepScheduleEvent, observation: CompletedStepObservation
+    ) -> None:
         del event, observation
         trainer_module.time.monotonic()  # consumes a tick; must not count toward the boundary
         calls.append("checkpoint")
@@ -752,7 +968,9 @@ def test_streaming_planned_step_uses_forward_input_provider_when_present(
     provider = FakeForwardInputProvider(wait_seconds_sequence=[0.01, 0.02])
     observed_forward_inputs: list[str] = []
 
-    def fake_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> FakeForwardResult:
+    def fake_run_qwen_forward(
+        model: object, forward_inputs: str, **kwargs: Any
+    ) -> FakeForwardResult:
         del model, kwargs
         observed_forward_inputs.append(forward_inputs)
         pack_index = int(forward_inputs.split("-")[-1])
@@ -786,15 +1004,256 @@ def test_streaming_planned_step_uses_forward_input_provider_when_present(
     assert provider.closed is False  # trainer does not own close(); pipeline does
 
 
+def test_first_micro_step_proof_is_a_run_local_one_shot_for_replayed_step() -> None:
+    step = replace(
+        next(_micro_steps(1)),
+        capture_fa2_branch=True,
+        require_fa2_branch_proof=True,
+        fa2_branch_proof_policy="first_micro_step",
+    )
+    observed_controls: list[tuple[bool, bool]] = []
+
+    def qwen_forward(
+        _model: object,
+        micro_step: SupervisedMicroStep,
+    ) -> FakeForwardResult:
+        observed_controls.append(
+            (micro_step.capture_fa2_branch, micro_step.require_fa2_branch_proof)
+        )
+        return FakeForwardResult(
+            pack_index=0,
+            logits=torch.zeros(1, 2, 3),
+            receipt=FakeProofReceipt(
+                fa2_branch_proof=(object() if micro_step.capture_fa2_branch else None)
+            ),
+        )
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=2, grad_accum_steps=1),
+        pack_stream=(step, step),
+        qwen_forward=qwen_forward,
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    trainer.run()
+
+    assert observed_controls == [(True, True), (False, False)]
+    assert trainer._fa2_first_micro_step_admitted is True
+
+    trainer.pack_stream = iter((step, step))
+    trainer.run()
+
+    assert observed_controls == [
+        (True, True),
+        (False, False),
+        (True, True),
+        (False, False),
+    ]
+
+
+def test_first_micro_step_proof_missing_fails_closed_without_admission() -> None:
+    step = replace(
+        next(_micro_steps(1)),
+        capture_fa2_branch=True,
+        require_fa2_branch_proof=True,
+        fa2_branch_proof_policy="first_micro_step",
+    )
+
+    def qwen_forward(
+        _model: object,
+        _micro_step: SupervisedMicroStep,
+    ) -> FakeForwardResult:
+        return FakeForwardResult(
+            pack_index=0,
+            logits=torch.zeros(1, 2, 3),
+            receipt=FakeProofReceipt(fa2_branch_proof=None),
+        )
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=(step,),
+        qwen_forward=qwen_forward,
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        trainer.run()
+
+    assert exc_info.value.code == "trainer.fa2_first_micro_step_proof_missing"
+    assert exc_info.value.context == {
+        "planned_step_id": 1,
+        "local_micro_step_index": 0,
+        "policy": "first_micro_step",
+        "receipt_type": "FakeProofReceipt",
+    }
+    assert trainer._fa2_first_micro_step_admitted is False
+
+
+@pytest.mark.parametrize(
+    ("policy", "stored_controls", "expected_controls"),
+    [
+        ("every_forward", (False, False), (True, True)),
+        ("disabled", (True, True), (False, False)),
+    ],
+)
+def test_explicit_fa2_proof_policies_override_recycled_step_flags(
+    policy: str,
+    stored_controls: tuple[bool, bool],
+    expected_controls: tuple[bool, bool],
+) -> None:
+    step = replace(
+        next(_micro_steps(1)),
+        capture_fa2_branch=stored_controls[0],
+        require_fa2_branch_proof=stored_controls[1],
+        fa2_branch_proof_policy=policy,
+    )
+    observed_controls: list[tuple[bool, bool]] = []
+
+    def qwen_forward(
+        _model: object,
+        micro_step: SupervisedMicroStep,
+    ) -> FakeForwardResult:
+        observed_controls.append(
+            (micro_step.capture_fa2_branch, micro_step.require_fa2_branch_proof)
+        )
+        return FakeForwardResult(
+            pack_index=0,
+            logits=torch.zeros(1, 2, 3),
+            receipt=FakeProofReceipt(fa2_branch_proof=object()),
+        )
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=2, grad_accum_steps=1),
+        pack_stream=(step, step),
+        qwen_forward=qwen_forward,
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    trainer.run()
+
+    assert observed_controls == [expected_controls, expected_controls]
+    assert trainer._fa2_first_micro_step_admitted is False
+
+
+def test_first_micro_step_policy_does_not_arm_unflagged_later_step() -> None:
+    step = replace(
+        next(_micro_steps(1)),
+        capture_fa2_branch=False,
+        require_fa2_branch_proof=False,
+        fa2_branch_proof_policy="first_micro_step",
+    )
+    observed_controls: list[tuple[bool, bool]] = []
+
+    def qwen_forward(
+        _model: object,
+        micro_step: SupervisedMicroStep,
+    ) -> FakeForwardResult:
+        observed_controls.append(
+            (micro_step.capture_fa2_branch, micro_step.require_fa2_branch_proof)
+        )
+        return FakeForwardResult(
+            pack_index=0,
+            logits=torch.zeros(1, 2, 3),
+            receipt=FakeProofReceipt(fa2_branch_proof=None),
+        )
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=2, grad_accum_steps=1),
+        pack_stream=(step, step),
+        qwen_forward=qwen_forward,
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    trainer.run()
+
+    assert observed_controls == [(False, False), (False, False)]
+    assert trainer._fa2_first_micro_step_admitted is False
+
+
+def test_default_and_provider_paths_receive_same_effective_fa2_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    step = replace(
+        next(_micro_steps(1)),
+        capture_fa2_branch=True,
+        require_fa2_branch_proof=True,
+        fa2_branch_proof_policy="first_micro_step",
+    )
+    observed_controls: list[tuple[bool, bool]] = []
+
+    def fake_build_qwen_forward_inputs(*args: Any, **kwargs: Any) -> str:
+        del args, kwargs
+        return "default-forward-inputs"
+
+    def fake_run_qwen_forward(
+        _model: object,
+        _forward_inputs: str,
+        **kwargs: Any,
+    ) -> FakeForwardResult:
+        observed_controls.append(
+            (
+                kwargs["capture_fa2_branch"],
+                kwargs["require_fa2_branch_proof"],
+            )
+        )
+        return FakeForwardResult(
+            pack_index=0,
+            logits=torch.zeros(1, 2, 3),
+            receipt=FakeProofReceipt(fa2_branch_proof=object()),
+        )
+
+    monkeypatch.setattr(
+        trainer_module,
+        "build_qwen_forward_inputs",
+        fake_build_qwen_forward_inputs,
+    )
+    monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
+
+    for provider in (None, FakeForwardInputProvider()):
+        trainer = SupervisedTrainer(
+            model=object(),
+            schedule=_schedule(resolved_max_steps=2, grad_accum_steps=1),
+            pack_stream=(step, step),
+            loss_context_factory=_loss_context([]),
+            loss_runner=StreamingFakeLossRunner([]),
+            runtime=FakeRuntime([]),
+            forward_input_provider=provider,
+        )
+        trainer.run()
+
+    assert observed_controls == [
+        (True, True),
+        (False, False),
+        (True, True),
+        (False, False),
+    ]
+
+
 def test_streaming_planned_step_ends_provider_cleanly_on_finite_gate_early_break(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = FakeForwardInputProvider()
 
-    def fake_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> FakeForwardResult:
+    def fake_run_qwen_forward(
+        model: object, forward_inputs: str, **kwargs: Any
+    ) -> FakeForwardResult:
         del model, kwargs
         pack_index = int(forward_inputs.split("-")[-1])
-        return FakeForwardResult(pack_index=pack_index, logits=torch.zeros(1, 2, 3), receipt={})
+        return FakeForwardResult(
+            pack_index=pack_index, logits=torch.zeros(1, 2, 3), receipt={}
+        )
 
     monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
 
@@ -813,7 +1272,9 @@ def test_streaming_planned_step_ends_provider_cleanly_on_finite_gate_early_break
     # Finite-gate early break stops after ordinal 0: provider never sees
     # ordinal 1, and end_planned_step still runs to discard prepared work.
     assert provider.calls == ["begin", "take:0", "end"]
-    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    assert (
+        result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    )
 
 
 def test_streaming_planned_step_ends_provider_on_consumer_error(
@@ -821,7 +1282,9 @@ def test_streaming_planned_step_ends_provider_on_consumer_error(
 ) -> None:
     provider = FakeForwardInputProvider()
 
-    def failing_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> Any:
+    def failing_run_qwen_forward(
+        model: object, forward_inputs: str, **kwargs: Any
+    ) -> Any:
         del model, forward_inputs, kwargs
         raise RuntimeError("consumer forward boom")
 
@@ -921,10 +1384,14 @@ def test_streaming_planned_step_duration_excludes_provider_teardown(
 
     monkeypatch.setattr(trainer_module.time, "monotonic", fake_monotonic)
 
-    def fake_run_qwen_forward(model: object, forward_inputs: str, **kwargs: Any) -> FakeForwardResult:
+    def fake_run_qwen_forward(
+        model: object, forward_inputs: str, **kwargs: Any
+    ) -> FakeForwardResult:
         del model, kwargs
         pack_index = int(forward_inputs.split("-")[-1])
-        return FakeForwardResult(pack_index=pack_index, logits=torch.zeros(1, 2, 3), receipt={})
+        return FakeForwardResult(
+            pack_index=pack_index, logits=torch.zeros(1, 2, 3), receipt={}
+        )
 
     monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
 
@@ -956,7 +1423,9 @@ def test_streaming_planned_step_duration_excludes_provider_teardown(
     assert observations[0].step_duration_seconds != pytest.approx(3.0)
 
 
-def test_trainer_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_trainer_profile_sync_helper_is_exact_env_gated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
     monkeypatch.setattr(trainer_module.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
@@ -971,6 +1440,30 @@ def test_trainer_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.Monk
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
     monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
+
+    assert calls == ["cuda:3"]
+
+
+def test_trainer_profile_sync_policy_is_frozen_against_environment_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(trainer_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        trainer_module.torch.cuda,
+        "synchronize",
+        lambda device: calls.append(str(device)),
+    )
+    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+
+    trainer_module.set_profile_sync_timing_policy(False)
+    try:
+        trainer_module._sync_device_if_requested(torch.device("cuda:2"))
+        monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "0")
+        trainer_module.set_profile_sync_timing_policy(True)
+        trainer_module._sync_device_if_requested(torch.device("cuda:3"))
+    finally:
+        trainer_module.set_profile_sync_timing_policy(None)
 
     assert calls == ["cuda:3"]
 
@@ -996,7 +1489,9 @@ def test_streaming_scalar_gate_partial_window_marks_metrics_unavailable() -> Non
     assert artifact["diagnostics"]["processed_micro_step_count"] == 1
     assert artifact["diagnostics"]["planned_micro_step_count"] == 2
     assert result.latest_observation.micro_step_count == 1
-    assert result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    assert (
+        result.latest_observation.optimizer_update_status == "skipped_non_finite_scalar"
+    )
     assert not any(item.startswith("runtime.backward:0.5") for item in log)
     assert "runtime.accumulation:False:enter" in log
     assert "runtime.accumulation:False:exit" in log
@@ -1009,6 +1504,18 @@ class FakeForwardResult:
     pack_index: int
     logits: torch.Tensor
     receipt: Any
+
+
+@dataclass(frozen=True)
+class RealLossForwardResult:
+    logits: torch.Tensor
+    receipt: Any
+    logits_position_ids: tuple[int, ...] | None = None
+
+
+@dataclass(frozen=True)
+class FakeProofReceipt:
+    fa2_branch_proof: Any | None
 
 
 class FakeForwardInputProvider:
@@ -1066,7 +1573,9 @@ class StreamingFakeLossRunner(FakeLossRunner):
     def compute(self, contexts: tuple[Any, ...]) -> FakeLossBundle:
         raise AssertionError("streaming trainer path must not retain all contexts")
 
-    def prepare_planned_step(self, micro_steps: tuple[SupervisedMicroStep, ...]) -> dict[str, int]:
+    def prepare_planned_step(
+        self, micro_steps: tuple[SupervisedMicroStep, ...]
+    ) -> dict[str, int]:
         self.log.append(f"streaming.prepare:{len(micro_steps)}")
         return {"micro_step_count": len(micro_steps)}
 
@@ -1088,8 +1597,14 @@ class StreamingFakeLossRunner(FakeLossRunner):
         plan: dict[str, int],
     ) -> dict[str, float]:
         return {
-            "total_loss": sum(float(item["total_loss"]) for item in micro_loss_artifacts),
-            "metrics": {"loss/total": sum(float(item["total_loss"]) for item in micro_loss_artifacts)},
+            "total_loss": sum(
+                float(item["total_loss"]) for item in micro_loss_artifacts
+            ),
+            "metrics": {
+                "loss/total": sum(
+                    float(item["total_loss"]) for item in micro_loss_artifacts
+                )
+            },
             "diagnostics": {"normalizer_scope": "planned_step_streaming"},
         }
 
@@ -1186,7 +1701,10 @@ class FakeRuntime:
         self.log.append(f"runtime.pre:{planned_step_id}")
         call_index = self.pre_call_count
         self.pre_call_count += 1
-        if planned_step_id in self.unsafe_pre_steps or call_index in self.unsafe_pre_call_indices:
+        if (
+            planned_step_id in self.unsafe_pre_steps
+            or call_index in self.unsafe_pre_call_indices
+        ):
             return _gate(
                 planned_step_id,
                 stage="pre_backward_scalar",
@@ -1283,6 +1801,59 @@ class FakeRuntime:
         return (denominators, peer)
 
 
+class RealLossRuntime(FakeRuntime):
+    def __init__(
+        self,
+        log: list[str],
+        *,
+        parameters: tuple[torch.nn.Parameter, ...],
+        gate_weight: float,
+    ) -> None:
+        super().__init__(log)
+        self.parameters = parameters
+        self.gate_weight = float(gate_weight)
+        self.bundle: Any | None = None
+        self.backward_loss: torch.Tensor | None = None
+        self.reference_objective: torch.Tensor | None = None
+        self.reference_gradients: tuple[torch.Tensor, ...] = ()
+
+    def pre_backward(
+        self,
+        bundle: Any,
+        *,
+        planned_step_id: int,
+    ) -> GateDecision:
+        self.bundle = bundle
+        base_term = bundle.term_by_name("base_ce")
+        gate_term = bundle.term_by_name("token_type_gate")
+        self.reference_objective = base_term.weighted_loss
+        if self.gate_weight != 0.0:
+            self.reference_objective = (
+                self.reference_objective + gate_term.weighted_loss
+            )
+        self.reference_gradients = torch.autograd.grad(
+            self.reference_objective,
+            self.parameters,
+            retain_graph=True,
+        )
+        return super().pre_backward(bundle, planned_step_id=planned_step_id)
+
+    def backward(
+        self,
+        loss: torch.Tensor,
+        *,
+        planned_step_id: int,
+        sync_gradients: bool = True,
+    ) -> None:
+        self.backward_loss = loss
+        super().backward(
+            loss,
+            planned_step_id=planned_step_id,
+            sync_gradients=sync_gradients,
+        )
+        loss.backward()
+
+
 class RuntimeWithPreparedModel(FakeRuntime):
     def __init__(self, log: list[str], model: object) -> None:
         super().__init__(log)
@@ -1301,6 +1872,62 @@ def _micro_steps(count: int, log: list[str] | None = None):
             vocab_groups=f"vocab-{index}",
             metadata={},
         )
+
+
+def _real_loss_projection() -> torch.nn.Linear:
+    projection = torch.nn.Linear(2, 8)
+    with torch.no_grad():
+        projection.weight.copy_(torch.linspace(-0.4, 0.6, steps=16).reshape(8, 2))
+        projection.bias.copy_(torch.linspace(0.3, -0.2, steps=8))
+    return projection
+
+
+def _real_loss_micro_step() -> SupervisedMicroStep:
+    token_sequence = TokenSequence(
+        pack_index=0,
+        input_ids=(0, 7),
+        segments=(
+            PackedSegment(
+                pack_index=0,
+                segment_index=0,
+                example_index=0,
+                example_id="ex-0",
+                start=0,
+                end=2,
+            ),
+        ),
+        atoms=(
+            TokenAtom(
+                pack_index=0,
+                segment_index=0,
+                example_index=0,
+                example_id="ex-0",
+                target_position=1,
+                token_id=7,
+                token_type="desc_text",
+                text="x",
+                logical_target_position=1,
+                source="unit",
+            ),
+        ),
+        spans=(),
+    )
+    vocab_groups = TokenVocabularyGroups(
+        vocab_size=8,
+        desc_text=(7,),
+        schema=(1, 2),
+        coordinate=(3, 4),
+        eos=(5,),
+        blocked=(0, 6),
+    )
+    return SupervisedMicroStep(
+        pack="pack-0",
+        encoded_examples=("example-0",),
+        position_inputs="positions-0",
+        token_sequence=token_sequence,
+        vocab_groups=vocab_groups,
+        metadata={},
+    )
 
 
 def _forward(log: list[str]):

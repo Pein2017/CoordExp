@@ -54,8 +54,9 @@ It also does not save these exact-resume surfaces:
 - RNG.
 
 Therefore checkpoints support explicit adapter-plus-delta model composition;
-they do not claim exact training-state resume. Pack cache v2 is rebuild-only,
-lives outside the run tree, and contributes only compact bindings to `run.json`.
+they do not claim exact training-state resume. Immutable pack cache v3 lives
+outside the run tree, publishes only to an absent semantic fingerprint target,
+and contributes only compact bindings to `run.json`.
 
 ## Inference artifacts
 

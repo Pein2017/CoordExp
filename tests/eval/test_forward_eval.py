@@ -61,6 +61,11 @@ def test_forward_eval_returns_one_pure_wide_observation_and_restores_mode(
     assert result.trigger_reasons == ("milestone_40pct",)
     assert result.example_count == 3
     assert result.pack_count == 2
+    assert result.accuracy_stats == {
+        "top1_correct": 2,
+        "top5_correct": 3,
+        "atom_count": 4,
+    }
     assert result.scalars == {
         "acc_top1": 0.5,
         "acc_top5": 0.75,
@@ -72,10 +77,16 @@ def test_forward_eval_returns_one_pure_wide_observation_and_restores_mode(
         "trigger_reasons": ["milestone_40pct"],
         "example_count": 3,
         "pack_count": 2,
+        "accuracy_stats": {
+            "top1_correct": 2,
+            "top5_correct": 3,
+            "atom_count": 4,
+        },
         "acc_top1": 0.5,
         "acc_top5": 0.75,
         "loss/total": 1.25,
     }
+    assert json.loads(json.dumps(result.to_logging_row())) == result.to_logging_row()
     assert model.training is True
     assert runtime.gathered == [(4, "eval", dict(FakeLossBundle.metrics))]
     assert list(tmp_path.iterdir()) == []
@@ -116,6 +127,25 @@ def test_forward_eval_streaming_counts_and_wide_scalars() -> None:
     assert result.scalars["loss/total"] == pytest.approx(1.25)
     assert "streaming.prepare:3" in log
     assert "streaming.finalize:3" in log
+
+
+def test_forward_eval_rejects_empty_stream_before_metric_reduction() -> None:
+    log: list[str] = []
+    runtime = FakeEvalRuntime(log)
+    runner = ForwardEvalRunner(
+        model=FakeModel(log),
+        micro_step_stream=(),
+        loss_runner=StreamingFakeLossRunner(log),
+        eval_source={"path": "tests/fixtures/eval.jsonl"},
+        qwen_forward=_qwen_forward(log),
+        loss_context_factory=_loss_context(log),
+        runtime=runtime,
+    )
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        runner.run(planned_step_id=1, trigger_reasons=("scheduled",))
+    assert exc_info.value.code == "eval_forward.empty_stream"
+    assert runtime.gathered == []
 
 
 def test_forward_eval_leaves_nonfinite_values_for_writer_normalization() -> None:
@@ -242,7 +272,13 @@ class FakeEvalRuntime:
         self.log = log
         self.gathered: list[tuple[int, str, dict[str, float]]] = []
 
-    def move_micro_step(self, micro_step: SupervisedMicroStep, *, planned_step_id: int, local_micro_step_index: int) -> SupervisedMicroStep:
+    def move_micro_step(
+        self,
+        micro_step: SupervisedMicroStep,
+        *,
+        planned_step_id: int,
+        local_micro_step_index: int,
+    ) -> SupervisedMicroStep:
         self.log.append(f"runtime.move:{planned_step_id}:{local_micro_step_index}")
         return micro_step
 
@@ -256,7 +292,11 @@ class FakeEvalRuntime:
     ) -> dict[str, Any]:
         self.log.append(f"runtime.gather:{planned_step_id}:{split}")
         self.gathered.append((planned_step_id, split, dict(metrics)))
-        return {"metrics": dict(metrics), "reduction": "single_rank"}
+        return {
+            "metrics": dict(metrics),
+            "accuracy_stats": dict(accuracy_stats or {}),
+            "reduction": "single_rank",
+        }
 
 
 class FakeLossRunner:
@@ -270,9 +310,14 @@ class FakeLossRunner:
 
 class FakeLossBundle:
     metrics = {"acc_top1": 0.5, "acc_top5": 0.75, "loss/total": 1.25}
+    accuracy_stats = {"top1_correct": 1, "top5_correct": 1, "atom_count": 1}
 
     def to_artifact_dict(self) -> dict[str, Any]:
-        return {"total_loss": 1.25, "metrics": dict(self.metrics)}
+        return {
+            "total_loss": 1.25,
+            "metrics": dict(self.metrics),
+            "accuracy_stats": dict(self.accuracy_stats),
+        }
 
 
 class StreamingFakeLossRunner(FakeLossRunner):
@@ -280,19 +325,32 @@ class StreamingFakeLossRunner(FakeLossRunner):
         del contexts
         raise AssertionError("streaming eval path must not retain all contexts")
 
-    def prepare_planned_step(self, micro_steps: tuple[SupervisedMicroStep, ...]) -> dict[str, int]:
+    def prepare_planned_step(
+        self, micro_steps: tuple[SupervisedMicroStep, ...]
+    ) -> dict[str, int]:
         self.log.append(f"streaming.prepare:{len(micro_steps)}")
         return {"micro_step_count": len(micro_steps)}
 
-    def compute_micro_step(self, context: Any, plan: dict[str, int], *, local_micro_step_index: int) -> FakeLossBundle:
+    def compute_micro_step(
+        self, context: Any, plan: dict[str, int], *, local_micro_step_index: int
+    ) -> FakeLossBundle:
         del context, plan
         self.log.append(f"streaming.loss:{local_micro_step_index}")
         return FakeLossBundle()
 
-    def finalize_planned_step(self, micro_loss_artifacts: tuple[dict[str, Any], ...], plan: dict[str, int]) -> dict[str, Any]:
+    def finalize_planned_step(
+        self, micro_loss_artifacts: tuple[dict[str, Any], ...], plan: dict[str, int]
+    ) -> dict[str, Any]:
         del plan
         self.log.append(f"streaming.finalize:{len(micro_loss_artifacts)}")
-        return {"metrics": dict(FakeLossBundle.metrics)}
+        return {
+            "metrics": dict(FakeLossBundle.metrics),
+            "accuracy_stats": {
+                "top1_correct": 2,
+                "top5_correct": 3,
+                "atom_count": 4,
+            },
+        }
 
 
 class NonfiniteLossRunner(StreamingFakeLossRunner):
@@ -300,34 +358,50 @@ class NonfiniteLossRunner(StreamingFakeLossRunner):
         self, micro_loss_artifacts: tuple[dict[str, Any], ...], plan: dict[str, int]
     ) -> dict[str, Any]:
         del micro_loss_artifacts, plan
-        return {"metrics": {"loss/total": float("nan"), "diagnostic/max_logit": float("inf")}}
+        return {
+            "metrics": {
+                "loss/total": float("nan"),
+                "diagnostic/max_logit": float("inf"),
+            }
+        }
 
 
 def _qwen_forward(log: list[str]):
     def forward(model: FakeModel, micro_step: SupervisedMicroStep) -> FakeForwardResult:
         index = int(str(micro_step.pack).split("-")[1])
-        log.append(f"forward:{index}:grad={torch.is_grad_enabled()}:training={getattr(model, 'training', None)}")
+        log.append(
+            f"forward:{index}:grad={torch.is_grad_enabled()}:training={getattr(model, 'training', None)}"
+        )
         return FakeForwardResult(torch.zeros(1, 2, 3), {"pack": index})
+
     return forward
 
 
 def _raising_forward(log: list[str]):
     def forward(model: FakeModel, micro_step: SupervisedMicroStep) -> FakeForwardResult:
         index = int(str(micro_step.pack).split("-")[1])
-        log.append(f"forward_raises:{index}:grad={torch.is_grad_enabled()}:training={getattr(model, 'training', None)}")
+        log.append(
+            f"forward_raises:{index}:grad={torch.is_grad_enabled()}:training={getattr(model, 'training', None)}"
+        )
         raise RuntimeError("synthetic forward failure")
+
     return forward
 
 
 def _loss_context(log: list[str]):
-    def factory(micro_step: SupervisedMicroStep, forward_result: FakeForwardResult) -> dict[str, Any]:
+    def factory(
+        micro_step: SupervisedMicroStep, forward_result: FakeForwardResult
+    ) -> dict[str, Any]:
         index = int(str(micro_step.pack).split("-")[1])
         log.append(f"context:{index}")
         return {"pack": micro_step.pack, "shape": tuple(forward_result.logits.shape)}
+
     return factory
 
 
-def _micro_step(index: int, *, encoded_examples: tuple[str, ...] = ("example",)) -> SupervisedMicroStep:
+def _micro_step(
+    index: int, *, encoded_examples: tuple[str, ...] = ("example",)
+) -> SupervisedMicroStep:
     return SupervisedMicroStep(
         pack=f"pack-{index}",
         encoded_examples=encoded_examples,
@@ -366,7 +440,9 @@ def _wave4_logits(rows: tuple[tuple[float, ...], ...]) -> torch.Tensor:
     return torch.tensor((rows,), dtype=torch.float32)
 
 
-def _wave4_segment(segment_index: int, start: int, end: int, *, pack_index: int) -> PackedSegment:
+def _wave4_segment(
+    segment_index: int, start: int, end: int, *, pack_index: int
+) -> PackedSegment:
     return PackedSegment(
         pack_index=pack_index,
         segment_index=segment_index,
@@ -424,7 +500,9 @@ def _wave4_context(
     )
 
 
-def _wave4_micro_step(context: LossContext, *, num_examples: int) -> SupervisedMicroStep:
+def _wave4_micro_step(
+    context: LossContext, *, num_examples: int
+) -> SupervisedMicroStep:
     pack_index = context.token_sequence.pack_index
     return SupervisedMicroStep(
         pack=_FakePack(pack_index=pack_index),
@@ -473,7 +551,9 @@ def _wave4_loss_runner_with_globally_unselected_gate_term() -> LossRunner:
 class _StaticQwenForward:
     """`qwen_forward` returns each pack's precomputed context unchanged."""
 
-    def __init__(self, contexts_by_pack: Mapping[int, LossContext] | None = None) -> None:
+    def __init__(
+        self, contexts_by_pack: Mapping[int, LossContext] | None = None
+    ) -> None:
         self._contexts_by_pack = (
             _WAVE4_CONTEXTS_BY_PACK if contexts_by_pack is None else contexts_by_pack
         )
@@ -483,7 +563,9 @@ class _StaticQwenForward:
         return self._contexts_by_pack[micro_step.pack.pack_index]
 
 
-def _wave4_loss_context_factory(micro_step: SupervisedMicroStep, forward_result: Any) -> Any:
+def _wave4_loss_context_factory(
+    micro_step: SupervisedMicroStep, forward_result: Any
+) -> Any:
     del micro_step
     return forward_result
 
@@ -564,7 +646,9 @@ def _run_rank(
         runner = ForwardEvalRunner(
             model=object(),
             micro_step_stream=iter(micro_steps),
-            loss_runner=loss_runner if loss_runner is not None else _wave4_loss_runner(),
+            loss_runner=loss_runner
+            if loss_runner is not None
+            else _wave4_loss_runner(),
             eval_source={"path": "fixture.jsonl"},
             qwen_forward=_StaticQwenForward(contexts_by_pack),
             loss_context_factory=_wave4_loss_context_factory,
@@ -634,10 +718,18 @@ _WAVE4_CONTEXTS_BY_PACK = {
         (_wave4_segment(0, 0, 3, pack_index=2),),
         (
             _wave4_atom(
-                pack_index=2, segment_index=0, target_position=1, token_id=1, token_type="schema"
+                pack_index=2,
+                segment_index=0,
+                target_position=1,
+                token_id=1,
+                token_type="schema",
             ),
             _wave4_atom(
-                pack_index=2, segment_index=0, target_position=2, token_id=5, token_type="eos"
+                pack_index=2,
+                segment_index=0,
+                target_position=2,
+                token_id=5,
+                token_type="eos",
             ),
         ),
         pack_index=2,
@@ -744,10 +836,14 @@ def _run_sharded_two_ranks(
     # both the default 3-pack fixture (evaluates to [0, 2] / [1], matching
     # this helper's own docstring) and any custom `micro_steps` subset.
     expected_rank0 = [
-        step.pack.pack_index for index, step in enumerate(micro_steps) if index % world_size == 0
+        step.pack.pack_index
+        for index, step in enumerate(micro_steps)
+        if index % world_size == 0
     ]
     expected_rank1 = [
-        step.pack.pack_index for index, step in enumerate(micro_steps) if index % world_size == 1
+        step.pack.pack_index
+        for index, step in enumerate(micro_steps)
+        if index % world_size == 1
     ]
     assert [step.pack.pack_index for step in rank0_steps] == expected_rank0
     assert [step.pack.pack_index for step in rank1_steps] == expected_rank1
@@ -798,7 +894,9 @@ def _run_sharded_two_ranks(
     return results[0].to_logging_row(), results[1].to_logging_row()
 
 
-def test_disjoint_shard_eval_reproduces_full_replicated_row_with_unequal_rank_atom_counts() -> None:
+def test_disjoint_shard_eval_reproduces_full_replicated_row_with_unequal_rank_atom_counts() -> (
+    None
+):
     replicated_row = _replicated_reference_row()
     rank0_row, rank1_row = _run_sharded_two_ranks()
 
@@ -810,7 +908,9 @@ def test_disjoint_shard_eval_reproduces_full_replicated_row_with_unequal_rank_at
     assert sharded_row["pack_count"] == replicated_row["pack_count"] == 3
     assert sharded_row["acc_top1"] == replicated_row["acc_top1"]
     assert sharded_row["acc_top5"] == replicated_row["acc_top5"]
-    assert sharded_row["loss/total"] == pytest.approx(replicated_row["loss/total"], rel=1e-5)
+    assert sharded_row["loss/total"] == pytest.approx(
+        replicated_row["loss/total"], rel=1e-5
+    )
     for name in ("base_ce", "token_type_gate"):
         assert sharded_row[f"loss/{name}"] == pytest.approx(
             replicated_row[f"loss/{name}"], rel=1e-5
@@ -824,9 +924,18 @@ def test_disjoint_shard_eval_reproduces_full_replicated_row_with_unequal_rank_at
             sharded_row[f"loss/{name}/segment_count"]
             == replicated_row[f"loss/{name}/segment_count"]
         )
-    assert sharded_row["count/supervised_atoms"] == replicated_row["count/supervised_atoms"]
-    assert sharded_row["count/eligible_segments"] == replicated_row["count/eligible_segments"]
-    assert sharded_row["count/skipped_segments"] == replicated_row["count/skipped_segments"]
+    assert (
+        sharded_row["count/supervised_atoms"]
+        == replicated_row["count/supervised_atoms"]
+    )
+    assert (
+        sharded_row["count/eligible_segments"]
+        == replicated_row["count/eligible_segments"]
+    )
+    assert (
+        sharded_row["count/skipped_segments"]
+        == replicated_row["count/skipped_segments"]
+    )
     # count/packs, count/examples are rank-local sums over the disjoint
     # shards, distinct from the row-level example_count/pack_count fields
     # (count/examples counts distinct segment example_ids -- 2 + 1 + 1 = 4
@@ -851,7 +960,9 @@ def test_disjoint_shard_eval_rejects_naive_disjoint_sum_of_local_losses() -> Non
 
     # mean_r(W * c_r) == sum_r(c_r) is exactly what the reducer computes;
     # prove it against the independently-computed replicated reference.
-    assert sharded_row["loss/total"] == pytest.approx(replicated_row["loss/total"], rel=1e-5)
+    assert sharded_row["loss/total"] == pytest.approx(
+        replicated_row["loss/total"], rel=1e-5
+    )
 
 
 def test_disjoint_shard_globally_zero_selected_term_matches_replicated_zero_weight_convention() -> (
@@ -963,7 +1074,9 @@ def test_disjoint_shard_eval_globally_zero_selected_term_is_rejected_identically
     assert sharded_excinfo.value.code == "loss.segment_balanced_zero_eligible"
 
 
-def _rows_equal_treating_nan_as_equal(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+def _rows_equal_treating_nan_as_equal(
+    a: Mapping[str, Any], b: Mapping[str, Any]
+) -> bool:
     if set(a) != set(b):
         return False
     for key in a:
@@ -1044,7 +1157,9 @@ def test_disjoint_shard_eval_nonfinite_shard_reduces_finite_flags_by_and_not_mea
     )
     sharded_writer.append_logging_row(sharded_row)
     replicated_writer.append_logging_row(replicated_row)
-    sharded_written = json.loads(sharded_writer.logging_path.read_text().splitlines()[0])
+    sharded_written = json.loads(
+        sharded_writer.logging_path.read_text().splitlines()[0]
+    )
     replicated_written = json.loads(
         replicated_writer.logging_path.read_text().splitlines()[0]
     )
@@ -1053,14 +1168,18 @@ def test_disjoint_shard_eval_nonfinite_shard_reduces_finite_flags_by_and_not_mea
     assert replicated_written["loss/total"] is None
     assert sharded_written["finite/total_loss"] == 0.0
     assert replicated_written["finite/total_loss"] == 0.0
-    assert sharded_written["non_finite_fields"] == replicated_written["non_finite_fields"]
+    assert (
+        sharded_written["non_finite_fields"] == replicated_written["non_finite_fields"]
+    )
     assert "loss/total" in sharded_written["non_finite_fields"]
     assert set(sharded_written) == set(replicated_written)
     for key in sharded_written:
         assert sharded_written[key] == replicated_written[key], key
 
 
-def test_replicated_fallback_when_pack_count_below_world_size_keeps_pre_change_semantics() -> None:
+def test_replicated_fallback_when_pack_count_below_world_size_keeps_pre_change_semantics() -> (
+    None
+):
     world_size = 4
     assert (
         resolve_active_eval_reduction_mode(pack_count=3, world_size=world_size)
@@ -1152,7 +1271,9 @@ def test_resolve_active_eval_reduction_mode_rejects_invalid_control(
 def test_partition_eval_micro_steps_for_rank_is_deterministic_and_disjoint() -> None:
     world_size = 2
     shards = [
-        partition_eval_micro_steps_for_rank(_WAVE4_ALL_PACKS, rank=rank, world_size=world_size)
+        partition_eval_micro_steps_for_rank(
+            _WAVE4_ALL_PACKS, rank=rank, world_size=world_size
+        )
         for rank in range(world_size)
     ]
     all_indices = [step.pack.pack_index for shard in shards for step in shard]
@@ -1171,7 +1292,9 @@ def _bare_micro_step_with_pack_index(pack_index: int) -> SupervisedMicroStep:
     )
 
 
-def test_partition_eval_micro_steps_for_rank_uses_sequence_position_not_pack_index_value() -> None:
+def test_partition_eval_micro_steps_for_rank_uses_sequence_position_not_pack_index_value() -> (
+    None
+):
     # Opus HOLD P2-A: pack_index values are deliberately non-contiguous and
     # chosen so that partitioning by pack_index VALUE (the old, rejected
     # behavior: pack_index % world_size) would produce a DIFFERENT split
@@ -1186,7 +1309,9 @@ def test_partition_eval_micro_steps_for_rank_uses_sequence_position_not_pack_ind
     )
     world_size = 2
     shards = [
-        partition_eval_micro_steps_for_rank(micro_steps, rank=rank, world_size=world_size)
+        partition_eval_micro_steps_for_rank(
+            micro_steps, rank=rank, world_size=world_size
+        )
         for rank in range(world_size)
     ]
     # Every pack covered exactly once, by its position in the given order.
@@ -1200,7 +1325,9 @@ def test_partition_eval_micro_steps_for_rank_uses_sequence_position_not_pack_ind
     assert [step.pack.pack_index for step in shards[1]] != [7, 5]
 
 
-def test_partition_eval_micro_steps_for_rank_still_validates_pack_identity_fail_closed() -> None:
+def test_partition_eval_micro_steps_for_rank_still_validates_pack_identity_fail_closed() -> (
+    None
+):
     micro_steps = (
         SupervisedMicroStep(
             pack=object(),
@@ -1229,7 +1356,9 @@ def test_forward_eval_runner_rejects_disjoint_shard_with_world_size_one() -> Non
     assert exc_info.value.code == "eval_forward.disjoint_shard_requires_multi_rank"
 
 
-def test_forward_eval_runner_rejects_non_streaming_loss_runner_in_disjoint_shard_mode() -> None:
+def test_forward_eval_runner_rejects_non_streaming_loss_runner_in_disjoint_shard_mode() -> (
+    None
+):
     with pytest.raises(RuntimeContractError) as exc_info:
         ForwardEvalRunner(
             model=object(),
@@ -1243,7 +1372,9 @@ def test_forward_eval_runner_rejects_non_streaming_loss_runner_in_disjoint_shard
     assert exc_info.value.code == "eval_forward.loss_runner_requires_streaming_protocol"
 
 
-def test_forward_eval_runner_rejects_non_streaming_loss_runner_in_replicated_mode() -> None:
+def test_forward_eval_runner_rejects_non_streaming_loss_runner_in_replicated_mode() -> (
+    None
+):
     # The non-streaming batch eval path has been deleted: construction must
     # fail closed for any loss runner lacking the streaming protocol, even
     # in the default replicated reduction mode.

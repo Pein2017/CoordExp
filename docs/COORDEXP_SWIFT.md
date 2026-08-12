@@ -100,15 +100,16 @@ single-process or DeepSpeed backend mode.
   selected-token embedding delta. Inference loads both through explicit paths.
   No exact optimizer, scheduler, scaler, dataloader, iterator, or RNG training
   continuation is provided.
-- Pack cache v2 is a rebuild-only internal cache outside the run tree. The run
-  records only compact immutable train/eval materialization bindings. Cache
-  identity is content-only: file `mtime` does not participate in the
-  fingerprint, so touching a dataset file without changing its bytes reuses
-  the existing cache. Distributed train resolution loads only the chunks a
-  rank's schedule requires (chunk-granular, rank-selective); every chunk that
-  is loaded still gets full digest and payload validation, and manifest-level
-  declaration checks (contiguity, counts, digest syntax, path existence) run
-  over every declared chunk regardless of whether that chunk is loaded.
+- Pack cache v3 is an immutable internal cache outside the run tree. `Rebuild`
+  means publishing only to a previously absent version/fingerprint target; the
+  normal path never repairs, replaces, deletes, or garbage-collects an existing
+  target. The run records only compact train/eval materialization bindings.
+  Cache identity binds content and declared producer sources rather than file
+  `mtime`, so touching a dataset file without changing its bytes reuses the
+  existing cache. Before Accelerate or model construction, distributed startup
+  validates the manifest and current rank's required train chunks plus every
+  eval payload. Loaded train chunks receive full digest and restricted-payload
+  validation, while manifest declaration checks cover every declared chunk.
 - Completed training-step rows additionally carry `step_duration_seconds`,
   `input_build_seconds`, and `input_wait_seconds` (max-reduced across ranks;
   additive fields only, never a replacement for an existing row key). For

@@ -13,6 +13,10 @@ import torch.distributed as dist
 
 from src.common.errors import RuntimeContractError
 from src.runtime import RankGradientFiniteReport, RankScalarFiniteReport
+from src.training.exact_resume import (
+    DistributedExactResumeRestoreStatus,
+    DistributedExactResumeStatus,
+)
 import src.training.pipeline as training_pipeline
 from src.training.pipeline import (
     _RANK_REPORT_FRAME_BYTES,
@@ -210,6 +214,32 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
             float(peer_rank + 1) for peer_rank in range(_WORLD_SIZE)
         ]
 
+        publication_statuses = gather(
+            DistributedExactResumeStatus(
+                phase="commit",
+                rank=rank,
+                world_size=_WORLD_SIZE,
+                ok=True,
+            )
+        )
+        assert [status.world_size for status in publication_statuses] == [
+            _WORLD_SIZE
+        ] * _WORLD_SIZE
+
+        restore_statuses = gather(
+            DistributedExactResumeRestoreStatus(
+                phase="restore_apply",
+                rank=rank,
+                world_size=_WORLD_SIZE,
+                ok=False,
+                error_code="training_state.test_failure",
+                error_type="TestFailure",
+            )
+        )
+        assert [status.world_size for status in restore_statuses] == [
+            _WORLD_SIZE
+        ] * _WORLD_SIZE
+
         metric_reports = gather(
             {
                 "kind": "metrics",
@@ -308,8 +338,8 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
         finally:
             training_pipeline._rank_report_header = original_rank_report_header
 
-        assert all_gather_calls == 8
-        output.put((rank, "ok:8"))
+        assert all_gather_calls == 10
+        output.put((rank, "ok:10"))
     except BaseException:
         output.put((rank, traceback.format_exc()))
         raise
@@ -365,4 +395,4 @@ def test_eight_rank_reports_use_bounded_typed_collectives_and_fail_closed() -> N
         messages[int(rank)] = str(message)
 
     assert [process.exitcode for process in processes] == [0] * _WORLD_SIZE
-    assert messages == {rank: "ok:8" for rank in range(_WORLD_SIZE)}
+    assert messages == {rank: "ok:10" for rank in range(_WORLD_SIZE)}

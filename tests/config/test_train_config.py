@@ -12,7 +12,13 @@ import yaml
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_json
 from src.config.loader import load_train_config
-from src.config.models import CoordGaussianRPSLossConfig, OptimizerGroupConfig, TrainConfig
+from src.config.models import (
+    CoordGaussianRPSLossConfig,
+    OptimizerGroupConfig,
+    PackingConfig,
+    RuntimeConfig,
+    TrainConfig,
+)
 from src.config.paths import resolve_run_directory
 from src.config.resolve import (
     estimate_full_logits_bytes,
@@ -33,8 +39,20 @@ INFRASTRUCTURE_DELETION_ALLOWLIST = (
     "runtime.deepspeed",
     "runtime.accelerate.gradient_accumulation_steps",
     "runtime.accelerate.mixed_precision",
+    "runtime.determinism.mode=legacy",
     "training.logging",
     "debug.dry_run_writes_artifacts",
+    "packing.policy=source_order_next_fit",
+    "packing.window_size=null",
+    "packing.lookahead=null",
+    "packing.seed=0",
+    "packing.worker_count=1",
+    "packing.cursor_byte_budget=65536",
+    "packing.max_packs_per_fragment=null",
+    "packing.fragment_item_budget=1024",
+    "packing.fragment_byte_budget=4194304",
+    "resume.mode=disabled",
+    "resume.checkpoint_dir=null",
 )
 ACTIVE_PROFILE_BASELINE = Path(
     "tests/config/fixtures/active_profile_wave2_baseline.json"
@@ -56,14 +74,18 @@ def test_smoke_config_loads_and_writes_resolved_artifacts(tmp_path: Path) -> Non
     assert resolved.config.model.base_model == str(Path(authored_model_path).resolve())
     assert len(resolved.fingerprint) == 64
     assert resolved.path_origins["data.train.path"].declared_path == "examples.jsonl"
-    assert resolved.path_origins["model.base_model"].declared_path == authored_model_path
+    assert (
+        resolved.path_origins["model.base_model"].declared_path == authored_model_path
+    )
 
     artifacts = write_resolved_config_artifacts(resolved, tmp_path / "run-a")
     payload = json.loads(artifacts.json_path.read_text())
 
     assert artifacts.yaml_path.exists()
     assert payload["resolution"]["fingerprint"] == resolved.fingerprint
-    assert payload["config"]["data"]["train"]["path"] == str(fixture_root / "examples.jsonl")
+    assert payload["config"]["data"]["train"]["path"] == str(
+        fixture_root / "examples.jsonl"
+    )
 
 
 @pytest.mark.parametrize("field", ("lr", "weight_decay"))
@@ -176,14 +198,27 @@ def test_three_level_inheritance_required_and_path_origins(tmp_path: Path) -> No
 
     assert resolved.config.run.name == "demo-run"
     assert resolved.config.checkpoint.steps == (2, 4)
-    assert resolved.config.data.train.path == str((direction.parent / "data/train.jsonl").resolve())
+    assert resolved.config.data.train.path == str(
+        (direction.parent / "data/train.jsonl").resolve()
+    )
     assert resolved.config.model.base_model == str(
         (base.parent / "model_cache/models/Qwen/example").resolve()
     )
-    assert resolved.config.adapter.path == str((direction.parent / "adapters/demo").resolve())
-    assert resolved.path_origins["model.base_model"].declaring_config_path == base.resolve()
-    assert resolved.path_origins["data.train.path"].declaring_config_path == direction.resolve()
-    assert resolved.path_origins["adapter.path"].declaring_config_path == direction.resolve()
+    assert resolved.config.adapter.path == str(
+        (direction.parent / "adapters/demo").resolve()
+    )
+    assert (
+        resolved.path_origins["model.base_model"].declaring_config_path
+        == base.resolve()
+    )
+    assert (
+        resolved.path_origins["data.train.path"].declaring_config_path
+        == direction.resolve()
+    )
+    assert (
+        resolved.path_origins["adapter.path"].declaring_config_path
+        == direction.resolve()
+    )
     assert [source.path for source in resolved.sources] == [
         base.resolve(),
         direction.resolve(),
@@ -231,7 +266,9 @@ def test_training_precision_rejects_fp32_before_accelerator_construction(
         load_train_config(config_path)
 
 
-def test_train_order_defaults_to_source_order_and_rejects_shuffle(tmp_path: Path) -> None:
+def test_train_order_defaults_to_source_order_and_rejects_shuffle(
+    tmp_path: Path,
+) -> None:
     default_path = tmp_path / "default.yaml"
     payload = _minimal_config()
     payload["data"].pop("train_order", None)
@@ -273,6 +310,292 @@ def test_fa2_branch_proof_explicit_every_forward_stays_explicit(tmp_path: Path) 
     resolved = load_train_config(config_path)
 
     assert resolved.config.model.fa2_branch_proof == "every_forward"
+
+
+def test_forward_input_provider_mode_defaults_to_synchronous_and_is_persisted(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    payload["training"].pop("forward_input_provider_mode", None)
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.training.forward_input_provider_mode == "synchronous"
+    assert (
+        resolved.config_dict["training"]["forward_input_provider_mode"] == "synchronous"
+    )
+    assert (
+        resolved.to_artifact_dict()["config"]["training"]["forward_input_provider_mode"]
+        == "synchronous"
+    )
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ("synchronous", "overlapped", "legacy_fused"),
+)
+def test_forward_input_provider_mode_accepts_exact_strict_values(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    config_path = tmp_path / f"{mode}.yaml"
+    payload = _minimal_config()
+    payload["training"]["forward_input_provider_mode"] = mode
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.training.forward_input_provider_mode == mode
+    assert resolved.config_dict["training"]["forward_input_provider_mode"] == mode
+
+
+@pytest.mark.parametrize("mode", ("legacy", "fused", "async", "OVERLAPPED", ""))
+def test_forward_input_provider_mode_rejects_unknown_or_renamed_values(
+    tmp_path: Path,
+    mode: str,
+) -> None:
+    config_path = tmp_path / "invalid.yaml"
+    payload = _minimal_config()
+    payload["training"]["forward_input_provider_mode"] = mode
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    assert "training.forward_input_provider_mode" in exc_info.value.context["field"]
+
+
+def test_packing_policy_defaults_to_source_order_next_fit_and_is_persisted(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    assert payload["packing"] == {"global_max_length": 12_000}
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    packing = resolved.config.packing
+    assert packing.policy == "source_order_next_fit"
+    assert packing.window_size is None
+    assert packing.lookahead is None
+    assert packing.seed == 0
+    assert packing.worker_count == 1
+    assert packing.cursor_byte_budget == 65_536
+    assert packing.max_packs_per_fragment is None
+    assert packing.fragment_item_budget == 1_024
+    assert packing.fragment_byte_budget == 4_194_304
+    assert resolved.config_dict["packing"] == packing.model_dump(mode="json")
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_policy"),
+    [
+        (
+            {
+                "global_max_length": 12_000,
+                "policy": "window_binpack",
+                "window_size": 32,
+                "seed": 17,
+                "worker_count": 4,
+            },
+            "window_binpack",
+        ),
+        (
+            {
+                "global_max_length": 12_000,
+                "policy": "online_window_binpack",
+                "lookahead": 32,
+                "seed": 17,
+                "worker_count": 4,
+                "cursor_byte_budget": 65_536,
+                "max_packs_per_fragment": 8,
+                "fragment_item_budget": 1_024,
+                "fragment_byte_budget": 4_194_304,
+            },
+            "online_window_binpack",
+        ),
+    ],
+)
+def test_packing_policy_accepts_exact_policy_specific_parameters(
+    payload: dict[str, object],
+    expected_policy: str,
+) -> None:
+    packing = PackingConfig.model_validate(payload)
+
+    assert packing.policy == expected_policy
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"global_max_length": 12_000, "policy": "best_fit"},
+        {
+            "global_max_length": 12_000,
+            "policy": "source_order_next_fit",
+            "window_size": 32,
+        },
+        {"global_max_length": 12_000, "policy": "window_binpack"},
+        {
+            "global_max_length": 12_000,
+            "policy": "window_binpack",
+            "window_size": 32,
+            "lookahead": 32,
+        },
+        {"global_max_length": 12_000, "policy": "online_window_binpack"},
+        {
+            "global_max_length": 12_000,
+            "policy": "online_window_binpack",
+            "lookahead": 32,
+        },
+        {
+            "global_max_length": 12_000,
+            "policy": "online_window_binpack",
+            "lookahead": 32,
+            "max_packs_per_fragment": 8,
+            "window_size": 32,
+        },
+        {
+            "global_max_length": 12_000,
+            "policy": "window_binpack",
+            "window_size": 0,
+        },
+        {
+            "global_max_length": 12_000,
+            "policy": "online_window_binpack",
+            "lookahead": 0,
+            "max_packs_per_fragment": 8,
+        },
+        {
+            "global_max_length": 12_000,
+            "policy": "online_window_binpack",
+            "lookahead": 32,
+            "max_packs_per_fragment": 0,
+        },
+        {"global_max_length": 12_000, "worker_count": 0},
+        {"global_max_length": 12_000, "cursor_byte_budget": 0},
+        {"global_max_length": 12_000, "fragment_item_budget": 0},
+        {"global_max_length": 12_000, "fragment_byte_budget": 0},
+    ],
+)
+def test_packing_policy_rejects_unknown_incompatible_or_unbounded_parameters(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        PackingConfig.model_validate(payload)
+
+
+def test_exact_resume_defaults_disabled_and_is_persisted(tmp_path: Path) -> None:
+    config_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    assert "resume" not in payload
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.resume.mode == "disabled"
+    assert resolved.config.resume.checkpoint_dir is None
+    assert resolved.config_dict["resume"] == {
+        "mode": "disabled",
+        "checkpoint_dir": None,
+    }
+
+
+def test_runtime_determinism_defaults_to_legacy_and_is_persisted(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    assert payload["runtime"] == {"seed": 17}
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.runtime.determinism.mode == "legacy"
+    assert resolved.config_dict["runtime"] == {
+        "seed": 17,
+        "determinism": {"mode": "legacy"},
+    }
+
+
+def test_runtime_determinism_accepts_only_explicit_supported_modes() -> None:
+    strict = RuntimeConfig.model_validate(
+        {"seed": 17, "determinism": {"mode": "strict_cuda_replay_v1"}}
+    )
+    assert strict.determinism.mode == "strict_cuda_replay_v1"
+
+    with pytest.raises(ValueError):
+        RuntimeConfig.model_validate(
+            {"seed": 17, "determinism": {"mode": "best_effort"}}
+        )
+
+
+def test_exact_resume_requires_strict_cuda_replay_determinism(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "resume.yaml"
+    payload = _minimal_config()
+    payload["resume"] = {
+        "mode": "exact_same_world_size",
+        "checkpoint_dir": "parent/checkpoints/step-3",
+    }
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+    assert "runtime.determinism.mode" in str(exc_info.value)
+
+    payload["runtime"]["determinism"] = {"mode": "strict_cuda_replay_v1"}
+    _write_yaml(config_path, payload)
+    resolved = load_train_config(config_path)
+    assert resolved.config.resume.mode == "exact_same_world_size"
+    assert resolved.config.runtime.determinism.mode == "strict_cuda_replay_v1"
+
+
+def test_exact_resume_accepts_same_world_mode_and_resolves_checkpoint_path(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    payload = _minimal_config()
+    payload["runtime"]["determinism"] = {"mode": "strict_cuda_replay_v1"}
+    payload["resume"] = {
+        "mode": "exact_same_world_size",
+        "checkpoint_dir": "parent/checkpoints/step-5",
+    }
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    expected = (tmp_path / "parent/checkpoints/step-5").resolve()
+    assert resolved.config.resume.mode == "exact_same_world_size"
+    assert resolved.config.resume.checkpoint_dir == str(expected)
+    assert resolved.path_origins["resume.checkpoint_dir"].resolved_path == expected
+
+
+@pytest.mark.parametrize(
+    "resume",
+    [
+        {"mode": "restart"},
+        {"mode": "disabled", "checkpoint_dir": "checkpoint"},
+        {"mode": "exact"},
+        {"mode": "EXACT_SAME_WORLD_SIZE"},
+    ],
+)
+def test_exact_resume_rejects_unknown_or_incompatible_controls(
+    tmp_path: Path,
+    resume: dict[str, object],
+) -> None:
+    config_path = tmp_path / "invalid.yaml"
+    payload = _minimal_config()
+    payload["resume"] = resume
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    assert "resume" in exc_info.value.context["field"]
 
 
 def test_geometry_flip_augmentation_defaults_disabled(tmp_path: Path) -> None:
@@ -398,9 +721,9 @@ def test_coord_gaussian_rps_loss_config_defaults_disabled_and_loads_plugin_param
     }
     _write_yaml(enabled_path, payload)
 
-    enabled_coord_loss = (
-        load_train_config(enabled_path).config.losses.protected.coord_gaussian_rps
-    )
+    enabled_coord_loss = load_train_config(
+        enabled_path
+    ).config.losses.protected.coord_gaussian_rps
     assert enabled_coord_loss.weight == pytest.approx(1.0)
     assert enabled_coord_loss.gaussian_weight == pytest.approx(0.5)
     assert enabled_coord_loss.rps_weight == pytest.approx(0.2)
@@ -502,11 +825,14 @@ def test_runtime_batch_and_qwen_control_checks(tmp_path: Path) -> None:
     with pytest.raises(ConfigContractError, match="divide evenly"):
         resolve_effective_batch_runtime(resolved.config, world_size=3)
 
-    assert estimate_full_logits_bytes(
-        global_max_length=12_000,
-        vocab_size=100_000,
-        dtype="bf16",
-    ) == 2_400_000_000
+    assert (
+        estimate_full_logits_bytes(
+            global_max_length=12_000,
+            vocab_size=100_000,
+            dtype="bf16",
+        )
+        == 2_400_000_000
+    )
     with pytest.raises(ConfigContractError, match="budget"):
         resolve_qwen_runtime_controls(
             resolved.config,
@@ -674,9 +1000,7 @@ def test_active_profile_migration_changes_only_infrastructure_allowlist() -> Non
         INFRASTRUCTURE_DELETION_ALLOWLIST
     )
     current_paths = {
-        str(path)
-        for root in ACTIVE_TRAIN_CONFIG_ROOTS
-        for path in root.rglob("*.yaml")
+        str(path) for root in ACTIVE_TRAIN_CONFIG_ROOTS for path in root.rglob("*.yaml")
     }
     assert current_paths == set(baseline["profiles"])
 
@@ -687,10 +1011,13 @@ def test_active_profile_migration_changes_only_infrastructure_allowlist() -> Non
     mismatches = _profile_digest_mismatches(payloads, baseline["profiles"])
     assert mismatches == {}
 
+
 @pytest.mark.parametrize(
     ("field_path", "value"),
     [
         ("runtime.seed", 18),
+        ("packing.seed", 18),
+        ("resume.mode", "exact_same_world_size"),
         ("eval.forward.every_fraction", 0.2),
         ("checkpoint.every_fraction", 0.2),
     ],
@@ -705,6 +1032,12 @@ def test_active_profile_semantic_digest_detects_non_allowlisted_drift(
     assert _profile_digest_mismatches({path: payload}, {path: expected}) == {}
 
     _set_nested(payload, field_path, value)
+    if field_path == "resume.mode":
+        _set_nested(
+            payload,
+            "runtime.determinism.mode",
+            "strict_cuda_replay_v1",
+        )
 
     mismatches = _profile_digest_mismatches({path: payload}, {path: expected})
     assert set(mismatches) == {path}
@@ -755,8 +1088,9 @@ def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
     assert smoke.data.eval is not None
     assert smoke.data.eval.sample_limit == 64
     assert smoke.data.augmentation.train.geometry_flips.enabled is True
-    assert smoke.data.augmentation.train.geometry_flips.horizontal_prob == pytest.approx(
-        0.5
+    assert (
+        smoke.data.augmentation.train.geometry_flips.horizontal_prob
+        == pytest.approx(0.5)
     )
     assert smoke.data.augmentation.train.geometry_flips.vertical_prob == pytest.approx(
         0.2
@@ -861,7 +1195,9 @@ def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
     assert protected.coord_gaussian_rps.gaussian_r95_fallback_bins == 8
 
 
-def test_random_ordering_pure_ce_typegate_configs_are_matched_and_prompt_neutral() -> None:
+def test_random_ordering_pure_ce_typegate_configs_are_matched_and_prompt_neutral() -> (
+    None
+):
     prod_path = Path(
         "configs/coordexp_swift/prod/"
         "qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_"
@@ -892,15 +1228,19 @@ def test_random_ordering_pure_ce_typegate_configs_are_matched_and_prompt_neutral
     assert smoke.template.object_ordering == "random"
     assert prod.runtime.seed == 17
     assert smoke.runtime.seed == 17
-    assert resolve_effective_batch_runtime(
-        prod, world_size=8
-    ).resolved_grad_accum_steps == 3
-    assert resolve_planned_step_schedule(
-        prod,
-        packs_per_epoch=14_660,
-        world_size=8,
-        source_config_path=str(prod_path),
-    ).resolved_max_steps == 4_887
+    assert (
+        resolve_effective_batch_runtime(prod, world_size=8).resolved_grad_accum_steps
+        == 3
+    )
+    assert (
+        resolve_planned_step_schedule(
+            prod,
+            packs_per_epoch=14_660,
+            world_size=8,
+            source_config_path=str(prod_path),
+        ).resolved_max_steps
+        == 4_887
+    )
 
     for candidate, reference in (
         (prod, prod_reference),
@@ -1065,6 +1405,29 @@ def _remove_infrastructure_allowlist(payload: dict[str, Any]) -> dict[str, Any]:
 def _active_profile_semantic_digest(payload: dict[str, Any]) -> str:
     normalized = _remove_infrastructure_allowlist(payload)
     resolved_mapping = TrainConfig.model_validate(normalized).model_dump(mode="json")
+    packing = resolved_mapping["packing"]
+    compatibility_defaults = {
+        "policy": "source_order_next_fit",
+        "window_size": None,
+        "lookahead": None,
+        "seed": 0,
+        "worker_count": 1,
+        "cursor_byte_budget": 65_536,
+        "max_packs_per_fragment": None,
+        "fragment_item_budget": 1_024,
+        "fragment_byte_budget": 4_194_304,
+    }
+    if all(packing.get(key) == value for key, value in compatibility_defaults.items()):
+        for key in compatibility_defaults:
+            packing.pop(key)
+    if resolved_mapping.get("resume") == {
+        "mode": "disabled",
+        "checkpoint_dir": None,
+    }:
+        resolved_mapping.pop("resume")
+    runtime = resolved_mapping["runtime"]
+    if runtime.get("determinism") == {"mode": "legacy"}:
+        runtime.pop("determinism")
     return sha256_json(resolved_mapping)
 
 

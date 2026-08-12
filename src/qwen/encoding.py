@@ -117,7 +117,9 @@ class EncodedExample:
             "supervised_token_count": sum(
                 span.token_count for span in self.supervised_token_spans
             ),
-            "ignored_token_count": sum(span.token_count for span in self.ignored_token_spans),
+            "ignored_token_count": sum(
+                span.token_count for span in self.ignored_token_spans
+            ),
             "image_encoding": self.image_encoding.to_artifact_dict(),
             "supervised_token_spans": [
                 span.to_artifact_dict() for span in self.supervised_token_spans
@@ -176,8 +178,7 @@ def encode_rendered_example(
     )
     base_input_ids = tuple(int(token_id) for token_id in tokenized["input_ids"])
     base_offset_mapping = tuple(
-        (int(start), int(end))
-        for start, end in tokenized["offset_mapping"]
+        (int(start), int(end)) for start, end in tokenized["offset_mapping"]
     )
     expansion = _expand_image_pad_tokens(
         tokenizer=components.tokenizer,
@@ -236,7 +237,10 @@ def _apply_chat_template(processor: Any, rendered: RenderedExample) -> str:
         raise EncodingContractError(
             "Qwen processor chat template must return text",
             code="qwen.chat_template_text",
-            context={"example_id": rendered.example_id, "value_type": type(chat_text).__name__},
+            context={
+                "example_id": rendered.example_id,
+                "value_type": type(chat_text).__name__,
+            },
         )
     return chat_text
 
@@ -288,13 +292,18 @@ def _expand_image_pad_tokens(
         )
     image_pad_id = int(image_pad_id)
     image_pad_indices = [
-        index for index, token_id in enumerate(base_input_ids) if token_id == image_pad_id
+        index
+        for index, token_id in enumerate(base_input_ids)
+        if token_id == image_pad_id
     ]
     if len(image_pad_indices) != 1:
         raise EncodingContractError(
             "V1 encoded examples must contain exactly one image placeholder",
             code="qwen.image_pad_count",
-            context={"example_id": example_id, "image_pad_count": len(image_pad_indices)},
+            context={
+                "example_id": example_id,
+                "image_pad_count": len(image_pad_indices),
+            },
         )
     image_pad_base_index = image_pad_indices[0]
 
@@ -434,7 +443,7 @@ def _token_indices_for_char_range(
     # Must stay a full linear scan, not a bisect/binary search: zero-width
     # special-token offsets (e.g. (0, 0)) can appear non-monotonically inside
     # offset_mapping, which would silently break a sorted-search shortcut.
-    # See openspec/changes/streamline-coordexp-swift-base-infrastructure/
+    # See openspec/changes/archive/2026-08-06-streamline-coordexp-swift-base-infrastructure/
     # implementation-notes.md "M5a" and
     # test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisect
     # for the concrete counterexample.

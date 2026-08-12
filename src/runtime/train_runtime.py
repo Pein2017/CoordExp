@@ -13,7 +13,6 @@ from src.common.errors import RuntimeContractError
 from src.config.models import RuntimeBatchResolution, RuntimeConfig
 from src.runtime.finite_gates import (
     GateDecision,
-    RankGradientFiniteReport,
     RankScalarFiniteReport,
     build_gradient_finite_report,
     reduce_gradient_overflow_reports,
@@ -30,9 +29,19 @@ _ACCURACY_METRIC_CORRECT_FIELDS: dict[str, str] = {
     "acc_top1": "top1_correct",
     "acc_top5": "top5_correct",
 }
-_ACCURACY_ATOM_COUNT_FIELD = "accuracy_atom_count"
+_ACCURACY_ATOM_COUNT_FIELD = "atom_count"
 _MAX_REDUCED_METRIC_KEYS = frozenset(
-    {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
+    {
+        "input_build_seconds",
+        "input_wait_seconds",
+        "eval_duration_seconds",
+        "resource/cpu_io_read_bytes",
+        "resource/cpu_io_write_bytes",
+        "resource/cpu_max_rss_bytes",
+        "resource/gpu_max_memory_allocated_bytes",
+        "resource/gpu_max_memory_reserved_bytes",
+        "step_duration_seconds",
+    }
 )
 
 # Sharded eval.forward reduction (design Seam C): a compact, mode-explicit
@@ -141,9 +150,9 @@ class TrainRuntime:
             runtime_batch=runtime_batch,
             expected_mixed_precision=expected_mixed_precision,
         )
-        seed_training_runtime(
+        self.seed_receipt = seed_training_runtime(
             runtime_config.seed,
-            deterministic=False,
+            determinism_mode=runtime_config.determinism.mode,
             phase="runtime_setup_reapplied",
         )
         self.model.to(self.device)
@@ -265,27 +274,59 @@ class TrainRuntime:
     ) -> dict[str, Any]:
         values = {str(key): float(metrics[key]) for key in sorted(metrics)}
         checked_accuracy_stats = _checked_accuracy_stats(accuracy_stats)
-        if self.world_size > 1:
-            values = self._reduce_metric_reports(
-                {
-                    "kind": "metrics",
-                    "planned_step_id": int(planned_step_id),
-                    "split": str(split),
-                    "rank": self.rank,
-                    "world_size": self.world_size,
-                    "metrics": values,
-                    "accuracy_stats": checked_accuracy_stats,
-                    "reduction_mode": reduction_mode,
-                }
+        accuracy_keys = tuple(
+            key for key in values if key in _ACCURACY_METRIC_CORRECT_FIELDS
+        )
+        if accuracy_keys and checked_accuracy_stats is None:
+            raise RuntimeContractError(
+                "accuracy metrics require exact integer accuracy_stats",
+                code="runtime.accuracy_stats_missing",
+                context={"metrics": list(accuracy_keys)},
             )
-        return {
+        if self.world_size > 1:
+            values, per_rank_metrics, global_accuracy_stats = (
+                self._reduce_metric_reports(
+                    {
+                        "kind": "metrics",
+                        "planned_step_id": int(planned_step_id),
+                        "split": str(split),
+                        "rank": self.rank,
+                        "world_size": self.world_size,
+                        "metrics": values,
+                        "accuracy_stats": checked_accuracy_stats,
+                        "reduction_mode": reduction_mode,
+                    }
+                )
+            )
+        else:
+            global_accuracy_stats = checked_accuracy_stats
+            if accuracy_keys and global_accuracy_stats is not None:
+                _validate_accuracy_metric_ratios(
+                    values,
+                    global_accuracy_stats,
+                    metric_keys=accuracy_keys,
+                    rank=self.rank,
+                )
+                values = _derive_accuracy_metrics(
+                    values,
+                    global_accuracy_stats,
+                    metric_keys=accuracy_keys,
+                )
+            per_rank_metrics = {
+                str(self.rank): {key: values[key] for key in sorted(values)}
+            }
+        result = {
             "planned_step_id": int(planned_step_id),
             "split": split,
             "rank": self.rank,
             "world_size": self.world_size,
             "metrics": values,
+            "per_rank_metrics": per_rank_metrics,
             "reduction": "single_rank" if self.world_size == 1 else "all_rank_mixed",
         }
+        if global_accuracy_stats is not None:
+            result["accuracy_stats"] = global_accuracy_stats
+        return result
 
     def gather_loss_denominators(
         self,
@@ -402,7 +443,11 @@ class TrainRuntime:
                     code="runtime.eval_reduction_consensus_invalid",
                     context={"report_index": report_index},
                 ) from exc
-            if report_rank < 0 or report_rank >= self.world_size or report_rank in ranks_seen:
+            if (
+                report_rank < 0
+                or report_rank >= self.world_size
+                or report_rank in ranks_seen
+            ):
                 raise RuntimeContractError(
                     "eval reduction consensus must contain one unique report per world rank",
                     code="runtime.eval_reduction_consensus_ranks",
@@ -516,7 +561,13 @@ class TrainRuntime:
             ) from exc
         return reports
 
-    def _reduce_metric_reports(self, local_report: Mapping[str, Any]) -> dict[str, float]:
+    def _reduce_metric_reports(
+        self, local_report: Mapping[str, Any]
+    ) -> tuple[
+        dict[str, float],
+        dict[str, dict[str, float]],
+        dict[str, int] | None,
+    ]:
         reports = self._gather_rank_reports(local_report)
         if len(reports) != self.world_size:
             raise RuntimeContractError(
@@ -555,7 +606,11 @@ class TrainRuntime:
                     code="runtime.metric_gather_invalid",
                     context={"report_index": report_index},
                 ) from exc
-            if report_rank < 0 or report_rank >= self.world_size or report_rank in reports_by_rank:
+            if (
+                report_rank < 0
+                or report_rank >= self.world_size
+                or report_rank in reports_by_rank
+            ):
                 raise RuntimeContractError(
                     "metric gather must contain one unique report per world rank",
                     code="runtime.metric_gather_ranks",
@@ -630,15 +685,28 @@ class TrainRuntime:
                 code="runtime.accuracy_stats_missing",
                 context={"metrics": list(accuracy_keys_present)},
             )
+        global_accuracy_stats = (
+            self._reduce_accuracy_stats(
+                reports_by_rank=reports_by_rank,
+                accuracy_stats_by_rank=accuracy_stats_by_rank,
+                metric_keys=accuracy_keys_present,
+                replicated=(
+                    expected_split == "eval" and expected_reduction_mode is None
+                ),
+            )
+            if accuracy_keys_present
+            else None
+        )
         eval_sharded = expected_reduction_mode == EVAL_DISJOINT_SHARD_REDUCTION_MODE
         reduced: dict[str, float] = {}
         for key in expected_keys:
             correct_field = _ACCURACY_METRIC_CORRECT_FIELDS.get(key)
             if correct_field is not None:
-                reduced[key] = self._reduce_accuracy_metric(
-                    key,
-                    correct_field=correct_field,
-                    accuracy_stats_by_rank=accuracy_stats_by_rank,
+                assert global_accuracy_stats is not None
+                reduced[key] = _accuracy_ratio(
+                    global_accuracy_stats[correct_field],
+                    global_accuracy_stats[_ACCURACY_ATOM_COUNT_FIELD],
+                    metric=key,
                 )
             elif key in _MAX_REDUCED_METRIC_KEYS:
                 reduced[key] = max(
@@ -651,10 +719,18 @@ class TrainRuntime:
             elif eval_sharded and key.startswith(_FINITE_METRIC_KEY_PREFIX):
                 reduced[key] = self._reduce_eval_finite_metric(key, reports_by_rank)
             else:
-                reduced[key] = sum(
-                    float(reports_by_rank[rank][key]) for rank in range(self.world_size)
-                ) / self.world_size
-        return reduced
+                reduced[key] = (
+                    sum(
+                        float(reports_by_rank[rank][key])
+                        for rank in range(self.world_size)
+                    )
+                    / self.world_size
+                )
+        per_rank_metrics = {
+            str(rank): {key: float(reports_by_rank[rank][key]) for key in expected_keys}
+            for rank in range(self.world_size)
+        }
+        return reduced, per_rank_metrics, global_accuracy_stats
 
     def _reduce_eval_sum_metric(
         self, key: str, reports_by_rank: Mapping[int, Mapping[str, Any]]
@@ -713,39 +789,65 @@ class TrainRuntime:
             result = min(result, value)
         return result
 
-    def _reduce_accuracy_metric(
+    def _reduce_accuracy_stats(
         self,
-        key: str,
         *,
-        correct_field: str,
+        reports_by_rank: Mapping[int, Mapping[str, Any]],
         accuracy_stats_by_rank: Mapping[int, Mapping[str, Any] | None],
-    ) -> float:
-        correct_total = 0
-        atom_total = 0
+        metric_keys: Sequence[str],
+        replicated: bool,
+    ) -> dict[str, int]:
+        totals = {
+            "top1_correct": 0,
+            "top5_correct": 0,
+            _ACCURACY_ATOM_COUNT_FIELD: 0,
+        }
+        checked_by_rank: dict[int, dict[str, int]] = {}
         for rank in range(self.world_size):
             stats = accuracy_stats_by_rank.get(rank)
             if not isinstance(stats, Mapping):
                 raise RuntimeContractError(
                     "accuracy metric reduction requires accuracy_stats from every rank",
                     code="runtime.accuracy_stats_missing",
-                    context={"metric": key, "rank": rank},
+                    context={"metrics": list(metric_keys), "rank": rank},
                 )
-            rank_correct = _checked_stat_int(stats, correct_field, metric=key, rank=rank)
-            rank_atoms = _checked_stat_int(
-                stats, _ACCURACY_ATOM_COUNT_FIELD, metric=key, rank=rank
+            checked = _checked_accuracy_stats(stats, rank=rank)
+            assert checked is not None
+            checked_by_rank[rank] = checked
+
+        for rank, checked in checked_by_rank.items():
+            _validate_accuracy_metric_ratios(
+                reports_by_rank[rank],
+                checked,
+                metric_keys=metric_keys,
+                rank=rank,
             )
-            _check_correct_within_atom_count(
-                rank_correct, rank_atoms, field=correct_field, metric=key, rank=rank
-            )
-            correct_total += rank_correct
-            atom_total += rank_atoms
-        if atom_total <= 0:
+
+        if replicated:
+            reference = checked_by_rank[0]
+            mismatched_ranks = [
+                rank
+                for rank in range(1, self.world_size)
+                if checked_by_rank[rank] != reference
+            ]
+            if mismatched_ranks:
+                raise RuntimeContractError(
+                    "replicated eval accuracy_stats must be identical on every rank",
+                    code="runtime.accuracy_stats_replicated_mismatch",
+                    context={"mismatched_ranks": mismatched_ranks},
+                )
+            return dict(reference)
+
+        for checked in checked_by_rank.values():
+            for field_name in totals:
+                totals[field_name] += checked[field_name]
+        if totals[_ACCURACY_ATOM_COUNT_FIELD] <= 0:
             raise RuntimeContractError(
                 "accuracy metric reduction requires a positive summed atom count",
                 code="runtime.accuracy_stats_zero_atoms",
-                context={"metric": key},
+                context={"metrics": list(metric_keys)},
             )
-        return float(correct_total) / float(atom_total)
+        return totals
 
 
 def _is_eval_sum_metric_key(key: str) -> bool:
@@ -782,6 +884,8 @@ def _checked_eval_finite_flag(value: float, *, key: str, rank: int) -> None:
 
 def _checked_accuracy_stats(
     accuracy_stats: Mapping[str, int] | None,
+    *,
+    rank: int = -1,
 ) -> dict[str, int] | None:
     if accuracy_stats is None:
         return None
@@ -789,6 +893,16 @@ def _checked_accuracy_stats(
         *_ACCURACY_METRIC_CORRECT_FIELDS.values(),
         _ACCURACY_ATOM_COUNT_FIELD,
     )
+    if set(accuracy_stats) != set(required_fields):
+        raise RuntimeContractError(
+            "accuracy_stats must contain exactly the declared sufficient-statistic fields",
+            code="runtime.accuracy_stats_fields",
+            context={
+                "rank": rank,
+                "expected_fields": sorted(required_fields),
+                "observed_fields": sorted(str(field) for field in accuracy_stats),
+            },
+        )
     checked: dict[str, int] = {}
     for field_name in required_fields:
         if field_name not in accuracy_stats:
@@ -801,7 +915,7 @@ def _checked_accuracy_stats(
                 },
             )
         checked[field_name] = _checked_stat_int(
-            accuracy_stats, field_name, metric="accuracy_stats", rank=-1
+            accuracy_stats, field_name, metric="accuracy_stats", rank=rank
         )
     atom_count = checked[_ACCURACY_ATOM_COUNT_FIELD]
     for correct_field in _ACCURACY_METRIC_CORRECT_FIELDS.values():
@@ -810,9 +924,63 @@ def _checked_accuracy_stats(
             atom_count,
             field=correct_field,
             metric="accuracy_stats",
-            rank=-1,
+            rank=rank,
         )
     return checked
+
+
+def _validate_accuracy_metric_ratios(
+    metrics: Mapping[str, Any],
+    accuracy_stats: Mapping[str, int],
+    *,
+    metric_keys: Sequence[str],
+    rank: int,
+) -> None:
+    atom_count = accuracy_stats[_ACCURACY_ATOM_COUNT_FIELD]
+    for metric_key in metric_keys:
+        correct_field = _ACCURACY_METRIC_CORRECT_FIELDS[metric_key]
+        expected = _accuracy_ratio(
+            accuracy_stats[correct_field], atom_count, metric=metric_key
+        )
+        observed = float(metrics[metric_key])
+        if observed != expected:
+            raise RuntimeContractError(
+                "accuracy metric must match the ratio derived from exact integer stats",
+                code="runtime.accuracy_metric_stats_mismatch",
+                context={
+                    "metric": metric_key,
+                    "rank": rank,
+                    "observed": observed,
+                    "expected": expected,
+                },
+            )
+
+
+def _derive_accuracy_metrics(
+    metrics: Mapping[str, float],
+    accuracy_stats: Mapping[str, int],
+    *,
+    metric_keys: Sequence[str],
+) -> dict[str, float]:
+    derived = dict(metrics)
+    atom_count = accuracy_stats[_ACCURACY_ATOM_COUNT_FIELD]
+    for metric_key in metric_keys:
+        derived[metric_key] = _accuracy_ratio(
+            accuracy_stats[_ACCURACY_METRIC_CORRECT_FIELDS[metric_key]],
+            atom_count,
+            metric=metric_key,
+        )
+    return derived
+
+
+def _accuracy_ratio(correct: int, atom_count: int, *, metric: str) -> float:
+    if atom_count <= 0:
+        raise RuntimeContractError(
+            "accuracy metric requires a positive atom count",
+            code="runtime.accuracy_stats_zero_atoms",
+            context={"metric": metric},
+        )
+    return float(correct) / float(atom_count)
 
 
 def _checked_stat_int(
@@ -845,7 +1013,7 @@ def _check_correct_within_atom_count(
                 "rank": rank,
                 "field": field,
                 "correct": correct,
-                "accuracy_atom_count": atom_count,
+                "atom_count": atom_count,
             },
         )
 

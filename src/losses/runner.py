@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -186,10 +187,12 @@ class LossRunner:
             "token_type_gate": gate_denominator,
         }
         if self.coord_gaussian_rps_weight > 0.0:
-            local_denominators["coord_gaussian_rps"] = _build_denominator_from_token_sequences(
-                "coord_gaussian_rps",
-                token_sequences,
-                token_types=("coordinate",),
+            local_denominators["coord_gaussian_rps"] = (
+                _build_denominator_from_token_sequences(
+                    "coord_gaussian_rps",
+                    token_sequences,
+                    token_types=("coordinate",),
+                )
             )
         denominators, denominator_scope, backend_gradient_scale = (
             _resolve_streaming_denominators(
@@ -235,16 +238,20 @@ class LossRunner:
             local_micro_step_index=local_micro_step_index,
             backend_gradient_scale=plan.backend_gradient_scale,
         )
-        gate_result = _compute_token_term_contribution(
-            name="token_type_gate",
-            context=context,
-            weight=self.token_type_gate_weight,
-            term=TokenTypeGateLoss(),
-            token_types=plan.token_type_gate_groups,
-            denominator=plan.denominators["token_type_gate"],
-            local_micro_step_index=local_micro_step_index,
-            backend_gradient_scale=plan.backend_gradient_scale,
+        gate_grad_context = (
+            torch.no_grad() if self.token_type_gate_weight == 0.0 else nullcontext()
         )
+        with gate_grad_context:
+            gate_result = _compute_token_term_contribution(
+                name="token_type_gate",
+                context=context,
+                weight=self.token_type_gate_weight,
+                term=TokenTypeGateLoss(),
+                token_types=plan.token_type_gate_groups,
+                denominator=plan.denominators["token_type_gate"],
+                local_micro_step_index=local_micro_step_index,
+                backend_gradient_scale=plan.backend_gradient_scale,
+            )
         terms_list = [base_result, gate_result]
         if (
             self.coord_gaussian_rps_weight > 0.0
@@ -265,7 +272,11 @@ class LossRunner:
             )
         terms = tuple(terms_list)
         total_loss = sum(
-            (term.weighted_loss for term in terms),
+            (
+                term.weighted_loss
+                for term in terms
+                if not (term.name == "token_type_gate" and term.weight == 0.0)
+            ),
             terms[0].weighted_loss.new_zeros(()),
         )
         counts = _build_micro_counts(context, base_result)
@@ -322,10 +333,10 @@ class LossRunner:
         metrics = {
             "loss/total": total_loss,
             "acc_top1": _ratio_or_raise(
-                accuracy_stats["top1_correct"], accuracy_stats["accuracy_atom_count"]
+                accuracy_stats["top1_correct"], accuracy_stats["atom_count"]
             ),
             "acc_top5": _ratio_or_raise(
-                accuracy_stats["top5_correct"], accuracy_stats["accuracy_atom_count"]
+                accuracy_stats["top5_correct"], accuracy_stats["atom_count"]
             ),
         }
         for term in terms:
@@ -343,7 +354,9 @@ class LossRunner:
         finite_status = {
             "total_loss": _finite_label_from_float(total_loss),
             "terms": {
-                str(term["name"]): _finite_label_from_float(float(term["weighted_loss"]))
+                str(term["name"]): _finite_label_from_float(
+                    float(term["weighted_loss"])
+                )
                 for term in terms
             },
         }
@@ -777,7 +790,9 @@ def _build_micro_counts(
         "count/eligible_segments": _eligible_segment_count(context),
         "count/skipped_segments": _skipped_segment_count(context),
         "count/packs": 1,
-        "count/examples": len({segment.example_id for segment in context.token_sequence.segments}),
+        "count/examples": len(
+            {segment.example_id for segment in context.token_sequence.segments}
+        ),
     }
 
 
@@ -973,7 +988,7 @@ def _merge_accuracy_stats(artifacts: tuple[dict[str, Any], ...]) -> dict[str, in
 
     top1_correct = 0
     top5_correct = 0
-    accuracy_atom_count = 0
+    atom_count = 0
     for micro_step_index, artifact in enumerate(artifacts):
         stats = artifact.get("accuracy_stats")
         if not isinstance(stats, Mapping):
@@ -982,6 +997,18 @@ def _merge_accuracy_stats(artifacts: tuple[dict[str, Any], ...]) -> dict[str, in
                 code="loss.accuracy_stats_missing",
                 context={"micro_step_index": micro_step_index},
             )
+        expected_fields = {"top1_correct", "top5_correct", "atom_count"}
+        if set(stats) != expected_fields:
+            raise LossContractError(
+                "streaming micro-step accuracy_stats must contain exactly the "
+                "declared sufficient-statistic fields",
+                code="loss.accuracy_stats_fields",
+                context={
+                    "micro_step_index": micro_step_index,
+                    "expected_fields": sorted(expected_fields),
+                    "observed_fields": sorted(str(field) for field in stats),
+                },
+            )
         micro_top1 = _checked_micro_accuracy_stat(
             stats, "top1_correct", micro_step_index=micro_step_index
         )
@@ -989,7 +1016,7 @@ def _merge_accuracy_stats(artifacts: tuple[dict[str, Any], ...]) -> dict[str, in
             stats, "top5_correct", micro_step_index=micro_step_index
         )
         micro_atoms = _checked_micro_accuracy_stat(
-            stats, "accuracy_atom_count", micro_step_index=micro_step_index
+            stats, "atom_count", micro_step_index=micro_step_index
         )
         if micro_top1 > micro_atoms or micro_top5 > micro_atoms:
             raise LossContractError(
@@ -1000,16 +1027,16 @@ def _merge_accuracy_stats(artifacts: tuple[dict[str, Any], ...]) -> dict[str, in
                     "micro_step_index": micro_step_index,
                     "top1_correct": micro_top1,
                     "top5_correct": micro_top5,
-                    "accuracy_atom_count": micro_atoms,
+                    "atom_count": micro_atoms,
                 },
             )
         top1_correct += micro_top1
         top5_correct += micro_top5
-        accuracy_atom_count += micro_atoms
+        atom_count += micro_atoms
     return {
         "top1_correct": top1_correct,
         "top5_correct": top5_correct,
-        "accuracy_atom_count": accuracy_atom_count,
+        "atom_count": atom_count,
     }
 
 
@@ -1025,8 +1052,7 @@ def _checked_micro_accuracy_stat(
     value = stats[field]
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise LossContractError(
-            "streaming micro-step accuracy_stats field must be a "
-            "non-negative integer",
+            "streaming micro-step accuracy_stats field must be a non-negative integer",
             code="loss.accuracy_stats_field_type",
             context={
                 "micro_step_index": micro_step_index,
@@ -1059,10 +1085,10 @@ def _build_metrics(
     metrics = {
         "loss/total": _float_value(total_loss),
         "acc_top1": _ratio_or_raise(
-            accuracy_stats["top1_correct"], accuracy_stats["accuracy_atom_count"]
+            accuracy_stats["top1_correct"], accuracy_stats["atom_count"]
         ),
         "acc_top5": _ratio_or_raise(
-            accuracy_stats["top5_correct"], accuracy_stats["accuracy_atom_count"]
+            accuracy_stats["top5_correct"], accuracy_stats["atom_count"]
         ),
     }
     for term in terms:
@@ -1108,7 +1134,7 @@ def _accuracy_stats(contexts: tuple[LossContext, ...]) -> dict[str, int]:
     return {
         "top1_correct": top1_correct,
         "top5_correct": top5_correct,
-        "accuracy_atom_count": total,
+        "atom_count": total,
     }
 
 
@@ -1129,15 +1155,14 @@ def _build_finite_status(
 ) -> dict[str, Any]:
     return {
         "total_loss": _finite_label(total_loss),
-        "terms": {
-            term.name: _finite_label(term.weighted_loss)
-            for term in terms
-        },
+        "terms": {term.name: _finite_label(term.weighted_loss) for term in terms},
     }
 
 
 def _finite_label(value: torch.Tensor) -> str:
-    return "finite" if bool(torch.isfinite(value.detach()).all().item()) else "non_finite"
+    return (
+        "finite" if bool(torch.isfinite(value.detach()).all().item()) else "non_finite"
+    )
 
 
 def _finite_metric(value: torch.Tensor) -> float:
