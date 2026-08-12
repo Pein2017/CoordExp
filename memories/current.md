@@ -27,27 +27,51 @@ not authoritative. The old S `gt:5001:15` event is a pre-actuator technical
 HOLD, not a model null. These boundaries are recorded in the
 [prior-evidence semantic audit](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md).
 
-## Active planned route
+## Latest executed route
 
-The only active planned training route is the Human-13 K-union-to-greedy
-overfit screen on S four-coordinate `geo_sorted_xy` step-2444. It is explicitly
-an optimization laboratory on the same thirteen images, not validation. Stage
-1 tries to consolidate only non-duplicate K-hit/greedy-miss owners; K-miss is
-gradient-neutral. Chronological class-agnostic pred-pred IoU `>0.95`
-classification precedes matching, so a later duplicate can never become a
-positive owner/replay/target/candidate or final owner credit and remains only a
-stable raw-state unlikelihood event.
+The Human-13 K-union-to-greedy overfit screen on S four-coordinate
+`geo_sorted_xy` step-2444 completed its bounded same-panel matrix. The evidence
+owner is
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/results.md`;
+continue from its execution handoff and
+`memories/notes/2026-08-12-human13-k-union-execution-result.md`.
 
-The corrected research-unit/OpenSpec/Superpowers packet passed independent
-Sol-xhigh and Fable-xhigh focused closure with no remaining P0/P1. Discovery is
-K=16 as four batches of four explicit `n=1` requests per image at sampling
-repetition penalty `1.10`; clean greedy remains HF batch-size one and
-repetition penalty `1.0`. Initial training, if authorized later, is
-language-DoRA-only AdamW at `1e-5` for sixteen panel updates, with independent
-world-size-one arms on at most eight GPUs. Planning is complete, but
-implementation, full-panel discovery, optimizer updates, and GPU execution are
-not authorized. Continue from the unit handoff and
-`memories/notes/2026-08-12-human13-k-union-planning-checkpoint.md`.
+The sealed ledger has `392` owners: Source greedy `G=173`, K-hit/greedy-miss
+`H=73`, and K-miss `M=146`. The exact discovery used sixteen explicit `n=1`
+requests per image in four batches of four at repetition penalty `1.10`; final
+readout used original-prompt HF fp32/SDPA, batch one, greedy, repetition penalty
+`1.0`. Chronological class-agnostic pred-pred IoU `>0.95` exclusion precedes
+matching, so later duplicates receive no owner credit.
+
+Native language-tower DoRA is sufficient for an initial same-panel recall
+increase. At one exposure A3 had the largest pooled H gain among executed H
+arms (`H+6/G-3/M+1`, unique owners `173 -> 177`) but was partly same-image
+owner exchange and is not a Pareto winner; A7 reached `H+5/G-2`; A1 reached
+`H+5/G-4` with lower output burden and more safe images.
+Full-GT body CE reached `H+12/M+8/G-5` and unique owners `188`, demonstrating
+a more responsive same-panel update surface including supervised K-miss
+recovery, but also raised rows, duplicates, and unmatched predictions. It does
+not establish capacity to fit all `392` owners. No point dominates all burden
+and owner axes.
+
+Repeated exposures do not snowball safely. A1/A3/A7 develop severe owner
+exchange, duplication, malformed rows, output growth, and cap stops; static
+`optimize-until-satisfied` is rejected. Source replay mitigates late output
+pathology but does not establish owner preservation. A0 is not neutral and
+must remain the attribution control.
+
+A4 was omitted by its frozen atomic 12,000-token bound, A6 failed closed before
+model load on donor-prefix provenance, and A8-prime was unavailable because the
+no-update census produced no artifact within its repair budget. Those arms are
+mechanically unknown, not negative scientific results. No fresh-image
+validation, generalization, full-set mastery, checkpoint promotion, or
+production claim exists.
+
+If the user chooses a successor, restart Source and compare only a one-exposure
+frontier: owner-balanced H1, full residual body CE with H/M separated, and the
+same target update with stronger Source preservation. Do not resume this
+matrix, extend to 100 updates, or adapt using post-update same-batch decoding
+without a new decision.
 
 ## Prior closed route
 

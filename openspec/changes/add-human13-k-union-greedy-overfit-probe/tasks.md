@@ -21,27 +21,37 @@
 
 ## 4. Arm Materialization, Launcher, and Analyzer
 
-- [ ] 4.1 Add strict research configs under `configs/coordexp_swift/research/human13_k_union/` for Frozen Source, full-GT capacity, A0 shared no-H background, A1, A3, A4, A7, A8-prime, and conditional A6, with byte-identical Source, fresh AdamW state, and exact fail-closed trainable-surface/optimizer/scheduler/clipping/family-coefficient values per arm.
-- [ ] 4.2 Add a dry-run materializer that emits isolated output roots and resolved arm plans without model load, forward, optimizer, checkpoint write, or GPU allocation, and test that A6 is omitted when no eligible `H_mid` donor exists.
+- [x] 4.1 Add strict research configs under `configs/coordexp_swift/research/human13_k_union/` for Frozen Source, full-GT capacity, A0 shared no-H background, A1, A3, A4, A7, A8-prime, and conditional A6, with byte-identical Source, fresh AdamW state, and exact fail-closed trainable-surface/optimizer/scheduler/clipping/family-coefficient values per arm.
+- [x] 4.2 Add a dry-run materializer that emits isolated output roots and resolved arm plans without model load, forward, optimizer, checkpoint write, or GPU allocation, and test that A6 is omitted when no eligible `H_mid` donor exists.
 - [x] 4.3 Add `scripts/research/analyze_human13_k_union.py` and tests that apply chronological duplicate exclusion before the declared cardinality-first, maximum-total-IoU one-to-one matcher, award later duplicates no owner credit, and report K-hit gained, Source retained/lost, K-miss incidental gain, duplicate/unmatched/invalid/malformed/cap burden, and per-image, legacy-twelve, image-2299, and pooled views.
-- [ ] 4.4 Add a bounded independent-arm launcher whose default is dry-run, whose explicit execute mode is separate from plan materialization, which assigns at most one world-size-one Accelerate process per GPU, and which never shares output roots or optimizer state; execution still requires documented user model/GPU authority outside the launcher.
-- [ ] 4.5 Gate Wave 2 CPU implementation with targeted and integration tests, strict config/OpenSpec validation, dry-run zero-model-action evidence, residue checks, and bounded standards plus research-intent reviews with no unresolved P0/P1.
+- [x] 4.4 Add a bounded independent-arm launcher whose default is dry-run, whose explicit execute mode is separate from plan materialization, which assigns at most one world-size-one Accelerate process per GPU, and which never shares output roots or optimizer state; execution still requires documented user model/GPU authority outside the launcher.
+- [x] 4.5 Gate Wave 2 CPU implementation with targeted and integration tests, strict config/OpenSpec validation, dry-run zero-model-action evidence, residue checks, and bounded standards plus research-intent reviews with no unresolved P0/P1.
 
 ## 5. Separately Authorized Full-Panel Discovery and Freeze
 
-- [ ] 5.1 After explicit model/GPU authorization, acquire or identity-verify all thirteen Source-matched HF batch-size-one clean-greedy outputs and execute the exact 208 K requests; finalize only when every image has sixteen unique declared seeds.
+- [x] 5.1 After explicit model/GPU authorization, acquire or identity-verify all thirteen Source-matched HF batch-size-one clean-greedy outputs and execute the exact 208 K requests; finalize only when every image has sixteen unique declared seeds.
 - [ ] 5.2 Seal the full-panel canonical manifest after chronological duplicate exclusion and retained-row matching, then run the no-update census to freeze selected rows, donor/A6 applicability, coherent order, cross-surface drift, and A8-prime applicability/margin.
 - [ ] 5.3 Verify that every training entry rejects fixtures, partial manifests, missing seeds, duplicate/positive-set intersections, or unsealed census fields; publish the no-update identity and compact runtime counters and stop before an optimizer action.
 
 ## 6. Separately Authorized Production-Shaped Slice
 
-- [ ] 6.1 After a distinct update authorization, select exactly one eligible image from the sealed full-panel manifest and run it through packing, forward/backward, one update, checkpoint write/read, HF batch-size-one clean greedy, declared matching, and final projection from a fresh Source/AdamW state.
-- [ ] 6.2 Publish the vertical-slice identity, masks, denominators, applied-step count, checkpoint readback, raw output, owner outcome, packed-token/runtime/peak-memory counters, and any measured failure without silently changing the 12,000-token or arm semantics.
-- [ ] 6.3 Run targeted real-entry regression checks and one bounded standards plus research-intent audit; stop and return the measured full-matrix cost proposal if any P0/P1, nonfinite value, write/read failure, mismatch, OOM, or overlength condition remains.
+- [x] 6.1 After a distinct update authorization, select exactly one eligible image from the sealed full-panel manifest and run it through packing, forward/backward, one update, checkpoint write/read, HF batch-size-one clean greedy, declared matching, and final projection from a fresh Source/AdamW state.
+- [x] 6.2 Publish the vertical-slice identity, masks, denominators, applied-step count, checkpoint readback, raw output, owner outcome, packed-token/runtime/peak-memory counters, and any measured failure without silently changing the 12,000-token or arm semantics.
+- [x] 6.3 Run targeted real-entry regression checks and one bounded standards plus research-intent audit; stop and return the measured full-matrix cost proposal if any P0/P1, nonfinite value, write/read failure, mismatch, OOM, or overlength condition remains.
 
 ## 7. Separately Authorized Human-13 Matrix
 
-- [ ] 7.1 Obtain a distinct user authorization for the measured matrix and launch only applicable independent arms, at most eight concurrently, at panel exposures `0, 1, 2, 4, 8, 16` from byte-identical Source and fresh optimizer states under the frozen sixteen-update contract.
-- [ ] 7.2 Freeze all original-prompt HF clean-greedy outputs and publish arm-by-arm owner outcomes and burden without promoting an arm from teacher-forced loss, trie, margin, or exact-token diagnostics.
-- [ ] 7.3 Stop at the first complete table and request another user decision before a fresh Source/AdamW 100-update run through exposures `32, 64, 100`, changing objectives, supervising K-miss, refreshing targets, or adding a candidate-tree/GT-IoU route.
-- [ ] 7.4 Reconcile results into the owning research unit and project memory, run strict OpenSpec verification plus final bounded audits, and leave checkpoint promotion, stable-spec sync, archive, commit, and publication to separately authorized follow-up actions.
+- [x] 7.1 Obtain a distinct user authorization for the measured matrix and launch only applicable independent arms, at most eight concurrently, at panel exposures `0, 1, 2, 4, 8, 16` from byte-identical Source and fresh optimizer states under the frozen sixteen-update contract.
+- [x] 7.2 Freeze all original-prompt HF clean-greedy outputs and publish arm-by-arm owner outcomes and burden without promoting an arm from teacher-forced loss, trie, margin, or exact-token diagnostics.
+- [x] 7.3 Stop at the first complete table and request another user decision before a fresh Source/AdamW 100-update run through exposures `32, 64, 100`, changing objectives, supervising K-miss, refreshing targets, or adding a candidate-tree/GT-IoU route.
+- [x] 7.4 Reconcile results into the owning research unit and project memory, run strict OpenSpec verification plus final bounded audits, and leave checkpoint promotion, stable-spec sync, archive, commit, and publication to separately authorized follow-up actions.
+
+## Execution disposition — 2026-08-12
+
+The authorized bounded screen stopped at its first complete interpretable table.
+Tasks 5.2 and 5.3 remain honestly incomplete: the canonical manifest was
+sealed, but the no-update census emitted no artifact after its declared repair
+budget, so A8-prime remained unavailable. The final execution audit found no
+P0 and narrowed the supported claims; A4 was omitted by its frozen atomic
+packing bound and A6 failed closed before model load. Neither is a scientific
+null. The change is intentionally not archive-ready while 5.2/5.3 remain open.

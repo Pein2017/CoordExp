@@ -164,3 +164,61 @@ no new P0/P1.
 model execution, and GPU launch until the user explicitly authorizes the next
 gate. The pass certifies only the corrected seven-file planning target; it does
 not certify future code or any runtime artifact.
+
+## Executed-artifact audit
+
+After the user authorized implementation and the bounded matrix, independent
+`gpt-5.6-sol/xhigh` and `claude-fable-5/xhigh` reviewers audited the sealed
+manifest, actual plans, training/checkpoint/eval receipts, all 338 output rows,
+the analyzer result, and the draft results record. Both were read-only. Neither
+found a P0 or disputed a pooled table value.
+
+Fable returned `PASS` for the same-panel, overfit-only observation with one P1
+records condition. Sol returned `PASS` only for the narrowed executed-arm
+observation and `HOLD` for a full-screen winner or promotion claim. The lead
+accepted the following corrections:
+
+1. A3@1 is not a Pareto winner. It has the largest pooled H gain among the
+   executed one-exposure H-supervised arms, while A1 has lower burden and more
+   safe images and A7 has one fewer pooled G loss. Two of A3's six H gains are
+   paired with G losses on the same images.
+2. A3 versus A7 does not support Source-owner preservation by replay. G-loss
+   ordering changes across milestones. It supports only mitigation of late
+   output length, duplicate, malformed, and cap pathology.
+3. A4, A6, and A8-prime are mechanically absent and cannot participate in a
+   full-matrix ranking. A4 and A6 originally lacked persisted launcher stderr;
+   A6 may contain a plan-side donor-binding defect.
+4. Every immutable eval receipt wrote an evaluation-contract digest into the
+   `resolved_arm_plan_sha256` field instead of the actual training-plan digest.
+   The checkpoint tree and output-file hashes remain internally consistent, so
+   the counts stand, but the eval receipts alone are not plan-reproducible.
+5. Full-GT@1 demonstrates a responsive native DoRA optimization surface, not
+   panel fit or sufficient capacity to memorize all 392 owners.
+
+The records-only remediation is
+`analysis/execution-reconciliation-v1.json` under the artifact root, SHA-256
+`f2bb0cd76047452463d19177fa8b39d15a8ba02d55fab3757f52a3acc22f7fda`.
+It crosswalks each actual plan/training receipt to the immutable eval receipt
+without rewriting an artifact. It also reproduces A4's first atomic preflight
+failure (`20846 > 12000`) and A6's donor-prefix validation failure through the
+CPU processor/payload path, both before model load. This is posthoc
+reconciliation, not a fabricated contemporaneous receipt; the three census
+failures remain prose-level provenance and no partial logits are interpreted.
+
+### Execution-review disposition
+
+`PASS_NARROW_EXECUTED_ARMS_WITH_PROVENANCE_LIMITATION`.
+
+The native low-dose same-panel effect, complete executed-arm table, and burden
+collapse are supported. `HOLD` remains on declaring a full-screen winner,
+replay-based owner preservation, A4/A6/A8 behavior, full-panel memorization,
+K-miss support expansion, generalization, production value, or architecture
+motivation.
+
+The two reviewers proposed different successors. Sol preferred one-step A3
+with versioned prefix refresh and a preservation ablation; Fable preferred
+one-exposure full-GT-direction CE with a frozen-Source logit anchor. The evidence
+common to both is narrower and owns the recommendation: restart Source, use one
+low-dose target update, and compare explicit preservation mechanisms before any
+adaptive refresh. Choosing between H-only refresh and H+M support expansion is
+a new user-owned scientific decision, not an audit conclusion.

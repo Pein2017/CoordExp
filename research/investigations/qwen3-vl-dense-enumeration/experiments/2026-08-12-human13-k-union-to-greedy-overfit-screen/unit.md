@@ -5,17 +5,24 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: not_authorized
+implementation_status: implemented_and_partially_executed
 unit_id: 2026-08-12-human13-k-union-to-greedy-overfit-screen
 topic: qwen3-vl-dense-enumeration
-status: planned
-evidence_status: none
+status: complete_bounded_same_panel
+evidence_status: original_prompt_clean_greedy_matrix_complete
 updated: 2026-08-12
 ---
 
 # Human-13 K-Union-to-Greedy Overfit Screen
 
 ## Decision and outcome
+
+The authorized implementation and bounded matrix have completed. The current
+scientific disposition is owned by [results.md](results.md): native low-dose
+updates can improve same-panel greedy owner coverage, but no executed arm
+compiles the full K-hit union safely. The useful region is one panel exposure;
+later exposures cause owner exchange and severe output growth. A4, A6, and
+A8-prime are mechanically absent and remain unknown, not negative results.
 
 This unit asks whether repeated natural sampling has already exposed useful
 physical-owner support that can be consolidated into one ordinary clean-greedy
@@ -36,11 +43,11 @@ The decision-owning outcome is one unforced completion from the original
 prompt under the frozen clean-greedy decode recipe. Teacher-forced likelihood,
 fixed-prefix margins, training loss, and sampled recall are diagnostics only.
 
-This document records the approved scientific design. The user authorized its
-research record, OpenSpec planning artifacts, and Superpowers implementation
-plan, but not implementation, model execution, GPU launch, checkpoint
-promotion, or modification of the existing blind-image guard. Eight GPUs are a
-later execution ceiling, not current launch authority.
+This document retains the approved scientific design. Execution provenance,
+the complete milestone table, mechanical failures, interpretation, and next
+decision are in [results.md](results.md). Checkpoint promotion, a long run,
+support-expansion successor, stable-spec sync, and production changes remain
+unauthorized.
 
 ## Originating intent and approved scope
 
