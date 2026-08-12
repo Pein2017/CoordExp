@@ -140,7 +140,9 @@ def _load_manifest_identity(path: Path) -> tuple[str, Mapping[str, Any]]:
     if not sidecar.is_file() or sidecar.read_text(encoding="ascii") != (
         f"{digest}  {path.name}\n"
     ):
-        raise ExecutionContractError("manifest digest receipt mismatches canonical bytes")
+        raise ExecutionContractError(
+            "manifest digest receipt mismatches canonical bytes"
+        )
     try:
         document = json.loads(payload)
     except json.JSONDecodeError as exc:
@@ -148,7 +150,11 @@ def _load_manifest_identity(path: Path) -> tuple[str, Mapping[str, Any]]:
     raw = _mapping(document, "manifest")
     canonical = (
         json.dumps(
-            raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+            raw,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
         )
         + "\n"
     ).encode("utf-8")
@@ -157,7 +163,9 @@ def _load_manifest_identity(path: Path) -> tuple[str, Mapping[str, Any]]:
     if raw.get("schema_version") != MANIFEST_SCHEMA_VERSION:
         raise ExecutionContractError("manifest schema_version is not canonical")
     if raw.get("full_panel") is not True:
-        raise ExecutionContractError("resolved plan requires a sealed full-panel manifest")
+        raise ExecutionContractError(
+            "resolved plan requires a sealed full-panel manifest"
+        )
     binding = _mapping(raw.get("binding"), "manifest.binding")
     panel = _mapping(binding.get("panel"), "manifest.binding.panel")
     if binding.get("unit_id") != UNIT_ID or binding.get("purpose") != "overfit_only":
@@ -169,21 +177,20 @@ def _load_manifest_identity(path: Path) -> tuple[str, Mapping[str, Any]]:
 
 def _source_dict() -> dict[str, str]:
     return {
-        key: str(value)
-        for key, value in materializer.FROZEN_SOURCE.__dict__.items()
+        key: str(value) for key, value in materializer.FROZEN_SOURCE.__dict__.items()
     }
 
 
-def validate_resolved_plan(
-    path: str | Path, manifest_path: str | Path
-) -> ResolvedPlan:
+def validate_resolved_plan(path: str | Path, manifest_path: str | Path) -> ResolvedPlan:
     """Validate a plan's content binding without importing the model runtime."""
 
     plan_path = Path(path)
     try:
         document = json.loads(plan_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ExecutionContractError(f"resolved plan does not exist: {plan_path}") from exc
+        raise ExecutionContractError(
+            f"resolved plan does not exist: {plan_path}"
+        ) from exc
     except json.JSONDecodeError as exc:
         raise ExecutionContractError("resolved plan is not valid JSON") from exc
     raw = _mapping(document, "resolved plan")
@@ -191,14 +198,23 @@ def validate_resolved_plan(
     unknown = set(raw) - allowed
     missing = _REQUIRED_PLAN_FIELDS - set(raw)
     if unknown:
-        raise ExecutionContractError(f"resolved plan has unknown fields: {sorted(unknown)}")
+        raise ExecutionContractError(
+            f"resolved plan has unknown fields: {sorted(unknown)}"
+        )
     if missing:
-        raise ExecutionContractError(f"resolved plan is missing fields: {sorted(missing)}")
+        raise ExecutionContractError(
+            f"resolved plan is missing fields: {sorted(missing)}"
+        )
     manifest_digest, _manifest = _load_manifest_identity(Path(manifest_path))
     if raw["schema_version"] != PLAN_SCHEMA_VERSION or raw["unit_id"] != UNIT_ID:
         raise ExecutionContractError("resolved plan schema or unit identity mismatches")
     identity = _mapping(raw["manifest_identity"], "manifest_identity")
-    if set(identity) != {"schema_version", "unit_id", "panel_sha256", "manifest_sha256"}:
+    if set(identity) != {
+        "schema_version",
+        "unit_id",
+        "panel_sha256",
+        "manifest_sha256",
+    }:
         raise ExecutionContractError("manifest_identity fields are not exact")
     if (
         identity["schema_version"] != MANIFEST_SCHEMA_VERSION
@@ -207,10 +223,14 @@ def validate_resolved_plan(
         or _digest(identity["manifest_sha256"], "manifest_identity.manifest_sha256")
         != manifest_digest
     ):
-        raise ExecutionContractError("resolved plan manifest SHA or unit identity mismatches")
+        raise ExecutionContractError(
+            "resolved plan manifest SHA or unit identity mismatches"
+        )
     source = _mapping(raw["source"], "source")
     if dict(source) != _source_dict():
-        raise ExecutionContractError("resolved plan source identity mismatches Frozen Source")
+        raise ExecutionContractError(
+            "resolved plan source identity mismatches Frozen Source"
+        )
     arm_id = str(raw["arm_id"])
     if arm_id not in materializer._COEFFICIENTS:
         raise ExecutionContractError(f"arm_id is not approved: {arm_id}")
@@ -249,7 +269,9 @@ def validate_resolved_plan(
         if dict(coefficients) != expected:
             raise ExecutionContractError("family coefficients drifted")
     if raw.get("renormalize_active_families", False) is not False:
-        raise ExecutionContractError("active family coefficients must not be renormalized")
+        raise ExecutionContractError(
+            "active family coefficients must not be renormalized"
+        )
     return ResolvedPlan(
         arm_id=arm_id,
         updates=updates,
@@ -264,7 +286,8 @@ def validate_resolved_plan(
 
 def _ids(value: Any, field: str) -> tuple[int, ...]:
     if not isinstance(value, (list, tuple)) or any(
-        isinstance(item, bool) or not isinstance(item, int) or item < 0 for item in value
+        isinstance(item, bool) or not isinstance(item, int) or item < 0
+        for item in value
     ):
         raise ExecutionContractError(
             f"{field} must be a sequence of non-negative token IDs"
@@ -280,11 +303,14 @@ def verify_source_prompt_prefix_parity(
     manifest: Mapping[str, Any] | Any | None = None,
     source_records: Mapping[int | str, Mapping[str, Any]] | None = None,
 ) -> dict[int, SourcePromptPrefix]:
-    """Verify literal executed prompt IDs against the Source discovery prefix.
+    """Verify reconstructed prompt IDs against the Source discovery receipt.
 
-    The helper never decodes or re-tokenizes IDs.  ``input_prompt_token_ids``
-    may be shorter because image placeholders expand; parity is checked on the
-    executed prompt IDs that the backend actually consumed.
+    The canonical discovery artifact intentionally stores a digest rather than
+    thousands of prompt IDs.  The caller therefore supplies processor-rebuilt
+    physical prompt IDs; this helper hashes those exact IDs and compares the
+    digest with the backend-bound discovery receipt.  Generated Source-body
+    tokens in ``manifest.images[*].source.prefix`` are never treated as prompt
+    tokens.
     """
 
     if records is None:
@@ -301,35 +327,17 @@ def verify_source_prompt_prefix_parity(
             raise ExecutionContractError("manifest has no source images")
         if expected_image_ids is None:
             expected_image_ids = tuple(
-                int(image.get("image_id") if isinstance(image, Mapping) else image.image_id)
+                int(
+                    image.get("image_id")
+                    if isinstance(image, Mapping)
+                    else image.image_id
+                )
                 for image in images
             )
-        if expected_prefix_token_ids is None:
-            prefixes: dict[int, tuple[int, ...]] = {}
-            for image in images:
-                image_id = int(
-                    image.get("image_id") if isinstance(image, Mapping) else image.image_id
-                )
-                trajectories = (
-                    image.get("trajectories")
-                    if isinstance(image, Mapping)
-                    else image.trajectories
-                )
-                if not trajectories:
-                    raise ExecutionContractError(
-                        f"manifest image {image_id} has no Source trajectory"
-                    )
-                source = trajectories[0]
-                prefix = source.get("prefix") if isinstance(source, Mapping) else source.prefix
-                token_ids = (
-                    prefix.get("raw_token_ids")
-                    if isinstance(prefix, Mapping)
-                    else prefix.raw_token_ids
-                )
-                prefixes[image_id] = tuple(int(token) for token in token_ids)
-            expected_prefix_token_ids = prefixes
     if expected_image_ids is None or expected_prefix_token_ids is None:
-        raise ExecutionContractError("manifest-derived expected source prefixes are required")
+        raise ExecutionContractError(
+            "processor-rebuilt expected prompt token IDs are required"
+        )
     expected_ids = tuple(int(image_id) for image_id in expected_image_ids)
     observed_ids = {int(image_id) for image_id in records}
     if observed_ids != set(expected_ids):
@@ -344,36 +352,44 @@ def verify_source_prompt_prefix_parity(
         )
         if record.get("image_sha256") != EXPECTED_IMAGE_SHA256.get(image_id):
             raise ExecutionContractError(f"source image {image_id} identity mismatches")
-        executed = _ids(
-            record.get("executed_prompt_token_ids"),
-            f"source[{image_id}].executed_prompt_token_ids",
-        )
-        expected = _ids(
-            record.get("expected_executed_prompt_token_ids", executed),
-            f"source[{image_id}].expected_executed_prompt_token_ids",
-        )
-        if executed != expected:
-            raise ExecutionContractError(
-                f"source image {image_id} prompt-prefix parity is not exact"
-            )
         declared = _ids(
             expected_prefix_token_ids.get(
                 image_id, expected_prefix_token_ids.get(str(image_id))
             ),
             f"expected_prefix_token_ids[{image_id}]",
         )
-        if executed != declared:
+        prompt_identity = _mapping(
+            record.get("prompt_identity"), f"source[{image_id}].prompt_identity"
+        )
+        expected_digest = _digest(
+            prompt_identity.get("prompt_token_ids_sha256"),
+            f"source[{image_id}].prompt_identity.prompt_token_ids_sha256",
+        )
+        observed_digest = hashlib.sha256(
+            json.dumps(
+                list(declared),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        ).hexdigest()
+        if observed_digest != expected_digest:
             raise ExecutionContractError(
-                f"source image {image_id} prompt-prefix parity mismatches manifest"
+                f"source image {image_id} prompt-prefix parity mismatches discovery"
             )
+        trajectory = _mapping(
+            record.get("trajectory"), f"source[{image_id}].trajectory"
+        )
         generated = _ids(
-            record.get("generated_token_ids"),
-            f"source[{image_id}].generated_token_ids",
+            trajectory.get("token_ids"),
+            f"source[{image_id}].trajectory.token_ids",
         )
         if not generated:
-            raise ExecutionContractError(f"source image {image_id} has no generated token IDs")
+            raise ExecutionContractError(
+                f"source image {image_id} has no generated token IDs"
+            )
         result[image_id] = SourcePromptPrefix(
-            image_id, str(record["image_sha256"]), executed, generated
+            image_id, str(record["image_sha256"]), declared, generated
         )
     return result
 
@@ -411,7 +427,9 @@ def plan_exposures(
     )
 
 
-def dry_run_resolved_plan(path: str | Path, manifest_path: str | Path) -> dict[str, Any]:
+def dry_run_resolved_plan(
+    path: str | Path, manifest_path: str | Path
+) -> dict[str, Any]:
     plan = validate_resolved_plan(path, manifest_path)
     schedule = plan_exposures(
         arm_id=plan.arm_id,
@@ -432,7 +450,9 @@ def dry_run_resolved_plan(path: str | Path, manifest_path: str | Path) -> dict[s
                 "updates": item.updates,
                 "run_root": str(item.run_root),
                 "optimizer_state_root": (
-                    None if item.optimizer_state_root is None else str(item.optimizer_state_root)
+                    None
+                    if item.optimizer_state_root is None
+                    else str(item.optimizer_state_root)
                 ),
             }
             for item in schedule

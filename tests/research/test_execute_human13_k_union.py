@@ -20,7 +20,10 @@ def _manifest(path: Path) -> tuple[Path, str]:
         },
         "full_panel": True,
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+    encoded = (
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n"
+    )
     path.write_text(encoded, encoding="utf-8")
     digest = hashlib.sha256(encoded.encode()).hexdigest()
     path.with_name(path.name + ".sha256").write_text(
@@ -29,7 +32,9 @@ def _manifest(path: Path) -> tuple[Path, str]:
     return path, digest
 
 
-def _plan(tmp_path: Path, manifest_sha: str, *, arm_id: str = "A1") -> dict[str, object]:
+def _plan(
+    tmp_path: Path, manifest_sha: str, *, arm_id: str = "A1"
+) -> dict[str, object]:
     source = {
         "checkpoint_path": entry.FROZEN_SOURCE.checkpoint_path,
         "base_model_path": entry.FROZEN_SOURCE.base_model_path,
@@ -75,13 +80,15 @@ def test_resolved_plan_requires_manifest_content_binding(tmp_path: Path) -> None
 
 
 def test_source_prompt_prefix_parity_uses_literal_ids_and_all_images() -> None:
+    prompt_ids = [10, 11, 12]
+    prompt_digest = hashlib.sha256(
+        json.dumps(prompt_ids, separators=(",", ":")).encode()
+    ).hexdigest()
     rows = {
         1584: {
             "image_sha256": entry.EXPECTED_IMAGE_SHA256[1584],
-            "input_prompt_token_ids": [10, 11],
-            "expected_executed_prompt_token_ids": [10, 11, 12],
-            "executed_prompt_token_ids": [10, 11, 12],
-            "generated_token_ids": [21, 22],
+            "prompt_identity": {"prompt_token_ids_sha256": prompt_digest},
+            "trajectory": {"token_ids": [21, 22]},
         }
     }
     result = entry.verify_source_prompt_prefix_parity(
@@ -92,30 +99,54 @@ def test_source_prompt_prefix_parity_uses_literal_ids_and_all_images() -> None:
     assert result[1584].prompt_token_ids == (10, 11, 12)
     assert result[1584].generated_token_ids == (21, 22)
 
-    bad = dict(rows)
-    bad[1584] = {**rows[1584], "executed_prompt_token_ids": [10, 99, 12]}
     with pytest.raises(entry.ExecutionContractError, match="prompt-prefix parity"):
         entry.verify_source_prompt_prefix_parity(
-            bad,
+            rows,
             expected_image_ids=(1584,),
-            expected_prefix_token_ids={1584: (10, 11, 12)},
+            expected_prefix_token_ids={1584: (10, 99, 12)},
         )
 
 
-def test_exposure_schedule_has_fresh_roots_and_frozen_source_no_updates(tmp_path: Path) -> None:
+def test_source_prompt_prefix_parity_never_uses_generated_manifest_prefix() -> None:
+    rows = {
+        1584: {
+            "image_sha256": entry.EXPECTED_IMAGE_SHA256[1584],
+            "prompt_identity": {"prompt_token_ids_sha256": "a" * 64},
+            "trajectory": {"token_ids": [21]},
+        }
+    }
+    manifest = {
+        "images": [
+            {"image_id": 1584, "trajectories": [{"prefix": {"raw_token_ids": [21]}}]}
+        ]
+    }
+
+    with pytest.raises(entry.ExecutionContractError, match="processor-rebuilt"):
+        entry.verify_source_prompt_prefix_parity(rows, manifest=manifest)
+
+
+def test_exposure_schedule_has_fresh_roots_and_frozen_source_no_updates(
+    tmp_path: Path,
+) -> None:
     schedule = entry.plan_exposures(
-        arm_id="A1", output_root=tmp_path / "a1", optimizer_state_root=tmp_path / "state"
+        arm_id="A1",
+        output_root=tmp_path / "a1",
+        optimizer_state_root=tmp_path / "state",
     )
     assert tuple(item.milestone for item in schedule) == (0, 1, 2, 4, 8, 16)
     assert len({item.run_root for item in schedule}) == 6
     assert all(item.updates == (item.milestone > 0) for item in schedule)
 
-    frozen = entry.plan_exposures(arm_id="frozen_source", output_root=tmp_path / "source")
+    frozen = entry.plan_exposures(
+        arm_id="frozen_source", output_root=tmp_path / "source"
+    )
     assert all(not item.updates for item in frozen)
     assert all(item.optimizer_state_root is None for item in frozen)
 
 
-def test_runtime_entry_is_not_execution_ready_without_real_runtime(tmp_path: Path) -> None:
+def test_runtime_entry_is_not_execution_ready_without_real_runtime(
+    tmp_path: Path,
+) -> None:
     manifest, digest = _manifest(tmp_path / "manifest.json")
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps(_plan(tmp_path, digest)), encoding="utf-8")
@@ -127,7 +158,9 @@ def test_runtime_entry_is_not_execution_ready_without_real_runtime(tmp_path: Pat
         entry.execute_resolved_plan(plan_path, manifest, execution_authorized=True)
 
 
-def test_runtime_entry_rejects_forged_ready_bit_before_any_callback(tmp_path: Path) -> None:
+def test_runtime_entry_rejects_forged_ready_bit_before_any_callback(
+    tmp_path: Path,
+) -> None:
     manifest, digest = _manifest(tmp_path / "manifest.json")
     plan_path = tmp_path / "plan.json"
     raw = _plan(tmp_path, digest)
