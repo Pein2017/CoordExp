@@ -1,0 +1,21 @@
+schema_version: human13_arm_config.v1
+unit_id: 2026-08-12-human13-k-union-to-greedy-overfit-screen
+arm_id: full_gt_capacity
+arm_name: Full-GT capacity
+updates: true
+source: &source
+  checkpoint_path: /data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444
+  base_model_path: /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  adapter_path: /data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/adapter
+  special_embedding_path: /data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/special_token_embeddings
+  adapter_sha256: 49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da
+  special_embedding_sha256: a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2
+trainable_surface: &surface {language_tower_dora: true, vision_tower: false, multimodal_aligner: false, token_embeddings: false, base_language_weights: false}
+optimizer: &optimizer {name: adamw_torch, learning_rate: 1.0e-5, betas: [0.9, 0.999], epsilon: 1.0e-8, weight_decay: 0.0}
+scheduler: &scheduler {name: cosine_with_warmup, warmup_steps: 0, horizon_updates: 16}
+max_grad_norm: 1.0
+packing: {global_max_length: 12000}
+family_coefficients: {h: 1.0, source_replay: 0.0, duplicate: 0.0}
+renormalize_active_families: false
+milestones: [0, 1, 2, 4, 8, 16]
+applicability: always
