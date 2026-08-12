@@ -1,11 +1,13 @@
 # Current Project Memory
 
-Last verified for the dense-enumeration route: 2026-08-07.
+Last verified for the dense-enumeration route: 2026-08-12.
 
 ## Authority boundary
 
 This file is continuity, not evidence. The current evidence owners are:
 
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md` and its `review.md` for the active plan and review closure
+- `openspec/changes/add-human13-k-union-greedy-overfit-probe/` for conditional implementation scope; it is not current executed behavior
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-07-s-k10-h20-natural-crossover/results.md` and its `review.md`
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/results.md` and its `review.md`
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md`
@@ -25,11 +27,33 @@ not authoritative. The old S `gt:5001:15` event is a pre-actuator technical
 HOLD, not a model null. These boundaries are recorded in the
 [prior-evidence semantic audit](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md).
 
-## Active route
+## Active planned route
 
-S four-coordinate `geo_sorted_xy` step-2444 remains the only decision-owning
-substrate. Both S natural-boundary units are now complete; no unit is active
-and no GPU work is authorized.
+The only active planned training route is the Human-13 K-union-to-greedy
+overfit screen on S four-coordinate `geo_sorted_xy` step-2444. It is explicitly
+an optimization laboratory on the same thirteen images, not validation. Stage
+1 tries to consolidate only non-duplicate K-hit/greedy-miss owners; K-miss is
+gradient-neutral. Chronological class-agnostic pred-pred IoU `>0.95`
+classification precedes matching, so a later duplicate can never become a
+positive owner/replay/target/candidate or final owner credit and remains only a
+stable raw-state unlikelihood event.
+
+The corrected research-unit/OpenSpec/Superpowers packet passed independent
+Sol-xhigh and Fable-xhigh focused closure with no remaining P0/P1. Discovery is
+K=16 as four batches of four explicit `n=1` requests per image at sampling
+repetition penalty `1.10`; clean greedy remains HF batch-size one and
+repetition penalty `1.0`. Initial training, if authorized later, is
+language-DoRA-only AdamW at `1e-5` for sixteen panel updates, with independent
+world-size-one arms on at most eight GPUs. Planning is complete, but
+implementation, full-panel discovery, optimizer updates, and GPU execution are
+not authorized. Continue from the unit handoff and
+`memories/notes/2026-08-12-human13-k-union-planning-checkpoint.md`.
+
+## Prior closed route
+
+S step-2444 also remains the substrate for the closed natural-boundary lineage.
+Both S natural-boundary units below are complete; their old route restrictions
+do not override the newly planned Human-13 unit.
 
 The 2026-08-06 unit completed after its serialization-only successor: gate v3
 ran on `gt:5001:15` across all fifteen arms, and the K/N/H cohort executed over
@@ -102,9 +126,10 @@ scientific audit `PASS` on evidence integrity with an initial documentation
 `P0 0` / `P1 0` / `P2 1`, whose single wording finding — an unscoped "small
 box" description of the unmatched K10-family rows — is corrected and now scoped
 to `gt:13348:14` and `gt:16228:15` only. No formal scientific disposition
-changed at any point. No unit is active and no GPU work is authorized.
+changed at any point. At that closed fixed point, no successor unit or GPU work
+was authorized.
 
-Decisions in force: training `HOLD` with no proposed route; A3 `DO NOT RUN`
+Decisions retained for that closed lineage: A3 `DO NOT RUN`
 because S's `row_contract` has `commit_token_id: null`; P4 `DO NOT RUN`; no
 sweep, retry, re-selection, or new crossover. The dominant `unmatched` outcome
 (`9` of `12` cells, including the untreated baseline at `2/3` events) routes to
