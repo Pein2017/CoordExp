@@ -15,10 +15,12 @@ has no failures or skips, so it demonstrates no production-source gap.
 
 The `gap` rows below remain deliberately unaccepted: they name the missing
 Wave 2, 3, or 5 qualification rather than a failing current owner.  They do
-not justify a `src/` edit, a delta narrowing, or promotion to Task 3.  Task 2's
-single decision is therefore **continue with qualification** under the existing
-plan; do not treat this baseline as an exact-continuation or production-launch
-receipt.
+not justify a `src/` edit, a delta narrowing, or an execution-promotion claim.
+They do authorize Task 3 test-first, scenario-specific qualification; if a
+failing test demonstrates a production-source gap, stop and re-plan before any
+`src/` edit.  Task 2's single decision is therefore **continue with
+qualification** under the existing plan; do not treat this baseline as an
+exact-continuation or production-launch receipt.
 
 | Delta spec | Requirement / scenario | Live source owner | Focused test owner | Verification command | Receipt | Disposition | Claim boundary |
 |---|---|---|---|---|---|---|---|
