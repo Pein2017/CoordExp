@@ -70,4 +70,4 @@ def test_materialized_a4_candidates_are_independent_runner_segments():
     result = materialize_segments(_manifest(), {1: skeleton}, prompt_token_counts={1: 3})
     a4 = [item for item in result.segments if item.role == "a4_union"]
     assert len(a4) == 1
-    assert runner.build_logical_segments(a4, allow_a4_bundle=True)[0].role == "a4_union"
+    assert runner.build_logical_segments(a4)[0].role == "a4_union"

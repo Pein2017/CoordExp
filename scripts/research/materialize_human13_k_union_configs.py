@@ -580,7 +580,7 @@ def _derive_a6_binding(
                 isinstance(target_start, bool)
                 or not isinstance(target_start, int)
                 or not isinstance(raw_tokens, list)
-                or not 0 < target_start <= len(raw_tokens)
+                or not 0 <= target_start <= len(raw_tokens)
             ):
                 raise MaterializationError(
                     "A6 selected row token provenance is invalid"
@@ -622,9 +622,9 @@ def _derive_a6_binding(
                 if str(row["row_id"]) in retained_ids
                 and int(row["token_end"]) <= target_start
             )
-            if not clean_prefix or not prior_rows or row_id in duplicate_ids:
+            if row_id in duplicate_ids:
                 raise MaterializationError(
-                    "A6 donor provenance has no clean native prior context"
+                    "A6 donor provenance cannot select a duplicate target row"
                 )
             owner_index = owners_by_id[owner_id].get("source_object_index")
             if isinstance(owner_index, bool) or not isinstance(owner_index, int):

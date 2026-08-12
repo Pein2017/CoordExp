@@ -26,7 +26,9 @@ BASE_ARMS = (
 )
 
 
-def _write_manifest(path: Path, *, h_mid: bool = True) -> tuple[Path, str, str]:
+def _write_manifest(
+    path: Path, *, h_mid: bool = True, selected_row0: bool = False
+) -> tuple[Path, str, str]:
     def request(
         mode: str, *, seed: int | None = None
     ) -> manifest_builder.RequestIdentity:
@@ -96,34 +98,52 @@ def _write_manifest(path: Path, *, h_mid: bool = True) -> tuple[Path, str, str]:
         sampled: list[manifest_builder.TrajectoryInput] = []
         for seed in manifest_builder.EXPECTED_K_SEEDS:
             if frozen.image_id == 2299 and seed == 21001:
+                sampled_tokens = (
+                    (21, 22, 999) if selected_row0 else (11, 12, 21, 22, 999)
+                )
+                sampled_rows = (
+                    (
+                        manifest_builder.PredictionRowInput(
+                            row_id="sampled:2299:21001:target",
+                            row_index=0,
+                            category=h_owner.category,
+                            bbox=h_owner.bbox,
+                            token_start=0,
+                            token_end=2,
+                            final_coordinate_token_index=1,
+                        ),
+                    )
+                    if selected_row0
+                    else (
+                        manifest_builder.PredictionRowInput(
+                            row_id="sampled:2299:21001:prior",
+                            row_index=0,
+                            category=h_owner.category,
+                            bbox=(0.0, 0.0, 1.0, 1.0),
+                            token_start=0,
+                            token_end=2,
+                            final_coordinate_token_index=1,
+                        ),
+                        manifest_builder.PredictionRowInput(
+                            row_id="sampled:2299:21001:target",
+                            row_index=1,
+                            category=h_owner.category,
+                            bbox=h_owner.bbox,
+                            token_start=2,
+                            token_end=4,
+                            final_coordinate_token_index=3,
+                        ),
+                    )
+                )
                 sampled.append(
                     manifest_builder.TrajectoryInput(
                         trajectory_id="sampled:2299:21001",
                         request=request("k_sampled", seed=seed),
-                        token_ids=(11, 12, 21, 22, 999),
-                        terminal_token_index=4,
+                        token_ids=sampled_tokens,
+                        terminal_token_index=len(sampled_tokens) - 1,
                         stop_reason="im_end",
                         parser_status="complete",
-                        rows=(
-                            manifest_builder.PredictionRowInput(
-                                row_id="sampled:2299:21001:prior",
-                                row_index=0,
-                                category=h_owner.category,
-                                bbox=(0.0, 0.0, 1.0, 1.0),
-                                token_start=0,
-                                token_end=2,
-                                final_coordinate_token_index=1,
-                            ),
-                            manifest_builder.PredictionRowInput(
-                                row_id="sampled:2299:21001:target",
-                                row_index=1,
-                                category=h_owner.category,
-                                bbox=h_owner.bbox,
-                                token_start=2,
-                                token_end=4,
-                                final_coordinate_token_index=3,
-                            ),
-                        ),
+                        rows=sampled_rows,
                     )
                 )
             else:
@@ -424,6 +444,26 @@ def test_materializer_binds_applicable_a6_and_a8_and_isolates_every_arm(
     )
     a8 = next(plan for plan in receipt["plans"] if plan["arm_id"] == "A8-prime")
     assert a8["a8_census_binding"]["required_margin"] == pytest.approx(0.125)
+
+
+def test_materializer_keeps_h_mid_a6_for_a_selected_row0_prompt_only_donor(
+    tmp_path: Path,
+) -> None:
+    manifest, _, _ = _write_manifest(tmp_path / "manifest.json", selected_row0=True)
+
+    receipt = materializer.materialize_plans(
+        output_root=tmp_path / "runs",
+        run_id="a6-row0",
+        config_root=CONFIG_ROOT,
+        manifest_path=manifest,
+    )
+
+    a6 = next(plan for plan in receipt["plans"] if plan["arm_id"] == "A6")
+    donor = a6["a6_donor_binding"]["donors"][0]
+    assert donor["target_row_id"] == "sampled:2299:21001:target"
+    assert donor["donor_prefix_token_ids"] == ()
+    assert donor["donor_prior_row_ids"] == ()
+    assert donor["h_mid_eligible"] is True
 
 
 def test_a8_binding_is_fail_closed_on_blocked_or_unbound_census(tmp_path: Path) -> None:

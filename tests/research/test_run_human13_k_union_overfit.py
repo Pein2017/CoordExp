@@ -22,7 +22,7 @@ from src.runtime.train_runtime import TrainRuntime
 from src.training.supervised_trainer import SupervisedMicroStep
 
 
-def test_logical_roles_keep_coherent_and_atomic_image_units() -> None:
+def test_logical_roles_keep_coherent_units_and_independent_a4_candidates() -> None:
     segments = runner.build_logical_segments(
         (
             _segment("a1:1", 1, "a1_full_h", 8),
@@ -63,12 +63,51 @@ def test_logical_roles_keep_coherent_and_atomic_image_units() -> None:
         "h1:1:first",
         "h1:1:second",
     )
-    with pytest.raises(ValueError, match="atomic candidate group"):
-        runner.build_logical_segments(
+    a4_candidates = runner.build_logical_segments(
+        (
+            _segment("a4:1:first", 1, "a4_union", 8),
+            _segment("a4:1:second", 1, "a4_union", 7),
+        )
+    )
+    assert tuple(item.segment_id for item in a4_candidates) == (
+        "a4:1:first",
+        "a4:1:second",
+    )
+
+
+def test_a4_candidate_segments_are_atomic_in_one_pack_and_attention_isolated() -> None:
+    plan = runner.plan_panel_packs(
+        (
+            _segment("replay:other", 2, "source_replay", 7),
+            _segment("a4:1:first", 1, "a4_union", 6),
+            _segment("a4:1:second", 1, "a4_union", 5),
+        ),
+        global_max_length=12,
+    )
+
+    a4_pack = next(
+        pack
+        for pack in plan.packs
+        if any(segment.role == "a4_union" for segment in pack.logical_segments)
+    )
+    assert tuple(
+        segment.segment_id
+        for segment in a4_pack.logical_segments
+        if segment.role == "a4_union"
+    ) == ("a4:1:first", "a4:1:second")
+    assert a4_pack.pack.length == 11
+    assert a4_pack.fa2_varlen_plan.segment_boundaries == (0, 6, 11)
+    assert a4_pack.position_inputs.reset_points == (0, 6)
+
+
+def test_a4_atomic_candidate_bundle_fails_when_combined_length_exceeds_limit() -> None:
+    with pytest.raises(ValueError, match="A4 atomic candidate bundle"):
+        runner.plan_panel_packs(
             (
-                _segment("a4:1:first", 1, "a4_union", 8),
-                _segment("a4:1:split", 1, "a4_union", 7),
-            )
+                _segment("a4:1:first", 1, "a4_union", 7),
+                _segment("a4:1:second", 1, "a4_union", 6),
+            ),
+            global_max_length=12,
         )
 
 
@@ -492,14 +531,23 @@ def test_execution_plan_derives_every_loss_site_from_manifest_and_encoded_rows(
 
 
 @pytest.mark.parametrize(
-    "mutation", ("wrong_role", "wrong_pack", "split_site", "reordered_candidates")
+    "mutation",
+    (
+        None,
+        "wrong_role",
+        "wrong_pack",
+        "split_site",
+        "reordered_candidates",
+        "different_prefix",
+    ),
 )
-def test_a4_requires_each_exact_candidate_once_in_one_a4_segment_and_pack(
-    mutation: str,
+def test_a4_requires_independent_candidate_segments_in_one_atomic_pack(
+    mutation: str | None,
 ) -> None:
     sealed, packed_plan, sites_by_pack = _a4_payload(
         wrong_role=mutation == "wrong_role",
         reorder_candidates=mutation == "reordered_candidates",
+        different_prefix=mutation == "different_prefix",
     )
     changed = {index: tuple(sites) for index, sites in sites_by_pack.items()}
     if mutation == "wrong_pack":
@@ -536,13 +584,30 @@ def test_a4_requires_each_exact_candidate_once_in_one_a4_segment_and_pack(
         ]
         changed[pack_index] = tuple(sites)
 
-    with pytest.raises(ValueError, match="role|exactly once"):
-        runner.build_execution_plan(
+    if mutation is None:
+        execution = runner.build_execution_plan(
             sealed,
             arm_id="A4",
             packed_plan=packed_plan,
             sites_by_pack=changed,
         )
+        a4_packs = [
+            (pack_index, segment)
+            for pack_index, segments in execution.pack_segments
+            for segment in segments
+            if segment.role == "a4_union"
+        ]
+        assert len({pack_index for pack_index, _segment in a4_packs}) == 1
+        assert len(a4_packs) == 2
+        assert all(len(segment.row_bindings) == 1 for _, segment in a4_packs)
+    else:
+        with pytest.raises(ValueError, match="role|exactly once|P_clean"):
+            runner.build_execution_plan(
+                sealed,
+                arm_id="A4",
+                packed_plan=packed_plan,
+                sites_by_pack=changed,
+            )
 
 
 @pytest.mark.parametrize(
@@ -692,6 +757,66 @@ def test_a6_rejects_an_unsealed_typed_donor_payload() -> None:
             sites_by_pack=sites_by_pack,
             a6_donor_binding=binding,
         )
+
+
+def test_a6_accepts_selected_row0_as_an_empty_prompt_only_donor_prefix() -> None:
+    sealed = _sealed_manifest(arm_id="A6")
+    donor_segment = _segment(
+        "a6:1:owner-h:row0",
+        1,
+        "a6_donor_h1",
+        8,
+        token_ids=(10, 151655, 151655, 151655, 151655, 30, 2, 0),
+        row_bindings=(
+            runner.Human13EncodedRowBinding(
+                family="h",
+                unit_id="owner-h",
+                manifest_row_id="row-h",
+                token_start=6,
+                token_end=8,
+                target_token_mask=(True, False),
+            ),
+        ),
+    )
+    background = tuple(
+        segment
+        for segment in _a1_payload()[1].logical_segments
+        if segment.role in {"source_replay", "duplicate_event"}
+    )
+    packed = runner.plan_panel_packs((donor_segment, *background), global_max_length=24)
+    unsealed = runner.Human13A6DonorBinding(
+        schema_version="human13_a6_donor_binding.v1",
+        manifest_identity=runner._manifest_identity(
+            runner._coerce_sealed_manifest(sealed)
+        ),
+        frozen_targets_sha256=runner._manifest_frozen_targets_sha256(sealed),
+        artifact_sha256="0" * 64,
+        applicable=True,
+        donors=(
+            runner.Human13A6DonorRecord(
+                image_id=1,
+                owner_id="owner-h",
+                target_row_id="row-h",
+                donor_trajectory_id="sampled",
+                donor_prefix_token_ids=(),
+                donor_prior_row_ids=(),
+                h_mid_eligible=True,
+            ),
+        ),
+    )
+    binding = _seal_a6_binding(unsealed)
+
+    execution = runner.build_execution_plan(
+        sealed,
+        arm_id="A6",
+        packed_plan=packed,
+        sites_by_pack=_sites_from_row_bindings(packed),
+        a6_donor_binding=binding,
+    )
+
+    row0 = execution.a6_donor_binding.donors[0]
+    assert row0.donor_prefix_token_ids == ()
+    assert row0.donor_prior_row_ids == ()
 
 
 @pytest.mark.parametrize(
@@ -1551,7 +1676,10 @@ def _replace_namespace(value: SimpleNamespace, **changes: object) -> SimpleNames
 
 
 def _a4_payload(
-    *, wrong_role: bool = False, reorder_candidates: bool = False
+    *,
+    wrong_role: bool = False,
+    reorder_candidates: bool = False,
+    different_prefix: bool = False,
 ) -> tuple[
     SimpleNamespace,
     runner.PackedPanelPlan,
@@ -1562,7 +1690,7 @@ def _a4_payload(
     background = tuple(
         segment for segment in a1_plan.logical_segments if segment.role != "a1_full_h"
     )
-    candidate_rows = (
+    candidate_rows = [
         runner.Human13EncodedRowBinding(
             family="h",
             unit_id="owner-h",
@@ -1575,39 +1703,40 @@ def _a4_payload(
             family="h",
             unit_id="owner-h",
             manifest_row_id="row-a4-other",
-            token_start=8,
-            token_end=10,
+            token_start=6,
+            token_end=8,
             target_token_mask=(True, True),
         ),
-    )
-    candidate_tokens = ((2, 0), (0, 2))
+    ]
+    candidate_tokens = [(2, 0), (0, 2)]
     if reorder_candidates:
-        first, second = candidate_rows
-        candidate_rows = (
-            replace(second, token_start=6, token_end=8),
-            replace(first, token_start=8, token_end=10),
-        )
-        candidate_tokens = tuple(reversed(candidate_tokens))
-    a4 = _segment(
-        "a4:1",
-        1,
-        "source_replay" if wrong_role else "a4_union",
-        10,
-        token_ids=(
+        candidate_rows.reverse()
+        candidate_tokens.reverse()
+    prefixes = [
+        (10, 151655, 151655, 151655, 151655, 30),
+        (
             10,
             151655,
             151655,
             151655,
             151655,
-            30,
-            *candidate_tokens[0],
-            *candidate_tokens[1],
+            31 if different_prefix else 30,
         ),
-        row_bindings=candidate_rows,
+    ]
+    a4_candidates = tuple(
+        _segment(
+            f"a4:1:{binding.manifest_row_id}",
+            1,
+            "source_replay" if wrong_role and index == 0 else "a4_union",
+            8,
+            token_ids=(*prefixes[index], *candidate_tokens[index]),
+            row_bindings=(binding,),
+        )
+        for index, binding in enumerate(candidate_rows)
     )
     packed = runner.plan_panel_packs(
-        (a4, *background),
-        global_max_length=10,
+        (*a4_candidates, *background),
+        global_max_length=16,
     )
     sites = {
         pack.pack.pack_index: tuple(

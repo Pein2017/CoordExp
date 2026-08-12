@@ -279,8 +279,6 @@ class Human13A6DonorRecord:
             raise ValueError("A6 donor image_id must be a positive integer")
         if not self.owner_id or not self.target_row_id or not self.donor_trajectory_id:
             raise ValueError("A6 donor provenance identities must be nonempty")
-        if not self.donor_prefix_token_ids:
-            raise ValueError("A6 donor prefix must be nonempty")
         if len(set(self.donor_prior_row_ids)) != len(self.donor_prior_row_ids):
             raise ValueError("A6 donor prior-row identities must be unique")
         if not isinstance(self.h_mid_eligible, bool):
@@ -414,8 +412,6 @@ class PackedPanelPlan:
 
 def build_logical_segments(
     segments: Sequence[LogicalPanelSegment],
-    *,
-    allow_a4_bundle: bool = False,
 ) -> tuple[LogicalPanelSegment, ...]:
     """Validate the experiment's coherent and atomic segment boundaries."""
 
@@ -427,7 +423,6 @@ def build_logical_segments(
         raise ValueError("logical segment IDs must be unique")
 
     seen_coherent: set[tuple[LogicalRole, int]] = set()
-    seen_a4: set[int] = set()
     for item in checked:
         if item.role in _COHERENT_ROLES:
             key = (item.role, item.image_id)
@@ -436,10 +431,6 @@ def build_logical_segments(
                     f"{item.role} must keep one coherent segment per image"
                 )
             seen_coherent.add(key)
-        if item.role == "a4_union":
-            if item.image_id in seen_a4 and not allow_a4_bundle:
-                raise ValueError("A4 must keep one atomic candidate group per image")
-            seen_a4.add(item.image_id)
     return checked
 
 
@@ -447,50 +438,79 @@ def plan_panel_packs(
     segments: Sequence[LogicalPanelSegment],
     *,
     global_max_length: int = GLOBAL_MAX_LENGTH,
-    allow_a4_bundle: bool = False,
 ) -> PackedPanelPlan:
     """Stable descending-length first-fit over indivisible logical segments."""
 
-    checked = build_logical_segments(segments, allow_a4_bundle=allow_a4_bundle)
+    checked = build_logical_segments(segments)
     limit = _validate_pack_limit(global_max_length)
+    a4_by_image: dict[int, list[LogicalPanelSegment]] = {}
+    packing_units: list[tuple[LogicalPanelSegment, ...]] = []
     for item in checked:
-        if item.encoded_length > GLOBAL_MAX_LENGTH:
+        if item.role == "a4_union":
+            a4_by_image.setdefault(item.image_id, []).append(item)
+        else:
+            packing_units.append((item,))
+    packing_units.extend(tuple(items) for items in a4_by_image.values())
+
+    for unit in packing_units:
+        unit_length = sum(item.encoded_length for item in unit)
+        a4_image_id = unit[0].image_id if unit[0].role == "a4_union" else None
+        if unit_length > GLOBAL_MAX_LENGTH:
+            if a4_image_id is not None:
+                raise ValueError(
+                    f"A4 atomic candidate bundle for image {a4_image_id} exceeds "
+                    "the 12,000-token hard preflight"
+                )
+            item = unit[0]
             raise ValueError(
                 f"logical segment {item.segment_id!r} exceeds the 12,000-token "
                 "hard preflight"
             )
-        if item.encoded_length > limit:
+        if unit_length > limit:
+            if a4_image_id is not None:
+                raise ValueError(
+                    f"A4 atomic candidate bundle for image {a4_image_id} exceeds "
+                    "the configured pack limit"
+                )
+            item = unit[0]
             raise ValueError(
                 f"logical segment {item.segment_id!r} exceeds the configured pack limit"
             )
 
-    ordered = tuple(
-        sorted(checked, key=lambda item: (-item.encoded_length, item.segment_id))
+    ordered_units = tuple(
+        sorted(
+            packing_units,
+            key=lambda unit: (
+                -sum(item.encoded_length for item in unit),
+                tuple(item.segment_id for item in unit),
+            ),
+        )
     )
     bins: list[list[LogicalPanelSegment]] = []
     bin_lengths: list[int] = []
-    for item in ordered:
+    for unit in ordered_units:
+        unit_length = sum(item.encoded_length for item in unit)
         destination = next(
             (
                 index
                 for index, length in enumerate(bin_lengths)
-                if length + item.encoded_length <= limit
+                if length + unit_length <= limit
             ),
             None,
         )
         if destination is None:
-            bins.append([item])
-            bin_lengths.append(item.encoded_length)
+            bins.append(list(unit))
+            bin_lengths.append(unit_length)
         else:
-            bins[destination].append(item)
-            bin_lengths[destination] += item.encoded_length
+            bins[destination].extend(unit)
+            bin_lengths[destination] += unit_length
 
     packed_steps = tuple(
         _materialize_bin(pack_index, tuple(items), global_max_length=limit)
         for pack_index, items in enumerate(bins)
     )
     return PackedPanelPlan(
-        logical_segments=ordered,
+        logical_segments=tuple(item for unit in ordered_units for item in unit),
         packs=packed_steps,
         global_max_length=limit,
     )
@@ -1161,10 +1181,6 @@ def _derive_a6_donor_records(manifest: Any) -> tuple[Human13A6DonorRecord, ...]:
                 if row.row_id in retained_ids
                 and row.token_end <= target_row.token_start
             )
-            if not prefix or not prior_rows:
-                raise ValueError(
-                    "A6 donor target has no clean natural prior H1 provenance"
-                )
             expected.append(
                 Human13A6DonorRecord(
                     image_id=image.image_id,
@@ -1342,6 +1358,7 @@ def _validate_sites_against_manifest(
         "full_gt": [],
     }
     seen_segments: set[str] = set()
+    a4_segments_by_image: dict[int, list[tuple[int, Human13SegmentBinding]]] = {}
 
     for pack_index, segments in execution.pack_segments:
         pack_sites = sites_by_pack.get(pack_index, ())
@@ -1355,6 +1372,17 @@ def _validate_sites_against_manifest(
                 raise ValueError(
                     f"{segment.role} requires exactly one H owner row per segment"
                 )
+            if segment.role == "a4_union":
+                if (
+                    len(segment.row_bindings) != 1
+                    or segment.row_bindings[0].family != "h"
+                ):
+                    raise ValueError(
+                        "A4 requires one independent complete candidate segment"
+                    )
+                a4_segments_by_image.setdefault(segment.image_id, []).append(
+                    (pack_index, segment)
+                )
             segment_sites = tuple(
                 site for site in pack_sites if site.segment_id == segment.segment_id
             )
@@ -1362,11 +1390,6 @@ def _validate_sites_against_manifest(
                 raise ValueError(
                     "each manifest-derived encoded row binding must appear exactly once"
                 )
-            if segment.role == "a4_union":
-                if len(segment.row_bindings) != 1 or segment.row_bindings[0].family != "h":
-                    raise ValueError("A4 candidate segment requires exactly one H row binding exactly once")
-                if segment.row_bindings[0].manifest_row_id not in image.candidate_row_ids:
-                    raise ValueError("A4 candidate row is outside canonical manifest order")
             seen_segments.add(segment.segment_id)
             unmatched = list(segment_sites)
             for row_binding in segment.row_bindings:
@@ -1416,6 +1439,32 @@ def _validate_sites_against_manifest(
             if unmatched:
                 raise ValueError(
                     "each manifest-derived encoded row binding must appear exactly once"
+                )
+
+    if contract.h_role == "a4_union":
+        for image_id, entries in a4_segments_by_image.items():
+            image = images[image_id]
+            pack_indices = {pack_index for pack_index, _segment in entries}
+            if len(pack_indices) != 1:
+                raise ValueError(
+                    "A4 candidate segments must stay in one atomic physical pack"
+                )
+            segments = tuple(segment for _pack_index, segment in entries)
+            candidate_row_ids = tuple(
+                segment.row_bindings[0].manifest_row_id for segment in segments
+            )
+            if candidate_row_ids != tuple(image.candidate_row_ids):
+                raise ValueError(
+                    "A4 candidate rows must appear exactly once in canonical "
+                    "manifest order"
+                )
+            prefixes = {
+                segment.input_ids[: segment.row_bindings[0].token_start]
+                for segment in segments
+            }
+            if len(prefixes) != 1:
+                raise ValueError(
+                    "A4 candidate segments must share the exact same P_clean"
                 )
 
     all_sites = tuple(
@@ -1518,12 +1567,11 @@ def _validate_encoded_row_against_manifest(
                 == (image.image_id, row.owner_id, row.row_id)
             )
             prefix = () if len(donor) != 1 else donor[0].donor_prefix_token_ids
+            prefix_start = row_binding.token_start - len(prefix)
             if (
                 len(donor) != 1
-                or segment.input_ids[
-                    row_binding.token_start - len(prefix) : row_binding.token_start
-                ]
-                != prefix
+                or prefix_start < 0
+                or segment.input_ids[prefix_start : row_binding.token_start] != prefix
             ):
                 raise ValueError(
                     "encoded A6 donor prefix mismatches sealed donor provenance"
