@@ -27,7 +27,7 @@ IMMUTABLE_R6_PREFLIGHT_MARKER = (
 IMMUTABLE_R6_PREFLIGHT_TERMINAL = IMMUTABLE_R6_PREFLIGHT_ROOT / "terminal-receipt.json"
 AMENDMENT_AUTHORITY = (
     REPO_ROOT
-    / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/"
+    / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/"
     "measurement-plan.md"
 )
 BASE_CONFIG = (

@@ -65,7 +65,7 @@ def _refinalize(
 def _fake_model_weight_identity() -> dict[str, object]:
     receipt = (
         Path(__file__).resolve().parents[2]
-        / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/"
+        / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/"
         "receipts/wave2-v3-plan.json"
     )
     return deepcopy(

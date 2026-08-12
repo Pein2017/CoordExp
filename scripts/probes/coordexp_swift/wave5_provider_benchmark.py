@@ -236,7 +236,7 @@ HISTORICAL_W0_BASE_WEIGHT_AGGREGATE_SHA256 = (
 )
 HISTORICAL_W0_WEIGHT_IDENTITY_RECEIPT_PATH = (
     REPO_ROOT
-    / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/"
+    / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/"
     "receipts/wave2-v3-plan.json"
 )
 HISTORICAL_W0_WEIGHT_IDENTITY_RECEIPT_FILE_SHA256 = (

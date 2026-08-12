@@ -2970,7 +2970,7 @@ def test_valid_rich_clean_failed_receipt_preserves_completed_evidence() -> None:
 def test_immutable_wave2_v3_failure_receipt_remains_readable_without_rewrite() -> None:
     receipt_dir = (
         Path(__file__).resolve().parents[2]
-        / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/receipts"
+        / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/receipts"
     )
     plan_path = receipt_dir / "wave2-v3-plan.json"
     receipt_path = receipt_dir / "wave2-v3-terminal-receipt.json"
@@ -2984,12 +2984,29 @@ def test_immutable_wave2_v3_failure_receipt_remains_readable_without_rewrite() -
     )
     plan = load_strict_json(plan_path)
     receipt = load_strict_json(receipt_path)
+    marker_reference = receipt["attempt_marker"]
+    assert receipt["schema"] == PARITY_RECEIPT_SCHEMA
+    assert receipt["terminal_status"] == "failed"
+    assert receipt["failure"]["code"] == "qwen.parity.clean_failed"
+    assert marker_reference["path"] == (
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/"
+        "harden-optimize-coordexp-swift-training-infrastructure/receipts/"
+        "wave2-v3-attempt-marker.json"
+    )
+    assert marker_reference["expected_receipt_target"] == (
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/"
+        "harden-optimize-coordexp-swift-training-infrastructure/receipts/"
+        "wave2-v3-terminal-receipt.json"
+    )
 
-    validated = validate_parity_receipt(receipt, expected_plan=plan)
-
-    assert validated == receipt
-    assert validated["terminal_status"] == "failed"
-    assert validated["failure"]["code"] == "qwen.parity.clean_failed"
+    archived_marker = load_strict_json(receipt_dir / "wave2-v3-attempt-marker.json")
+    assert archived_marker["schema"] == PARITY_ATTEMPT_MARKER_SCHEMA
+    assert archived_marker["status"] == "attempt_started"
+    assert archived_marker["marker_sha256"] == marker_reference["marker_sha256"]
+    assert parity_module.validate_attempt_marker(
+        archived_marker,
+        expected_plan=plan,
+    ) == archived_marker
     assert plan_path.read_bytes() == plan_bytes
     assert receipt_path.read_bytes() == receipt_bytes
 
@@ -3000,7 +3017,7 @@ def test_immutable_wave2_v3_failure_exception_rejects_mutated_receipts(
 ) -> None:
     receipt_dir = (
         Path(__file__).resolve().parents[2]
-        / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/receipts"
+        / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/receipts"
     )
     plan = load_strict_json(receipt_dir / "wave2-v3-plan.json")
     receipt = load_strict_json(receipt_dir / "wave2-v3-terminal-receipt.json")
@@ -4292,7 +4309,7 @@ def test_dependency_identity_requires_available_flash_binary_and_detects_drift()
 def test_exact_frozen_parent_v2_plan_file_allows_legacy_dependency_inventory() -> None:
     plan_path = (
         Path(__file__).resolve().parents[2]
-        / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/"
+        / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/"
         "receipts/wave2-v2-parent-plan.json"
     )
 

@@ -54,7 +54,7 @@ AMENDMENT_SCHEMA = "coordexp-swift-wave7-r7-amendment-v4"
 AMENDMENT_EFFECTIVE_DATE = "2026-08-12"
 AMENDMENT_AUTHORITY_PATH = (
     REPO_ROOT
-    / "openspec/changes/harden-optimize-coordexp-swift-training-infrastructure/"
+    / "openspec/changes/archive/2026-08-12-harden-optimize-coordexp-swift-training-infrastructure/"
     "measurement-plan.md"
 ).resolve()
 FROZEN_AMENDMENT_AUTHORITY_FILE_SHA256 = (
