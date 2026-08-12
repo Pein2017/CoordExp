@@ -14,16 +14,16 @@
 
 ## 3. Packed Panel-Step Runner
 
-- [ ] 3.1 Add interface-first tests in `tests/research/test_run_human13_k_union_overfit.py` for logical segment construction, stable descending-length first-fit planning, isolated causal/MRoPE positions, 12,000-token fail-closed preflight, A4 image atomicity, and coherent A1/A8/full-GT segments.
-- [ ] 3.2 Add `scripts/research/run_human13_k_union_overfit.py` as an experiment-local adapter over the existing Qwen forward, no-padding packing, planned-step accumulation, AdamW/DoRA, finite gate, RunWriter, and CheckpointWriter interfaces; do not add a second trainer or modify generic StateBank admission.
-- [ ] 3.3 Verify through tests that every physical pack uses the complete panel denominator, model parameters and optimizer state remain unchanged between packs, and exactly one optimizer step occurs per panel exposure.
-- [ ] 3.4 Add compact performance counters for logical/packed tokens, pack count, padding, utilization, GPU seconds, wall time, and peak memory while explicitly omitting any unmeasured prefix-KV or image-encoder reuse claim.
+- [x] 3.1 Add interface-first tests in `tests/research/test_run_human13_k_union_overfit.py` for logical segment construction, stable descending-length first-fit planning, isolated causal/MRoPE positions, 12,000-token fail-closed preflight, A4 image atomicity, and coherent A1/A8/full-GT segments.
+- [x] 3.2 Add `scripts/research/run_human13_k_union_overfit.py` as an experiment-local adapter over the existing Qwen forward, no-padding packing, planned-step accumulation, AdamW/DoRA, finite gate, RunWriter, and CheckpointWriter interfaces; do not add a second trainer or modify generic StateBank admission.
+- [x] 3.3 Verify through tests that every physical pack uses the complete panel denominator, model parameters and optimizer state remain unchanged between packs, and exactly one optimizer step occurs per panel exposure.
+- [x] 3.4 Add compact performance counters for logical/packed tokens, pack count, padding, utilization, GPU seconds, wall time, and peak memory while explicitly omitting any unmeasured prefix-KV or image-encoder reuse claim.
 
 ## 4. Arm Materialization, Launcher, and Analyzer
 
 - [ ] 4.1 Add strict research configs under `configs/coordexp_swift/research/human13_k_union/` for Frozen Source, full-GT capacity, A0 shared no-H background, A1, A3, A4, A7, A8-prime, and conditional A6, with byte-identical Source, fresh AdamW state, and exact fail-closed trainable-surface/optimizer/scheduler/clipping/family-coefficient values per arm.
 - [ ] 4.2 Add a dry-run materializer that emits isolated output roots and resolved arm plans without model load, forward, optimizer, checkpoint write, or GPU allocation, and test that A6 is omitted when no eligible `H_mid` donor exists.
-- [ ] 4.3 Add `scripts/research/analyze_human13_k_union.py` and tests that apply chronological duplicate exclusion before the declared cardinality-first, maximum-total-IoU one-to-one matcher, award later duplicates no owner credit, and report K-hit gained, Source retained/lost, K-miss incidental gain, duplicate/unmatched/invalid/malformed/cap burden, and per-image, legacy-twelve, image-2299, and pooled views.
+- [x] 4.3 Add `scripts/research/analyze_human13_k_union.py` and tests that apply chronological duplicate exclusion before the declared cardinality-first, maximum-total-IoU one-to-one matcher, award later duplicates no owner credit, and report K-hit gained, Source retained/lost, K-miss incidental gain, duplicate/unmatched/invalid/malformed/cap burden, and per-image, legacy-twelve, image-2299, and pooled views.
 - [ ] 4.4 Add a bounded independent-arm launcher whose default is dry-run, whose explicit execute mode is separate from plan materialization, which assigns at most one world-size-one Accelerate process per GPU, and which never shares output roots or optimizer state; execution still requires documented user model/GPU authority outside the launcher.
 - [ ] 4.5 Gate Wave 2 CPU implementation with targeted and integration tests, strict config/OpenSpec validation, dry-run zero-model-action evidence, residue checks, and bounded standards plus research-intent reviews with no unresolved P0/P1.
 
