@@ -155,6 +155,21 @@ No automatic extension to `32,64,100`, objective retuning, target refresh,
 checkpoint promotion, OpenSpec archive, commit, push, or publication is
 authorized.
 
+## Execution authority received on 2026-08-12
+
+The user subsequently authorized this task to implement and verify the complete
+OpenSpec path, run the full-panel Source/K discovery and census, execute the
+production-shaped update slice, and launch the applicable matrix on at most
+eight GPUs.  The same instruction authorizes in-scope dynamic execution
+decisions and scoped commits while requiring preservation of unrelated work and
+explicitly forbidding over-audit and over-design.  This single instruction
+satisfies the earlier implementation, discovery, update-slice, and matrix
+authority gates; it does not change the frozen scientific semantics, mechanical
+stop rules, or the explicit launcher `--execute` guard.  A fresh 100-update
+screen, checkpoint promotion, push, publication, stable-spec sync, and OpenSpec
+archive remain outside the current completion objective unless separately
+chosen after the first complete matrix table.
+
 ## Dirty-worktree boundary
 
 At the time of this handoff, the checkout also contains unrelated modified

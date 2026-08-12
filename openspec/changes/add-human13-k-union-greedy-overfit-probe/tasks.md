@@ -1,6 +1,6 @@
 ## 1. Authorization and Frozen Inputs
 
-- [ ] 1.1 Record explicit user authorization to begin implementation, recheck the exact `/data/CoordExp/.worktrees/research-probes` branch and dirty-file ownership, and confirm that model/GPU execution remains separately gated.
+- [x] 1.1 Record explicit user authorization to begin implementation, recheck the exact `/data/CoordExp/.worktrees/research-probes` branch and dirty-file ownership, and confirm that model/GPU execution remains separately gated.
 - [ ] 1.2 Add `scripts/research/build_human13_k_union_manifest.py` with typed, canonical records for panel, Source, request, trajectory, owner, selected row, raw/clean prefix, duplicate event, arm, and global denominator identities.
 - [ ] 1.3 Add focused manifest tests under `tests/research/test_build_human13_k_union_manifest.py` for the exact panel hash, overfit-only admission, seed completeness, chronological duplicate-before-matching classification, duplicate/owner-positive disjointness including a dense two-owner collision fixture, raw-to-clean token surgery, `G/H/M`, target selection, terminal masks, zero denominators, and fail-closed generic blind admission.
 - [ ] 1.4 Add `scripts/research/collect_human13_k16_vllm.py` and tests that plan four batches of four explicit `n=1` requests per image with seeds `21001..21016`, sampling repetition penalty `1.10`, canonical result order, incomplete-request failure, and non-claiming optional cache telemetry.
