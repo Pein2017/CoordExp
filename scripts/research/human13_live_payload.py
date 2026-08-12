@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from scripts.research import run_human13_k_union_overfit as runner
 from src.supervision import TokenSequence, build_token_sequence_from_packed_supervision
