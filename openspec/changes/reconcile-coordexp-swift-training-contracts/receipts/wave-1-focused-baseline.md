@@ -54,5 +54,7 @@ update behavior.
 
 Decision: **continue with qualification**.  The stop/re-plan rule does not
 permit a `src/` change because no gap has demonstrated one.  It also does not
-permit entering Task 3: retained qualification gaps must be closed by their
-own planned waves before an execution-promotion claim.
+permit an execution-promotion claim.  Task 3 may begin only as test-first,
+scenario-specific qualification for the bounded evidence gaps; if a failing
+test demonstrates a production-source gap, stop and re-plan before any `src/`
+edit.
