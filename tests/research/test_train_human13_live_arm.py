@@ -44,6 +44,11 @@ class _Manifest:
     full_panel: bool = True
 
 
+@dataclass(frozen=True)
+class _Payload:
+    micro_steps: tuple[object, ...]
+
+
 def _image(image_id: int, *, owners: int, selected: int, replay: int, dup: int):
     return SimpleNamespace(
         image_id=image_id,
@@ -533,6 +538,34 @@ def test_materialize_resolved_plan_rejects_stale_noncanonical_destination(
 
     with pytest.raises(live_train.LiveTrainingError, match="output_root"):
         live_train.materialize_resolved_plan(receipt, arm_id="A1")
+
+
+def test_attach_live_image_processor_preserves_human13_row_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bindings = ("sealed-row-binding",)
+    original = SimpleNamespace(
+        example_id="segment",
+        input_ids=(1, 2),
+        human13_row_bindings=bindings,
+    )
+    attached = SimpleNamespace(example_id="segment", input_ids=(1, 2))
+    source_step = SimpleNamespace(encoded_examples=(original,))
+    attached_step = SimpleNamespace(encoded_examples=(attached,))
+    monkeypatch.setattr(
+        "src.training.pipeline._attach_image_processors_to_micro_steps",
+        lambda steps, *, image_processor: (attached_step,),
+    )
+    monkeypatch.setattr(
+        "src.training.pipeline._qwen_image_processor",
+        lambda components: "image-processor",
+    )
+
+    result = live_train._attach_live_image_processor(
+        _Payload((source_step,)), SimpleNamespace()
+    )
+
+    assert result.micro_steps[0].encoded_examples[0].human13_row_bindings == bindings
 
 
 def test_direct_script_entry_bootstraps_repo_imports(tmp_path: Path) -> None:

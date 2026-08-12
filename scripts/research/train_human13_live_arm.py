@@ -866,10 +866,26 @@ def _attach_live_image_processor(payload: Any, components: Any) -> Any:
         _qwen_image_processor,
     )
 
+    original_steps = tuple(payload.micro_steps)
     attached = _attach_image_processors_to_micro_steps(
-        tuple(payload.micro_steps),
+        original_steps,
         image_processor=_qwen_image_processor(components),
     )
+    # The generic dataclass ``replace`` used by the image-processor seam only
+    # retains declared EncodedExample fields.  Human-13 row bindings are an
+    # experiment-local sealed extension and must survive that mechanical copy.
+    for original_step, attached_step in zip(original_steps, attached, strict=True):
+        for original, updated in zip(
+            original_step.encoded_examples,
+            attached_step.encoded_examples,
+            strict=True,
+        ):
+            bindings = getattr(original, "human13_row_bindings", None)
+            if bindings is None:
+                raise LiveTrainingError(
+                    "live image-processor attachment lost a sealed segment source"
+                )
+            object.__setattr__(updated, "human13_row_bindings", bindings)
     return replace(payload, micro_steps=attached)
 
 
