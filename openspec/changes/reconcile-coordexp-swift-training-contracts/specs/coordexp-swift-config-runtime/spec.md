@@ -4,9 +4,11 @@
 
 Training configuration SHALL expose a strict `resume` object whose supported
 modes are `disabled` and `exact_same_world_size`. The compatibility default
-MUST be `disabled`. `resume.checkpoint_dir` MUST be absent or null when disabled
-and MUST resolve from the YAML file that authors it when exact continuation is
-selected. Unknown modes, unknown fields, or incompatible mode/path
+MUST be `disabled`. `resume.checkpoint_dir` MUST be absent or null when
+disabled. Exact mode with a null checkpoint path is the publish-only
+control/parent branch that creates a committed exact boundary; when exact
+continuation authors a checkpoint path, that path MUST resolve from the YAML
+file that authors it. Unknown modes, unknown fields, or incompatible mode/path
 combinations MUST fail during config resolution before cache, model, optimizer,
 or accelerator mutation.
 
@@ -27,9 +29,17 @@ or accelerator mutation.
 
 #### Scenario: Resume fields are incompatible
 
-- **WHEN** a disabled config supplies a checkpoint path or an exact mode omits
-  its checkpoint path
+- **WHEN** a disabled config supplies a checkpoint path
 - **THEN** strict validation MUST fail before training-side mutation.
+
+#### Scenario: Exact state publication is selected without continuation
+
+- **WHEN** a config selects `exact_same_world_size` with an absent or null
+  checkpoint path
+- **THEN** the resolved config MUST preserve exact mode with a null checkpoint
+  path
+- **AND** runtime MUST publish exact training state without attempting restore
+  so the run can serve as an uninterrupted control or interrupted parent.
 
 ### Requirement: Exact Resume Requires Strict Deterministic Replay Admission
 

@@ -9,13 +9,23 @@
 
 ## 2. Close Config, Payload, And Admission Gaps
 
-- [ ] 2.1 Add or complete the strict config matrix for omitted/disabled resume, disabled-with-path rejection, exact-without-path rejection, YAML-relative checkpoint resolution, unknown mode/field rejection, strict replay requirement, and launcher determinism failure before CUDA/model setup.
-- [ ] 2.2 Add a disabled-mode checkpoint test proving that normal inference-payload publication and aliases are unchanged and no `training_state/`, exact-state manifest, callback, identity, or exact publication event is written.
-- [ ] 2.3 Add an enabled-mode sibling test proving that the self-authenticating inference payload commits independently, exact state is typed under `training_state/`, selectors/events wait for phase two, and inference readers ignore the sibling while loading only explicit adapter/delta payloads.
-- [ ] 2.4 Add exact-admission tests for same-world-size and rank-map compatibility, optimizer-step save-boundary enforcement, restored next planned step/pack cursor/optimizer/scheduler/scaler/RNG state, and fail-closed rejection of world-size drift, unsupported accumulation position, identity mismatch, and inference-only payloads before mutable restore. These interface tests do not close exactness without the matched first post-resume forward/update probe in Wave 3.
-- [ ] 2.5 Make the minimum source changes required by failing interface tests; do not add a second checkpoint format, a historical migration shim, cross-world-size support, mid-accumulation support, or inference knowledge of training-state internals.
-- [ ] 2.6 Run the focused config, artifact, inference-reader, and exact-resume suites and publish a change-local Wave 2 receipt binding command, source state, test counts, failures, and claim boundary.
-- [ ] 2.7 Gate Wave 2 with the focused executable config/payload/admission/historical-reader matrix; resolve every failure or zero-test selection before distributed qualification without adding another independent audit layer.
+- [x] 2.1 Add or complete the strict config matrix for omitted/disabled resume, disabled-with-path rejection, exact publish-only control/parent mode with a null path, YAML-relative continuation path resolution, unknown mode/field rejection, strict replay requirement, and launcher determinism failure before CUDA/model setup.
+- [x] 2.2 Add a disabled-mode checkpoint test proving that normal inference-payload publication and aliases are unchanged and no `training_state/`, exact-state manifest, callback, identity, or exact publication event is written.
+- [x] 2.3 Add an enabled-mode sibling test proving that the self-authenticating inference payload commits independently, exact state is typed under `training_state/`, selectors/events wait for phase two, and inference readers ignore the sibling while loading only explicit adapter/delta payloads.
+- [x] 2.4 Add exact-admission tests for same-world-size and rank-map compatibility, optimizer-step save-boundary enforcement, restored next planned step/pack cursor/optimizer/scheduler/scaler/RNG state, and fail-closed rejection of world-size drift, unsupported accumulation position, identity mismatch, and inference-only payloads before mutable restore. These interface tests do not close exactness without the matched first post-resume forward/update probe in Wave 3.
+- [x] 2.5 Preserve current source behavior: `ResumeConfig._disabled_mode_has_no_checkpoint` rejects only disabled mode with a path; exact mode with a null path is the required publish-only control/parent branch. Replace the over-broad RED with a positive resolved-config test and rerun config-bundle, input-attestation, and Wave-7 exact-resume consumer suites. No `src/` edit is authorized.
+- [x] 2.6 Run the focused config, artifact, inference-reader, and exact-resume suites and publish a change-local Wave 2 receipt binding command, source state, test counts, failures, and claim boundary.
+> Task 3 status (`be720f58d`, receipt `receipts/wave-2-contract-qualification.md`):
+> 2.1 through 2.7 are backed by executed passing nodes. The initial
+> exact-without-path RED was withdrawn because it contradicted the publish-only
+> control/parent contract; it is replaced by the positive resolved-config test,
+> and the affected config consumers pass `311` tests. The archive move at
+> `71dab9772` intentionally changed `wave7_exact_resume_request.py` without
+> refreshing its frozen identity, so only the sequence controller's exact frozen
+> request-producer SHA-256 was updated to the observed current source hash; the
+> strict identity check is unchanged. No `src/` edit was made.
+
+- [x] 2.7 Gate Wave 2 with the focused executable config/payload/admission/historical-reader matrix; resolve every failure or zero-test selection before distributed qualification without adding another independent audit layer.
 
 ## 3. Qualify Distributed Atomic Publication
 

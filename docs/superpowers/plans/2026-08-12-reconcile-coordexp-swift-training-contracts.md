@@ -207,6 +207,11 @@ Expected: either a no-source accepted baseline/narrowed delta commit, or no comm
 - Create: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-2-contract-qualification.md`
 - Modify: `openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md`
 - Modify: `openspec/changes/reconcile-coordexp-swift-training-contracts/tasks.md`
+- Test: `tests/config/test_train_config.py`
+- Test: `tests/artifacts/test_checkpoint_payload_identity.py`
+- Test: `tests/artifacts/test_checkpoint_writer.py`
+- Test: `tests/artifacts/test_run_artifacts.py`
+- Modify: `scripts/probes/coordexp_swift/wave7_exact_resume_sequence.py:FROZEN_REQUEST_PRODUCER_SOURCE_SHA256`
 - Test owners: the config, artifact, exact-resume, pipeline-exact-resume, and inference files listed in the File and Ownership Map.
 
 **Interfaces:**
@@ -227,6 +232,46 @@ conda run -n ms pytest -q \
 ```
 
 Expected: all nodes pass and demonstrate omission/default persistence, YAML-relative exact path resolution, strict replay requirement, and unknown/incompatible rejection. If a node is missing or fails semantically, return to Task 2 and re-plan test-first.
+
+- [ ] **Step 1A: Preserve the exact publish-only control/parent configuration**
+
+Withdraw the Task-3 discovery RED because fixed-target review proved it
+contradicts the exact-state control/parent path. Replace it with a positive
+test:
+
+```bash
+cd /data/CoordExp/.worktrees/CoordExp-swift
+conda run -n ms pytest -q \
+  tests/config/test_train_config.py::test_exact_publish_only_mode_preserves_null_checkpoint_path
+```
+
+Expected: exit code `0`; the resolved config retains
+`{"mode": "exact_same_world_size", "checkpoint_dir": null}`. Do not modify
+`src/config/models.py` or `src/training/pipeline.py`. The live split is:
+`resume.mode` enables exact-state publication, while a non-null
+`resume.checkpoint_dir` selects restore.
+
+Run all affected config consumers, not only the leaf config file:
+
+```bash
+conda run -n ms pytest -q \
+  tests/config/test_train_config.py \
+  tests/training/test_wave7_exact_resume_config_bundle.py \
+  tests/training/test_input_attestation.py \
+  tests/training/test_wave7_exact_resume_sequence.py
+```
+
+Expected: every config consumer passes except an independently frozen
+historical-source identity assertion already classified with exact observed and
+expected hashes. Repair such a failure only through its owning historical
+receipt/disposition, never by changing publish-only semantics.
+
+The archive-path cleanup changed only the request producer's OpenSpec authority
+path, turning its SHA-256 from
+`540101ead19eeb82a7a2821954371a01e57e936f1484d8a0cf5130b330af71ac` to
+`7c2e3d4688977c8b60ca08c24325e1497dd562792cd0bf8286e5af93bfc04b3f`.
+Update only `FROZEN_REQUEST_PRODUCER_SOURCE_SHA256` to that observed current
+hash; retain the exact source-hash assertion and do not relax or remove it.
 
 - [ ] **Step 2: Run inference-payload and exact-sibling acceptance tests**
 
@@ -269,12 +314,20 @@ Use `apply_patch` to record exact commands, pinned commit, test counts, cited py
 
 ```bash
 git add openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-2-contract-qualification.md openspec/changes/reconcile-coordexp-swift-training-contracts/tasks.md
+git add openspec/changes/reconcile-coordexp-swift-training-contracts/design.md openspec/changes/reconcile-coordexp-swift-training-contracts/specs docs/superpowers/plans/2026-08-12-reconcile-coordexp-swift-training-contracts.md
+git add scripts/probes/coordexp_swift/wave7_exact_resume_sequence.py
+git add tests/config/test_train_config.py tests/artifacts/test_checkpoint_payload_identity.py tests/artifacts/test_checkpoint_writer.py tests/artifacts/test_run_artifacts.py
 git diff --cached --check
 git diff --cached
 git commit -m "test(training): qualify bounded resume interfaces"
 ```
 
-Expected: only evidence and evidence-backed task checkboxes are committed unless Task 2 produced and approved a revised red/green implementation task.
+Expected: the commit contains the positive publish-only config test, qualified
+scenario tests, corrected delta/design/tasks/plan, and evidence-backed Wave-2
+artifacts. No source, pipeline, checkpoint format, historical migration, or
+inference-runtime implementation change is included. Rollback removes only the
+new tests/evidence and restores affected matrix rows to `gap`; it does not
+re-introduce the invalid exact-without-path clause.
 
 ### Task 4: Qualify Distributed Atomic Publication Under Fresh Authorization
 

@@ -1227,6 +1227,53 @@ def test_failed_finalize_preserves_matching_committed_checkpoint_progress(
     ] == ["completed", "failed"]
 
 
+def test_inference_only_publication_event_cannot_carry_exact_state_identity(
+    tmp_path: Path,
+) -> None:
+    """`coordexp-swift-training-resume` -> Scenario: Exact training state is disabled."""
+
+    writer = _writer(tmp_path)
+    checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-3"
+
+    with pytest.raises(ArtifactContractError) as exc_info:
+        writer.record_checkpoint_publication_event(
+            step=3,
+            status="completed",
+            started_at="2026-08-11T00:00:00+00:00",
+            completed_at="2026-08-11T00:00:01+00:00",
+            duration_seconds=1.0,
+            is_final=False,
+            exact_training_state_enabled=False,
+            checkpoint_identity={
+                "checkpoint_step": 3,
+                "resolved_path": str(checkpoint_dir),
+                "training_state_manifest_file_sha256": "a" * 64,
+                "training_state_aggregate_digest": "b" * 64,
+            },
+            inference_payload_identity={
+                "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+                "schema_version": 2,
+                "manifest_relative_path": "inference_payload_manifest.json",
+                "manifest_file_sha256": "c" * 64,
+                "aggregate_digest": "d" * 64,
+            },
+            committed_progress={
+                "schema": "coordexp-swift-checkpoint-committed-progress",
+                "schema_version": 1,
+                "completed_steps": 3,
+                "consumed_packs": 9,
+                "optimizer_update_status": "applied",
+                "finite_status": "finite",
+            },
+            failure_code=None,
+        )
+
+    assert exc_info.value.code == "run_writer.invalid_checkpoint_publication_event"
+    state = writer.read_run()
+    assert state["measurement"].get("checkpoint_publication_events", []) == []
+    assert not checkpoint_dir.exists()
+
+
 def _record_committed_checkpoint_event(
     writer: RunWriter,
     *,

@@ -68,6 +68,24 @@ Alternative considered: synchronize all six archived delta specs and finish
 their old task list. Rejected because it would inherit unfinished packing,
 efficiency, interruption, and final-gate claims into one authority surface.
 
+#### Qualified contract correction: exact mode may be publish-only
+
+Task 3 initially encoded exact mode without a checkpoint path as an invalid
+configuration. Fixed-target review showed that this shape is the live and
+required publish-only control/parent branch: exact mode enables training-state
+publication, while a non-null checkpoint path independently selects restore.
+The uninterrupted control and interrupted parent must create committed exact
+boundaries before a child checkpoint exists.
+
+Therefore no production-source change is authorized. The config delta is
+narrowed to reject the incompatible shape the live validator owns (disabled
+mode with a path), and a positive test MUST preserve exact mode plus a null
+path. This is not a silent downgrade: the resolved config and active-profile
+identity retain exact mode, and runtime publishes exact state without entering
+the restore branch. Introducing a distinct publish-only mode or authored-intent
+signal is a separate user-owned compatibility design and is outside this
+change.
+
 ### 2. Keep two payload types with one ordered checkpoint transaction
 
 The inference payload remains the first independently authenticated payload in

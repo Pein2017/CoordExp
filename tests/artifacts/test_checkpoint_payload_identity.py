@@ -14,9 +14,13 @@ from src.artifacts.checkpoint_payload import (
     load_inference_checkpoint_payload_manifest,
     write_inference_checkpoint_payload_manifest,
 )
+from src.adapters.dora import inspect_dora_adapter_payload
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import ArtifactContractError
-from src.qwen.special_token_embeddings import DEFAULT_EMBED_DELTA_TENSOR_KEY
+from src.qwen.special_token_embeddings import (
+    DEFAULT_EMBED_DELTA_TENSOR_KEY,
+    inspect_special_token_embedding_delta_payload,
+)
 
 
 def test_inference_checkpoint_payload_identity_is_complete_and_path_independent(
@@ -245,6 +249,95 @@ def test_failed_publication_has_null_identities_and_does_not_advance_progress(
     assert state["checkpoint_event_count"] == 0
     assert state["final_optimizer_update_status"] is None
     assert state["final_finite_status"] is None
+
+
+def test_payload_reading_ignores_exact_sibling_and_extra_historical_metadata(
+    tmp_path: Path,
+) -> None:
+    """`coordexp-swift-training-artifacts` -> Scenario: Existing checkpoint is used;
+    `coordexp-swift-training-resume` -> Scenario: Inference reads a checkpoint with
+    exact state."""
+
+    checkpoint = _write_checkpoint_payload(tmp_path / "checkpoint")
+    write_inference_checkpoint_payload_manifest(checkpoint)
+    manifest_before = load_inference_checkpoint_payload_manifest(checkpoint)
+    identity = build_inference_checkpoint_payload_identity(checkpoint)
+
+    training_state = checkpoint / "training_state"
+    (training_state / "rank-00000").mkdir(parents=True)
+    (training_state / "training_state_manifest.json").write_text(
+        json.dumps({"schema_version": 2, "commit_status": "committed"}, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    (training_state / "rank-00000" / "model.pt").write_bytes(b"exact-state-bytes")
+    (checkpoint / "checkpoint.json").write_text("{}\n", encoding="utf-8")
+    (checkpoint / "checkpoint_handoff.json").write_text("{}\n", encoding="utf-8")
+    (checkpoint / "setup_receipt.json").write_text("{}\n", encoding="utf-8")
+    (checkpoint / "optimizer.pt").write_bytes(b"historical-resume-like-file")
+
+    assert load_inference_checkpoint_payload_manifest(checkpoint) == manifest_before
+    assert build_inference_checkpoint_payload_identity(checkpoint) == identity
+    assert admit_inference_checkpoint_payload_identity(checkpoint, identity) == identity
+
+    inventoried = {
+        item["relative_path"]
+        for component in ("adapter", "special_token_embedding_delta")
+        for item in manifest_before[component]["files"]
+    }
+    assert inventoried == {
+        "adapter_config.json",
+        "adapter_model.safetensors",
+        "special_token_embeddings.json",
+        "special_token_embeddings.safetensors",
+    }
+    assert "training_state" not in json.dumps(manifest_before)
+    assert (training_state / "rank-00000" / "model.pt").is_file()
+
+
+def test_historical_payload_without_a_current_manifest_stays_inference_loadable(
+    tmp_path: Path,
+) -> None:
+    """`coordexp-swift-training-artifacts` -> Scenario: Existing checkpoint is used;
+    `coordexp-swift-training-resume` -> Scenario: Historical artifacts contain extra
+    metadata."""
+
+    checkpoint = _write_checkpoint_payload(tmp_path / "historical")
+    base_model = (tmp_path / "base-model").resolve()
+    (checkpoint / "checkpoint.json").write_text("{}\n", encoding="utf-8")
+    (checkpoint / "checkpoint_handoff.json").write_text("{}\n", encoding="utf-8")
+    (checkpoint / "training_state").mkdir()
+    (checkpoint / "training_state" / "legacy_resume.pt").write_bytes(b"historical")
+
+    adapter_identity = inspect_dora_adapter_payload(
+        checkpoint / "adapter",
+        expected_base_model_path=base_model,
+    )
+    delta_identity = inspect_special_token_embedding_delta_payload(
+        checkpoint / "special_token_embeddings",
+        expected_base_model_path=base_model,
+        expected_base_config_sha256="b" * 64,
+        expected_tokenizer_sha256="t" * 64,
+    )
+
+    assert adapter_identity["kind"] == "dora_adapter"
+    assert adapter_identity["root"] == str((checkpoint / "adapter").resolve())
+    assert sorted(item["relative_path"] for item in adapter_identity["files"]) == [
+        "adapter_config.json",
+        "adapter_model.safetensors",
+    ]
+    assert delta_identity["root"] == str(
+        (checkpoint / "special_token_embeddings").resolve()
+    )
+    assert sorted(item["relative_path"] for item in delta_identity["files"]) == [
+        "special_token_embeddings.json",
+        "special_token_embeddings.safetensors",
+    ]
+    assert not (checkpoint / "inference_payload_manifest.json").exists()
+    with pytest.raises(ArtifactContractError) as exc_info:
+        load_inference_checkpoint_payload_manifest(checkpoint)
+    assert exc_info.value.code == "checkpoint.inference_payload_manifest_invalid"
+    assert (checkpoint / "training_state" / "legacy_resume.pt").is_file()
 
 
 def _run_writer(tmp_path: Path) -> RunWriter:

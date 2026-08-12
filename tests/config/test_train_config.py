@@ -574,6 +574,25 @@ def test_exact_resume_accepts_same_world_mode_and_resolves_checkpoint_path(
     assert resolved.path_origins["resume.checkpoint_dir"].resolved_path == expected
 
 
+def test_exact_publish_only_mode_preserves_null_checkpoint_path(
+    tmp_path: Path,
+) -> None:
+    """Exact mode without a path is the publish-only control/parent branch."""
+
+    config_path = tmp_path / "exact-without-path.yaml"
+    payload = _minimal_config()
+    payload["runtime"]["determinism"] = {"mode": "strict_cuda_replay_v1"}
+    payload["resume"] = {"mode": "exact_same_world_size"}
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.resume.model_dump(mode="json") == {
+        "mode": "exact_same_world_size",
+        "checkpoint_dir": None,
+    }
+
+
 @pytest.mark.parametrize(
     "resume",
     [

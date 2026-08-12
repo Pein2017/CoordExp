@@ -405,6 +405,62 @@ def test_final_and_best_are_rank_zero_owned_and_safe(tmp_path: Path) -> None:
     assert not list(tmp_path.rglob("checkpoint_handoff.json"))
 
 
+def test_disabled_exact_state_publishes_only_the_inference_payload_and_aliases(
+    tmp_path: Path,
+) -> None:
+    """`coordexp-swift-training-artifacts`/`coordexp-swift-training-resume`
+    -> Scenario: Exact state is disabled."""
+
+    writer = _run_writer(tmp_path)
+    result = CheckpointWriter(tmp_path).write_checkpoint(
+        step=1,
+        accelerator=FakeAccelerator(),
+        model=FakePeftModel(),
+        adapter_name="default",
+        special_token_result=_special_token_result(),
+        base_model_path="base",
+        base_config_sha256="base-sha",
+        tokenizer_sha256="tokenizer-sha",
+        run_writer=writer,
+        is_final=True,
+        best_candidate={
+            "completed": True,
+            "selector": "eval/acc:max",
+            "value": 0.5,
+            "optimizer_update_status": "applied",
+            "finite_status": "finite",
+        },
+    )
+
+    checkpoint_dir = result.checkpoint_dir
+    assert (checkpoint_dir / "adapter" / "adapter_model.safetensors").is_file()
+    assert (checkpoint_dir / "inference_payload_manifest.json").is_file()
+    assert result.final_updated and result.best_updated
+    assert (tmp_path / "checkpoints" / "final.json").is_file()
+    assert (tmp_path / "checkpoints" / "best.json").is_file()
+    assert _staging(tmp_path) == []
+
+    assert not (checkpoint_dir / "training_state").exists()
+    assert [
+        path.relative_to(checkpoint_dir).as_posix()
+        for path in sorted(checkpoint_dir.rglob("*"))
+        if "training_state" in path.name
+    ] == []
+    manifest = json.loads(
+        (checkpoint_dir / "inference_payload_manifest.json").read_text()
+    )
+    assert set(manifest) == {
+        "schema",
+        "schema_version",
+        "adapter",
+        "special_token_embedding_delta",
+        "aggregate_digest",
+    }
+    assert writer.read_run()["measurement"].get(
+        "checkpoint_publication_events", []
+    ) == []
+
+
 def test_exact_state_callback_runs_after_durable_payload_and_before_aliases(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
