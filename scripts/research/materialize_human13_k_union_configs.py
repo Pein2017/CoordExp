@@ -919,6 +919,7 @@ def _plan_for_config(
     *,
     output_root: Path,
     run_id: str,
+    manifest_identity: Human13ManifestIdentity | None = None,
 ) -> dict[str, Any]:
     arm_slug = config.arm_id.lower().replace("-", "_")
     arm_root = (output_root / run_id / arm_slug).resolve()
@@ -929,7 +930,7 @@ def _plan_for_config(
             f"{run_id}\0{config.arm_id}\0fresh-adamw".encode()
         ).hexdigest()
     )
-    return {
+    plan = {
         "schema_version": "human13_resolved_arm_plan.v1",
         "unit_id": UNIT_ID,
         "arm_id": config.arm_id,
@@ -957,6 +958,9 @@ def _plan_for_config(
         "fresh_state_id": fresh_state_id,
         "resolved_plan_path": str(arm_root / "resolved_plan.json"),
     }
+    if manifest_identity is not None:
+        plan["manifest_identity"] = asdict(manifest_identity)
+    return plan
 
 
 def materialize_plans(
@@ -1027,7 +1031,12 @@ def materialize_plans(
                 }
             )
             continue
-        plan = _plan_for_config(config, output_root=Path(output_root), run_id=run_id)
+        plan = _plan_for_config(
+            config,
+            output_root=Path(output_root),
+            run_id=run_id,
+            manifest_identity=identity,
+        )
         if config.arm_id == "A6":
             plan["a6_donor_binding"] = a6_binding_to_dict(a6)
         if config.arm_id == "A8-prime":
