@@ -695,7 +695,17 @@ def test_a6_rejects_an_unsealed_typed_donor_payload() -> None:
 
 
 @pytest.mark.parametrize(
-    "mutation", (None, "image", "owner", "trajectory", "prefix", "eligibility")
+    "mutation",
+    (
+        None,
+        "image",
+        "owner",
+        "row",
+        "trajectory",
+        "raw_prefix",
+        "duplicate_prior_row",
+        "eligibility",
+    ),
 )
 def test_a6_typed_binding_validates_exact_donor_provenance(
     mutation: str | None,
@@ -707,10 +717,14 @@ def test_a6_typed_binding_validates_exact_donor_provenance(
         donor = replace(donor, image_id=2)
     elif mutation == "owner":
         donor = replace(donor, owner_id="owner-g")
+    elif mutation == "row":
+        donor = replace(donor, target_row_id="invented-row")
     elif mutation == "trajectory":
         donor = replace(donor, donor_trajectory_id="source")
-    elif mutation == "prefix":
-        donor = replace(donor, donor_prefix_token_ids=(99,))
+    elif mutation == "raw_prefix":
+        donor = replace(donor, donor_prefix_token_ids=(2, 0, 9, 9))
+    elif mutation == "duplicate_prior_row":
+        donor = replace(donor, donor_prior_row_ids=("row-h", "row-duplicate"))
     elif mutation == "eligibility":
         donor = replace(donor, h_mid_eligible=False)
     if mutation is not None:
@@ -1078,6 +1092,7 @@ def _sealed_manifest(*, arm_id: str = "A1") -> SimpleNamespace:
     selected = SimpleNamespace(
         owner_id="owner-h",
         row_id="row-h",
+        trajectory_id="sampled",
         token_ids=(2, 0),
         target_token_mask=(True, False),
     )
@@ -1086,6 +1101,8 @@ def _sealed_manifest(*, arm_id: str = "A1") -> SimpleNamespace:
         raw_token_ids=(1, 2),
         replay_token_mask=(True, True),
         rows=(SimpleNamespace(row_id="row-replay", token_start=0, token_end=2),),
+        retained_row_ids=("row-replay",),
+        duplicate_row_ids=(),
     )
     sampled = SimpleNamespace(
         trajectory_id="sampled",
@@ -1095,17 +1112,21 @@ def _sealed_manifest(*, arm_id: str = "A1") -> SimpleNamespace:
             SimpleNamespace(row_id="row-h", token_start=0, token_end=2),
             SimpleNamespace(row_id="row-a4-other", token_start=2, token_end=4),
         ),
+        retained_row_ids=("row-h", "row-a4-other"),
+        duplicate_row_ids=(),
     )
     image = SimpleNamespace(
         image_id=1,
         owners=(
             SimpleNamespace(
                 owner_id="owner-h",
+                source_object_index=0,
                 source_row_ids=(),
                 sampled_row_ids=("row-h", "row-a4-other"),
             ),
             SimpleNamespace(
                 owner_id="owner-g",
+                source_object_index=1,
                 source_row_ids=("row-replay",),
                 sampled_row_ids=(),
             ),
@@ -1399,13 +1420,34 @@ def _a6_payload() -> tuple[
     selected = SimpleNamespace(
         owner_id="owner-h",
         row_id="row-a4-other",
+        trajectory_id="sampled",
         token_ids=(0, 2),
         target_token_mask=(True, False),
+    )
+    sampled = next(
+        trajectory
+        for trajectory in image.trajectories
+        if trajectory.trajectory_id == "sampled"
+    )
+    sampled = _replace_namespace(
+        sampled,
+        raw_token_ids=(2, 0, 9, 9, 0, 2),
+        rows=(
+            SimpleNamespace(row_id="row-h", token_start=0, token_end=2),
+            SimpleNamespace(row_id="row-duplicate", token_start=2, token_end=4),
+            SimpleNamespace(row_id="row-a4-other", token_start=4, token_end=6),
+        ),
+        retained_row_ids=("row-h", "row-a4-other"),
+        duplicate_row_ids=("row-duplicate",),
     )
     image = _replace_namespace(
         image,
         selected_rows=(selected,),
         target_row_ids=("row-a4-other",),
+        trajectories=tuple(
+            sampled if trajectory.trajectory_id == "sampled" else trajectory
+            for trajectory in image.trajectories
+        ),
     )
     sealed = _replace_namespace(sealed, images=(image,))
     donor = _segment(

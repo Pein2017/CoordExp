@@ -95,44 +95,41 @@ def test_execute_fails_closed_without_a_real_runner_entry_contract(
 ) -> None:
     jobs = launcher.plan_launches(_plans(tmp_path), gpu_ids=(0, 1, 2))
 
-    with pytest.raises(launcher.LaunchContractError, match="runner entry contract"):
+    with pytest.raises(launcher.LaunchContractError, match="content-bound runnable"):
         launcher.execute_launches(jobs, execution_authorized=True)
 
 
-def test_execute_assigns_isolated_cuda_visibility_without_retry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_execute_rejects_a_caller_forged_ready_bit(tmp_path: Path) -> None:
+    jobs = launcher.plan_launches(_plans(tmp_path), gpu_ids=(0, 1, 2))
+    for job in jobs["jobs"]:
+        job["runner_entry_contract"] = "human13_runner_cli.v1"
+        job["execution_ready"] = True
+
+    with pytest.raises(launcher.LaunchContractError, match="bound runnable"):
+        launcher.execute_launches(jobs, execution_authorized=True)
+
+
+@pytest.mark.parametrize("entry_kind", ("noop", "current_runner"))
+def test_existing_entry_never_claims_execution_ready_without_real_bound_cli(
+    tmp_path: Path, entry_kind: str
 ) -> None:
     payload = _plans(tmp_path, count=2)
     for plan in payload["plans"]:
         Path(plan["resolved_plan_path"]).write_text("{}", encoding="utf-8")
-    runner_entry = tmp_path / "runner.py"
-    runner_entry.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    if entry_kind == "noop":
+        runner_entry = tmp_path / "runner.py"
+        runner_entry.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    else:
+        runner_entry = Path("scripts/research/run_human13_k_union_overfit.py")
     jobs = launcher.plan_launches(
         payload,
         gpu_ids=(2, 4),
         runner_entry=runner_entry,
         runner_entry_contract="human13_runner_cli.v1",
     )
-    calls: list[tuple[list[str], dict[str, str]]] = []
-
-    class Process:
-        def __init__(self, returncode: int = 0) -> None:
-            self.returncode = returncode
-
-        def wait(self) -> int:
-            return self.returncode
-
-    def fake_popen(command: list[str], *, env: dict[str, str]) -> Process:
-        calls.append((command, env))
-        return Process()
-
-    monkeypatch.setattr(launcher.subprocess, "Popen", fake_popen)
-    receipt = launcher.execute_launches(jobs, execution_authorized=True)
-
-    assert receipt["process_start_count"] == 2
-    assert receipt["retry_count"] == 0
-    assert [env["CUDA_VISIBLE_DEVICES"] for _, env in calls] == ["2", "4"]
-    assert [env["WORLD_SIZE"] for _, env in calls] == ["1", "1"]
+    assert all(job["execution_ready"] is False for job in jobs["jobs"])
+    with pytest.raises(launcher.LaunchContractError, match="bound runnable"):
+        launcher.execute_launches(jobs, execution_authorized=True)
 
 
 def test_cli_default_does_not_start_processes(
@@ -141,9 +138,9 @@ def test_cli_default_does_not_start_processes(
     path = tmp_path / "plans.json"
     path.write_text(json.dumps(_plans(tmp_path)), encoding="utf-8")
     monkeypatch.setattr(
-        launcher.subprocess,
-        "Popen",
-        lambda *_args, **_kwargs: pytest.fail("dry-run started a process"),
+        launcher,
+        "execute_launches",
+        lambda *_args, **_kwargs: pytest.fail("dry-run entered execute mode"),
     )
 
     assert launcher.main(["--plans", str(path), "--gpus", "0,1,2"]) == 0

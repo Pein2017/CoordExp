@@ -112,6 +112,35 @@ class Human13A8CensusBinding:
     target_bytes_unchanged: bool
 
 
+@dataclass(frozen=True)
+class Human13ManifestIdentity:
+    schema_version: str
+    unit_id: str
+    panel_sha256: str
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class Human13A6DonorRecord:
+    image_id: int
+    owner_id: str
+    target_row_id: str
+    donor_trajectory_id: str
+    donor_prefix_token_ids: tuple[int, ...]
+    donor_prior_row_ids: tuple[str, ...]
+    h_mid_eligible: bool
+
+
+@dataclass(frozen=True)
+class Human13A6DonorBinding:
+    schema_version: str
+    manifest_identity: Human13ManifestIdentity
+    frozen_targets_sha256: str
+    artifact_sha256: str
+    applicable: bool
+    donors: tuple[Human13A6DonorRecord, ...]
+
+
 FROZEN_SOURCE = FrozenSource(
     checkpoint_path=(
         "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/"
@@ -304,6 +333,11 @@ def load_arm_config(path: str | Path) -> ArmConfig:
     if not isinstance(raw["updates"], bool):
         raise MaterializationError("updates must be boolean")
     updates = raw["updates"]
+    expected_updates = arm_id != "frozen_source"
+    if updates is not expected_updates:
+        raise MaterializationError(
+            "arm update matrix requires Frozen Source no-update and every other arm updating"
+        )
     source = _source_from_dict(raw["source"])
 
     if updates:
@@ -370,7 +404,7 @@ def load_arm_config(path: str | Path) -> ArmConfig:
     )
 
 
-def _canonical_sha256(value: Mapping[str, Any]) -> str:
+def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(
             value, sort_keys=True, separators=(",", ":"), allow_nan=False
@@ -378,85 +412,246 @@ def _canonical_sha256(value: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
-def a6_binding_from_dict(value: Mapping[str, Any]) -> Any:
-    # The runner owns this exact typed execution contract.  Import it only when
-    # an A6 binding is actually supplied; ordinary dry-run materialization does
-    # not import the packed/model-facing runner surface.
-    from scripts.research.run_human13_k_union_overfit import (
-        Human13A6DonorBinding,
-        Human13A6DonorRecord,
-        Human13ManifestIdentity,
-        _a6_donor_artifact_sha256,
-    )
-
-    raw = _mapping(value, "A6 donor binding")
-    identity_raw = _mapping(raw.get("manifest_identity"), "A6 manifest_identity")
-    identity = Human13ManifestIdentity(**identity_raw)
-    donors = tuple(
-        Human13A6DonorRecord(
-            **{
-                **item,
-                "donor_prefix_token_ids": tuple(item["donor_prefix_token_ids"]),
-                "donor_prior_row_ids": tuple(item["donor_prior_row_ids"]),
-            }
-        )
-        for item in raw.get("donors", ())
-    )
-    binding = Human13A6DonorBinding(
-        schema_version=str(raw.get("schema_version")),
-        manifest_identity=identity,
-        frozen_targets_sha256=str(raw.get("frozen_targets_sha256")),
-        artifact_sha256=str(raw.get("artifact_sha256")),
-        applicable=raw.get("applicable"),
-        donors=donors,
-    )
-    if binding.manifest_identity.unit_id != UNIT_ID:
-        raise MaterializationError("A6 binding unit_id mismatches")
-    if binding.manifest_identity.panel_sha256 != PANEL_SHA256:
-        raise MaterializationError("A6 binding panel_sha256 mismatches")
-    if binding.artifact_sha256 != _a6_donor_artifact_sha256(binding):
-        raise MaterializationError("A6 binding artifact_sha256 mismatches")
-    if not any(donor.h_mid_eligible for donor in binding.donors):
-        raise MaterializationError("A6 binding has no eligible H_mid donor")
-    return binding
-
-
-def a6_binding_to_dict(binding: Any) -> dict[str, Any]:
+def a6_binding_to_dict(binding: Human13A6DonorBinding) -> dict[str, Any]:
     return asdict(binding)
 
 
-def _load_a8_binding(path: Path) -> Human13A8CensusBinding:
-    raw = dict(_mapping(json.loads(path.read_text(encoding="utf-8")), "census"))
-    supplied_digest = raw.pop("artifact_sha256", None)
-    if supplied_digest != _canonical_sha256(raw):
-        raise MaterializationError("A8 census artifact_sha256 mismatches its payload")
+def _load_manifest_document(
+    path: Path,
+) -> tuple[Mapping[str, Any], Human13ManifestIdentity, str]:
+    payload = path.read_bytes()
+    raw = _mapping(json.loads(payload), "sealed Human-13 manifest")
     _exact_fields(
         raw,
         {
             "schema_version",
-            "manifest_identity",
-            "frozen_targets_sha256",
-            "census",
+            "binding",
+            "images",
+            "arms",
+            "denominators",
+            "full_panel",
         },
-        "A8 census binding",
+        "sealed Human-13 manifest",
     )
-    if raw.get("schema_version") != "human13_a8_census_binding.v1":
-        raise MaterializationError("A8 census binding schema_version is not canonical")
-    identity = _mapping(raw.get("manifest_identity"), "census manifest_identity")
-    _exact_fields(
-        identity,
-        {"schema_version", "unit_id", "panel_sha256", "manifest_sha256"},
-        "census manifest_identity",
-    )
-    if (
-        identity.get("unit_id") != UNIT_ID
-        or identity.get("panel_sha256") != PANEL_SHA256
+    if raw["schema_version"] != "human13_k_union_manifest.v1":
+        raise MaterializationError("manifest schema_version is not canonical")
+    if raw["full_panel"] is not True:
+        raise MaterializationError("A6/A8 requires a sealed full-panel manifest")
+    canonical = (
+        json.dumps(
+            raw,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if payload != canonical:
+        raise MaterializationError("manifest is not canonically serialized")
+    manifest_sha = hashlib.sha256(payload).hexdigest()
+    digest_path = Path(f"{path}.sha256")
+    if not digest_path.is_file() or digest_path.read_text(encoding="ascii") != (
+        f"{manifest_sha}  {path.name}\n"
     ):
-        raise MaterializationError("A8 census manifest identity mismatches")
-    census = _mapping(raw["census"], "canonical census")
+        raise MaterializationError("manifest digest receipt mismatches canonical bytes")
+    manifest_binding = _mapping(raw["binding"], "manifest binding")
+    panel = _mapping(manifest_binding.get("panel"), "manifest panel binding")
+    if (
+        manifest_binding.get("unit_id") != UNIT_ID
+        or panel.get("panel_sha256") != PANEL_SHA256
+    ):
+        raise MaterializationError("manifest unit or panel identity mismatches")
+    identity = Human13ManifestIdentity(
+        schema_version=str(raw["schema_version"]),
+        unit_id=UNIT_ID,
+        panel_sha256=PANEL_SHA256,
+        manifest_sha256=manifest_sha,
+    )
+    images = raw["images"]
+    if not isinstance(images, list) or not images:
+        raise MaterializationError("manifest images must be a nonempty list")
+    projection = [
+        {
+            "image_id": image["image_id"],
+            "selected_rows": [
+                {
+                    "owner_id": row["owner_id"],
+                    "row_id": row["row_id"],
+                    "token_ids": list(row["token_ids"]),
+                    "target_token_mask": list(row["target_token_mask"]),
+                }
+                for row in image["selected_rows"]
+            ],
+        }
+        for image in images
+    ]
+    return raw, identity, _canonical_sha256(projection)
+
+
+def _a6_artifact_sha256(binding: Human13A6DonorBinding) -> str:
+    payload = asdict(binding)
+    payload.pop("artifact_sha256")
+    return _canonical_sha256(payload)
+
+
+def _derive_a6_binding(
+    manifest: Mapping[str, Any],
+    identity: Human13ManifestIdentity,
+    frozen_targets_sha256: str,
+) -> Human13A6DonorBinding | None:
+    donors: list[Human13A6DonorRecord] = []
+    for image_value in manifest["images"]:
+        image = _mapping(image_value, "A6 manifest image")
+        image_id = image.get("image_id")
+        if isinstance(image_id, bool) or not isinstance(image_id, int):
+            raise MaterializationError("A6 image provenance has invalid image_id")
+        owners = [_mapping(item, "A6 owner") for item in image.get("owners", ())]
+        owners_by_id = {str(item.get("owner_id")): item for item in owners}
+        if len(owners_by_id) != len(owners):
+            raise MaterializationError("A6 owner provenance is not unique")
+        h_owner_ids = tuple(str(item) for item in image.get("h_owner_ids", ()))
+        g_owner_ids = tuple(str(item) for item in image.get("g_owner_ids", ()))
+        try:
+            max_g_index = max(
+                int(owners_by_id[owner_id]["source_object_index"])
+                for owner_id in g_owner_ids
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MaterializationError("A6 G-owner provenance is incomplete") from exc
+        trajectories = [
+            _mapping(item, "A6 trajectory") for item in image.get("trajectories", ())
+        ]
+        trajectories_by_id = {
+            str(item.get("trajectory_id")): item for item in trajectories
+        }
+        if len(trajectories_by_id) != len(trajectories):
+            raise MaterializationError("A6 trajectory provenance is not unique")
+        for selected_value in image.get("selected_rows", ()):
+            selected = _mapping(selected_value, "A6 selected row")
+            owner_id = str(selected.get("owner_id"))
+            row_id = str(selected.get("row_id"))
+            trajectory_id = str(selected.get("trajectory_id"))
+            if owner_id not in h_owner_ids or owner_id not in owners_by_id:
+                raise MaterializationError("A6 selected owner provenance is invented")
+            trajectory = trajectories_by_id.get(trajectory_id)
+            if trajectory is None:
+                raise MaterializationError(
+                    "A6 selected trajectory provenance is invented"
+                )
+            rows = [
+                _mapping(item, "A6 trajectory row")
+                for item in trajectory.get("rows", ())
+            ]
+            rows_by_id = {str(item.get("row_id")): item for item in rows}
+            if len(rows_by_id) != len(rows) or row_id not in rows_by_id:
+                raise MaterializationError("A6 selected row provenance is invented")
+            target = rows_by_id[row_id]
+            target_start = target.get("token_start")
+            raw_tokens = trajectory.get("raw_token_ids")
+            if (
+                isinstance(target_start, bool)
+                or not isinstance(target_start, int)
+                or not isinstance(raw_tokens, list)
+                or not 0 < target_start <= len(raw_tokens)
+            ):
+                raise MaterializationError(
+                    "A6 selected row token provenance is invalid"
+                )
+            duplicate_ids = {
+                str(item) for item in trajectory.get("duplicate_row_ids", ())
+            }
+            retained_ids = {
+                str(item) for item in trajectory.get("retained_row_ids", ())
+            }
+            if (
+                duplicate_ids - set(rows_by_id)
+                or retained_ids - set(rows_by_id)
+                or duplicate_ids & retained_ids
+            ):
+                raise MaterializationError(
+                    "A6 duplicate/retained row provenance is invalid"
+                )
+            removed: set[int] = set()
+            for duplicate_id in duplicate_ids:
+                duplicate = rows_by_id[duplicate_id]
+                start, end = duplicate.get("token_start"), duplicate.get("token_end")
+                if (
+                    not isinstance(start, int)
+                    or not isinstance(end, int)
+                    or not 0 <= start < end
+                ):
+                    raise MaterializationError("A6 duplicate row span is invalid")
+                if end <= target_start:
+                    removed.update(range(start, end))
+            clean_prefix = tuple(
+                int(token)
+                for index, token in enumerate(raw_tokens[:target_start])
+                if index not in removed
+            )
+            prior_rows = tuple(
+                str(row["row_id"])
+                for row in rows
+                if str(row["row_id"]) in retained_ids
+                and int(row["token_end"]) <= target_start
+            )
+            if not clean_prefix or not prior_rows or row_id in duplicate_ids:
+                raise MaterializationError(
+                    "A6 donor provenance has no clean native prior context"
+                )
+            owner_index = owners_by_id[owner_id].get("source_object_index")
+            if isinstance(owner_index, bool) or not isinstance(owner_index, int):
+                raise MaterializationError("A6 H-owner sort provenance is invalid")
+            donors.append(
+                Human13A6DonorRecord(
+                    image_id=image_id,
+                    owner_id=owner_id,
+                    target_row_id=row_id,
+                    donor_trajectory_id=trajectory_id,
+                    donor_prefix_token_ids=clean_prefix,
+                    donor_prior_row_ids=prior_rows,
+                    h_mid_eligible=owner_index < max_g_index,
+                )
+            )
+    if not donors or not any(item.h_mid_eligible for item in donors):
+        return None
+    unsealed = Human13A6DonorBinding(
+        schema_version="human13_a6_donor_binding.v1",
+        manifest_identity=identity,
+        frozen_targets_sha256=frozen_targets_sha256,
+        artifact_sha256="0" * 64,
+        applicable=True,
+        donors=tuple(donors),
+    )
+    return Human13A6DonorBinding(
+        schema_version=unsealed.schema_version,
+        manifest_identity=identity,
+        frozen_targets_sha256=frozen_targets_sha256,
+        artifact_sha256=_a6_artifact_sha256(unsealed),
+        applicable=True,
+        donors=tuple(donors),
+    )
+
+
+def _load_a8_binding(
+    path: Path,
+    *,
+    manifest: Mapping[str, Any],
+    identity: Human13ManifestIdentity,
+    frozen_targets_sha256: str,
+) -> Human13A8CensusBinding:
+    payload = path.read_bytes()
+    census = _mapping(json.loads(payload), "canonical census")
     _exact_fields(
         census,
-        {"schema_version", "frozen_targets", "aligned_surface", "a8_prime"},
+        {
+            "schema_version",
+            "trie",
+            "coherent_chain",
+            "frozen_targets",
+            "aligned_surface",
+            "a8_prime",
+        },
         "canonical census",
     )
     if census["schema_version"] != "human13_k_union_no_update_census.v1":
@@ -469,26 +664,175 @@ def _load_a8_binding(path: Path) -> Human13A8CensusBinding:
         {"byte_identical", "sha256_before", "sha256_after"},
         "census frozen_targets",
     )
-    frozen_sha = str(raw["frozen_targets_sha256"])
     if (
         frozen.get("byte_identical") is not True
-        or frozen.get("sha256_before") != frozen_sha
-        or frozen.get("sha256_after") != frozen_sha
+        or frozen.get("sha256_before") != frozen_targets_sha256
+        or frozen.get("sha256_after") != frozen_targets_sha256
     ):
         raise MaterializationError("A8 census did not preserve frozen target bytes")
+    trie = _mapping(census["trie"], "census trie")
+    _exact_fields(
+        trie,
+        {"original_row_count", "unique_row_count", "exact_duplicate_count", "images"},
+        "census trie",
+    )
+    selected_rows = [
+        (str(image["image_id"]), _mapping(row, "A8 selected row"))
+        for image in manifest["images"]
+        for row in image["selected_rows"]
+    ]
+    unique_rows = {
+        (image_id, tuple(int(token) for token in row["token_ids"]))
+        for image_id, row in selected_rows
+    }
+    trie_images = trie["images"]
+    if (
+        int(trie["original_row_count"]) != len(selected_rows)
+        or int(trie["unique_row_count"]) != len(unique_rows)
+        or int(trie["exact_duplicate_count"]) != len(selected_rows) - len(unique_rows)
+        or not isinstance(trie_images, list)
+        or not trie_images
+    ):
+        raise MaterializationError("A8 census trie is incomplete")
+    expected_children: dict[str, dict[tuple[int, ...], set[int]]] = {}
+    for image_id, row in selected_rows:
+        token_ids = tuple(int(token) for token in row["token_ids"])
+        image_children = expected_children.setdefault(image_id, {})
+        for offset, token in enumerate(token_ids):
+            image_children.setdefault(token_ids[:offset], set()).add(token)
+    seen_trie_images: set[str] = set()
+    for image_value in trie_images:
+        image = _mapping(image_value, "census trie image")
+        _exact_fields(
+            image,
+            {
+                "image_id",
+                "nodes",
+                "projected_token_ids",
+                "projected_owner_ids",
+                "reached_native_leaf",
+            },
+            "census trie image",
+        )
+        image_id = str(image["image_id"])
+        if image_id in seen_trie_images or image_id not in expected_children:
+            raise MaterializationError("A8 census trie image provenance mismatches")
+        seen_trie_images.add(image_id)
+        nodes = image["nodes"]
+        if not isinstance(nodes, list):
+            raise MaterializationError("A8 census trie nodes are incomplete")
+        observed_children: dict[tuple[int, ...], tuple[int, ...]] = {}
+        for node_value in nodes:
+            node = _mapping(node_value, "census trie node")
+            _exact_fields(
+                node,
+                {
+                    "prefix_token_ids",
+                    "viable_child_token_ids",
+                    "actual_top1_token_id",
+                    "actual_top1_is_viable_child",
+                    "strongest_viable_child_token_id",
+                    "strongest_viable_child_margin",
+                    "top_tie_count",
+                },
+                "census trie node",
+            )
+            prefix = tuple(int(token) for token in node["prefix_token_ids"])
+            children = tuple(int(token) for token in node["viable_child_token_ids"])
+            if prefix in observed_children:
+                raise MaterializationError("A8 census trie prefix is duplicated")
+            observed_children[prefix] = children
+        expected_image_children = {
+            prefix: tuple(sorted(children))
+            for prefix, children in expected_children[image_id].items()
+        }
+        if observed_children != expected_image_children:
+            raise MaterializationError("A8 census trie is truncated or fabricated")
+    if seen_trie_images != set(expected_children):
+        raise MaterializationError("A8 census trie image census is incomplete")
+    chain = _mapping(census["coherent_chain"], "census coherent_chain")
+    _exact_fields(
+        chain,
+        {
+            "site_count",
+            "sites",
+            "first_non_argmax_site",
+            "minimum_strict_margin",
+            "tie_site_count",
+            "token_role_counts",
+        },
+        "census coherent_chain",
+    )
+    sites = chain["sites"]
+    if (
+        not isinstance(sites, list)
+        or not sites
+        or int(chain["site_count"]) != len(sites)
+    ):
+        raise MaterializationError("A8 coherent chain is incomplete")
+    packed_margins: list[float] = []
+    drifts: list[float] = []
+    expected_sites = {
+        (image_id, str(row["owner_id"]), offset): int(token)
+        for image_id, row in selected_rows
+        for offset, (token, included) in enumerate(
+            zip(row["token_ids"], row["target_token_mask"], strict=True)
+        )
+        if included is True
+    }
+    observed_sites: set[tuple[str, str, int]] = set()
+    for index, site_value in enumerate(sites):
+        site = _mapping(site_value, f"census coherent_chain site {index}")
+        site_key = (
+            str(site.get("image_id")),
+            str(site.get("owner_id")),
+            int(site.get("token_offset", -1)),
+        )
+        if (
+            site.get("site_index") != index
+            or site.get("packed_finite") is not True
+            or site.get("hf_finite") is not True
+            or site.get("aligned_finite") is not True
+            or site_key in observed_sites
+            or expected_sites.get(site_key) != site.get("target_token_id")
+        ):
+            raise MaterializationError("A8 census lacks complete finite aligned sites")
+        observed_sites.add(site_key)
+        try:
+            packed_margin = float(site["packed_target_margin"])
+            hf_margin = float(site["hf_target_margin"])
+            reported_drift = float(site["absolute_margin_drift"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MaterializationError("A8 aligned site margin is incomplete") from exc
+        derived_drift = abs(packed_margin - hf_margin)
+        if not all(
+            math.isfinite(item) for item in (packed_margin, hf_margin, reported_drift)
+        ):
+            raise MaterializationError("A8 census aligned margins are not finite")
+        if not math.isclose(
+            reported_drift, derived_drift, rel_tol=0.0, abs_tol=1.0e-12
+        ):
+            raise MaterializationError("A8 aligned site drift is self-asserted")
+        packed_margins.append(packed_margin)
+        drifts.append(derived_drift)
+    if observed_sites != set(expected_sites):
+        raise MaterializationError("A8 coherent chain is truncated or fabricated")
     aligned = _mapping(census["aligned_surface"], "census aligned_surface")
     _exact_fields(
         aligned,
         {"all_finite", "maximum_absolute_margin_drift", "site_count"},
         "census aligned_surface",
     )
-    if aligned["all_finite"] is not True or int(aligned["site_count"]) <= 0:
+    if aligned["all_finite"] is not True or int(aligned["site_count"]) != len(sites):
         raise MaterializationError("A8 census lacks complete finite aligned sites")
-    maximum_drift = float(aligned["maximum_absolute_margin_drift"])
-    if not math.isfinite(maximum_drift) or maximum_drift < 0.0:
-        raise MaterializationError(
-            "A8 census margin drift must be finite and nonnegative"
-        )
+    maximum_drift = max(drifts)
+    if not math.isclose(
+        float(aligned["maximum_absolute_margin_drift"]),
+        maximum_drift,
+        rel_tol=0.0,
+        abs_tol=1.0e-12,
+    ):
+        raise MaterializationError("A8 maximum drift is not derived from every site")
     a8 = _mapping(census.get("a8_prime"), "census a8_prime")
     _exact_fields(
         a8,
@@ -501,42 +845,45 @@ def _load_a8_binding(path: Path) -> Human13A8CensusBinding:
         },
         "census a8_prime",
     )
-    if not isinstance(a8["applicable"], bool) or not isinstance(a8["blocked"], bool):
-        raise MaterializationError("A8 applicable/blocked values must be boolean")
-    required_margin = a8.get("required_margin")
-    if required_margin is None:
-        raise MaterializationError("A8 census lacks the drift-derived required margin")
-    required_margin = float(required_margin)
+    required_margin = maximum_drift + 1.0e-4
+    try:
+        reported_required_margin = float(a8["required_margin"])
+    except (TypeError, ValueError) as exc:
+        raise MaterializationError(
+            "A8 required margin is not derived from aligned drift"
+        ) from exc
     if not math.isclose(
-        required_margin,
-        maximum_drift + 1.0e-4,
-        rel_tol=0.0,
-        abs_tol=1.0e-12,
+        reported_required_margin, required_margin, rel_tol=0.0, abs_tol=1.0e-12
     ):
         raise MaterializationError(
             "A8 required margin is not derived from aligned drift"
         )
+    applicable = required_margin <= 0.5
+    expected_reason = None if applicable else "required_margin_exceeds_0_5"
+    expected_violations = (
+        sum(margin < required_margin for margin in packed_margins) if applicable else 0
+    )
+    if (
+        a8.get("applicable") is not applicable
+        or a8.get("blocked") is applicable
+        or a8.get("block_reason") != expected_reason
+        or int(a8.get("violating_site_count", -1)) != expected_violations
+    ):
+        raise MaterializationError("A8 applicable/blocked state is not census-derived")
     binding = Human13A8CensusBinding(
-        schema_version=str(raw["schema_version"]),
+        schema_version="human13_a8_census_binding.v1",
         census_schema_version=str(census["schema_version"]),
-        manifest_identity={str(k): str(v) for k, v in identity.items()},
-        frozen_targets_sha256=frozen_sha,
-        artifact_sha256=str(supplied_digest),
-        applicable=a8.get("applicable"),
-        blocked=a8.get("blocked"),
+        manifest_identity=asdict(identity),
+        frozen_targets_sha256=frozen_targets_sha256,
+        artifact_sha256=hashlib.sha256(payload).hexdigest(),
+        applicable=applicable,
+        blocked=not applicable,
         block_reason=a8.get("block_reason"),
         required_margin=required_margin,
         violating_site_count=int(a8.get("violating_site_count", 0)),
         maximum_absolute_margin_drift=maximum_drift,
         target_bytes_unchanged=True,
     )
-    if binding.applicable:
-        if binding.blocked or binding.required_margin is None:
-            raise MaterializationError(
-                "applicable A8 census is blocked or lacks margin"
-            )
-        if not (0.0 < binding.required_margin <= 0.5):
-            raise MaterializationError("A8 required_margin must be in (0, 0.5]")
     return binding
 
 
@@ -591,7 +938,7 @@ def materialize_plans(
     run_id: str,
     config_root: str | Path = CONFIG_ROOT,
     census_path: str | Path | None = None,
-    a6_binding_path: str | Path | None = None,
+    manifest_path: str | Path | None = None,
 ) -> dict[str, Any]:
     if not run_id or "/" in run_id or run_id in {".", ".."}:
         raise MaterializationError("run_id must be one nonempty path-safe component")
@@ -603,24 +950,32 @@ def materialize_plans(
             "config directory must contain each exact approved arm once"
         )
 
-    a6 = None
-    if a6_binding_path is not None:
-        a6 = a6_binding_from_dict(
-            _mapping(
-                json.loads(Path(a6_binding_path).read_text(encoding="utf-8")),
-                "A6 donor binding",
-            )
+    manifest = identity = frozen_targets_sha256 = None
+    if manifest_path is not None:
+        manifest, identity, frozen_targets_sha256 = _load_manifest_document(
+            Path(manifest_path)
         )
-    a8 = _load_a8_binding(Path(census_path)) if census_path is not None else None
-    if a6 is not None and a8 is not None:
-        if (
-            a6.manifest_identity.manifest_sha256
-            != a8.manifest_identity["manifest_sha256"]
-            or a6.frozen_targets_sha256 != a8.frozen_targets_sha256
-        ):
-            raise MaterializationError(
-                "A6 and A8 bindings do not share manifest/targets"
-            )
+    if census_path is not None and manifest is None:
+        raise MaterializationError("A8 census requires its sealed canonical manifest")
+    a6 = (
+        _derive_a6_binding(manifest, identity, frozen_targets_sha256)
+        if manifest is not None
+        and identity is not None
+        and frozen_targets_sha256 is not None
+        else None
+    )
+    a8 = (
+        _load_a8_binding(
+            Path(census_path),
+            manifest=manifest,
+            identity=identity,
+            frozen_targets_sha256=frozen_targets_sha256,
+        )
+        if census_path is not None
+        and identity is not None
+        and frozen_targets_sha256 is not None
+        else None
+    )
 
     plans: list[dict[str, Any]] = []
     omitted: list[dict[str, str]] = []
@@ -679,7 +1034,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--census", type=Path)
-    parser.add_argument("--a6-binding", type=Path)
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        help="Sealed canonical full-panel manifest used to derive A6 and bind A8.",
+    )
     parser.add_argument(
         "--write-receipt",
         type=Path,
@@ -695,7 +1054,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_id=args.run_id,
         config_root=args.config_root,
         census_path=args.census,
-        a6_binding_path=args.a6_binding,
+        manifest_path=args.manifest,
     )
     encoded = json.dumps(receipt, sort_keys=True, indent=2) + "\n"
     if args.write_receipt is not None:

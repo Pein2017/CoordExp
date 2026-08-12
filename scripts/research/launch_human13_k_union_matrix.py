@@ -2,18 +2,16 @@
 """Plan or explicitly execute isolated Human-13 world-size-one arm jobs.
 
 Dry-run is the default.  ``--execute`` additionally requires the explicit
-``--user-model-gpu-authority`` acknowledgement and a separately verified
-``human13_runner_cli.v1`` entry that consumes each resolved plan.  None of
-these flags grants execution authority by itself.
+``--user-model-gpu-authority`` acknowledgement, but remains fail-closed until
+an experiment-local content-bound entry really consumes each resolved plan.
+None of these flags grants execution authority by itself.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
-import subprocess
 from typing import Any, Mapping, Sequence
 
 
@@ -85,7 +83,6 @@ def plan_launches(
         raise LaunchContractError("refusing to overwrite an existing arm output root")
 
     runner_path = Path(runner_entry).resolve()
-    contract_bound = runner_entry_contract == "human13_runner_cli.v1"
     jobs: list[dict[str, Any]] = []
     for plan, gpu_id in zip(raw_plans, checked_gpus, strict=True):
         plan_path = str(plan.get("resolved_plan_path", ""))
@@ -116,11 +113,11 @@ def plan_launches(
                 "command": command,
                 "retry_policy": "none",
                 "runner_entry_contract": runner_entry_contract,
-                "execution_ready": bool(
-                    contract_bound
-                    and runner_path.is_file()
-                    and Path(plan_path).is_file()
-                ),
+                # No experiment-local entry currently consumes the resolved
+                # plan as a real training CLI.  Literal labels and file
+                # existence are deliberately insufficient execution proof.
+                "execution_ready": False,
+                "execution_block_reason": "content_bound_runner_cli_unavailable",
             }
         )
     return {
@@ -142,51 +139,10 @@ def execute_launches(
         raise LaunchContractError(
             "execute mode requires separate user model/GPU launch authority"
         )
-    jobs = launch_plan.get("jobs")
-    if not isinstance(jobs, list) or not jobs or len(jobs) > MAX_JOBS:
-        raise LaunchContractError("execute requires one bounded dry-run launch plan")
-    if any(Path(str(job["output_root"])).exists() for job in jobs):
-        raise LaunchContractError("refusing to overwrite an existing arm output root")
-    if any(
-        job.get("runner_entry_contract") != "human13_runner_cli.v1"
-        or job.get("execution_ready") is not True
-        for job in jobs
-    ):
-        raise LaunchContractError(
-            "execute requires an explicit bound runnable runner entry contract"
-        )
-
-    processes: list[tuple[Mapping[str, Any], subprocess.Popen[Any]]] = []
-    for job in jobs:
-        if job.get("world_size") != 1 or job.get("retry_policy") != "none":
-            raise LaunchContractError("every job must be world-size one with no retry")
-        env = dict(os.environ)
-        env.update(
-            {
-                "CUDA_VISIBLE_DEVICES": str(job["gpu_id"]),
-                "WORLD_SIZE": "1",
-                "LOCAL_WORLD_SIZE": "1",
-                "RANK": "0",
-                "LOCAL_RANK": "0",
-            }
-        )
-        processes.append((job, subprocess.Popen(list(job["command"]), env=env)))
-
-    statuses = [
-        {"arm_id": str(job["arm_id"]), "returncode": process.wait()}
-        for job, process in processes
-    ]
-    failures = [item for item in statuses if item["returncode"] != 0]
-    receipt = {
-        "schema_version": "human13_launch_execution.v1",
-        "mode": "execute",
-        "process_start_count": len(processes),
-        "retry_count": 0,
-        "statuses": statuses,
-    }
-    if failures:
-        raise RuntimeError(f"Human-13 arm jobs failed without retry: {failures}")
-    return receipt
+    _ = launch_plan
+    raise LaunchContractError(
+        "execute requires a real content-bound runnable entry; none is implemented"
+    )
 
 
 def _gpu_ids(value: str) -> tuple[int, ...]:

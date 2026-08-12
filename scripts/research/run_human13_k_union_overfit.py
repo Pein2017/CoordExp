@@ -1094,7 +1094,86 @@ def _a6_donor_provenance(record: Human13A6DonorRecord) -> tuple[Any, ...]:
         record.donor_trajectory_id,
         record.donor_prefix_token_ids,
         record.donor_prior_row_ids,
+        record.h_mid_eligible,
     )
+
+
+def _derive_a6_donor_records(manifest: Any) -> tuple[Human13A6DonorRecord, ...]:
+    expected: list[Human13A6DonorRecord] = []
+    for image in manifest.images:
+        owners_by_id = _unique_by_id(image.owners, "owner_id", "manifest owner")
+        trajectories_by_id = _unique_by_id(
+            image.trajectories, "trajectory_id", "manifest trajectory"
+        )
+        try:
+            max_g_sort_index = max(
+                owners_by_id[owner_id].source_object_index
+                for owner_id in image.g_owner_ids
+            )
+        except (KeyError, ValueError) as exc:
+            raise ValueError("A6 G-owner sort provenance is incomplete") from exc
+        for selected in image.selected_rows:
+            if selected.owner_id not in image.h_owner_ids:
+                raise ValueError("A6 donor target owner is not a manifest H owner")
+            owner = owners_by_id.get(selected.owner_id)
+            if owner is None:
+                raise ValueError("A6 donor target owner is not in manifest owners")
+            trajectory = trajectories_by_id.get(selected.trajectory_id)
+            if trajectory is None:
+                raise ValueError("A6 donor trajectory is not in the manifest")
+            rows_by_id = _unique_by_id(
+                trajectory.rows, "row_id", "A6 donor trajectory row"
+            )
+            target_row = rows_by_id.get(selected.row_id)
+            if target_row is None:
+                raise ValueError(
+                    "A6 donor target row is not in the selected trajectory"
+                )
+            duplicate_ids = set(trajectory.duplicate_row_ids)
+            retained_ids = set(trajectory.retained_row_ids)
+            if (
+                duplicate_ids - set(rows_by_id)
+                or retained_ids - set(rows_by_id)
+                or duplicate_ids & retained_ids
+                or selected.row_id in duplicate_ids
+            ):
+                raise ValueError("A6 donor duplicate/retained provenance is invalid")
+            removed_positions: set[int] = set()
+            for row in trajectory.rows:
+                if (
+                    row.row_id in duplicate_ids
+                    and row.token_end <= target_row.token_start
+                ):
+                    removed_positions.update(range(row.token_start, row.token_end))
+            prefix = tuple(
+                token
+                for index, token in enumerate(
+                    trajectory.raw_token_ids[: target_row.token_start]
+                )
+                if index not in removed_positions
+            )
+            prior_rows = tuple(
+                row.row_id
+                for row in trajectory.rows
+                if row.row_id in retained_ids
+                and row.token_end <= target_row.token_start
+            )
+            if not prefix or not prior_rows:
+                raise ValueError(
+                    "A6 donor target has no clean natural prior H1 provenance"
+                )
+            expected.append(
+                Human13A6DonorRecord(
+                    image_id=image.image_id,
+                    owner_id=selected.owner_id,
+                    target_row_id=selected.row_id,
+                    donor_trajectory_id=trajectory.trajectory_id,
+                    donor_prefix_token_ids=prefix,
+                    donor_prior_row_ids=prior_rows,
+                    h_mid_eligible=(owner.source_object_index < max_g_sort_index),
+                )
+            )
+    return tuple(expected)
 
 
 def _validate_a6_donor_binding(
@@ -1110,32 +1189,7 @@ def _validate_a6_donor_binding(
     if binding.artifact_sha256 != _a6_donor_artifact_sha256(binding):
         raise ValueError("A6 donor binding artifact digest mismatches its payload")
 
-    expected: list[Human13A6DonorRecord] = []
-    for image in sealed.manifest.images:
-        h_owners = set(image.h_owner_ids)
-        for selected in image.selected_rows:
-            if selected.owner_id not in h_owners:
-                raise ValueError("A6 donor target owner is not a manifest H owner")
-            trajectory, target_row = _trajectory_row(image, selected.row_id)
-            prefix = tuple(trajectory.raw_token_ids[: target_row.token_start])
-            prior_rows = tuple(
-                row.row_id
-                for row in trajectory.rows
-                if row.token_end <= target_row.token_start
-            )
-            if not prefix or not prior_rows:
-                raise ValueError("A6 donor target has no natural prior H1 provenance")
-            expected.append(
-                Human13A6DonorRecord(
-                    image_id=image.image_id,
-                    owner_id=selected.owner_id,
-                    target_row_id=selected.row_id,
-                    donor_trajectory_id=trajectory.trajectory_id,
-                    donor_prefix_token_ids=prefix,
-                    donor_prior_row_ids=prior_rows,
-                    h_mid_eligible=False,
-                )
-            )
+    expected = _derive_a6_donor_records(sealed.manifest)
 
     donor_keys = tuple(
         (item.image_id, item.owner_id, item.target_row_id) for item in binding.donors
