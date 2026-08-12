@@ -358,7 +358,9 @@ Expected: cited nodes cover one complete unique contribution per rank, missing/d
 
 - [ ] **Step 2: Freeze the command manifest without launching**
 
-Inspect the current probe CLI and use `apply_patch` to create strict JSON whose fields are `schema`, `implementation_commit`, `cwd`, `world_size`, `arms`, `commands`, `config_files`, `artifact_root`, `comparison_policy`, and `authorization_status`. Record the exact observed commit, absolute paths, and argv tokens; `schema` is exactly `coordexp-swift-reconcile-resume-probe-command-manifest-v1`, `cwd` is exactly `/data/CoordExp/.worktrees/CoordExp-swift`, `world_size` is exactly `2`, `arms` is exactly `success, rank_failure, interruption` in that order, and `authorization_status` is exactly `not_requested`. `commands["success"]` and `config_files["success"]` each have exactly `uninterrupted_control` and `resumed_child` branch keys; the failure-shaped values are single argv/config entries. Each success branch resolves exactly one corresponding next forward and at most one applied optimizer update, each failure-shaped arm resolves no more than one forward and one applied update per rank, and the artifact root is an absent absolute path with separate branch/arm descendants. `comparison_policy` names the exact fields and comparison rules for input/pack identity, pre-forward state, objective/loss fields, and resulting trainable parameters. Do not execute any command in the manifest during this step.
+Inspect the current probe CLI and use `apply_patch` to create strict JSON whose fields are `schema`, `implementation_commit`, `cwd`, `world_size`, `arms`, `setup_command`, `commands`, `config_files`, `artifact_root`, `comparison_policy`, `verification_command`, and `authorization_status`. Record the exact observed commit, absolute paths, and argv tokens; `schema` is exactly `coordexp-swift-reconcile-resume-probe-command-manifest-v1`, `cwd` is exactly `/data/CoordExp/.worktrees/CoordExp-swift`, `world_size` is exactly `2`, `arms` is exactly `success, rank_failure, interruption` in that order, and `authorization_status` is exactly `not_requested`. `setup_command` is the single model-free `prepare` argv and `verification_command` is the single durable-artifact `verify` argv; both are authorized and executed at most once with the arm commands. `commands["success"]` and `config_files["success"]` each have exactly `uninterrupted_control` and `resumed_child` branch keys. The `resumed_child` command owns both its one-step parent setup and one-step resumed child launch; `config_files["success"]["resumed_child"]` names both generated files as `setup_parent` and `resumed_child`. The failure-shaped commands are single representative model-free argv entries and their config-file values are `null`; exhaustive injected failure and interruption-boundary coverage remains the already-executed Step-1 test gate rather than extra launch commands. Each success branch resolves exactly one corresponding next forward and at most one applied optimizer update after its boundary, each failure-shaped arm resolves zero model forwards and zero applied optimizer updates, and the artifact root is an absent absolute path with separate arm descendants. `comparison_policy` names the exact fields and comparison rules for input/pack identity, pre-forward state, objective/loss fields, and resulting trainable parameters. Do not execute any command in the manifest during this step.
+
+Because `prepare` creates the config files and cache only after fresh authorization, compute the three expected generated config-file SHA256 values read-only from the deterministic renderer, the exact absolute base-config path, and the absent artifact root. Record those expected values in `config_files`; after `prepare`, execution MUST compare each generated file against the pre-authorized value before any success launch. A mismatch stops without retry.
 
 Validate the authored file without launching:
 
@@ -371,8 +373,8 @@ path = Path("openspec/changes/reconcile-coordexp-swift-training-contracts/receip
 payload = json.loads(path.read_text(encoding="utf-8"))
 assert set(payload) == {
     "schema", "implementation_commit", "cwd", "world_size", "arms",
-    "commands", "config_files", "artifact_root", "comparison_policy",
-    "authorization_status",
+    "setup_command", "commands", "config_files", "artifact_root",
+    "comparison_policy", "verification_command", "authorization_status",
 }
 assert payload["schema"] == "coordexp-swift-reconcile-resume-probe-command-manifest-v1"
 assert len(payload["implementation_commit"]) == 40
@@ -385,10 +387,19 @@ assert set(payload["config_files"]) == set(payload["arms"])
 branches = {"uninterrupted_control", "resumed_child"}
 assert set(payload["commands"]["success"]) == branches
 assert set(payload["config_files"]["success"]) == branches
+assert isinstance(payload["setup_command"], list) and payload["setup_command"]
+assert isinstance(payload["verification_command"], list) and payload["verification_command"]
 assert all(isinstance(payload["commands"]["success"][branch], list) and payload["commands"]["success"][branch] for branch in branches)
-assert all(Path(payload["config_files"]["success"][branch]).is_absolute() for branch in branches)
+assert Path(payload["config_files"]["success"]["uninterrupted_control"]["path"]).is_absolute()
+assert set(payload["config_files"]["success"]["resumed_child"]) == {"setup_parent", "resumed_child"}
+assert all(Path(item["path"]).is_absolute() for item in payload["config_files"]["success"]["resumed_child"].values())
+assert all(len(item["expected_sha256"]) == 64 for item in (
+    payload["config_files"]["success"]["uninterrupted_control"],
+    *payload["config_files"]["success"]["resumed_child"].values(),
+))
 assert all(isinstance(payload["commands"][arm], list) and payload["commands"][arm] for arm in ("rank_failure", "interruption"))
-assert all(Path(payload["config_files"][arm]).is_absolute() for arm in ("rank_failure", "interruption"))
+assert payload["config_files"]["rank_failure"] is None
+assert payload["config_files"]["interruption"] is None
 assert Path(payload["artifact_root"]).is_absolute()
 assert not Path(payload["artifact_root"]).exists()
 assert isinstance(payload["comparison_policy"], dict) and payload["comparison_policy"]
@@ -421,7 +432,7 @@ Obtain the single independent pre-cost/distributed-qualification audit against t
 
 - [ ] **Step 5: Execute exactly the authorized argv arrays once**
 
-Run each argv array exactly as frozen, through the `ms` environment, in the order `uninterrupted_control`, `resumed_child`, `rank_failure`, `interruption`. Stop without retry if the commit/command/config changes, the target becomes occupied, a timeout/hang/OOM occurs, or any declared resource/forward/collective/artifact bound is exceeded.
+Run each argv array exactly as frozen, through the `ms` environment, in the order `setup_command`, `uninterrupted_control`, `resumed_child`, `rank_failure`, `interruption`, `verification_command`. Immediately after `setup_command`, verify the prepare receipt signature, implementation commit, private cache receipt, and all three generated config SHA256 values against the packet before any model launch. Stop without retry if the commit/command/config changes, the target becomes occupied, a timeout/hang/OOM occurs, or any declared resource/forward/collective/artifact bound is exceeded.
 
 Expected: `wave-3-terminal-receipt.json` binds every rank and branch, command/commit/config/artifact identity, terminal status, resource maxima, and stop outcome. Before the corresponding next forward it compares input/pack identity and trainable/optimizer/scheduler/scaler/RNG/cursor state; after both branches' first corresponding optimizer update it compares objective/loss fields and resulting trainable parameters under the frozen policy. It also proves aliases/events appear only after the authenticated exact-state manifest; failure and interruption leave no resumable alias/event, and any committed inference payload remains inference-only.
 
