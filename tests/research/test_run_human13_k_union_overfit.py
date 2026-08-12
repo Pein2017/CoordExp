@@ -2,16 +2,23 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass
+from dataclasses import field
+from dataclasses import replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import torch
+from safetensors.torch import save_file
 
 from scripts.research import run_human13_k_union_overfit as runner
-from src.losses.normalizers import SegmentBalancedDenominator
-from src.losses.runner import LossBundle, LossTermResult
+from src.artifacts.checkpoints import CheckpointWriter
+from src.artifacts.run_writer import RunWriter
+from src.config.models import RuntimeBatchResolution, RuntimeConfig
+from src.losses.runner import LossBundle
 from src.runtime import GateDecision
+from src.runtime.train_runtime import TrainRuntime
 from src.training.supervised_trainer import SupervisedMicroStep
 
 
@@ -326,6 +333,129 @@ def test_training_entry_rejects_unsealed_and_partial_manifest(tmp_path: Path) ->
         runner._require_full_panel_manifest(SimpleNamespace(full_panel=False))
 
 
+def test_execution_rejects_sealed_manifest_binding_mismatch_before_forward(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sealed, execution, micro_steps = _bound_a1_execution()
+    mismatched = replace(
+        execution,
+        manifest_identity=replace(
+            execution.manifest_identity, manifest_sha256="f" * 64
+        ),
+    )
+    monkeypatch.setattr(runner, "load_sealed_training_manifest", lambda _: sealed)
+    forward_calls = 0
+
+    def forbidden_forward(*_: object) -> object:
+        nonlocal forward_calls
+        forward_calls += 1
+        raise AssertionError("forward must not run")
+
+    writer = RecordingWriter()
+    with pytest.raises(ValueError, match="sealed manifest identity"):
+        runner.run_panel_exposure(
+            manifest_path=tmp_path / "sealed.json",
+            execution_plan=mismatched,
+            model=torch.nn.Linear(1, 1, bias=False),
+            micro_steps=micro_steps,
+            runtime=RecordingRuntime(
+                torch.nn.Linear(1, 1, bias=False),
+                torch.optim.AdamW(torch.nn.Linear(1, 1).parameters()),
+            ),
+            qwen_forward=forbidden_forward,
+            run_writer=writer,
+            checkpoint_writer=RecordingCheckpointWriter(),
+            checkpoint_kwargs={"adapter_name": "human13"},
+            updated_at="2026-08-12T00:00:00Z",
+        )
+
+    assert forward_calls == 0
+    assert writer.finalized["status"] == "failed"
+
+
+def test_a4_complete_candidate_group_cannot_split_across_packs() -> None:
+    sealed, packed_plan, sites_by_pack = _a4_split_fixture()
+
+    with pytest.raises(ValueError, match="A4 candidate group.*one segment.*one pack"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A4",
+            packed_plan=packed_plan,
+            sites_by_pack=sites_by_pack,
+        )
+
+
+def test_finalized_artifact_preserves_bounded_family_diagnostics() -> None:
+    denominators = runner.Human13PanelDenominators(
+        family_counts=(("h", 1), ("duplicate", 1)),
+        duplicate_event_counts=((1, 1),),
+    )
+    loss_runner = runner.Human13PanelLossRunner(
+        denominators=denominators,
+        coefficients=(("h", 1.0), ("duplicate", 1.0)),
+    )
+    plan = loss_runner.prepare_planned_step((_loss_micro_step(0, denominators),))
+    context = _a4_and_duplicate_context()
+    bundle = loss_runner.compute_micro_step(context, plan, local_micro_step_index=0)
+
+    finalized = loss_runner.finalize_planned_step((bundle.to_artifact_dict(),), plan)
+
+    terms = {term["name"]: term for term in finalized["terms"]}
+    assert terms["h"]["denominator"]["eligible_segment_count"] == 1
+    assert terms["h"]["diagnostics"]["candidate_weights"] == pytest.approx([0.5, 0.5])
+    assert terms["h"]["diagnostics"]["effective_owner_count"] == pytest.approx(2.0)
+    assert terms["duplicate"]["diagnostics"] == {
+        "raw_event_count": 1,
+        "consumed_event_count": 1,
+        "capped_event_count": 0,
+    }
+
+
+def test_nonfinite_multi_pack_refusal_finalizes_failed_without_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sealed, execution, micro_steps = _bound_a1_execution(two_packs=True)
+    monkeypatch.setattr(runner, "load_sealed_training_manifest", lambda _: sealed)
+    model = torch.nn.Linear(1, 1, bias=False)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
+    runtime = NonfiniteRecordingRuntime(model, optimizer)
+    writer = RecordingWriter()
+    checkpoint = RecordingCheckpointWriter()
+
+    with pytest.raises(RuntimeError, match="finite applied panel update"):
+        runner.run_panel_exposure(
+            manifest_path=tmp_path / "sealed.json",
+            execution_plan=execution,
+            model=model,
+            micro_steps=micro_steps,
+            runtime=runtime,
+            qwen_forward=lambda _model, micro_step: SimpleNamespace(
+                logits=torch.zeros(
+                    (
+                        1,
+                        len(
+                            micro_step.calibration_metadata.selected_causal_logits_positions
+                        ),
+                        3,
+                    ),
+                    requires_grad=True,
+                ),
+                logits_position_ids=micro_step.calibration_metadata.selected_causal_logits_positions,
+            ),
+            run_writer=writer,
+            checkpoint_writer=checkpoint,
+            checkpoint_kwargs={"adapter_name": "human13"},
+            updated_at="2026-08-12T00:00:00Z",
+        )
+
+    assert runtime.optimizer_step_count == 0
+    assert checkpoint.calls == []
+    assert writer.finalized["status"] == "failed"
+    assert writer.finalized["completed_steps"] == 0
+
+
 def test_one_exposure_keeps_parameters_and_adamw_state_between_packs_then_steps_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -337,27 +467,32 @@ def test_one_exposure_keeps_parameters_and_adamw_state_between_packs_then_steps_
     runtime = RecordingRuntime(model, optimizer)
     snapshots: list[tuple[float, int]] = []
 
-    def qwen_forward(_model: object, micro_step: SupervisedMicroStep) -> torch.Tensor:
+    def qwen_forward(_model: object, micro_step: SupervisedMicroStep) -> object:
         snapshots.append((float(model.weight.detach()), len(optimizer.state)))
-        return model.weight.square().sum() * float(micro_step.pack.pack_index + 1)
+        positions = micro_step.calibration_metadata.selected_causal_logits_positions
+        value = model.weight.square() * float(micro_step.pack.pack_index + 1)
+        logits = torch.cat((value, -value, value * 0.0), dim=1).unsqueeze(0)
+        return SimpleNamespace(
+            logits=logits.expand(1, len(positions), 3),
+            logits_position_ids=positions,
+        )
 
     writer = RecordingWriter()
     checkpoint_writer = RecordingCheckpointWriter()
-    micro_steps = (_training_micro_step(0), _training_micro_step(1))
+    sealed, execution, micro_steps = _bound_a1_execution(two_packs=True)
     monkeypatch.setattr(
         runner,
         "load_sealed_training_manifest",
-        lambda _: SimpleNamespace(full_panel=True),
+        lambda _: sealed,
     )
 
     result = runner.run_panel_exposure(
         manifest_path=tmp_path / "sealed.json",
+        execution_plan=execution,
         model=model,
         micro_steps=micro_steps,
-        loss_runner=ScalarStreamingLossRunner(),
         runtime=runtime,
         qwen_forward=qwen_forward,
-        loss_context_factory=lambda _micro_step, value: value,
         run_writer=writer,
         checkpoint_writer=checkpoint_writer,
         checkpoint_kwargs={"adapter_name": "human13"},
@@ -372,16 +507,78 @@ def test_one_exposure_keeps_parameters_and_adamw_state_between_packs_then_steps_
     assert checkpoint_writer.calls[0]["step"] == 1
     assert writer.rows[0]["performance"] == {
         "pack_count": 2,
-        "logical_tokens": 2,
-        "packed_tokens": 2,
+        "logical_tokens": 24,
+        "packed_tokens": 24,
         "padding_tokens": 0,
-        "utilization": 1.0,
+        "utilization": 0.75,
         "gpu_seconds": None,
         "wall_time_seconds": None,
         "peak_memory_bytes": None,
     }
     assert writer.finalized["completed_steps"] == 1
     assert writer.finalized["consumed_packs"] == 2
+
+
+def test_cpu_vertical_real_qwen_runtime_and_writers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sealed, execution, micro_steps = _bound_a1_execution(two_packs=True)
+    monkeypatch.setattr(runner, "load_sealed_training_manifest", lambda _: sealed)
+    model = CpuPackedModel()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
+    accelerator = CpuAccelerator()
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(seed=17),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1,
+            effective_batch_size=2,
+            resolved_grad_accum_steps=2,
+        ),
+        model=model,
+        optimizer=optimizer,
+        scheduler=None,
+        expected_mixed_precision="no",
+        max_grad_norm=1.0,
+        accelerator=accelerator,
+    )
+    run_dir = tmp_path / "run"
+    writer = RunWriter.initialize(
+        run_dir=run_dir,
+        run_id="human13-cpu",
+        run_name="human13-cpu",
+        artifact_root=tmp_path,
+        collision_outcome="created",
+        created_at="2026-08-12T00:00:00Z",
+        config_fingerprint="c" * 64,
+        resolved_config={"arm": "A1"},
+        world_size=1,
+        resolved_max_steps=1,
+    )
+
+    result = runner.run_panel_exposure(
+        manifest_path=tmp_path / "sealed.json",
+        execution_plan=execution,
+        model=model,
+        micro_steps=micro_steps,
+        runtime=runtime,
+        run_writer=writer,
+        checkpoint_writer=CheckpointWriter(run_dir),
+        checkpoint_kwargs={"adapter_name": "default"},
+        updated_at="2026-08-12T00:00:01Z",
+    )
+
+    state = writer.read_run()
+    log_row = json.loads(writer.logging_path.read_text(encoding="utf-8"))
+    assert result.completed_steps == runtime.optimizer_step_count == 1
+    assert accelerator.backward_calls == 2
+    assert model.selected_lengths == [2, 1]
+    assert state["status"] == "completed"
+    assert state["checkpoint_event_count"] == 1
+    assert log_row["loss_bundle"]["terms"]
+    assert (
+        run_dir / "checkpoints" / "step-1" / "adapter" / "adapter_model.safetensors"
+    ).is_file()
 
 
 @dataclass(frozen=True)
@@ -409,6 +606,7 @@ class FakeImageEncoding:
     image_grid_thw: tuple[int, int, int]
     merged_visual_tokens: int
     plan: "FakeImagePlan"
+    pixel_values: torch.Tensor = field(default_factory=lambda: torch.zeros((16, 2)))
 
 
 @dataclass(frozen=True)
@@ -488,55 +686,267 @@ def _training_micro_step(pack_index: int) -> SupervisedMicroStep:
     )
 
 
-class ScalarStreamingLossRunner:
-    def prepare_planned_step(self, micro_steps: object) -> object:
-        return SimpleNamespace(count=len(tuple(micro_steps)))
+def _sealed_manifest(*, arm_id: str = "A1") -> SimpleNamespace:
+    selected = SimpleNamespace(
+        owner_id="owner-1",
+        row_id="row-1",
+        token_ids=(2,),
+        target_token_mask=(True,),
+    )
+    image = SimpleNamespace(
+        image_id=1,
+        owners=(SimpleNamespace(owner_id="owner-1"),),
+        h_owner_ids=("owner-1",),
+        g_owner_ids=(),
+        duplicate_events=(SimpleNamespace(event_id="event-1"),),
+        selected_rows=(selected,),
+        candidate_row_ids=("row-1", "row-2") if arm_id == "A4" else ("row-1",),
+        replay_row_ids=("replay-1",),
+    )
+    return SimpleNamespace(
+        schema_version="human13_k_union_manifest.v1",
+        full_panel=True,
+        binding=SimpleNamespace(
+            unit_id="2026-08-12-human13-k-union-to-greedy-overfit-screen",
+            panel=SimpleNamespace(panel_sha256="a" * 64, owner_count=1),
+        ),
+        arms=(SimpleNamespace(arm_id=arm_id),),
+        images=(image,),
+        denominators=SimpleNamespace(
+            target_image_count=1,
+            target_owner_count=1,
+            replay_owner_count=1,
+            duplicate_image_count=1,
+            duplicate_event_count=1,
+        ),
+        canonical_sha256="b" * 64,
+    )
 
-    def compute_micro_step(
-        self,
-        context: torch.Tensor,
-        plan: object,
-        *,
-        local_micro_step_index: int,
-    ) -> LossBundle:
-        del plan, local_micro_step_index
-        denominator = SegmentBalancedDenominator(
-            term_name="scalar",
-            denominator_scope="planned_step",
-            eligible_segment_count=1,
-            selected_atom_count=1,
-            skipped_segment_count=0,
-            context_count=1,
+
+def _bound_a1_execution(
+    *, two_packs: bool = False
+) -> tuple[
+    SimpleNamespace, runner.Human13ExecutionPlan, tuple[SupervisedMicroStep, ...]
+]:
+    sealed = _sealed_manifest()
+    segments = (
+        _segment("a1:1", 1, "a1_full_h", 8),
+        _segment("replay:1", 1, "source_replay", 8),
+        _segment("duplicate:1", 1, "duplicate_event", 8),
+    )
+    packed = runner.plan_panel_packs(
+        segments, global_max_length=16 if two_packs else 24
+    )
+    sites_by_pack = {
+        pack.pack.pack_index: tuple(
+            runner.Human13LossSite(
+                family=(
+                    "h"
+                    if logical.role == "a1_full_h"
+                    else "replay"
+                    if logical.role == "source_replay"
+                    else "duplicate"
+                ),
+                objective=(
+                    "duplicate_unlikelihood"
+                    if logical.role == "duplicate_event"
+                    else "owner_ce"
+                ),
+                unit_id=(
+                    "owner-1"
+                    if logical.role == "a1_full_h"
+                    else "replay-1"
+                    if logical.role == "source_replay"
+                    else "event-1"
+                ),
+                image_id=1,
+                segment_id=logical.segment_id,
+                manifest_row_ids=(
+                    "row-1"
+                    if logical.role == "a1_full_h"
+                    else "replay-1"
+                    if logical.role == "source_replay"
+                    else "event-1",
+                ),
+                logits_positions=(packed_segment.end - 2,),
+                target_token_ids=(2,),
+            )
+            for logical, packed_segment in zip(
+                pack.logical_segments, pack.pack.segments, strict=True
+            )
         )
-        term = LossTermResult(
-            name="scalar",
-            raw_loss=context,
-            weighted_loss=context,
-            weight=1.0,
-            segment_mean_numerator=context,
-            denominator=denominator,
-            reducer_name="test",
-            selected_count=1,
-            skipped_count=0,
-            math_dtype="float32",
-            token_weighted_diagnostic=context.detach(),
-            diagnostics={},
+        for pack in packed.packs
+    }
+    execution = runner.build_execution_plan(
+        sealed,
+        arm_id="A1",
+        packed_plan=packed,
+        sites_by_pack=sites_by_pack,
+    )
+    micro_steps = runner.build_supervised_micro_steps(
+        packed,
+        denominators=execution.denominators,
+        token_sequences={
+            pack.pack.pack_index: SimpleNamespace(pack_index=pack.pack.pack_index)
+            for pack in packed.packs
+        },
+        vocab_groups=SimpleNamespace(vocab_size=3),
+        sites_by_pack=sites_by_pack,
+        expected_vocab_size=3,
+    )
+    return sealed, execution, micro_steps
+
+
+def _a4_split_fixture() -> tuple[
+    SimpleNamespace,
+    runner.PackedPanelPlan,
+    dict[int, tuple[runner.Human13LossSite, ...]],
+]:
+    sealed = _sealed_manifest(arm_id="A4")
+    packed = runner.plan_panel_packs(
+        (
+            _segment("a4:1:first", 1, "source_replay", 8),
+            _segment("a4:1:second", 1, "source_replay", 8),
+        ),
+        global_max_length=8,
+    )
+    sites = {
+        0: (
+            runner.Human13LossSite(
+                family="h",
+                objective="union_mass",
+                unit_id="candidate-a",
+                image_id=1,
+                segment_id="a4:1:first",
+                manifest_row_ids=("row-1",),
+                logits_positions=(6,),
+                target_token_ids=(0,),
+            ),
+        ),
+        1: (
+            runner.Human13LossSite(
+                family="h",
+                objective="union_mass",
+                unit_id="candidate-b",
+                image_id=1,
+                segment_id="a4:1:second",
+                manifest_row_ids=("row-2",),
+                logits_positions=(6,),
+                target_token_ids=(1,),
+            ),
+        ),
+    }
+    return sealed, packed, sites
+
+
+def _a4_and_duplicate_context() -> runner.Human13PackLossContext:
+    return runner.Human13PackLossContext(
+        logits=torch.zeros((1, 3, 3), requires_grad=True),
+        logits_position_ids=(0, 1, 2),
+        sites=(
+            runner.Human13LossSite(
+                family="h",
+                objective="union_mass",
+                unit_id="candidate-a",
+                image_id=1,
+                segment_id="a4:1",
+                manifest_row_ids=("row-1",),
+                logits_positions=(0,),
+                target_token_ids=(0,),
+            ),
+            runner.Human13LossSite(
+                family="h",
+                objective="union_mass",
+                unit_id="candidate-b",
+                image_id=1,
+                segment_id="a4:1",
+                manifest_row_ids=("row-2",),
+                logits_positions=(1,),
+                target_token_ids=(1,),
+            ),
+            runner.Human13LossSite(
+                family="duplicate",
+                objective="duplicate_unlikelihood",
+                unit_id="event-1",
+                image_id=1,
+                segment_id="dup:1",
+                manifest_row_ids=("duplicate-1",),
+                logits_positions=(2,),
+                target_token_ids=(2,),
+            ),
+        ),
+    )
+
+
+class CpuPackedModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.tensor([0.2, -0.1, 0.0]))
+        self.config = SimpleNamespace(vocab_size=3)
+        self.selected_lengths: list[int] = []
+
+    def forward(self, **kwargs: object) -> object:
+        selected = kwargs["logits_to_keep"]
+        count = int(selected.numel()) if isinstance(selected, torch.Tensor) else 0
+        self.selected_lengths.append(count)
+        return SimpleNamespace(logits=self.weight.view(1, 1, 3).expand(1, count, 3))
+
+    def save_pretrained(self, output_dir: str | Path, **_: object) -> None:
+        path = Path(output_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "adapter_config.json").write_text(
+            json.dumps({"peft_type": "LORA", "use_dora": True}) + "\n",
+            encoding="utf-8",
         )
-        return LossBundle(
-            total_loss=context,
-            terms=(term,),
-            metrics={"loss/total": float(context.detach())},
-            counts={"count/packs": 1},
-            diagnostics={},
-            finite_status={"total_loss": "finite", "terms": {"scalar": "finite"}},
+        save_file(
+            {
+                "base_model.q_proj.lora_A.default.weight": self.weight[:2]
+                .view(1, 2)
+                .clone(),
+                "base_model.q_proj.lora_B.default.weight": self.weight[:2]
+                .view(2, 1)
+                .clone(),
+                "base_model.q_proj.lora_magnitude_vector.default.weight": self.weight.clone(),
+            },
+            str(path / "adapter_model.safetensors"),
         )
 
-    def finalize_planned_step(
-        self, artifacts: object, plan: object
-    ) -> dict[str, object]:
-        del plan
-        items = tuple(artifacts)
-        return {"total_loss": sum(float(item["total_loss"]) for item in items)}
+
+class CpuAccelerator:
+    def __init__(self) -> None:
+        self.device = torch.device("cpu")
+        self.process_index = 0
+        self.num_processes = 1
+        self.is_main_process = True
+        self.distributed_type = SimpleNamespace(name="NO")
+        self.gradient_accumulation_steps = 1
+        self.mixed_precision = "no"
+        self.scaler = None
+        self.backward_calls = 0
+
+    def prepare(self, *objects: object) -> tuple[object, ...]:
+        return objects
+
+    def no_sync(self, _model: object) -> object:
+        return nullcontext()
+
+    def backward(self, loss: torch.Tensor) -> None:
+        self.backward_calls += 1
+        loss.backward()
+
+    def clip_grad_norm_(self, parameters: object, max_norm: float) -> None:
+        torch.nn.utils.clip_grad_norm_(parameters, max_norm)
+
+    def wait_for_everyone(self) -> None:
+        return None
+
+    def unwrap_model(self, model: object) -> object:
+        return model
+
+    def broadcast_object_list(
+        self, _values: list[object], *, from_process: int
+    ) -> None:
+        assert from_process == 0
 
 
 class RecordingRuntime:
@@ -580,6 +990,26 @@ class RecordingRuntime:
 
     def zero_gradients(self, **_: object) -> None:
         self.optimizer.zero_grad(set_to_none=True)
+
+
+class NonfiniteRecordingRuntime(RecordingRuntime):
+    def pre_backward(self, bundle: LossBundle, *, planned_step_id: int) -> GateDecision:
+        del bundle
+        return GateDecision(
+            stage="pre_backward_scalar",
+            planned_step_id=planned_step_id,
+            world_size=1,
+            ranks=(0,),
+            all_ranks_safe=False,
+            should_call_backward=False,
+            should_call_optimizer_step=False,
+            should_clear_gradients=True,
+            optimizer_update_status="skipped_non_finite",
+            finite_status="nonfinite",
+            reason_codes=("rank0:non_finite_scalar",),
+            rank_diagnostics=(),
+            diagnostics={},
+        )
 
 
 def _gate(planned_step_id: int, *, backward: bool, optimizer: bool) -> GateDecision:

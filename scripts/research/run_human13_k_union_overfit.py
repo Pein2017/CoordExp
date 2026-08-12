@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+import hashlib
 import math
 from pathlib import Path
 from typing import Any, Literal, Sequence, TypeAlias
@@ -155,6 +156,8 @@ class Human13LossSite:
     logits_positions: tuple[int, ...]
     target_token_ids: tuple[int, ...]
     required_margin: float | None = None
+    segment_id: str = ""
+    manifest_row_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.family not in _LOSS_FAMILIES or self.objective not in _LOSS_OBJECTIVES:
@@ -207,6 +210,41 @@ class Human13PlannedLossPlan:
     denominators: Human13PanelDenominators
     coefficients: tuple[tuple[LossFamily, float], ...]
     micro_step_count: int
+
+
+@dataclass(frozen=True)
+class Human13ManifestIdentity:
+    schema_version: str
+    unit_id: str
+    panel_sha256: str
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class SealedHuman13Manifest:
+    manifest: Any
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class Human13SegmentBinding:
+    segment_id: str
+    image_id: int
+    role: LogicalRole
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
+class Human13ExecutionPlan:
+    """Manifest-bound payload admitted to the one-exposure runner."""
+
+    manifest_identity: Human13ManifestIdentity
+    arm_id: str
+    denominators: Human13PanelDenominators
+    coefficients: tuple[tuple[LossFamily, float], ...]
+    pack_segments: tuple[tuple[int, tuple[Human13SegmentBinding, ...]], ...]
+    sites_by_pack: tuple[tuple[int, tuple[Human13LossSite, ...]], ...]
 
 
 @dataclass(frozen=True)
@@ -411,6 +449,49 @@ def build_supervised_micro_steps(
     return tuple(micro_steps)
 
 
+def build_execution_plan(
+    sealed_manifest: SealedHuman13Manifest | Any,
+    *,
+    arm_id: str,
+    packed_plan: PackedPanelPlan,
+    sites_by_pack: Mapping[int, Sequence[Human13LossSite]],
+) -> Human13ExecutionPlan:
+    """Bind one immutable arm payload to its sealed manifest and physical packs."""
+
+    sealed = _coerce_sealed_manifest(sealed_manifest)
+    manifest = sealed.manifest
+    _require_full_panel_manifest(manifest)
+    declared_arms = {item.arm_id for item in manifest.arms}
+    if arm_id not in declared_arms:
+        raise ValueError(f"arm {arm_id!r} is absent from the sealed manifest")
+    coefficients, expected = _arm_contract(arm_id)
+    frozen_sites = tuple(
+        (pack.pack.pack_index, tuple(sites_by_pack.get(pack.pack.pack_index, ())))
+        for pack in packed_plan.packs
+    )
+    if any(not sites for _, sites in frozen_sites):
+        raise ValueError("every Human-13 pack must contain a manifest-bound loss site")
+    denominators = _manifest_denominators(manifest, arm_id, coefficients)
+    execution = Human13ExecutionPlan(
+        manifest_identity=_manifest_identity(sealed),
+        arm_id=arm_id,
+        denominators=denominators,
+        coefficients=coefficients,
+        pack_segments=tuple(
+            (pack.pack.pack_index, _segment_bindings(pack))
+            for pack in packed_plan.packs
+        ),
+        sites_by_pack=frozen_sites,
+    )
+    _validate_sites_against_manifest(
+        manifest,
+        execution,
+        packed_plan=packed_plan,
+        expected_h=expected,
+    )
+    return execution
+
+
 def human13_loss_context_factory(
     micro_step: SupervisedMicroStep,
     forward_result: Any,
@@ -564,19 +645,57 @@ class Human13PanelLossRunner:
         plan: Human13PlannedLossPlan,
     ) -> dict[str, Any]:
         artifacts = tuple(micro_loss_artifacts)
+        terms: list[dict[str, Any]] = []
+        for family, _weight in plan.coefficients:
+            family_terms = [
+                term
+                for artifact in artifacts
+                for term in artifact["terms"]
+                if term["name"] == family
+            ]
+            if not family_terms:
+                continue
+            representative = dict(family_terms[0])
+            representative["raw_loss"] = sum(
+                float(term["raw_loss"]) for term in family_terms
+            )
+            representative["weighted_loss"] = sum(
+                float(term["weighted_loss"]) for term in family_terms
+            )
+            representative["segment_mean_numerator"] = sum(
+                float(term["segment_mean_numerator"]) for term in family_terms
+            )
+            representative["selected_count"] = sum(
+                int(term["selected_count"]) for term in family_terms
+            )
+            denominator = dict(representative["denominator"])
+            denominator["selected_atom_count"] = representative["selected_count"]
+            representative["denominator"] = denominator
+            representative["diagnostics"] = _merge_family_diagnostics(family_terms)
+            terms.append(representative)
         return {
             "total_loss": sum(float(item["total_loss"]) for item in artifacts),
             "micro_step_count": len(artifacts),
             "denominators": dict(plan.denominators.family_counts),
             "denominator_scope": "complete_panel",
+            "terms": terms,
+            "metrics": {
+                "loss/total": sum(float(item["total_loss"]) for item in artifacts),
+                **{f"loss/{term['name']}": float(term["raw_loss"]) for term in terms},
+            },
         }
 
 
-def load_sealed_training_manifest(path: str | Path) -> Any:
+def load_sealed_training_manifest(path: str | Path) -> SealedHuman13Manifest:
     """Load the canonical digest-bound manifest and require the full panel."""
 
-    manifest = load_manifest(path, require_full_panel=True)
-    return _require_full_panel_manifest(manifest)
+    manifest_path = Path(path)
+    manifest = load_manifest(manifest_path, require_full_panel=True)
+    _require_full_panel_manifest(manifest)
+    return SealedHuman13Manifest(
+        manifest=manifest,
+        manifest_sha256=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+    )
 
 
 def _require_full_panel_manifest(manifest: Any) -> Any:
@@ -588,9 +707,9 @@ def _require_full_panel_manifest(manifest: Any) -> Any:
 def run_panel_exposure(
     *,
     manifest_path: str | Path,
+    execution_plan: Human13ExecutionPlan,
     model: Any,
     micro_steps: Sequence[SupervisedMicroStep],
-    loss_runner: Any,
     runtime: Any,
     run_writer: Any,
     checkpoint_writer: Any,
@@ -600,30 +719,52 @@ def run_panel_exposure(
     wall_time_seconds: float | None = None,
     peak_memory_bytes: int | None = None,
     qwen_forward: Callable[[Any, SupervisedMicroStep], Any] | None = None,
-    loss_context_factory: Callable[
-        [SupervisedMicroStep, Any], Any
-    ] = human13_loss_context_factory,
 ) -> SupervisedTrainingResult:
     """Execute exactly one existing planned trainer step over all panel packs."""
 
-    manifest = load_sealed_training_manifest(manifest_path)
-    _require_full_panel_manifest(manifest)
     packs = tuple(micro_steps)
-    if not packs:
-        raise ValueError("one panel exposure requires at least one physical pack")
     initial_optimizer_steps = int(getattr(runtime, "optimizer_step_count", 0))
-    schedule = _one_exposure_schedule(pack_count=len(packs))
     checkpoint_count = 0
+    completed_steps = 0
+    consumed_packs = 0
+    terminal_optimizer_status: str | None = None
+    terminal_finite_status: str | None = None
+
+    def finalize_failed(error: BaseException) -> None:
+        applied = (
+            int(getattr(runtime, "optimizer_step_count", 0)) - initial_optimizer_steps
+        )
+        run_writer.finalize(
+            status="failed",
+            updated_at=updated_at,
+            completed_steps=completed_steps,
+            consumed_packs=consumed_packs,
+            checkpoint_event_count=checkpoint_count,
+            optimizer_update_status=(
+                terminal_optimizer_status or ("applied" if applied == 1 else None)
+            ),
+            finite_status=terminal_finite_status,
+            terminal_error=f"{type(error).__name__}: {error}",
+        )
 
     def write_final(_event: StepScheduleEvent, _observation: Any) -> None:
-        nonlocal checkpoint_count
+        nonlocal checkpoint_count, completed_steps, consumed_packs
+        nonlocal terminal_optimizer_status, terminal_finite_status
+        consumed_packs = int(_observation.micro_step_count)
+        terminal_optimizer_status = _observation.optimizer_update_status
+        terminal_finite_status = _observation.finite_status
+        applied = (
+            int(getattr(runtime, "optimizer_step_count", 0)) - initial_optimizer_steps
+        )
         if (
             _observation.optimizer_update_status != "applied"
             or _observation.finite_status != "finite"
+            or applied != 1
         ):
             raise RuntimeError(
                 "Human-13 checkpoint requires one finite applied panel update"
             )
+        completed_steps = 1
         payload = dict(checkpoint_kwargs)
         payload.update(
             {
@@ -638,24 +779,38 @@ def run_panel_exposure(
         checkpoint_writer.write_checkpoint(**payload)
         checkpoint_count += 1
 
-    trainer = SupervisedTrainer(
-        model=model,
-        schedule=schedule,
-        pack_stream=packs,
-        qwen_forward=qwen_forward,
-        loss_context_factory=loss_context_factory,
-        loss_runner=loss_runner,
-        runtime=runtime,
-        on_final=write_final,
-    )
-    result = trainer.run()
-    applied_steps = (
-        int(getattr(runtime, "optimizer_step_count", 0)) - initial_optimizer_steps
-    )
-    if applied_steps != 1:
-        raise RuntimeError(
-            f"Human-13 exposure must apply exactly one optimizer step, got {applied_steps}"
+    try:
+        sealed = load_sealed_training_manifest(manifest_path)
+        _validate_execution_payload(sealed, execution_plan, packs)
+        if not packs:
+            raise ValueError("one panel exposure requires at least one physical pack")
+        trainer = SupervisedTrainer(
+            model=model,
+            schedule=_one_exposure_schedule(pack_count=len(packs)),
+            pack_stream=packs,
+            qwen_forward=qwen_forward,
+            loss_context_factory=human13_loss_context_factory,
+            loss_runner=Human13PanelLossRunner(
+                denominators=execution_plan.denominators,
+                coefficients=execution_plan.coefficients,
+            ),
+            runtime=runtime,
+            on_final=write_final,
         )
+        result = trainer.run()
+        completed_steps = result.completed_steps
+        consumed_packs = result.consumed_micro_steps
+        applied_steps = (
+            int(getattr(runtime, "optimizer_step_count", 0)) - initial_optimizer_steps
+        )
+        if applied_steps != 1:
+            raise RuntimeError(
+                "Human-13 exposure must apply exactly one optimizer step, "
+                f"got {applied_steps}"
+            )
+    except BaseException as error:
+        finalize_failed(error)
+        raise
     latest = result.latest_observation
     packed_tokens = sum(
         int(getattr(micro_step.pack, "length", 1)) for micro_step in packs
@@ -684,31 +839,397 @@ def run_panel_exposure(
             peak_memory_bytes, "peak_memory_bytes"
         ),
     )
-    run_writer.append_logging_row(
-        {
-            "split": "train",
-            "step": 1,
-            "non_finite_fields": [],
-            "pack_count": len(packs),
-            "performance": performance.to_artifact_dict(),
-            "optimizer_update_status": (
+    try:
+        run_writer.append_logging_row(
+            {
+                "split": "train",
+                "step": 1,
+                "non_finite_fields": [],
+                "pack_count": len(packs),
+                "performance": performance.to_artifact_dict(),
+                "optimizer_update_status": (
+                    None if latest is None else latest.optimizer_update_status
+                ),
+                "finite_status": None if latest is None else latest.finite_status,
+                "loss_bundle": (
+                    None if latest is None else dict(latest.loss_bundle_artifact)
+                ),
+            }
+        )
+        run_writer.finalize(
+            status="completed",
+            updated_at=updated_at,
+            completed_steps=result.completed_steps,
+            consumed_packs=result.consumed_micro_steps,
+            checkpoint_event_count=checkpoint_count,
+            optimizer_update_status=(
                 None if latest is None else latest.optimizer_update_status
             ),
-            "finite_status": None if latest is None else latest.finite_status,
-        }
-    )
-    run_writer.finalize(
-        status="completed",
-        updated_at=updated_at,
-        completed_steps=result.completed_steps,
-        consumed_packs=result.consumed_micro_steps,
-        checkpoint_event_count=checkpoint_count,
-        optimizer_update_status=(
-            None if latest is None else latest.optimizer_update_status
-        ),
-        finite_status=None if latest is None else latest.finite_status,
-    )
+            finite_status=None if latest is None else latest.finite_status,
+        )
+    except BaseException as error:
+        finalize_failed(error)
+        raise
     return result
+
+
+def _coerce_sealed_manifest(
+    value: SealedHuman13Manifest | Any,
+) -> SealedHuman13Manifest:
+    if isinstance(value, SealedHuman13Manifest):
+        return value
+    digest = getattr(value, "canonical_sha256", None)
+    if not isinstance(digest, str) or len(digest) != 64:
+        raise ValueError("Human-13 manifest is not canonically digest bound")
+    return SealedHuman13Manifest(manifest=value, manifest_sha256=digest)
+
+
+def _manifest_identity(sealed: SealedHuman13Manifest) -> Human13ManifestIdentity:
+    manifest = sealed.manifest
+    return Human13ManifestIdentity(
+        schema_version=str(manifest.schema_version),
+        unit_id=str(manifest.binding.unit_id),
+        panel_sha256=str(manifest.binding.panel.panel_sha256),
+        manifest_sha256=sealed.manifest_sha256,
+    )
+
+
+def _arm_contract(
+    arm_id: str,
+) -> tuple[tuple[tuple[LossFamily, float], ...], tuple[LossObjective, LogicalRole]]:
+    if arm_id == "A1":
+        return (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0)), (
+            "owner_ce",
+            "a1_full_h",
+        )
+    if arm_id in {"A8", "A8-prime", "A8_prime"}:
+        return (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0)), (
+            "bottleneck",
+            "a8_full_h",
+        )
+    if arm_id == "A4":
+        return (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0)), (
+            "union_mass",
+            "a4_union",
+        )
+    if arm_id in {"full_gt", "full-GT", "full_gt_capacity"}:
+        return (("full_gt", 1.0),), ("owner_ce", "full_gt")
+    raise ValueError(f"arm {arm_id!r} is not admitted by the packed panel runner")
+
+
+def _manifest_denominators(
+    manifest: Any,
+    arm_id: str,
+    coefficients: tuple[tuple[LossFamily, float], ...],
+) -> Human13PanelDenominators:
+    source = manifest.denominators
+    counts = {
+        "h": int(
+            source.target_image_count if arm_id == "A4" else source.target_owner_count
+        ),
+        "replay": int(source.replay_owner_count),
+        "duplicate": int(source.duplicate_image_count),
+        "full_gt": int(manifest.binding.panel.owner_count),
+    }
+    active = tuple(
+        (family, counts[family]) for family, weight in coefficients if weight
+    )
+    duplicate_counts = tuple(
+        (image.image_id, len(image.duplicate_events))
+        for image in manifest.images
+        if image.duplicate_events
+    )
+    return Human13PanelDenominators(
+        family_counts=active,
+        duplicate_event_counts=duplicate_counts,
+    )
+
+
+def _segment_bindings(pack: PackedPanelMicroStep) -> tuple[Human13SegmentBinding, ...]:
+    packed_by_id = {item.example_id: item for item in pack.pack.segments}
+    return tuple(
+        Human13SegmentBinding(
+            segment_id=logical.segment_id,
+            image_id=logical.image_id,
+            role=logical.role,
+            start=packed_by_id[logical.segment_id].start,
+            end=packed_by_id[logical.segment_id].end,
+        )
+        for logical in pack.logical_segments
+    )
+
+
+def _validate_sites_against_manifest(
+    manifest: Any,
+    execution: Human13ExecutionPlan,
+    *,
+    packed_plan: PackedPanelPlan,
+    expected_h: tuple[LossObjective, LogicalRole],
+) -> None:
+    del packed_plan
+    segments = {
+        binding.segment_id: (pack_index, binding)
+        for pack_index, bindings in execution.pack_segments
+        for binding in bindings
+    }
+    images = {image.image_id: image for image in manifest.images}
+    selected_by_row = {
+        row.row_id: row for image in manifest.images for row in image.selected_rows
+    }
+    seen_rows: dict[str, list[tuple[int, str]]] = {}
+    seen_segment_ids: set[str] = set()
+    for pack_index, sites in execution.sites_by_pack:
+        for site in sites:
+            location = segments.get(site.segment_id)
+            if location is None or location[0] != pack_index:
+                raise ValueError(
+                    "loss site is not bound to its logical segment and pack"
+                )
+            binding = location[1]
+            seen_segment_ids.add(site.segment_id)
+            if binding.image_id != site.image_id or any(
+                position < binding.start or position >= binding.end
+                for position in site.logits_positions
+            ):
+                raise ValueError("loss site escapes its manifest-bound logical segment")
+            if not site.manifest_row_ids or len(set(site.manifest_row_ids)) != len(
+                site.manifest_row_ids
+            ):
+                raise ValueError("loss site requires unique canonical manifest rows")
+            expected_objective, expected_role = expected_h
+            if site.family == "h" and (
+                site.objective != expected_objective or binding.role != expected_role
+            ):
+                if expected_role == "a4_union":
+                    raise ValueError(
+                        "A4 candidate group must be complete in one segment and one pack"
+                    )
+                raise ValueError(
+                    "arm loss site has an unrelated objective or logical role"
+                )
+            if site.family == "h" and expected_role in {
+                "a1_full_h",
+                "a8_full_h",
+            }:
+                if len(site.manifest_row_ids) != 1:
+                    raise ValueError("H loss site must bind exactly one selected row")
+                selected = selected_by_row.get(site.manifest_row_ids[0])
+                expected_targets = (
+                    ()
+                    if selected is None
+                    else tuple(
+                        token
+                        for token, included in zip(
+                            selected.token_ids,
+                            selected.target_token_mask,
+                            strict=True,
+                        )
+                        if included
+                    )
+                )
+                if expected_targets != site.target_token_ids:
+                    raise ValueError("H loss targets mismatch the frozen selected row")
+            if site.family == "replay" and (
+                site.objective != "owner_ce" or binding.role != "source_replay"
+            ):
+                raise ValueError(
+                    "replay site has an unrelated objective or logical role"
+                )
+            if site.family == "duplicate" and (
+                site.objective != "duplicate_unlikelihood"
+                or binding.role != "duplicate_event"
+            ):
+                raise ValueError(
+                    "duplicate site has an unrelated objective or logical role"
+                )
+            if site.family == "full_gt" and binding.role != "full_gt":
+                raise ValueError("full-GT site has an unrelated logical role")
+            for row_id in site.manifest_row_ids:
+                seen_rows.setdefault(row_id, []).append((pack_index, site.segment_id))
+
+    if seen_segment_ids != set(segments):
+        raise ValueError("logical segment membership is partial or unrelated")
+    allowed_roles = {expected_h[1], "source_replay", "duplicate_event"}
+    if any(
+        binding.image_id not in images or binding.role not in allowed_roles
+        for _pack, bindings in execution.pack_segments
+        for binding in bindings
+    ):
+        raise ValueError("logical segments mismatch the sealed arm and panel images")
+    observed_role_images = {
+        role: {
+            binding.image_id
+            for _pack, bindings in execution.pack_segments
+            for binding in bindings
+            if binding.role == role
+        }
+        for role in allowed_roles
+    }
+    expected_role_images = {
+        expected_h[1]: {
+            image.image_id
+            for image in manifest.images
+            if (
+                image.candidate_row_ids
+                if expected_h[1] == "a4_union"
+                else image.owners
+                if expected_h[1] == "full_gt"
+                else image.h_owner_ids
+            )
+        },
+        "source_replay": {
+            image.image_id for image in manifest.images if image.replay_row_ids
+        },
+        "duplicate_event": {
+            image.image_id for image in manifest.images if image.duplicate_events
+        },
+    }
+    if any(
+        observed_role_images[role] != expected_images
+        for role, expected_images in expected_role_images.items()
+    ):
+        raise ValueError(
+            "logical segment image coverage mismatches the sealed manifest"
+        )
+
+    if expected_h == ("union_mass", "a4_union"):
+        for image_id, image in images.items():
+            expected_rows = set(image.candidate_row_ids)
+            if not expected_rows:
+                continue
+            observed = {
+                row_id: locations
+                for row_id, locations in seen_rows.items()
+                if row_id in expected_rows
+            }
+            locations = {
+                location for values in observed.values() for location in values
+            }
+            if (
+                set(observed) != expected_rows
+                or any(len(values) != 1 for values in observed.values())
+                or len(locations) != 1
+            ):
+                raise ValueError(
+                    "A4 candidate group must be complete in one segment and one pack"
+                )
+            only = next(iter(locations))
+            binding = segments[only[1]][1]
+            if binding.image_id != image_id or binding.role != "a4_union":
+                raise ValueError(
+                    "A4 candidate group must be complete in one segment and one pack"
+                )
+    else:
+        expected_rows = (
+            {owner.owner_id for image in manifest.images for owner in image.owners}
+            if expected_h[1] == "full_gt"
+            else set(selected_by_row)
+        )
+        observed_rows = {
+            row_id
+            for row_id, locations in seen_rows.items()
+            if any(
+                site.family in {"h", "full_gt"} and row_id in site.manifest_row_ids
+                for _pack, sites in execution.sites_by_pack
+                for site in sites
+            )
+            for _location in locations
+        }
+        if expected_rows and observed_rows != expected_rows:
+            raise ValueError(
+                "arm payload is partial or mismatched to selected manifest rows"
+            )
+
+    family_rows = {
+        family: [
+            row_id
+            for _pack, sites in execution.sites_by_pack
+            for site in sites
+            if site.family == family
+            for row_id in site.manifest_row_ids
+        ]
+        for family in ("replay", "duplicate")
+    }
+    expected_replay = {
+        row_id for image in manifest.images for row_id in image.replay_row_ids
+    }
+    expected_duplicate = {
+        event.event_id for image in manifest.images for event in image.duplicate_events
+    }
+    for family, expected_rows in (
+        ("replay", expected_replay),
+        ("duplicate", expected_duplicate),
+    ):
+        observed = family_rows[family]
+        if set(observed) != expected_rows or len(observed) != len(expected_rows):
+            raise ValueError(
+                f"{family} payload is partial, duplicated, or mismatched to manifest"
+            )
+
+
+def _validate_execution_payload(
+    sealed_value: SealedHuman13Manifest | Any,
+    execution: Human13ExecutionPlan,
+    packs: tuple[SupervisedMicroStep, ...],
+) -> None:
+    sealed = _coerce_sealed_manifest(sealed_value)
+    if execution.manifest_identity != _manifest_identity(sealed):
+        raise ValueError("execution plan does not match the sealed manifest identity")
+    manifest = sealed.manifest
+    coefficients, expected_h = _arm_contract(execution.arm_id)
+    if execution.arm_id not in {item.arm_id for item in manifest.arms}:
+        raise ValueError("execution arm is absent from the sealed manifest")
+    if (
+        coefficients != execution.coefficients
+        or execution.denominators
+        != _manifest_denominators(manifest, execution.arm_id, coefficients)
+    ):
+        raise ValueError(
+            "execution arm or global denominators mismatch sealed manifest"
+        )
+    expected_packs = dict(execution.pack_segments)
+    expected_sites = dict(execution.sites_by_pack)
+    if tuple(sorted(expected_packs)) != tuple(range(len(packs))):
+        raise ValueError("execution pack membership is partial or noncanonical")
+    for micro_step in packs:
+        index = micro_step.pack.pack_index
+        actual_segments = tuple(item.example_id for item in micro_step.pack.segments)
+        if actual_segments != tuple(item.segment_id for item in expected_packs[index]):
+            raise ValueError("micro-step pack membership mismatches execution plan")
+        metadata = micro_step.metadata
+        if (
+            metadata.get("human13_panel_denominators") != execution.denominators
+            or metadata.get("human13_loss_sites") != expected_sites[index]
+        ):
+            raise ValueError("micro-step loss payload mismatches execution plan")
+    synthetic_plan = PackedPanelPlan((), (), GLOBAL_MAX_LENGTH)
+    _validate_sites_against_manifest(
+        manifest, execution, packed_plan=synthetic_plan, expected_h=expected_h
+    )
+
+
+def _merge_family_diagnostics(terms: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    diagnostics = [term["diagnostics"] for term in terms]
+    merged: dict[str, Any] = {}
+    for name in ("raw_event_count", "consumed_event_count", "capped_event_count"):
+        if any(name in item for item in diagnostics):
+            merged[name] = sum(int(item.get(name, 0)) for item in diagnostics)
+    weights = [
+        float(weight)
+        for item in diagnostics
+        for weight in item.get("candidate_weights", ())
+    ]
+    if weights:
+        merged["candidate_weights"] = weights
+        merged["effective_owner_count"] = sum(
+            float(item.get("effective_owner_count", 0.0)) for item in diagnostics
+        )
+        merged["candidate_groups"] = [
+            dict(group)
+            for item in diagnostics
+            for group in item.get("candidate_groups", ())
+        ]
+    return merged
 
 
 def _dispatch_family(
@@ -746,11 +1267,22 @@ def _dispatch_family(
     if objective == "union_mass":
         numerator = context.logits.sum() * 0.0
         groups = _sites_by_image(sites)
-        for group in groups.values():
+        candidate_weights: list[float] = []
+        effective_owner_count = 0.0
+        candidate_groups: list[dict[str, Any]] = []
+        for image_id, group in groups.items():
             logits, targets, mask = _padded_site_tensors(context, group)
-            numerator = (
-                numerator
-                + prefix_free_union_negative_log_mass(logits, targets, mask).numerator
+            local = prefix_free_union_negative_log_mass(logits, targets, mask)
+            numerator = numerator + local.numerator
+            candidate_weights.extend(local.candidate_weights)
+            effective_owner_count += local.effective_owner_count
+            candidate_groups.append(
+                {
+                    "image_id": image_id,
+                    "candidate_weights": list(local.candidate_weights),
+                    "effective_owner_count": local.effective_owner_count,
+                    "candidate_count": local.candidate_count,
+                }
             )
         return (
             numerator,
@@ -758,10 +1290,16 @@ def _dispatch_family(
             {
                 "objective_kinds": [objective],
                 "atomic_image_count": len(groups),
+                "candidate_weights": candidate_weights,
+                "effective_owner_count": effective_owner_count,
+                "candidate_groups": candidate_groups,
             },
         )
     if objective == "duplicate_unlikelihood":
         numerator = context.logits.sum() * 0.0
+        raw_event_count = 0
+        consumed_event_count = 0
+        capped_event_count = 0
         for image_id, group in _sites_by_image(sites).items():
             if any(len(site.logits_positions) != 1 for site in group):
                 raise ValueError("each duplicate event must select exactly one token")
@@ -777,10 +1315,22 @@ def _dispatch_family(
             local = image_balanced_duplicate_token_unlikelihood(
                 selected, targets, images
             )
+            raw_event_count += local.raw_event_count
+            consumed_event_count += local.consumed_event_count
+            capped_event_count += local.capped_event_count
             numerator = numerator + (
                 local.numerator * len(group) / denominators.duplicate_count(image_id)
             )
-        return numerator, selected_count, {"objective_kinds": [objective]}
+        return (
+            numerator,
+            selected_count,
+            {
+                "objective_kinds": [objective],
+                "raw_event_count": raw_event_count,
+                "consumed_event_count": consumed_event_count,
+                "capped_event_count": capped_event_count,
+            },
+        )
     raise AssertionError(f"unhandled Human-13 objective: {objective}")
 
 
@@ -937,15 +1487,20 @@ def _optional_nonnegative_int(value: int | None, field: str) -> int | None:
 __all__ = [
     "GLOBAL_MAX_LENGTH",
     "Human13CompactLogitsMetadata",
+    "Human13ExecutionPlan",
     "Human13LossSite",
+    "Human13ManifestIdentity",
     "Human13PackLossContext",
     "Human13PanelDenominators",
     "Human13PanelLossRunner",
+    "Human13SegmentBinding",
     "LogicalPanelSegment",
     "LogicalRole",
     "PackedPanelMicroStep",
     "PackedPanelPlan",
     "PanelPerformanceCounters",
+    "SealedHuman13Manifest",
+    "build_execution_plan",
     "build_supervised_micro_steps",
     "build_logical_segments",
     "dry_run_receipt",
