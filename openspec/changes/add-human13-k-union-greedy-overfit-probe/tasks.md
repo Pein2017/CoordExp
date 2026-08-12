@@ -1,16 +1,16 @@
 ## 1. Authorization and Frozen Inputs
 
 - [x] 1.1 Record explicit user authorization to begin implementation, recheck the exact `/data/CoordExp/.worktrees/research-probes` branch and dirty-file ownership, and confirm that model/GPU execution remains separately gated.
-- [ ] 1.2 Add `scripts/research/build_human13_k_union_manifest.py` with typed, canonical records for panel, Source, request, trajectory, owner, selected row, raw/clean prefix, duplicate event, arm, and global denominator identities.
-- [ ] 1.3 Add focused manifest tests under `tests/research/test_build_human13_k_union_manifest.py` for the exact panel hash, overfit-only admission, seed completeness, chronological duplicate-before-matching classification, duplicate/owner-positive disjointness including a dense two-owner collision fixture, raw-to-clean token surgery, `G/H/M`, target selection, terminal masks, zero denominators, and fail-closed generic blind admission.
-- [ ] 1.4 Add `scripts/research/collect_human13_k16_vllm.py` and tests that plan four batches of four explicit `n=1` requests per image with seeds `21001..21016`, sampling repetition penalty `1.10`, canonical result order, incomplete-request failure, and non-claiming optional cache telemetry.
+- [x] 1.2 Add `scripts/research/build_human13_k_union_manifest.py` with typed, canonical records for panel, Source, request, trajectory, owner, selected row, raw/clean prefix, duplicate event, arm, and global denominator identities.
+- [x] 1.3 Add focused manifest tests under `tests/research/test_build_human13_k_union_manifest.py` for the exact panel hash, overfit-only admission, seed completeness, chronological duplicate-before-matching classification, duplicate/owner-positive disjointness including a dense two-owner collision fixture, raw-to-clean token surgery, `G/H/M`, target selection, terminal masks, zero denominators, and fail-closed generic blind admission.
+- [x] 1.4 Add `scripts/research/collect_human13_k16_vllm.py` and tests that plan four batches of four explicit `n=1` requests per image with seeds `21001..21016`, sampling repetition penalty `1.10`, canonical result order, incomplete-request failure, and non-claiming optional cache telemetry.
 
 ## 2. Objective Math and No-Update Census
 
-- [ ] 2.1 Add failing pure-math tests in `tests/losses/test_human13_k_union.py` for owner-mean masked row CE, once-per-image prefix-free union mass, coherent full-H token bottleneck hinge, and all-event image-balanced duplicate-token unlikelihood including finite loss and gradient at a target margin of at least thirty nats.
-- [ ] 2.2 Implement the minimal fp32 helpers in `src/losses/human13_k_union.py`, including explicit numerator/denominator outputs, detached bottleneck competitor selection, finite checks, candidate weights, and effective-owner diagnostics.
-- [ ] 2.3 Add `scripts/research/census_human13_k_union_trie.py` and tests for exact-token row deduplication, coherent-chain first non-argmax/minimum margin/tie/token-role census, cross-surface target-margin drift, A8-prime blocking, and byte-identical frozen targets before and after census.
-- [ ] 2.4 Gate Wave 1 with targeted CPU tests, strict OpenSpec validation, diff/residue checks for deferred A2/A5/candidate-tree/GT-IoU work, and one bounded standards plus research-intent review with no unresolved P0/P1.
+- [x] 2.1 Add failing pure-math tests in `tests/losses/test_human13_k_union.py` for owner-mean masked row CE, once-per-image prefix-free union mass, coherent full-H token bottleneck hinge, and all-event image-balanced duplicate-token unlikelihood including finite loss and gradient at a target margin of at least thirty nats.
+- [x] 2.2 Implement the minimal fp32 helpers in `src/losses/human13_k_union.py`, including explicit numerator/denominator outputs, detached bottleneck competitor selection, finite checks, candidate weights, and effective-owner diagnostics.
+- [x] 2.3 Add `scripts/research/census_human13_k_union_trie.py` and tests for exact-token row deduplication, coherent-chain first non-argmax/minimum margin/tie/token-role census, cross-surface target-margin drift, A8-prime blocking, and byte-identical frozen targets before and after census.
+- [x] 2.4 Gate Wave 1 with targeted CPU tests, strict OpenSpec validation, diff/residue checks for deferred A2/A5/candidate-tree/GT-IoU work, and one bounded standards plus research-intent review with no unresolved P0/P1.
 
 ## 3. Packed Panel-Step Runner
 
