@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from dataclasses import asdict
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -24,6 +26,7 @@ from scripts.research.build_human13_k_union_manifest import (
     Human13KUnionManifest,
     ImageRecord,
     load_manifest,
+    validate_manifest,
 )
 from scripts.research.compare_clean_rollout_owner_coverage import (
     _global_matches,
@@ -38,12 +41,15 @@ _CAP_STOP_REASONS = frozenset(
     {"cap", "cap_stop", "length", "length_truncated", "max_new_tokens"}
 )
 _NATURAL_STOP_REASONS = frozenset({"eos", "im_end", "natural_stop"})
+_SUPPORTED_STOP_REASONS = _CAP_STOP_REASONS | _NATURAL_STOP_REASONS
 _JSONL_CONTRACT = """raw output JSONL contract (one object per image/arm/milestone):
   required: image_id, arm_id, milestone,
             decode_mode='original_prompt_clean_greedy', repetition_penalty=1.0,
             predictions (or pred), generated_token_ids, stop_reason
   each prediction: generated_order (or row_index), description/category, bbox
   optional: malformed_row_count (or dropped_prediction_count), runtime
+  provenance: exact manifest_sha256, panel/image/source/surface identities,
+              backend='hf', physical_batch_size=1, and trajectory identity
 """
 
 
@@ -212,8 +218,108 @@ def _runtime(value: Any) -> dict[str, float]:
     }
 
 
+def _provenance(
+    *,
+    manifest: Human13KUnionManifest,
+    image: ImageRecord,
+    output: Mapping[str, Any],
+    arm_id: str,
+    milestone: int,
+) -> dict[str, Any]:
+    value = output.get("provenance")
+    if not isinstance(value, Mapping):
+        raise ValueError("output.provenance must be an object")
+    source = image.trajectories[0]
+    expected: dict[str, Any] = {
+        "unit_id": manifest.binding.unit_id,
+        "purpose": manifest.binding.purpose,
+        "artifact_root": manifest.binding.artifact_root,
+        "manifest_sha256": _manifest_sha256(manifest),
+        "panel_sha256": manifest.binding.panel.panel_sha256,
+        "image_id": image.image_id,
+        "panel_row_sha256": image.panel_row_sha256,
+        "image_sha256": image.image_sha256,
+        "arm_id": arm_id,
+        "milestone": milestone,
+        "backend": "hf",
+        "backend_version": source.request.backend_version,
+        "physical_batch_size": 1,
+        "do_sample": False,
+        "max_new_tokens": source.request.max_new_tokens,
+        "source_checkpoint_identity": {
+            "checkpoint_path": manifest.binding.source.checkpoint_path,
+            "base_model_path": manifest.binding.source.base_model_path,
+            "adapter_sha256": manifest.binding.source.adapter_sha256,
+            "special_embedding_sha256": (
+                manifest.binding.source.special_embedding_sha256
+            ),
+        },
+        "prompt_policy_fingerprint": (
+            manifest.binding.surface.prompt_policy_fingerprint
+        ),
+        "tokenizer_sha256": manifest.binding.surface.tokenizer_sha256,
+        "tokenizer_class": manifest.binding.surface.tokenizer_class,
+        "wrapper": manifest.binding.surface.wrapper,
+        "parser": manifest.binding.surface.parser,
+        "source_trajectory_id": source.trajectory_id,
+    }
+    dynamic_fields = {
+        "checkpoint_path",
+        "checkpoint_payload_sha256",
+        "run_id",
+        "run_root",
+        "resolved_arm_plan_sha256",
+        "resolved_config_sha256",
+        "trajectory_id",
+    }
+    if set(value) != set(expected) | dynamic_fields:
+        missing = sorted(set(expected) - set(value))
+        missing.extend(sorted(dynamic_fields - set(value)))
+        extra = sorted(set(value) - set(expected))
+        extra = [field for field in extra if field not in dynamic_fields]
+        raise ValueError(
+            f"output.provenance keys differ: missing={missing}, extra={extra}"
+        )
+    for field, expected_value in expected.items():
+        if value[field] != expected_value:
+            raise ValueError(
+                f"output.provenance.{field} does not match the frozen run identity"
+            )
+    for field in ("checkpoint_path", "run_id", "run_root", "trajectory_id"):
+        if not isinstance(value[field], str) or not value[field]:
+            raise ValueError(f"output.provenance.{field} must be a non-empty string")
+    for field in (
+        "checkpoint_payload_sha256",
+        "resolved_arm_plan_sha256",
+        "resolved_config_sha256",
+    ):
+        digest = value[field]
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError(f"output.provenance.{field} must be a lowercase SHA-256")
+    checkpoint_path = str(value["checkpoint_path"])
+    if arm_id == "frozen_source":
+        if value["trajectory_id"] != source.trajectory_id:
+            raise ValueError(
+                "frozen_source output.provenance.trajectory_id must equal manifest Source"
+            )
+        if checkpoint_path != manifest.binding.source.checkpoint_path:
+            raise ValueError(
+                "frozen_source output.provenance.checkpoint_path must equal Source"
+            )
+    elif checkpoint_path == manifest.binding.source.checkpoint_path:
+        raise ValueError(
+            "trained arm output.provenance.checkpoint_path must differ from Source"
+        )
+    return dict(value)
+
+
 def _analyze_one(
     *,
+    manifest: Human13KUnionManifest,
     image: ImageRecord,
     output: Mapping[str, Any],
     fixed_row_budgets: tuple[int, ...],
@@ -225,6 +331,16 @@ def _analyze_one(
     if not isinstance(arm_id, str) or not arm_id:
         raise ValueError("output.arm_id must be a non-empty string")
     milestone = _integer(output.get("milestone"), "output.milestone")
+    declared_arms = {arm.arm_id for arm in manifest.arms}
+    if arm_id not in declared_arms:
+        raise ValueError("output.arm_id is absent from the frozen manifest arms")
+    provenance = _provenance(
+        manifest=manifest,
+        image=image,
+        output=output,
+        arm_id=arm_id,
+        milestone=milestone,
+    )
     if output.get("decode_mode") != "original_prompt_clean_greedy":
         raise ValueError("output must be an original-prompt clean-greedy decode")
     if _finite_number(
@@ -244,6 +360,14 @@ def _analyze_one(
     stop_reason = output.get("stop_reason")
     if not isinstance(stop_reason, str) or not stop_reason:
         raise ValueError("output.stop_reason must be a non-empty string")
+    if stop_reason not in _SUPPORTED_STOP_REASONS:
+        raise ValueError("output.stop_reason is outside the explicit supported enum")
+    if arm_id == "frozen_source":
+        source = image.trajectories[0]
+        if tuple(token_ids) != source.raw_token_ids:
+            raise ValueError(
+                "frozen_source generated_token_ids do not match the manifest Source trajectory"
+            )
 
     natural = _match_prefix(
         image,
@@ -292,6 +416,7 @@ def _analyze_one(
         "invalid_rows": natural["invalid_rows"],
         "stop_reason": stop_reason,
         "runtime": _runtime(output.get("runtime")),
+        "_provenance": provenance,
         "_owner_matches": natural["owner_matches"],
     }
 
@@ -499,13 +624,13 @@ def _aggregate_fixed_budgets(
     }
 
 
-def analyze_outputs(
+def _analyze_outputs_unsafe(
     manifest: Human13KUnionManifest,
     outputs: Sequence[Mapping[str, Any]],
     *,
     fixed_row_budgets: Sequence[int] = DEFAULT_FIXED_ROW_BUDGETS,
 ) -> dict[str, Any]:
-    """Analyze Source and arm raw outputs without using the native row bank."""
+    """Fixture-only projection that skips full-panel manifest validation."""
 
     budgets = tuple(
         sorted({_integer(item, "fixed_row_budget", minimum=1) for item in fixed_row_budgets})
@@ -532,6 +657,7 @@ def analyze_outputs(
         if image_id not in images:
             raise ValueError(f"output image {image_id} is absent from the manifest")
         record = _analyze_one(
+            manifest=manifest,
             image=images[image_id],
             output=raw_output,
             fixed_row_budgets=budgets,
@@ -566,6 +692,42 @@ def analyze_outputs(
     }
     if incomplete:
         raise ValueError(f"arm/milestone outputs do not cover the manifest: {incomplete}")
+
+    group_evidence_fields = (
+        "manifest_sha256",
+        "arm_id",
+        "milestone",
+        "checkpoint_path",
+        "checkpoint_payload_sha256",
+        "run_id",
+        "run_root",
+        "resolved_arm_plan_sha256",
+        "resolved_config_sha256",
+    )
+    run_root_owner: dict[str, tuple[str, str]] = {}
+    for identity, image_ids in group_images.items():
+        group = [
+            record
+            for record in records
+            if (record["arm_id"], record["milestone"]) == identity
+        ]
+        signatures = {
+            tuple(record["_provenance"][field] for field in group_evidence_fields)
+            for record in group
+        }
+        if len(signatures) != 1:
+            raise ValueError(
+                f"arm/milestone {identity} run evidence is not group-consistent"
+            )
+        del image_ids
+        run_root = str(group[0]["_provenance"]["run_root"])
+        run_owner = (
+            str(group[0]["_provenance"]["run_id"]),
+            str(group[0]["arm_id"]),
+        )
+        prior = run_root_owner.setdefault(run_root, run_owner)
+        if prior != run_owner:
+            raise ValueError("different arm/run groups require a unique run_root")
 
     for record in records:
         image_id = int(record["image_id"])
@@ -611,6 +773,36 @@ def analyze_outputs(
             _aggregate_fixed_budgets(aggregate, selected, budgets)
             result[panel].append(aggregate)
     return result
+
+
+def _manifest_sha256(manifest: Human13KUnionManifest) -> str:
+    payload = (
+        json.dumps(
+            asdict(manifest),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def analyze_outputs(
+    manifest: Human13KUnionManifest,
+    outputs: Sequence[Mapping[str, Any]],
+    *,
+    fixed_row_budgets: Sequence[int] = DEFAULT_FIXED_ROW_BUDGETS,
+) -> dict[str, Any]:
+    """Validate the full frozen manifest, then analyze its raw HF outputs."""
+
+    if not manifest.full_panel:
+        raise ValueError("partial Human-13 manifest is mechanics-only")
+    validate_manifest(manifest, require_full_panel=True)
+    return _analyze_outputs_unsafe(
+        manifest, outputs, fixed_row_budgets=fixed_row_budgets
+    )
 
 
 def load_outputs(path: str | Path) -> list[dict[str, Any]]:
