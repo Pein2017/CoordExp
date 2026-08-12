@@ -263,6 +263,43 @@ class Human13ManifestIdentity:
 
 
 @dataclass(frozen=True)
+class Human13A8CensusBinding:
+    """Canonical no-update census identity and frozen A8-prime margin."""
+
+    schema_version: str
+    census_schema_version: str
+    manifest_identity: Human13ManifestIdentity
+    frozen_targets_sha256: str
+    artifact_sha256: str
+    applicable: bool
+    required_margin: float
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "human13_a8_census_binding.v1":
+            raise ValueError("A8 census binding schema is not supported")
+        if self.census_schema_version != "human13_k_union_no_update_census.v1":
+            raise ValueError("A8 census artifact schema is not canonical")
+        if not isinstance(self.manifest_identity, Human13ManifestIdentity):
+            raise ValueError("A8 census binding requires a typed manifest identity")
+        for value, label in (
+            (self.frozen_targets_sha256, "frozen target"),
+            (self.artifact_sha256, "artifact"),
+        ):
+            if len(value) != 64 or any(
+                character not in "0123456789abcdef" for character in value
+            ):
+                raise ValueError(f"A8 census {label} digest must be lowercase SHA-256")
+        if self.applicable is not True:
+            raise ValueError("A8 census binding must seal applicable=true")
+        if (
+            isinstance(self.required_margin, bool)
+            or not math.isfinite(self.required_margin)
+            or not 0 < self.required_margin <= 0.5
+        ):
+            raise ValueError("A8 census required margin must be finite in (0, 0.5]")
+
+
+@dataclass(frozen=True)
 class Human13A6DonorRecord:
     """One selected A6 target and its frozen natural H1 donor provenance."""
 
@@ -348,6 +385,7 @@ class Human13ExecutionPlan:
     pack_segments: tuple[tuple[int, tuple[Human13SegmentBinding, ...]], ...]
     sites_by_pack: tuple[tuple[int, tuple[Human13LossSite, ...]], ...]
     a6_donor_binding: Human13A6DonorBinding | None = None
+    a8_census_binding: Human13A8CensusBinding | None = None
 
 
 @dataclass(frozen=True)
@@ -584,6 +622,7 @@ def build_execution_plan(
     packed_plan: PackedPanelPlan,
     sites_by_pack: Mapping[int, Sequence[Human13LossSite]],
     a6_donor_binding: Human13A6DonorBinding | None = None,
+    a8_census_binding: Human13A8CensusBinding | None = None,
 ) -> Human13ExecutionPlan:
     """Bind one immutable arm payload to its sealed manifest and physical packs."""
 
@@ -594,10 +633,14 @@ def build_execution_plan(
     if arm_id not in declared_arms:
         raise ValueError(f"arm {arm_id!r} is absent from the sealed manifest")
     if arm_id == "A8-prime":
-        raise ValueError(
-            "sealed_census_required: A8-prime execution requires a canonical "
-            "manifest- and target-bound census artifact"
-        )
+        if a8_census_binding is None:
+            raise ValueError(
+                "sealed_census_required: A8-prime execution requires a canonical "
+                "manifest- and target-bound census artifact"
+            )
+        _validate_a8_census_binding(sealed, a8_census_binding)
+    elif a8_census_binding is not None:
+        raise ValueError("A8 census binding cannot be attached to another arm")
     if arm_id == "A6":
         if a6_donor_binding is None:
             raise ValueError(
@@ -615,6 +658,8 @@ def build_execution_plan(
     )
     if any(not sites for _, sites in frozen_sites):
         raise ValueError("every Human-13 pack must contain a manifest-bound loss site")
+    if a8_census_binding is not None:
+        _validate_a8_site_margins(frozen_sites, a8_census_binding)
     denominators = _manifest_denominators(manifest, arm_id, coefficients)
     execution = Human13ExecutionPlan(
         manifest_identity=_manifest_identity(sealed),
@@ -627,6 +672,7 @@ def build_execution_plan(
         ),
         sites_by_pack=frozen_sites,
         a6_donor_binding=a6_donor_binding,
+        a8_census_binding=a8_census_binding,
     )
     _validate_sites_against_manifest(
         manifest,
@@ -1042,7 +1088,7 @@ def _manifest_identity(sealed: SealedHuman13Manifest) -> Human13ManifestIdentity
 
 
 def _manifest_frozen_targets_sha256(manifest_value: Any) -> str:
-    """Digest the exact selected-row projection consumed by A6."""
+    """Digest the exact selected-row projection consumed by A6 and A8."""
 
     manifest = (
         manifest_value.manifest
@@ -1071,6 +1117,36 @@ def _manifest_frozen_targets_sha256(manifest_value: Any) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_a8_census_binding(
+    sealed: SealedHuman13Manifest,
+    binding: Human13A8CensusBinding,
+) -> None:
+    if not isinstance(binding, Human13A8CensusBinding):
+        raise ValueError("A8 census binding must be typed and canonical")
+    if binding.manifest_identity != _manifest_identity(sealed):
+        raise ValueError("A8 census binding mismatches the sealed manifest")
+    if binding.frozen_targets_sha256 != _manifest_frozen_targets_sha256(sealed):
+        raise ValueError("A8 census binding mismatches the frozen target census")
+
+
+def _validate_a8_site_margins(
+    sites_by_pack: Sequence[tuple[int, Sequence[Human13LossSite]]],
+    binding: Human13A8CensusBinding,
+) -> None:
+    bottleneck_sites = tuple(
+        site
+        for _pack_index, sites in sites_by_pack
+        for site in sites
+        if site.objective == "bottleneck"
+    )
+    if not bottleneck_sites or any(
+        site.required_margin != binding.required_margin for site in bottleneck_sites
+    ):
+        raise ValueError(
+            "A8 bottleneck site margin must exactly match the frozen census margin"
+        )
 
 
 def _a6_donor_artifact_sha256(binding: Human13A6DonorBinding) -> str:
@@ -1718,10 +1794,15 @@ def _validate_execution_payload(
         raise ValueError("execution plan does not match the sealed manifest identity")
     manifest = sealed.manifest
     if execution.arm_id == "A8-prime":
-        raise ValueError(
-            "sealed_census_required: A8-prime execution requires a canonical "
-            "manifest- and target-bound census artifact"
-        )
+        if execution.a8_census_binding is None:
+            raise ValueError(
+                "sealed_census_required: A8-prime execution requires a canonical "
+                "manifest- and target-bound census artifact"
+            )
+        _validate_a8_census_binding(sealed, execution.a8_census_binding)
+        _validate_a8_site_margins(execution.sites_by_pack, execution.a8_census_binding)
+    elif execution.a8_census_binding is not None:
+        raise ValueError("A8 census binding cannot be attached to another arm")
     if execution.arm_id == "A6":
         if execution.a6_donor_binding is None:
             raise ValueError(

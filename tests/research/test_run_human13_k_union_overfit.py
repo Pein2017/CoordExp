@@ -875,30 +875,133 @@ def test_a6_typed_binding_validates_exact_donor_provenance(
             )
 
 
-def test_a8_prime_execution_is_blocked_until_task4_supplies_a_sealed_census() -> None:
-    sealed, execution, micro_steps = _bound_a1_execution()
-    sealed = SimpleNamespace(
-        **{
-            **vars(sealed),
-            "arms": (SimpleNamespace(arm_id="A8-prime"),),
-        }
-    )
+def test_a8_prime_requires_and_admits_exact_typed_census_binding() -> None:
+    sealed, packed, sites_by_pack = _a8_payload()
+    binding = _a8_binding(sealed)
 
     with pytest.raises(ValueError, match="sealed_census_required"):
         runner.build_execution_plan(
             sealed,
             arm_id="A8-prime",
-            packed_plan=_a1_payload()[1],
-            sites_by_pack=_a1_payload()[2],
+            packed_plan=packed,
+            sites_by_pack=sites_by_pack,
         )
 
-    forged = replace(
-        execution,
+    execution = runner.build_execution_plan(
+        sealed,
         arm_id="A8-prime",
-        coefficients=runner._arm_contract("A8-prime").coefficients,
+        packed_plan=packed,
+        sites_by_pack=sites_by_pack,
+        a8_census_binding=binding,
     )
-    with pytest.raises(ValueError, match="sealed_census_required"):
-        runner._validate_execution_payload(sealed, forged, micro_steps)
+
+    assert execution.a8_census_binding == binding
+    assert {
+        site.required_margin
+        for _pack_index, sites in execution.sites_by_pack
+        for site in sites
+        if site.objective == "bottleneck"
+    } == {0.125}
+
+
+@pytest.mark.parametrize("mutation", ("manifest", "targets", "margin", "untyped"))
+def test_a8_prime_rejects_forged_or_drifted_census_binding(mutation: str) -> None:
+    sealed, packed, sites_by_pack = _a8_payload()
+    binding: object = _a8_binding(sealed)
+    if mutation == "manifest":
+        binding = replace(
+            binding,
+            manifest_identity=replace(binding.manifest_identity, panel_sha256="c" * 64),
+        )
+    elif mutation == "targets":
+        binding = replace(binding, frozen_targets_sha256="c" * 64)
+    elif mutation == "margin":
+        binding = replace(binding, required_margin=0.25)
+    elif mutation == "untyped":
+        binding = SimpleNamespace(**vars(binding))
+
+    with pytest.raises(ValueError, match="A8.*census|census.*A8"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A8-prime",
+            packed_plan=packed,
+            sites_by_pack=sites_by_pack,
+            a8_census_binding=binding,
+        )
+
+
+def test_a8_census_binding_rejects_noncanonical_or_blocked_receipts() -> None:
+    sealed, _packed, _sites_by_pack = _a8_payload()
+    binding = _a8_binding(sealed)
+
+    with pytest.raises(ValueError, match="artifact.*SHA-256"):
+        replace(binding, artifact_sha256="not-a-census-digest")
+    with pytest.raises(ValueError, match="applicable=true"):
+        replace(binding, applicable=False)
+    with pytest.raises(ValueError, match="required margin"):
+        replace(binding, required_margin=0.5001)
+
+
+def test_a8_binding_is_rejected_for_every_other_arm() -> None:
+    sealed, packed, sites_by_pack = _a1_payload()
+
+    with pytest.raises(ValueError, match="A8 census binding cannot"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A1",
+            packed_plan=packed,
+            sites_by_pack=sites_by_pack,
+            a8_census_binding=_a8_binding(sealed),
+        )
+
+
+def test_a8_execution_validation_rechecks_binding_and_every_bottleneck_margin() -> None:
+    sealed, packed, sites_by_pack = _a8_payload()
+    binding = _a8_binding(sealed)
+    execution = runner.build_execution_plan(
+        sealed,
+        arm_id="A8-prime",
+        packed_plan=packed,
+        sites_by_pack=sites_by_pack,
+        a8_census_binding=binding,
+    )
+    micro_steps = runner.build_supervised_micro_steps(
+        packed,
+        denominators=execution.denominators,
+        token_sequences={
+            pack.pack.pack_index: SimpleNamespace(pack_index=pack.pack.pack_index)
+            for pack in packed.packs
+        },
+        vocab_groups=SimpleNamespace(vocab_size=3),
+        sites_by_pack=sites_by_pack,
+        expected_vocab_size=3,
+    )
+
+    forged_binding = replace(
+        execution,
+        a8_census_binding=replace(binding, frozen_targets_sha256="c" * 64),
+    )
+    with pytest.raises(ValueError, match="A8.*census|census.*A8"):
+        runner._validate_execution_payload(sealed, forged_binding, micro_steps)
+
+    drifted_sites = tuple(
+        (
+            pack_index,
+            tuple(
+                replace(site, required_margin=0.25)
+                if site.objective == "bottleneck"
+                else site
+                for site in sites
+            ),
+        )
+        for pack_index, sites in execution.sites_by_pack
+    )
+    with pytest.raises(ValueError, match="A8.*margin|margin.*A8"):
+        runner._validate_execution_payload(
+            sealed,
+            replace(execution, sites_by_pack=drifted_sites),
+            micro_steps,
+        )
 
 
 def test_finalized_artifact_preserves_bounded_family_diagnostics() -> None:
@@ -1437,6 +1540,56 @@ def _a1_payload(
         for pack in packed.packs
     }
     return sealed, packed, sites_by_pack
+
+
+def _a8_payload(
+    *, required_margin: float = 0.125
+) -> tuple[
+    SimpleNamespace,
+    runner.PackedPanelPlan,
+    dict[int, tuple[runner.Human13LossSite, ...]],
+]:
+    sealed = _sealed_manifest(arm_id="A8-prime")
+    a1_segments = _a1_payload()[1].logical_segments
+    packed = runner.plan_panel_packs(
+        tuple(
+            replace(segment, role="a8_full_h")
+            if segment.role == "a1_full_h"
+            else segment
+            for segment in a1_segments
+        ),
+        global_max_length=24,
+    )
+    sites_by_pack = {
+        pack_index: tuple(
+            replace(
+                site,
+                objective="bottleneck",
+                required_margin=required_margin,
+            )
+            if site.family == "h"
+            else site
+            for site in sites
+        )
+        for pack_index, sites in _sites_from_row_bindings(packed).items()
+    }
+    return sealed, packed, sites_by_pack
+
+
+def _a8_binding(
+    sealed: SimpleNamespace, *, required_margin: float = 0.125
+) -> runner.Human13A8CensusBinding:
+    return runner.Human13A8CensusBinding(
+        schema_version="human13_a8_census_binding.v1",
+        census_schema_version="human13_k_union_no_update_census.v1",
+        manifest_identity=runner._manifest_identity(
+            runner._coerce_sealed_manifest(sealed)
+        ),
+        frozen_targets_sha256=runner._manifest_frozen_targets_sha256(sealed),
+        artifact_sha256="d" * 64,
+        applicable=True,
+        required_margin=required_margin,
+    )
 
 
 def _two_h_independent_payload() -> tuple[
