@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-08-07
+updated: 2026-08-12
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -19,6 +19,18 @@ paper thesis. It does not own executed facts, runtime behavior, a final
 architecture, or an implementation contract.
 
 ## Current Live Route
+
+As of `2026-08-12`, the separate interrupted-checkpoint [Owner Bridge Step-611
+Natural-Decode Recall Probe](experiments/2026-08-12-owner-bridge-step611-recall-probe/results.md)
+is the current evidence owner for the permanent OwnerBridge checkpoint only; it
+does not replace the source-specific causal lineage below. The bridge-bound
+human-refined 12+2299 screen is a behavioral `HOLD`: legacy-12 recovers 7
+class+IoU50 owners over 346 GT, image 2299 recovers none over 46, and every
+final route remains non-null at the saturated admission cap before native EOS.
+This rejects a missing-bridge explanation and routes any authorized successor
+to the final-boundary route-to-opener admission seam, not another broad eval or
+new training launch. The already-completed val200 run is supplementary
+prevalence evidence only; the 13-image screen was sufficient.
 
 As of `2026-08-06`, the completed no-training [Static-Dynamic Owner Interface
 Crossover result](experiments/2026-08-05-static-dynamic-owner-interface-crossover/results.md)

@@ -1,0 +1,17 @@
+extends: qwen3_vl_2b_owner_bridge_step611_recall_bridge_smoke16.yaml
+run:
+  name: owner-bridge-step611-recall-bridge-human13-repair1
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-12-owner-bridge-step611-recall-probe/artifacts/inputs/human-refined-13.xy-sorted.coord.jsonl
+generation:
+  batch_size: 2
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+scoring:
+  enabled: true
+debug:
+  smoke: false
+  dry_run: false
