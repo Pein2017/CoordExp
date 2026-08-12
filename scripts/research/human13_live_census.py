@@ -29,6 +29,7 @@ from scripts.research.run_human13_k_union_overfit import (
     plan_panel_packs,
 )
 from src.inference.backend import token_ids_sha256
+from src.qwen.fa2 import build_fa2_varlen_plan
 from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
 
 
@@ -340,7 +341,7 @@ def _default_packed_forward(
         packed.pack,
         packed.encoded_examples,
         packed.position_inputs,
-        fa2_varlen_plan=packed.fa2_varlen_plan,
+        fa2_varlen_plan=build_fa2_varlen_plan(packed.pack, device=device),
         logits_to_keep_positions=positions,
         device=device,
         fa2_branch_proof_policy="human13_no_update_census",

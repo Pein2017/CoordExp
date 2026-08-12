@@ -525,3 +525,50 @@ def test_default_packed_capture_uses_current_compact_qwen_forward_seam(
     assert calls["run"][2]["capture_fa2_branch"] is True
     assert calls["run"][2]["require_fa2_branch_proof"] is True
     assert result.receipt["evidence_count"] == 14
+
+
+def test_default_packed_capture_rebuilds_fa2_metadata_on_runtime_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_device = torch.device("meta")
+    calls: dict[str, Any] = {}
+
+    def fake_build(
+        pack: Any,
+        encoded_examples: Any,
+        position_inputs: Any,
+        **kwargs: Any,
+    ) -> Any:
+        del pack, encoded_examples, position_inputs
+        plan = kwargs["fa2_varlen_plan"]
+        calls["q_device"] = plan.cu_seq_lens_q.device
+        calls["k_device"] = plan.cu_seq_lens_k.device
+        calls["positions"] = kwargs["logits_to_keep_positions"]
+        return SimpleNamespace()
+
+    def fake_run(model: Any, inputs: Any, **kwargs: Any) -> Any:
+        del model, inputs, kwargs
+        positions = calls["positions"]
+        return SimpleNamespace(
+            logits=torch.stack(
+                tuple(_vector(position) for position in positions)
+            ).unsqueeze(0),
+            logits_position_ids=positions,
+        )
+
+    monkeypatch.setattr(live, "build_qwen_forward_inputs", fake_build)
+    monkeypatch.setattr(live, "run_qwen_forward", fake_run)
+
+    capture_human13_live_census(
+        plan=_plan(),
+        prompt_skeletons={1: Skeleton("image:1", PROMPT_IDS, len(PROMPT_IDS))},
+        packed_model=object(),
+        packed_runtime=SimpleNamespace(
+            accelerator=SimpleNamespace(device=runtime_device)
+        ),
+        tokenizer=FakeTokenizer(),
+        hf_scorer=FakeHFScorer(),
+    )
+
+    assert calls["q_device"] == runtime_device
+    assert calls["k_device"] == runtime_device
