@@ -9,6 +9,7 @@ import sys
 import pytest
 import yaml
 
+from scripts.research import build_human13_k_union_manifest as manifest_builder
 import scripts.research.materialize_human13_k_union_configs as materializer
 
 
@@ -26,80 +27,148 @@ BASE_ARMS = (
 
 
 def _write_manifest(path: Path, *, h_mid: bool = True) -> tuple[Path, str, str]:
-    document = {
-        "schema_version": "human13_k_union_manifest.v1",
-        "binding": {
-            "unit_id": materializer.UNIT_ID,
-            "panel": {"panel_sha256": materializer.PANEL_SHA256},
-        },
-        "images": [
-            {
-                "image_id": 2299,
-                "owners": [
-                    {"owner_id": "g", "source_object_index": 8},
-                    {
-                        "owner_id": "h",
-                        "source_object_index": 3 if h_mid else 9,
-                    },
-                ],
-                "g_owner_ids": ["g"],
-                "h_owner_ids": ["h"],
-                "selected_rows": [
-                    {
-                        "owner_id": "h",
-                        "row_id": "target",
-                        "trajectory_id": "sampled",
-                        "token_ids": [21, 22],
-                        "target_token_mask": [True, True],
-                    }
-                ],
-                "trajectories": [
-                    {
-                        "trajectory_id": "sampled",
-                        "raw_token_ids": [11, 12, 91, 92, 21, 22],
-                        "rows": [
-                            {"row_id": "prior", "token_start": 0, "token_end": 2},
-                            {
-                                "row_id": "duplicate",
-                                "token_start": 2,
-                                "token_end": 4,
-                            },
-                            {"row_id": "target", "token_start": 4, "token_end": 6},
-                        ],
-                        "retained_row_ids": ["prior", "target"],
-                        "duplicate_row_ids": ["duplicate"],
-                    }
-                ],
-            }
-        ],
-        "arms": [],
-        "denominators": {},
-        "full_panel": True,
-    }
-    encoded = (
-        json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        + "\n"
-    ).encode()
-    path.write_bytes(encoded)
-    manifest_sha = hashlib.sha256(encoded).hexdigest()
-    Path(f"{path}.sha256").write_text(
-        f"{manifest_sha}  {path.name}\n", encoding="ascii"
+    def request(
+        mode: str, *, seed: int | None = None
+    ) -> manifest_builder.RequestIdentity:
+        if mode == "source_greedy":
+            return manifest_builder.RequestIdentity(
+                backend="hf",
+                backend_version="test-hf",
+                mode="source_greedy",
+                n=1,
+                seed=None,
+                physical_batch_index=0,
+                temperature=0.0,
+                top_p=1.0,
+                repetition_penalty=1.0,
+                max_new_tokens=3084,
+            )
+        assert seed is not None
+        return manifest_builder.RequestIdentity(
+            backend="vllm",
+            backend_version="test-vllm",
+            mode="k_sampled",
+            n=1,
+            seed=seed,
+            physical_batch_index=(seed - 21001) // 4,
+            temperature=0.4,
+            top_p=0.95,
+            repetition_penalty=1.10,
+            max_new_tokens=512,
+        )
+
+    images: list[manifest_builder.ImageInput] = []
+    for frozen in manifest_builder.load_frozen_panel():
+        if frozen.image_id == 2299:
+            g_index = 8 if h_mid else 2
+            g_owner = frozen.owners[g_index]
+            h_owner = frozen.owners[3]
+            source = manifest_builder.TrajectoryInput(
+                trajectory_id="source:2299",
+                request=request("source_greedy"),
+                token_ids=(31, 32, 999),
+                terminal_token_index=2,
+                stop_reason="im_end",
+                parser_status="complete",
+                rows=(
+                    manifest_builder.PredictionRowInput(
+                        row_id="source:2299:g",
+                        row_index=0,
+                        category=g_owner.category,
+                        bbox=g_owner.bbox,
+                        token_start=0,
+                        token_end=2,
+                        final_coordinate_token_index=1,
+                    ),
+                ),
+            )
+        else:
+            source = manifest_builder.TrajectoryInput(
+                trajectory_id=f"source:{frozen.image_id}",
+                request=request("source_greedy"),
+                token_ids=(999,),
+                terminal_token_index=0,
+                stop_reason="im_end",
+                parser_status="complete",
+                rows=(),
+            )
+
+        sampled: list[manifest_builder.TrajectoryInput] = []
+        for seed in manifest_builder.EXPECTED_K_SEEDS:
+            if frozen.image_id == 2299 and seed == 21001:
+                sampled.append(
+                    manifest_builder.TrajectoryInput(
+                        trajectory_id="sampled:2299:21001",
+                        request=request("k_sampled", seed=seed),
+                        token_ids=(11, 12, 21, 22, 999),
+                        terminal_token_index=4,
+                        stop_reason="im_end",
+                        parser_status="complete",
+                        rows=(
+                            manifest_builder.PredictionRowInput(
+                                row_id="sampled:2299:21001:prior",
+                                row_index=0,
+                                category=h_owner.category,
+                                bbox=(0.0, 0.0, 1.0, 1.0),
+                                token_start=0,
+                                token_end=2,
+                                final_coordinate_token_index=1,
+                            ),
+                            manifest_builder.PredictionRowInput(
+                                row_id="sampled:2299:21001:target",
+                                row_index=1,
+                                category=h_owner.category,
+                                bbox=h_owner.bbox,
+                                token_start=2,
+                                token_end=4,
+                                final_coordinate_token_index=3,
+                            ),
+                        ),
+                    )
+                )
+            else:
+                sampled.append(
+                    manifest_builder.TrajectoryInput(
+                        trajectory_id=f"sampled:{frozen.image_id}:{seed}",
+                        request=request("k_sampled", seed=seed),
+                        token_ids=(999,),
+                        terminal_token_index=0,
+                        stop_reason="im_end",
+                        parser_status="complete",
+                        rows=(),
+                    )
+                )
+        images.append(
+            manifest_builder.ImageInput(
+                image_id=frozen.image_id,
+                owners=frozen.owners,
+                source=source,
+                sampled=tuple(sampled),
+                panel_row_sha256=frozen.panel_row_sha256,
+                image_sha256=frozen.image_sha256,
+            )
+        )
+
+    built = manifest_builder.build_manifest(
+        binding=manifest_builder.default_binding(),
+        images=tuple(images),
+        require_full_panel=True,
     )
+    manifest_sha = manifest_builder.canonical_write(built, path)
     frozen_projection = [
         {
-            "image_id": 2299,
+            "image_id": image.image_id,
             "selected_rows": [
                 {
-                    key: document["images"][0]["selected_rows"][0][key]
-                    for key in (
-                        "owner_id",
-                        "row_id",
-                        "token_ids",
-                        "target_token_mask",
-                    )
+                    "owner_id": row.owner_id,
+                    "row_id": row.row_id,
+                    "token_ids": list(row.token_ids),
+                    "target_token_mask": list(row.target_token_mask),
                 }
+                for row in image.selected_rows
             ],
         }
+        for image in built.images
     ]
     frozen_sha = hashlib.sha256(
         json.dumps(
@@ -120,7 +189,7 @@ def _write_census(path: Path, *, frozen_sha: str, applicable: bool = True) -> Pa
         {
             "site_index": index,
             "image_id": "2299",
-            "owner_id": "h",
+            "owner_id": "gt:2299:3",
             "token_offset": index,
             "target_token_id": 21 + index,
             "token_role": "coordinate",
@@ -165,7 +234,7 @@ def _write_census(path: Path, *, frozen_sha: str, applicable: bool = True) -> Pa
                         },
                     ],
                     "projected_token_ids": [21, 22],
-                    "projected_owner_ids": ["h"],
+                    "projected_owner_ids": ["gt:2299:3"],
                     "reached_native_leaf": True,
                 }
             ],
@@ -327,11 +396,11 @@ def test_materializer_binds_applicable_a6_and_a8_and_isolates_every_arm(
     assert a6["a6_donor_binding"]["donors"] == (
         {
             "image_id": 2299,
-            "owner_id": "h",
-            "target_row_id": "target",
-            "donor_trajectory_id": "sampled",
+            "owner_id": "gt:2299:3",
+            "target_row_id": "sampled:2299:21001:target",
+            "donor_trajectory_id": "sampled:2299:21001",
             "donor_prefix_token_ids": (11, 12),
-            "donor_prior_row_ids": ("prior",),
+            "donor_prior_row_ids": ("sampled:2299:21001:prior",),
             "h_mid_eligible": True,
         },
     )
@@ -449,7 +518,10 @@ def test_a6_is_derived_from_manifest_and_omitted_without_h_mid(tmp_path: Path) -
     ] == "sealed_eligible_h_mid_donor_unavailable"
 
 
-def test_manifest_bound_materialization_still_imports_no_model_runtime() -> None:
+def test_manifest_bound_materialization_still_imports_no_model_runtime(
+    tmp_path: Path,
+) -> None:
+    manifest, _, _ = _write_manifest(tmp_path / "manifest.json")
     code = """
 import json
 import sys
@@ -458,27 +530,7 @@ from pathlib import Path
 import scripts.research.materialize_human13_k_union_configs as materializer
 
 root = Path(tempfile.mkdtemp(prefix='human13-manifest-proof-'))
-document = {
-    'schema_version': 'human13_k_union_manifest.v1',
-    'binding': {'unit_id': materializer.UNIT_ID, 'panel': {'panel_sha256': materializer.PANEL_SHA256}},
-    'images': [{
-        'image_id': 1,
-        'owners': [{'owner_id': 'g', 'source_object_index': 0}, {'owner_id': 'h', 'source_object_index': 1}],
-        'g_owner_ids': ['g'],
-        'h_owner_ids': ['h'],
-        'selected_rows': [{'owner_id': 'h', 'row_id': 'target', 'trajectory_id': 'sampled', 'token_ids': [2], 'target_token_mask': [True]}],
-        'trajectories': [{'trajectory_id': 'sampled', 'raw_token_ids': [1, 2], 'rows': [{'row_id': 'prior', 'token_start': 0, 'token_end': 1}, {'row_id': 'target', 'token_start': 1, 'token_end': 2}], 'retained_row_ids': ['prior', 'target'], 'duplicate_row_ids': []}],
-    }],
-    'arms': [],
-    'denominators': {},
-    'full_panel': True,
-}
-payload = (json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\\n').encode()
-manifest = root / 'manifest.json'
-manifest.write_bytes(payload)
-import hashlib
-digest = hashlib.sha256(payload).hexdigest()
-Path(f'{manifest}.sha256').write_text(f'{digest}  {manifest.name}\\n', encoding='ascii')
+manifest = Path(sys.argv[1])
 materializer.materialize_plans(
     output_root=root / 'runs',
     run_id='manifest-proof',
@@ -500,7 +552,7 @@ forbidden = sorted(
 print(json.dumps(forbidden))
 """
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, str(manifest)],
         check=True,
         capture_output=True,
         text=True,
@@ -509,12 +561,13 @@ print(json.dumps(forbidden))
 
 
 @pytest.mark.parametrize("mutation", ("owner", "row", "trajectory"))
-def test_a6_manifest_rejects_invented_selected_provenance(
+def test_materializer_rejects_resealed_semantic_manifest_mutation(
     tmp_path: Path, mutation: str
 ) -> None:
     manifest, _, _ = _write_manifest(tmp_path / "manifest.json")
     raw = json.loads(manifest.read_text(encoding="utf-8"))
-    selected = raw["images"][0]["selected_rows"][0]
+    target_image = next(image for image in raw["images"] if image["selected_rows"])
+    selected = target_image["selected_rows"][0]
     selected[
         {"owner": "owner_id", "row": "row_id", "trajectory": "trajectory_id"}[mutation]
     ] = "invented"
@@ -526,7 +579,9 @@ def test_a6_manifest_rejects_invented_selected_provenance(
     Path(f"{manifest}.sha256").write_text(
         f"{digest}  {manifest.name}\n", encoding="ascii"
     )
-    with pytest.raises(materializer.MaterializationError, match="A6.*provenance"):
+    with pytest.raises(
+        materializer.MaterializationError, match="canonical full-panel admission"
+    ):
         materializer.materialize_plans(
             output_root=tmp_path / "runs",
             run_id=f"bad-{mutation}",

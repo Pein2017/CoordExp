@@ -14,6 +14,8 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any, Mapping, Sequence
 
 import yaml
@@ -419,6 +421,29 @@ def a6_binding_to_dict(binding: Human13A6DonorBinding) -> dict[str, Any]:
 def _load_manifest_document(
     path: Path,
 ) -> tuple[Mapping[str, Any], Human13ManifestIdentity, str]:
+    # Admission belongs to the canonical manifest owner.  Run that validator in
+    # a bounded CPU subprocess so this materializer remains free of model-stack
+    # imports while still reusing the one authoritative semantic validator.
+    admission = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "from scripts.research.build_human13_k_union_manifest "
+                "import load_manifest; "
+                "load_manifest(sys.argv[1], require_full_panel=True)"
+            ),
+            str(path.resolve()),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if admission.returncode != 0:
+        raise MaterializationError(
+            "sealed Human-13 manifest failed canonical full-panel admission"
+        )
     payload = path.read_bytes()
     raw = _mapping(json.loads(payload), "sealed Human-13 manifest")
     _exact_fields(
@@ -512,6 +537,8 @@ def _derive_a6_binding(
             raise MaterializationError("A6 owner provenance is not unique")
         h_owner_ids = tuple(str(item) for item in image.get("h_owner_ids", ()))
         g_owner_ids = tuple(str(item) for item in image.get("g_owner_ids", ()))
+        if not h_owner_ids or not g_owner_ids:
+            continue
         try:
             max_g_index = max(
                 int(owners_by_id[owner_id]["source_object_index"])
