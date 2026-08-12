@@ -75,7 +75,6 @@ def _manifest():
                     (),
                     {
                         "image_id": 1,
-                        "source": source,
                         "trajectories": (source, sampled),
                         "owners": (owner,),
                         "selected_rows": (selected,),
@@ -217,7 +216,6 @@ def test_source_replay_binding_is_offset_after_multimodal_prompt():
         (),
         {
             "image_id": 1,
-            "source": source,
             "trajectories": (source,),
             "owners": (owner,),
             "selected_rows": (),

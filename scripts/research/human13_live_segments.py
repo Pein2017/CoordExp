@@ -75,6 +75,7 @@ def materialize_segments(
             raise ValueError(f"invalid prompt token count for image {image_id}")
 
         selected = {row.row_id: row for row in image.selected_rows}
+        source = _source_trajectory(image)
         h_rows = tuple(
             row
             for row in image.selected_rows
@@ -93,7 +94,7 @@ def materialize_segments(
             )
             return segment
 
-        clean = tuple(image.source.prefix.clean_token_ids)
+        clean = tuple(source.prefix.clean_token_ids)
         all_h = tuple(token for row in h_rows for token in row.token_ids)
         all_h_bindings = _bindings(
             "h",
@@ -148,7 +149,7 @@ def materialize_segments(
 
         # Source replay keeps the clean source prefix and only matched rows.
         source_rows = tuple(
-            r for r in image.source.rows if r.row_id in set(image.replay_row_ids)
+            r for r in source.rows if r.row_id in set(image.replay_row_ids)
         )
         owner_by_row = {
             row_id: owner.owner_id
@@ -160,7 +161,7 @@ def materialize_segments(
                 "source_replay",
                 clean,
                 _replay_bindings(
-                    image.source,
+                    source,
                     source_rows,
                     owner_by_row,
                     prompt_token_count=prompt_count,
@@ -240,6 +241,21 @@ def materialize_segments(
     # must not prevent materializing A0/A1/etc. from the same frozen manifest.
     result.preflight(global_max_length, enforce_a4_aggregate=False)
     return result
+
+
+def _source_trajectory(image: Any) -> Any:
+    sources = tuple(
+        trajectory
+        for trajectory in getattr(image, "trajectories", ())
+        if getattr(getattr(trajectory, "request", None), "mode", None)
+        == "source_greedy"
+    )
+    if len(sources) != 1:
+        raise ValueError(
+            f"image {getattr(image, 'image_id', '<unknown>')} must contain exactly "
+            "one source_greedy trajectory"
+        )
+    return sources[0]
 
 
 def _bindings(
