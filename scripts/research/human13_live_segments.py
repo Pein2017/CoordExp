@@ -102,8 +102,9 @@ def materialize_segments(
             prompt_count + len(clean),
             unit_by_row={row.row_id: row.owner_id for row in h_rows},
         )
-        segments.append(add("a1_full_h", clean + all_h, all_h_bindings, "a1"))
-        segments.append(add("a8_full_h", clean + all_h, all_h_bindings, "a8-prime"))
+        if h_rows:
+            segments.append(add("a1_full_h", clean + all_h, all_h_bindings, "a1"))
+            segments.append(add("a8_full_h", clean + all_h, all_h_bindings, "a8-prime"))
         for row in h_rows:
             segments.append(
                 add(

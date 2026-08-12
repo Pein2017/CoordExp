@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
@@ -167,6 +168,38 @@ def test_a4_aggregate_does_not_block_non_a4_materialization():
         global_max_length=8,
     )
     result.preflight(8)
+
+
+def test_image_without_h_owners_does_not_emit_empty_h_segments():
+    manifest = _manifest()
+    image = manifest.images[0]
+    source = image.trajectories[0]
+    g_owner = SimpleNamespace(
+        owner_id="gt:1:0",
+        stratum="G",
+        source_row_ids=(),
+        sampled_row_ids=(),
+    )
+    no_h_image = SimpleNamespace(
+        image_id=1,
+        trajectories=(source,),
+        owners=(g_owner,),
+        selected_rows=(),
+        duplicate_events=(),
+        replay_row_ids=(),
+        target_row_ids=(),
+        candidate_row_ids=(),
+    )
+    no_h_manifest = SimpleNamespace(images=(no_h_image,))
+    skeleton = Skeleton("image:1", (7, 8, 9), 3, {"gt:1:0": (30, 31)})
+
+    result = materialize_segments(no_h_manifest, {1: skeleton})
+
+    roles = {segment.role for segment in result.segments}
+    assert "a1_full_h" not in roles
+    assert "a8_full_h" not in roles
+    assert "h1_independent" not in roles
+    assert "a6_donor_h1" not in roles
 
 
 def test_materialized_a4_candidates_are_independent_runner_segments():
