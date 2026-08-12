@@ -518,6 +518,8 @@ def test_live_assembly_rejects_trainable_source_delta_or_nonfresh_optimizer(
 def test_processor_skeletons_bind_exact_prompt_counts_and_owner_row_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.config.models import TemplateConfig, TemplatePromptConfig
+
     manifest, raws = _canonical_fake_manifest_and_rows()
     components = SimpleNamespace(
         processor="processor",
@@ -525,11 +527,11 @@ def test_processor_skeletons_bind_exact_prompt_counts_and_owner_row_tokens(
         processor_identity="processor-identity",
         tokenizer_sha256=live.SOURCE_TOKENIZER_SHA256,
     )
-    template = SimpleNamespace(
+    template = TemplateConfig(
         object_field_order="desc_first",
         object_ordering="geo_sorted_xy",
         assistant_format="object_box_closed",
-        prompt=SimpleNamespace(system="system", user="user"),
+        prompt=TemplatePromptConfig(system="system", user="user"),
     )
     resolved = SimpleNamespace(
         config=SimpleNamespace(
@@ -545,10 +547,16 @@ def test_processor_skeletons_bind_exact_prompt_counts_and_owner_row_tokens(
         assert template_config.object_ordering == "geo_sorted_xy"
         return SimpleNamespace(
             example_id=raw.example_id,
-            template_fingerprint=live.HUMAN13_PROMPT_POLICY_FINGERPRINT,
+            # Renderer identity and inference prompt-policy identity are two
+            # intentionally distinct contracts.
+            template_fingerprint="renderer-template-fingerprint",
         )
 
     monkeypatch.setattr("src.templates.render_example", fake_render)
+    monkeypatch.setattr(
+        "scripts.research.collect_human13_discovery._prompt_policy_fingerprint",
+        lambda _: live.HUMAN13_PROMPT_POLICY_FINGERPRINT,
+    )
 
     def fake_encode(raw: Any, rendered: Any, **kwargs: Any) -> _FakeEncoded:
         assert rendered.example_id == raw.example_id

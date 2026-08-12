@@ -775,6 +775,9 @@ def build_human13_processor_skeletons(
     from src.data import load_raw_examples
     from src.qwen import encode_rendered_example
     from src.templates import render_example
+    from scripts.research.collect_human13_discovery import (
+        _prompt_policy_fingerprint,
+    )
 
     resolved = load_infer_config(root / HUMAN13_SOURCE_INFER_CONFIG)
     infer_config = resolved.config
@@ -798,6 +801,8 @@ def build_human13_processor_skeletons(
         template.assistant_format,
     ) != ("desc_first", "geo_sorted_xy", "object_box_closed"):
         raise Human13LiveModelError("Source prompt template structure drifted")
+    if _prompt_policy_fingerprint(resolved) != HUMAN13_PROMPT_POLICY_FINGERPRINT:
+        raise Human13LiveModelError("Source prompt-policy fingerprint drifted")
     processor_config = ProcessorConfig(
         do_resize=False,
         max_raw_pixels=1_000_000_000,
@@ -821,10 +826,6 @@ def build_human13_processor_skeletons(
                 f"canonical panel lacks manifest image {image_id}"
             )
         rendered = render_example(raw, template)
-        if rendered.template_fingerprint != HUMAN13_PROMPT_POLICY_FINGERPRINT:
-            raise Human13LiveModelError(
-                f"prompt-policy fingerprint drifted for image {image_id}"
-            )
         encoded = encode_rendered_example(
             raw,
             rendered,
