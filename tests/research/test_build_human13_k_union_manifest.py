@@ -629,3 +629,147 @@ def test_canonical_write_rejects_invalid_direct_manifest(tmp_path: Path) -> None
         manifest_builder.canonical_write(invalid, tmp_path / "invalid.json")
 
     assert not (tmp_path / "invalid.json").exists()
+
+
+def _trajectory_with_owner_rows(
+    trajectory_id: str,
+    request: manifest_builder.RequestIdentity,
+    owner_indices: tuple[int, ...],
+) -> manifest_builder.TrajectoryInput:
+    token_ids = [100]
+    rows = []
+    for row_index, owner_index in enumerate(owner_indices):
+        token_start = len(token_ids)
+        token_ids.extend((1000 + owner_index * 4 + offset for offset in range(4)))
+        rows.append(
+            manifest_builder.PredictionRowInput(
+                row_id=f"{trajectory_id}-row-{owner_index}",
+                row_index=row_index,
+                category="person",
+                bbox=(
+                    float(owner_index * 20),
+                    0.0,
+                    float(owner_index * 20 + 10),
+                    10.0,
+                ),
+                token_start=token_start,
+                token_end=token_start + 4,
+                final_coordinate_token_index=token_start + 2,
+            )
+        )
+    terminal_token_index = len(token_ids)
+    token_ids.append(999)
+    return manifest_builder.TrajectoryInput(
+        trajectory_id=trajectory_id,
+        request=request,
+        token_ids=tuple(token_ids),
+        terminal_token_index=terminal_token_index,
+        stop_reason="im_end",
+        parser_status="complete",
+        rows=tuple(rows),
+    )
+
+
+def test_owner_and_residual_orders_follow_source_object_index_not_owner_id() -> None:
+    owners = tuple(
+        manifest_builder.OwnerInput(
+            owner_id=f"gt:2299:{owner_index}",
+            category="person",
+            bbox=(
+                float(owner_index * 20),
+                0.0,
+                float(owner_index * 20 + 10),
+                10.0,
+            ),
+            source_object_index=owner_index,
+        )
+        for owner_index in range(13)
+    )
+    source = _trajectory_with_owner_rows(
+        "source-ordered", _request("source_greedy"), (2, 10)
+    )
+    first_k = _trajectory_with_owner_rows(
+        "k-21001-ordered", _request("k_sampled", seed=21001), (3, 11)
+    )
+    image = manifest_builder.ImageInput(
+        image_id=2299,
+        owners=owners,
+        source=source,
+        sampled=(first_k,) + tuple(_empty_sample(seed) for seed in range(21002, 21017)),
+    )
+
+    record = manifest_builder.build_manifest(
+        binding=manifest_builder.default_binding(),
+        images=(image,),
+        require_full_panel=False,
+    ).images[0]
+
+    assert record.g_owner_ids == ("gt:2299:2", "gt:2299:10")
+    assert record.h_owner_ids == ("gt:2299:3", "gt:2299:11")
+    assert record.m_owner_ids == (
+        "gt:2299:0",
+        "gt:2299:1",
+        "gt:2299:4",
+        "gt:2299:5",
+        "gt:2299:6",
+        "gt:2299:7",
+        "gt:2299:8",
+        "gt:2299:9",
+        "gt:2299:12",
+    )
+    assert tuple(row.owner_id for row in record.selected_rows) == (
+        "gt:2299:3",
+        "gt:2299:11",
+    )
+    assert record.target_row_ids == (
+        "k-21001-ordered-row-3",
+        "k-21001-ordered-row-11",
+    )
+    assert record.candidate_row_ids == (
+        "k-21001-ordered-row-3",
+        "k-21001-ordered-row-11",
+    )
+
+
+def test_matching_normalizes_coco_category_case_and_whitespace() -> None:
+    owner = manifest_builder.OwnerInput(
+        owner_id="gt:2299:0",
+        category=" Wine   Glass ",
+        bbox=(0.0, 0.0, 10.0, 10.0),
+        source_object_index=0,
+    )
+    source = manifest_builder.TrajectoryInput(
+        trajectory_id="source-category-normalized",
+        request=_request("source_greedy"),
+        token_ids=(100, 11, 12, 13, 14, 999),
+        terminal_token_index=5,
+        stop_reason="im_end",
+        parser_status="complete",
+        rows=(
+            manifest_builder.PredictionRowInput(
+                row_id="source-wine-glass",
+                row_index=0,
+                category="wine GLASS",
+                bbox=(0.0, 0.0, 10.0, 10.0),
+                token_start=1,
+                token_end=5,
+                final_coordinate_token_index=3,
+            ),
+        ),
+    )
+    image = manifest_builder.ImageInput(
+        image_id=2299,
+        owners=(owner,),
+        source=source,
+        sampled=tuple(_empty_sample(seed) for seed in range(21001, 21017)),
+    )
+
+    record = manifest_builder.build_manifest(
+        binding=manifest_builder.default_binding(),
+        images=(image,),
+        require_full_panel=False,
+    ).images[0]
+
+    assert record.g_owner_ids == ("gt:2299:0",)
+    assert record.m_owner_ids == ()
+    assert record.replay_row_ids == ("source-wine-glass",)

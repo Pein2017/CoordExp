@@ -19,6 +19,7 @@ from scripts.research.compare_clean_rollout_owner_coverage import (
     iou_xyxy,
 )
 from src.data.geometry import coord_bins_to_pixel_xyxy, parse_source_bbox_tokens
+from src.eval.detection_categories import normalize_coco_category_name
 
 
 SCHEMA_VERSION = "human13_k_union_manifest.v1"
@@ -541,8 +542,10 @@ def _build_trajectory(
         else:
             duplicate_reference[row.row_id] = duplicate_of
 
-    gt = [(owner.category, owner.bbox) for owner in owners]
-    pred = [(row.category, row.bbox) for row in retained]
+    gt = [
+        (normalize_coco_category_name(owner.category), owner.bbox) for owner in owners
+    ]
+    pred = [(normalize_coco_category_name(row.category), row.bbox) for row in retained]
     matches = _global_matches(gt, pred, 0.50)
     matched_owner_by_row = {
         retained[pred_index].row_id: (owners[owner_index].owner_id, overlap)
@@ -680,11 +683,20 @@ def _build_image(image: ImageInput) -> ImageRecord:
         for owner_id, _ in trajectory.matched_owner_by_row.values()
     }
     h_owner_ids_set = sampled_owner_ids - source_owner_ids
+    owner_order = {
+        owner.owner_id: (owner.source_object_index, owner.owner_id)
+        for owner in image.owners
+    }
+
+    def ordered_owner_ids(owner_ids: Sequence[str] | set[str]) -> tuple[str, ...]:
+        return tuple(sorted(owner_ids, key=owner_order.__getitem__))
 
     occurrence_by_owner: dict[
         str, list[tuple[float, int, int, str, str, tuple[int, ...]]]
     ] = {}
-    candidate_occurrences: list[tuple[int, int, str, tuple[int, ...]]] = []
+    candidate_occurrences: list[
+        tuple[tuple[int, str], int, int, str, tuple[int, ...]]
+    ] = []
     for trajectory_input, trajectory_build in zip(trajectories[1:], sampled_built):
         seed = trajectory_input.request.seed
         assert seed is not None
@@ -707,10 +719,12 @@ def _build_image(image: ImageInput) -> ImageRecord:
                     tokens,
                 )
             )
-            candidate_occurrences.append((seed, row.row_index, row_id, tokens))
+            candidate_occurrences.append(
+                (owner_order[owner_id], seed, row.row_index, row_id, tokens)
+            )
 
     selected_rows: list[SelectedRowRecord] = []
-    for owner_id in sorted(h_owner_ids_set):
+    for owner_id in ordered_owner_ids(h_owner_ids_set):
         occurrences = occurrence_by_owner[owner_id]
         overlap, seed, row_index, row_id, trajectory_id, tokens = min(
             occurrences,
@@ -731,7 +745,7 @@ def _build_image(image: ImageInput) -> ImageRecord:
 
     seen_candidate_tokens: set[tuple[int, ...]] = set()
     candidate_row_ids: list[str] = []
-    for _, _, row_id, tokens in sorted(candidate_occurrences):
+    for _, _, _, row_id, tokens in sorted(candidate_occurrences):
         if tokens in seen_candidate_tokens:
             continue
         seen_candidate_tokens.add(tokens)
@@ -798,14 +812,14 @@ def _build_image(image: ImageInput) -> ImageRecord:
         trajectories=tuple(item.record for item in built),
         duplicate_events=tuple(event for item in built for event in item.events),
         selected_rows=tuple(selected_rows),
-        g_owner_ids=tuple(sorted(source_owner_ids)),
-        h_owner_ids=tuple(sorted(h_owner_ids_set)),
-        m_owner_ids=tuple(
-            sorted(
+        g_owner_ids=ordered_owner_ids(source_owner_ids),
+        h_owner_ids=ordered_owner_ids(h_owner_ids_set),
+        m_owner_ids=ordered_owner_ids(
+            {
                 owner.owner_id
                 for owner in image.owners
                 if owner.owner_id not in source_owner_ids | sampled_owner_ids
-            )
+            }
         ),
         replay_row_ids=replay_row_ids,
         target_row_ids=target_row_ids,
