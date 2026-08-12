@@ -531,3 +531,101 @@ def test_load_rejects_altered_arm_identity_even_with_matching_digest(
 
     with pytest.raises(ValueError, match="arm identities"):
         manifest_builder.load_manifest(path, require_full_panel=False)
+
+
+def _empty_source(image_id: int) -> manifest_builder.TrajectoryInput:
+    return manifest_builder.TrajectoryInput(
+        trajectory_id=f"source-{image_id}",
+        request=_request("source_greedy"),
+        token_ids=(900, 999),
+        terminal_token_index=1,
+        stop_reason="im_end",
+        parser_status="complete",
+        rows=(),
+    )
+
+
+def test_full_panel_rejects_substituted_bytes_before_count_admission(
+    tmp_path: Path,
+) -> None:
+    images = []
+    for image_index, (image_id, _) in enumerate(EXPECTED_IMAGE_IDENTITIES):
+        owner_count = 32 if image_index == 12 else 30
+        owners = tuple(
+            manifest_builder.OwnerInput(
+                owner_id=f"gt:{image_id}:{owner_index}",
+                category="person",
+                bbox=(
+                    float(owner_index),
+                    0.0,
+                    float(owner_index + 1),
+                    1.0,
+                ),
+                source_object_index=owner_index,
+            )
+            for owner_index in range(owner_count)
+        )
+        images.append(
+            manifest_builder.ImageInput(
+                image_id=image_id,
+                owners=owners,
+                source=_empty_source(image_id),
+                sampled=tuple(_empty_sample(seed) for seed in range(21001, 21017)),
+            )
+        )
+    substituted_panel = tmp_path / "substituted-panel.jsonl"
+    substituted_panel.write_text(
+        "".join(
+            json.dumps({"image_id": image_id, "objects": []}, separators=(",", ":"))
+            + "\n"
+            for image_id, _ in EXPECTED_IMAGE_IDENTITIES
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="panel SHA-256"):
+        manifest_builder.build_manifest(
+            binding=manifest_builder.default_binding(),
+            images=tuple(images),
+            panel_path=substituted_panel,
+            require_full_panel=True,
+        )
+
+
+def test_load_rejects_raw_row_provenance_mutation_with_matching_digest(
+    tmp_path: Path,
+) -> None:
+    built = _build_dense_fixture()
+    path = tmp_path / "row-mutated.json"
+    manifest_builder.canonical_write(built, path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    source = document["images"][0]["trajectories"][0]
+    source["rows"][1]["bbox"] = [70.0, 70.0, 80.0, 80.0]
+    payload = (
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    path.write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    (tmp_path / "row-mutated.json.sha256").write_text(
+        f"{digest}  row-mutated.json\n", encoding="ascii"
+    )
+
+    with pytest.raises(ValueError, match="meaning-bearing projections"):
+        manifest_builder.load_manifest(path, require_full_panel=False)
+
+
+def test_canonical_write_rejects_invalid_direct_manifest(tmp_path: Path) -> None:
+    built = _build_dense_fixture()
+    invalid_image = replace(built.images[0], g_owner_ids=())
+    invalid = replace(built, images=(invalid_image,))
+
+    with pytest.raises(ValueError, match="meaning-bearing projections"):
+        manifest_builder.canonical_write(invalid, tmp_path / "invalid.json")
+
+    assert not (tmp_path / "invalid.json").exists()

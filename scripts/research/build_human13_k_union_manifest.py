@@ -18,12 +18,18 @@ from scripts.research.compare_clean_rollout_owner_coverage import (
     _global_matches,
     iou_xyxy,
 )
+from src.data.geometry import coord_bins_to_pixel_xyxy, parse_source_bbox_tokens
 
 
 SCHEMA_VERSION = "human13_k_union_manifest.v1"
 UNIT_ID = "2026-08-12-human13-k-union-to-greedy-overfit-screen"
 PURPOSE = "overfit_only"
 PANEL_SHA256 = "5c6cc95965c6dd24d7f61f09a0c56edb71eb5a9a05664fa7d26269718f741f23"
+PANEL_PATH = (
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
+    "2026-08-05-static-dynamic-owner-interface-crossover/inputs/"
+    "human-refined-13.geo_sorted_xy.coord.jsonl"
+)
 
 EXPECTED_IMAGE_IDENTITIES = (
     (1584, "06b9d29a50b896f1bec14a267a57016723e54e205a1d1a40088237d95ce91206"),
@@ -148,6 +154,16 @@ class ImageInput:
     owners: tuple[OwnerInput, ...]
     source: TrajectoryInput
     sampled: tuple[TrajectoryInput, ...]
+    panel_row_sha256: str | None = None
+    image_sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class FrozenPanelRow:
+    image_id: int
+    panel_row_sha256: str
+    image_sha256: str
+    owners: tuple[OwnerInput, ...]
 
 
 @dataclass(frozen=True)
@@ -200,6 +216,7 @@ class TrajectoryRecord:
     terminal_token_index: int | None
     stop_reason: str
     parser_status: str
+    rows: tuple[PredictionRowInput, ...]
     prefix: PrefixRecord
     retained_row_ids: tuple[str, ...]
     duplicate_row_ids: tuple[str, ...]
@@ -211,6 +228,8 @@ class TrajectoryRecord:
 @dataclass(frozen=True)
 class ImageRecord:
     image_id: int
+    panel_row_sha256: str | None
+    image_sha256: str | None
     owners: tuple[OwnerRecord, ...]
     trajectories: tuple[TrajectoryRecord, ...]
     duplicate_events: tuple[DuplicateEventRecord, ...]
@@ -298,6 +317,102 @@ def default_binding() -> BindingIdentity:
             target_row_rule="max_owner_iou_then_seed_then_row_index",
         ),
     )
+
+
+def load_frozen_panel(path: str | Path = PANEL_PATH) -> tuple[FrozenPanelRow, ...]:
+    """Load only the exact canonical panel and bind each row to image bytes."""
+
+    panel_path = Path(path).expanduser().resolve(strict=True)
+    payload = panel_path.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != PANEL_SHA256:
+        raise ValueError("panel SHA-256 does not match the frozen Human-13 panel")
+    raw_lines = tuple(line for line in payload.splitlines() if line.strip())
+    if len(raw_lines) != len(EXPECTED_IMAGE_IDENTITIES):
+        raise ValueError("frozen Human-13 panel must contain exactly thirteen rows")
+    expected_images = dict(EXPECTED_IMAGE_IDENTITIES)
+    rows: list[FrozenPanelRow] = []
+    for row_index, raw_line in enumerate(raw_lines):
+        document = json.loads(raw_line)
+        if not isinstance(document, Mapping):
+            raise ValueError(f"panel row {row_index} must be an object")
+        image_id = int(document.get("image_id"))
+        expected_image_id = EXPECTED_IMAGE_IDENTITIES[row_index][0]
+        if image_id != expected_image_id:
+            raise ValueError("panel row identities are not in canonical Human-13 order")
+        image_refs = document.get("images")
+        if not isinstance(image_refs, list) or len(image_refs) != 1:
+            raise ValueError(f"panel row {image_id} must declare exactly one image")
+        image_path = (panel_path.parent / str(image_refs[0])).resolve(strict=True)
+        image_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
+        if image_sha256 != expected_images[image_id]:
+            raise ValueError(f"image-content SHA-256 mismatch for image {image_id}")
+        width = document.get("width")
+        height = document.get("height")
+        objects = document.get("objects")
+        if not isinstance(width, int) or not isinstance(height, int):
+            raise ValueError(f"panel row {image_id} has invalid dimensions")
+        if not isinstance(objects, list):
+            raise ValueError(f"panel row {image_id} has invalid objects")
+        owners: list[OwnerInput] = []
+        for object_index, obj in enumerate(objects):
+            if not isinstance(obj, Mapping):
+                raise ValueError(
+                    f"panel row {image_id} object {object_index} is invalid"
+                )
+            bins = parse_source_bbox_tokens(
+                obj.get("bbox_2d"), field=f"panel[{image_id}].objects[{object_index}]"
+            )
+            bbox = coord_bins_to_pixel_xyxy(
+                bins,
+                image_width=width,
+                image_height=height,
+                field=f"panel[{image_id}].objects[{object_index}]",
+            )
+            category = obj.get("category_name", obj.get("desc"))
+            if not isinstance(category, str) or not category:
+                raise ValueError(
+                    f"panel row {image_id} object {object_index} has no category"
+                )
+            owners.append(
+                OwnerInput(
+                    owner_id=f"gt:{image_id}:{object_index}",
+                    category=category,
+                    bbox=tuple(float(item) for item in bbox),
+                    source_object_index=object_index,
+                )
+            )
+        rows.append(
+            FrozenPanelRow(
+                image_id=image_id,
+                panel_row_sha256=hashlib.sha256(raw_line).hexdigest(),
+                image_sha256=image_sha256,
+                owners=tuple(owners),
+            )
+        )
+    if sum(len(row.owners) for row in rows) != 392:
+        raise ValueError("frozen Human-13 panel must contain exactly 392 owners")
+    return tuple(rows)
+
+
+def _validate_full_panel_inputs(
+    images: Sequence[ImageInput], *, panel_path: str | Path
+) -> None:
+    frozen_rows = load_frozen_panel(panel_path)
+    if tuple(image.image_id for image in images) != tuple(
+        row.image_id for row in frozen_rows
+    ):
+        raise ValueError("full Human-13 input does not match canonical row order")
+    for image, frozen in zip(images, frozen_rows):
+        if image.panel_row_sha256 != frozen.panel_row_sha256:
+            raise ValueError(f"panel-row SHA-256 mismatch for image {image.image_id}")
+        if image.image_sha256 != frozen.image_sha256:
+            raise ValueError(
+                f"image-content SHA-256 mismatch for image {image.image_id}"
+            )
+        if image.owners != frozen.owners:
+            raise ValueError(
+                f"owner identities do not match panel row {image.image_id}"
+            )
 
 
 def _validate_binding(binding: BindingIdentity) -> None:
@@ -483,6 +598,7 @@ def _build_trajectory(
         terminal_token_index=terminal,
         stop_reason=trajectory.stop_reason,
         parser_status=trajectory.parser_status,
+        rows=rows,
         prefix=PrefixRecord(
             raw_token_ids=raw_prefix,
             clean_token_ids=clean_prefix,
@@ -676,6 +792,8 @@ def _build_image(image: ImageInput) -> ImageRecord:
 
     return ImageRecord(
         image_id=image.image_id,
+        panel_row_sha256=image.panel_row_sha256,
+        image_sha256=image.image_sha256,
         owners=tuple(owner_records),
         trajectories=tuple(item.record for item in built),
         duplicate_events=tuple(event for item in built for event in item.events),
@@ -699,6 +817,7 @@ def build_manifest(
     *,
     binding: BindingIdentity,
     images: Sequence[ImageInput],
+    panel_path: str | Path = PANEL_PATH,
     require_full_panel: bool = True,
 ) -> Human13KUnionManifest:
     """Build a manifest; partial inputs are mechanics-only and fail full admission."""
@@ -715,11 +834,17 @@ def build_manifest(
             images, key=lambda item: panel_order.get(item.image_id, 10**9)
         )
     )
-    full_panel = (
+    full_panel_candidate = (
         tuple(item.image_id for item in image_records)
         == tuple(item[0] for item in EXPECTED_IMAGE_IDENTITIES)
         and sum(len(item.owners) for item in image_records) == 392
     )
+    if full_panel_candidate or require_full_panel:
+        ordered_inputs = tuple(
+            sorted(images, key=lambda item: panel_order.get(item.image_id, 10**9))
+        )
+        _validate_full_panel_inputs(ordered_inputs, panel_path=panel_path)
+    full_panel = full_panel_candidate
     if require_full_panel and not full_panel:
         raise ValueError(
             "full Human-13 manifest requires all thirteen images and 392 owners"
@@ -763,6 +888,7 @@ def _canonical_bytes(value: Human13KUnionManifest) -> bytes:
 def canonical_write(value: Human13KUnionManifest, path: str | Path) -> str:
     """Write one canonical manifest and its single adjacent SHA-256 digest."""
 
+    validate_manifest(value, require_full_panel=value.full_panel)
     target = Path(path)
     digest_path = Path(f"{target}.sha256")
     if target.exists() or digest_path.exists():
@@ -857,6 +983,24 @@ def _prefix_from_dict(value: Mapping[str, Any]) -> PrefixRecord:
     )
 
 
+def _prediction_row_from_dict(value: Mapping[str, Any]) -> PredictionRowInput:
+    _require_keys(
+        value, set(PredictionRowInput.__dataclass_fields__), field="prediction_row"
+    )
+    return PredictionRowInput(
+        row_id=str(value["row_id"]),
+        row_index=int(value["row_index"]),
+        category=str(value["category"]),
+        bbox=tuple(float(item) for item in value["bbox"]),  # type: ignore[arg-type]
+        token_start=int(value["token_start"]),
+        token_end=int(value["token_end"]),
+        final_coordinate_token_index=int(value["final_coordinate_token_index"]),
+        parser_status=str(value["parser_status"]),
+        geometry_valid=bool(value["geometry_valid"]),
+        row_terminated=bool(value["row_terminated"]),
+    )
+
+
 def _trajectory_record_from_dict(value: Mapping[str, Any]) -> TrajectoryRecord:
     _require_keys(value, set(TrajectoryRecord.__dataclass_fields__), field="trajectory")
     terminal = value["terminal_token_index"]
@@ -867,6 +1011,7 @@ def _trajectory_record_from_dict(value: Mapping[str, Any]) -> TrajectoryRecord:
         terminal_token_index=None if terminal is None else int(terminal),
         stop_reason=str(value["stop_reason"]),
         parser_status=str(value["parser_status"]),
+        rows=tuple(_prediction_row_from_dict(item) for item in value["rows"]),
         prefix=_prefix_from_dict(value["prefix"]),
         retained_row_ids=tuple(str(item) for item in value["retained_row_ids"]),
         duplicate_row_ids=tuple(str(item) for item in value["duplicate_row_ids"]),
@@ -929,6 +1074,14 @@ def _image_record_from_dict(value: Mapping[str, Any]) -> ImageRecord:
     _require_keys(value, set(ImageRecord.__dataclass_fields__), field="image")
     return ImageRecord(
         image_id=int(value["image_id"]),
+        panel_row_sha256=(
+            None
+            if value["panel_row_sha256"] is None
+            else str(value["panel_row_sha256"])
+        ),
+        image_sha256=(
+            None if value["image_sha256"] is None else str(value["image_sha256"])
+        ),
         owners=tuple(_owner_record_from_dict(item) for item in value["owners"]),
         trajectories=tuple(
             _trajectory_record_from_dict(item) for item in value["trajectories"]
@@ -948,9 +1101,16 @@ def _image_record_from_dict(value: Mapping[str, Any]) -> ImageRecord:
     )
 
 
-def _validate_loaded_manifest(
-    value: Human13KUnionManifest, *, require_full_panel: bool
+def validate_manifest(
+    value: Human13KUnionManifest,
+    *,
+    require_full_panel: bool = False,
+    panel_path: str | Path = PANEL_PATH,
 ) -> None:
+    """Fail closed by rederiving every meaning-bearing manifest projection."""
+
+    if value.schema_version != SCHEMA_VERSION:
+        raise ValueError("manifest schema_version does not match")
     _validate_binding(value.binding)
     if value.arms != _arm_identities():
         raise ValueError("arm identities do not match the frozen Human-13 matrix")
@@ -963,6 +1123,7 @@ def _validate_loaded_manifest(
         raise ValueError("manifest image identities are not a Human-13 subset")
     if observed_ids != tuple(sorted(observed_ids, key=panel_order.__getitem__)):
         raise ValueError("manifest image identities are not in canonical panel order")
+    reconstructed_inputs: list[ImageInput] = []
     for image in value.images:
         if (
             not image.trajectories
@@ -975,6 +1136,40 @@ def _validate_loaded_manifest(
         if sampled_seeds != EXPECTED_K_SEEDS:
             raise ValueError(
                 f"image {image.image_id} requires exactly seeds 21001..21016"
+            )
+        owner_inputs = tuple(
+            OwnerInput(
+                owner_id=owner.owner_id,
+                category=owner.category,
+                bbox=owner.bbox,
+                source_object_index=owner.source_object_index,
+            )
+            for owner in image.owners
+        )
+        trajectory_inputs = tuple(
+            TrajectoryInput(
+                trajectory_id=trajectory.trajectory_id,
+                request=trajectory.request,
+                token_ids=trajectory.raw_token_ids,
+                terminal_token_index=trajectory.terminal_token_index,
+                stop_reason=trajectory.stop_reason,
+                parser_status=trajectory.parser_status,
+                rows=trajectory.rows,
+            )
+            for trajectory in image.trajectories
+        )
+        image_input = ImageInput(
+            image_id=image.image_id,
+            owners=owner_inputs,
+            source=trajectory_inputs[0],
+            sampled=trajectory_inputs[1:],
+            panel_row_sha256=image.panel_row_sha256,
+            image_sha256=image.image_sha256,
+        )
+        reconstructed_inputs.append(image_input)
+        if _build_image(image_input) != image:
+            raise ValueError(
+                f"image {image.image_id} meaning-bearing projections do not match raw rows"
             )
         duplicate_rows = {
             row_id
@@ -1011,6 +1206,8 @@ def _validate_loaded_manifest(
     )
     if value.full_panel != expected_full:
         raise ValueError("full_panel does not match the frozen panel contents")
+    if value.full_panel:
+        _validate_full_panel_inputs(reconstructed_inputs, panel_path=panel_path)
     expected_denominators = GlobalDenominatorIdentity(
         panel_image_count=13,
         target_image_count=sum(bool(item.h_owner_ids) for item in value.images),
@@ -1062,14 +1259,14 @@ def load_manifest(
     expected_digest_receipt = f"{digest}  {Path(path).name}\n"
     if digest_path.read_text(encoding="ascii") != expected_digest_receipt:
         raise ValueError("manifest digest does not match canonical bytes")
-    _validate_loaded_manifest(result, require_full_panel=require_full_panel)
+    validate_manifest(result, require_full_panel=require_full_panel)
     return result
 
 
 def dry_run_summary(value: Human13KUnionManifest) -> dict[str, Any]:
     """Return a plan-only summary with an explicit zero-action receipt."""
 
-    _validate_binding(value.binding)
+    validate_manifest(value, require_full_panel=False)
     return {
         "unit_id": value.binding.unit_id,
         "purpose": value.binding.purpose,
@@ -1092,6 +1289,7 @@ def dry_run_summary(value: Human13KUnionManifest) -> dict[str, Any]:
 __all__ = [
     "BindingIdentity",
     "DuplicateEventRecord",
+    "FrozenPanelRow",
     "GlobalDenominatorIdentity",
     "Human13KUnionManifest",
     "ImageInput",
@@ -1108,5 +1306,7 @@ __all__ = [
     "canonical_write",
     "default_binding",
     "dry_run_summary",
+    "load_frozen_panel",
     "load_manifest",
+    "validate_manifest",
 ]
