@@ -55,6 +55,34 @@
 > owner wants 3.1-3.3 checked directly against that file. This preparatory
 > commit does not launch a model/GPU and does not check 3.1-3.7; it only
 > equips the frozen command manifest that Task 4 Step 2 will bind by argv.
+>
+> Correction (commit `fix(training): make resume qualifier fail closed`):
+> fixed-target review found the initial cut fail-open and non-fail-closed in
+> three places, all resolved without launching a model/GPU: (1) `verify` now
+> fails closed -- it admits both checkpoint boundaries via the real
+> `admit_training_state`/`TrainingStateExpectations` primitives (a small,
+> `world_size=2`-bounded comparator modeled on
+> `wave7_exact_resume_compare.py`'s `_compare_decoded_rank`, not a copy of
+> that 8-rank-fixed module) and requires exactly one durable `logging.jsonl`
+> train row at step 2 on both branches, instead of comparing invented
+> `run.json` fields that production never writes; any missing input or
+> mismatch now yields `status: "failed"`, never `"verified"`. (2) `prepare`
+> now runs the real, model-free `src.prepare_train_cache` entrypoint once
+> (`load_model=False`) against a private `COORDEXP_SWIFT_PACK_CACHE_ROOT`,
+> behind an injectable seam, instead of only reserving an absent cache root.
+> (3) `success-control`/`success-resumed` now require `--commit` and check
+> argument == prepare receipt == current `HEAD` immediately before launch,
+> reverify each config file's hash/fingerprint, and verify every receipt's
+> signature digest before trusting it. `_role_overrides` also now sets
+> `uninterrupted_control`/`resumed_parent` to `resume.mode:
+> exact_same_world_size` with a null path (the Task 2.5 publish-only
+> contract) instead of `disabled`, which would have skipped exact-state
+> publication entirely; eval forward is disabled in every role so the
+> declared numeric forward ceiling (control=2/rank, resumed_parent=1/rank,
+> resumed_child=1/rank) counts only train-split forwards. `rank-failure`/
+> `interruption` no longer call `torch.cuda.current_device()` through
+> `rng_snapshot=None`; they build CPU-only RNG state explicitly and are
+> covered by a `CUDA_VISIBLE_DEVICES=''` subprocess test.
 - [ ] 3.4 Prepare a fresh launch-authorization packet bound to the exact implementation commit, config, artifact root, and commands. Fix `world_size=2`, at most two GPUs, and three semantic arms: a success arm containing matched uninterrupted-control and parent-to-resumed-child branches, a rank-failure arm, and an interruption arm. Require exactly one corresponding next forward and at most one applied optimizer update in each success branch; cap each failure-shaped arm at one forward and one applied update per rank. Derive and record numeric ceilings for model forwards/collectives per rank and branch/arm, per-arm and total wall time, per-rank RSS/GPU memory, new artifact bytes across both success branches and all arms, and required free disk.
 - [ ] 3.5 Run the independent pre-cost/distributed-qualification audit against the frozen commands, bounds, comparison policy, and deterministic control-plane evidence; resolve every P0/P1 finding, then obtain fresh user authorization immediately before launch bound to that exact packet. Planning approval or an earlier launch approval does not satisfy this task.
 - [ ] 3.6 Execute only the authorized smallest production-shaped probe. The success receipt MUST bind the matched branch pair and compare next input/pack identity; pre-forward trainable/optimizer/scheduler/scaler/RNG/cursor state; objective/loss fields; and resulting trainable parameters after the first post-resume optimizer update under the declared exact policy. Stop without retry on command/commit drift, occupied targets, insufficient headroom, timeout/hang, OOM, or any declared-bound exceedance; bind launcher/runtime identity, world size, artifact trees, terminal status, resource maxima, and stop outcome in immutable change-local receipts.

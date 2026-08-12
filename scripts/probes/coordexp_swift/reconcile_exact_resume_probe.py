@@ -8,12 +8,18 @@ that reuses production config/artifact/admission utilities instead of copying
 that controller.
 
 Command grammar (strict, no defaults):
-    prepare          -- author the immutable two-rank config bundle.
+    prepare          -- author the immutable two-rank config bundle and its
+                        private, model-free pack cache.
     success-control  -- run the boundary-then-next-update control branch.
     success-resumed  -- run the matched parent-boundary + resumed-child branch.
     rank-failure     -- model-free two-rank exact-publication failure injection.
-    interruption     -- exercise the three externally visible commit boundaries.
-    verify           -- read durable artifacts only and publish a terminal receipt.
+    interruption     -- exercise the exact-state/event-adjacent interruption
+                        boundaries for real; the inference-payload boundary
+                        uses a non-production stub (see `interruption`'s
+                        docstring).
+    verify           -- read durable artifacts only, admit and compare both
+                        checkpoint boundaries and the step-2 objective, and
+                        publish one fail-closed terminal receipt.
 
 Every subcommand is also reachable as a plain Python function (`prepare`,
 `success_control`, `success_resumed`, `rank_failure`, `interruption`,
@@ -24,46 +30,52 @@ touch a GPU or a production model.
 from __future__ import annotations
 
 import argparse
-import copy
 import ctypes
 import errno
 import hashlib
 import json
 import os
+import random
 import stat
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import torch
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.artifacts.run_writer import RunWriter  # noqa: E402
 from src.artifacts.training_state import (  # noqa: E402
+    AdmittedTrainingState,
+    DecodedRankTrainingState,
     RankTrainingStatePayload,
+    REQUIRED_RNG_KINDS,
+    TrainingStateExpectations,
+    TrainingStateManifest,
     TrainingStatePublicationPlan,
     abort_training_state_contributions,
+    admit_training_state,
     begin_training_state_contributions,
     build_resume_compatibility_projection,
     commit_training_state_contributions,
     load_training_state_manifest,
     publish_rank_training_state_contribution,
+    serialize_rank_training_state,
 )
 from src.common.errors import ArtifactContractError, CoordExpError  # noqa: E402
 from src.config.fingerprint import sha256_json  # noqa: E402
 from src.config.loader import load_train_config  # noqa: E402
-from src.training.exact_resume import (  # noqa: E402
-    build_exact_resume_identities,
-    serialize_current_rank_training_state,
-)
+from src.runtime.seeding import _STRICT_ENVIRONMENT  # noqa: E402
+from src.training.exact_resume import build_exact_resume_identities  # noqa: E402
 
 
 WORLD_SIZE = 2
@@ -256,6 +268,48 @@ def _strict_json_load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _load_signed_receipt(path: Path) -> dict[str, Any]:
+    """Load one of this probe's own `_signed` receipts and verify its digest."""
+
+    payload = _strict_json_load(path)
+    recorded = payload.get("receipt_payload_sha256")
+    if not isinstance(recorded, str):
+        raise ReconcileProbeError(
+            f"receipt is not signed: {path}",
+            code="reconcile_probe.receipt_unsigned",
+        )
+    body = {key: value for key, value in payload.items() if key != "receipt_payload_sha256"}
+    if _sha256_bytes(_canonical_json_bytes(body)) != recorded:
+        raise ReconcileProbeError(
+            f"receipt payload digest mismatch: {path}",
+            code="reconcile_probe.receipt_digest_mismatch",
+            context={"path": str(path)},
+        )
+    return payload
+
+
+def _assert_absolute_existing_root(path_value: str | Path, *, field: str) -> Path:
+    path = _assert_absolute(path_value, field=field)
+    _assert_no_symlink_components(path, include_leaf=True)
+    info = _lstat_or_none(path)
+    if info is None or not stat.S_ISDIR(info.st_mode):
+        raise ReconcileProbeError(
+            f"{field} does not exist",
+            code="reconcile_probe.target_missing",
+            context={"field": field, "path": str(path)},
+        )
+    return path
+
+
+def _assert_no_path_drift(observed: Path, *, expected: str, field: str) -> None:
+    if str(observed) != expected:
+        raise ReconcileProbeError(
+            f"{field} differs from the prepared bundle",
+            code="reconcile_probe.path_drift",
+            context={"expected": expected, "observed": str(observed)},
+        )
+
+
 def _current_commit() -> str:
     completed = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -301,24 +355,31 @@ def _role_overrides(role: str, *, artifact_root: Path) -> dict[str, Any]:
             "collision_policy": "fail",
         },
         "runtime": {"determinism": {"mode": "strict_cuda_replay_v1"}},
+        # No eval forward in any role: this probe's numeric forward ceiling
+        # (control=2/rank, resumed_parent=1/rank, resumed_child=1/rank) counts
+        # only train-split forwards, and `steps: []` with the default unset
+        # `every_fraction` is the schema-valid "never run eval forward" state.
+        "eval": {"forward": {"steps": []}},
     }
     if role == ROLE_UNINTERRUPTED_CONTROL:
         common["training"] = {"max_steps": 2}
         common["checkpoint"] = {"steps": [1, 2], "save_final": True}
-        common["eval"] = {"forward": {"steps": [1]}}
-        common["resume"] = {"mode": "disabled", "checkpoint_dir": None}
+        # Publish-only control branch: exact mode with a null path is the
+        # contract Task 2.5 established for "no restore, but still publish
+        # training_state/" -- `resume.mode: disabled` would make the real
+        # pipeline skip exact-state publication entirely and leave nothing
+        # for `verify` to admit at the step-1/step-2 boundaries.
+        common["resume"] = {"mode": "exact_same_world_size", "checkpoint_dir": None}
     elif role == ROLE_RESUMED_PARENT:
         common["training"] = {"max_steps": 1}
         common["checkpoint"] = {"steps": [1], "save_final": True}
-        common["eval"] = {"forward": {"steps": [1]}}
-        common["resume"] = {"mode": "disabled", "checkpoint_dir": None}
+        common["resume"] = {"mode": "exact_same_world_size", "checkpoint_dir": None}
     elif role == ROLE_RESUMED_CHILD:
         parent_checkpoint = str(
             artifact_root / RUNS_DIR_NAME / ROLE_RESUMED_PARENT / "checkpoints" / "step-1"
         )
         common["training"] = {"max_steps": 2}
         common["checkpoint"] = {"steps": [2], "save_final": True}
-        common["eval"] = {"forward": {"steps": [2]}}
         common["resume"] = {
             "mode": "exact_same_world_size",
             "checkpoint_dir": parent_checkpoint,
@@ -359,6 +420,8 @@ def _validate_resolved_role(
             and config["resume"]["mode"] == overrides["resume"]["mode"]
             and config["resume"]["checkpoint_dir"]
             == overrides["resume"]["checkpoint_dir"]
+            and list(config["eval"]["forward"]["steps"]) == []
+            and config["eval"]["forward"]["every_fraction"] is None
         )
     except (KeyError, TypeError) as exc:
         raise ReconcileProbeError(
@@ -401,7 +464,108 @@ def _write_role_config(
         "path": str(artifact_root / CONFIG_DIR_NAME / filename),
         "file_sha256": _sha256_file(path),
         "resolved_config_fingerprint": resolved.fingerprint,
+        "config_dict": resolved.config_dict,
     }
+
+
+def _determinant_relevant_projection(config_dict: Mapping[str, Any]) -> dict[str, Any]:
+    """Project exactly the fields `build_packing_cache_determinants` reads.
+
+    `_role_overrides` only ever touches `run`, `runtime.determinism.mode`,
+    `training.max_steps`, `checkpoint`, `eval`, and `resume`; none of those
+    are packing-cache determinants, so every role must project identically.
+    """
+
+    return {
+        "data": config_dict["data"],
+        "template": config_dict["template"],
+        "packing": config_dict["packing"],
+        "model": config_dict["model"],
+        "training_precision": config_dict["training"]["precision"],
+        "runtime_seed": config_dict["runtime"]["seed"],
+    }
+
+
+def _assert_shared_pack_cache_determinants(
+    control_config_dict: Mapping[str, Any],
+    other_config_dict: Mapping[str, Any],
+    *,
+    role: str,
+) -> None:
+    if _determinant_relevant_projection(
+        control_config_dict
+    ) != _determinant_relevant_projection(other_config_dict):
+        raise ReconcileProbeError(
+            f"{role} does not share the control branch's packing-cache determinants",
+            code="reconcile_probe.pack_cache_determinant_drift",
+            context={"role": role},
+        )
+
+
+PrepareCacheCallable = Callable[[Path, Path, Path], dict[str, Any]]
+
+
+def _strict_determinism_env() -> dict[str, str]:
+    """The exact env `src.runtime.seeding` requires before `strict_cuda_replay_v1`."""
+
+    return dict(_STRICT_ENVIRONMENT)
+
+
+def _default_prepare_pack_cache(
+    config_path: Path, cache_root: Path, receipt_path: Path
+) -> dict[str, Any]:
+    """Run the real single-process, model-free cache preparation entrypoint."""
+
+    env = {
+        **os.environ,
+        **_strict_determinism_env(),
+        "COORDEXP_SWIFT_PACK_CACHE_ROOT": str(cache_root),
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "src.prepare_train_cache",
+            "--config",
+            str(config_path),
+            "--receipt",
+            str(receipt_path),
+        ],
+        cwd=str(REPO_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ReconcileProbeError(
+            "pack cache preparation exited with a nonzero status",
+            code="reconcile_probe.pack_cache_prepare_failed",
+            context={"returncode": result.returncode, "stderr_tail": result.stderr[-2000:]},
+        )
+    if not receipt_path.is_file():
+        raise ReconcileProbeError(
+            "pack cache preparation did not publish its durable receipt",
+            code="reconcile_probe.pack_cache_prepare_failed",
+        )
+    payload = _strict_json_load(receipt_path)
+    recorded = payload.get("receipt_sha256")
+    body = {key: value for key, value in payload.items() if key != "receipt_sha256"}
+    encoded = json.dumps(
+        body, allow_nan=False, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    ).encode("ascii")
+    if not isinstance(recorded, str) or hashlib.sha256(encoded).hexdigest() != recorded:
+        raise ReconcileProbeError(
+            "pack cache preparation receipt failed digest verification",
+            code="reconcile_probe.receipt_digest_mismatch",
+        )
+    if payload.get("terminal_status") != "completed":
+        raise ReconcileProbeError(
+            "pack cache preparation did not reach a completed terminal status",
+            code="reconcile_probe.pack_cache_prepare_failed",
+            context={"terminal_status": payload.get("terminal_status")},
+        )
+    return payload
 
 
 def prepare(
@@ -409,8 +573,13 @@ def prepare(
     artifact_root: str | Path,
     base_config: str | Path,
     world_size: int,
+    prepare_pack_cache: PrepareCacheCallable = _default_prepare_pack_cache,
 ) -> dict[str, Any]:
-    """Author the immutable two-rank config bundle; never launches a model."""
+    """Author the immutable two-rank config bundle and its private pack cache.
+
+    Never launches a model or GPU: cache preparation runs the same
+    single-process, `load_model=False` route as `src.prepare_train_cache`.
+    """
 
     _require_world_size(world_size)
     target = _assert_absolute(artifact_root, field="artifact_root")
@@ -445,15 +614,44 @@ def prepare(
             code="reconcile_probe.parent_unavailable",
             context={"path": str(parent)},
         )
+
+    # The private cache root and its receipt live beside `target`, not inside
+    # it: cache preparation runs (and must fully succeed) before the config
+    # bundle is atomically installed, so a failed prepare() leaves neither a
+    # half-installed bundle nor an orphaned cache root behind.
+    pack_cache_root = parent / f".{target.name}.pack-cache"
+    pack_cache_receipt_path = parent / f".{target.name}.pack-cache-receipt.json"
+    _assert_absent_target(pack_cache_root)
+    _assert_absent_target(pack_cache_receipt_path)
+
     stage = Path(tempfile.mkdtemp(prefix=f".{target.name}.stage-", dir=str(parent)))
     try:
         (stage / CONFIG_DIR_NAME).mkdir(mode=0o755)
-        configs: dict[str, Any] = {}
+        entries: dict[str, Any] = {}
         for role in (ROLE_UNINTERRUPTED_CONTROL, ROLE_RESUMED_PARENT, ROLE_RESUMED_CHILD):
-            configs[role] = _write_role_config(
+            entries[role] = _write_role_config(
                 stage, role, base_config=base, artifact_root=target
             )
-        pack_cache_root = target / ".cache" / "packing"
+            if role != ROLE_UNINTERRUPTED_CONTROL:
+                _assert_shared_pack_cache_determinants(
+                    entries[ROLE_UNINTERRUPTED_CONTROL]["config_dict"],
+                    entries[role]["config_dict"],
+                    role=role,
+                )
+
+        control_config_path = (
+            stage / CONFIG_DIR_NAME / ROLE_FILENAMES[ROLE_UNINTERRUPTED_CONTROL]
+        )
+        cache_receipt = prepare_pack_cache(
+            control_config_path, pack_cache_root, pack_cache_receipt_path
+        )
+
+        configs = {
+            role: {
+                key: value for key, value in entry.items() if key != "config_dict"
+            }
+            for role, entry in entries.items()
+        }
         body = {
             "schema": SCHEMA_PREPARE_RECEIPT,
             "status": "prepared",
@@ -464,12 +662,16 @@ def prepare(
             "configs": configs,
             "pack_cache": {
                 "root": str(pack_cache_root),
-                "status": "reserved_absent",
-                "note": (
-                    "private cache root is reserved but not pre-populated; "
-                    "the real production src.train route materializes it on "
-                    "first authorized launch"
-                ),
+                "status": "prepared",
+                "receipt_path": str(pack_cache_receipt_path),
+                "receipt_sha256": _sha256_file(pack_cache_receipt_path),
+                "prepared_for_role": ROLE_UNINTERRUPTED_CONTROL,
+                "shared_with_roles": [ROLE_RESUMED_PARENT, ROLE_RESUMED_CHILD],
+                "resolved_config_fingerprint": cache_receipt.get("result", {}).get(
+                    "resolved_config_fingerprint"
+                )
+                if isinstance(cache_receipt.get("result"), Mapping)
+                else None,
             },
         }
         receipt = _signed(body)
@@ -489,6 +691,14 @@ def prepare(
         except OSError:
             pass
         return _strict_json_load(target / PREPARE_RECEIPT_NAME)
+    except BaseException:
+        import shutil
+
+        if pack_cache_root.exists():
+            shutil.rmtree(pack_cache_root, ignore_errors=True)
+        if pack_cache_receipt_path.exists():
+            pack_cache_receipt_path.unlink(missing_ok=True)
+        raise
     finally:
         if stage.exists():
             import shutil
@@ -504,17 +714,55 @@ def _load_prepare_receipt(artifact_root: Path) -> dict[str, Any]:
             code="reconcile_probe.prepare_receipt_missing",
             context={"path": str(path)},
         )
-    return _strict_json_load(path)
+    return _load_signed_receipt(path)
 
 
-def _check_commit_drift(receipt: Mapping[str, Any], *, commit: str | None) -> None:
-    if commit is None:
-        return
-    if commit != receipt["commit"]:
+def _require_commit_binding(
+    receipt: Mapping[str, Any], *, root: Path, commit: str
+) -> None:
+    """Require argument == prepare receipt == current HEAD, immediately before launch."""
+
+    current = _current_commit()
+    if not (commit == receipt["commit"] == current):
         raise ReconcileProbeError(
-            "commit differs from the prepared bundle",
+            "commit argument, prepare receipt, and current HEAD must all match",
             code="reconcile_probe.commit_drift",
-            context={"expected": receipt["commit"], "observed": commit},
+            context={
+                "argument": commit,
+                "prepare_receipt": receipt["commit"],
+                "head": current,
+            },
+        )
+    _assert_no_path_drift(root, expected=receipt["artifact_root"], field="artifact_root")
+
+
+def _verify_role_config_not_drifted(receipt: Mapping[str, Any], role: str) -> None:
+    entry = receipt["configs"][role]
+    config_path = Path(entry["path"])
+    if not config_path.is_file():
+        raise ReconcileProbeError(
+            f"{role} config is missing from the prepared bundle",
+            code="reconcile_probe.config_drift",
+            context={"path": str(config_path)},
+        )
+    if _sha256_file(config_path) != entry["file_sha256"]:
+        raise ReconcileProbeError(
+            f"{role} config file drifted from the prepared bundle",
+            code="reconcile_probe.config_drift",
+            context={"role": role, "path": str(config_path)},
+        )
+    try:
+        resolved = load_train_config(config_path)
+    except Exception as exc:
+        raise ReconcileProbeError(
+            f"{role} config no longer resolves",
+            code="reconcile_probe.config_drift",
+        ) from exc
+    if resolved.fingerprint != entry["resolved_config_fingerprint"]:
+        raise ReconcileProbeError(
+            f"{role} resolved config fingerprint drifted from the prepared bundle",
+            code="reconcile_probe.config_drift",
+            context={"role": role},
         )
 
 
@@ -555,8 +803,12 @@ def _launch_argv(config_path: str) -> list[str]:
     ]
 
 
-def _launch_env() -> dict[str, str]:
-    return dict(os.environ)
+def _launch_env(receipt: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        **os.environ,
+        **_strict_determinism_env(),
+        "COORDEXP_SWIFT_PACK_CACHE_ROOT": receipt["pack_cache"]["root"],
+    }
 
 
 def _run_config_path(receipt: Mapping[str, Any], role: str) -> str:
@@ -621,23 +873,24 @@ def _write_run_receipt(receipt_dir: Path, name: str, body: Mapping[str, Any]) ->
         )
     signed = _signed(dict(body))
     _write_new_file(path, _canonical_json_bytes(signed) + b"\n")
-    return _strict_json_load(path)
+    return _load_signed_receipt(path)
 
 
 def success_control(
     *,
     artifact_root: str | Path,
-    commit: str | None = None,
+    commit: str,
     launch: LaunchCallable = _default_launch,
 ) -> dict[str, Any]:
-    root = Path(artifact_root)
+    root = _assert_absolute_existing_root(artifact_root, field="artifact_root")
     receipt = _load_prepare_receipt(root)
-    _check_commit_drift(receipt, commit=commit)
+    _require_commit_binding(receipt, root=root, commit=commit)
+    _verify_role_config_not_drifted(receipt, ROLE_UNINTERRUPTED_CONTROL)
 
     config_path = _run_config_path(receipt, ROLE_UNINTERRUPTED_CONTROL)
     argv = _launch_argv(config_path)
     started = time.monotonic()
-    result = launch(argv, REPO_ROOT, _launch_env())
+    result = launch(argv, REPO_ROOT, _launch_env(receipt))
     wall_time = time.monotonic() - started
     _require_launch_ok(result, role=ROLE_UNINTERRUPTED_CONTROL)
 
@@ -666,17 +919,19 @@ def success_control(
 def success_resumed(
     *,
     artifact_root: str | Path,
-    commit: str | None = None,
+    commit: str,
     launch: LaunchCallable = _default_launch,
 ) -> dict[str, Any]:
-    root = Path(artifact_root)
+    root = _assert_absolute_existing_root(artifact_root, field="artifact_root")
     receipt = _load_prepare_receipt(root)
-    _check_commit_drift(receipt, commit=commit)
+    _require_commit_binding(receipt, root=root, commit=commit)
+    _verify_role_config_not_drifted(receipt, ROLE_RESUMED_PARENT)
+    _verify_role_config_not_drifted(receipt, ROLE_RESUMED_CHILD)
 
     parent_config = _run_config_path(receipt, ROLE_RESUMED_PARENT)
     parent_argv = _launch_argv(parent_config)
     setup_started = time.monotonic()
-    setup_result = launch(parent_argv, REPO_ROOT, _launch_env())
+    setup_result = launch(parent_argv, REPO_ROOT, _launch_env(receipt))
     setup_wall_time = time.monotonic() - setup_started
     _require_launch_ok(setup_result, role=ROLE_RESUMED_PARENT)
     parent_run_dir = _run_dir(receipt, ROLE_RESUMED_PARENT)
@@ -687,7 +942,7 @@ def success_resumed(
     child_config = _run_config_path(receipt, ROLE_RESUMED_CHILD)
     child_argv = _launch_argv(child_config)
     update_started = time.monotonic()
-    update_result = launch(child_argv, REPO_ROOT, _launch_env())
+    update_result = launch(child_argv, REPO_ROOT, _launch_env(receipt))
     update_wall_time = time.monotonic() - update_started
     _require_launch_ok(update_result, role=ROLE_RESUMED_CHILD)
     child_run_dir = _run_dir(receipt, ROLE_RESUMED_CHILD)
@@ -783,7 +1038,16 @@ def _synthetic_plan() -> TrainingStatePublicationPlan:
 
 
 def _synthetic_payload(rank: int) -> RankTrainingStatePayload:
-    import torch
+    """Build a payload with explicit CPU-only RNG state -- never calls CUDA.
+
+    `serialize_current_rank_training_state(rng_snapshot=None)` falls back to
+    `capture_rank_rng_snapshot`, which calls `torch.cuda.current_device()` and
+    therefore requires a real GPU. This probe is required to be GPU-free, so
+    it calls the lower-level `serialize_rank_training_state` directly with an
+    explicit Python/NumPy/torch-CPU state plus a synthetic `torch_cuda`
+    tensor, exactly as `tests/training/test_exact_resume.py` already does for
+    its own CPU-only fixtures.
+    """
 
     torch.manual_seed(100 + rank)
     model = torch.nn.Linear(3, 2)
@@ -792,17 +1056,22 @@ def _synthetic_payload(rank: int) -> RankTrainingStatePayload:
     loss.backward()
     optimizer.step()
     optimizer.zero_grad(set_to_none=True)
-    return serialize_current_rank_training_state(
+    python_rng_state = random.getstate()
+    numpy_rng_state = np.random.get_state()
+    torch_cpu_rng_state = torch.get_rng_state().clone()
+    synthetic_cuda_rng_states = (torch.arange(32, dtype=torch.uint8) + rank,)
+    return serialize_rank_training_state(
         rank=rank,
-        world_size=WORLD_SIZE,
         model=model,
         optimizer=optimizer,
         scheduler=None,
         scaler=None,
+        python_rng_state=python_rng_state,
+        numpy_rng_state=numpy_rng_state,
+        torch_cpu_rng_state=torch_cpu_rng_state,
+        torch_cuda_rng_states=synthetic_cuda_rng_states,
         cursor={"data": {"epoch": 0, "ordinal": rank}, "pack": {"ordinal": rank, "pending": []}},
         next_rank_local_micro_step=1,
-        accumulation_microstep=0,
-        rng_snapshot=None,
     )
 
 
@@ -899,7 +1168,7 @@ def rank_failure(
     receipt = _signed(body)
     receipt_path = root / "rank-failure-receipt.json"
     _write_new_file(receipt_path, _canonical_json_bytes(receipt) + b"\n")
-    return _strict_json_load(receipt_path)
+    return _load_signed_receipt(receipt_path)
 
 
 def _corrupt_rank_contribution(stage_path: Path, rank: int, *, garbage: bool) -> None:
@@ -937,18 +1206,26 @@ CommitInferenceCallable = Callable[[Path], dict[str, Any]]
 def _stub_inference_manifest(checkpoint_dir: Path) -> dict[str, Any]:
     """Write a schema-shaped inference-payload manifest stand-in.
 
-    The real production writer (`write_inference_checkpoint_payload_manifest`)
-    inspects a genuine trained DoRA adapter payload, which only exists after a
-    real model launch. This probe is model-free, so it durably records a
-    self-consistent stub manifest at the same path instead; the real writer is
-    exercised only during the authorized GPU launch in Task 4.
+    This is NOT the real production owner and does not close the "before
+    inference commit" boundary: the real writer
+    (`write_inference_checkpoint_payload_manifest`) inspects a genuine
+    trained DoRA adapter payload via `inspect_dora_adapter_payload`, which
+    only exists after a real model launch produces real adapter weights.
+    This probe is required to stay model-free and GPU-free, so it cannot
+    fabricate one; the real writer is exercised only during the authorized
+    GPU launch. This stub exists solely so `interruption`'s exact-state and
+    event-adjacent boundaries (which ARE exercised for real, below) have a
+    durable predecessor artifact to stop after/before.
     """
 
     body = {
         "schema": "coordexp-swift-inference-checkpoint-payload-manifest",
         "schema_version": 1,
-        "status": "stub",
-        "note": "reconcile probe stand-in; real launch uses the production writer",
+        "status": "stub_not_production",
+        "note": (
+            "reconcile probe stand-in, not write_inference_checkpoint_payload_manifest; "
+            "the real GPU launch exercises the production inference-payload writer"
+        ),
     }
     manifest = {**body, "aggregate_digest": sha256_json(body)}
     path = checkpoint_dir / "inference_payload_manifest.json"
@@ -963,7 +1240,13 @@ def interruption(
     world_size: int = WORLD_SIZE,
     commit_inference: CommitInferenceCallable = _stub_inference_manifest,
 ) -> dict[str, Any]:
-    """Exercise the three externally visible interruption boundaries."""
+    """Exercise the exact-state/event-adjacent interruption boundaries.
+
+    Boundary 0->1 (before/after the inference-payload commit) uses an
+    injectable, non-production stub -- see `_stub_inference_manifest`. Only
+    boundaries 1->2 (exact-state manifest staging/commit) use the real
+    production admission primitives from `src.artifacts.training_state`.
+    """
 
     _require_world_size(world_size)
     if stop_after not in INTERRUPTION_BOUNDARIES:
@@ -1032,13 +1315,15 @@ def interruption(
         "checkpoint_dir": str(checkpoint_dir),
         "inference_payload_present": inference_present,
         "inference_payload_only": inference_present and not training_state_present,
+        "inference_commit_owner": "stub_not_production",
         "exact_state_present": training_state_present,
+        "exact_state_commit_owner": "production_training_state_primitives",
         "event_recorded": event_recorded,
     }
     receipt = _signed(body)
     receipt_path = root / "interruption-receipt.json"
     _write_new_file(receipt_path, _canonical_json_bytes(receipt) + b"\n")
-    return _strict_json_load(receipt_path)
+    return _load_signed_receipt(receipt_path)
 
 
 # --------------------------------------------------------------------------
@@ -1046,69 +1331,271 @@ def interruption(
 # --------------------------------------------------------------------------
 
 
+_EXCLUDED_LOGGING_KEYS = frozenset({"per_rank_measurement"})
+_EXCLUDED_LOGGING_KEY_MARKERS = ("duration", "resource", "wall", "timing")
+
+
 _COMPARISON_POLICY = {
-    "next_pack_and_cursor": ["cursor"],
-    "trainable_model": ["model_state_ref"],
-    "optimizer": ["optimizer_state_ref"],
-    "scheduler_scaler_applicability": ["scheduler_applicable", "scaler_applicable"],
-    "per_rank_rng": ["rng_ref"],
-    "topology_identity": ["topology_ref"],
-    "objective_loss": ["loss"],
-    "resulting_trainable_parameters": ["parameters_ref"],
+    "boundary_step1_control_vs_parent": [
+        "identities",
+        "cursor",
+        "trainable_model",
+        "optimizer",
+        "scheduler",
+        "scaler",
+        "rng.python",
+        "rng.numpy",
+        "rng.torch_cpu",
+        "rng.torch_cuda",
+        "cuda_device_topology",
+        "structure_signature",
+    ],
+    "post_update_step2_control_vs_child": [
+        "identities",
+        "cursor",
+        "trainable_model",
+        "optimizer",
+        "scheduler",
+        "scaler",
+        "rng.python",
+        "rng.numpy",
+        "rng.torch_cpu",
+        "rng.torch_cuda",
+        "cuda_device_topology",
+        "structure_signature",
+    ],
+    "post_update_objective_step2_control_vs_child": {
+        "source": "logging.jsonl",
+        "selector": {"split": "train", "step": 2},
+        "excluded_key_markers": list(_EXCLUDED_LOGGING_KEY_MARKERS),
+        "excluded_keys": sorted(_EXCLUDED_LOGGING_KEYS),
+    },
 }
 
+_REQUIRED_COMPARISONS = tuple(_COMPARISON_POLICY)
 
-def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
-    """Read durable artifacts only and publish one strict terminal receipt."""
 
-    root = Path(artifact_root)
-    prepare_receipt = _load_prepare_receipt(root)
-    receipts_dir = root / RECEIPTS_DIR_NAME
+def _manifest_expectations(manifest: TrainingStateManifest) -> TrainingStateExpectations:
+    return TrainingStateExpectations(
+        checkpoint_step=manifest.checkpoint_step,
+        world_size=manifest.world_size,
+        identities=manifest.identities,
+        scheduler_applicable=manifest.scheduler_applicable,
+        scaler_applicable=manifest.scaler_applicable,
+        rng_kinds=REQUIRED_RNG_KINDS,
+    )
 
-    def _load(name: str) -> dict[str, Any] | None:
-        path = receipts_dir / name
-        if not path.is_file():
-            return None
-        return _strict_json_load(path)
 
-    control = _load("success-control-receipt.json")
-    resumed = _load("success-resumed-receipt.json")
-
-    findings: dict[str, Any] = {}
-    status = "incomplete"
-    if control is not None and resumed is not None:
-        if control["commit"] != prepare_receipt["commit"]:
-            raise ReconcileProbeError(
-                "success-control receipt commit differs from the prepared bundle",
-                code="reconcile_probe.commit_drift",
-            )
-        if resumed["commit"] != prepare_receipt["commit"]:
-            raise ReconcileProbeError(
-                "success-resumed receipt commit differs from the prepared bundle",
-                code="reconcile_probe.commit_drift",
-            )
-        control_run = _strict_json_load(Path(control["run_dir"]) / "run.json")
-        child_run = _strict_json_load(
-            Path(resumed["update"]["run_dir"]) / "run.json"
+def _admit_rank_state(
+    checkpoint_dir: Path, manifest: TrainingStateManifest, rank: int
+) -> DecodedRankTrainingState:
+    admitted = admit_training_state(
+        checkpoint_dir, _manifest_expectations(manifest), current_rank=rank
+    )
+    if not isinstance(admitted, AdmittedTrainingState):
+        raise ReconcileProbeError(
+            "training-state admission returned an unexpected result",
+            code="reconcile_probe.admission_failed",
         )
-        findings["next_pack_and_cursor_matched"] = control_run.get(
-            "next_planned_step"
-        ) == child_run.get("next_planned_step")
-        findings["objective_loss_matched"] = control_run.get(
-            "final_loss"
-        ) == child_run.get("final_loss")
-        status = "verified"
+    return admitted.decoded_rank
 
+
+def _exact_state_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, torch.Tensor) or isinstance(right, torch.Tensor):
+        return (
+            isinstance(left, torch.Tensor)
+            and isinstance(right, torch.Tensor)
+            and left.dtype == right.dtype
+            and tuple(left.shape) == tuple(right.shape)
+            and torch.equal(left, right)
+        )
+    if isinstance(left, np.ndarray) or isinstance(right, np.ndarray):
+        return (
+            isinstance(left, np.ndarray)
+            and isinstance(right, np.ndarray)
+            and left.dtype == right.dtype
+            and left.shape == right.shape
+            and bool(np.array_equal(left, right))
+        )
+    if isinstance(left, Mapping) or isinstance(right, Mapping):
+        return (
+            isinstance(left, Mapping)
+            and isinstance(right, Mapping)
+            and set(left) == set(right)
+            and all(_exact_state_equal(left[key], right[key]) for key in left)
+        )
+    if isinstance(left, Sequence) and not isinstance(left, (str, bytes, bytearray)):
+        return (
+            isinstance(right, Sequence)
+            and not isinstance(right, (str, bytes, bytearray))
+            and len(left) == len(right)
+            and all(
+                _exact_state_equal(a, b) for a, b in zip(left, right, strict=True)
+            )
+        )
+    try:
+        return bool(left == right)
+    except (TypeError, ValueError):
+        return left is right
+
+
+def _compare_decoded_rank(
+    left: DecodedRankTrainingState,
+    right: DecodedRankTrainingState,
+    *,
+    path_prefix: str,
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    if left.signature != right.signature or dict(left.structure) != dict(
+        right.structure
+    ):
+        mismatches.append(
+            {
+                "path": f"{path_prefix}.structure_signature",
+                "expected": left.signature,
+                "observed": right.signature,
+            }
+        )
+    if dict(left.cursor) != dict(right.cursor):
+        mismatches.append({"path": f"{path_prefix}.cursor"})
+    if left.cuda_device_topology != right.cuda_device_topology:
+        mismatches.append({"path": f"{path_prefix}.cuda_device_topology"})
+    rng_pairs = {
+        "python": (left.python_rng_state, right.python_rng_state),
+        "numpy": (left.numpy_rng_state, right.numpy_rng_state),
+        "torch_cpu": (left.torch_cpu_rng_state, right.torch_cpu_rng_state),
+        "torch_cuda": (left.torch_cuda_rng_states, right.torch_cuda_rng_states),
+    }
+    for name, (rng_left, rng_right) in rng_pairs.items():
+        if not _exact_state_equal(rng_left, rng_right):
+            mismatches.append({"path": f"{path_prefix}.rng.{name}"})
+    for owner in ("trainable_model", "optimizer", "scheduler", "scaler"):
+        if not _exact_state_equal(getattr(left, owner), getattr(right, owner)):
+            mismatches.append({"path": f"{path_prefix}.{owner}"})
+    return mismatches
+
+
+def _compare_checkpoint_pair(
+    left_dir: Path, right_dir: Path, *, step: int, path_prefix: str
+) -> list[dict[str, Any]]:
+    left_manifest = load_training_state_manifest(left_dir)
+    right_manifest = load_training_state_manifest(right_dir)
+    for manifest, checkpoint_dir in ((left_manifest, left_dir), (right_manifest, right_dir)):
+        if (
+            manifest.checkpoint_step != step
+            or manifest.world_size != WORLD_SIZE
+            or tuple(rank.rank for rank in manifest.ranks) != tuple(range(WORLD_SIZE))
+        ):
+            raise ReconcileProbeError(
+                "checkpoint manifest does not match the required boundary/rank set",
+                code="reconcile_probe.manifest_identity_mismatch",
+                context={
+                    "path": str(checkpoint_dir),
+                    "checkpoint_step": manifest.checkpoint_step,
+                    "world_size": manifest.world_size,
+                },
+            )
+    mismatches: list[dict[str, Any]] = []
+    for key in sorted(set(left_manifest.identities) | set(right_manifest.identities)):
+        if left_manifest.identities.get(key) != right_manifest.identities.get(key):
+            mismatches.append({"path": f"{path_prefix}.identities.{key}"})
+    for rank in range(WORLD_SIZE):
+        left_state = _admit_rank_state(left_dir, left_manifest, rank)
+        right_state = _admit_rank_state(right_dir, right_manifest, rank)
+        mismatches.extend(
+            _compare_decoded_rank(left_state, right_state, path_prefix=f"{path_prefix}.rank{rank}")
+        )
+    return mismatches
+
+
+def _is_excluded_logging_key(key: str) -> bool:
+    lowered = key.lower()
+    return key in _EXCLUDED_LOGGING_KEYS or any(
+        marker in lowered for marker in _EXCLUDED_LOGGING_KEY_MARKERS
+    )
+
+
+def _read_single_train_row(run_dir: Path, *, step: int) -> dict[str, Any]:
+    path = run_dir / "logging.jsonl"
+    if not path.is_file():
+        raise ReconcileProbeError(
+            "run has no durable logging.jsonl",
+            code="reconcile_probe.logging_missing",
+            context={"path": str(path)},
+        )
+    matches: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ReconcileProbeError(
+                "logging.jsonl row is not strict JSON",
+                code="reconcile_probe.malformed_json",
+                context={"path": str(path)},
+            ) from exc
+        if not isinstance(row, dict):
+            raise ReconcileProbeError(
+                "logging.jsonl row is not a JSON object",
+                code="reconcile_probe.malformed_json",
+                context={"path": str(path)},
+            )
+        if row.get("split") == "train" and row.get("step") == step:
+            matches.append(row)
+    if len(matches) != 1:
+        raise ReconcileProbeError(
+            "run does not have exactly one durable train row for the required step",
+            code="reconcile_probe.logging_row_count",
+            context={"run_dir": str(run_dir), "step": step, "observed": len(matches)},
+        )
+    return matches[0]
+
+
+def _compare_loss_rows(
+    left: Mapping[str, Any], right: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    for key in sorted(set(left) | set(right)):
+        if _is_excluded_logging_key(key):
+            continue
+        if left.get(key) != right.get(key):
+            mismatches.append(
+                {
+                    "path": f"logging.{key}",
+                    "expected": left.get(key),
+                    "observed": right.get(key),
+                }
+            )
+    return mismatches
+
+
+def _write_terminal_receipt(
+    root: Path,
+    *,
+    status: str,
+    commit: str,
+    world_size: int,
+    missing_inputs: Sequence[str],
+    mismatches: Sequence[Mapping[str, Any]],
+    input_file_sha256: Mapping[str, str],
+) -> dict[str, Any]:
+    if status not in ("verified", "failed"):
+        raise ReconcileProbeError(
+            "terminal receipt status must be verified or failed",
+            code="reconcile_probe.invalid_status",
+        )
     body = {
         "schema": SCHEMA_TERMINAL_RECEIPT,
         "status": status,
-        "commit": prepare_receipt["commit"],
+        "commit": commit,
         "artifact_root": str(root),
-        "world_size": prepare_receipt["world_size"],
+        "world_size": world_size,
+        "required_comparisons": list(_REQUIRED_COMPARISONS),
         "comparison_policy": _COMPARISON_POLICY,
-        "control_receipt_present": control is not None,
-        "resumed_receipt_present": resumed is not None,
-        "findings": findings,
+        "missing_inputs": list(missing_inputs),
+        "bounded_mismatches": list(mismatches),
+        "input_file_sha256": dict(sorted(input_file_sha256.items())),
     }
     receipt = _signed(body)
     receipt_path = root / "terminal-receipt.json"
@@ -1118,7 +1605,133 @@ def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
             code="reconcile_probe.receipt_exists",
         )
     _write_new_file(receipt_path, _canonical_json_bytes(receipt) + b"\n")
-    return _strict_json_load(receipt_path)
+    return _load_signed_receipt(receipt_path)
+
+
+def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
+    """Read durable artifacts only, admit+compare both boundaries, fail closed.
+
+    Never returns `status: "verified"` unless every required durable input
+    exists and every required comparison actually ran and passed; any
+    missing input or mismatch yields `status: "failed"`.
+    """
+
+    root = _assert_absolute_existing_root(artifact_root, field="artifact_root")
+    prepare_receipt = _load_prepare_receipt(root)
+    _assert_no_path_drift(
+        root, expected=prepare_receipt["artifact_root"], field="artifact_root"
+    )
+    current = _current_commit()
+    if current != prepare_receipt["commit"]:
+        raise ReconcileProbeError(
+            "current commit differs from the prepared bundle",
+            code="reconcile_probe.commit_drift",
+            context={"prepare_receipt": prepare_receipt["commit"], "head": current},
+        )
+
+    world_size = prepare_receipt["world_size"]
+    receipts_dir = root / RECEIPTS_DIR_NAME
+    control_path = receipts_dir / "success-control-receipt.json"
+    resumed_path = receipts_dir / "success-resumed-receipt.json"
+    missing_inputs: list[str] = []
+    input_hashes: dict[str, str] = {
+        str(root / PREPARE_RECEIPT_NAME): _sha256_file(root / PREPARE_RECEIPT_NAME)
+    }
+    for path in (control_path, resumed_path):
+        if not path.is_file():
+            missing_inputs.append(str(path))
+    if missing_inputs:
+        return _write_terminal_receipt(
+            root,
+            status="failed",
+            commit=current,
+            world_size=world_size,
+            missing_inputs=missing_inputs,
+            mismatches=[],
+            input_file_sha256=input_hashes,
+        )
+
+    control = _load_signed_receipt(control_path)
+    resumed = _load_signed_receipt(resumed_path)
+    input_hashes[str(control_path)] = _sha256_file(control_path)
+    input_hashes[str(resumed_path)] = _sha256_file(resumed_path)
+    for label, receipt in (("success-control", control), ("success-resumed", resumed)):
+        if receipt["commit"] != prepare_receipt["commit"]:
+            raise ReconcileProbeError(
+                f"{label} receipt commit differs from the prepared bundle",
+                code="reconcile_probe.commit_drift",
+            )
+
+    control_run_dir = Path(control["run_dir"])
+    parent_run_dir = Path(resumed["setup"]["run_dir"])
+    child_run_dir = Path(resumed["update"]["run_dir"])
+    checkpoints = {
+        "control_step1": control_run_dir / "checkpoints" / "step-1",
+        "parent_step1": parent_run_dir / "checkpoints" / "step-1",
+        "control_step2": control_run_dir / "checkpoints" / "step-2",
+        "child_step2": child_run_dir / "checkpoints" / "step-2",
+    }
+    manifest_paths = {
+        name: path / "training_state" / "manifest.json"
+        for name, path in checkpoints.items()
+    }
+    logging_paths = {
+        "control_logging": control_run_dir / "logging.jsonl",
+        "child_logging": child_run_dir / "logging.jsonl",
+    }
+    for path in (*manifest_paths.values(), *logging_paths.values()):
+        if not path.is_file():
+            missing_inputs.append(str(path))
+    if missing_inputs:
+        return _write_terminal_receipt(
+            root,
+            status="failed",
+            commit=current,
+            world_size=world_size,
+            missing_inputs=missing_inputs,
+            mismatches=[],
+            input_file_sha256=input_hashes,
+        )
+    for name, path in manifest_paths.items():
+        input_hashes[f"{name}_manifest"] = _sha256_file(path)
+    for name, path in logging_paths.items():
+        input_hashes[name] = _sha256_file(path)
+
+    mismatches: list[dict[str, Any]] = []
+    mismatches.extend(
+        _compare_checkpoint_pair(
+            checkpoints["control_step1"],
+            checkpoints["parent_step1"],
+            step=1,
+            path_prefix="boundary",
+        )
+    )
+    mismatches.extend(
+        _compare_checkpoint_pair(
+            checkpoints["control_step2"],
+            checkpoints["child_step2"],
+            step=2,
+            path_prefix="post_update",
+        )
+    )
+    try:
+        control_row = _read_single_train_row(control_run_dir, step=2)
+        child_row = _read_single_train_row(child_run_dir, step=2)
+    except ReconcileProbeError as exc:
+        mismatches.append({"path": "post_update_objective", "code": exc.code})
+    else:
+        mismatches.extend(_compare_loss_rows(control_row, child_row))
+
+    status = "verified" if not mismatches else "failed"
+    return _write_terminal_receipt(
+        root,
+        status=status,
+        commit=current,
+        world_size=world_size,
+        missing_inputs=missing_inputs,
+        mismatches=mismatches,
+        input_file_sha256=input_hashes,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1137,11 +1750,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     control_parser = subparsers.add_parser("success-control")
     control_parser.add_argument("--artifact-root", required=True)
-    control_parser.add_argument("--commit", default=None)
+    control_parser.add_argument("--commit", required=True)
 
     resumed_parser = subparsers.add_parser("success-resumed")
     resumed_parser.add_argument("--artifact-root", required=True)
-    resumed_parser.add_argument("--commit", default=None)
+    resumed_parser.add_argument("--commit", required=True)
 
     failure_parser = subparsers.add_parser("rank-failure")
     failure_parser.add_argument("--artifact-root", required=True)
