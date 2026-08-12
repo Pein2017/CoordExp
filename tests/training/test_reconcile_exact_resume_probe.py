@@ -142,6 +142,18 @@ def _write_matched_success_fixture(target: Path, receipt: dict) -> tuple[dict, d
     return control_receipt, resumed_receipt
 
 
+def _write_representative_failure_arms(target: Path) -> tuple[dict, dict]:
+    rank_failure_receipt = probe.rank_failure(
+        artifact_root=target / "arms" / "rank_failure",
+        inject={"rank": 1, "kind": "missing"},
+    )
+    interruption_receipt = probe.interruption(
+        artifact_root=target / "arms" / "interruption",
+        stop_after=1,
+    )
+    return rank_failure_receipt, interruption_receipt
+
+
 def _resign_receipt(path: Path, mutate) -> None:
     """Rewrite one of this probe's own signed receipts after mutating its body."""
 
@@ -735,6 +747,7 @@ def test_verify_fails_closed_without_durable_checkpoints(tmp_path: Path) -> None
 
     probe.success_control(artifact_root=target, commit=receipt["commit"], launch=fake_launch)
     probe.success_resumed(artifact_root=target, commit=receipt["commit"], launch=fake_launch)
+    _write_representative_failure_arms(target)
 
     result = probe.verify_artifacts(artifact_root=target)
     assert result["status"] == "failed"
@@ -747,6 +760,7 @@ def test_verify_admits_and_compares_both_boundaries_and_reports_verified(
 ) -> None:
     target, receipt = _prepared(tmp_path)
     _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
 
     result = probe.verify_artifacts(artifact_root=target)
     assert result["status"] == "verified"
@@ -754,12 +768,109 @@ def test_verify_admits_and_compares_both_boundaries_and_reports_verified(
     assert result["bounded_mismatches"] == []
     assert result["missing_inputs"] == []
     assert set(result["required_comparisons"]) == set(probe._COMPARISON_POLICY)
-    assert result["input_file_sha256"]  # real file digests recorded
+    assert {"rank_failure_arm", "interruption_arm"} <= set(result["required_comparisons"])
+    assert str(target / "arms" / "rank_failure" / "rank-failure-receipt.json") in result[
+        "input_file_sha256"
+    ]
+    assert str(target / "arms" / "interruption" / "interruption-receipt.json") in result[
+        "input_file_sha256"
+    ]
+
+
+def test_verify_fails_closed_when_representative_failure_arms_are_missing(
+    tmp_path: Path,
+) -> None:
+    target, receipt = _prepared(tmp_path)
+    _write_matched_success_fixture(target, receipt)
+
+    result = probe.verify_artifacts(artifact_root=target)
+
+    assert result["status"] == "failed"
+    assert str(target / "arms" / "rank_failure" / "rank-failure-receipt.json") in result[
+        "missing_inputs"
+    ]
+    assert str(target / "arms" / "interruption" / "interruption-receipt.json") in result[
+        "missing_inputs"
+    ]
+
+
+def test_verify_fails_closed_on_tampered_failure_arm_digest(tmp_path: Path) -> None:
+    target, receipt = _prepared(tmp_path)
+    _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
+    failure_path = target / "arms" / "rank_failure" / "rank-failure-receipt.json"
+    payload = json.loads(failure_path.read_text(encoding="utf-8"))
+    payload["status"] = "forged_without_resigning"
+    failure_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = probe.verify_artifacts(artifact_root=target)
+
+    assert result["status"] == "failed"
+    assert any(
+        item["path"] == "rank_failure_arm.receipt"
+        and item["code"] == "reconcile_probe.receipt_digest_mismatch"
+        for item in result["bounded_mismatches"]
+    )
+
+
+def test_verify_fails_closed_on_wrong_rank_failure_schema_status_and_shape(
+    tmp_path: Path,
+) -> None:
+    target, receipt = _prepared(tmp_path)
+    _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
+    failure_path = target / "arms" / "rank_failure" / "rank-failure-receipt.json"
+
+    def mutate(payload: dict) -> None:
+        payload["schema"] = "wrong-schema"
+        payload["status"] = "wrong-status"
+        payload.pop("manifest_admitted")
+        payload["selector_admitted"] = True
+
+    _resign_receipt(failure_path, mutate)
+    result = probe.verify_artifacts(artifact_root=target)
+
+    assert result["status"] == "failed"
+    mismatch_paths = {item["path"] for item in result["bounded_mismatches"]}
+    assert {
+        "rank_failure_arm.schema",
+        "rank_failure_arm.status",
+        "rank_failure_arm.manifest_admitted",
+        "rank_failure_arm.selector_admitted",
+    } <= mismatch_paths
+
+
+def test_verify_fails_closed_on_wrong_interruption_schema_status_and_shape(
+    tmp_path: Path,
+) -> None:
+    target, receipt = _prepared(tmp_path)
+    _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
+    interruption_path = target / "arms" / "interruption" / "interruption-receipt.json"
+
+    def mutate(payload: dict) -> None:
+        payload["schema"] = "wrong-schema"
+        payload["status"] = "wrong-status"
+        payload.pop("exact_state_present")
+        payload["stop_after"] = 2
+
+    _resign_receipt(interruption_path, mutate)
+    result = probe.verify_artifacts(artifact_root=target)
+
+    assert result["status"] == "failed"
+    mismatch_paths = {item["path"] for item in result["bounded_mismatches"]}
+    assert {
+        "interruption_arm.schema",
+        "interruption_arm.status",
+        "interruption_arm.exact_state_present",
+        "interruption_arm.stop_after",
+    } <= mismatch_paths
 
 
 def test_verify_fails_closed_on_a_mismatched_boundary_checkpoint(tmp_path: Path) -> None:
     target, receipt = _prepared(tmp_path)
     _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
 
     # Corrupt the parent's step-1 checkpoint after the fact: a real cursor drift.
     parent_checkpoint = target / "runs" / "resumed_parent" / "checkpoints" / "step-1"
@@ -798,6 +909,7 @@ def test_verify_fails_closed_on_a_mismatched_boundary_checkpoint(tmp_path: Path)
 def test_verify_fails_closed_on_missing_or_mismatched_train_step2_row(tmp_path: Path) -> None:
     target, receipt = _prepared(tmp_path)
     _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
 
     # Overwrite the child's logging.jsonl with a mismatched loss value.
     child_run_dir = target / "runs" / "resumed_child"
@@ -812,6 +924,7 @@ def test_verify_fails_closed_on_missing_or_mismatched_train_step2_row(tmp_path: 
 def test_verify_rejects_commit_drift_between_receipts(tmp_path: Path) -> None:
     target, receipt = _prepared(tmp_path)
     _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
 
     control_path = target / probe.RECEIPTS_DIR_NAME / "success-control-receipt.json"
     _resign_receipt(control_path, lambda payload: payload.__setitem__("commit", "f" * 40))
@@ -824,6 +937,7 @@ def test_verify_rejects_commit_drift_between_receipts(tmp_path: Path) -> None:
 def test_verify_rejects_a_tampered_receipt_digest(tmp_path: Path) -> None:
     target, receipt = _prepared(tmp_path)
     _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
 
     control_path = target / probe.RECEIPTS_DIR_NAME / "success-control-receipt.json"
     payload = json.loads(control_path.read_text(encoding="utf-8"))
@@ -837,6 +951,7 @@ def test_verify_rejects_a_tampered_receipt_digest(tmp_path: Path) -> None:
 
 def test_verify_rejects_malformed_strict_json_receipt(tmp_path: Path) -> None:
     target, _ = _prepared(tmp_path)
+    _write_representative_failure_arms(target)
     receipts_dir = target / probe.RECEIPTS_DIR_NAME
     receipts_dir.mkdir()
     (receipts_dir / "success-control-receipt.json").write_text(

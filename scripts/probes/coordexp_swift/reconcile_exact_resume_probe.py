@@ -93,6 +93,15 @@ CONFIG_DIR_NAME = "configs"
 RUNS_DIR_NAME = "runs"
 PREPARE_RECEIPT_NAME = "prepare-receipt.json"
 RECEIPTS_DIR_NAME = "receipts"
+ARMS_DIR_NAME = "arms"
+RANK_FAILURE_ARM_NAME = "rank_failure"
+INTERRUPTION_ARM_NAME = "interruption"
+RANK_FAILURE_RECEIPT_NAME = "rank-failure-receipt.json"
+INTERRUPTION_RECEIPT_NAME = "interruption-receipt.json"
+
+REPRESENTATIVE_FAILURE_RANK = 1
+REPRESENTATIVE_FAILURE_KIND = "missing"
+REPRESENTATIVE_INTERRUPTION_STOP_AFTER = 1
 
 ROLE_UNINTERRUPTED_CONTROL = "uninterrupted_control"
 ROLE_RESUMED_PARENT = "resumed_parent"
@@ -1370,9 +1379,128 @@ _COMPARISON_POLICY = {
         "excluded_key_markers": list(_EXCLUDED_LOGGING_KEY_MARKERS),
         "excluded_keys": sorted(_EXCLUDED_LOGGING_KEYS),
     },
+    "rank_failure_arm": {
+        "source": f"{ARMS_DIR_NAME}/{RANK_FAILURE_ARM_NAME}/{RANK_FAILURE_RECEIPT_NAME}",
+        "expected": {
+            "schema": SCHEMA_RANK_FAILURE_RECEIPT,
+            "status": "converged_failure",
+            "world_size": WORLD_SIZE,
+            "injected_rank": REPRESENTATIVE_FAILURE_RANK,
+            "kind": REPRESENTATIVE_FAILURE_KIND,
+            "manifest_admitted": False,
+            "residue": [],
+        },
+        "forbidden_claim_key_markers": ["selector", "event"],
+    },
+    "interruption_arm": {
+        "source": f"{ARMS_DIR_NAME}/{INTERRUPTION_ARM_NAME}/{INTERRUPTION_RECEIPT_NAME}",
+        "expected": {
+            "schema": SCHEMA_INTERRUPTION_RECEIPT,
+            "status": "converged_partial_state",
+            "world_size": WORLD_SIZE,
+            "stop_after": REPRESENTATIVE_INTERRUPTION_STOP_AFTER,
+            "inference_payload_present": True,
+            "inference_payload_only": True,
+            "inference_commit_owner": "stub_not_production",
+            "exact_state_present": False,
+            "event_recorded": False,
+        },
+    },
 }
 
 _REQUIRED_COMPARISONS = tuple(_COMPARISON_POLICY)
+
+
+def _exact_json_field_equal(observed: Any, expected: Any) -> bool:
+    if isinstance(expected, bool):
+        return observed is expected
+    if isinstance(expected, int):
+        return type(observed) is int and observed == expected
+    if isinstance(expected, str):
+        return isinstance(observed, str) and observed == expected
+    if isinstance(expected, list):
+        return isinstance(observed, list) and observed == expected
+    return observed == expected
+
+
+def _bounded_observed(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= 160 else value[:157] + "..."
+    if isinstance(value, (list, dict)):
+        return {"type": type(value).__name__, "size": len(value)}
+    return {"type": type(value).__name__}
+
+
+def _compare_arm_receipt_fields(
+    receipt: Mapping[str, Any],
+    *,
+    path_prefix: str,
+    expected: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    for key, expected_value in expected.items():
+        if key not in receipt:
+            mismatches.append(
+                {"path": f"{path_prefix}.{key}", "code": "missing_field"}
+            )
+            continue
+        observed = receipt[key]
+        if not _exact_json_field_equal(observed, expected_value):
+            mismatches.append(
+                {
+                    "path": f"{path_prefix}.{key}",
+                    "expected": expected_value,
+                    "observed": _bounded_observed(observed),
+                }
+            )
+    return mismatches
+
+
+def _compare_rank_failure_arm(
+    receipt: Mapping[str, Any], *, checkpoint_dir: Path
+) -> list[dict[str, Any]]:
+    mismatches = _compare_arm_receipt_fields(
+        receipt,
+        path_prefix="rank_failure_arm",
+        expected={
+            **_COMPARISON_POLICY["rank_failure_arm"]["expected"],
+            "checkpoint_dir": str(checkpoint_dir),
+        },
+    )
+    error_code = receipt.get("error_code")
+    if not isinstance(error_code, str) or not error_code.startswith("training_state."):
+        mismatches.append(
+            {
+                "path": "rank_failure_arm.error_code",
+                "expected": "training_state.*",
+                "observed": _bounded_observed(error_code),
+            }
+        )
+    for key in receipt:
+        lowered = key.lower()
+        if any(marker in lowered for marker in ("selector", "event")):
+            mismatches.append(
+                {
+                    "path": f"rank_failure_arm.{key}",
+                    "code": "unsupported_admission_claim",
+                }
+            )
+    return mismatches
+
+
+def _compare_interruption_arm(
+    receipt: Mapping[str, Any], *, checkpoint_dir: Path
+) -> list[dict[str, Any]]:
+    return _compare_arm_receipt_fields(
+        receipt,
+        path_prefix="interruption_arm",
+        expected={
+            **_COMPARISON_POLICY["interruption_arm"]["expected"],
+            "checkpoint_dir": str(checkpoint_dir),
+        },
+    )
 
 
 def _manifest_expectations(manifest: TrainingStateManifest) -> TrainingStateExpectations:
@@ -1633,11 +1761,15 @@ def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
     receipts_dir = root / RECEIPTS_DIR_NAME
     control_path = receipts_dir / "success-control-receipt.json"
     resumed_path = receipts_dir / "success-resumed-receipt.json"
+    rank_failure_root = root / ARMS_DIR_NAME / RANK_FAILURE_ARM_NAME
+    interruption_root = root / ARMS_DIR_NAME / INTERRUPTION_ARM_NAME
+    rank_failure_path = rank_failure_root / RANK_FAILURE_RECEIPT_NAME
+    interruption_path = interruption_root / INTERRUPTION_RECEIPT_NAME
     missing_inputs: list[str] = []
     input_hashes: dict[str, str] = {
         str(root / PREPARE_RECEIPT_NAME): _sha256_file(root / PREPARE_RECEIPT_NAME)
     }
-    for path in (control_path, resumed_path):
+    for path in (control_path, resumed_path, rank_failure_path, interruption_path):
         if not path.is_file():
             missing_inputs.append(str(path))
     if missing_inputs:
@@ -1660,6 +1792,21 @@ def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
             raise ReconcileProbeError(
                 f"{label} receipt commit differs from the prepared bundle",
                 code="reconcile_probe.commit_drift",
+            )
+
+    mismatches: list[dict[str, Any]] = []
+    for path, path_prefix, compare in (
+        (rank_failure_path, "rank_failure_arm", _compare_rank_failure_arm),
+        (interruption_path, "interruption_arm", _compare_interruption_arm),
+    ):
+        input_hashes[str(path)] = _sha256_file(path)
+        try:
+            arm_receipt = _load_signed_receipt(path)
+        except ReconcileProbeError as exc:
+            mismatches.append({"path": f"{path_prefix}.receipt", "code": exc.code})
+        else:
+            mismatches.extend(
+                compare(arm_receipt, checkpoint_dir=path.parent / "checkpoint")
             )
 
     control_run_dir = Path(control["run_dir"])
@@ -1689,7 +1836,7 @@ def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
             commit=current,
             world_size=world_size,
             missing_inputs=missing_inputs,
-            mismatches=[],
+            mismatches=mismatches,
             input_file_sha256=input_hashes,
         )
     for name, path in manifest_paths.items():
@@ -1697,7 +1844,6 @@ def verify_artifacts(*, artifact_root: str | Path) -> dict[str, Any]:
     for name, path in logging_paths.items():
         input_hashes[name] = _sha256_file(path)
 
-    mismatches: list[dict[str, Any]] = []
     mismatches.extend(
         _compare_checkpoint_pair(
             checkpoints["control_step1"],
