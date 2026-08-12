@@ -69,7 +69,6 @@ class Human13HFCensusScorer:
             raise ValueError("HF census scorer requires the exact-history backend seam")
 
         normalized: dict[int, DecodeRequest] = {}
-        prompt_owner: dict[tuple[int, ...], int] = {}
         for image_id, request in requests_by_image.items():
             if (
                 isinstance(image_id, bool)
@@ -80,17 +79,10 @@ class Human13HFCensusScorer:
                 raise ValueError(
                     "HF census requests must be keyed by positive image IDs"
                 )
-            prompt = tuple(
-                int(value) for value in request.expected_executed_prompt_token_ids
-            )
-            if prompt in prompt_owner:
-                raise ValueError("HF census prompt identity is not unique by image")
-            prompt_owner[prompt] = image_id
             normalized[image_id] = request
         if not normalized:
             raise ValueError("HF census scorer requires canonical panel requests")
         self._requests_by_image = normalized
-        self._image_by_prompt = prompt_owner
 
     def _validate_launch(self) -> None:
         launch = self._launch
@@ -129,11 +121,13 @@ class Human13HFCensusScorer:
             raise ValueError("HF census encoded example has an invalid prompt boundary")
         input_ids = tuple(int(value) for value in input_ids_value)
         prompt = input_ids[:prompt_count]
-        image_id = self._image_by_prompt.get(prompt)
-        if image_id is None:
-            raise ValueError(
-                "HF census encoded prompt identity differs from canonical requests"
-            )
+        image_id = getattr(encoded_example, "human13_image_id", None)
+        if (
+            isinstance(image_id, bool)
+            or not isinstance(image_id, int)
+            or image_id not in self._requests_by_image
+        ):
+            raise ValueError("HF census encoded image identity is not canonical")
         request = self._requests_by_image[image_id]
         expected_prompt = tuple(request.expected_executed_prompt_token_ids)
         if (

@@ -334,6 +334,7 @@ def test_capture_maps_target_to_predecessor_and_reuses_coherent_trie_contexts() 
     assert result.receipt["packed_forward_count"] == 1
     assert len(hf.calls) == 1
     assert hf.calls[0][1] == (5, 6, 7, 8, 9)
+    assert hf.calls[0][0].human13_image_id == 1
     assert packed.calls[0][:3] == (model, runtime, tokenizer)
     census = run_census_with_exact_logits(plan=_plan(), evidence=result.evidence)
     assert census["coherent_chain"]["site_count"] == 5

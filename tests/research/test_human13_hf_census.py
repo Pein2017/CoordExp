@@ -147,11 +147,16 @@ def _receipt(
     )
 
 
-def _request(tmp_path: Any) -> DecodeRequest:
-    path = tmp_path / "1.png"
-    Image.new("RGB", (2, 2), color="white").save(path)
+def _request(
+    tmp_path: Any,
+    *,
+    image_id: int = 1,
+    color: str | tuple[int, int, int] = "white",
+) -> DecodeRequest:
+    path = tmp_path / f"{image_id}.png"
+    Image.new("RGB", (2, 2), color=color).save(path)
     return DecodeRequest(
-        request_id="1",
+        request_id=str(image_id),
         chat_text="canonical prompt",
         input_prompt_token_ids=(11,),
         expected_executed_prompt_token_ids=(11, 12),
@@ -190,6 +195,7 @@ class Encoded:
     input_ids: tuple[int, ...]
     prompt_token_count: int
     image_grid_thw: tuple[int, int, int] = (1, 1, 2)
+    human13_image_id: int = 1
 
 
 def test_scorer_selects_exact_causal_rows_from_literal_continuation(
@@ -218,6 +224,57 @@ def test_scorer_selects_exact_causal_rows_from_literal_continuation(
     assert model.forward_calls[0]["logits_to_keep"] == 0
     assert len(processor.calls) == 1
     assert tokenizer.decode_calls == []
+
+
+def test_scorer_routes_thirteen_shared_prompts_by_true_image_identity(
+    tmp_path: Any,
+) -> None:
+    from scripts.research.human13_hf_census import Human13HFCensusScorer
+
+    session = _session()
+    prepared_request_ids: list[str] = []
+    original_prepare = session.prepare_exact_history
+
+    def record_prepare(request: DecodeRequest) -> Any:
+        prepared_request_ids.append(request.request_id)
+        return original_prepare(request)
+
+    session.prepare_exact_history = record_prepare
+    image_ids = tuple(range(100, 113))
+    requests = {
+        image_id: _request(
+            tmp_path,
+            image_id=image_id,
+            color=(image_id - 100, 0, 0),
+        )
+        for image_id in image_ids
+    }
+    assert (
+        len(
+            {
+                request.expected_executed_prompt_token_ids
+                for request in requests.values()
+            }
+        )
+        == 1
+    )
+    assert len({request.image_sha256 for request in requests.values()}) == 13
+
+    scorer = Human13HFCensusScorer(
+        session=session,
+        requests_by_image=requests,
+    )
+    scorer.score_causal_logits(
+        Encoded(
+            "a1:107",
+            (11, 12, 13),
+            2,
+            human13_image_id=107,
+        ),
+        (1,),
+    )
+
+    assert prepared_request_ids == ["107"]
 
 
 @pytest.mark.parametrize(

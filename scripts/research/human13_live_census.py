@@ -77,12 +77,22 @@ def _prompt_ids(
 
 
 def _clone_skeleton(
-    skeleton: Any, *, segment_id: str, input_ids: tuple[int, ...]
+    skeleton: Any,
+    *,
+    segment_id: str,
+    image_id: int,
+    input_ids: tuple[int, ...],
 ) -> Any:
     if is_dataclass(skeleton):
-        return replace(skeleton, example_id=segment_id, input_ids=input_ids)
+        encoded = replace(skeleton, example_id=segment_id, input_ids=input_ids)
+        object.__setattr__(encoded, "human13_image_id", image_id)
+        return encoded
     values = dict(vars(skeleton))
-    values.update(example_id=segment_id, input_ids=input_ids)
+    values.update(
+        example_id=segment_id,
+        human13_image_id=image_id,
+        input_ids=input_ids,
+    )
     return SimpleNamespace(**values)
 
 
@@ -101,6 +111,7 @@ def _logical_segment(
         encoded_example=_clone_skeleton(
             skeleton,
             segment_id=segment_id,
+            image_id=image_id,
             input_ids=input_ids,
         ),
     )
