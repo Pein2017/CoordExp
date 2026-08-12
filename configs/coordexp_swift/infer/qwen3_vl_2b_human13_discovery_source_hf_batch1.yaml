@@ -1,0 +1,15 @@
+extends: qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml
+run:
+  name: qwen3-vl-2b-human13-discovery-source-hf-batch1
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-12-human13-k-union-to-greedy-overfit-screen
+  collision_policy: fail
+generation:
+  batch_size: 1
+  max_new_tokens: 3084
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+debug:
+  smoke: true
+  dry_run: false

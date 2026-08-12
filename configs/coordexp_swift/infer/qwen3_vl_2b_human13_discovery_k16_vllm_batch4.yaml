@@ -1,0 +1,22 @@
+extends: qwen3_vl_2b_human13_discovery_source_hf_batch1.yaml
+run:
+  name: qwen3-vl-2b-human13-discovery-k16-vllm-batch4
+backend:
+  type: vllm
+  vllm:
+    gpu_memory_utilization: 0.70
+    max_model_len: 2048
+data:
+  input_jsonl: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-crossover/inputs/human-refined-13.geo_sorted_xy.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.10
+scoring:
+  enabled: true
+debug:
+  smoke: false
+  dry_run: false
