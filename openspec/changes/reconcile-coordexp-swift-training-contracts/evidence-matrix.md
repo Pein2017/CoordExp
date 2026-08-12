@@ -5,6 +5,21 @@ receipt beside it. `accepted` means named source plus focused unit/control-plane
 coverage exists; it does not promote the conditional delta. `gap` identifies a
 later bounded qualification, never an inferred behavior.
 
+## Wave 1 focused execution (Task 2)
+
+`receipts/wave-1-focused-baseline.md` reran the frozen 16-file focused suite at
+the current docs-only descendant of the pinned implementation commit.  It
+executes every named test module on an `accepted` row; the receipt remains
+bounded to unit/control-plane behavior and its artifact assertions.  The run
+has no failures or skips, so it demonstrates no production-source gap.
+
+The `gap` rows below remain deliberately unaccepted: they name the missing
+Wave 2, 3, or 5 qualification rather than a failing current owner.  They do
+not justify a `src/` edit, a delta narrowing, or promotion to Task 3.  Task 2's
+single decision is therefore **continue with qualification** under the existing
+plan; do not treat this baseline as an exact-continuation or production-launch
+receipt.
+
 | Delta spec | Requirement / scenario | Live source owner | Focused test owner | Verification command | Receipt | Disposition | Claim boundary |
 |---|---|---|---|---|---|---|---|
 | config-runtime | Exact Resume Configuration Is Strict And Opt-In | `src/config/models.py:ResumeConfig` | `tests/config/test_train_config.py:test_exact_resume_defaults_disabled_and_is_persisted` | `conda run -n ms python -m pytest -q tests/config/test_train_config.py` | `receipts/wave-0-baseline.md` | accepted | strict config only |
