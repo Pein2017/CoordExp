@@ -32,6 +32,29 @@
 - [ ] 3.1 Add deterministic multi-rank control-plane coverage for successful exact-state publication with one complete, unique contribution from every expected rank and aliases/events committed only after the authenticated manifest.
 - [ ] 3.2 Add injected one-rank failure plus missing, duplicate, malformed, and corrupt rank-contribution cases; prove all live ranks converge the same bounded failure without hanging and no selector or completed exact-state event references the step.
 - [ ] 3.3 Add interruption tests at each externally visible boundary: before inference commit, after inference commit but before exact-state manifest commit, and after manifest staging but before authoritative event/alias commit; prove partial state is inadmissible and any surviving inference payload remains inference-only.
+> Task 4 preparatory-tooling status (commit `test(training): add two-rank
+> exact-resume qualifier`): the Wave-7 controller
+> (`scripts/probes/coordexp_swift/wave7_exact_resume_sequence.py`) is fixed to
+> eight ranks (`payload["world_size"] != 8`) and its grammar cannot express the
+> current `world_size=2` packet, so a bounded, independent CLI --
+> `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`, covered by
+> `tests/training/test_reconcile_exact_resume_probe.py` (45 focused nodes) --
+> reuses `src.artifacts.training_state`, `src.artifacts.checkpoint_payload`,
+> and `src.config.loader` to provide `prepare`/`success-control`/
+> `success-resumed`/`rank-failure`/`interruption`/`verify` commands. `prepare`
+> and `rank-failure`/`interruption` are real and model-free (no GPU/model
+> import); `success-control`/`success-resumed` build the real
+> `torch.distributed.run -m src.train` argv but execute through an injectable
+> `launch` seam so unit tests never touch a GPU. `rank-failure` and
+> `interruption` exercise real production admission code
+> (`begin_training_state_contributions`, `publish_rank_training_state_contribution`,
+> `commit_training_state_contributions`) and durably converge the same
+> missing/duplicate/malformed/corrupt and three-boundary scenarios 3.2/3.3
+> describe; they are offered as supporting evidence, not a substitute for
+> dedicated coverage in `tests/training/test_exact_resume.py` if the task
+> owner wants 3.1-3.3 checked directly against that file. This preparatory
+> commit does not launch a model/GPU and does not check 3.1-3.7; it only
+> equips the frozen command manifest that Task 4 Step 2 will bind by argv.
 - [ ] 3.4 Prepare a fresh launch-authorization packet bound to the exact implementation commit, config, artifact root, and commands. Fix `world_size=2`, at most two GPUs, and three semantic arms: a success arm containing matched uninterrupted-control and parent-to-resumed-child branches, a rank-failure arm, and an interruption arm. Require exactly one corresponding next forward and at most one applied optimizer update in each success branch; cap each failure-shaped arm at one forward and one applied update per rank. Derive and record numeric ceilings for model forwards/collectives per rank and branch/arm, per-arm and total wall time, per-rank RSS/GPU memory, new artifact bytes across both success branches and all arms, and required free disk.
 - [ ] 3.5 Run the independent pre-cost/distributed-qualification audit against the frozen commands, bounds, comparison policy, and deterministic control-plane evidence; resolve every P0/P1 finding, then obtain fresh user authorization immediately before launch bound to that exact packet. Planning approval or an earlier launch approval does not satisfy this task.
 - [ ] 3.6 Execute only the authorized smallest production-shaped probe. The success receipt MUST bind the matched branch pair and compare next input/pack identity; pre-forward trainable/optimizer/scheduler/scaler/RNG/cursor state; objective/loss fields; and resulting trainable parameters after the first post-resume optimizer update under the declared exact policy. Stop without retry on command/commit drift, occupied targets, insufficient headroom, timeout/hang, OOM, or any declared-bound exceedance; bind launcher/runtime identity, world size, artifact trees, terminal status, resource maxima, and stop outcome in immutable change-local receipts.

@@ -339,6 +339,8 @@ re-introduce the invalid exact-without-path clause.
 - Modify: `openspec/changes/reconcile-coordexp-swift-training-contracts/tasks.md`
 - Read/verify: `scripts/probes/coordexp_swift/wave7_exact_resume_sequence.py`, `scripts/probes/coordexp_swift/wave7_exact_resume_interrupt.py`, and their tests; do not reuse them unless their current grammar exactly satisfies this change's bounds.
 
+**Preparatory tooling (commit `test(training): add two-rank exact-resume qualifier`):** the Wave-7 controller's grammar is fixed to eight ranks and cannot express `world_size=2`, so Step 2's command manifest should freeze `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py` (`prepare`/`success-control`/`success-resumed`/`rank-failure`/`interruption`/`verify`, tested by `tests/training/test_reconcile_exact_resume_probe.py`) rather than the Wave-7 scripts. It reuses `src.artifacts.training_state`/`src.artifacts.checkpoint_payload`/`src.config.loader`; `success-control`/`success-resumed` still need a real launch to exercise the injectable `launch` seam for a genuine forward/update.
+
 **Interfaces:**
 - Consumes: the exact post-Task-3 commit and already passing deterministic multi-rank control-plane tests.
 - Produces: one immutable manifest of exact argv arrays, one freshly authorized quantitative launch packet, and target-bound receipts for the matched success branch pair plus rank-failure and interruption arms.
