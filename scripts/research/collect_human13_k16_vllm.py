@@ -278,6 +278,11 @@ def execute_vllm_batch(
     """Submit one batch through the already-open backend-neutral vLLM session."""
 
     _validate_plan_for_batch(batch)
+    expected_image_sha256 = dict(EXPECTED_IMAGE_IDENTITIES)[batch.image_id]
+    if getattr(base_request, "image_sha256", None) != expected_image_sha256:
+        raise ValueError(
+            "base request image SHA-256 does not match the frozen Human-13 image"
+        )
     from src.inference.vllm_backend import (
         _close_prompt_images,
         _restore_native_request_order,

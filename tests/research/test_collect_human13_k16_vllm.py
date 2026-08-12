@@ -151,6 +151,7 @@ def test_vllm_session_seam_uses_numeric_native_ids_and_preserves_collector_attri
     @dataclass(frozen=True)
     class BaseRequest:
         request_id: str
+        image_sha256: str
 
     @dataclass(frozen=True)
     class NativeOutput:
@@ -187,9 +188,10 @@ def test_vllm_session_seam_uses_numeric_native_ids_and_preserves_collector_attri
             return 99
 
     session = Session()
+    expected_image_sha256 = dict(collector.EXPECTED_IMAGE_IDENTITIES)[1584]
     bound = collector.execute_vllm_batch(
         session=session,
-        base_request=BaseRequest(request_id="base"),
+        base_request=BaseRequest(request_id="base", image_sha256=expected_image_sha256),
         batch=batch,
     )
 
@@ -215,7 +217,9 @@ def test_vllm_session_seam_uses_numeric_native_ids_and_preserves_collector_attri
     with pytest.raises(RuntimeContractError, match="duplicate native request ids"):
         collector.execute_vllm_batch(
             session=session,
-            base_request=BaseRequest(request_id="base"),
+            base_request=BaseRequest(
+                request_id="base", image_sha256=expected_image_sha256
+            ),
             batch=batch,
         )
 
@@ -249,3 +253,37 @@ def test_batch_validation_rejects_noncanonical_seed_image_or_request_identity() 
         collector._validate_plan_for_batch(
             replace(batch, requests=(wrong_request_id, *batch.requests[1:]))
         )
+
+
+def test_vllm_batch_rejects_base_request_image_mismatch_before_runtime_action() -> None:
+    batch = collector.plan_image_requests(image_id=1584)[0]
+
+    @dataclass(frozen=True)
+    class BaseRequest:
+        request_id: str
+        image_sha256: str
+
+    class Session:
+        def __init__(self) -> None:
+            self.prompt_calls = 0
+            self._engine = SimpleNamespace(generate=self._unexpected_engine_action)
+
+        def _generation_prompts(
+            self, requests: object
+        ) -> tuple[list[object], list[str]]:
+            del requests
+            self.prompt_calls += 1
+            raise AssertionError("base image mismatch reached prompt preparation")
+
+        def _unexpected_engine_action(self, *args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise AssertionError("base image mismatch reached engine submission")
+
+    session = Session()
+    with pytest.raises(ValueError, match="base request image SHA-256"):
+        collector.execute_vllm_batch(
+            session=session,
+            base_request=BaseRequest(request_id="base", image_sha256="0" * 64),
+            batch=batch,
+        )
+    assert session.prompt_calls == 0
