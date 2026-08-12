@@ -27,6 +27,8 @@ def test_logical_roles_keep_coherent_and_atomic_image_units() -> None:
         (
             _segment("a1:1", 1, "a1_full_h", 8),
             _segment("a8:2", 2, "a8_full_h", 8),
+            _segment("h1:2:first", 2, "h1_independent", 8),
+            _segment("a6:2:first", 2, "a6_donor_h1", 8),
             _segment("gt:3", 3, "full_gt", 8),
             _segment("a4:4", 4, "a4_union", 8),
             _segment("replay:1", 1, "source_replay", 8),
@@ -37,6 +39,8 @@ def test_logical_roles_keep_coherent_and_atomic_image_units() -> None:
     assert tuple(item.role for item in segments) == (
         "a1_full_h",
         "a8_full_h",
+        "h1_independent",
+        "a6_donor_h1",
         "full_gt",
         "a4_union",
         "source_replay",
@@ -49,6 +53,16 @@ def test_logical_roles_keep_coherent_and_atomic_image_units() -> None:
                 _segment("a1:1:split", 1, "a1_full_h", 7),
             )
         )
+    independent = runner.build_logical_segments(
+        (
+            _segment("h1:1:first", 1, "h1_independent", 8),
+            _segment("h1:1:second", 1, "h1_independent", 7),
+        )
+    )
+    assert tuple(item.segment_id for item in independent) == (
+        "h1:1:first",
+        "h1:1:second",
+    )
     with pytest.raises(ValueError, match="atomic candidate group"):
         runner.build_logical_segments(
             (
@@ -543,7 +557,7 @@ def test_a4_requires_each_exact_candidate_once_in_one_a4_segment_and_pack(
         (
             "A3",
             (1.0, 1.0, 1.0),
-            {"a1_full_h", "source_replay", "duplicate_event"},
+            {"h1_independent", "source_replay", "duplicate_event"},
         ),
         (
             "A4",
@@ -553,9 +567,9 @@ def test_a4_requires_each_exact_candidate_once_in_one_a4_segment_and_pack(
         (
             "A6",
             (1.0, 1.0, 1.0),
-            {"a1_full_h", "source_replay", "duplicate_event"},
+            {"a6_donor_h1", "source_replay", "duplicate_event"},
         ),
-        ("A7", (1.0, 0.0, 1.0), {"a1_full_h", "duplicate_event"}),
+        ("A7", (1.0, 0.0, 1.0), {"h1_independent", "duplicate_event"}),
         (
             "A8-prime",
             (1.0, 1.0, 1.0),
@@ -578,6 +592,148 @@ def test_arm_contract_supports_every_declared_training_arm_with_exact_roles(
 def test_frozen_source_remains_a_no_update_path() -> None:
     with pytest.raises(ValueError, match="Frozen Source.*no-update"):
         runner._arm_contract("frozen_source")
+
+
+def test_a3_accepts_multiple_independent_h1_segments_for_one_image() -> None:
+    sealed, packed, sites_by_pack = _two_h_independent_payload()
+
+    execution = runner.build_execution_plan(
+        sealed,
+        arm_id="A3",
+        packed_plan=packed,
+        sites_by_pack=sites_by_pack,
+    )
+
+    h_segments = [
+        segment
+        for _pack, segments in execution.pack_segments
+        for segment in segments
+        if segment.role == "h1_independent"
+    ]
+    assert [(item.image_id, len(item.row_bindings)) for item in h_segments] == [
+        (1, 1),
+        (1, 1),
+    ]
+
+
+def test_a6_requires_sealed_donor_binding_for_plan_and_forged_execution() -> None:
+    sealed, packed, sites_by_pack = _a6_payload()
+    with pytest.raises(ValueError, match="sealed_a6_donor_required"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A6",
+            packed_plan=packed,
+            sites_by_pack=sites_by_pack,
+        )
+
+    a1_sealed, execution, micro_steps = _bound_a1_execution()
+    a6_sealed = SimpleNamespace(
+        **{**vars(a1_sealed), "arms": (SimpleNamespace(arm_id="A6"),)}
+    )
+    forged = replace(
+        execution,
+        arm_id="A6",
+        coefficients=runner._arm_contract("A6").coefficients,
+    )
+    with pytest.raises(ValueError, match="sealed_a6_donor_required"):
+        runner._validate_execution_payload(a6_sealed, forged, micro_steps)
+
+
+def test_forged_a6_role_is_rejected_with_a_valid_typed_binding() -> None:
+    sealed, packed, sites_by_pack = _a6_payload()
+    binding = _a6_binding(sealed)
+    execution = runner.build_execution_plan(
+        sealed,
+        arm_id="A6",
+        packed_plan=packed,
+        sites_by_pack=sites_by_pack,
+        a6_donor_binding=binding,
+    )
+    micro_steps = runner.build_supervised_micro_steps(
+        packed,
+        denominators=execution.denominators,
+        token_sequences={
+            pack.pack.pack_index: SimpleNamespace(pack_index=pack.pack.pack_index)
+            for pack in packed.packs
+        },
+        vocab_groups=SimpleNamespace(vocab_size=3),
+        sites_by_pack=sites_by_pack,
+        expected_vocab_size=3,
+    )
+    forged = replace(
+        execution,
+        pack_segments=tuple(
+            (
+                pack_index,
+                tuple(
+                    replace(segment, role="a1_full_h")
+                    if segment.role == "a6_donor_h1"
+                    else segment
+                    for segment in segments
+                ),
+            )
+            for pack_index, segments in execution.pack_segments
+        ),
+    )
+
+    with pytest.raises(ValueError, match="role mismatches.*arm contract"):
+        runner._validate_execution_payload(sealed, forged, micro_steps)
+
+
+def test_a6_rejects_an_unsealed_typed_donor_payload() -> None:
+    sealed, packed, sites_by_pack = _a6_payload()
+    binding = replace(_a6_binding(sealed), artifact_sha256="d" * 64)
+
+    with pytest.raises(ValueError, match="A6 donor binding artifact digest"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A6",
+            packed_plan=packed,
+            sites_by_pack=sites_by_pack,
+            a6_donor_binding=binding,
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation", (None, "image", "owner", "trajectory", "prefix", "eligibility")
+)
+def test_a6_typed_binding_validates_exact_donor_provenance(
+    mutation: str | None,
+) -> None:
+    sealed, packed, sites_by_pack = _a6_payload()
+    binding = _a6_binding(sealed)
+    donor = binding.donors[0]
+    if mutation == "image":
+        donor = replace(donor, image_id=2)
+    elif mutation == "owner":
+        donor = replace(donor, owner_id="owner-g")
+    elif mutation == "trajectory":
+        donor = replace(donor, donor_trajectory_id="source")
+    elif mutation == "prefix":
+        donor = replace(donor, donor_prefix_token_ids=(99,))
+    elif mutation == "eligibility":
+        donor = replace(donor, h_mid_eligible=False)
+    if mutation is not None:
+        binding = _seal_a6_binding(replace(binding, donors=(donor,)))
+
+    if mutation is None:
+        execution = runner.build_execution_plan(
+            sealed,
+            arm_id="A6",
+            packed_plan=packed,
+            sites_by_pack=sites_by_pack,
+            a6_donor_binding=binding,
+        )
+        assert execution.a6_donor_binding == binding
+    else:
+        with pytest.raises(ValueError, match="A6.*donor|donor.*A6"):
+            runner.build_execution_plan(
+                sealed,
+                arm_id="A6",
+                packed_plan=packed,
+                sites_by_pack=sites_by_pack,
+                a6_donor_binding=binding,
+            )
 
 
 def test_a8_prime_execution_is_blocked_until_task4_supplies_a_sealed_census() -> None:
@@ -1135,6 +1291,221 @@ def _a1_payload(
         for pack in packed.packs
     }
     return sealed, packed, sites_by_pack
+
+
+def _two_h_independent_payload() -> tuple[
+    SimpleNamespace,
+    runner.PackedPanelPlan,
+    dict[int, tuple[runner.Human13LossSite, ...]],
+]:
+    sealed = _sealed_manifest(arm_id="A3")
+    image = sealed.images[0]
+    sampled = image.trajectories[1]
+    second = SimpleNamespace(
+        owner_id="owner-h2",
+        row_id="row-h2",
+        token_ids=(1, 0),
+        target_token_mask=(True, False),
+    )
+    sampled = _replace_namespace(
+        sampled,
+        raw_token_ids=(2, 0, 1, 0, 0, 2),
+        replay_token_mask=(False,) * 6,
+        rows=(
+            SimpleNamespace(row_id="row-h", token_start=0, token_end=2),
+            SimpleNamespace(row_id="row-h2", token_start=2, token_end=4),
+            SimpleNamespace(row_id="row-a4-other", token_start=4, token_end=6),
+        ),
+    )
+    image = _replace_namespace(
+        image,
+        owners=(
+            *image.owners,
+            SimpleNamespace(
+                owner_id="owner-h2",
+                source_row_ids=(),
+                sampled_row_ids=("row-h2",),
+            ),
+        ),
+        h_owner_ids=("owner-h", "owner-h2"),
+        selected_rows=(*image.selected_rows, second),
+        target_row_ids=("row-h", "row-h2"),
+        trajectories=(image.trajectories[0], sampled),
+    )
+    sealed = _replace_namespace(
+        sealed,
+        images=(image,),
+        binding=_replace_namespace(
+            sealed.binding,
+            panel=_replace_namespace(sealed.binding.panel, owner_count=3),
+        ),
+        denominators=_replace_namespace(
+            sealed.denominators,
+            target_owner_count=2,
+        ),
+    )
+    segments = (
+        _segment(
+            "h1:1:owner-h",
+            1,
+            "h1_independent",
+            8,
+            token_ids=(10, 151655, 151655, 151655, 151655, 30, 2, 0),
+            row_bindings=(
+                runner.Human13EncodedRowBinding(
+                    family="h",
+                    unit_id="owner-h",
+                    manifest_row_id="row-h",
+                    token_start=6,
+                    token_end=8,
+                    target_token_mask=(True, False),
+                ),
+            ),
+        ),
+        _segment(
+            "h1:1:owner-h2",
+            1,
+            "h1_independent",
+            8,
+            token_ids=(10, 151655, 151655, 151655, 151655, 31, 1, 0),
+            row_bindings=(
+                runner.Human13EncodedRowBinding(
+                    family="h",
+                    unit_id="owner-h2",
+                    manifest_row_id="row-h2",
+                    token_start=6,
+                    token_end=8,
+                    target_token_mask=(True, False),
+                ),
+            ),
+        ),
+        *(
+            segment
+            for segment in _a1_payload()[1].logical_segments
+            if segment.role in {"source_replay", "duplicate_event"}
+        ),
+    )
+    packed = runner.plan_panel_packs(segments, global_max_length=24)
+    return sealed, packed, _sites_from_row_bindings(packed)
+
+
+def _a6_payload() -> tuple[
+    SimpleNamespace,
+    runner.PackedPanelPlan,
+    dict[int, tuple[runner.Human13LossSite, ...]],
+]:
+    sealed = _sealed_manifest(arm_id="A6")
+    image = sealed.images[0]
+    selected = SimpleNamespace(
+        owner_id="owner-h",
+        row_id="row-a4-other",
+        token_ids=(0, 2),
+        target_token_mask=(True, False),
+    )
+    image = _replace_namespace(
+        image,
+        selected_rows=(selected,),
+        target_row_ids=("row-a4-other",),
+    )
+    sealed = _replace_namespace(sealed, images=(image,))
+    donor = _segment(
+        "a6:1:owner-h",
+        1,
+        "a6_donor_h1",
+        10,
+        token_ids=(10, 151655, 151655, 151655, 151655, 30, 2, 0, 0, 2),
+        row_bindings=(
+            runner.Human13EncodedRowBinding(
+                family="h",
+                unit_id="owner-h",
+                manifest_row_id="row-a4-other",
+                token_start=8,
+                token_end=10,
+                target_token_mask=(True, False),
+            ),
+        ),
+    )
+    background = tuple(
+        segment
+        for segment in _a1_payload()[1].logical_segments
+        if segment.role in {"source_replay", "duplicate_event"}
+    )
+    packed = runner.plan_panel_packs((donor, *background), global_max_length=24)
+    return sealed, packed, _sites_from_row_bindings(packed)
+
+
+def _sites_from_row_bindings(
+    packed: runner.PackedPanelPlan,
+) -> dict[int, tuple[runner.Human13LossSite, ...]]:
+    return {
+        pack.pack.pack_index: tuple(
+            runner.Human13LossSite(
+                family=row.family,
+                objective=(
+                    "owner_ce"
+                    if row.family in {"h", "replay", "full_gt"}
+                    else "duplicate_unlikelihood"
+                ),
+                unit_id=row.unit_id,
+                image_id=logical.image_id,
+                segment_id=logical.segment_id,
+                manifest_row_ids=(row.manifest_row_id,),
+                logits_positions=tuple(
+                    physical.start + row.token_start + offset - 1
+                    for offset, included in enumerate(row.target_token_mask)
+                    if included
+                ),
+                target_token_ids=tuple(
+                    logical.encoded_example.input_ids[row.token_start + offset]
+                    for offset, included in enumerate(row.target_token_mask)
+                    if included
+                ),
+            )
+            for logical, physical in zip(
+                pack.logical_segments, pack.pack.segments, strict=True
+            )
+            for row in logical.encoded_example.human13_row_bindings
+        )
+        for pack in packed.packs
+    }
+
+
+def _a6_binding(sealed: SimpleNamespace) -> runner.Human13A6DonorBinding:
+    return _seal_a6_binding(
+        runner.Human13A6DonorBinding(
+            schema_version="human13_a6_donor_binding.v1",
+            manifest_identity=runner._manifest_identity(
+                runner._coerce_sealed_manifest(sealed)
+            ),
+            frozen_targets_sha256=runner._manifest_frozen_targets_sha256(sealed),
+            artifact_sha256="c" * 64,
+            applicable=True,
+            donors=(
+                runner.Human13A6DonorRecord(
+                    image_id=1,
+                    owner_id="owner-h",
+                    target_row_id="row-a4-other",
+                    donor_trajectory_id="sampled",
+                    donor_prefix_token_ids=(2, 0),
+                    donor_prior_row_ids=("row-h",),
+                    h_mid_eligible=True,
+                ),
+            ),
+        )
+    )
+
+
+def _seal_a6_binding(
+    binding: runner.Human13A6DonorBinding,
+) -> runner.Human13A6DonorBinding:
+    return replace(
+        binding,
+        artifact_sha256=runner._a6_donor_artifact_sha256(binding),
+    )
+
+
+def _replace_namespace(value: SimpleNamespace, **changes: object) -> SimpleNamespace:
+    return SimpleNamespace(**{**vars(value), **changes})
 
 
 def _a4_payload(

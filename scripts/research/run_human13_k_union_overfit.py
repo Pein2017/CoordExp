@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 import hashlib
+import json
 import math
 from pathlib import Path
 from typing import Any, Literal, Sequence, TypeAlias
@@ -42,6 +43,8 @@ GLOBAL_MAX_LENGTH = 12_000
 
 LogicalRole: TypeAlias = Literal[
     "a1_full_h",
+    "h1_independent",
+    "a6_donor_h1",
     "a8_full_h",
     "full_gt",
     "a4_union",
@@ -51,6 +54,8 @@ LogicalRole: TypeAlias = Literal[
 
 _COHERENT_ROLES = frozenset({"a1_full_h", "a8_full_h", "full_gt"})
 _KNOWN_ROLES = _COHERENT_ROLES | {
+    "h1_independent",
+    "a6_donor_h1",
     "a4_union",
     "source_replay",
     "duplicate_event",
@@ -258,6 +263,63 @@ class Human13ManifestIdentity:
 
 
 @dataclass(frozen=True)
+class Human13A6DonorRecord:
+    """One selected A6 target and its frozen natural H1 donor provenance."""
+
+    image_id: int
+    owner_id: str
+    target_row_id: str
+    donor_trajectory_id: str
+    donor_prefix_token_ids: tuple[int, ...]
+    donor_prior_row_ids: tuple[str, ...]
+    h_mid_eligible: bool
+
+    def __post_init__(self) -> None:
+        if isinstance(self.image_id, bool) or self.image_id <= 0:
+            raise ValueError("A6 donor image_id must be a positive integer")
+        if not self.owner_id or not self.target_row_id or not self.donor_trajectory_id:
+            raise ValueError("A6 donor provenance identities must be nonempty")
+        if not self.donor_prefix_token_ids:
+            raise ValueError("A6 donor prefix must be nonempty")
+        if len(set(self.donor_prior_row_ids)) != len(self.donor_prior_row_ids):
+            raise ValueError("A6 donor prior-row identities must be unique")
+        if not isinstance(self.h_mid_eligible, bool):
+            raise ValueError("A6 donor H_mid eligibility must be boolean")
+
+
+@dataclass(frozen=True)
+class Human13A6DonorBinding:
+    """Sealed frozen-ledger applicability and exact donor census for A6."""
+
+    schema_version: str
+    manifest_identity: Human13ManifestIdentity
+    frozen_targets_sha256: str
+    artifact_sha256: str
+    applicable: bool
+    donors: tuple[Human13A6DonorRecord, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "human13_a6_donor_binding.v1":
+            raise ValueError("A6 donor binding schema is not supported")
+        if not isinstance(self.manifest_identity, Human13ManifestIdentity):
+            raise ValueError("A6 donor binding requires a typed manifest identity")
+        for value, label in (
+            (self.frozen_targets_sha256, "frozen target"),
+            (self.artifact_sha256, "artifact"),
+        ):
+            if len(value) != 64 or any(
+                character not in "0123456789abcdef" for character in value
+            ):
+                raise ValueError(f"A6 donor {label} digest must be lowercase SHA-256")
+        if self.applicable is not True:
+            raise ValueError("A6 donor binding must seal applicable=true")
+        if not self.donors or not all(
+            isinstance(item, Human13A6DonorRecord) for item in self.donors
+        ):
+            raise ValueError("A6 donor binding requires typed donor records")
+
+
+@dataclass(frozen=True)
 class SealedHuman13Manifest:
     manifest: Any
     manifest_sha256: str
@@ -287,6 +349,7 @@ class Human13ExecutionPlan:
     coefficients: tuple[tuple[LossFamily, float], ...]
     pack_segments: tuple[tuple[int, tuple[Human13SegmentBinding, ...]], ...]
     sites_by_pack: tuple[tuple[int, tuple[Human13LossSite, ...]], ...]
+    a6_donor_binding: Human13A6DonorBinding | None = None
 
 
 @dataclass(frozen=True)
@@ -497,6 +560,7 @@ def build_execution_plan(
     arm_id: str,
     packed_plan: PackedPanelPlan,
     sites_by_pack: Mapping[int, Sequence[Human13LossSite]],
+    a6_donor_binding: Human13A6DonorBinding | None = None,
 ) -> Human13ExecutionPlan:
     """Bind one immutable arm payload to its sealed manifest and physical packs."""
 
@@ -511,6 +575,15 @@ def build_execution_plan(
             "sealed_census_required: A8-prime execution requires a canonical "
             "manifest- and target-bound census artifact"
         )
+    if arm_id == "A6":
+        if a6_donor_binding is None:
+            raise ValueError(
+                "sealed_a6_donor_required: A6 execution requires a frozen-ledger "
+                "applicability and donor binding"
+            )
+        _validate_a6_donor_binding(sealed, a6_donor_binding)
+    elif a6_donor_binding is not None:
+        raise ValueError("A6 donor binding cannot be attached to another arm")
     contract = _arm_contract(arm_id)
     coefficients = contract.coefficients
     frozen_sites = tuple(
@@ -530,6 +603,7 @@ def build_execution_plan(
             for pack in packed_plan.packs
         ),
         sites_by_pack=frozen_sites,
+        a6_donor_binding=a6_donor_binding,
     )
     _validate_sites_against_manifest(
         manifest,
@@ -944,6 +1018,136 @@ def _manifest_identity(sealed: SealedHuman13Manifest) -> Human13ManifestIdentity
     )
 
 
+def _manifest_frozen_targets_sha256(manifest_value: Any) -> str:
+    """Digest the exact selected-row projection consumed by A6."""
+
+    manifest = (
+        manifest_value.manifest
+        if isinstance(manifest_value, SealedHuman13Manifest)
+        else manifest_value
+    )
+    projection = [
+        {
+            "image_id": image.image_id,
+            "selected_rows": [
+                {
+                    "owner_id": row.owner_id,
+                    "row_id": row.row_id,
+                    "token_ids": list(row.token_ids),
+                    "target_token_mask": list(row.target_token_mask),
+                }
+                for row in image.selected_rows
+            ],
+        }
+        for image in manifest.images
+    ]
+    encoded = json.dumps(
+        projection,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _a6_donor_artifact_sha256(binding: Human13A6DonorBinding) -> str:
+    """Canonical digest of the typed A6 binding, excluding its digest field."""
+
+    identity = binding.manifest_identity
+    projection = {
+        "schema_version": binding.schema_version,
+        "manifest_identity": {
+            "schema_version": identity.schema_version,
+            "unit_id": identity.unit_id,
+            "panel_sha256": identity.panel_sha256,
+            "manifest_sha256": identity.manifest_sha256,
+        },
+        "frozen_targets_sha256": binding.frozen_targets_sha256,
+        "applicable": binding.applicable,
+        "donors": [
+            {
+                "image_id": donor.image_id,
+                "owner_id": donor.owner_id,
+                "target_row_id": donor.target_row_id,
+                "donor_trajectory_id": donor.donor_trajectory_id,
+                "donor_prefix_token_ids": list(donor.donor_prefix_token_ids),
+                "donor_prior_row_ids": list(donor.donor_prior_row_ids),
+                "h_mid_eligible": donor.h_mid_eligible,
+            }
+            for donor in binding.donors
+        ],
+    }
+    encoded = json.dumps(
+        projection,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _a6_donor_provenance(record: Human13A6DonorRecord) -> tuple[Any, ...]:
+    return (
+        record.image_id,
+        record.owner_id,
+        record.target_row_id,
+        record.donor_trajectory_id,
+        record.donor_prefix_token_ids,
+        record.donor_prior_row_ids,
+    )
+
+
+def _validate_a6_donor_binding(
+    sealed: SealedHuman13Manifest,
+    binding: Human13A6DonorBinding,
+) -> None:
+    if not isinstance(binding, Human13A6DonorBinding):
+        raise ValueError("A6 donor binding must be typed and sealed")
+    if binding.manifest_identity != _manifest_identity(sealed):
+        raise ValueError("A6 donor binding mismatches the sealed manifest")
+    if binding.frozen_targets_sha256 != _manifest_frozen_targets_sha256(sealed):
+        raise ValueError("A6 donor binding mismatches the frozen target census")
+    if binding.artifact_sha256 != _a6_donor_artifact_sha256(binding):
+        raise ValueError("A6 donor binding artifact digest mismatches its payload")
+
+    expected: list[Human13A6DonorRecord] = []
+    for image in sealed.manifest.images:
+        h_owners = set(image.h_owner_ids)
+        for selected in image.selected_rows:
+            if selected.owner_id not in h_owners:
+                raise ValueError("A6 donor target owner is not a manifest H owner")
+            trajectory, target_row = _trajectory_row(image, selected.row_id)
+            prefix = tuple(trajectory.raw_token_ids[: target_row.token_start])
+            prior_rows = tuple(
+                row.row_id
+                for row in trajectory.rows
+                if row.token_end <= target_row.token_start
+            )
+            if not prefix or not prior_rows:
+                raise ValueError("A6 donor target has no natural prior H1 provenance")
+            expected.append(
+                Human13A6DonorRecord(
+                    image_id=image.image_id,
+                    owner_id=selected.owner_id,
+                    target_row_id=selected.row_id,
+                    donor_trajectory_id=trajectory.trajectory_id,
+                    donor_prefix_token_ids=prefix,
+                    donor_prior_row_ids=prior_rows,
+                    h_mid_eligible=False,
+                )
+            )
+
+    donor_keys = tuple(
+        (item.image_id, item.owner_id, item.target_row_id) for item in binding.donors
+    )
+    if len(set(donor_keys)) != len(donor_keys) or tuple(
+        _a6_donor_provenance(item) for item in binding.donors
+    ) != tuple(_a6_donor_provenance(item) for item in expected):
+        raise ValueError("A6 donor provenance does not exactly match selected targets")
+    if not any(item.h_mid_eligible for item in binding.donors):
+        raise ValueError("A6 donor binding has no frozen H_mid-eligible native donor")
+
+
 def _arm_contract(
     arm_id: str,
 ) -> Human13ArmContract:
@@ -955,12 +1159,18 @@ def _arm_contract(
     if arm_id == "A0":
         coefficients = (("h", 0.0), ("replay", 1.0), ("duplicate", 1.0))
         h_objective, h_role = None, None
-    elif arm_id in {"A1", "A3", "A6"}:
+    elif arm_id == "A1":
         coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
         h_objective, h_role = "owner_ce", "a1_full_h"
+    elif arm_id == "A3":
+        coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
+        h_objective, h_role = "owner_ce", "h1_independent"
+    elif arm_id == "A6":
+        coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
+        h_objective, h_role = "owner_ce", "a6_donor_h1"
     elif arm_id == "A7":
         coefficients = (("h", 1.0), ("replay", 0.0), ("duplicate", 1.0))
-        h_objective, h_role = "owner_ce", "a1_full_h"
+        h_objective, h_role = "owner_ce", "h1_independent"
     elif arm_id == "A8-prime":
         coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
         h_objective, h_role = "bottleneck", "a8_full_h"
@@ -1082,6 +1292,12 @@ def _validate_sites_against_manifest(
             image = images.get(segment.image_id)
             if image is None:
                 raise ValueError("logical segment image is absent from the manifest")
+            if segment.role in {"h1_independent", "a6_donor_h1"} and (
+                len(segment.row_bindings) != 1 or segment.row_bindings[0].family != "h"
+            ):
+                raise ValueError(
+                    f"{segment.role} requires exactly one H owner row per segment"
+                )
             segment_sites = tuple(
                 site for site in pack_sites if site.segment_id == segment.segment_id
             )
@@ -1104,6 +1320,7 @@ def _validate_sites_against_manifest(
                     segment,
                     row_binding,
                     contract=contract,
+                    a6_donor_binding=execution.a6_donor_binding,
                 )
                 matches = [
                     site
@@ -1200,6 +1417,7 @@ def _validate_encoded_row_against_manifest(
     row_binding: Human13EncodedRowBinding,
     *,
     contract: Human13ArmContract,
+    a6_donor_binding: Human13A6DonorBinding | None,
 ) -> None:
     actual_tokens = segment.input_ids[row_binding.token_start : row_binding.token_end]
     family = row_binding.family
@@ -1212,7 +1430,12 @@ def _validate_encoded_row_against_manifest(
     if segment.role not in contract.allowed_roles or segment.role != expected_role:
         raise ValueError("encoded row role mismatches the manifest arm contract")
 
-    if family == "h" and contract.h_role in {"a1_full_h", "a8_full_h"}:
+    if family == "h" and contract.h_role in {
+        "a1_full_h",
+        "h1_independent",
+        "a6_donor_h1",
+        "a8_full_h",
+    }:
         selected = [
             row
             for row in image.selected_rows
@@ -1226,6 +1449,30 @@ def _validate_encoded_row_against_manifest(
         expected_tokens = tuple(row.token_ids)
         expected_mask = tuple(row.target_token_mask)
         expected_unit = row.owner_id
+        if contract.h_role == "a6_donor_h1":
+            if a6_donor_binding is None:
+                raise ValueError("sealed_a6_donor_required")
+            donor = tuple(
+                item
+                for item in a6_donor_binding.donors
+                if (
+                    item.image_id,
+                    item.owner_id,
+                    item.target_row_id,
+                )
+                == (image.image_id, row.owner_id, row.row_id)
+            )
+            prefix = () if len(donor) != 1 else donor[0].donor_prefix_token_ids
+            if (
+                len(donor) != 1
+                or segment.input_ids[
+                    row_binding.token_start - len(prefix) : row_binding.token_start
+                ]
+                != prefix
+            ):
+                raise ValueError(
+                    "encoded A6 donor prefix mismatches sealed donor provenance"
+                )
     elif family == "h":
         if row_binding.manifest_row_id not in image.candidate_row_ids:
             raise ValueError("A4 encoded row is absent from manifest candidates")
@@ -1372,6 +1619,15 @@ def _validate_execution_payload(
             "sealed_census_required: A8-prime execution requires a canonical "
             "manifest- and target-bound census artifact"
         )
+    if execution.arm_id == "A6":
+        if execution.a6_donor_binding is None:
+            raise ValueError(
+                "sealed_a6_donor_required: A6 execution requires a frozen-ledger "
+                "applicability and donor binding"
+            )
+        _validate_a6_donor_binding(sealed, execution.a6_donor_binding)
+    elif execution.a6_donor_binding is not None:
+        raise ValueError("A6 donor binding cannot be attached to another arm")
     contract = _arm_contract(execution.arm_id)
     coefficients = contract.coefficients
     if execution.arm_id not in {item.arm_id for item in manifest.arms}:
@@ -1719,6 +1975,8 @@ def _optional_nonnegative_int(value: int | None, field: str) -> int | None:
 
 __all__ = [
     "GLOBAL_MAX_LENGTH",
+    "Human13A6DonorBinding",
+    "Human13A6DonorRecord",
     "Human13CompactLogitsMetadata",
     "Human13EncodedRowBinding",
     "Human13ExecutionPlan",
