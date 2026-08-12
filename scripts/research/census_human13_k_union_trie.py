@@ -358,11 +358,6 @@ def _a8_prime_receipt(
             required_margin=required_margin,
         )
     violating = sum(margin < required_margin for margin in packed_margins)
-    if violating == 0:
-        return _blocked_a8(
-            "no_margin_violations",
-            required_margin=required_margin,
-        )
     return {
         "applicable": True,
         "blocked": False,

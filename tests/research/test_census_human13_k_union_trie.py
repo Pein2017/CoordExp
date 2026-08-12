@@ -253,15 +253,45 @@ def test_census_traverses_full_chain_and_seals_margin_ties_roles_and_drift() -> 
     assert frozen_targets == original
 
 
+def test_all_satisfied_chain_remains_a8_applicable_as_zero_gradient_noop() -> None:
+    row = SelectedNativeRow("image-1", "owner-a", (1,))
+
+    result = run_no_update_census(
+        selected_rows=(row,),
+        trie_logits={"image-1": {(): torch.tensor((0.0, 1.0))}},
+        coherent_sites=(
+            _site(
+                "owner-a",
+                0,
+                1,
+                "row_terminator",
+                (0.0, 1.0),
+                (0.0, 1.0),
+            ),
+        ),
+        frozen_targets={"selected_rows": [[1]]},
+    )
+
+    assert result["coherent_chain"]["first_non_argmax_site"] is None
+    assert result["coherent_chain"]["minimum_strict_margin"] == 1.0
+    assert result["coherent_chain"]["tie_site_count"] == 0
+    assert result["a8_prime"] == {
+        "applicable": True,
+        "blocked": False,
+        "block_reason": None,
+        "required_margin": pytest.approx(1.0e-4),
+        "violating_site_count": 0,
+    }
+
+
 @pytest.mark.parametrize(
     ("packed", "hf", "reason"),
     (
-        ((0.0, 1.0), (0.0, 1.0), "no_margin_violations"),
         ((0.0, 1.0), (0.0, 0.4), "required_margin_exceeds_0_5"),
         ((0.0, 1.0), (0.0, float("nan")), "aligned_finite_scores_unavailable"),
     ),
 )
-def test_census_blocks_a8_prime_for_noop_large_drift_or_nonfinite_alignment(
+def test_census_blocks_a8_prime_for_large_drift_or_nonfinite_alignment(
     packed: tuple[float, ...],
     hf: tuple[float, ...],
     reason: str,
