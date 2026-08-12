@@ -178,3 +178,66 @@ def test_materialized_a4_candidates_are_independent_runner_segments():
     a4 = [item for item in result.segments if item.role == "a4_union"]
     assert len(a4) == 1
     assert runner.build_logical_segments(a4)[0].role == "a4_union"
+
+
+def test_source_replay_binding_is_offset_after_multimodal_prompt():
+    source = TrajectoryRecord(
+        "source",
+        _request(),
+        (10, 11, 12, 99),
+        3,
+        "im_end",
+        "complete",
+        (
+            type(
+                "R",
+                (),
+                {"row_id": "source-row", "token_start": 0, "token_end": 3},
+            )(),
+        ),
+        PrefixRecord((10, 11, 12), (10, 11, 12), ()),
+        ("source-row",),
+        (),
+        (),
+        (True, True, True),
+        (False, False, False, False),
+    )
+    owner = type(
+        "O",
+        (),
+        {
+            "owner_id": "gt:1:0",
+            "stratum": "G",
+            "source_row_ids": ("source-row",),
+            "sampled_row_ids": (),
+        },
+    )()
+    image = type(
+        "I",
+        (),
+        {
+            "image_id": 1,
+            "source": source,
+            "trajectories": (source,),
+            "owners": (owner,),
+            "selected_rows": (),
+            "duplicate_events": (),
+            "replay_row_ids": ("source-row",),
+            "target_row_ids": (),
+            "candidate_row_ids": (),
+        },
+    )()
+    manifest = type("M", (), {"images": (image,)})()
+    skeleton = Skeleton("image:1", (7, 8, 9), 3, {"gt:1:0": (30,)})
+
+    result = materialize_segments(manifest, {1: skeleton})
+    replay = next(item for item in result.segments if item.role == "source_replay")
+    binding = replay.encoded_example.human13_row_bindings[0]
+    assert replay.encoded_example.input_ids[
+        binding.token_start : binding.token_end
+    ] == (
+        10,
+        11,
+        12,
+    )
+    assert (binding.token_start, binding.token_end) == (3, 6)

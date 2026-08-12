@@ -159,7 +159,12 @@ def materialize_segments(
             add(
                 "source_replay",
                 clean,
-                _replay_bindings(image.source, source_rows, owner_by_row),
+                _replay_bindings(
+                    image.source,
+                    source_rows,
+                    owner_by_row,
+                    prompt_token_count=prompt_count,
+                ),
                 "source-replay",
             )
         )
@@ -270,7 +275,11 @@ def _bindings(
 
 
 def _replay_bindings(
-    source: Any, rows: Sequence[Any], owner_by_row: Mapping[str, str]
+    source: Any,
+    rows: Sequence[Any],
+    owner_by_row: Mapping[str, str],
+    *,
+    prompt_token_count: int,
 ) -> tuple[Human13EncodedRowBinding, ...]:
     removed = {
         i
@@ -315,8 +324,8 @@ def _replay_bindings(
                 "replay",
                 owner_by_row.get(row.row_id, row.row_id),
                 row.row_id,
-                start,
-                end,
+                prompt_token_count + start,
+                prompt_token_count + end,
                 clean_mask,
             )
         )
