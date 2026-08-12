@@ -240,7 +240,10 @@ if a packed training config resolves to sdpa/eager attention, fp32
 FlashAttention, or a worst-case full-sequence logits memory estimate above the
 resolved budget. Explicit smoke/probe configuration MAY capture branch-level
 evidence, while production profiles MUST be able to disable hot-path proof
-instrumentation. The resolved controls and preflight estimate MUST be
+instrumentation. When `model.fa2_branch_proof` is not set, it MUST resolve to
+one representative first-micro-step capture rather than per-forward capture;
+explicit `every_forward` MUST remain available for debugging and explicit
+`disabled` for profiling. The resolved controls and preflight estimate MUST be
 inspectable through the resolved config or explicit smoke/probe output; normal
 training MUST NOT emit a per-step forward receipt for this purpose.
 
@@ -264,6 +267,15 @@ training MUST NOT emit a per-step forward receipt for this purpose.
 - **WHEN** production config disables packed-forward branch-proof capture
 - **THEN** the runtime MUST preserve the same packed inputs and validation
 - **AND** MUST NOT emit per-step proof receipts.
+
+#### Scenario: Proof cadence omitted from config
+
+- **WHEN** a training config does not set `model.fa2_branch_proof`
+- **THEN** the resolved config MUST record `first_micro_step`
+- **AND** exactly one representative FA2 branch proof MUST be captured and
+  validated for the run
+- **AND** all later forwards MUST retain explicit varlen inputs and runtime
+  validation without capture instrumentation.
 
 ### Requirement: Config-First Entry Surface
 
