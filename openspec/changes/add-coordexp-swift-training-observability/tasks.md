@@ -1,0 +1,216 @@
+## 0. Wave 0 - Prerequisite authority and baseline
+
+- [ ] 0.1 Verify `reconcile-coordexp-swift-training-contracts`, `decompose-coordexp-swift-training-orchestration`, and `standardize-coordexp-swift-supervised-losses` are implementation-complete, synced, and archived; record their exact commits and this change's base commit, and stop if stable specs, current code, docs, or archive dispositions disagree.
+- [ ] 0.2 Rebase this change's `Wide-Step Logging Stream` delta against the complete stable requirement produced by the synced losses change; retain every post-loss paragraph/scenario and prove the canonical computed-term fields are raw/configured-weight/weighted, the ambiguous alias is absent, and an omitted zero-weight optional term has no field family.
+- [ ] 0.3 Characterize and pin the fixed owner/import graph: `src/runtime/metrics.py` for types/reduction, `src/training/reporting.py` for canonical rows, `src/artifacts/observation_publisher.py` for JSONL-first sinks, and `src/training/session.py` for wiring. Stop if the predecessor has not established these owner seams or if the facade remains a competing owner.
+- [ ] 0.4 Freeze an exact command manifest with cwd, `conda` environment, commands, configs, world size/devices, artifact roots, expected evidence, and quantitative limits; require a reviewed append-only amendment for any later command change.
+- [ ] 0.5 Run the focused config/loss/runtime/reporting/artifact/exact-resume suites against that untouched baseline and gate entry with strict OpenSpec validation plus standards and intent-contract audits; do not begin implementation with an unresolved P0/P1.
+
+## 1. Wave 1 - Required presentation config
+
+- [ ] 1.1 Add failing config tests proving `observability.steps` is required
+  with no default, accepts only positive integers, rejects legacy logging
+  aliases, and remains present in `resolved_config.json`.
+- [ ] 1.2 Add the strict required `ObservabilityConfig` surface to
+  `src/config/models.py` without adding enable flags, sink lists, or a
+  compatibility alias.
+- [ ] 1.3 Author an explicit `observability.steps` value in every supported
+  training YAML under `configs/coordexp_swift/prod/` and
+  `configs/coordexp_swift/smoke/`; leave inference, archived, Stage 1, and Stage
+  2 configs untouched.
+- [ ] 1.4 Update current config fixture builders and strict-key tests so every
+  accepted training fixture makes an explicit presentation decision and old
+  fixtures fail for the intended missing-field reason.
+- [ ] 1.5 Gate Wave 1 with the focused config suite, a script that resolves
+  every supported active training YAML, strict OpenSpec validation, a residue
+  search for an observability default or accepted logging alias, and no
+  unresolved test or validation failure.
+
+## 2. Wave 2 - Explicit distributed metric reduction
+
+- [ ] 2.1 Add failing unit tests for scalar and ratio samples, cross-rank
+  schema/reducer disagreement, required versus backend-unavailable fields,
+  identical-value mismatch, sum-before-divide ratios, and rejection of a
+  metric with no reducer.
+- [ ] 2.2 Implement the narrow immutable metric sample/batch types and reducer
+  logic in `src/runtime/metrics.py`; use `BOOL_ALL` for boolean conjunction,
+  keep reducer selection producer-owned, and add no
+  mutable registry, event names, subscriptions, or implicit mean fallback.
+- [ ] 2.3 Migrate train metric gathering to typed batches, preserving exact
+  integer accuracy statistics and keeping per-rank reports ephemeral rather
+  than serializing a normal `per_rank_measurement` trace.
+- [ ] 2.4 Migrate both replicated and disjoint-shard eval reduction to explicit
+  `IDENTICAL`, `SUM`, `MAX`, `BOOL_ALL`, and ratio samples while preserving
+  full-row equivalence and best-checkpoint selector values.
+- [ ] 2.5 Add and execute a real two-process Gloo probe with deliberately
+  asymmetric rank-local norms, timings, counts, and numerator/denominator
+  statistics; assert rank maximum, sum, ratio, schema agreement, and clean
+  collective termination.
+- [ ] 2.6 Delete the superseded key-name/suffix reducer tables, implicit
+  plain-mean branch, and normal-row per-rank serialization after all callers
+  use typed batches.
+- [ ] 2.7 Gate Wave 2 with focused runtime and eval suites, the Gloo receipt,
+  strict OpenSpec validation, and searches proving no implicit reducer or
+  dynamic registry remains; do not continue with an unresolved test or
+  validation failure.
+
+## 3. Wave 3 - Truthful optimizer, loss, timing, and resource observations
+
+- [ ] 3.1 Add failing CPU optimizer/scheduler tests that distinguish planned
+  step, optimizer-wrapper attempt, actual applied update, and scheduler advance.
+  Preserve scheduler/eval/checkpoint planned-step policy; add the closed
+  `optimizer_boundary_action = apply | scaler_skip | not_attempted` decision and
+  prove all ranks select the same action before a wrapper call. Prove
+  the runtime-owned `AppliedUpdateReceipt.not_attempted(planned_step_id,
+  group_count, reason)` returns `attempted: false`, `applied: false`,
+  `step_was_skipped: false`, and null group LRs on a `not_attempted` rejection;
+  prove `optimizer_step_count` does not advance for that branch but counts every
+  completed wrapper invocation, including a `scaler_skip` finalization;
+  `scheduler_step_count` counts completed planned-step advances, and
+  `optimizer_update_status` owns actual application without a redundant durable
+  applied counter; prove applied LR is the pre-call param-group value only when
+  the accepted global outcome is actually applied. Add runtime-owned
+  `terminal_not_attempted` and `terminal_post_wrapper` receipt constructors with
+  truthful nullable fields and bounded mutation state. A supported pre-backward
+  `not_attempted` may remain `unchanged`, but an fp16 `terminal_not_attempted`
+  after exactly-once unscale MUST preserve known no-wrapper/no-parameter-
+  mutation truth while reporting the composite GradScaler state as
+  `divergent_or_unknown`, not `unchanged`; reporter/session code MUST NOT
+  synthesize those booleans from exceptions.
+- [ ] 3.2 Add failing ordering tests proving fp16 has exactly one owner and call
+  order: `accelerator.unscale_gradients(optimizer)` exactly once, gradient finite
+  inspection and pre-clip norm, then one global boundary action. Prove `apply`
+  uses a non-unscaling clip primitive such as `torch.nn.utils.clip_grad_norm_`
+  over already-unscaled gradients before the wrapper. Prove `scaler_skip` is
+  admitted only when every rank has an active scaler and a current non-finite
+  unscaled gradient, performs no clip, calls the wrapper once for scaler
+  finalization. Require every real fp16 wrapper call to converge
+  `all_skipped | none_skipped | mixed` before scheduler: `apply` accepts only
+  none-skipped and `scaler_skip` only all-skipped. Prove mixed candidacy or
+  unrelated unsafe fp16 state terminates before a wrapper with parameters and
+  underlying optimizer untouched but GradScaler `UNSCALED`/unfinalized and
+  `mutation_state=divergent_or_unknown`; prove post-call mixed
+  truth uses nullable application state, while unanimous action-contradictory
+  truth remains known; `scaler_skip+none_skipped` retains identical pre-call LRs
+  actually applied, while other terminal outcomes use null LRs. No rank-local
+  raise may precede consensus. Prohibit
+  `accelerator.clip_grad_norm_`, return the single runtime-owned bounded update
+  receipt, propagate it through `CompletedStepObservation`, and reuse the
+  existing all-rank max norm without another gradient-scan collective.
+- [ ] 3.3 In `src/training/reporting.py`, consume the prerequisite completed loss telemetry without recomputing from backend-scaled tensors or sufficient statistics: preserve raw/configured-weight/weighted fields only for actually computed terms, retain computed zero-weight gate diagnostics, preserve complete omission of a zero-weight optional term, and verify single-rank and asymmetric multi-rank rows.
+- [ ] 3.4 Capture exact per-step physical-token, supervised-atom, and pack work
+  counts before tensors are released and derive global throughput only from
+  summed work divided by rank-max step duration.
+- [ ] 3.5 Extend input timing with accurately completed H2D measurement where
+  available, retain honest CPU-build/wait/step scopes, mark unsupported fields
+  unavailable, and add a test that normal observation never synchronizes CUDA
+  solely for timing.
+- [ ] 3.6 Extend the resource collector with current and process-lifetime peak
+  CUDA allocated/reserved bytes plus per-step allocator retry/OOM deltas;
+  verify rank-max bytes, rank-sum deltas, CPU unavailability, and no fabricated
+  zero.
+- [ ] 3.7 Update train/eval row construction in `src/training/reporting.py` to
+  emit the new loss, LR, norm, throughput, timing, memory, counter, finite, and
+  availability fields while retaining one strict row per completed planned
+  step/eval. Add the terminal exception: pre-wrapper terminal unsafe and post-
+  wrapper contradictory outcomes publish/converge exactly one row at the
+  current planned-step id before failed finalization, without incrementing
+  completed/scheduler counts or dispatching eval/checkpoint/exact-resume/
+  selector/final-success handlers. If row publication fails, preserve the
+  optimizer-boundary code as primary during common failed finalization.
+- [ ] 3.8 Before any GPU-backed action, review the frozen command manifest,
+  obtain fresh user authorization for that action, and record bounds for
+  devices/world size, planned steps, model forwards, cache/materialization
+  passes, wall time, peak GPU memory, and artifact bytes. Execute genuine CUDA
+  fp16 finite and overflow arms through real Accelerate. Both MUST prove exactly
+  one `accelerator.unscale_gradients(optimizer)` followed by finite/norm
+  authority with no `accelerator.clip_grad_norm_`; the finite arm MUST then prove
+  one non-unscaling clip, an applied update, and pre-call LR. The overflow arm
+  MUST prove an all-rank-confirmed `scaler_skip`, zero clip calls, one wrapper
+  call solely for scaler finalization, post-call skipped truth, null applied LR,
+  one completed-wrapper counter increment, planned scheduler progression, and
+  no underlying optimizer mutation or false applied status. Also execute a
+  bounded two-rank injected-outcome probe covering pre-wrapper mixed/unsupported,
+  post-wrapper mixed, `apply+all_skipped`, and `scaler_skip+none_skipped`:
+  require truthful terminal fields (including pre-wrapper
+  `mutation_state=divergent_or_unknown` after unscale), one terminal row, common
+  failed finalization, no rank-local pre-consensus raise, and zero scheduler/
+  scheduled-handler progression. Gate
+  DDP/cost expansion with focused trainer/loss/runtime/resource/artifact tests,
+  collective/CUDA-sync residue checks, strict OpenSpec validation, and the
+  single pre-DDP/cost standards plus intent-contract audit; no fp16 claim is
+  allowed without both receipts.
+
+## 4. Wave 4 - JSONL-first console and TensorBoard publisher
+
+- [ ] 4.1 Add failing publisher tests for required `step`, step/total console
+  formatting, train interval/terminal dispatch, unconditional eval mirroring,
+  rank-zero-only ownership, and proof that JSONL append completes before any
+  presentation call. Cover the terminal optimizer-boundary row and an injected
+  append failure that still converges failed finalization with the primary
+  optimizer-boundary code.
+- [ ] 4.2 Keep the row builder in `src/training/reporting.py` and implement the
+  direct rank-zero observation publisher in
+  `src/artifacts/observation_publisher.py` around the existing `RunWriter`
+  append/status handshake; expose one train/eval publication interface rather
+  than an event dispatcher.
+- [ ] 4.3 Implement the compact console presenter and segment-local approximate
+  ETA without persisting ETA or presentation state and without including sink
+  time in `step_duration_seconds`.
+- [ ] 4.4 Implement a lazy run-local `tensorboard/` sink using
+  `torch.utils.tensorboard.SummaryWriter`, deterministic
+  `<split>/<canonical-key>` tags, finite numeric values only, canonical planned
+  step as `global_step`, bounded queueing, and terminal close.
+- [ ] 4.5 Add a TensorBoard event-reader test that loads a temporary run's event
+  file and proves expected train/eval tags, finite values, and global steps.
+- [ ] 4.6 Inject TensorBoard import, initialization, `add_scalar`, flush, and close failures; prove the already written JSONL row survives, at most one bounded run warning plus one best-effort stderr warning is emitted, cleanup failure cannot recurse, the sink latches disabled, and later JSONL/eval/checkpoint work continues. Add exact tests that `unavailable_fields` and `non_finite_fields` are sorted/unique and bounded by field count and name bytes with one bounded truncation count/marker.
+- [ ] 4.7 Wire the publisher only from `src/training/session.py`, delete
+  superseded console/TensorBoard/pass-through helpers, and verify non-main ranks
+  create neither terminal progress nor event files.
+- [ ] 4.8 Gate Wave 4 with focused publisher, run-writer, train/eval reporting/
+  session, TensorBoard reader, and failure suites; strict OpenSpec validation; searches
+  for event buses, generic registries, alternate scalar files, DB/W&B, and
+  per-rank event streams; do not continue with an unresolved test or validation
+  failure.
+
+## 5. Wave 5 - Resume boundary, docs, and production-shaped acceptance
+
+- [ ] 5.1 Exclude the top-level `observability` block from exact-resume
+  semantic compatibility and three-run input-attestation projections while
+  keeping forward, loss, optimizer, scheduler, data-order, RNG, applied LR,
+  pre-clip norm, finite, and update-status comparisons strict.
+- [ ] 5.2 Update the Wave 7 exact-resume comparator and fixtures to classify new
+  timing/resource/availability fields as non-semantic observations, ignore
+  console/TensorBoard/ETA, and accept presentation-only config drift without
+  accepting loss, LR, norm, or update drift. Prove no exact-resume state,
+  checkpoint, best selector, or successful final artifact is published from a
+  terminal pre-wrapper or post-wrapper optimizer boundary, and that `run.json`
+  records failed status plus the current planned-step id without counting it as
+  completed.
+- [ ] 5.3 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`,
+  `docs/IMPLEMENTATION_MAP.md`, and `docs/ARTIFACTS.md` with the required config,
+  canonical metric meanings/reducers, run-local TensorBoard path, approximate
+  ETA boundary, failure policy, and probe-only metric exclusions; do not revive
+  historical Trainer/event-bus terminology.
+- [ ] 5.4 Run the focused exact-resume, input-attestation, config, runtime,
+  loss, eval, artifact, trainer, reporting, publisher, and session suites through
+  `conda run -n ms`, then re-resolve every active production/smoke training
+  config and run strict JSON/non-finite checks over emitted fixture rows.
+- [ ] 5.5 With fresh user authorization for this distinct GPU action, record its
+  bounds for devices/world size, planned steps, model forwards, cache/
+  materialization passes, wall time, peak GPU memory, and artifact bytes, then
+  execute the smallest current two-rank production-mimic config that
+  performs one real finite optimizer update and scheduled eval; verify one
+  shared run tree, one train and one eval canonical row, correct LR/norm/loss/
+  timing/resource fields, readable rank-zero TensorBoard events, and no
+  rank-local run/event trees. Record exact config, commit, command, devices,
+  artifact root, counters, and evidence scope without making a throughput or
+  model-quality claim.
+- [ ] 5.6 Run the relevant broader regression suite, `openspec validate
+  add-coordexp-swift-training-observability --strict`, and residue searches
+  proving no implicit reducer, old scheduler-derived LR path, normal per-rank
+  trace, alternate scalar authority, or unbounded sink error state remains.
+- [ ] 5.7 Obtain the final standards/code-quality and intent/spec-contract
+  audits over the implementation, executed probes, emitted artifacts, docs,
+  and exact-resume exclusions; resolve all P0/P1 findings and record any lower
+  severity residual risk before requesting OpenSpec verification/archive.
