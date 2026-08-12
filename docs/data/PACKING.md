@@ -29,6 +29,10 @@ and
 - Pack-cache v3 manifests record the resolved determinant registry, source-code
   identities, materialization metadata, chunks, and hashes. Worker count is
   provenance, not semantic cache identity.
+- Cache preparation renders and tokenizes the dataset once before training. It
+  uses the bounded 16-process fork pool by default, restores results to exact
+  source order, and records the materialization strategy/worker count. Training
+  does not expose a second runtime-tokenization mode.
 - Cache fingerprints bind raw/image content, tokenizer/processor front-end
   assets, realized vocabulary groups, serialized micro-step runtime fields, and
   the declared renderer/parser/geometry/Qwen/packing/supervision/schema/
@@ -48,6 +52,32 @@ and
   payloads and every eval payload before constructing Accelerate or loading
   model weights. Distributed ranks are cache consumers only and fail fast on a
   cache miss.
+
+## Cache retention
+
+Pack caches are disposable acceleration state, not the provenance owner for a
+dataset, run, checkpoint, or research conclusion. Retain a payload only while
+it uses the current supported format and is referenced by active work, or while
+an in-progress exact-resume/checkpoint receipt explicitly requires it.
+
+Older-format payloads are not migration inputs and may be retired after all of
+the following checks pass:
+
+1. no live training/cache-preparation process or open file references the
+   candidate directory;
+2. the target is an exact fingerprint child of the documented cache root, not
+   the root itself;
+3. current configs, run manifests, checkpoints, receipts, and active research
+   controllers do not reference it; and
+4. a compact retirement receipt records the cache root, format, fingerprints,
+   aggregate bytes, exclusions, and evidence trade-off.
+
+Current-format cache payloads referenced by active exact-resume evidence remain
+out of scope even when an older experiment created them. Model weights,
+processed/raw data, run outputs, checkpoints, and TensorBoard or evaluation
+artifacts are never governed by this cache-retirement policy. Training startup
+and cache preparation stay non-destructive; retirement is a separate operator
+action so a launch cannot silently garbage-collect another run's state.
 
 ## Ownership map
 
@@ -86,3 +116,7 @@ cleanup by adding a new cache knob or compatibility layer.
 Older Stage-1 static-packing matrices under `configs/stage1/` are preserved for
 old-run interpretation. They are not the current Swift packing owner or a
 current config route.
+
+The 2026-08-12 retirement of obsolete pack-cache and vLLM-materialization
+payloads is recorded in
+[`docs/history/cache-retirement/2026-08-12.md`](../history/cache-retirement/2026-08-12.md).

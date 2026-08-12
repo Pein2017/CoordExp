@@ -247,6 +247,10 @@ docs:
       title: Documentation History
       type: history-router
       status: historical-router
+    - path: docs/history/cache-retirement/2026-08-12.md
+      title: Obsolete Cache Retirement Receipt 2026-08-12
+      type: historical-receipt
+      status: historical
     - path: docs/history/architecture/README.md
       title: Architecture History
       type: history-router
