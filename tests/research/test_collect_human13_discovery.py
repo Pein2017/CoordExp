@@ -4,6 +4,7 @@ from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,7 @@ from scripts.research.build_human13_k_union_manifest import (
     ImageInput,
     RequestIdentity,
     TrajectoryInput,
+    _validate_trajectory,
     build_manifest,
     default_binding,
     load_frozen_panel,
@@ -33,6 +35,20 @@ ROW_PARTS = (
     "<|box_end|>",
 )
 ROW_TEXT = "".join(ROW_PARTS)
+
+
+def _sampling_sha256(value: object) -> str:
+    return hashlib.sha256(
+        (
+            json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode()
+    ).hexdigest()
 
 
 def _trace(parts: tuple[str, ...]) -> tuple[dict[str, object], ...]:
@@ -62,6 +78,36 @@ def _result(*, repeated: bool = False, stop: bool = True) -> SimpleNamespace:
         stop_reason="im_end" if stop else "length",
         token_trace=_trace(parts),
         executed_media_sha256="a" * 64,
+    )
+
+
+def _result_with_rows(rows: tuple[tuple[str, ...], ...]) -> SimpleNamespace:
+    parts = tuple(part for row in rows for part in row) + ("<|im_end|>",)
+    return SimpleNamespace(
+        request_id="request",
+        backend="hf",
+        backend_mode="generate",
+        response_family="transformers",
+        generated_token_ids=tuple(1000 + index for index in range(len(parts))),
+        parser_text="".join(parts[:-1]),
+        raw_generated_text="".join(parts),
+        stop_reason="im_end",
+        token_trace=_trace(parts),
+        executed_media_sha256="a" * 64,
+    )
+
+
+def _row_parts(
+    description: str,
+    coords: tuple[int, int, int, int],
+) -> tuple[str, ...]:
+    return (
+        "<|object_ref_start|>",
+        description,
+        "<|object_ref_end|>",
+        "<|box_start|>",
+        *(f"<|coord_{value}|>" for value in coords),
+        "<|box_end|>",
     )
 
 
@@ -103,10 +149,11 @@ def _empty_trajectory(
         if mode == "source"
         else f"human13:{image_id}:k16:{seed}"
     )
+    terminal_token_id = 999 if mode == "source" else int(seed)
     return TrajectoryInput(
         trajectory_id=trajectory_id,
         request=request,
-        token_ids=(999,),
+        token_ids=(terminal_token_id,),
         terminal_token_index=0,
         stop_reason="im_end",
         parser_status="empty",
@@ -118,6 +165,27 @@ def _record(*, frozen: object, mode: str, seed: int | None = None) -> dict[str, 
     image_id = int(getattr(frozen, "image_id"))
     trajectory = _empty_trajectory(image_id=image_id, mode=mode, seed=seed)
     binding = default_binding()
+    sampling_params = None
+    if mode == "k":
+        assert seed is not None
+        sampling_params = {
+            "request_id": trajectory.trajectory_id,
+            "physical_batch_index": (seed - 21001) // 4,
+            "request_order_in_batch": (seed - 21001) % 4,
+            "parameters": {
+                "n": 1,
+                "seed": seed,
+                "temperature": 0.4,
+                "top_p": 0.95,
+                "top_k": 0,
+                "repetition_penalty": 1.10,
+                "max_tokens": 512,
+            },
+            "stop_token_ids": [151645],
+        }
+    sampling_params_sha256 = (
+        None if sampling_params is None else _sampling_sha256(sampling_params)
+    )
     return {
         "schema_version": adapter.RECORD_SCHEMA_VERSION,
         "mode": mode,
@@ -140,6 +208,8 @@ def _record(*, frozen: object, mode: str, seed: int | None = None) -> dict[str, 
             "response_family": "test",
             "session_identity_sha256": "d" * 64,
         },
+        "sampling_params": sampling_params,
+        "sampling_params_sha256": sampling_params_sha256,
         "runtime_counters": {
             "physical_batch_index": trajectory.request.physical_batch_index,
             "physical_batch_size": 1 if mode == "source" else 4,
@@ -150,7 +220,7 @@ def _record(*, frozen: object, mode: str, seed: int | None = None) -> dict[str, 
         "token_trace": [
             {
                 "step_index": 0,
-                "token_id": 999,
+                "token_id": trajectory.token_ids[0],
                 "token_text": "<|im_end|>",
                 "is_stop": True,
                 "is_pad": False,
@@ -176,6 +246,16 @@ def _write_artifact(root: Path, *, mode: str, records: list[dict[str, object]]) 
     config_path = (
         adapter.SOURCE_CONFIG_PATH if mode == "source" else adapter.K_CONFIG_PATH
     )
+    sampling_evidence = [record["sampling_params"] for record in records]
+    sampling_payload = (
+        json.dumps(
+            sampling_evidence,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode()
     receipt = {
         "schema_version": adapter.COLLECTION_SCHEMA_VERSION,
         "status": "completed",
@@ -188,6 +268,11 @@ def _write_artifact(root: Path, *, mode: str, records: list[dict[str, object]]) 
         "session_identity": {
             "backend": "hf" if mode == "source" else "vllm",
             "session_identity_sha256": "d" * 64,
+        },
+        "sampling_params_identity": {
+            "status": "captured" if mode == "k" else "not_applicable",
+            "record_count": 208 if mode == "k" else 0,
+            "sha256": hashlib.sha256(sampling_payload).hexdigest(),
         },
         "runtime_counters": {
             "image_count": 13,
@@ -320,6 +405,85 @@ def test_projection_preserves_terminal_rows_and_final_coordinate_token() -> None
     assert parse["dropped_predictions"] == []
 
 
+def test_projection_accepts_real_14038_generated_order_jump_across_geometry_drops() -> (
+    None
+):
+    from src.inference.parsing import parse_compact_object_box_closed
+
+    invalid = _row_parts("invalid", (900, 200, 100, 400))
+    accepted_27 = _row_parts("person", (100, 200, 300, 400))
+    accepted_39 = _row_parts("chair", (500, 600, 700, 800))
+    result = _result_with_rows(
+        (invalid,) * 27 + (accepted_27,) + (invalid,) * 11 + (accepted_39,)
+    )
+    parsed = parse_compact_object_box_closed(
+        result.parser_text,
+        row_id="human13:14038:source",
+        row_index=0,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    projected, parse = adapter.trajectory_input_from_decode_result(
+        image_id=14038,
+        trajectory_id="human13:14038:source",
+        request=_request(mode="source"),
+        result=result,
+        image_width=1000,
+        image_height=1000,
+    )
+
+    assert [prediction["generated_order"] for prediction in parsed.predictions] == [
+        27,
+        39,
+    ]
+    assert parse["parse_status"] == "accepted_with_drops"
+    assert [drop["reason"] for drop in parse["dropped_predictions"]] == [
+        "geometry_invalid"
+    ] * 38
+    assert [row.row_index for row in projected.rows] == [0, 1]
+    assert [row.category for row in projected.rows] == ["person", "chair"]
+    assert _validate_trajectory(projected) == projected.rows
+
+
+@pytest.mark.parametrize(
+    "generated_orders",
+    [
+        (0, "1"),
+        (0, 0),
+        (1, 0),
+        (-1, 1),
+    ],
+)
+def test_projection_rejects_non_integer_duplicate_decreasing_or_negative_generated_order(
+    monkeypatch: pytest.MonkeyPatch,
+    generated_orders: tuple[object, object],
+) -> None:
+    import src.inference.parsing as parsing
+
+    real_parse = parsing.parse_compact_object_box_closed
+
+    def altered_parse(*args: object, **kwargs: object) -> object:
+        parsed = real_parse(*args, **kwargs)
+        for prediction, generated_order in zip(
+            parsed.predictions, generated_orders, strict=True
+        ):
+            prediction["generated_order"] = generated_order
+        return parsed
+
+    monkeypatch.setattr(parsing, "parse_compact_object_box_closed", altered_parse)
+
+    with pytest.raises(ValueError, match="generated order"):
+        adapter.trajectory_input_from_decode_result(
+            image_id=1584,
+            trajectory_id="bad-generated-order",
+            request=_request(mode="source"),
+            result=_result(repeated=True),
+            image_width=1000,
+            image_height=1000,
+        )
+
+
 def test_projection_rejects_bad_terminal_parser_or_token_alignment() -> None:
     wrong_stop = _result(stop=False)
     wrong_stop.stop_reason = "im_end"
@@ -395,6 +559,87 @@ def test_dispatch_is_thirteen_source_batch1_calls_and_fifty_two_k_four_calls() -
     ]
 
 
+def test_k_generate_captures_exact_sampling_objects_passed_to_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSamplingParams:
+        def __init__(self, **kwargs: object) -> None:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    class FakeEngine:
+        def __init__(self) -> None:
+            self.sampling_params: list[FakeSamplingParams] | None = None
+
+        def generate(
+            self,
+            prompts: list[object],
+            sampling_params: list[FakeSamplingParams],
+            *,
+            use_tqdm: bool,
+        ) -> list[str]:
+            assert len(prompts) == 4
+            assert use_tqdm is False
+            self.sampling_params = sampling_params
+            return [f"native:{index}" for index in range(4)]
+
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm",
+        SimpleNamespace(SamplingParams=FakeSamplingParams),
+    )
+    batch = adapter.plan_panel_requests()[0]
+    engine = FakeEngine()
+
+    outputs, captured = adapter.generate_k_batch(
+        engine=engine,
+        prompts=[object(), object(), object(), object()],
+        planned_requests=batch.requests,
+        stop_token_id=151645,
+    )
+
+    assert outputs == ["native:0", "native:1", "native:2", "native:3"]
+    assert engine.sampling_params is not None
+    assert [
+        (
+            params.n,
+            params.seed,
+            params.temperature,
+            params.top_p,
+            params.top_k,
+            params.repetition_penalty,
+            params.max_tokens,
+            params.stop_token_ids,
+        )
+        for params in engine.sampling_params
+    ] == [
+        (1, 21001, 0.4, 0.95, 0, 1.10, 512, [151645]),
+        (1, 21002, 0.4, 0.95, 0, 1.10, 512, [151645]),
+        (1, 21003, 0.4, 0.95, 0, 1.10, 512, [151645]),
+        (1, 21004, 0.4, 0.95, 0, 1.10, 512, [151645]),
+    ]
+    assert captured == tuple(
+        {
+            "request_id": planned.request_id,
+            "physical_batch_index": planned.physical_batch_index,
+            "request_order_in_batch": order,
+            "parameters": {
+                "n": params.n,
+                "seed": params.seed,
+                "temperature": params.temperature,
+                "top_p": params.top_p,
+                "top_k": params.top_k,
+                "repetition_penalty": params.repetition_penalty,
+                "max_tokens": params.max_tokens,
+            },
+            "stop_token_ids": params.stop_token_ids,
+        }
+        for order, (planned, params) in enumerate(
+            zip(batch.requests, engine.sampling_params, strict=True)
+        )
+    )
+
+
 def test_atomic_execution_never_overwrites_and_publishes_terminal_failure(
     tmp_path: Path,
 ) -> None:
@@ -462,6 +707,7 @@ def test_converter_requires_completed_exact_coverage_and_admits_canonical_manife
         ("bad_session_receipt", "session identity"),
         ("bad_runtime_receipt", "runtime counters"),
         ("bad_config_receipt", "config identity"),
+        ("degenerate_k", "degenerate"),
     ],
 )
 def test_converter_fails_closed_on_bad_receipt_result_or_identity(
@@ -500,6 +746,14 @@ def test_converter_fails_closed_on_bad_receipt_result_or_identity(
         runtime = dict(source_records[0]["runtime_counters"])
         runtime["request_id"] = "wrong"
         source_records[0]["runtime_counters"] = runtime
+    elif mutation == "degenerate_k":
+        for record in k_records[:16]:
+            trajectory = dict(record["trajectory"])
+            trajectory["token_ids"] = [999]
+            record["trajectory"] = trajectory
+            trace = [dict(record["token_trace"][0])]
+            trace[0]["token_id"] = 999
+            record["token_trace"] = trace
 
     source_root = tmp_path / "source"
     k_root = tmp_path / "k"
@@ -527,6 +781,74 @@ def test_converter_fails_closed_on_bad_receipt_result_or_identity(
         (source_root / adapter.RECEIPT_NAME).write_text(json.dumps(receipt) + "\n")
 
     with pytest.raises(ValueError, match=message):
+        adapter.artifacts_to_image_inputs(
+            source_root=source_root,
+            k_root=k_root,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("seed", 21002),
+        ("temperature", 0.5),
+        ("top_p", 0.90),
+        ("repetition_penalty", 1.0),
+        ("max_tokens", 511),
+        ("n", 2),
+        ("top_k", 1),
+    ],
+)
+def test_converter_rejects_mutated_captured_k_sampling_parameter(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    frozen = load_frozen_panel()
+    source_records = [_record(frozen=row, mode="source") for row in frozen]
+    k_records = [
+        _record(frozen=row, mode="k", seed=seed)
+        for row in frozen
+        for seed in EXPECTED_K_SEEDS
+    ]
+    sampling = dict(k_records[0]["sampling_params"])
+    parameters = dict(sampling["parameters"])
+    parameters[field] = value
+    sampling["parameters"] = parameters
+    k_records[0]["sampling_params"] = sampling
+    k_records[0]["sampling_params_sha256"] = _sampling_sha256(sampling)
+    source_root = tmp_path / "source"
+    k_root = tmp_path / "k"
+    _write_artifact(source_root, mode="source", records=source_records)
+    _write_artifact(k_root, mode="k", records=k_records)
+
+    with pytest.raises(ValueError, match="sampling parameters"):
+        adapter.artifacts_to_image_inputs(
+            source_root=source_root,
+            k_root=k_root,
+        )
+
+
+def test_converter_rejects_mutated_captured_k_stop_token(
+    tmp_path: Path,
+) -> None:
+    frozen = load_frozen_panel()
+    source_records = [_record(frozen=row, mode="source") for row in frozen]
+    k_records = [
+        _record(frozen=row, mode="k", seed=seed)
+        for row in frozen
+        for seed in EXPECTED_K_SEEDS
+    ]
+    sampling = dict(k_records[0]["sampling_params"])
+    sampling["stop_token_ids"] = [151643]
+    k_records[0]["sampling_params"] = sampling
+    k_records[0]["sampling_params_sha256"] = _sampling_sha256(sampling)
+    source_root = tmp_path / "source"
+    k_root = tmp_path / "k"
+    _write_artifact(source_root, mode="source", records=source_records)
+    _write_artifact(k_root, mode="k", records=k_records)
+
+    with pytest.raises(ValueError, match="stop-token"):
         adapter.artifacts_to_image_inputs(
             source_root=source_root,
             k_root=k_root,

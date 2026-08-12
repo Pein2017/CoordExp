@@ -52,8 +52,8 @@ K_CONFIG_PATH = (
     REPO_ROOT / "configs/coordexp_swift/infer/"
     "qwen3_vl_2b_human13_discovery_k16_vllm_batch4.yaml"
 )
-COLLECTION_SCHEMA_VERSION = "human13_discovery_collection.v1"
-RECORD_SCHEMA_VERSION = "human13_discovery_trajectory.v1"
+COLLECTION_SCHEMA_VERSION = "human13_discovery_collection.v2"
+RECORD_SCHEMA_VERSION = "human13_discovery_trajectory.v2"
 RECEIPT_NAME = "receipt.json"
 RECORDS_NAME = "trajectories.jsonl"
 _PARSER_ID = "compact-object-box-closed-v1"
@@ -65,6 +65,7 @@ _ALLOWED_PARSE_STATUSES = {
     "all_spans_dropped",
 }
 _DIGEST_LENGTH = 64
+_IM_END_TOKEN_ID = 151645
 _SOURCE_POLICY = {
     "n": 1,
     "temperature": 0.0,
@@ -451,10 +452,19 @@ def trajectory_input_from_decode_result(
     if parsed.parse_status not in _ALLOWED_PARSE_STATUSES:
         raise ValueError("parser status is outside the strict discovery contract")
     rows: list[PredictionRowInput] = []
+    previous_generated_order = -1
     for expected_order, prediction in enumerate(parsed.predictions):
         generated_order = prediction.get("generated_order")
-        if generated_order != expected_order:
-            raise ValueError("parser complete rows are not in generated order")
+        if (
+            isinstance(generated_order, bool)
+            or not isinstance(generated_order, int)
+            or generated_order < 0
+            or generated_order <= previous_generated_order
+        ):
+            raise ValueError(
+                "accepted parser rows require strictly increasing generated order"
+            )
+        previous_generated_order = generated_order
         raw_span_text = prediction.get("raw_span_text")
         char_start = prediction.get("char_start")
         char_end = prediction.get("char_end")
@@ -722,6 +732,95 @@ def _trajectory_from_dict(value: Mapping[str, object]) -> TrajectoryInput:
     )
 
 
+def _validate_k_sampling_payload(
+    value: object,
+    *,
+    request_id: str,
+    seed: int,
+    physical_batch_index: int,
+    request_order_in_batch: int,
+) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("K trajectory sampling parameters must be an object")
+    _require_keys(
+        value,
+        {
+            "request_id",
+            "physical_batch_index",
+            "request_order_in_batch",
+            "parameters",
+            "stop_token_ids",
+        },
+        field="K sampling parameters",
+    )
+    parameters = value["parameters"]
+    if not isinstance(parameters, Mapping):
+        raise ValueError("K trajectory sampling parameters must contain parameters")
+    _require_keys(
+        parameters,
+        {
+            "n",
+            "seed",
+            "temperature",
+            "top_p",
+            "top_k",
+            "repetition_penalty",
+            "max_tokens",
+        },
+        field="K sampling parameter values",
+    )
+    expected_parameters = {
+        "n": 1,
+        "seed": seed,
+        "temperature": 0.4,
+        "top_p": 0.95,
+        "top_k": 0,
+        "repetition_penalty": 1.10,
+        "max_tokens": 512,
+    }
+    if (
+        any(
+            type(parameters[key]) is not int
+            for key in ("n", "seed", "top_k", "max_tokens")
+        )
+        or any(
+            isinstance(parameters[key], bool)
+            or not isinstance(parameters[key], (int, float))
+            for key in ("temperature", "top_p", "repetition_penalty")
+        )
+        or dict(parameters) != expected_parameters
+    ):
+        raise ValueError("K trajectory sampling parameters differ from frozen values")
+    if (
+        value["request_id"] != request_id
+        or type(value["physical_batch_index"]) is not int
+        or value["physical_batch_index"] != physical_batch_index
+        or type(value["request_order_in_batch"]) is not int
+        or value["request_order_in_batch"] != request_order_in_batch
+    ):
+        raise ValueError(
+            "K trajectory sampling parameters request/order binding differs"
+        )
+    if value["stop_token_ids"] != [_IM_END_TOKEN_ID]:
+        raise ValueError("K trajectory sampling stop-token identity differs")
+
+
+def _validate_k_sampling_params(
+    value: object,
+    *,
+    trajectory: TrajectoryInput,
+) -> None:
+    seed = trajectory.request.seed
+    assert seed is not None
+    _validate_k_sampling_payload(
+        value,
+        request_id=trajectory.trajectory_id,
+        seed=seed,
+        physical_batch_index=(seed - 21001) // 4,
+        request_order_in_batch=(seed - 21001) % 4,
+    )
+
+
 def _validate_record(
     value: Mapping[str, object],
     *,
@@ -739,6 +838,8 @@ def _validate_record(
             "prompt_identity",
             "execution_model_identity",
             "session_identity",
+            "sampling_params",
+            "sampling_params_sha256",
             "runtime_counters",
             "token_trace",
             "parse",
@@ -828,6 +929,21 @@ def _validate_record(
     )
     if trajectory.trajectory_id != expected_trajectory_id:
         raise ValueError("trajectory ID differs from its image/request identity")
+    sampling_params = value["sampling_params"]
+    sampling_params_sha256 = value["sampling_params_sha256"]
+    if expected_mode == "source":
+        if sampling_params is not None or sampling_params_sha256 is not None:
+            raise ValueError("Source trajectory unexpectedly has K sampling parameters")
+    else:
+        _validate_k_sampling_params(
+            sampling_params,
+            trajectory=trajectory,
+        )
+        if _require_digest(
+            sampling_params_sha256,
+            field="trajectory sampling parameters",
+        ) != _sha256_bytes(_canonical_bytes(sampling_params)):
+            raise ValueError("trajectory sampling parameters SHA-256 mismatch")
     if (
         runtime.get("physical_batch_index") != trajectory.request.physical_batch_index
         or runtime.get("request_id") != trajectory.trajectory_id
@@ -878,6 +994,7 @@ def _load_collection(
         "binding",
         "config_identity",
         "session_identity",
+        "sampling_params_identity",
         "runtime_counters",
         "records_file",
         "records_sha256",
@@ -917,6 +1034,27 @@ def _load_collection(
     )
     if session_identity.get("backend") != expected_backend:
         raise ValueError("collection session identity backend differs from mode")
+    sampling_identity = receipt["sampling_params_identity"]
+    if not isinstance(sampling_identity, Mapping):
+        raise ValueError("collection sampling parameters identity must be an object")
+    _require_keys(
+        sampling_identity,
+        {"status", "record_count", "sha256"},
+        field="sampling parameters identity",
+    )
+    expected_sampling_count = 0 if expected_mode == "source" else 208
+    expected_sampling_status = (
+        "not_applicable" if expected_mode == "source" else "captured"
+    )
+    if (
+        sampling_identity["status"] != expected_sampling_status
+        or sampling_identity["record_count"] != expected_sampling_count
+    ):
+        raise ValueError("collection sampling parameters coverage differs")
+    sampling_identity_digest = _require_digest(
+        sampling_identity["sha256"],
+        field="collection sampling parameters identity",
+    )
     runtime_counters = receipt["runtime_counters"]
     expected_count = 13 if expected_mode == "source" else 208
     expected_batches = 13 if expected_mode == "source" else 52
@@ -948,6 +1086,7 @@ def _load_collection(
     if _sha256_bytes(payload) != receipt["records_sha256"]:
         raise ValueError("collection records SHA-256 mismatch")
     records: list[tuple[int, TrajectoryInput]] = []
+    sampling_evidence: list[object] = []
     for line_number, raw_line in enumerate(payload.splitlines(), start=1):
         if not raw_line.strip():
             continue
@@ -963,6 +1102,7 @@ def _load_collection(
                 "trajectory session identity differs from collection receipt"
             )
         image_id = int(value.get("image_id", -1))
+        sampling_evidence.append(value.get("sampling_params"))
         records.append(
             (
                 image_id,
@@ -975,6 +1115,8 @@ def _load_collection(
         )
     if len(records) != int(receipt["record_count"]):
         raise ValueError("collection receipt/result coverage differs")
+    if _sha256_bytes(_canonical_bytes(sampling_evidence)) != sampling_identity_digest:
+        raise ValueError("collection sampling parameters SHA-256 mismatch")
     if len(records) != expected_count:
         suffix = (
             "one Source trajectory per image"
@@ -1031,6 +1173,11 @@ def artifacts_to_image_inputs(
         if seeds != EXPECTED_K_SEEDS:
             raise ValueError(
                 f"image {row.image_id} requires sixteen unique declared K seeds"
+            )
+        if len({trajectory.token_ids for trajectory in sampled}) == 1:
+            raise ValueError(
+                f"invalid discovery: image {row.image_id} has degenerate identical "
+                "token IDs across all sixteen K trajectories"
             )
         images.append(
             ImageInput(
@@ -1098,6 +1245,7 @@ def _record_from_result(
     session_identity: Mapping[str, object],
     result: object,
     request: RequestIdentity,
+    sampling_params: Mapping[str, object] | None,
     batch_elapsed_seconds: float,
 ) -> dict[str, object]:
     trajectory_id = (
@@ -1129,6 +1277,12 @@ def _record_from_result(
         },
         "execution_model_identity": dict(execution_model_identity),
         "session_identity": dict(session_identity),
+        "sampling_params": (None if sampling_params is None else dict(sampling_params)),
+        "sampling_params_sha256": (
+            None
+            if sampling_params is None
+            else _sha256_bytes(_canonical_bytes(sampling_params))
+        ),
         "runtime_counters": {
             "physical_batch_index": request.physical_batch_index,
             "physical_batch_size": 1 if mode == "source" else 4,
@@ -1152,6 +1306,11 @@ def _write_completed_collection(
     runtime_counters: Mapping[str, object],
 ) -> None:
     payload = b"".join(_canonical_bytes(dict(record)) for record in records)
+    sampling_evidence = [record.get("sampling_params") for record in records]
+    sampling_count = sum(item is not None for item in sampling_evidence)
+    expected_sampling_count = 0 if mode == "source" else len(records)
+    if sampling_count != expected_sampling_count:
+        raise ValueError("completed collection sampling evidence is incomplete")
     (staging / RECORDS_NAME).write_bytes(payload)
     _atomic_write_json(
         staging / RECEIPT_NAME,
@@ -1162,6 +1321,11 @@ def _write_completed_collection(
             "binding": _json_normalized(asdict(default_binding())),
             "config_identity": dict(config_identity),
             "session_identity": dict(session_identity),
+            "sampling_params_identity": {
+                "status": "not_applicable" if mode == "source" else "captured",
+                "record_count": sampling_count,
+                "sha256": _sha256_bytes(_canonical_bytes(sampling_evidence)),
+            },
             "runtime_counters": dict(runtime_counters),
             "records_file": RECORDS_NAME,
             "records_sha256": _sha256_bytes(payload),
@@ -1188,6 +1352,73 @@ def _vllm_sampling_params(request: Any, *, stop_token_id: int) -> Any:
         skip_special_tokens=False,
         spaces_between_special_tokens=True,
     )
+
+
+def _sampling_params_evidence(
+    *,
+    sampling_params: object,
+    planned_request: object,
+    request_order_in_batch: int,
+) -> dict[str, object]:
+    """Serialize the exact constructed vLLM request object passed to the engine."""
+
+    return {
+        "request_id": str(getattr(planned_request, "request_id")),
+        "physical_batch_index": int(getattr(planned_request, "physical_batch_index")),
+        "request_order_in_batch": request_order_in_batch,
+        "parameters": {
+            "n": getattr(sampling_params, "n"),
+            "seed": getattr(sampling_params, "seed"),
+            "temperature": getattr(sampling_params, "temperature"),
+            "top_p": getattr(sampling_params, "top_p"),
+            "top_k": getattr(sampling_params, "top_k"),
+            "repetition_penalty": getattr(sampling_params, "repetition_penalty"),
+            "max_tokens": getattr(sampling_params, "max_tokens"),
+        },
+        "stop_token_ids": list(getattr(sampling_params, "stop_token_ids")),
+    }
+
+
+def generate_k_batch(
+    *,
+    engine: object,
+    prompts: Sequence[object],
+    planned_requests: Sequence[object],
+    stop_token_id: int,
+) -> tuple[object, tuple[dict[str, object], ...]]:
+    """Generate once and return evidence derived from the exact passed objects."""
+
+    if len(prompts) != 4 or len(planned_requests) != 4:
+        raise ValueError("K engine submission requires exactly four requests")
+    sampling_params = tuple(
+        _vllm_sampling_params(request, stop_token_id=stop_token_id)
+        for request in planned_requests
+    )
+    captured = tuple(
+        _sampling_params_evidence(
+            sampling_params=params,
+            planned_request=request,
+            request_order_in_batch=order,
+        )
+        for order, (request, params) in enumerate(
+            zip(planned_requests, sampling_params, strict=True)
+        )
+    )
+    for order, (request, evidence) in enumerate(
+        zip(planned_requests, captured, strict=True)
+    ):
+        _validate_k_sampling_payload(
+            evidence,
+            request_id=str(getattr(request, "request_id")),
+            seed=int(getattr(request, "seed")),
+            physical_batch_index=int(getattr(request, "physical_batch_index")),
+            request_order_in_batch=order,
+        )
+    generate = getattr(engine, "generate", None)
+    if not callable(generate):
+        raise TypeError("vLLM engine does not expose generate")
+    outputs = generate(prompts, list(sampling_params), use_tqdm=False)
+    return outputs, captured
 
 
 def _execute_runtime(
@@ -1268,7 +1499,15 @@ def _execute_runtime(
                 generation_policy=policy,
             )
             prompt_by_image[image_id] = prompt_by_example[str(example.example_id)]
-        contexts: list[tuple[int, object, RequestIdentity, float]] = []
+        contexts: list[
+            tuple[
+                int,
+                object,
+                RequestIdentity,
+                Mapping[str, object] | None,
+                float,
+            ]
+        ] = []
         started = time.perf_counter()
         with open_backend_session(frontend.launch) as session:
             backend_version = str(session.receipt.backend_version)
@@ -1289,6 +1528,7 @@ def _execute_runtime(
                                 seed=None,
                                 backend_version=backend_version,
                             ),
+                            None,
                             elapsed,
                         )
                     )
@@ -1314,16 +1554,16 @@ def _execute_runtime(
                     prompts, media_hashes = session._generation_prompts(native_requests)
                     batch_started = time.perf_counter()
                     try:
-                        native_outputs = session._engine.generate(
-                            prompts,
-                            [
-                                _vllm_sampling_params(
-                                    request,
-                                    stop_token_id=session._im_end_token_id(),
-                                )
-                                for request in batch.requests
-                            ],
-                            use_tqdm=False,
+                        stop_token_id = session._im_end_token_id()
+                        if stop_token_id != _IM_END_TOKEN_ID:
+                            raise ValueError(
+                                "runtime im_end token differs from frozen identity"
+                            )
+                        native_outputs, captured_sampling = generate_k_batch(
+                            engine=session._engine,
+                            prompts=prompts,
+                            planned_requests=batch.requests,
+                            stop_token_id=stop_token_id,
                         )
                     finally:
                         _close_prompt_images(prompts)
@@ -1336,12 +1576,14 @@ def _execute_runtime(
                         scientific_request,
                         native,
                         media_hash,
+                        sampling_params,
                     ) in zip(
                         batch.requests,
                         native_requests,
                         scientific_requests,
                         ordered,
                         media_hashes,
+                        captured_sampling,
                         strict=True,
                     ):
                         result = session._materialize_result(
@@ -1364,6 +1606,7 @@ def _execute_runtime(
                                     seed=planned.seed,
                                     backend_version=backend_version,
                                 ),
+                                sampling_params,
                                 elapsed,
                             )
                         )
@@ -1403,9 +1646,10 @@ def _execute_runtime(
                 session_identity=session_identity,
                 result=result,
                 request=request,
+                sampling_params=sampling_params,
                 batch_elapsed_seconds=batch_elapsed,
             )
-            for image_id, result, request, batch_elapsed in contexts
+            for image_id, result, request, sampling_params, batch_elapsed in contexts
         ]
         expected_count = 13 if mode == "source" else 208
         if len(records) != expected_count:
