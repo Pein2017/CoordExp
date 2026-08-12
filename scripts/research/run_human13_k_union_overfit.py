@@ -414,6 +414,8 @@ class PackedPanelPlan:
 
 def build_logical_segments(
     segments: Sequence[LogicalPanelSegment],
+    *,
+    allow_a4_bundle: bool = False,
 ) -> tuple[LogicalPanelSegment, ...]:
     """Validate the experiment's coherent and atomic segment boundaries."""
 
@@ -435,7 +437,7 @@ def build_logical_segments(
                 )
             seen_coherent.add(key)
         if item.role == "a4_union":
-            if item.image_id in seen_a4:
+            if item.image_id in seen_a4 and not allow_a4_bundle:
                 raise ValueError("A4 must keep one atomic candidate group per image")
             seen_a4.add(item.image_id)
     return checked
@@ -445,10 +447,11 @@ def plan_panel_packs(
     segments: Sequence[LogicalPanelSegment],
     *,
     global_max_length: int = GLOBAL_MAX_LENGTH,
+    allow_a4_bundle: bool = False,
 ) -> PackedPanelPlan:
     """Stable descending-length first-fit over indivisible logical segments."""
 
-    checked = build_logical_segments(segments)
+    checked = build_logical_segments(segments, allow_a4_bundle=allow_a4_bundle)
     limit = _validate_pack_limit(global_max_length)
     for item in checked:
         if item.encoded_length > GLOBAL_MAX_LENGTH:
@@ -1359,13 +1362,11 @@ def _validate_sites_against_manifest(
                 raise ValueError(
                     "each manifest-derived encoded row binding must appear exactly once"
                 )
-            if segment.role == "a4_union" and tuple(
-                item.manifest_row_id for item in segment.row_bindings
-            ) != tuple(image.candidate_row_ids):
-                raise ValueError(
-                    "A4 candidate rows must appear exactly once in canonical "
-                    "manifest order"
-                )
+            if segment.role == "a4_union":
+                if len(segment.row_bindings) != 1 or segment.row_bindings[0].family != "h":
+                    raise ValueError("A4 candidate segment requires exactly one H row binding exactly once")
+                if segment.row_bindings[0].manifest_row_id not in image.candidate_row_ids:
+                    raise ValueError("A4 candidate row is outside canonical manifest order")
             seen_segments.add(segment.segment_id)
             unmatched = list(segment_sites)
             for row_binding in segment.row_bindings:

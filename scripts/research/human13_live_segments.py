@@ -78,11 +78,11 @@ def materialize_segments(
 
         clean = tuple(image.source.prefix.clean_token_ids)
         all_h = tuple(token for row in h_rows for token in row.token_ids)
-        all_h_bindings = _bindings("h", h_rows, prompt_count + len(clean))
+        all_h_bindings = _bindings("h", h_rows, prompt_count + len(clean), unit_by_row={row.row_id: row.owner_id for row in h_rows})
         segments.append(add("a1_full_h", clean + all_h, all_h_bindings, "a1"))
         segments.append(add("a8_full_h", clean + all_h, all_h_bindings, "a8-prime"))
         for row in h_rows:
-            segments.append(add("h1_independent", clean + tuple(row.token_ids), _bindings("h", (row,), prompt_count + len(clean)), f"h1:{row.row_id}"))
+            segments.append(add("h1_independent", clean + tuple(row.token_ids), _bindings("h", (row,), prompt_count + len(clean), unit_by_row={row.row_id: row.owner_id}), f"h1:{row.row_id}"))
 
         # A6 uses the exact donor trajectory prefix before the selected row.
         for row in h_rows:
@@ -91,22 +91,23 @@ def materialize_segments(
                 raise ValueError(f"missing A6 donor trajectory {row.trajectory_id}")
             source_row = next((r for r in donor.rows if r.row_id == row.row_id), None)
             donor_prefix = tuple(donor.raw_token_ids[: source_row.token_start]) if source_row is not None else tuple(donor.prefix.clean_token_ids)
-            segments.append(add("a6_donor_h1", donor_prefix + tuple(row.token_ids), _bindings("h", (row,), prompt_count + len(donor_prefix)), f"a6:{row.row_id}"))
+            segments.append(add("a6_donor_h1", donor_prefix + tuple(row.token_ids), _bindings("h", (row,), prompt_count + len(donor_prefix), unit_by_row={row.row_id: row.owner_id}), f"a6:{row.row_id}"))
 
         # Source replay keeps the clean source prefix and only matched rows.
         source_rows = tuple(r for r in image.source.rows if r.row_id in set(image.replay_row_ids))
-        replay_suffix = tuple(token for row in source_rows for token in image.source.raw_token_ids[row.token_start:row.token_end])
-        segments.append(add("source_replay", clean + replay_suffix, _bindings("replay", source_rows, prompt_count + len(clean)), "source-replay")) if source_rows else segments.append(add("source_replay", clean, (), "source-replay"))
+        owner_by_row = {row_id: owner.owner_id for owner in image.owners for row_id in getattr(owner, "source_row_ids", ())}
+        segments.append(add("source_replay", clean, _replay_bindings(image.source, source_rows, owner_by_row), "source-replay"))
 
         # Full-GT body-only rows are supplied by the processor-only skeleton.
         owner_tokens = getattr(skeleton, "owner_row_tokens", {})
         gt_suffix = tuple(token for owner in image.owners for token in owner_tokens.get(owner.owner_id, ()))
-        segments.append(add("full_gt", gt_suffix, (), "full-gt"))
+        gt_bindings = _full_gt_bindings(image.owners, owner_tokens, prompt_count)
+        segments.append(add("full_gt", gt_suffix, gt_bindings, "full-gt"))
 
         # Duplicate events retain the exact original decision prefix and target.
         for event in image.duplicate_events:
             dup_ids = tuple(event.decision_prefix_token_ids) + (int(event.target_token_id),)
-            segments.append(add("duplicate_event", dup_ids, (), event.event_id))
+            segments.append(add("duplicate_event", dup_ids, (_duplicate_binding(event, prompt_count),), event.event_id))
 
         # A4 candidates remain separate segments, with an atomic aggregate gate.
         total = 0
@@ -123,8 +124,10 @@ def materialize_segments(
             row = candidate_rows.get(row_id)
             if row is None:
                 continue
-            candidate = add("a4_union", clean + tuple(row.token_ids), _bindings("h", (row,), prompt_count + len(clean)), f"a4:{row.row_id}")
+            owner_id = next((owner.owner_id for owner in image.owners if row_id in getattr(owner, "sampled_row_ids", ())), row_id)
+            candidate = add("a4_union", clean + tuple(row.token_ids), _bindings("h", (row,), prompt_count + len(clean), unit_by_row={row.row_id: owner_id}), f"a4:{row.row_id}")
             a4_segments.append(candidate)
+            segments.append(candidate)
             total += candidate.encoded_length
         a4_totals.append((image_id, total))
 
@@ -133,15 +136,63 @@ def materialize_segments(
     return result
 
 
-def _bindings(family: str, rows: Sequence[Any], offset: int) -> tuple[Human13EncodedRowBinding, ...]:
+def _bindings(family: str, rows: Sequence[Any], offset: int, *, unit_by_row: Mapping[str, str] | None = None) -> tuple[Human13EncodedRowBinding, ...]:
     out = []
     cursor = offset
     for row in rows:
         length = len(row.token_ids) if hasattr(row, "token_ids") else int(row.token_end - row.token_start)
         if length <= 0:
             continue
-        out.append(Human13EncodedRowBinding(family, "2026-08-12-human13-k-union-to-greedy-overfit-screen", row.row_id, cursor, cursor + length, (True,) * length))
+        unit_id = (unit_by_row or {}).get(row.row_id, row.row_id)
+        mask = tuple(row.target_token_mask) if hasattr(row, "target_token_mask") else (True,) * length
+        out.append(Human13EncodedRowBinding(family, unit_id, row.row_id, cursor, cursor + length, mask))
         cursor += length
+    return tuple(out)
+
+
+def _replay_bindings(source: Any, rows: Sequence[Any], owner_by_row: Mapping[str, str]) -> tuple[Human13EncodedRowBinding, ...]:
+    removed = {i for row in source.rows if row.row_id in set(source.duplicate_row_ids) for i in range(row.token_start, row.token_end)}
+    raw_to_clean = {}
+    clean_index = 0
+    for raw_index in range(len(source.raw_token_ids[: source.terminal_token_index or len(source.raw_token_ids)])):
+        if raw_index not in removed:
+            raw_to_clean[raw_index] = clean_index
+            clean_index += 1
+    out = []
+    replay_mask = tuple(source.replay_token_mask)
+    for row in rows:
+        indexes = [raw_to_clean[i] for i in range(row.token_start, row.token_end) if i in raw_to_clean]
+        if not indexes:
+            continue
+        start, end = min(indexes), max(indexes) + 1
+        # Map the raw mask to the clean span, retaining malformed/unmatched positions masked.
+        clean_mask_values = [False] * (end - start)
+        for raw in range(row.token_start, row.token_end):
+            clean = raw_to_clean.get(raw)
+            if clean is not None and raw < len(replay_mask):
+                clean_mask_values[clean - start] = bool(replay_mask[raw])
+        clean_mask = tuple(clean_mask_values)
+        if not any(clean_mask):
+            continue
+        out.append(Human13EncodedRowBinding("replay", owner_by_row.get(row.row_id, row.row_id), row.row_id, start, end, clean_mask))
+    return tuple(out)
+
+
+def _duplicate_binding(event: Any, prompt_count: int) -> Human13EncodedRowBinding:
+    length = len(event.decision_prefix_token_ids) + 1
+    start = prompt_count
+    return Human13EncodedRowBinding("duplicate", event.event_id, event.duplicate_row_id, start, start + length, (False,) * (length - 1) + (True,))
+
+
+def _full_gt_bindings(owners: Sequence[Any], owner_tokens: Mapping[str, Sequence[int]], prompt_count: int) -> tuple[Human13EncodedRowBinding, ...]:
+    cursor = prompt_count
+    out = []
+    for owner in owners:
+        tokens = tuple(owner_tokens.get(owner.owner_id, ()))
+        if not tokens:
+            raise ValueError(f"full_gt owner {owner.owner_id} has no encoded body row")
+        out.append(Human13EncodedRowBinding("full_gt", owner.owner_id, owner.owner_id, cursor, cursor + len(tokens), (True,) * len(tokens)))
+        cursor += len(tokens)
     return tuple(out)
 
 

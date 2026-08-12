@@ -10,6 +10,7 @@ from scripts.research.build_human13_k_union_manifest import (
     TrajectoryRecord,
 )
 from scripts.research.human13_live_segments import materialize_segments
+from scripts.research import run_human13_k_union_overfit as runner
 
 
 @dataclass(frozen=True)
@@ -50,9 +51,23 @@ def test_materializes_roles_from_manifest_spans_without_retokenizing():
     assert by_role["duplicate_event"][0].encoded_example.input_ids == (7, 8, 9, 20, 21, 22)
     assert by_role["full_gt"][0].encoded_example.input_ids == (7, 8, 9, 30, 31)
     assert by_role["source_replay"][0].encoded_example.input_ids == (7, 8, 9, 10, 11, 12)
+    h_binding = by_role["h1_independent"][0].encoded_example.human13_row_bindings[0]
+    assert h_binding.unit_id == "gt:1:0" and h_binding.target_token_mask == (True, True)
+    dup_binding = by_role["duplicate_event"][0].encoded_example.human13_row_bindings[0]
+    assert dup_binding.family == "duplicate" and dup_binding.target_token_mask == (False, False, True)
+    gt_binding = by_role["full_gt"][0].encoded_example.human13_row_bindings[0]
+    assert gt_binding.family == "full_gt" and gt_binding.unit_id == "gt:1:0"
 
 
 def test_a4_atomic_preflight_reports_aggregate_and_rejects_over_limit():
-    skeleton = Skeleton("image:1", (1, 2), 2, {})
+    skeleton = Skeleton("image:1", (1, 2), 2, {"gt:1:0": (30,)})
     with pytest.raises(ValueError, match="A4.*12,000"):
         materialize_segments(_manifest(), {1: skeleton}, prompt_token_counts={1: 2}, global_max_length=3)
+
+
+def test_materialized_a4_candidates_are_independent_runner_segments():
+    skeleton = Skeleton("image:1", (7, 8, 9), 3, {"gt:1:0": (30, 31)})
+    result = materialize_segments(_manifest(), {1: skeleton}, prompt_token_counts={1: 3})
+    a4 = [item for item in result.segments if item.role == "a4_union"]
+    assert len(a4) == 1
+    assert runner.build_logical_segments(a4, allow_a4_bundle=True)[0].role == "a4_union"
