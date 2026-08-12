@@ -194,10 +194,24 @@ def execute_batch(
 def _validate_plan_for_batch(batch: PlannedBatch) -> None:
     if len(batch.requests) != REQUESTS_PER_BATCH:
         raise ValueError("each physical batch requires exactly four requests")
+    expected_image_ids = {image_id for image_id, _ in EXPECTED_IMAGE_IDENTITIES}
+    if batch.image_id not in expected_image_ids or any(
+        request.image_id != batch.image_id for request in batch.requests
+    ):
+        raise ValueError("batch must contain one single expected image identity")
     if any(
         request.physical_batch_index != batch.batch_index for request in batch.requests
     ):
         raise ValueError("request physical-batch identity does not match its batch")
+    start = batch.batch_index * REQUESTS_PER_BATCH
+    expected_seeds = EXPECTED_K_SEEDS[start : start + REQUESTS_PER_BATCH]
+    if tuple(request.seed for request in batch.requests) != expected_seeds:
+        raise ValueError("batch seeds do not match the exact seed slice")
+    if any(
+        request.request_id != _request_id(image_id=request.image_id, seed=request.seed)
+        for request in batch.requests
+    ):
+        raise ValueError("request does not carry its canonical request identity")
     if any(
         request.sampling != {**SAMPLING, "seed": request.seed}
         for request in batch.requests
@@ -270,8 +284,8 @@ def execute_vllm_batch(
     )
 
     decode_requests = tuple(
-        replace(base_request, request_id=request.request_id)
-        for request in batch.requests
+        replace(base_request, request_id=str(native_index))
+        for native_index, request in enumerate(batch.requests)
     )
     prompts, media_hashes = session._generation_prompts(decode_requests)
     del media_hashes  # The later artifact projection owns executed-RGB evidence.
@@ -291,6 +305,7 @@ def execute_vllm_batch(
         {
             "request_id": request.request_id,
             "seed": request.seed,
+            "native_request_id": str(output.request_id),
             "native_output": output,
         }
         for request, output in zip(batch.requests, ordered_outputs, strict=True)

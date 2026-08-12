@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
+import sys
+from types import ModuleType
 
 import pytest
 
 import scripts.research.collect_human13_k16_vllm as collector
+from src.common.errors import RuntimeContractError
 
 
 def test_one_image_is_four_successive_batches_of_four_explicit_n1_requests() -> None:
@@ -129,3 +133,119 @@ def test_dry_run_exact_panel_is_plan_only_without_runtime_import() -> None:
     assert summary["execution"] == "not_started"
     assert summary["cache_telemetry"]["status"] == "unavailable"
     assert summary["sampling_contract"]["n"] == 1
+
+
+def test_vllm_session_seam_uses_numeric_native_ids_and_preserves_collector_attribution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = collector.plan_image_requests(image_id=1584)[0]
+    fake_vllm = ModuleType("vllm")
+
+    class SamplingParams:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    fake_vllm.SamplingParams = SamplingParams  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    @dataclass(frozen=True)
+    class BaseRequest:
+        request_id: str
+
+    @dataclass(frozen=True)
+    class NativeOutput:
+        request_id: str
+
+    class Engine:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[object], list[SamplingParams]]] = []
+            self.native_ids = ("103", "100", "102", "101")
+
+        def generate(
+            self,
+            prompts: list[object],
+            sampling_params: list[SamplingParams],
+            *,
+            use_tqdm: bool,
+        ) -> list[NativeOutput]:
+            assert use_tqdm is False
+            self.calls.append((prompts, sampling_params))
+            return [NativeOutput(request_id) for request_id in self.native_ids]
+
+    class Session:
+        def __init__(self) -> None:
+            self._engine = Engine()
+            self.request_ids: tuple[str, ...] = ()
+
+        def _generation_prompts(
+            self, requests: tuple[BaseRequest, ...]
+        ) -> tuple[list[object], list[str]]:
+            self.request_ids = tuple(request.request_id for request in requests)
+            return ([{} for _ in requests], ["hash" for _ in requests])
+
+        def _im_end_token_id(self) -> int:
+            return 99
+
+    session = Session()
+    bound = collector.execute_vllm_batch(
+        session=session,
+        base_request=BaseRequest(request_id="base"),
+        batch=batch,
+    )
+
+    assert session.request_ids == ("0", "1", "2", "3")
+    assert [result.request_id for result in bound] == [
+        request.request_id for request in batch.requests
+    ]
+    assert [result.seed for result in bound] == [21001, 21002, 21003, 21004]
+    assert [result.payload["native_request_id"] for result in bound] == [
+        "100",
+        "101",
+        "102",
+        "103",
+    ]
+    assert [params.kwargs["n"] for params in session._engine.calls[0][1]] == [
+        1,
+        1,
+        1,
+        1,
+    ]
+
+    session._engine.native_ids = ("100", "101", "101", "102")
+    with pytest.raises(RuntimeContractError, match="duplicate native request ids"):
+        collector.execute_vllm_batch(
+            session=session,
+            base_request=BaseRequest(request_id="base"),
+            batch=batch,
+        )
+
+
+def test_batch_validation_rejects_noncanonical_seed_image_or_request_identity() -> None:
+    batch = collector.plan_image_requests(image_id=1584)[1]
+    first = batch.requests[0]
+    wrong_seed = replace(
+        first,
+        seed=21001,
+        request_id="human13:1584:k16:21001",
+        sampling={**collector.SAMPLING, "seed": 21001},
+    )
+    with pytest.raises(ValueError, match="exact seed slice"):
+        collector._validate_plan_for_batch(
+            replace(batch, requests=(wrong_seed, *batch.requests[1:]))
+        )
+
+    wrong_image = replace(
+        first,
+        image_id=99999,
+        request_id="human13:99999:k16:21005",
+    )
+    with pytest.raises(ValueError, match="single expected image"):
+        collector._validate_plan_for_batch(
+            replace(batch, requests=(wrong_image, *batch.requests[1:]))
+        )
+
+    wrong_request_id = replace(first, request_id="human13:1584:k16:99999")
+    with pytest.raises(ValueError, match="canonical request identity"):
+        collector._validate_plan_for_batch(
+            replace(batch, requests=(wrong_request_id, *batch.requests[1:]))
+        )
