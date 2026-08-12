@@ -190,53 +190,72 @@ def _score_image_trie(
 ) -> dict[str, Any]:
     if trie_logits is None:
         raise CensusContractError(f"missing trie logits for image {image_id}")
-    prefix: tuple[int, ...] = ()
-    nodes: list[dict[str, Any]] = []
+    if set(trie_logits) != set(children):
+        raise CensusContractError(
+            f"trie logits for image {image_id} must cover every frozen trie prefix"
+        )
+    nodes_by_prefix = {
+        prefix: _score_trie_node(
+            image_id=image_id,
+            prefix=prefix,
+            viable=viable,
+            logits=trie_logits[prefix],
+        )
+        for prefix, viable in sorted(children.items())
+    }
+
+    projected_prefix: tuple[int, ...] = ()
     reached_leaf = False
-    while prefix in children:
-        logits = _finite_vector(
-            trie_logits.get(prefix),
-            label=f"trie_logits[{image_id!r}]{prefix}",
-        )
-        viable = children[prefix]
-        if viable and max(viable) >= int(logits.numel()):
-            raise CensusContractError("trie child token is outside logits vocabulary")
-        top1 = int(logits.argmax().item())
-        viable_tensor = torch.tensor(viable, dtype=torch.long, device=logits.device)
-        strongest_viable = int(viable_tensor[logits[viable_tensor].argmax()].item())
-        nonviable_mask = torch.ones_like(logits, dtype=torch.bool)
-        nonviable_mask[viable_tensor] = False
-        strongest_nonviable_score = (
-            float(logits[nonviable_mask].max().item())
-            if bool(nonviable_mask.any().item())
-            else float("-inf")
-        )
-        viable_margin = (
-            float(logits[strongest_viable].item()) - strongest_nonviable_score
-        )
-        nodes.append(
-            {
-                "prefix_token_ids": list(prefix),
-                "viable_child_token_ids": list(viable),
-                "actual_top1_token_id": top1,
-                "actual_top1_is_viable_child": top1 in viable,
-                "strongest_viable_child_token_id": strongest_viable,
-                "strongest_viable_child_margin": viable_margin,
-                "top_tie_count": int((logits == logits.max()).sum().item()),
-            }
-        )
-        if top1 not in viable:
+    while projected_prefix in nodes_by_prefix:
+        node = nodes_by_prefix[projected_prefix]
+        top1 = node["actual_top1_token_id"]
+        if not node["actual_top1_is_viable_child"]:
             break
-        prefix = (*prefix, top1)
-        if prefix in owners_by_leaf:
+        projected_prefix = (*projected_prefix, top1)
+        if projected_prefix in owners_by_leaf:
             reached_leaf = True
             break
     return {
         "image_id": image_id,
-        "nodes": nodes,
-        "projected_token_ids": list(prefix),
-        "projected_owner_ids": list(owners_by_leaf.get(prefix, ())),
+        "nodes": list(nodes_by_prefix.values()),
+        "projected_token_ids": list(projected_prefix),
+        "projected_owner_ids": list(owners_by_leaf.get(projected_prefix, ())),
         "reached_native_leaf": reached_leaf,
+    }
+
+
+def _score_trie_node(
+    *,
+    image_id: str,
+    prefix: tuple[int, ...],
+    viable: tuple[int, ...],
+    logits: torch.Tensor,
+) -> dict[str, Any]:
+    checked = _finite_vector(
+        logits,
+        label=f"trie_logits[{image_id!r}]{prefix}",
+    )
+    if viable and max(viable) >= int(checked.numel()):
+        raise CensusContractError("trie child token is outside logits vocabulary")
+    top1 = int(checked.argmax().item())
+    viable_tensor = torch.tensor(viable, dtype=torch.long, device=checked.device)
+    strongest_viable = int(viable_tensor[checked[viable_tensor].argmax()].item())
+    nonviable_mask = torch.ones_like(checked, dtype=torch.bool)
+    nonviable_mask[viable_tensor] = False
+    strongest_nonviable_score = (
+        float(checked[nonviable_mask].max().item())
+        if bool(nonviable_mask.any().item())
+        else float("-inf")
+    )
+    viable_margin = float(checked[strongest_viable].item()) - strongest_nonviable_score
+    return {
+        "prefix_token_ids": list(prefix),
+        "viable_child_token_ids": list(viable),
+        "actual_top1_token_id": top1,
+        "actual_top1_is_viable_child": top1 in viable,
+        "strongest_viable_child_token_id": strongest_viable,
+        "strongest_viable_child_margin": viable_margin,
+        "top_tie_count": int((checked == checked.max()).sum().item()),
     }
 
 
@@ -257,7 +276,9 @@ def _score_chain(
         role_counts[site.token_role] += 1
         packed = _surface_score(site.packed_logits, site.target_token_id)
         hf = _surface_score(site.hf_logits, site.target_token_id)
-        finite = packed is not None and hf is not None
+        packed_finite = packed is not None
+        hf_finite = hf is not None
+        finite = packed_finite and hf_finite
         aligned_finite = aligned_finite and finite
         receipt: dict[str, Any] = {
             "site_index": site_index,
@@ -266,31 +287,42 @@ def _score_chain(
             "token_offset": site.token_offset,
             "target_token_id": site.target_token_id,
             "token_role": site.token_role,
+            "packed_finite": packed_finite,
+            "hf_finite": hf_finite,
             "aligned_finite": finite,
         }
-        if finite:
-            assert packed is not None and hf is not None
-            drift = abs(packed["target_margin"] - hf["target_margin"])
+        if packed is not None:
             packed_margins.append(packed["target_margin"])
-            drifts.append(drift)
             packed_ties = packed["top_tie_count"]
             tie_site_count += int(packed_ties > 1)
             receipt.update(
                 {
                     "packed_competitor_token_id": packed["competitor_token_id"],
-                    "hf_competitor_token_id": hf["competitor_token_id"],
                     "packed_target_margin": packed["target_margin"],
-                    "hf_target_margin": hf["target_margin"],
-                    "absolute_margin_drift": drift,
                     "packed_top_tie_count": packed_ties,
-                    "hf_top_tie_count": hf["top_tie_count"],
                     "packed_competitor_status": site.competitor_status_by_token.get(
                         packed["competitor_token_id"], "unclassified"
                     ),
                 }
             )
-            if first_non_argmax is None and packed["target_margin"] <= 0.0:
-                first_non_argmax = dict(receipt)
+        if hf is not None:
+            receipt.update(
+                {
+                    "hf_competitor_token_id": hf["competitor_token_id"],
+                    "hf_target_margin": hf["target_margin"],
+                    "hf_top_tie_count": hf["top_tie_count"],
+                }
+            )
+        if packed is not None and hf is not None:
+            drift = abs(packed["target_margin"] - hf["target_margin"])
+            drifts.append(drift)
+            receipt["absolute_margin_drift"] = drift
+        if (
+            packed is not None
+            and first_non_argmax is None
+            and packed["target_margin"] <= 0.0
+        ):
+            first_non_argmax = dict(receipt)
         receipts.append(receipt)
 
     minimum = min(packed_margins) if packed_margins else None

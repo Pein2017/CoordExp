@@ -116,6 +116,62 @@ def test_trie_keeps_same_prefixes_and_logits_scoped_to_each_image() -> None:
     ]
 
 
+def test_trie_scores_every_frozen_branch_before_projecting_greedy_row() -> None:
+    rows = (
+        SelectedNativeRow("image-1", "owner-a", (1, 3)),
+        SelectedNativeRow("image-1", "owner-b", (2, 4)),
+    )
+    sites = (
+        _site("owner-a", 0, 1, "boundary", (0, 3, 1, 0, 0), (0, 3, 1, 0, 0)),
+        _site(
+            "owner-a",
+            1,
+            3,
+            "row_terminator",
+            (0, 0, 0, 3, 0),
+            (0, 0, 0, 3, 0),
+        ),
+        _site("owner-b", 0, 2, "boundary", (0, 1, 3, 0, 0), (0, 1, 3, 0, 0)),
+        _site(
+            "owner-b",
+            1,
+            4,
+            "row_terminator",
+            (0, 0, 0, 0, 3),
+            (0, 0, 0, 0, 3),
+        ),
+    )
+    root_and_projected_only = {
+        (): torch.tensor((0.0, 3.0, 2.0, 0.0, 0.0)),
+        (1,): torch.tensor((0.0, 0.0, 0.0, 3.0, 0.0)),
+    }
+
+    with pytest.raises(ValueError, match="every frozen trie prefix"):
+        run_no_update_census(
+            selected_rows=rows,
+            trie_logits={"image-1": root_and_projected_only},
+            coherent_sites=sites,
+            frozen_targets={"selected_rows": [[1, 3], [2, 4]]},
+        )
+
+    result = run_no_update_census(
+        selected_rows=rows,
+        trie_logits={
+            "image-1": {
+                **root_and_projected_only,
+                (2,): torch.tensor((0.0, 0.0, 0.0, 0.0, 4.0)),
+            }
+        },
+        coherent_sites=sites,
+        frozen_targets={"selected_rows": [[1, 3], [2, 4]]},
+    )
+
+    image = result["trie"]["images"][0]
+    assert [node["prefix_token_ids"] for node in image["nodes"]] == [[], [1], [2]]
+    assert image["projected_token_ids"] == [1, 3]
+    assert image["projected_owner_ids"] == ["owner-a"]
+
+
 def test_census_traverses_full_chain_and_seals_margin_ties_roles_and_drift() -> None:
     rows = (
         SelectedNativeRow("image-1", "owner-a", (1, 2, 3)),
@@ -152,6 +208,7 @@ def test_census_traverses_full_chain_and_seals_margin_ties_roles_and_drift() -> 
                 (): torch.tensor((0.0, 2.0, 1.0, 0.0)),
                 (1,): torch.tensor((0, 0, 2, 1)),
                 (1, 2): torch.tensor((0, 0, 0, 2)),
+                (2,): torch.tensor((0, 2, 0, 0)),
             }
         },
         coherent_sites=sites,
@@ -220,3 +277,39 @@ def test_census_blocks_a8_prime_for_noop_large_drift_or_nonfinite_alignment(
     assert result["a8_prime"]["blocked"] is True
     assert result["a8_prime"]["applicable"] is False
     assert result["a8_prime"]["block_reason"] == reason
+
+
+def test_nonfinite_hf_preserves_finite_packed_chain_diagnostics() -> None:
+    row = SelectedNativeRow("image-1", "owner-a", (1,))
+
+    result = run_no_update_census(
+        selected_rows=(row,),
+        trie_logits={"image-1": {(): torch.tensor((0.0, 2.0, 0.0))}},
+        coherent_sites=(
+            _site(
+                "owner-a",
+                0,
+                1,
+                "row_terminator",
+                (1.0, 1.0, 0.0),
+                (0.0, float("nan"), 0.0),
+            ),
+        ),
+        frozen_targets={"selected_rows": [[1]]},
+    )
+
+    chain = result["coherent_chain"]
+    site = chain["sites"][0]
+    assert site["aligned_finite"] is False
+    assert site["packed_competitor_token_id"] == 0
+    assert site["packed_target_margin"] == 0.0
+    assert site["packed_top_tie_count"] == 2
+    assert chain["first_non_argmax_site"]["site_index"] == 0
+    assert chain["minimum_strict_margin"] == 0.0
+    assert chain["tie_site_count"] == 1
+    assert result["aligned_surface"] == {
+        "all_finite": False,
+        "maximum_absolute_margin_drift": None,
+        "site_count": 0,
+    }
+    assert result["a8_prime"]["block_reason"] == "aligned_finite_scores_unavailable"
