@@ -365,7 +365,7 @@ def _role_overrides(role: str, *, artifact_root: Path) -> dict[str, Any]:
         },
         "runtime": {"determinism": {"mode": "strict_cuda_replay_v1"}},
         # No eval forward in any role: this probe's numeric forward ceiling
-        # (control=2/rank, resumed_parent=1/rank, resumed_child=1/rank) counts
+        # (control=2/rank, resumed_parent=2/rank, resumed_child=1/rank) counts
         # only train-split forwards, and `steps: []` with the default unset
         # `every_fraction` is the schema-valid "never run eval forward" state.
         "eval": {"forward": {"steps": []}},
@@ -380,15 +380,15 @@ def _role_overrides(role: str, *, artifact_root: Path) -> dict[str, Any]:
         # for `verify` to admit at the step-1/step-2 boundaries.
         common["resume"] = {"mode": "exact_same_world_size", "checkpoint_dir": None}
     elif role == ROLE_RESUMED_PARENT:
-        common["training"] = {"max_steps": 1}
-        common["checkpoint"] = {"steps": [1], "save_final": True}
+        common["training"] = {"max_steps": 2}
+        common["checkpoint"] = {"steps": [1, 2], "save_final": True}
         common["resume"] = {"mode": "exact_same_world_size", "checkpoint_dir": None}
     elif role == ROLE_RESUMED_CHILD:
         parent_checkpoint = str(
             artifact_root / RUNS_DIR_NAME / ROLE_RESUMED_PARENT / "checkpoints" / "step-1"
         )
         common["training"] = {"max_steps": 2}
-        common["checkpoint"] = {"steps": [2], "save_final": True}
+        common["checkpoint"] = {"steps": [1, 2], "save_final": True}
         common["resume"] = {
             "mode": "exact_same_world_size",
             "checkpoint_dir": parent_checkpoint,
@@ -425,6 +425,10 @@ def _validate_resolved_role(
             and config["run"]["artifact_root"] == overrides["run"]["artifact_root"]
             and config["run"]["collision_policy"] == "fail"
             and config["training"]["max_steps"] == overrides["training"]["max_steps"]
+            and list(config["checkpoint"]["steps"])
+            == list(overrides["checkpoint"]["steps"])
+            and config["checkpoint"]["save_final"]
+            is overrides["checkpoint"]["save_final"]
             and config["runtime"]["determinism"]["mode"] == "strict_cuda_replay_v1"
             and config["resume"]["mode"] == overrides["resume"]["mode"]
             and config["resume"]["checkpoint_dir"]
@@ -946,7 +950,7 @@ def success_resumed(
     parent_run_dir = _run_dir(receipt, ROLE_RESUMED_PARENT)
     parent_state = _load_run_state(parent_run_dir)
     _require_world_size_in_state(parent_state, role=ROLE_RESUMED_PARENT)
-    _require_completed_steps(parent_state, expected=1, role=ROLE_RESUMED_PARENT)
+    _require_completed_steps(parent_state, expected=2, role=ROLE_RESUMED_PARENT)
 
     child_config = _run_config_path(receipt, ROLE_RESUMED_CHILD)
     child_argv = _launch_argv(child_config)
@@ -1340,7 +1344,9 @@ def interruption(
 # --------------------------------------------------------------------------
 
 
-_EXCLUDED_LOGGING_KEYS = frozenset({"per_rank_measurement"})
+_EXCLUDED_LOGGING_KEYS = frozenset(
+    {"input_build_seconds", "input_wait_seconds", "per_rank_measurement"}
+)
 _EXCLUDED_LOGGING_KEY_MARKERS = ("duration", "resource", "wall", "timing")
 
 
@@ -1409,6 +1415,7 @@ _COMPARISON_POLICY = {
 }
 
 _REQUIRED_COMPARISONS = tuple(_COMPARISON_POLICY)
+_CROSS_ROLE_IDENTITY_EXCLUSIONS = frozenset({"resolved_config"})
 
 
 def _exact_json_field_equal(observed: Any, expected: Any) -> bool:
@@ -1625,6 +1632,8 @@ def _compare_checkpoint_pair(
             )
     mismatches: list[dict[str, Any]] = []
     for key in sorted(set(left_manifest.identities) | set(right_manifest.identities)):
+        if key in _CROSS_ROLE_IDENTITY_EXCLUSIONS:
+            continue
         if left_manifest.identities.get(key) != right_manifest.identities.get(key):
             mismatches.append({"path": f"{path_prefix}.identities.{key}"})
     for rank in range(WORLD_SIZE):
@@ -1972,6 +1981,8 @@ def main(argv: list[str] | None = None, *, launch: LaunchCallable = _default_lau
             "unsupported command", code="reconcile_probe.unknown_command"
         )
     print(json.dumps(result, allow_nan=False, indent=2, sort_keys=True))
+    if args.command == "verify" and result.get("status") != "verified":
+        return 1
     return 0
 
 

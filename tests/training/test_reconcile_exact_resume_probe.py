@@ -87,18 +87,24 @@ def _write_train_row(run_dir: Path, *, step: int, loss: float = 1.5, duration: f
         handle.write(json.dumps(row) + "\n")
 
 
-def _write_real_checkpoint(checkpoint_dir: Path, *, step: int) -> None:
+def _write_real_checkpoint(
+    checkpoint_dir: Path,
+    *,
+    step: int,
+    identities: dict[str, str] | None = None,
+    resolved_config: dict | None = None,
+) -> None:
     """Author a genuinely admittable `training_state/` via real primitives."""
 
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    resolved_config = probe._synthetic_resolved_config()
+    resolved_config = resolved_config or probe._synthetic_resolved_config()
     plan = probe.TrainingStatePublicationPlan(
         parent_run_id="fixture-run",
         parent_segment_id="fixture-segment",
         checkpoint_step=step,
         continuation_index=0,
         world_size=2,
-        identities=probe._synthetic_identities(),
+        identities=identities or probe._synthetic_identities(),
         scheduler_applicable=False,
         scaler_applicable=False,
         resolved_config=resolved_config,
@@ -121,7 +127,7 @@ def _write_matched_success_fixture(target: Path, receipt: dict) -> tuple[dict, d
     child_run_dir = target / "runs" / "resumed_child"
 
     _write_run_json(control_run_dir, completed_steps=2)
-    _write_run_json(parent_run_dir, completed_steps=1)
+    _write_run_json(parent_run_dir, completed_steps=2)
     _write_run_json(child_run_dir, completed_steps=2)
     _write_real_checkpoint(control_run_dir / "checkpoints" / "step-1", step=1)
     _write_real_checkpoint(parent_run_dir / "checkpoints" / "step-1", step=1)
@@ -298,7 +304,9 @@ def test_prepare_authors_an_exact_two_rank_bundle_with_publish_only_boundary(
         "mode": "exact_same_world_size",
         "checkpoint_dir": None,
     }
-    assert parent_config.config_dict["training"]["max_steps"] == 1
+    assert parent_config.config_dict["training"]["max_steps"] == 2
+    assert parent_config.config_dict["checkpoint"]["steps"] == [1, 2]
+    assert parent_config.config_dict["checkpoint"]["save_final"] is True
 
     child_config = probe.load_train_config(target / "configs/resumed_child.yaml")
     assert child_config.config_dict["resume"]["mode"] == "exact_same_world_size"
@@ -306,10 +314,37 @@ def test_prepare_authors_an_exact_two_rank_bundle_with_publish_only_boundary(
         target / "runs/resumed_parent/checkpoints/step-1"
     )
     assert child_config.config_dict["training"]["max_steps"] == 2
+    assert child_config.config_dict["checkpoint"]["steps"] == [1, 2]
+    assert child_config.config_dict["checkpoint"]["save_final"] is True
     assert child_config.config_dict["eval"]["forward"]["steps"] == []
 
     # Re-loading the receipt from disk must reproduce the same signed JSON.
     assert probe._load_signed_receipt(target / probe.PREPARE_RECEIPT_NAME) == receipt
+
+
+def test_prepare_authors_resume_compatible_parent_and_child_semantics(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "bundle"
+    probe.prepare(
+        artifact_root=target,
+        base_config=BASE_CONFIG,
+        world_size=2,
+        prepare_pack_cache=_fake_prepare_pack_cache([]),
+    )
+
+    parent = probe.load_train_config(target / "configs/resumed_parent.yaml")
+    child = probe.load_train_config(target / "configs/resumed_child.yaml")
+
+    assert parent.config_dict["training"]["max_steps"] == 2
+    assert child.config_dict["training"]["max_steps"] == 2
+    assert parent.config_dict["checkpoint"]["steps"] == [1, 2]
+    assert child.config_dict["checkpoint"]["steps"] == [1, 2]
+    assert parent.config_dict["checkpoint"]["save_final"] is True
+    assert child.config_dict["checkpoint"]["save_final"] is True
+    assert probe.build_resume_compatibility_projection(
+        parent.to_artifact_dict()
+    ) == probe.build_resume_compatibility_projection(child.to_artifact_dict())
 
 
 def test_prepare_leaves_no_stage_or_cache_residue_on_success(tmp_path: Path) -> None:
@@ -566,7 +601,7 @@ def test_success_resumed_counts_setup_separately_from_update(tmp_path: Path) -> 
     def fake_launch(argv, cwd, env):
         calls.append(tuple(argv))
         if "resumed_parent.yaml" in argv[argv.index("--config") + 1]:
-            _write_run_json(target / "runs" / "resumed_parent", completed_steps=1)
+            _write_run_json(target / "runs" / "resumed_parent", completed_steps=2)
         else:
             _write_run_json(target / "runs" / "resumed_child", completed_steps=2)
         return probe.LaunchResult(0, "ok", "")
@@ -740,7 +775,7 @@ def test_verify_fails_closed_without_durable_checkpoints(tmp_path: Path) -> None
         if "uninterrupted_control.yaml" in config_arg:
             _write_run_json(target / "runs" / "uninterrupted_control", completed_steps=2)
         elif "resumed_parent.yaml" in config_arg:
-            _write_run_json(target / "runs" / "resumed_parent", completed_steps=1)
+            _write_run_json(target / "runs" / "resumed_parent", completed_steps=2)
         else:
             _write_run_json(target / "runs" / "resumed_child", completed_steps=2)
         return probe.LaunchResult(0, "ok", "")
@@ -906,6 +941,83 @@ def test_verify_fails_closed_on_a_mismatched_boundary_checkpoint(tmp_path: Path)
     assert any(item["path"] == "boundary.rank0.cursor" for item in result["bounded_mismatches"])
 
 
+def test_checkpoint_pair_ignores_only_resolved_config_identity_drift(
+    tmp_path: Path,
+) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left_config = probe._synthetic_resolved_config()
+    right_config = json.loads(json.dumps(left_config))
+    right_config["config"]["run"]["name"] = "other-branch"
+    right_config["config"]["resume"] = {
+        "mode": "exact_same_world_size",
+        "checkpoint_dir": "/reconcile-probe/parent/checkpoints/step-1",
+    }
+    digest = "a" * 64
+    right_identities = probe.build_exact_resume_identities(
+        base_model=digest,
+        cache=digest,
+        dependencies=digest,
+        policy=digest,
+        resolved_config=right_config,
+        topology=digest,
+        trainable_surface=digest,
+    )
+    left_identities = probe._synthetic_identities()
+    _write_real_checkpoint(left, step=1, identities=left_identities)
+    _write_real_checkpoint(
+        right,
+        step=1,
+        identities=dict(right_identities),
+        resolved_config=right_config,
+    )
+
+    assert probe._compare_checkpoint_pair(
+        left, right, step=1, path_prefix="boundary"
+    ) == []
+
+
+def test_checkpoint_pair_keeps_non_config_identities_strict(tmp_path: Path) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left_identities = probe._synthetic_identities()
+    right_identities = dict(left_identities)
+    right_identities["cache"] = "b" * 64
+    _write_real_checkpoint(left, step=1, identities=left_identities)
+    _write_real_checkpoint(right, step=1, identities=right_identities)
+
+    assert probe._compare_checkpoint_pair(
+        left, right, step=1, path_prefix="boundary"
+    ) == [{"path": "boundary.identities.cache"}]
+
+
+def test_objective_comparison_ignores_input_timing_but_not_training_semantics() -> None:
+    control = {
+        "step": 2,
+        "split": "train",
+        "loss": 1.5,
+        "optimizer_update_status": "applied",
+        "input_build_seconds": 0.1,
+        "input_wait_seconds": 0.2,
+    }
+    timing_jitter = {
+        **control,
+        "input_build_seconds": 10.0,
+        "input_wait_seconds": 20.0,
+    }
+    assert probe._compare_loss_rows(control, timing_jitter) == []
+
+    semantic_drift = {
+        **timing_jitter,
+        "loss": 9.0,
+        "optimizer_update_status": "skipped_nonfinite",
+    }
+    assert {item["path"] for item in probe._compare_loss_rows(control, semantic_drift)} == {
+        "logging.loss",
+        "logging.optimizer_update_status",
+    }
+
+
 def test_verify_fails_closed_on_missing_or_mismatched_train_step2_row(tmp_path: Path) -> None:
     target, receipt = _prepared(tmp_path)
     _write_matched_success_fixture(target, receipt)
@@ -961,3 +1073,22 @@ def test_verify_rejects_malformed_strict_json_receipt(tmp_path: Path) -> None:
     with pytest.raises(probe.ReconcileProbeError) as exc_info:
         probe.verify_artifacts(artifact_root=target)
     assert exc_info.value.code == "reconcile_probe.malformed_json"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_returncode"),
+    [("verified", 0), ("failed", 1)],
+)
+def test_cli_verify_exit_code_reflects_terminal_receipt_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    expected_returncode: int,
+) -> None:
+    monkeypatch.setattr(
+        probe,
+        "verify_artifacts",
+        lambda *, artifact_root: {"status": status, "artifact_root": artifact_root},
+    )
+
+    assert probe.main(["verify", "--artifact-root", str(tmp_path)]) == expected_returncode

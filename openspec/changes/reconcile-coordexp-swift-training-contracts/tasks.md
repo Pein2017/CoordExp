@@ -56,7 +56,8 @@
 > commit does not launch a model/GPU and does not check 3.1-3.7; it only
 > equips the frozen command manifest that Task 4 Step 2 will bind by argv.
 >
-> Correction (commit `fix(training): make resume qualifier fail closed`):
+> Corrections (commits `fix(training): make resume qualifier fail closed` and
+> `fix(training): make resume probe launch-compatible`):
 > fixed-target review found the initial cut fail-open and non-fail-closed in
 > three places, all resolved without launching a model/GPU: (1) `verify` now
 > fails closed -- it admits both checkpoint boundaries via the real
@@ -78,8 +79,13 @@
 > exact_same_world_size` with a null path (the Task 2.5 publish-only
 > contract) instead of `disabled`, which would have skipped exact-state
 > publication entirely; eval forward is disabled in every role so the
-> declared numeric forward ceiling (control=2/rank, resumed_parent=1/rank,
-> resumed_child=1/rank) counts only train-split forwards. `rank-failure`/
+> declared numeric forward ceiling (control=2/rank, resumed_parent=2/rank,
+> resumed_child=1/rank) counts only train-split forwards. Parent and child
+> intentionally share `training.max_steps: 2`, `checkpoint.steps: [1, 2]`,
+> and `save_final: true`, so their resume-compatibility projections match;
+> the parent still supplies the step-1 comparison boundary while completing
+> two setup forwards, and the child restores step 1 and executes only step 2.
+> `rank-failure`/
 > `interruption` no longer call `torch.cuda.current_device()` through
 > `rng_snapshot=None`; they build CPU-only RNG state explicitly and are
 > covered by a `CUDA_VISIBLE_DEVICES=''` subprocess test.
