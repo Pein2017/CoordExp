@@ -374,16 +374,236 @@ def test_execution_rejects_sealed_manifest_binding_mismatch_before_forward(
     assert writer.finalized["status"] == "failed"
 
 
-def test_a4_complete_candidate_group_cannot_split_across_packs() -> None:
-    sealed, packed_plan, sites_by_pack = _a4_split_fixture()
+def test_execution_requires_actual_physical_indices_exactly_once_in_order() -> None:
+    sealed, execution, micro_steps = _bound_a1_execution(two_packs=True)
 
-    with pytest.raises(ValueError, match="A4 candidate group.*one segment.*one pack"):
+    with pytest.raises(ValueError, match="physical micro-step indices"):
+        runner._validate_execution_payload(
+            sealed,
+            execution,
+            (micro_steps[0], micro_steps[0]),
+        )
+
+    with pytest.raises(ValueError, match="physical micro-step indices"):
+        runner._validate_execution_payload(
+            sealed,
+            execution,
+            tuple(reversed(micro_steps)),
+        )
+
+
+def test_execution_requires_exact_packed_segment_ranges() -> None:
+    sealed, execution, micro_steps = _bound_a1_execution()
+    micro_step = micro_steps[0]
+    first, *rest = micro_step.pack.segments
+    shifted = replace(first, start=first.start + 1, end=first.end + 1)
+    changed = replace(
+        micro_step,
+        pack=replace(micro_step.pack, segments=(shifted, *rest)),
+    )
+
+    with pytest.raises(ValueError, match="sealed segment bindings"):
+        runner._validate_execution_payload(sealed, execution, (changed,))
+
+
+def test_execution_requires_exact_encoded_example_identities() -> None:
+    sealed, execution, micro_steps = _bound_a1_execution()
+    micro_step = micro_steps[0]
+    first, *rest = micro_step.encoded_examples
+    changed = replace(
+        micro_step,
+        encoded_examples=(replace(first, example_id="swapped-example"), *rest),
+    )
+
+    with pytest.raises(ValueError, match="sealed segment bindings"):
+        runner._validate_execution_payload(sealed, execution, (changed,))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "h_owner",
+        "h_image",
+        "h_position",
+        "h_duplicate",
+        "replay_payload",
+        "duplicate_payload",
+    ),
+)
+def test_execution_plan_derives_every_loss_site_from_manifest_and_encoded_rows(
+    mutation: str,
+) -> None:
+    sealed, packed, sites_by_pack = _a1_payload()
+    changed = {index: tuple(sites) for index, sites in sites_by_pack.items()}
+
+    if mutation == "h_duplicate":
+        pack_index, h_site = next(
+            (index, site)
+            for index, sites in changed.items()
+            for site in sites
+            if site.family == "h"
+        )
+        changed[pack_index] = (*changed[pack_index], h_site)
+    else:
+        family = "h" if mutation.startswith("h_") else mutation.removesuffix("_payload")
+        pack_index, site_index, site = next(
+            (index, offset, site)
+            for index, sites in changed.items()
+            for offset, site in enumerate(sites)
+            if site.family == family
+        )
+        if mutation == "h_owner":
+            replacement = replace(site, unit_id="owner-g")
+        elif mutation == "h_image":
+            replacement = replace(site, image_id=2)
+        elif mutation == "h_position":
+            replacement = replace(
+                site, logits_positions=(site.logits_positions[0] + 1,)
+            )
+        elif mutation == "replay_payload":
+            replacement = replace(site, target_token_ids=(0, 0))
+        else:
+            replacement = replace(site, target_token_ids=(2,))
+        sites = list(changed[pack_index])
+        sites[site_index] = replacement
+        changed[pack_index] = tuple(sites)
+
+    with pytest.raises(ValueError, match="manifest.*encoded|exactly once"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A1",
+            packed_plan=packed,
+            sites_by_pack=changed,
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation", ("wrong_role", "wrong_pack", "split_site", "reordered_candidates")
+)
+def test_a4_requires_each_exact_candidate_once_in_one_a4_segment_and_pack(
+    mutation: str,
+) -> None:
+    sealed, packed_plan, sites_by_pack = _a4_payload(
+        wrong_role=mutation == "wrong_role",
+        reorder_candidates=mutation == "reordered_candidates",
+    )
+    changed = {index: tuple(sites) for index, sites in sites_by_pack.items()}
+    if mutation == "wrong_pack":
+        source_pack, source_offset, site = next(
+            (index, offset, site)
+            for index, sites in changed.items()
+            for offset, site in enumerate(sites)
+            if site.family == "h"
+        )
+        destination = next(index for index in changed if index != source_pack)
+        source_sites = list(changed[source_pack])
+        source_sites.pop(source_offset)
+        changed[source_pack] = tuple(source_sites)
+        changed[destination] = (*changed[destination], site)
+    elif mutation == "split_site":
+        pack_index, site_index, site = next(
+            (index, offset, site)
+            for index, sites in changed.items()
+            for offset, site in enumerate(sites)
+            if site.family == "h" and len(site.logits_positions) == 2
+        )
+        sites = list(changed[pack_index])
+        sites[site_index : site_index + 1] = [
+            replace(
+                site,
+                logits_positions=(site.logits_positions[0],),
+                target_token_ids=(site.target_token_ids[0],),
+            ),
+            replace(
+                site,
+                logits_positions=(site.logits_positions[1],),
+                target_token_ids=(site.target_token_ids[1],),
+            ),
+        ]
+        changed[pack_index] = tuple(sites)
+
+    with pytest.raises(ValueError, match="role|exactly once"):
         runner.build_execution_plan(
             sealed,
             arm_id="A4",
             packed_plan=packed_plan,
-            sites_by_pack=sites_by_pack,
+            sites_by_pack=changed,
         )
+
+
+@pytest.mark.parametrize(
+    ("arm_id", "coefficients", "allowed_roles"),
+    (
+        ("A0", (0.0, 1.0, 1.0), {"source_replay", "duplicate_event"}),
+        (
+            "A1",
+            (1.0, 1.0, 1.0),
+            {"a1_full_h", "source_replay", "duplicate_event"},
+        ),
+        (
+            "A3",
+            (1.0, 1.0, 1.0),
+            {"a1_full_h", "source_replay", "duplicate_event"},
+        ),
+        (
+            "A4",
+            (1.0, 1.0, 1.0),
+            {"a4_union", "source_replay", "duplicate_event"},
+        ),
+        (
+            "A6",
+            (1.0, 1.0, 1.0),
+            {"a1_full_h", "source_replay", "duplicate_event"},
+        ),
+        ("A7", (1.0, 0.0, 1.0), {"a1_full_h", "duplicate_event"}),
+        (
+            "A8-prime",
+            (1.0, 1.0, 1.0),
+            {"a8_full_h", "source_replay", "duplicate_event"},
+        ),
+        ("full_gt_capacity", (1.0, 0.0, 0.0), {"full_gt"}),
+    ),
+)
+def test_arm_contract_supports_every_declared_training_arm_with_exact_roles(
+    arm_id: str,
+    coefficients: tuple[float, float, float],
+    allowed_roles: set[str],
+) -> None:
+    contract = runner._arm_contract(arm_id)
+
+    assert tuple(weight for _family, weight in contract.coefficients) == coefficients
+    assert set(contract.allowed_roles) == allowed_roles
+
+
+def test_frozen_source_remains_a_no_update_path() -> None:
+    with pytest.raises(ValueError, match="Frozen Source.*no-update"):
+        runner._arm_contract("frozen_source")
+
+
+def test_a8_prime_execution_is_blocked_until_task4_supplies_a_sealed_census() -> None:
+    sealed, execution, micro_steps = _bound_a1_execution()
+    sealed = SimpleNamespace(
+        **{
+            **vars(sealed),
+            "arms": (SimpleNamespace(arm_id="A8-prime"),),
+        }
+    )
+
+    with pytest.raises(ValueError, match="sealed_census_required"):
+        runner.build_execution_plan(
+            sealed,
+            arm_id="A8-prime",
+            packed_plan=_a1_payload()[1],
+            sites_by_pack=_a1_payload()[2],
+        )
+
+    forged = replace(
+        execution,
+        arm_id="A8-prime",
+        coefficients=runner._arm_contract("A8-prime").coefficients,
+    )
+    with pytest.raises(ValueError, match="sealed_census_required"):
+        runner._validate_execution_payload(sealed, forged, micro_steps)
 
 
 def test_finalized_artifact_preserves_bounded_family_diagnostics() -> None:
@@ -572,7 +792,7 @@ def test_cpu_vertical_real_qwen_runtime_and_writers(
     log_row = json.loads(writer.logging_path.read_text(encoding="utf-8"))
     assert result.completed_steps == runtime.optimizer_step_count == 1
     assert accelerator.backward_calls == 2
-    assert model.selected_lengths == [2, 1]
+    assert model.selected_lengths == [2, 2]
     assert state["status"] == "completed"
     assert state["checkpoint_event_count"] == 1
     assert log_row["loss_bundle"]["terms"]
@@ -585,6 +805,7 @@ def test_cpu_vertical_real_qwen_runtime_and_writers(
 class FakeEncodedExample:
     example_id: str
     input_ids: tuple[int, ...]
+    human13_row_bindings: tuple[object, ...] = ()
     image_pad_physical_start: int = 1
     image_pad_physical_end: int = 5
     image_grid_thw: tuple[int, int, int] = (1, 4, 4)
@@ -619,9 +840,20 @@ def _segment(
     image_id: int,
     role: runner.LogicalRole,
     length: int,
+    *,
+    token_ids: tuple[int, ...] | None = None,
+    row_bindings: tuple[object, ...] = (),
 ) -> runner.LogicalPanelSegment:
-    token_ids = (10, 151655, 151655, 151655, 151655) + tuple(range(20, 20 + length - 5))
-    encoded = FakeEncodedExample(segment_id, token_ids)
+    if token_ids is None:
+        token_ids = (10, 151655, 151655, 151655, 151655) + tuple(
+            range(20, 20 + length - 5)
+        )
+    assert len(token_ids) == length
+    encoded = FakeEncodedExample(
+        segment_id,
+        token_ids,
+        human13_row_bindings=row_bindings,
+    )
     return runner.LogicalPanelSegment(
         segment_id=segment_id,
         image_id=image_id,
@@ -688,27 +920,64 @@ def _training_micro_step(pack_index: int) -> SupervisedMicroStep:
 
 def _sealed_manifest(*, arm_id: str = "A1") -> SimpleNamespace:
     selected = SimpleNamespace(
-        owner_id="owner-1",
-        row_id="row-1",
-        token_ids=(2,),
-        target_token_mask=(True,),
+        owner_id="owner-h",
+        row_id="row-h",
+        token_ids=(2, 0),
+        target_token_mask=(True, False),
+    )
+    source = SimpleNamespace(
+        trajectory_id="source",
+        raw_token_ids=(1, 2),
+        replay_token_mask=(True, True),
+        rows=(SimpleNamespace(row_id="row-replay", token_start=0, token_end=2),),
+    )
+    sampled = SimpleNamespace(
+        trajectory_id="sampled",
+        raw_token_ids=(2, 0, 0, 2),
+        replay_token_mask=(False, False, False, False),
+        rows=(
+            SimpleNamespace(row_id="row-h", token_start=0, token_end=2),
+            SimpleNamespace(row_id="row-a4-other", token_start=2, token_end=4),
+        ),
     )
     image = SimpleNamespace(
         image_id=1,
-        owners=(SimpleNamespace(owner_id="owner-1"),),
-        h_owner_ids=("owner-1",),
-        g_owner_ids=(),
-        duplicate_events=(SimpleNamespace(event_id="event-1"),),
+        owners=(
+            SimpleNamespace(
+                owner_id="owner-h",
+                source_row_ids=(),
+                sampled_row_ids=("row-h", "row-a4-other"),
+            ),
+            SimpleNamespace(
+                owner_id="owner-g",
+                source_row_ids=("row-replay",),
+                sampled_row_ids=(),
+            ),
+        ),
+        h_owner_ids=("owner-h",),
+        g_owner_ids=("owner-g",),
+        duplicate_events=(
+            SimpleNamespace(
+                event_id="event-1",
+                image_id=1,
+                trajectory_id="duplicate-source",
+                duplicate_row_id="row-duplicate",
+                decision_prefix_token_ids=(0,),
+                target_token_id=1,
+                target_token_index=1,
+            ),
+        ),
         selected_rows=(selected,),
-        candidate_row_ids=("row-1", "row-2") if arm_id == "A4" else ("row-1",),
-        replay_row_ids=("replay-1",),
+        candidate_row_ids=(("row-h", "row-a4-other") if arm_id == "A4" else ("row-h",)),
+        replay_row_ids=("row-replay",),
+        trajectories=(source, sampled),
     )
     return SimpleNamespace(
         schema_version="human13_k_union_manifest.v1",
         full_panel=True,
         binding=SimpleNamespace(
             unit_id="2026-08-12-human13-k-union-to-greedy-overfit-screen",
-            panel=SimpleNamespace(panel_sha256="a" * 64, owner_count=1),
+            panel=SimpleNamespace(panel_sha256="a" * 64, owner_count=2),
         ),
         arms=(SimpleNamespace(arm_id=arm_id),),
         images=(image,),
@@ -728,55 +997,7 @@ def _bound_a1_execution(
 ) -> tuple[
     SimpleNamespace, runner.Human13ExecutionPlan, tuple[SupervisedMicroStep, ...]
 ]:
-    sealed = _sealed_manifest()
-    segments = (
-        _segment("a1:1", 1, "a1_full_h", 8),
-        _segment("replay:1", 1, "source_replay", 8),
-        _segment("duplicate:1", 1, "duplicate_event", 8),
-    )
-    packed = runner.plan_panel_packs(
-        segments, global_max_length=16 if two_packs else 24
-    )
-    sites_by_pack = {
-        pack.pack.pack_index: tuple(
-            runner.Human13LossSite(
-                family=(
-                    "h"
-                    if logical.role == "a1_full_h"
-                    else "replay"
-                    if logical.role == "source_replay"
-                    else "duplicate"
-                ),
-                objective=(
-                    "duplicate_unlikelihood"
-                    if logical.role == "duplicate_event"
-                    else "owner_ce"
-                ),
-                unit_id=(
-                    "owner-1"
-                    if logical.role == "a1_full_h"
-                    else "replay-1"
-                    if logical.role == "source_replay"
-                    else "event-1"
-                ),
-                image_id=1,
-                segment_id=logical.segment_id,
-                manifest_row_ids=(
-                    "row-1"
-                    if logical.role == "a1_full_h"
-                    else "replay-1"
-                    if logical.role == "source_replay"
-                    else "event-1",
-                ),
-                logits_positions=(packed_segment.end - 2,),
-                target_token_ids=(2,),
-            )
-            for logical, packed_segment in zip(
-                pack.logical_segments, pack.pack.segments, strict=True
-            )
-        )
-        for pack in packed.packs
-    }
+    sealed, packed, sites_by_pack = _a1_payload(two_packs=two_packs)
     execution = runner.build_execution_plan(
         sealed,
         arm_id="A1",
@@ -797,44 +1018,216 @@ def _bound_a1_execution(
     return sealed, execution, micro_steps
 
 
-def _a4_split_fixture() -> tuple[
+def _a1_payload(
+    *, two_packs: bool = False
+) -> tuple[
+    SimpleNamespace,
+    runner.PackedPanelPlan,
+    dict[int, tuple[runner.Human13LossSite, ...]],
+]:
+    sealed = _sealed_manifest()
+    segments = (
+        _segment(
+            "a1:1",
+            1,
+            "a1_full_h",
+            8,
+            token_ids=(10, 151655, 151655, 151655, 151655, 30, 2, 0),
+            row_bindings=(
+                runner.Human13EncodedRowBinding(
+                    family="h",
+                    unit_id="owner-h",
+                    manifest_row_id="row-h",
+                    token_start=6,
+                    token_end=8,
+                    target_token_mask=(True, False),
+                ),
+            ),
+        ),
+        _segment(
+            "replay:1",
+            1,
+            "source_replay",
+            8,
+            token_ids=(10, 151655, 151655, 151655, 151655, 40, 1, 2),
+            row_bindings=(
+                runner.Human13EncodedRowBinding(
+                    family="replay",
+                    unit_id="owner-g",
+                    manifest_row_id="row-replay",
+                    token_start=6,
+                    token_end=8,
+                    target_token_mask=(True, True),
+                ),
+            ),
+        ),
+        _segment(
+            "duplicate:1",
+            1,
+            "duplicate_event",
+            8,
+            token_ids=(10, 151655, 151655, 151655, 151655, 50, 0, 1),
+            row_bindings=(
+                runner.Human13EncodedRowBinding(
+                    family="duplicate",
+                    unit_id="event-1",
+                    manifest_row_id="row-duplicate",
+                    token_start=6,
+                    token_end=8,
+                    target_token_mask=(False, True),
+                ),
+            ),
+        ),
+    )
+    packed = runner.plan_panel_packs(
+        segments, global_max_length=16 if two_packs else 24
+    )
+    sites_by_pack = {
+        pack.pack.pack_index: tuple(
+            runner.Human13LossSite(
+                family=(
+                    "h"
+                    if logical.role == "a1_full_h"
+                    else "replay"
+                    if logical.role == "source_replay"
+                    else "duplicate"
+                ),
+                objective=(
+                    "duplicate_unlikelihood"
+                    if logical.role == "duplicate_event"
+                    else "owner_ce"
+                ),
+                unit_id=(
+                    "owner-h"
+                    if logical.role == "a1_full_h"
+                    else "owner-g"
+                    if logical.role == "source_replay"
+                    else "event-1"
+                ),
+                image_id=1,
+                segment_id=logical.segment_id,
+                manifest_row_ids=(
+                    "row-h"
+                    if logical.role == "a1_full_h"
+                    else "row-replay"
+                    if logical.role == "source_replay"
+                    else "row-duplicate",
+                ),
+                logits_positions=(
+                    (packed_segment.start + 5,)
+                    if logical.role == "a1_full_h"
+                    else (packed_segment.start + 5, packed_segment.start + 6)
+                    if logical.role == "source_replay"
+                    else (packed_segment.start + 6,)
+                ),
+                target_token_ids=(
+                    (2,)
+                    if logical.role == "a1_full_h"
+                    else (1, 2)
+                    if logical.role == "source_replay"
+                    else (1,)
+                ),
+            )
+            for logical, packed_segment in zip(
+                pack.logical_segments, pack.pack.segments, strict=True
+            )
+        )
+        for pack in packed.packs
+    }
+    return sealed, packed, sites_by_pack
+
+
+def _a4_payload(
+    *, wrong_role: bool = False, reorder_candidates: bool = False
+) -> tuple[
     SimpleNamespace,
     runner.PackedPanelPlan,
     dict[int, tuple[runner.Human13LossSite, ...]],
 ]:
     sealed = _sealed_manifest(arm_id="A4")
-    packed = runner.plan_panel_packs(
-        (
-            _segment("a4:1:first", 1, "source_replay", 8),
-            _segment("a4:1:second", 1, "source_replay", 8),
+    _, a1_plan, _ = _a1_payload()
+    background = tuple(
+        segment for segment in a1_plan.logical_segments if segment.role != "a1_full_h"
+    )
+    candidate_rows = (
+        runner.Human13EncodedRowBinding(
+            family="h",
+            unit_id="owner-h",
+            manifest_row_id="row-h",
+            token_start=6,
+            token_end=8,
+            target_token_mask=(True, True),
         ),
-        global_max_length=8,
+        runner.Human13EncodedRowBinding(
+            family="h",
+            unit_id="owner-h",
+            manifest_row_id="row-a4-other",
+            token_start=8,
+            token_end=10,
+            target_token_mask=(True, True),
+        ),
+    )
+    candidate_tokens = ((2, 0), (0, 2))
+    if reorder_candidates:
+        first, second = candidate_rows
+        candidate_rows = (
+            replace(second, token_start=6, token_end=8),
+            replace(first, token_start=8, token_end=10),
+        )
+        candidate_tokens = tuple(reversed(candidate_tokens))
+    a4 = _segment(
+        "a4:1",
+        1,
+        "source_replay" if wrong_role else "a4_union",
+        10,
+        token_ids=(
+            10,
+            151655,
+            151655,
+            151655,
+            151655,
+            30,
+            *candidate_tokens[0],
+            *candidate_tokens[1],
+        ),
+        row_bindings=candidate_rows,
+    )
+    packed = runner.plan_panel_packs(
+        (a4, *background),
+        global_max_length=10,
     )
     sites = {
-        0: (
+        pack.pack.pack_index: tuple(
             runner.Human13LossSite(
-                family="h",
-                objective="union_mass",
-                unit_id="candidate-a",
-                image_id=1,
-                segment_id="a4:1:first",
-                manifest_row_ids=("row-1",),
-                logits_positions=(6,),
-                target_token_ids=(0,),
-            ),
-        ),
-        1: (
-            runner.Human13LossSite(
-                family="h",
-                objective="union_mass",
-                unit_id="candidate-b",
-                image_id=1,
-                segment_id="a4:1:second",
-                manifest_row_ids=("row-2",),
-                logits_positions=(6,),
-                target_token_ids=(1,),
-            ),
-        ),
+                family=row.family,
+                objective=(
+                    "union_mass"
+                    if row.family == "h"
+                    else "owner_ce"
+                    if row.family == "replay"
+                    else "duplicate_unlikelihood"
+                ),
+                unit_id=row.unit_id,
+                image_id=logical.image_id,
+                segment_id=logical.segment_id,
+                manifest_row_ids=(row.manifest_row_id,),
+                logits_positions=tuple(
+                    physical.start + row.token_start + offset - 1
+                    for offset, included in enumerate(row.target_token_mask)
+                    if included
+                ),
+                target_token_ids=tuple(
+                    logical.encoded_example.input_ids[row.token_start + offset]
+                    for offset, included in enumerate(row.target_token_mask)
+                    if included
+                ),
+            )
+            for logical, physical in zip(
+                pack.logical_segments, pack.pack.segments, strict=True
+            )
+            for row in logical.encoded_example.human13_row_bindings
+        )
+        for pack in packed.packs
     }
     return sealed, packed, sites
 

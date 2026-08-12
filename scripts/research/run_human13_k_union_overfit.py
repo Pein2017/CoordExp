@@ -146,6 +146,35 @@ class Human13PanelDenominators:
 
 
 @dataclass(frozen=True)
+class Human13EncodedRowBinding:
+    """One materialized row span whose causal targets are derived, not supplied."""
+
+    family: LossFamily
+    unit_id: str
+    manifest_row_id: str
+    token_start: int
+    token_end: int
+    target_token_mask: tuple[bool, ...]
+
+    def __post_init__(self) -> None:
+        if self.family not in _LOSS_FAMILIES or not self.unit_id:
+            raise ValueError("encoded row binding requires a known family and unit")
+        if not self.manifest_row_id:
+            raise ValueError("encoded row binding requires one manifest row identity")
+        if (
+            isinstance(self.token_start, bool)
+            or isinstance(self.token_end, bool)
+            or self.token_start < 0
+            or self.token_end <= self.token_start
+        ):
+            raise ValueError("encoded row binding requires one nonempty token span")
+        if len(self.target_token_mask) != self.token_end - self.token_start or not any(
+            self.target_token_mask
+        ):
+            raise ValueError("encoded row binding requires one aligned nonempty mask")
+
+
+@dataclass(frozen=True)
 class Human13LossSite:
     """Already selected causal-logit sites; no research labels are rederived."""
 
@@ -213,6 +242,14 @@ class Human13PlannedLossPlan:
 
 
 @dataclass(frozen=True)
+class Human13ArmContract:
+    coefficients: tuple[tuple[LossFamily, float], ...]
+    h_objective: LossObjective | None
+    h_role: LogicalRole | None
+    allowed_roles: frozenset[LogicalRole]
+
+
+@dataclass(frozen=True)
 class Human13ManifestIdentity:
     schema_version: str
     unit_id: str
@@ -231,8 +268,13 @@ class Human13SegmentBinding:
     segment_id: str
     image_id: int
     role: LogicalRole
+    segment_index: int
+    example_index: int
+    example_id: str
     start: int
     end: int
+    input_ids: tuple[int, ...]
+    row_bindings: tuple[Human13EncodedRowBinding, ...]
 
 
 @dataclass(frozen=True)
@@ -464,7 +506,13 @@ def build_execution_plan(
     declared_arms = {item.arm_id for item in manifest.arms}
     if arm_id not in declared_arms:
         raise ValueError(f"arm {arm_id!r} is absent from the sealed manifest")
-    coefficients, expected = _arm_contract(arm_id)
+    if arm_id == "A8-prime":
+        raise ValueError(
+            "sealed_census_required: A8-prime execution requires a canonical "
+            "manifest- and target-bound census artifact"
+        )
+    contract = _arm_contract(arm_id)
+    coefficients = contract.coefficients
     frozen_sites = tuple(
         (pack.pack.pack_index, tuple(sites_by_pack.get(pack.pack.pack_index, ())))
         for pack in packed_plan.packs
@@ -487,7 +535,7 @@ def build_execution_plan(
         manifest,
         execution,
         packed_plan=packed_plan,
-        expected_h=expected,
+        contract=contract,
     )
     return execution
 
@@ -576,6 +624,8 @@ class Human13PanelLossRunner:
             raise ValueError("planned loss denominators changed after preflight")
         terms: list[LossTermResult] = []
         for family, weight in plan.coefficients:
+            if weight == 0:
+                continue
             sites = tuple(site for site in context.sites if site.family == family)
             numerator, selected_count, diagnostics = _dispatch_family(
                 context,
@@ -896,25 +946,52 @@ def _manifest_identity(sealed: SealedHuman13Manifest) -> Human13ManifestIdentity
 
 def _arm_contract(
     arm_id: str,
-) -> tuple[tuple[tuple[LossFamily, float], ...], tuple[LossObjective, LogicalRole]]:
-    if arm_id == "A1":
-        return (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0)), (
-            "owner_ce",
-            "a1_full_h",
+) -> Human13ArmContract:
+    if arm_id == "frozen_source":
+        raise ValueError("Frozen Source is a separate no-update path")
+    coefficients: tuple[tuple[LossFamily, float], ...]
+    h_objective: LossObjective | None
+    h_role: LogicalRole | None
+    if arm_id == "A0":
+        coefficients = (("h", 0.0), ("replay", 1.0), ("duplicate", 1.0))
+        h_objective, h_role = None, None
+    elif arm_id in {"A1", "A3", "A6"}:
+        coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
+        h_objective, h_role = "owner_ce", "a1_full_h"
+    elif arm_id == "A7":
+        coefficients = (("h", 1.0), ("replay", 0.0), ("duplicate", 1.0))
+        h_objective, h_role = "owner_ce", "a1_full_h"
+    elif arm_id == "A8-prime":
+        coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
+        h_objective, h_role = "bottleneck", "a8_full_h"
+    elif arm_id == "A4":
+        coefficients = (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0))
+        h_objective, h_role = "union_mass", "a4_union"
+    elif arm_id == "full_gt_capacity":
+        coefficients = (
+            ("full_gt", 1.0),
+            ("replay", 0.0),
+            ("duplicate", 0.0),
         )
-    if arm_id in {"A8", "A8-prime", "A8_prime"}:
-        return (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0)), (
-            "bottleneck",
-            "a8_full_h",
-        )
-    if arm_id == "A4":
-        return (("h", 1.0), ("replay", 1.0), ("duplicate", 1.0)), (
-            "union_mass",
-            "a4_union",
-        )
-    if arm_id in {"full_gt", "full-GT", "full_gt_capacity"}:
-        return (("full_gt", 1.0),), ("owner_ce", "full_gt")
-    raise ValueError(f"arm {arm_id!r} is not admitted by the packed panel runner")
+        h_objective, h_role = "owner_ce", "full_gt"
+    else:
+        raise ValueError(f"arm {arm_id!r} is not admitted by the packed panel runner")
+
+    active_families = {family for family, weight in coefficients if weight > 0}
+    roles: set[LogicalRole] = set()
+    if "h" in active_families or "full_gt" in active_families:
+        assert h_role is not None
+        roles.add(h_role)
+    if "replay" in active_families:
+        roles.add("source_replay")
+    if "duplicate" in active_families:
+        roles.add("duplicate_event")
+    return Human13ArmContract(
+        coefficients=coefficients,
+        h_objective=h_objective,
+        h_role=h_role,
+        allowed_roles=frozenset(roles),
+    )
 
 
 def _manifest_denominators(
@@ -947,16 +1024,38 @@ def _manifest_denominators(
 
 def _segment_bindings(pack: PackedPanelMicroStep) -> tuple[Human13SegmentBinding, ...]:
     packed_by_id = {item.example_id: item for item in pack.pack.segments}
-    return tuple(
-        Human13SegmentBinding(
-            segment_id=logical.segment_id,
-            image_id=logical.image_id,
-            role=logical.role,
-            start=packed_by_id[logical.segment_id].start,
-            end=packed_by_id[logical.segment_id].end,
+    bindings: list[Human13SegmentBinding] = []
+    for logical in pack.logical_segments:
+        packed = packed_by_id[logical.segment_id]
+        row_bindings = getattr(logical.encoded_example, "human13_row_bindings", None)
+        if (
+            not isinstance(row_bindings, tuple)
+            or not row_bindings
+            or not all(
+                isinstance(item, Human13EncodedRowBinding) for item in row_bindings
+            )
+        ):
+            raise ValueError(
+                "every encoded Human-13 segment requires typed manifest row bindings"
+            )
+        input_ids = tuple(logical.encoded_example.input_ids)
+        if any(item.token_end > len(input_ids) for item in row_bindings):
+            raise ValueError("encoded Human-13 row binding escapes its segment")
+        bindings.append(
+            Human13SegmentBinding(
+                segment_id=logical.segment_id,
+                image_id=logical.image_id,
+                role=logical.role,
+                segment_index=packed.segment_index,
+                example_index=packed.example_index,
+                example_id=packed.example_id,
+                start=packed.start,
+                end=packed.end,
+                input_ids=input_ids,
+                row_bindings=row_bindings,
+            )
         )
-        for logical in pack.logical_segments
-    )
+    return tuple(bindings)
 
 
 def _validate_sites_against_manifest(
@@ -964,207 +1063,299 @@ def _validate_sites_against_manifest(
     execution: Human13ExecutionPlan,
     *,
     packed_plan: PackedPanelPlan,
-    expected_h: tuple[LossObjective, LogicalRole],
+    contract: Human13ArmContract,
 ) -> None:
     del packed_plan
-    segments = {
-        binding.segment_id: (pack_index, binding)
-        for pack_index, bindings in execution.pack_segments
-        for binding in bindings
+    images = _unique_by_id(manifest.images, "image_id", "manifest image")
+    sites_by_pack = dict(execution.sites_by_pack)
+    observed: dict[LossFamily, list[tuple[int, str]]] = {
+        "h": [],
+        "replay": [],
+        "duplicate": [],
+        "full_gt": [],
     }
-    images = {image.image_id: image for image in manifest.images}
-    selected_by_row = {
-        row.row_id: row for image in manifest.images for row in image.selected_rows
-    }
-    seen_rows: dict[str, list[tuple[int, str]]] = {}
-    seen_segment_ids: set[str] = set()
-    for pack_index, sites in execution.sites_by_pack:
-        for site in sites:
-            location = segments.get(site.segment_id)
-            if location is None or location[0] != pack_index:
-                raise ValueError(
-                    "loss site is not bound to its logical segment and pack"
-                )
-            binding = location[1]
-            seen_segment_ids.add(site.segment_id)
-            if binding.image_id != site.image_id or any(
-                position < binding.start or position >= binding.end
-                for position in site.logits_positions
-            ):
-                raise ValueError("loss site escapes its manifest-bound logical segment")
-            if not site.manifest_row_ids or len(set(site.manifest_row_ids)) != len(
-                site.manifest_row_ids
-            ):
-                raise ValueError("loss site requires unique canonical manifest rows")
-            expected_objective, expected_role = expected_h
-            if site.family == "h" and (
-                site.objective != expected_objective or binding.role != expected_role
-            ):
-                if expected_role == "a4_union":
-                    raise ValueError(
-                        "A4 candidate group must be complete in one segment and one pack"
-                    )
-                raise ValueError(
-                    "arm loss site has an unrelated objective or logical role"
-                )
-            if site.family == "h" and expected_role in {
-                "a1_full_h",
-                "a8_full_h",
-            }:
-                if len(site.manifest_row_ids) != 1:
-                    raise ValueError("H loss site must bind exactly one selected row")
-                selected = selected_by_row.get(site.manifest_row_ids[0])
-                expected_targets = (
-                    ()
-                    if selected is None
-                    else tuple(
-                        token
-                        for token, included in zip(
-                            selected.token_ids,
-                            selected.target_token_mask,
-                            strict=True,
-                        )
-                        if included
-                    )
-                )
-                if expected_targets != site.target_token_ids:
-                    raise ValueError("H loss targets mismatch the frozen selected row")
-            if site.family == "replay" and (
-                site.objective != "owner_ce" or binding.role != "source_replay"
-            ):
-                raise ValueError(
-                    "replay site has an unrelated objective or logical role"
-                )
-            if site.family == "duplicate" and (
-                site.objective != "duplicate_unlikelihood"
-                or binding.role != "duplicate_event"
-            ):
-                raise ValueError(
-                    "duplicate site has an unrelated objective or logical role"
-                )
-            if site.family == "full_gt" and binding.role != "full_gt":
-                raise ValueError("full-GT site has an unrelated logical role")
-            for row_id in site.manifest_row_ids:
-                seen_rows.setdefault(row_id, []).append((pack_index, site.segment_id))
+    seen_segments: set[str] = set()
 
-    if seen_segment_ids != set(segments):
-        raise ValueError("logical segment membership is partial or unrelated")
-    allowed_roles = {expected_h[1], "source_replay", "duplicate_event"}
-    if any(
-        binding.image_id not in images or binding.role not in allowed_roles
-        for _pack, bindings in execution.pack_segments
-        for binding in bindings
-    ):
-        raise ValueError("logical segments mismatch the sealed arm and panel images")
-    observed_role_images = {
-        role: {
-            binding.image_id
-            for _pack, bindings in execution.pack_segments
-            for binding in bindings
-            if binding.role == role
-        }
-        for role in allowed_roles
-    }
-    expected_role_images = {
-        expected_h[1]: {
-            image.image_id
-            for image in manifest.images
-            if (
-                image.candidate_row_ids
-                if expected_h[1] == "a4_union"
-                else image.owners
-                if expected_h[1] == "full_gt"
-                else image.h_owner_ids
+    for pack_index, segments in execution.pack_segments:
+        pack_sites = sites_by_pack.get(pack_index, ())
+        for segment in segments:
+            image = images.get(segment.image_id)
+            if image is None:
+                raise ValueError("logical segment image is absent from the manifest")
+            segment_sites = tuple(
+                site for site in pack_sites if site.segment_id == segment.segment_id
             )
-        },
-        "source_replay": {
-            image.image_id for image in manifest.images if image.replay_row_ids
-        },
-        "duplicate_event": {
-            image.image_id for image in manifest.images if image.duplicate_events
-        },
-    }
-    if any(
-        observed_role_images[role] != expected_images
-        for role, expected_images in expected_role_images.items()
+            if len(segment_sites) != len(segment.row_bindings):
+                raise ValueError(
+                    "each manifest-derived encoded row binding must appear exactly once"
+                )
+            if segment.role == "a4_union" and tuple(
+                item.manifest_row_id for item in segment.row_bindings
+            ) != tuple(image.candidate_row_ids):
+                raise ValueError(
+                    "A4 candidate rows must appear exactly once in canonical "
+                    "manifest order"
+                )
+            seen_segments.add(segment.segment_id)
+            unmatched = list(segment_sites)
+            for row_binding in segment.row_bindings:
+                _validate_encoded_row_against_manifest(
+                    image,
+                    segment,
+                    row_binding,
+                    contract=contract,
+                )
+                matches = [
+                    site
+                    for site in unmatched
+                    if (
+                        site.family,
+                        site.unit_id,
+                        site.manifest_row_ids,
+                    )
+                    == (
+                        row_binding.family,
+                        row_binding.unit_id,
+                        (row_binding.manifest_row_id,),
+                    )
+                ]
+                if len(matches) != 1:
+                    raise ValueError(
+                        "each manifest-derived encoded row binding must appear exactly once"
+                    )
+                site = matches[0]
+                unmatched.remove(site)
+                expected_objective = _objective_for_family(row_binding.family, contract)
+                expected_positions, expected_targets = _encoded_row_loss_payload(
+                    segment, row_binding
+                )
+                if (
+                    site.image_id != segment.image_id
+                    or site.objective != expected_objective
+                    or site.logits_positions != expected_positions
+                    or site.target_token_ids != expected_targets
+                ):
+                    raise ValueError(
+                        "loss site does not match its manifest-derived encoded row binding"
+                    )
+                observed[row_binding.family].append(
+                    (segment.image_id, row_binding.manifest_row_id)
+                )
+            if unmatched:
+                raise ValueError(
+                    "each manifest-derived encoded row binding must appear exactly once"
+                )
+
+    all_sites = tuple(
+        site for _pack_index, sites in execution.sites_by_pack for site in sites
+    )
+    if seen_segments != {site.segment_id for site in all_sites} or len(
+        all_sites
+    ) != sum(len(items) for items in observed.values()):
+        raise ValueError("loss site is not bound to its sealed encoded segment")
+
+    expected = _expected_manifest_rows(manifest, contract=contract)
+    for family, expected_rows in expected.items():
+        if sorted(observed[family]) != sorted(expected_rows):
+            raise ValueError(
+                f"{family} manifest-derived encoded rows must appear exactly once"
+            )
+
+
+def _unique_by_id(items: Sequence[Any], field: str, label: str) -> dict[Any, Any]:
+    result: dict[Any, Any] = {}
+    for item in items:
+        identity = getattr(item, field)
+        if identity in result:
+            raise ValueError(f"{label} identities must be unique")
+        result[identity] = item
+    return result
+
+
+def _trajectory_row(image: Any, row_id: str) -> tuple[Any, Any]:
+    matches = [
+        (trajectory, row)
+        for trajectory in image.trajectories
+        for row in trajectory.rows
+        if row.row_id == row_id
+    ]
+    if len(matches) != 1:
+        raise ValueError("manifest row identity must resolve exactly once within image")
+    return matches[0]
+
+
+def _row_tokens(trajectory: Any, row: Any) -> tuple[int, ...]:
+    return tuple(trajectory.raw_token_ids[row.token_start : row.token_end])
+
+
+def _owners_for_row(image: Any, row_id: str, field: str) -> tuple[str, ...]:
+    return tuple(
+        owner.owner_id for owner in image.owners if row_id in getattr(owner, field)
+    )
+
+
+def _validate_encoded_row_against_manifest(
+    image: Any,
+    segment: Human13SegmentBinding,
+    row_binding: Human13EncodedRowBinding,
+    *,
+    contract: Human13ArmContract,
+) -> None:
+    actual_tokens = segment.input_ids[row_binding.token_start : row_binding.token_end]
+    family = row_binding.family
+    expected_role = {
+        "h": contract.h_role,
+        "replay": "source_replay",
+        "duplicate": "duplicate_event",
+        "full_gt": "full_gt",
+    }[family]
+    if segment.role not in contract.allowed_roles or segment.role != expected_role:
+        raise ValueError("encoded row role mismatches the manifest arm contract")
+
+    if family == "h" and contract.h_role in {"a1_full_h", "a8_full_h"}:
+        selected = [
+            row
+            for row in image.selected_rows
+            if row.row_id == row_binding.manifest_row_id
+        ]
+        if len(selected) != 1:
+            raise ValueError(
+                "selected manifest row must resolve exactly once per image"
+            )
+        row = selected[0]
+        expected_tokens = tuple(row.token_ids)
+        expected_mask = tuple(row.target_token_mask)
+        expected_unit = row.owner_id
+    elif family == "h":
+        if row_binding.manifest_row_id not in image.candidate_row_ids:
+            raise ValueError("A4 encoded row is absent from manifest candidates")
+        trajectory, row = _trajectory_row(image, row_binding.manifest_row_id)
+        expected_tokens = _row_tokens(trajectory, row)
+        expected_mask = (True,) * len(expected_tokens)
+        owners = _owners_for_row(image, row_binding.manifest_row_id, "sampled_row_ids")
+        if len(owners) != 1:
+            raise ValueError("A4 candidate row must resolve to one manifest owner")
+        expected_unit = owners[0]
+    elif family == "replay":
+        if row_binding.manifest_row_id not in image.replay_row_ids:
+            raise ValueError("replay encoded row is absent from the manifest")
+        trajectory, row = _trajectory_row(image, row_binding.manifest_row_id)
+        expected_tokens = _row_tokens(trajectory, row)
+        expected_mask = tuple(
+            trajectory.replay_token_mask[row.token_start : row.token_end]
+        )
+        owners = _owners_for_row(image, row_binding.manifest_row_id, "source_row_ids")
+        if len(owners) != 1:
+            raise ValueError("replay row must resolve to one manifest owner")
+        expected_unit = owners[0]
+    elif family == "duplicate":
+        events = [
+            event
+            for event in image.duplicate_events
+            if event.duplicate_row_id == row_binding.manifest_row_id
+        ]
+        if len(events) != 1:
+            raise ValueError("duplicate row must resolve to one manifest event")
+        event = events[0]
+        expected_tokens = (*event.decision_prefix_token_ids, event.target_token_id)
+        expected_mask = (False,) * len(event.decision_prefix_token_ids) + (True,)
+        expected_unit = event.event_id
+    else:
+        owners = {owner.owner_id for owner in image.owners}
+        if (
+            row_binding.manifest_row_id not in owners
+            or row_binding.unit_id != row_binding.manifest_row_id
+            or not all(row_binding.target_token_mask)
+        ):
+            raise ValueError(
+                "full-GT encoded row must bind one complete manifest owner"
+            )
+        expected_tokens = actual_tokens
+        expected_mask = row_binding.target_token_mask
+        expected_unit = row_binding.manifest_row_id
+
+    if (
+        row_binding.unit_id != expected_unit
+        or actual_tokens != expected_tokens
+        or row_binding.target_token_mask != expected_mask
     ):
         raise ValueError(
-            "logical segment image coverage mismatches the sealed manifest"
+            "encoded row tokens, mask, or identity mismatch the manifest row"
         )
 
-    if expected_h == ("union_mass", "a4_union"):
-        for image_id, image in images.items():
-            expected_rows = set(image.candidate_row_ids)
-            if not expected_rows:
-                continue
-            observed = {
-                row_id: locations
-                for row_id, locations in seen_rows.items()
-                if row_id in expected_rows
-            }
-            locations = {
-                location for values in observed.values() for location in values
-            }
-            if (
-                set(observed) != expected_rows
-                or any(len(values) != 1 for values in observed.values())
-                or len(locations) != 1
-            ):
-                raise ValueError(
-                    "A4 candidate group must be complete in one segment and one pack"
-                )
-            only = next(iter(locations))
-            binding = segments[only[1]][1]
-            if binding.image_id != image_id or binding.role != "a4_union":
-                raise ValueError(
-                    "A4 candidate group must be complete in one segment and one pack"
-                )
-    else:
-        expected_rows = (
-            {owner.owner_id for image in manifest.images for owner in image.owners}
-            if expected_h[1] == "full_gt"
-            else set(selected_by_row)
-        )
-        observed_rows = {
-            row_id
-            for row_id, locations in seen_rows.items()
-            if any(
-                site.family in {"h", "full_gt"} and row_id in site.manifest_row_ids
-                for _pack, sites in execution.sites_by_pack
-                for site in sites
-            )
-            for _location in locations
-        }
-        if expected_rows and observed_rows != expected_rows:
-            raise ValueError(
-                "arm payload is partial or mismatched to selected manifest rows"
-            )
 
-    family_rows = {
-        family: [
-            row_id
-            for _pack, sites in execution.sites_by_pack
-            for site in sites
-            if site.family == family
-            for row_id in site.manifest_row_ids
+def _encoded_row_loss_payload(
+    segment: Human13SegmentBinding,
+    binding: Human13EncodedRowBinding,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    token_indices = tuple(
+        binding.token_start + offset
+        for offset, included in enumerate(binding.target_token_mask)
+        if included
+    )
+    if not token_indices or token_indices[0] == 0:
+        raise ValueError("encoded target token requires one causal predecessor")
+    return (
+        tuple(segment.start + token_index - 1 for token_index in token_indices),
+        tuple(segment.input_ids[token_index] for token_index in token_indices),
+    )
+
+
+def _objective_for_family(
+    family: LossFamily,
+    contract: Human13ArmContract,
+) -> LossObjective:
+    objective = {
+        "h": contract.h_objective,
+        "replay": "owner_ce",
+        "duplicate": "duplicate_unlikelihood",
+        "full_gt": "owner_ce",
+    }[family]
+    if objective is None:
+        raise ValueError("inactive H family cannot carry a loss site")
+    return objective
+
+
+def _expected_manifest_rows(
+    manifest: Any,
+    *,
+    contract: Human13ArmContract,
+) -> dict[LossFamily, list[tuple[int, str]]]:
+    if contract.h_role == "a4_union":
+        h_rows = [
+            (image.image_id, row_id)
+            for image in manifest.images
+            for row_id in image.candidate_row_ids
         ]
-        for family in ("replay", "duplicate")
+    elif contract.h_role == "full_gt":
+        h_rows = [
+            (image.image_id, owner.owner_id)
+            for image in manifest.images
+            for owner in image.owners
+        ]
+    else:
+        h_rows = [
+            (image.image_id, row.row_id)
+            for image in manifest.images
+            for row in image.selected_rows
+        ]
+    active = {family for family, weight in contract.coefficients if weight > 0}
+    replay_rows = [
+        (image.image_id, row_id)
+        for image in manifest.images
+        for row_id in image.replay_row_ids
+    ]
+    duplicate_rows = [
+        (image.image_id, event.duplicate_row_id)
+        for image in manifest.images
+        for event in image.duplicate_events
+    ]
+    return {
+        "h": h_rows if "h" in active else [],
+        "full_gt": h_rows if "full_gt" in active else [],
+        "replay": replay_rows if "replay" in active else [],
+        "duplicate": duplicate_rows if "duplicate" in active else [],
     }
-    expected_replay = {
-        row_id for image in manifest.images for row_id in image.replay_row_ids
-    }
-    expected_duplicate = {
-        event.event_id for image in manifest.images for event in image.duplicate_events
-    }
-    for family, expected_rows in (
-        ("replay", expected_replay),
-        ("duplicate", expected_duplicate),
-    ):
-        observed = family_rows[family]
-        if set(observed) != expected_rows or len(observed) != len(expected_rows):
-            raise ValueError(
-                f"{family} payload is partial, duplicated, or mismatched to manifest"
-            )
 
 
 def _validate_execution_payload(
@@ -1176,7 +1367,13 @@ def _validate_execution_payload(
     if execution.manifest_identity != _manifest_identity(sealed):
         raise ValueError("execution plan does not match the sealed manifest identity")
     manifest = sealed.manifest
-    coefficients, expected_h = _arm_contract(execution.arm_id)
+    if execution.arm_id == "A8-prime":
+        raise ValueError(
+            "sealed_census_required: A8-prime execution requires a canonical "
+            "manifest- and target-bound census artifact"
+        )
+    contract = _arm_contract(execution.arm_id)
+    coefficients = contract.coefficients
     if execution.arm_id not in {item.arm_id for item in manifest.arms}:
         raise ValueError("execution arm is absent from the sealed manifest")
     if (
@@ -1191,11 +1388,47 @@ def _validate_execution_payload(
     expected_sites = dict(execution.sites_by_pack)
     if tuple(sorted(expected_packs)) != tuple(range(len(packs))):
         raise ValueError("execution pack membership is partial or noncanonical")
+    actual_indices = tuple(micro_step.pack.pack_index for micro_step in packs)
+    if actual_indices != tuple(range(len(packs))):
+        raise ValueError(
+            "actual physical micro-step indices must be exact unique 0..N-1"
+        )
     for micro_step in packs:
         index = micro_step.pack.pack_index
-        actual_segments = tuple(item.example_id for item in micro_step.pack.segments)
-        if actual_segments != tuple(item.segment_id for item in expected_packs[index]):
-            raise ValueError("micro-step pack membership mismatches execution plan")
+        expected_bindings = expected_packs[index]
+        actual_segments = micro_step.pack.segments
+        actual_examples = micro_step.encoded_examples
+        if len(actual_segments) != len(expected_bindings) or len(
+            actual_examples
+        ) != len(expected_bindings):
+            raise ValueError("micro-step mismatches sealed segment bindings")
+        for actual, encoded, expected in zip(
+            actual_segments, actual_examples, expected_bindings, strict=True
+        ):
+            encoded_ids = getattr(encoded, "input_ids", None)
+            encoded_rows = getattr(encoded, "human13_row_bindings", None)
+            if (
+                actual.pack_index,
+                actual.segment_index,
+                actual.example_index,
+                actual.example_id,
+                actual.start,
+                actual.end,
+            ) != (
+                index,
+                expected.segment_index,
+                expected.example_index,
+                expected.example_id,
+                expected.start,
+                expected.end,
+            ) or (
+                getattr(encoded, "example_id", None) != expected.example_id
+                or encoded_ids != expected.input_ids
+                or encoded_rows != expected.row_bindings
+                or tuple(micro_step.pack.input_ids[actual.start : actual.end])
+                != expected.input_ids
+            ):
+                raise ValueError("micro-step mismatches sealed segment bindings")
         metadata = micro_step.metadata
         if (
             metadata.get("human13_panel_denominators") != execution.denominators
@@ -1204,7 +1437,7 @@ def _validate_execution_payload(
             raise ValueError("micro-step loss payload mismatches execution plan")
     synthetic_plan = PackedPanelPlan((), (), GLOBAL_MAX_LENGTH)
     _validate_sites_against_manifest(
-        manifest, execution, packed_plan=synthetic_plan, expected_h=expected_h
+        manifest, execution, packed_plan=synthetic_plan, contract=contract
     )
 
 
@@ -1487,6 +1720,7 @@ def _optional_nonnegative_int(value: int | None, field: str) -> int | None:
 __all__ = [
     "GLOBAL_MAX_LENGTH",
     "Human13CompactLogitsMetadata",
+    "Human13EncodedRowBinding",
     "Human13ExecutionPlan",
     "Human13LossSite",
     "Human13ManifestIdentity",
