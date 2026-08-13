@@ -1,4 +1,4 @@
 interface:
   display_name: "Audit Review"
-  short_description: "Audit a change, run, claim, or fixed diff"
-  default_prompt: "Use $audit-review to return a read-only evidence-backed decision on this change, run, claim, or fixed diff."
+  short_description: "Gate CoordExp runs, claims, and promotions"
+  default_prompt: "Use $audit-review to return a read-only evidence-backed decision on this CoordExp run, artifact, claim, launch, promotion, or compatibility gate."

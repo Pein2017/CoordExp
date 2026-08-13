@@ -10,9 +10,9 @@ evidence, implementation or contract defects, objective mismatch, data
 distribution, optimization, decoding, and genuine model limitation before
 recommending a change.
 
-Use `debug-feedback-loop` for engineering failures without a model-behavior
-symptom and `model-innovation-risk-audit` when the main risk is a silent newly
-wired contract mismatch.
+Use the owning code/config/runtime path for engineering failures without a
+model-behavior symptom and `model-innovation-risk-audit` when the main risk is a
+silent newly wired contract mismatch.
 
 ## Diagnose
 

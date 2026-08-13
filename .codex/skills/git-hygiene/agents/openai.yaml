@@ -1,4 +1,4 @@
 interface:
   display_name: "Git Hygiene"
-  short_description: "Scoped commits, sync, and token-safe git"
-  default_prompt: "Use $git-hygiene to stage, commit, split dirty work, synchronize, or push while preserving unrelated edits and keeping credentials out of history and output."
+  short_description: "Exact worktrees and scoped, token-safe git"
+  default_prompt: "Use $git-hygiene to bind this task to the exact worktree and safely stage, commit, synchronize, publish, or retire its scoped changes."

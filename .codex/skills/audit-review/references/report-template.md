@@ -2,7 +2,7 @@
 
 ### Scope
 - Target: `<paths / change id / feature>`
-- Mode: `spec/design review` | `implementation vs spec audit` | `regression risk audit` | `diff/code review`
+- Mode: `run/artifact audit` | `claim validity` | `launch/promotion gate` | `implementation versus vertical contract`
 - Intent: `<user brief / OpenSpec change / stable spec / docs contract / unavailable>`
 - Fixed point: `<base ref / merge base / staged / unstaged / not applicable>`
 - Constraints: `<no-network / time budget / must-run tests / do-not-run tests>`
@@ -12,10 +12,6 @@
 - Environment assumptions: `<conda env, python version, GPU/no-GPU>`
 
 ### Findings (Ranked)
-
-For `diff/code review`, keep two subsections—`Engineering Standards` and
-`Intent And Contract`—and rank P0/P1/P2 within each. For other modes, use the
-single severity sequence below.
 
 #### P0 (Correctness / Data Corruption / Eval Invalidity)
 - Finding:
@@ -40,8 +36,6 @@ single severity sequence below.
 
 ### Confirmed OK / Ruled Out
 - `<short bullets with evidence>`
-
-For `diff/code review`, identify the axis each confirmed check supports.
 
 ### Verification Steps (Commands)
 - `<exact commands; prefer narrow tests first>`

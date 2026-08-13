@@ -24,9 +24,9 @@ current-behavior documentation, production code, or an ordinary audit.
   authority.
 
 Use `audit-review` for correctness findings, `model-diagnosis` for abnormal
-behavior, `debug-feedback-loop` for a reproducible mechanical failure,
-`coordexp-infer-eval-workflow` for run operations, and `git-hygiene` for
-repository publication.
+behavior, the owning code/config/runtime path for a reproducible mechanical
+failure, `coordexp-infer-eval-workflow` for run operations, and `git-hygiene`
+for repository publication.
 
 ## Work
 

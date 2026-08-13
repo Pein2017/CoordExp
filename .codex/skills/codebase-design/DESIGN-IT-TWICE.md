@@ -44,6 +44,7 @@ locality, seam placement, contract visibility, testability, migration cost, and
 the burden placed on the user.
 
 Give a recommendation. If the choice alters algorithm, forward semantics, data,
-loss, statistics, evaluation meaning, or experiment cost, use `grill-me` to ask
-one decision question. Otherwise select the soundest reversible implementation
-without making the user choose code aesthetics.
+loss, statistics, evaluation meaning, or experiment cost, ask one direct
+decision question. Use `grill-me` only when the user explicitly invokes it.
+Otherwise select the soundest reversible implementation without making the user
+choose code aesthetics.

@@ -2,3 +2,6 @@ interface:
   display_name: "Workflow Self-Distillation"
   short_description: "Distill or promote durable skill owners"
   default_prompt: "Use $workflow-self-distillation to turn repeated work into one durable owner or promote a validated worktree-local skill into CODEX_HOME."
+
+policy:
+  allow_implicit_invocation: false

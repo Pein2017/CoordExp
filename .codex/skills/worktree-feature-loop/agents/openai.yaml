@@ -1,4 +1,0 @@
-interface:
-  display_name: "Worktree Feature Loop"
-  short_description: "Bind work to one exact checkout"
-  default_prompt: "Use $worktree-feature-loop to choose or verify the exact worktree for this task."

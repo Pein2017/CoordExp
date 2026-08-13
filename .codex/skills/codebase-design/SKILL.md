@@ -1,12 +1,30 @@
 ---
 name: codebase-design
-description: Design or compare CoordExp module interfaces and seam placement when behavior needs deeper ownership, testability, or research-semantic clarity.
+description: Review and rank CoordExp architecture friction read-only, or design and compare module interfaces and seam placement when behavior needs deeper ownership, testability, or research-semantic clarity.
 ---
 
 # Codebase Design
 
 Design a **deep module**: substantial behavior behind a small, honest interface
 at the owner of the concept. Keep user-owned scientific choices visible.
+
+## Choose The Mode
+
+- **Review:** follow current authority to live contracts, config, tests,
+  artifacts, callers, and source. Find concrete caller knowledge spread across
+  modules, multiple policy owners, shallow orchestration, compatibility leakage,
+  or tests crossing internals. Rank candidates before proposing an interface.
+- **Design:** design only the selected concept and owner. Compare meaningfully
+  different interfaces when the seam is consequential.
+
+Architecture review is read-only. Do not implement, record a durable proposal,
+or change research meaning without separate authorization.
+
+For each review candidate report the current owner, exact friction evidence,
+deepening direction, knowledge hidden and retained, semantic risk, benefit,
+verification, and confidence. Give one top recommendation and stop at `drop`,
+`probe assumption`, `ready for interface decision`, `ready for implementation
+approval`, or `needs user decision`.
 
 ## Decide Whether A Seam Exists
 
@@ -52,6 +70,7 @@ Read [DEEPENING.md](DEEPENING.md) when restructuring an existing cluster and
 
 ## Report
 
-State current owner and friction, proposed promise, hidden versus visible
-knowledge, alternatives when consequential, migration cost, research-semantic
-risk, and verification.
+For review, return ranked candidates with exact evidence, one recommendation,
+verification, residual risk, and approval state. For design, state current owner
+and friction, proposed promise, hidden versus visible knowledge, alternatives
+when consequential, migration cost, research-semantic risk, and verification.

@@ -67,8 +67,10 @@ manifest identity, logical data root, counts, and checksum status.
 - Preserve tracked manifests as the portable contract.
 - Keep one-off cleanup helpers disposable and outside durable repository
   surfaces.
-- Use the Baidu transfer skill for shared run artifacts, not routine recovery of
-  raw or processed public data.
+- Keep shared run-artifact transport outside this skill. Resolve its current
+  owner from `docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md` and live
+  operator tooling; do not revive a removed transfer skill or treat a public
+  data manifest as transfer authorization.
 
 Report changed manifests, source and materialized scope, validation evidence,
 active-root exclusions, regeneration route, and unresolved provenance gaps.

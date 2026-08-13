@@ -1,4 +1,0 @@
-interface:
-  display_name: "Architecture Review"
-  short_description: "Rank evidence-backed architecture opportunities"
-  default_prompt: "Use $improve-codebase-architecture for a read-only architecture review and ranked recommendation."

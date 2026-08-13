@@ -1,4 +1,0 @@
-interface:
-  display_name: "Debug Feedback Loop"
-  short_description: "Run a tight red-to-green debugging loop"
-  default_prompt: "Use $debug-feedback-loop to reproduce, discriminate, and close this exact engineering failure."

@@ -1,12 +1,29 @@
 ---
 name: git-hygiene
-description: Stage, commit, split dirty work, synchronize, or push CoordExp changes while preserving unrelated edits and keeping credentials out of repository history and output.
+description: Choose and verify the exact CoordExp worktree, or stage, commit, split, synchronize, publish, and safely retire repository work while preserving unrelated edits and keeping credentials out of history and output.
 ---
 
 # Git Hygiene
 
 Keep commits logical and scoped. Dirty changes from parallel work are expected;
 never stage, rewrite, or revert unrelated files.
+
+## Bind The Checkout
+
+1. Inspect the repository root, current branch and status, and `git worktree
+   list` before editing or publishing.
+2. Use the user-named checkout or the smallest current owner from repository
+   guidance. Work in place only for narrow reversible work with no ownership
+   conflict; otherwise isolate it in a worktree from the authorized base.
+3. Confirm the absolute worktree and branch before changing files. Keep heavy
+   data, models, caches, outputs, and runtime links outside Git. Add a shared
+   link only when the target is validated and the path is absent; never replace
+   an existing path or stage the link.
+4. Keep symbol indexes and commands bound to that absolute checkout. Reactivate
+   a code index after changing roots, and verify the task in the same checkout.
+
+Stop on an ambiguous base, overlapping dirty ownership, or a requested move to
+a different checkout until ownership is resolved.
 
 ## Preflight
 
@@ -52,11 +69,13 @@ bodies, logs, or tracked files. Skip network operations that have no work.
 
 - Before deleting branches or worktrees, compare metadata with real directories
   and inspect uncommitted work plus ahead/behind state.
+- Retire a worktree only after its work is merged or explicitly discarded,
+  durable artifacts are preserved, and its status is clean.
 - Dry-run metadata pruning before applying it.
 - A stale worktree marker or lock error is evidence to investigate, not proof
   that deletion is safe.
 - History rewrite, force push, hard reset, destructive cleanup, and branch
   creation require explicit user scope.
 
-Report commits created, checks run, fetch/integration/push status, branch and
-upstream identity, and remaining dirty files.
+Report the exact checkout and branch, changes and verification, commits created,
+fetch/integration/push state, remaining dirt, and merge or retirement state.

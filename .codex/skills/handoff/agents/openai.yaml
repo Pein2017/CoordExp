@@ -2,3 +2,6 @@ interface:
   display_name: "Handoff"
   short_description: "Route a fresh agent to current state"
   default_prompt: "Use $handoff to produce a compact continuation brief that points to current owning state."
+
+policy:
+  allow_implicit_invocation: true

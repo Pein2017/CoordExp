@@ -1,6 +1,6 @@
 ---
 name: workflow-self-distillation
-description: Distill repeated Codex work, memories, sessions, or user preferences into the smallest durable owner, or promote a validated worktree-local skill into CODEX_HOME.
+description: Use only when the user explicitly invokes $workflow-self-distillation to distill repeated Codex work, memories, sessions, or preferences into the smallest durable owner, or to promote a validated worktree-local skill into CODEX_HOME.
 ---
 
 # Workflow Self-Distillation
