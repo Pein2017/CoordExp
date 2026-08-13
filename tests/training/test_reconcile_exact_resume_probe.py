@@ -8,8 +8,10 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -576,6 +578,138 @@ def test_shared_pack_cache_determinant_projection_rejects_real_drift() -> None:
 # --------------------------------------------------------------------------
 # success-control / success-resumed (fake launch; no GPU/model activity)
 # --------------------------------------------------------------------------
+
+
+def test_resumed_parent_uses_held_parent_route_while_control_and_child_use_src_train(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, receipt = _prepared(tmp_path)
+    parent_run_dir = target / "runs" / "resumed_parent"
+    admitted = _write_authoritative_parent_step_one(parent_run_dir, monkeypatch)
+    observed_argv: dict[str, tuple[str, ...]] = {}
+
+    def launch(argv, cwd, env):
+        role = (
+            "uninterrupted_control"
+            if "uninterrupted_control.yaml" in argv[-1]
+            else "resumed_child"
+        )
+        observed_argv[role] = tuple(argv)
+        _write_run_json(target / "runs" / role, completed_steps=2)
+        return probe.LaunchResult(0, "", "")
+
+    def interrupt_parent(argv, cwd, env, run_dir):
+        observed_argv["resumed_parent"] = tuple(argv)
+        return probe.ParentInterruptionResult(
+            pid=401,
+            pgid=401,
+            signals=("SIGTERM",),
+            returncode=-signal.SIGTERM,
+            termination_duration_seconds=0.1,
+            stdout_tail="",
+            stderr_tail="",
+            authenticated_step_one=admitted,
+        )
+
+    probe.success_control(
+        artifact_root=target, commit=receipt["commit"], launch=launch
+    )
+    probe.success_resumed(
+        artifact_root=target,
+        commit=receipt["commit"],
+        launch=launch,
+        interrupt_parent=interrupt_parent,
+    )
+
+    control = observed_argv["uninterrupted_control"]
+    parent = observed_argv["resumed_parent"]
+    child = observed_argv["resumed_child"]
+    assert "src.train" in control
+    assert "held-parent" not in control
+    assert "src.train" in child
+    assert "held-parent" not in child
+    assert "src.train" not in parent
+    assert "scripts.probes.coordexp_swift.reconcile_exact_resume_probe" in parent
+    assert "held-parent" in parent
+
+
+def test_held_parent_calls_real_handler_then_blocks_before_step_two(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.training import pipeline as training_pipeline
+
+    order: list[str] = []
+    hold_entered = threading.Event()
+    release_hold = threading.Event()
+
+    def real_factory(*args, **kwargs):
+        order.append("real_factory")
+
+        def real_handler(scheduled_event, observation):
+            order.append("real_handler")
+
+        return real_handler
+
+    def fake_pipeline(config_path):
+        handler = training_pipeline._checkpoint_handler()
+        handler(SimpleNamespace(planned_step_id=1), object())
+        order.append("step_two")
+        return {"status": "completed"}
+
+    def hold():
+        order.append("hold")
+        hold_entered.set()
+        assert release_hold.wait(timeout=2.0)
+
+    monkeypatch.setattr(training_pipeline, "_checkpoint_handler", real_factory)
+    monkeypatch.setattr(training_pipeline, "run_training_pipeline", fake_pipeline)
+    worker = threading.Thread(
+        target=probe._run_held_parent,
+        args=(Path("parent.yaml"),),
+        kwargs={"hold": hold},
+        daemon=True,
+    )
+    worker.start()
+    assert hold_entered.wait(timeout=2.0)
+    assert order == ["real_factory", "real_handler", "hold"]
+    assert worker.is_alive()
+    assert training_pipeline._checkpoint_handler is not real_factory
+
+    release_hold.set()
+    worker.join(timeout=2.0)
+    assert not worker.is_alive()
+    assert order == ["real_factory", "real_handler", "hold", "step_two"]
+    assert training_pipeline._checkpoint_handler is real_factory
+
+
+def test_held_parent_does_not_hold_when_step_one_publication_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.training import pipeline as training_pipeline
+
+    publication_error = RuntimeError("step-one publication failed")
+    hold_calls: list[str] = []
+
+    def real_factory(*args, **kwargs):
+        def real_handler(scheduled_event, observation):
+            raise publication_error
+
+        return real_handler
+
+    def fake_pipeline(config_path):
+        handler = training_pipeline._checkpoint_handler()
+        handler(SimpleNamespace(planned_step_id=1), object())
+        raise AssertionError("unreachable after publication failure")
+
+    monkeypatch.setattr(training_pipeline, "_checkpoint_handler", real_factory)
+    monkeypatch.setattr(training_pipeline, "run_training_pipeline", fake_pipeline)
+    with pytest.raises(RuntimeError) as exc_info:
+        probe._run_held_parent(
+            Path("parent.yaml"), hold=lambda: hold_calls.append("hold")
+        )
+    assert exc_info.value is publication_error
+    assert hold_calls == []
+    assert training_pipeline._checkpoint_handler is real_factory
 
 
 def test_success_control_rejects_launch_without_prepare(tmp_path: Path) -> None:

@@ -103,7 +103,8 @@ def _resolved_config() -> dict[str, Any]:
                 "determinism": {"mode": "strict_cuda_replay_v1"},
                 "seed": 17,
             },
-            "training": {"seed": 17},
+            "training": {"max_steps": 2, "seed": 17},
+            "checkpoint": {"save_final": True, "steps": [1, 2]},
         },
         "resolution": {
             "entry_config_path": "/configs/parent.yaml",
@@ -135,6 +136,26 @@ def test_resume_compatibility_binds_runtime_determinism_but_not_continuation() -
     legacy_child = copy.deepcopy(child)
     legacy_child["config"]["runtime"]["determinism"]["mode"] = "legacy"
     assert build_resume_compatibility_projection(legacy_child) != strict_parent
+
+
+def test_resume_compatibility_keeps_max_steps_and_checkpoint_cadence_strict() -> None:
+    parent = _resolved_config()
+    child = copy.deepcopy(parent)
+    child["config"]["run"]["name"] = "child"
+    child["config"]["resume"] = {
+        "checkpoint_dir": "/outputs/parent/checkpoints/step-1",
+        "mode": "exact_same_world_size",
+    }
+    expected = build_resume_compatibility_projection(parent)
+    assert build_resume_compatibility_projection(child) == expected
+
+    max_steps_drift = copy.deepcopy(child)
+    max_steps_drift["config"]["training"]["max_steps"] = 3
+    assert build_resume_compatibility_projection(max_steps_drift) != expected
+
+    cadence_drift = copy.deepcopy(child)
+    cadence_drift["config"]["checkpoint"]["steps"] = [1]
+    assert build_resume_compatibility_projection(cadence_drift) != expected
 
 
 def _identities(

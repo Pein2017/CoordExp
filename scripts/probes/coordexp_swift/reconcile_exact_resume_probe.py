@@ -41,6 +41,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -115,6 +116,7 @@ ROLE_FILENAMES = {
     ROLE_RESUMED_PARENT: "resumed_parent.yaml",
     ROLE_RESUMED_CHILD: "resumed_child.yaml",
 }
+HELD_PARENT_MODULE = "scripts.probes.coordexp_swift.reconcile_exact_resume_probe"
 
 INJECT_KINDS = frozenset({"missing", "duplicate", "malformed", "corrupt"})
 INTERRUPTION_BOUNDARIES = (0, 1, 2)
@@ -1111,7 +1113,7 @@ def _interrupt_parent_at_authoritative_step_one(
                 boundary_wait_duration_seconds=boundary_wait_duration,
                 launch_duration_seconds=max(0.0, time.monotonic() - launch_started),
             )
-        except BaseException as exc:
+        except BaseException:
             if process.poll() is None or _process_group_exists(pgid):
                 try:
                     _terminate_process_group(
@@ -1137,8 +1139,54 @@ def _default_launch(argv: Sequence[str], cwd: Path, env: Mapping[str, str]) -> L
     return LaunchResult(completed.returncode, completed.stdout, completed.stderr)
 
 
-def _launch_argv(config_path: str) -> list[str]:
-    return [
+def _hold_until_process_termination() -> None:
+    """Keep one rank inside the committed step-1 checkpoint callback."""
+
+    threading.Event().wait()
+
+
+def _held_parent_checkpoint_handler_factory(
+    real_factory: Callable[..., Any],
+    *,
+    hold: Callable[[], None],
+) -> Callable[..., Any]:
+    """Decorate the real handler so step 1 cannot return to the trainer."""
+
+    def held_factory(*args: Any, **kwargs: Any) -> Any:
+        real_handler = real_factory(*args, **kwargs)
+
+        def held_handler(scheduled_event: Any, observation: Any) -> None:
+            real_handler(scheduled_event, observation)
+            if int(scheduled_event.planned_step_id) == 1:
+                hold()
+
+        return held_handler
+
+    return held_factory
+
+
+def _run_held_parent(
+    config_path: Path,
+    *,
+    hold: Callable[[], None] = _hold_until_process_termination,
+) -> Mapping[str, Any]:
+    """Run the real pipeline with only its step-1 checkpoint return held."""
+
+    from src.training import pipeline as training_pipeline
+
+    real_factory = training_pipeline._checkpoint_handler
+    training_pipeline._checkpoint_handler = _held_parent_checkpoint_handler_factory(
+        real_factory,
+        hold=hold,
+    )
+    try:
+        return training_pipeline.run_training_pipeline(config_path)
+    finally:
+        training_pipeline._checkpoint_handler = real_factory
+
+
+def _launch_argv(config_path: str, *, held_parent: bool = False) -> list[str]:
+    argv = [
         sys.executable,
         "-m",
         "torch.distributed.run",
@@ -1146,10 +1194,12 @@ def _launch_argv(config_path: str) -> list[str]:
         "--nproc_per_node",
         str(WORLD_SIZE),
         "-m",
-        "src.train",
-        "--config",
-        config_path,
+        HELD_PARENT_MODULE if held_parent else "src.train",
     ]
+    if held_parent:
+        argv.append("held-parent")
+    argv.extend(["--config", config_path])
+    return argv
 
 
 def _launch_env(receipt: Mapping[str, Any]) -> dict[str, str]:
@@ -1279,7 +1329,7 @@ def success_resumed(
     _verify_role_config_not_drifted(receipt, ROLE_RESUMED_CHILD)
 
     parent_config = _run_config_path(receipt, ROLE_RESUMED_PARENT)
-    parent_argv = _launch_argv(parent_config)
+    parent_argv = _launch_argv(parent_config, held_parent=True)
     parent_run_dir = _run_dir(receipt, ROLE_RESUMED_PARENT)
     setup_result = interrupt_parent(
         parent_argv, REPO_ROOT, _launch_env(receipt), parent_run_dir
@@ -1644,14 +1694,13 @@ def interruption(
     checkpoint_dir = root / "checkpoint"
     checkpoint_dir.mkdir()
 
-    inference_manifest: dict[str, Any] | None = None
     training_state_manifest_digest: str | None = None
     event_recorded = False
 
     if stop_after >= 0:
         pass  # boundary 0: nothing committed yet.
     if stop_after >= 1:
-        inference_manifest = commit_inference(checkpoint_dir)
+        commit_inference(checkpoint_dir)
     if stop_after >= 2:
         plan = _synthetic_plan()
         payloads = {rank: _synthetic_payload(rank) for rank in range(WORLD_SIZE)}
@@ -2317,7 +2366,21 @@ def _parse_inject_argument(value: str) -> Mapping[str, Any]:
 
 
 def main(argv: list[str] | None = None, *, launch: LaunchCallable = _default_launch) -> int:
-    args = _build_parser().parse_args(argv)
+    command_argv = sys.argv[1:] if argv is None else argv
+    if command_argv and command_argv[0] == "held-parent":
+        held_parent_parser = argparse.ArgumentParser(add_help=False)
+        held_parent_parser.add_argument("command", choices=("held-parent",))
+        held_parent_parser.add_argument("--config", required=True)
+        held_parent_args = held_parent_parser.parse_args(command_argv)
+        config_path = Path(held_parent_args.config)
+        result = {
+            "entry_config_path": str(config_path),
+            **dict(_run_held_parent(config_path)),
+        }
+        print(json.dumps(result, allow_nan=False, indent=2, sort_keys=True))
+        return 0
+
+    args = _build_parser().parse_args(command_argv)
     if args.command == "prepare":
         result = prepare(
             artifact_root=args.artifact_root,
