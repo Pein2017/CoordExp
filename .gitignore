@@ -70,8 +70,6 @@
 /.proxy/
 /.vendor/
 /.worktrees/
-/.codex/serena/shared/
-/.codex/serena/runtime/
 /.mcp.json
 /baidu_net_cookie.txt
 /github_personal_token.txt
@@ -94,10 +92,6 @@
 !.codex/hooks.json
 !.codex/hooks/
 !.codex/hooks/**
-!.codex/serena/
-!.codex/serena/serena_worktree_mcp.py
-!.codex/serena/bridge.lock
-!.codex/serena/setup_shared_runtime.sh
 !.codex/skills/
 !.codex/skills/**
 .codex/.tmp/
