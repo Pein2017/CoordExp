@@ -93,10 +93,10 @@
 > `interruption` no longer call `torch.cuda.current_device()` through
 > `rng_snapshot=None`; they build CPU-only RNG state explicitly and are
 > covered by a `CUDA_VISIBLE_DEVICES=''` subprocess test.
-- [ ] 3.4 Prepare a fresh launch-authorization packet bound to the exact implementation commit, config, artifact root, and commands. Fix `world_size=2`, at most two GPUs, and three semantic arms: a success arm containing matched uninterrupted-control and parent-to-resumed-child branches, a rank-failure arm, and an interruption arm. Require exactly one corresponding next forward and at most one applied optimizer update in each success branch; cap each failure-shaped arm at one forward and one applied update per rank. Derive and record numeric ceilings for model forwards/collectives per rank and branch/arm, per-arm and total wall time, per-rank RSS/GPU memory, new artifact bytes across both success branches and all arms, and required free disk.
-- [ ] 3.5 Run the independent pre-cost/distributed-qualification audit against the frozen commands, bounds, comparison policy, and deterministic control-plane evidence; resolve every P0/P1 finding, then obtain fresh user authorization immediately before launch bound to that exact packet. Planning approval or an earlier launch approval does not satisfy this task.
-- [ ] 3.6 Execute only the authorized smallest production-shaped probe. The success receipt MUST bind the matched branch pair and compare next input/pack identity; pre-forward trainable/optimizer/scheduler/scaler/RNG/cursor state; objective/loss fields; and resulting trainable parameters after the first post-resume optimizer update under the declared exact policy. Stop without retry on command/commit drift, occupied targets, insufficient headroom, timeout/hang, OOM, or any declared-bound exceedance; bind launcher/runtime identity, world size, artifact trees, terminal status, resource maxima, and stop outcome in immutable change-local receipts.
-- [ ] 3.7 Gate Wave 3 only when the matched success-pair and failure/interruption receipts are target-bound, every required rank and branch is accounted for, focused artifact verification passes, no P0/P1 pre-cost audit finding remains, and the supported claim stays limited to same-world-size optimizer-step-boundary continuation; publication/admission alone is insufficient.
+- [ ] 3.4 Keep attempt 3 frozen at implementation commit `037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest SHA-256 `c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`, and packet SHA-256 `70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02`; record its pre-launch `HOLD` without editing either frozen file. Close only its two P1s test-first: (a) in `reconcile_exact_resume_probe.py`, route only the resumed parent through a synchronous held-parent wrapper that calls the real pipeline checkpoint handler and then blocks after committed step 1 while control/child remain `src.train`; (b) add the separate experiment-local packet executor and schema-v2 `execution_contract`. Preserve production `src/`, strict admission, and resume-compatibility behavior.
+- [ ] 3.5 Re-freeze the successor packet and schema-v2 manifest against the post-repair commit, absent target, exact configs/commands, and original `world_size=2`/two-GPU/three-arm numeric bounds. Run the independent pre-cost/distributed-qualification audit and resolve every P0/P1. If the exact frozen packet is `READY`, the lead-only executor proceeds under current goal authority without another user prompt; any mutation invalidates `READY` and requires re-freeze/re-review, not a repeated authorization prompt.
+- [ ] 3.6 Execute only through `reconcile_exact_resume_packet_executor.py` after `READY`. It MUST claim the attempt marker with `O_EXCL`, run exactly once in order `setup`, `success.uninterrupted_control`, `success.resumed_child`, `rank_failure`, `interruption`, `verification`, stop on the first failure with no retry, and publish one signed outer receipt binding implementation/manifest/packet hashes, exact argv observations, launcher/runtime identity, world size, artifact trees, process/GPU/resource maxima, stop outcome, and the inner verifier receipt when reached. The success evidence MUST bind the matched branch pair and compare next input/pack identity; pre-forward trainable/optimizer/scheduler/scaler/RNG/cursor state; objective/loss fields; and resulting trainable parameters after the first post-resume optimizer update under the declared exact policy.
+- [ ] 3.7 Gate Wave 3 only when the successor packet has a `READY` pre-cost review, the signed outer receipt proves exact six-command order and marker ownership, the matched success-pair and failure/interruption inner receipts are target-bound, every required rank and branch is accounted for, focused artifact verification passes, and the supported claim stays limited to same-world-size optimizer-step-boundary continuation; publication/admission alone is insufficient.
 
 > **Wave 3 attempt 1 stopped before GPU (2026-08-13):** the freshly
 > authorized frozen setup command exited `1` before cache publication because
@@ -107,7 +107,8 @@
 > ran. The immutable attempt-1 manifest, packet, and terminal receipt are under
 > `receipts/wave-3-attempt-1-*`. A successor packet MUST use
 > `/usr/bin/env -u CUDA_VISIBLE_DEVICES`, a new absent target, a new commit and
-> manifest digest, independent pre-cost closure, and fresh user authorization.
+> manifest digest, and independent pre-cost `READY`; under the current goal the
+> lead-only executor then proceeds without another authorization prompt.
 
 > **Wave 3 attempt 2 stopped at child read-only admission (2026-08-13):**
 > corrected CPU setup, two-step control, and two-step parent all completed
@@ -124,6 +125,18 @@
 > admits step 1 before launching the child. This requires a test-first bounded
 > parent-interruption controller; changing admission to accept a stale event is
 > forbidden.
+
+> **Wave 3 attempt 3 held before launch (2026-08-13):** pre-cost review bound
+> implementation commit `037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest
+> SHA-256 `c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`,
+> and packet SHA-256
+> `70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02`
+> and returned `HOLD` on two P1s: the parent step-1 observation-to-signal TOCTOU
+> can allow step 2 to begin, and no outer executor guarantees an attempt-level
+> signed receipt. No attempt-3 command, GPU/model work, cache preparation, or
+> artifact-target mutation executed. The manifest and packet remain immutable;
+> `receipts/wave-3-attempt-3-pre-cost-review.md` authorizes only the bounded
+> test-first held-parent and packet-executor successor implementation.
 
 ## 4. Reconcile Cache And Provenance Dependencies
 
@@ -146,7 +159,7 @@
 ## 6. Final Verification And Disposition
 
 - [ ] 6.1 Run all focused suites named by the evidence matrix plus the relevant config, artifact, training, cache, inference, and distributed test directories through the repository runtime; record exact pass/fail/skip counts and investigate every unexpected skip.
-- [ ] 6.2 Re-run the authorized verifier for the target-bound matched success branch pair and one distributed failure/interruption path from the final implementation state; verify next input/pack identity, declared pre-forward state, first-update objective/loss fields and resulting trainable parameters, manifest/event/selector identity, and historical-reader outcomes from durable artifacts, not console text alone. Do not relaunch either success branch without a fresh packet and authorization.
+- [ ] 6.2 Re-run only the already-reviewed frozen verifier against the target-bound matched success branch pair and one distributed failure/interruption path from the final implementation state; verify next input/pack identity, declared pre-forward state, first-update objective/loss fields and resulting trainable parameters, manifest/event/selector identity, and historical-reader outcomes from durable artifacts, not console text alone. If implementation or execution inputs changed, do not relaunch: re-freeze and obtain `READY` pre-cost review, after which the lead-only executor proceeds under current goal authority without another prompt.
 - [ ] 6.3 Run `openspec validate reconcile-coordexp-swift-training-contracts --strict` and a stable-spec/delta merge-conflict scan; verify every modified requirement copies the full owning stable block and every new requirement has executable scenarios.
 - [ ] 6.4 Run residue scans proving the change introduced no changed-order packing promotion, speculative efficiency claim, production cache campaign, logging enhancement, loss-objective/RL behavior, dependency upgrade, orchestration refactor, historical migration shim, cross-world-size resume, or mid-accumulation promise.
 - [ ] 6.5 Obtain one independent final audit against the exact implementation commit and receipts, reporting both standards/code-quality and intent/contract verdicts; resolve all P0/P1 findings and record lower-priority dispositions explicitly.

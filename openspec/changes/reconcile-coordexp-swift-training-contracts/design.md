@@ -140,10 +140,14 @@ Alternative considered: reason from atomic rename helpers and unit tests alone.
 Rejected because the prior unchecked gate was specifically about distributed
 failure and interruption behavior.
 
-This probe is acceptance evidence, not implicit launch authority. Immediately
-before execution, the implementer MUST present a fresh launch packet and obtain
-fresh user authorization bound to the exact commit, config, artifact root, and
-commands. The packet fixes `world_size=2`, uses at most two GPUs, permits at most
+This probe is acceptance evidence, not implicit launch authority. The executor
+MUST freeze a launch packet bound to the exact commit, config, artifact root,
+and commands and pass an independent pre-cost review. If that exact frozen
+packet is `READY`, the lead-only executor proceeds under the current goal-level
+authority without asking the user again. Any implementation, manifest, packet,
+config, command, target, or bound mutation invalidates `READY` and requires a
+new freeze plus review; it does not require a repeated authorization prompt.
+The packet fixes `world_size=2`, uses at most two GPUs, permits at most
 three bounded semantic arms: one success arm comprising the matched control and
 resumed branches, one rank-failure arm, and one interruption arm. Each success
 branch executes exactly one next forward and at most one applied optimizer
@@ -155,6 +159,39 @@ bytes across both success branches and the failure-shaped arms, and required
 free disk. Missing bounds, changed commands/commit, an occupied artifact
 target, or any exceeded bound stops the launch and requires a new packet rather
 than an automatic retry.
+
+Wave-3 attempt 3 is frozen at implementation commit
+`037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest SHA-256
+`c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`,
+and packet SHA-256
+`70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02`.
+Its pre-cost disposition is `HOLD` before launch because two P1 gaps remain:
+the external parent observer has a check-to-signal window in which the trainer
+can enter step 2 after committing step 1, and the six direct commands have no
+outer executor guaranteed to publish an attempt-level receipt on either
+success or failure. No attempt-3 command, GPU/model work, cache preparation, or
+artifact-target mutation has executed. The manifest and packet are immutable
+evidence and MUST NOT be edited to repair these gaps.
+
+The only authorized parent repair is probe-local and test-first in
+`scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`: the resumed
+parent alone uses a synchronous held-parent entry route that wraps the real
+pipeline checkpoint handler, calls that real handler first, and then blocks at
+the committed step-1 boundary so the trainer cannot enter step 2. The
+uninterrupted control and resumed child continue to launch `src.train`.
+Production `src/` behavior, exact-admission strictness, max-step/checkpoint
+compatibility, and provider support remain unchanged.
+
+The only authorized execution repair is a separate experiment-local
+`reconcile_exact_resume_packet_executor.py`. Its manifest schema v2 carries a
+machine-readable `execution_contract` fixing the command order to setup,
+control, resumed, rank failure, interruption, verification; the executor
+claims an absent attempt marker with `O_EXCL`, stops on the first failure with
+no retry, samples the declared process/GPU resources, and always attempts one
+signed outer terminal receipt. That outer receipt binds the implementation,
+manifest and packet hashes, exact argv observations, marker, resource maxima,
+stop outcome, and the inner verifier receipt when verification is reached.
+These two seams are qualification tooling, not production orchestration.
 
 ### 5. Make historical interpretation conservative and explicit
 
@@ -211,9 +248,10 @@ publication gate is closed.
 - **[Risk] Cache/provenance requirements import unfinished archive scope.** →
   Require per-requirement source, test, and receipt evidence and remove
   unsupported language before sync.
-- **[Risk] A planning approval is mistaken for permission to consume GPUs or
-  publish probe artifacts.** → Require the fresh, commit-bound quantitative
-  launch packet in Decision 4; no inherited or blanket approval satisfies it.
+- **[Risk] A stale review is mistaken for authority to consume GPUs or publish
+  probe artifacts.** → Require exact frozen hashes and a `READY` pre-cost
+  review; any mutation requires re-freeze/re-review. Under the current goal,
+  `READY` is the lead-only execution gate and no repeated prompt is required.
 - **[Risk] Concurrent user-owned documentation edits overlap reconciliation.**
   → Inspect ownership and diff at apply time, patch only exact stale claims,
   and never reset or overwrite unrelated changes.
@@ -225,9 +263,10 @@ publication gate is closed.
 2. Add or tighten focused tests first, then make the minimum source repair for
    demonstrated gaps.
 3. Freeze the exact probe commands and quantitative bounds, pass the independent
-   pre-cost/distributed-qualification audit, obtain fresh commit-bound launch
-   authorization, then execute the bounded matched-success/failure/interruption
-   probe and publish its immutable scope-labeled receipt under this change.
+   pre-cost/distributed-qualification audit, then let the lead-only executor
+   proceed under current goal authority without another prompt. Any mutation
+   requires re-freeze/re-review before the bounded probe may execute and publish
+   its immutable scope-labeled receipt under this change.
 4. Reconcile canonical docs and run the stable-vs-delta conflict scan.
 5. Run focused, full relevant, and strict OpenSpec validation, then obtain the
    single independent final audit with both code-quality and contract lenses.

@@ -18,7 +18,7 @@
 - Do not add changed-order packing, a cache materialization campaign, an efficiency claim, logging, loss/RL behavior, orchestration decomposition, dependency upgrades, historical migration, cross-world-size resume, or mid-accumulation resume.
 - Preserve unrelated dirty work. Never reset, clean, bulk-stage, overwrite user edits, repair an occupied immutable cache target, or rewrite historical evidence.
 - Tests precede any production repair. A failing acceptance test may demonstrate a gap; it does not authorize a source change until Task 2's stop/re-plan checkpoint has produced an amended OpenSpec task and an amended execution task with exact interfaces and a red/green command.
-- The distributed probe is not authorized by approval of this plan. It requires fresh user authorization immediately before launch, bound to the exact commit, configs, artifact roots, frozen commands, declared comparison policy, and quantitative bounds. Its success arm is a matched pair: one uninterrupted control branch and one parent-to-resumed-child branch, each executing the corresponding next forward and at most one optimizer update.
+- The distributed probe requires an exact frozen packet and independent pre-cost `READY` bound to the implementation commit, configs, artifact roots, commands, comparison policy, and quantitative bounds. Once that exact packet is `READY`, the lead-only executor proceeds under the current goal-level authority without asking the user again. Any mutation invalidates `READY` and requires re-freeze/re-review, not a repeated authorization prompt. Its success arm is a matched pair: one uninterrupted control branch and one parent-to-resumed-child branch, each executing the corresponding next forward and at most one optimizer update.
 - Commits below are future execution checkpoints. Stage only the paths named by the step, inspect `git diff --cached`, and never include unrelated work.
 
 ---
@@ -329,127 +329,103 @@ inference-runtime implementation change is included. Rollback removes only the
 new tests/evidence and restores affected matrix rows to `gap`; it does not
 re-introduce the invalid exact-without-path clause.
 
-### Task 4: Qualify Distributed Atomic Publication Under Fresh Authorization
+### Task 4: Close the Attempt-3 HOLD and Qualify the Successor Packet
 
 **Files:**
-- Create: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-command-manifest.json`
-- Create: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-launch-packet.md`
-- Create: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-terminal-receipt.json`
-- Modify: `openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md`
-- Modify: `openspec/changes/reconcile-coordexp-swift-training-contracts/tasks.md`
-- Read/verify: `scripts/probes/coordexp_swift/wave7_exact_resume_sequence.py`, `scripts/probes/coordexp_swift/wave7_exact_resume_interrupt.py`, and their tests; do not reuse them unless their current grammar exactly satisfies this change's bounds.
+- Read only: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-command-manifest.json`
+- Read only: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-launch-packet.md`
+- Read: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-pre-cost-review.md`
+- Modify: `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`
+- Test: `tests/training/test_reconcile_exact_resume_probe.py`
+- Create: `scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py`
+- Create: `tests/training/test_reconcile_exact_resume_packet_executor.py`
+- Create after the TDD repairs: successor schema-v2 command manifest, packet, pre-cost review, attempt marker, and outer terminal receipt under the change-local receipts/artifact roots.
+- Modify after executed evidence: `openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md` and `tasks.md`.
 
-**Preparatory tooling (commit `test(training): add two-rank exact-resume qualifier`, corrected by `fix(training): make resume qualifier fail closed`, `fix(training): make resume probe launch-compatible`, and the Task-4 R3 interruption repair):** the Wave-7 controller's grammar is fixed to eight ranks and cannot express `world_size=2`, so Step 2's command manifest should freeze `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py` (`prepare`/`success-control`/`success-resumed`/`rank-failure`/`interruption`/`verify`, tested by `tests/training/test_reconcile_exact_resume_probe.py`) rather than the Wave-7 scripts. It reuses `src.artifacts.training_state`/`src.config.loader`/`src.prepare_train_cache`; `prepare` runs real model-free cache preparation (`load_model=False`) behind an injectable seam; `verify` fails closed via `admit_training_state`-based checkpoint comparison plus a required `logging.jsonl` step-2 row on both branches; `success-control`/`success-resumed` require `--commit` bound to the prepare receipt and current `HEAD` and still need a real launch for a genuine forward/update. The generated configs remain resume-compatible with `training.max_steps: 2`, `checkpoint.steps: [1, 2]`, and `save_final: true`, but the bounded controller realizes train-forward counts `control=2`, `resumed_parent=1`, `resumed_child=1`: it starts the parent in its own session/process group, authenticates the authoritative step-1 event and manifest, terminates and reaps the group, re-authenticates unchanged one-step parent progress, and only then launches the child for step 2. The controlled parent exit is recorded as interruption, never normal two-step completion.
+**Attempt-3 disposition:** implementation commit `037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest SHA-256 `c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`, and packet SHA-256 `70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02` are frozen evidence. Pre-cost review is `HOLD` on two P1s: the external observation-to-signal controller has a parent step-2 TOCTOU, and direct execution has no outer attempt receipt. No attempt-3 command, GPU/model work, cache preparation, or artifact-target mutation executed. Do not edit the manifest or packet.
 
 **Interfaces:**
-- Consumes: the exact post-Task-3 commit and already passing deterministic multi-rank control-plane tests.
-- Produces: one immutable manifest of exact argv arrays, one freshly authorized quantitative launch packet, and target-bound receipts for the matched success branch pair plus rank-failure and interruption arms.
+- Held parent: only `success-resumed` routes the parent through a probe-local synchronous entry that wraps the real pipeline checkpoint handler, calls the real handler first, and blocks after committed step 1. Control and child continue to use `-m src.train`. No `src/` edit or compatibility weakening is allowed.
+- Packet executor callable: `execute(*, manifest_path: Path, packet_path: Path, expected_manifest_sha256: str, expected_packet_sha256: str, attempt_marker_path: Path, terminal_receipt_path: Path, launch=..., gpu_sampler=..., process_sampler=...) -> dict`.
+- Packet executor CLI: `execute --manifest ... --packet ... --manifest-sha256 ... --packet-sha256 ... --attempt-marker ... --terminal-receipt ...`.
+- Schema v2 adds only `execution_contract`: exact six-command order, `O_EXCL` marker creation, stop-on-failure, retry count zero, required resource observations, and required outer-receipt/inner-receipt bindings.
 
-- [ ] **Step 1: Prove the model-free multi-rank control plane first**
+- [ ] **Step 1: Write the held-parent RED tests**
+
+Add and run exactly:
+
+```bash
+cd /data/CoordExp/.worktrees/CoordExp-swift
+conda run -n ms pytest -q \
+  tests/training/test_reconcile_exact_resume_probe.py::test_resumed_parent_uses_held_parent_route_while_control_and_child_use_src_train \
+  tests/training/test_reconcile_exact_resume_probe.py::test_held_parent_calls_real_handler_then_blocks_before_step_two \
+  tests/training/test_reconcile_exact_resume_probe.py::test_held_parent_does_not_hold_when_step_one_publication_fails \
+  tests/training/test_exact_resume.py::test_resume_compatibility_keeps_max_steps_and_checkpoint_cadence_strict
+```
+
+Expected RED: the new route assertions fail before implementation; the existing compatibility node stays green. The tests require the real handler to return successfully before the step-1 hold, propagate handler failure without holding, and prove the trainer cannot enter step 2 while held.
+
+- [ ] **Step 2: Implement only the synchronous held-parent route and turn GREEN**
+
+Modify only `reconcile_exact_resume_probe.py`. The resumed-parent argv uses its probe-local held-parent route; the route wraps the real pipeline checkpoint handler synchronously, invokes it first, then blocks after successful committed step 1 until the existing bounded controller terminates the process group. Do not poll to decide when the trainer may advance. Keep uninterrupted-control and resumed-child argv on `src.train`; do not edit `src/`, admission, config compatibility, `training.max_steps`, or checkpoint cadence.
+
+Run the exact four nodes from Step 1, then:
+
+```bash
+conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_probe.py tests/training/test_exact_resume.py
+```
+
+Expected: all pass; the broader files catch route, failure propagation, publication, and compatibility regressions without launching a GPU/model.
+
+- [ ] **Step 3: Write the packet-executor RED tests**
+
+Create `tests/training/test_reconcile_exact_resume_packet_executor.py` with focused tests that require: the exact callable and CLI interfaces above; hash/schema/packet validation before marker acquisition; exclusive absent-marker creation with `O_EXCL`; exact order `setup`, `success.uninterrupted_control`, `success.resumed_child`, `rank_failure`, `interruption`, `verification`; immediate stop and no retry after any nonzero/exception/bound failure; and one signed outer receipt after marker ownership binding manifest/packet/implementation, argv observations, process/GPU maxima, stop outcome, plus the verified inner terminal receipt when reached. Run:
+
+```bash
+conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_packet_executor.py
+```
+
+Expected RED: collection succeeds and the new interface/behavior tests fail because the executor does not exist.
+
+- [ ] **Step 4: Implement the experiment-local executor and schema-v2 contract**
+
+Create only `scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py`. Implement the exact callable and CLI interfaces; accept only the v2 manifest whose machine-readable `execution_contract` fixes:
+
+```text
+setup
+success.uninterrupted_control
+success.resumed_child
+rank_failure
+interruption
+verification
+```
+
+Validate both expected SHA-256 bindings, packet binding, commit/cwd/targets, and contract before creating the marker. Claim `attempt_marker_path` atomically with `O_CREAT|O_EXCL`; an existing marker is terminal and executes nothing. After ownership, run each frozen argv at most once via `launch`, sample via the injected process/GPU samplers, stop on the first failure with retry count zero, and write the signed outer receipt to an absent `terminal_receipt_path`. The outer receipt binds all frozen identities and command observations, resource maxima and stop reason, and validates/binds the inner verifier receipt if verification completed. Do not duplicate probe comparison logic or add general orchestration.
 
 Run:
 
 ```bash
-cd /data/CoordExp/.worktrees/CoordExp-swift
-conda run -n ms pytest -q tests/training/test_exact_resume.py tests/training/test_pipeline_exact_resume.py -k 'publish or contribution or rank or interrupt or atomic or alias or event'
+conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_packet_executor.py
+conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_probe.py tests/training/test_exact_resume.py
 ```
 
-Expected: cited nodes cover one complete unique contribution per rank, missing/duplicate/malformed/corrupt contributions, one-rank failure convergence without hang, and interruption boundaries. A zero-test selection or missing scenario returns to Task 2 for a test-first re-plan.
+Expected: all pass without packet, cache, GPU, or model execution.
 
-- [ ] **Step 2: Freeze the command manifest without launching**
+- [ ] **Step 5: Re-freeze and pass pre-cost review**
 
-Inspect the current probe CLI and use `apply_patch` to create strict JSON whose fields are `schema`, `implementation_commit`, `cwd`, `world_size`, `arms`, `setup_command`, `commands`, `config_files`, `artifact_root`, `comparison_policy`, `verification_command`, and `authorization_status`. Record the exact observed commit, absolute paths, and argv tokens; `schema` is exactly `coordexp-swift-reconcile-resume-probe-command-manifest-v1`, `cwd` is exactly `/data/CoordExp/.worktrees/CoordExp-swift`, `world_size` is exactly `2`, `arms` is exactly `success, rank_failure, interruption` in that order, and `authorization_status` is exactly `not_requested`. `setup_command` is the single model-free `prepare` argv and `verification_command` is the single durable-artifact `verify` argv; both are authorized and executed at most once with the arm commands. `commands["success"]` and `config_files["success"]` each have exactly `uninterrupted_control` and `resumed_child` branch keys. The `resumed_child` command owns one interrupted step-1 parent and one-step resumed child launch; `config_files["success"]["resumed_child"]` names both resume-compatible generated files as `setup_parent` and `resumed_child`. Its parent config still declares two steps, but the controller MUST authenticate step 1 through production admission, terminate and reap the dedicated process group before step 2, re-authenticate unchanged one-step parent progress, and only then launch the child. The failure-shaped commands are single representative model-free argv entries and their config-file values are `null`; exhaustive injected failure and interruption-boundary coverage remains the already-executed Step-1 test gate rather than extra launch commands. Each success branch resolves exactly one corresponding next forward and at most one applied optimizer update after its boundary, each failure-shaped arm resolves zero model forwards and zero applied optimizer updates, and the artifact root is an absent absolute path with separate arm descendants. `comparison_policy` names the exact fields and comparison rules for input/pack identity, pre-forward state, objective/loss fields, and resulting trainable parameters. Do not execute any command in the manifest during this step.
+Create a successor packet and schema-v2 manifest bound to the post-repair commit, new absent target/marker/outer-receipt paths, exact configs/argv, and the same `world_size=2`, at-most-two-GPU, three-arm comparison and quantitative bounds. Do not edit attempt 3. Validate the v2 manifest with the executor tests and read-only hash/path/GPU/disk preflight. Obtain one independent pre-cost review of the exact successor hashes and resolve every P0/P1.
 
-Because `prepare` creates the config files and cache only after fresh authorization, compute the three expected generated config-file SHA256 values read-only from the deterministic renderer, the exact absolute base-config path, and the absent artifact root. Record those expected values in `config_files`; after `prepare`, execution MUST compare each generated file against the pre-authorized value before any success launch. A mismatch stops without retry.
+Expected: if and only if the exact frozen successor is `READY`, the lead-only executor may proceed under the current goal-level authority without another user prompt. Any implementation, manifest, packet, config, command, target, or bound mutation invalidates `READY` and returns to re-freeze/re-review; it does not create a repeated prompt.
 
-Validate the authored file without launching:
+- [ ] **Step 6: Execute exactly once through the packet executor**
 
-```bash
-conda run -n ms python - <<'PY'
-import json
-from pathlib import Path
+Invoke only the frozen executor CLI from Step 5. The executor claims the `O_EXCL` marker and runs the exact six commands in order, at most once each. Immediately after setup it must validate the prepare receipt, implementation commit, private-cache receipt, and all generated config hashes before the first model command. It stops without retry on drift, occupied paths, insufficient headroom, timeout/hang/OOM, nonzero exit, missing measurements, or any declared bound failure.
 
-path = Path("openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-command-manifest.json")
-payload = json.loads(path.read_text(encoding="utf-8"))
-assert set(payload) == {
-    "schema", "implementation_commit", "cwd", "world_size", "arms",
-    "setup_command", "commands", "config_files", "artifact_root",
-    "comparison_policy", "verification_command", "authorization_status",
-}
-assert payload["schema"] == "coordexp-swift-reconcile-resume-probe-command-manifest-v1"
-assert len(payload["implementation_commit"]) == 40
-assert all(char in "0123456789abcdef" for char in payload["implementation_commit"])
-assert payload["cwd"] == "/data/CoordExp/.worktrees/CoordExp-swift"
-assert payload["world_size"] == 2
-assert payload["arms"] == ["success", "rank_failure", "interruption"]
-assert set(payload["commands"]) == set(payload["arms"])
-assert set(payload["config_files"]) == set(payload["arms"])
-branches = {"uninterrupted_control", "resumed_child"}
-assert set(payload["commands"]["success"]) == branches
-assert set(payload["config_files"]["success"]) == branches
-assert isinstance(payload["setup_command"], list) and payload["setup_command"]
-assert isinstance(payload["verification_command"], list) and payload["verification_command"]
-assert all(isinstance(payload["commands"]["success"][branch], list) and payload["commands"]["success"][branch] for branch in branches)
-assert Path(payload["config_files"]["success"]["uninterrupted_control"]["path"]).is_absolute()
-assert set(payload["config_files"]["success"]["resumed_child"]) == {"setup_parent", "resumed_child"}
-assert all(Path(item["path"]).is_absolute() for item in payload["config_files"]["success"]["resumed_child"].values())
-assert all(len(item["expected_sha256"]) == 64 for item in (
-    payload["config_files"]["success"]["uninterrupted_control"],
-    *payload["config_files"]["success"]["resumed_child"].values(),
-))
-assert all(isinstance(payload["commands"][arm], list) and payload["commands"][arm] for arm in ("rank_failure", "interruption"))
-assert payload["config_files"]["rank_failure"] is None
-assert payload["config_files"]["interruption"] is None
-assert Path(payload["artifact_root"]).is_absolute()
-assert not Path(payload["artifact_root"]).exists()
-assert isinstance(payload["comparison_policy"], dict) and payload["comparison_policy"]
-assert payload["authorization_status"] == "not_requested"
-PY
-```
+Expected: the signed outer receipt accounts for every attempted command and resource observation and binds the inner verified receipt when reached. The inner evidence compares the required boundary/first-update state and proves failure/interruption publication semantics. Exit zero or an inner receipt without the outer receipt is insufficient.
 
-Expected: exit code 0 and no output.
+- [ ] **Step 7: Verify durable artifacts and commit bounded evidence**
 
-- [ ] **Step 3: Prepare the quantitative launch packet**
-
-Use `apply_patch` to record in `wave-3-launch-packet.md`: manifest SHA256, implementation commit, config SHA256 values, artifact-root absence proof, exact GPU identities/occupancy, required free disk, model-forward and collective ceilings per rank and branch/arm derived from the resolved configs, per-branch/arm and total wall-time limits, per-rank CPU RSS/GPU-memory high-water limits, new-artifact-byte limit across both success branches and all arms, the declared exact comparison policy, stop conditions, and no-retry rule.
-
-Run the read-only preflight:
-
-```bash
-cd /data/CoordExp/.worktrees/CoordExp-swift
-git status --short
-git rev-parse HEAD
-sha256sum openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-command-manifest.json
-nvidia-smi --query-gpu=index,uuid,memory.total,memory.used --format=csv,noheader
-df -B1 /data/CoordExp/.worktrees/CoordExp-swift
-```
-
-Expected: commit and manifest bindings match, the artifact root remains absent, and numeric headroom satisfies every declared ceiling. Any drift, occupied target, or insufficient headroom stops before authorization.
-
-- [ ] **Step 4: Pass pre-cost qualification and obtain fresh authorization**
-
-Obtain the single independent pre-cost/distributed-qualification audit against the frozen commands, bounds, comparison policy, and model-free control-plane evidence; resolve every P0/P1 finding. Then present the unchanged packet and request authorization immediately before execution. Expected: explicit approval bound to the recorded commit, manifest digest, configs, artifact root, exactly two GPUs, `world_size=2`, the success pair plus two failure-shaped arms, exactly one next forward and at most one applied optimizer update per success branch, and the recorded failure-arm bounds. Earlier approvals and this plan do not satisfy this step.
-
-- [ ] **Step 5: Execute exactly the authorized argv arrays once**
-
-Run each argv array exactly as frozen, through the `ms` environment, in the order `setup_command`, `uninterrupted_control`, `resumed_child`, `rank_failure`, `interruption`, `verification_command`. Immediately after `setup_command`, verify the prepare receipt signature, implementation commit, private cache receipt, and all three generated config SHA256 values against the packet before any model launch. Stop without retry if the commit/command/config changes, the target becomes occupied, a timeout/hang/OOM occurs, or any declared resource/forward/collective/artifact bound is exceeded.
-
-Expected: `wave-3-terminal-receipt.json` binds every rank and branch, command/commit/config/artifact identity, terminal status, resource maxima, and stop outcome. Before the corresponding next forward it compares input/pack identity and trainable/optimizer/scheduler/scaler/RNG/cursor state; after both branches' first corresponding optimizer update it compares objective/loss fields and resulting trainable parameters under the frozen policy. It also proves aliases/events appear only after the authenticated exact-state manifest; failure and interruption leave no resumable alias/event, and any committed inference payload remains inference-only.
-
-- [ ] **Step 6: Verify durable artifacts, not console status**
-
-Run the frozen verification command from the manifest against the final artifact tree. Expected: every required rank and success branch is accounted for, all matched state/sequence/objective/result comparisons are target-bound, the failure-shaped artifacts satisfy publication semantics, and the claim is limited to same-world-size optimizer-step-boundary continuation. This is a focused executable gate, not another independent audit. Exit zero, admission, or payload presence alone is insufficient.
-
-- [ ] **Step 7: Commit the immutable distributed qualification packet**
-
-```bash
-git add openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-command-manifest.json openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-launch-packet.md openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-terminal-receipt.json openspec/changes/reconcile-coordexp-swift-training-contracts/tasks.md
-git diff --cached --check
-git diff --cached
-git commit -m "test(training): qualify atomic exact-state publication"
-```
-
-Expected: the commit contains only the authorization/command/terminal evidence, matrix updates, and completed task marks; large probe payloads stay in their bound artifact root.
+Use the outer receipt and bound inner verifier receipt, not console status, to prove exact six-command order, every required rank/branch, target identity, comparison results, and the same-world-size optimizer-step claim boundary. Stage only the successor implementation/tests and change-local successor evidence with explicit paths; inspect the staged diff before committing. Large probe payloads remain in their bound artifact root.
 
 ### Task 5: Qualify Cache Admission and Non-secret Provenance
 
@@ -596,9 +572,9 @@ Expected: exit code 0 with exact pass/fail/skip counts recorded in `final-verifi
 
 - [ ] **Step 2: Re-run the target-bound matched-success and one failure/interruption verifier**
 
-Run only the already authorized, frozen verifier argv arrays against the final artifact tree; do not relaunch training without a new authorization packet.
+Run only the already-reviewed frozen verifier argv against the final artifact tree. Do not relaunch training if the implementation or execution inputs changed; re-freeze the exact successor and obtain a new pre-cost `READY`, after which the lead-only executor proceeds under the current goal authority without another prompt.
 
-Expected: next input/pack identity, declared pre-forward state, first-update objective/loss fields and resulting trainable parameters, manifest/event/selector identities, rank/branch inventory, and historical-reader classification remain bound to the final commit and durable artifacts. If implementation changed after Task 4, the old probe is stale and this step stops for a new packet and fresh authorization for both success branches.
+Expected: next input/pack identity, declared pre-forward state, first-update objective/loss fields and resulting trainable parameters, manifest/event/selector identities, rank/branch inventory, and historical-reader classification remain bound to the final commit and durable artifacts. If implementation changed after Task 4, the old probe is stale and this step stops for re-freeze/re-review of both success branches; no repeated user authorization prompt is required after `READY`.
 
 - [ ] **Step 3: Run strict OpenSpec and residue gates**
 
