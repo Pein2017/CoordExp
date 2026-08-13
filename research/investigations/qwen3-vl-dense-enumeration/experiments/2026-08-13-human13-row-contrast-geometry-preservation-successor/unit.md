@@ -5,17 +5,25 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: authorized_in_progress
+implementation_status: implemented_and_executed
 unit_id: 2026-08-13-human13-row-contrast-geometry-preservation-successor
 topic: qwen3-vl-dense-enumeration
-status: authorized_in_progress
-evidence_status: design_frozen_execution_pending
+status: complete_bounded_same_panel_hold
+evidence_status: original_prompt_clean_greedy_matrix_complete
 updated: 2026-08-13
 ---
 
 # Human-13 Row-Contrast and Geometry-Preservation Successor
 
 ## Decision
+
+The authorized bounded execution is complete. The outcome and immutable
+evidence are in [results.md](results.md). Neither R1 nor R2 is promoted: at
+exposure two both reach `H+9/G-6/M+7`, but duplicate burden is `39--40` and R2
+never activates its projection because both raw watch dot products are
+positive. The rectangle gate reduces malformed rows to three, while static
+complete-row contrast does not control the image-14038 free-running book
+attractor. No additional dose or checkpoint continuation is authorized.
 
 Run one bounded successor to the completed
 [Human-13 K-union-to-greedy screen](../2026-08-12-human13-k-union-to-greedy-overfit-screen/results.md).

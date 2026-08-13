@@ -21,11 +21,11 @@
 
 ## 5. Execute the bounded two-arm benchmark
 
-- [ ] 5.1 Launch fresh-Source R1 and R2 world-size-one jobs on two GPUs to cumulative exposures one and two, preserving independent optimizer and artifact roots.
-- [ ] 5.2 Evaluate R1@1, R1@2, R2@1, and R2@2 under the exact HF clean-greedy surface using up to four GPUs, then run the canonical Human-13 analyzer.
+- [x] 5.1 Launch fresh-Source R1 and R2 world-size-one jobs on two GPUs to cumulative exposures one and two, preserving independent optimizer and artifact roots.
+- [x] 5.2 Evaluate R1@1, R1@2, R2@1, and R2@2 under the exact HF clean-greedy surface using up to four GPUs, then run the canonical Human-13 analyzer.
 
 ## 6. Close the research record
 
-- [ ] 6.1 Publish immutable artifact hashes and the full per-image/pooled Pareto table against historical A4@2, including projection and performance receipts.
-- [ ] 6.2 Update the owning research unit/results with supported, ruled-out, unresolved, claim-boundary, and next-decision statements; do not extend dose or scope.
-- [ ] 6.3 Run final targeted verification, strict OpenSpec validation, standards review, intent-contract review, and project-continuity check before marking the goal complete.
+- [x] 6.1 Publish immutable artifact hashes and the full per-image/pooled Pareto table against historical A4@2, including projection and performance receipts.
+- [x] 6.2 Update the owning research unit/results with supported, ruled-out, unresolved, claim-boundary, and next-decision statements; do not extend dose or scope.
+- [x] 6.3 Run final targeted verification, strict OpenSpec validation, standards review, intent-contract review, and project-continuity check before marking the goal complete.
