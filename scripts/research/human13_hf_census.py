@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass, replace
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import torch
 
@@ -253,6 +254,21 @@ class Human13HFCensusScorer:
             logits_position_ids=causal_positions,
         )
 
+    def exact_history_context(
+        self, encoded_example: Any
+    ) -> tuple[Any, Mapping[str, Any]]:
+        """Return verified native multimodal inputs for a literal continuation."""
+
+        _image_id, request, input_ids = self._resolve_request(encoded_example)
+        history = self._session.prepare_exact_history(request)
+        prompt_count = len(request.expected_executed_prompt_token_ids)
+        history = self._session.extend_exact_history(history, input_ids[prompt_count:])
+        state = self._session._validated_exact_history(history)  # noqa: SLF001
+        native_inputs = state.context.native_inputs
+        if not isinstance(native_inputs, Mapping):
+            raise ValueError("HF exact history lost its multimodal inputs")
+        return self._session, dict(native_inputs)
+
 
 def _load_source_inputs(repo_root: str | Path) -> tuple[Any, dict[int, DecodeRequest]]:
     """Build the frozen processor-only frontend and canonical request map."""
@@ -320,8 +336,67 @@ def open_source_hf_census_scorer(
         )
 
 
+@contextmanager
+def open_checkpoint_hf_census_scorer(
+    *,
+    repo_root: str | Path,
+    checkpoint_path: str | Path,
+    session_context_factory: Callable[[Any], Any] | None = None,
+) -> Iterator[Human13HFCensusScorer]:
+    """Open exact HF scoring on a private proposal or accepted checkpoint.
+
+    The frozen Source frontend still owns base model, panel, prompt, tokenizer,
+    fp32 dtype and SDPA. Only adapter and special-token payload paths are
+    rebound to the caller's already materialized transaction checkpoint.
+    """
+
+    from src.inference.backend import open_backend_session
+
+    checkpoint = Path(checkpoint_path).expanduser()
+    if checkpoint.is_symlink() or not checkpoint.is_dir():
+        raise ValueError("proposal checkpoint must be a regular directory")
+    checkpoint = checkpoint.resolve(strict=True)
+    adapter_path = checkpoint / "adapter"
+    delta_path = checkpoint / "special_token_embeddings"
+    if (
+        adapter_path.is_symlink()
+        or delta_path.is_symlink()
+        or not adapter_path.is_dir()
+        or not delta_path.is_dir()
+    ):
+        raise ValueError("proposal checkpoint lacks adapter or special-token payload")
+    launch, requests_by_image = _load_source_inputs(repo_root)
+    adapter = dict(getattr(launch, "adapter", {}) or {})
+    embedding_delta = dict(getattr(launch, "embedding_delta", {}) or {})
+    adapter["path"] = str(adapter_path)
+    embedding_delta["path"] = str(delta_path)
+    bound_launch: Any
+    if is_dataclass(launch) and not isinstance(launch, type):
+        bound_launch = replace(
+            cast(Any, launch),
+            adapter=adapter,
+            embedding_delta=embedding_delta,
+        )
+    else:
+        bound_launch = SimpleNamespace(
+            **{
+                **vars(launch),
+                "adapter": adapter,
+                "embedding_delta": embedding_delta,
+            }
+        )
+    factory: Callable[[Any], Any] = session_context_factory or open_backend_session
+    with factory(bound_launch) as session:
+        yield Human13HFCensusScorer(
+            session=session,
+            requests_by_image=requests_by_image,
+            launch=bound_launch,
+        )
+
+
 __all__ = [
     "HFCausalLogits",
     "Human13HFCensusScorer",
+    "open_checkpoint_hf_census_scorer",
     "open_source_hf_census_scorer",
 ]

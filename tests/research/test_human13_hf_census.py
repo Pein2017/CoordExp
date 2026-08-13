@@ -409,3 +409,59 @@ def test_source_context_opener_owns_session_cleanup(
         assert scorer.attention_implementation == "sdpa"
 
     assert close_calls == 1
+
+
+def test_checkpoint_context_opener_rebinds_only_adapter_payload(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    from scripts.research import human13_hf_census as census
+
+    checkpoint = tmp_path / "proposal"
+    (checkpoint / "adapter").mkdir(parents=True)
+    (checkpoint / "special_token_embeddings").mkdir()
+    launch = _launch()
+    launch_values = dict(vars(launch))
+    launch_values.update(
+        adapter={"path": "/source/adapter", "dtype": "fp32"},
+        embedding_delta={"path": "/source/delta"},
+    )
+    launch = SimpleNamespace(**launch_values)
+    session = _session()
+    observed_launches: list[Any] = []
+
+    @contextmanager
+    def fake_session_context(bound_launch: Any) -> Any:
+        observed_launches.append(bound_launch)
+        yield session
+
+    monkeypatch.setattr(
+        census,
+        "_load_source_inputs",
+        lambda _: (launch, {1: _request(tmp_path)}),
+    )
+
+    with census.open_checkpoint_hf_census_scorer(
+        repo_root="/repo",
+        checkpoint_path=checkpoint,
+        session_context_factory=fake_session_context,
+    ) as scorer:
+        assert scorer.model_dtype == "torch.float32"
+
+    assert observed_launches[0].model_path == launch.model_path
+    assert observed_launches[0].backend_options == launch.backend_options
+    assert observed_launches[0].adapter["path"] == str(checkpoint / "adapter")
+    assert observed_launches[0].embedding_delta["path"] == str(
+        checkpoint / "special_token_embeddings"
+    )
+
+
+def test_checkpoint_context_rejects_missing_private_payload(tmp_path: Any) -> None:
+    from scripts.research.human13_hf_census import open_checkpoint_hf_census_scorer
+
+    with pytest.raises(ValueError, match="proposal checkpoint"):
+        with open_checkpoint_hf_census_scorer(
+            repo_root=tmp_path,
+            checkpoint_path=tmp_path / "missing",
+        ):
+            pass
