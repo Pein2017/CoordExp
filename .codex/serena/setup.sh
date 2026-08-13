@@ -3,9 +3,7 @@ set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 readonly serena_bin="/root/.local/bin/serena"
-readonly bridge_setup="${repo_root}/.codex/serena/setup_shared_runtime.sh"
 readonly language_setup="${repo_root}/.codex/serena/setup_language_servers.sh"
-readonly wrapper="${repo_root}/.codex/serena/serena_worktree_mcp.py"
 
 check_official_serena() {
     local version
@@ -23,10 +21,8 @@ check_official_serena() {
 
 check_all() {
     check_official_serena
-    "${bridge_setup}" --check
     "${language_setup}" --check
-    /root/miniconda3/envs/ms/bin/python -m py_compile "${wrapper}"
-    printf 'official Serena shared runtime is ready\n'
+    printf 'official Serena stdio runtime is ready\n'
 }
 
 if [[ "${1:-}" == "--check" ]]; then
@@ -35,6 +31,5 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 
 check_official_serena
-"${bridge_setup}"
 "${language_setup}"
 check_all

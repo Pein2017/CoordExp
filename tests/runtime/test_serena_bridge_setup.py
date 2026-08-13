@@ -67,8 +67,8 @@ def test_full_setup_checks_official_serena_and_all_runtime_components() -> None:
 
     assert result.returncode == 0, result.stderr
     assert "Serena 1.7.0" in result.stdout
-    assert "mcp-proxy 0.12.0" in result.stdout
+    assert "mcp-proxy" not in result.stdout
     assert "pyright 1.1.403" in result.stdout
     assert "typescript-language-server 5.1.3" in result.stdout
     assert "bash-language-server 5.6.0" in result.stdout
-    assert "official Serena shared runtime is ready" in result.stdout
+    assert "official Serena stdio runtime is ready" in result.stdout
