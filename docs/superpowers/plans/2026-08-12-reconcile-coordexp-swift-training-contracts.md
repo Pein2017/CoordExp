@@ -329,7 +329,7 @@ inference-runtime implementation change is included. Rollback removes only the
 new tests/evidence and restores affected matrix rows to `gap`; it does not
 re-introduce the invalid exact-without-path clause.
 
-### Task 4: Close the Attempt-4 GPU-Evidence Stop and Qualify Attempt 6
+### Task 4: Close the Attempt-4 GPU-Evidence Stop and Qualify Attempt 7
 
 **Files:**
 - Read only: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-command-manifest.json`
@@ -339,11 +339,16 @@ re-introduce the invalid exact-without-path clause.
   terminal receipt, and produced artifact.
 - Read only: every `wave-3-attempt-5-*` manifest, packet, and signed review;
   Attempt 5 executed nothing and produced no marker, receipt, or artifact.
+- Read only after this evidence commit: the exact immutable Attempt-6 manifest,
+  packet, and signed `READY` review; Attempt 6 executed nothing and produced no
+  marker, command, target, cache, model, `torchrun`, GPU, or output artifact.
 - Modify: `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`
 - Test: `tests/training/test_reconcile_exact_resume_probe.py`
 - Modify: `scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py`
 - Test: `tests/training/test_reconcile_exact_resume_packet_executor.py`
-- Create after the TDD repairs: successor schema-v2 command manifest, packet, pre-cost review, attempt marker, and outer terminal receipt under the change-local receipts/artifact roots.
+- Create after this planning/evidence commit: new Attempt-7 schema-v2 command
+  manifest, packet, independent pre-cost review, attempt marker, and outer
+  terminal receipt under new change-local receipt and `-r7` artifact roots.
 - Modify after executed evidence: `openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md` and `tasks.md`.
 
 **Attempt-3 disposition:** implementation commit `037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest SHA-256 `c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`, and packet SHA-256 `70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02` are frozen evidence. Pre-cost review is `HOLD` on two P1s: the external observation-to-signal controller has a parent step-2 TOCTOU, and direct execution has no outer attempt receipt. No attempt-3 command, GPU/model work, cache preparation, or artifact-target mutation executed. Do not edit the manifest or packet.
@@ -385,6 +390,24 @@ implementation defect and it is fixed test-first in this task; P0-1 is closed
 only by a successor freeze. Do not edit, re-sign, delete, or reuse the
 Attempt-5 manifest, packet, or review: their exact hashes and the signed `HOLD`
 are the durable record of a pre-cost stop. Preserve every attempt 1-5 file.
+
+**Attempt-6 disposition:** implementation commit
+`1fbd9d68be4cf5dee1be1b09886f7c8a7b84205e`, manifest SHA-256
+`4dff3f0bc81ca0e55cf614f3ef676430bddb1a236f24b36d97e948d5eafbe1ae`,
+packet SHA-256
+`28e79a1d850a2308980e172089b4f03823703be0c004bb25e373527818afb0b2`,
+and independent `READY` review SHA-256
+`8b23ae8838ad453ea5fb430f17e244759c67f382e67473810e2a0f680dd76a43`
+with payload digest
+`1f8705c595bc5771cb34e791fb6859483dd8ddbc1a344c169d61f8567d06c78f`
+are frozen evidence. The review passed for those exact identities. Before the
+marker, any command, the `-r6` target, cache preparation, model load,
+`torchrun`, GPU allocation, or output mutation, concurrent tests-only commit
+`27abc8087e6c8591257463b19c8a83a63fd554e1` changed tracked HEAD and therefore
+invalidated Attempt 6's exact-commit and tracked-clean binding. Attempt 6
+executed nothing. Preserve its three files byte-for-byte; do not launch, edit,
+re-sign, delete, or reuse them. Attempt 7 is an append-only successor, not a
+repair of Attempt 6.
 
 **Interfaces:**
 - Held parent: only `success-resumed` routes the parent through a probe-local synchronous entry that wraps the real pipeline checkpoint handler, calls the real handler first, and blocks after committed step 1. Control and child continue to use `-m src.train`. No `src/` edit or compatibility weakening is allowed.
@@ -457,7 +480,8 @@ are the durable record of a pre-cost stop. Preserve every attempt 1-5 file.
   `src/config/resolve.py:resolve_effective_batch_runtime` as
   `resolved_grad_accum_steps = effective_batch_size // world_size`, taking
   `effective_batch_size` from the loaded config and `world_size` from the
-  caller. Attempt 6 binds three separate authorities. (1) Config identity: the
+  caller. Attempt 7 retains and re-freezes the same three separate authorities.
+  (1) Config identity: the
   manifest and packet bind the absolute base-config path
   `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml`
   with SHA-256
@@ -518,7 +542,7 @@ conda run -n ms pytest -q \
 ```
 
 Expected GREEN: the already implemented route assertions and compatibility node
-pass. They remain a prerequisite for Attempt 6: the real handler returns before
+pass. They remain a prerequisite for Attempt 7: the real handler returns before
 the step-1 hold, handler failure propagates without holding, and the trainer
 cannot enter step 2 while held.
 
@@ -730,15 +754,23 @@ the existing
 probe and exact-resume files pass without packet, cache, GPU, or model
 execution.
 
-- [ ] **Step 5: Freeze Attempt 6 and pass pre-cost review**
+- [ ] **Step 5: Freeze Attempt 7 and pass pre-cost review**
 
-Attempt 6 is authorized only after the Step-4 resumed-parent run-state
-correction is committed and reviewed. Create the Attempt-6 packet and schema-v2
-manifest bound to the post-repair commit, a new absent `-r6` artifact root with
-its own absent marker/outer-receipt/cache paths, exact configs/argv, the
-exact immutable review-receipt path, retained physical-index-to-UUID map, exact
-per-command CPU mode, matching bound, and required-rank arrays, bounded
-artifact-summary limits, and the same `world_size=2`, at-most-two-GPU,
+Attempt 7 is authorized only after this planning/evidence commit exists and
+the tracked worktree is clean. Record the exact then-current outputs of
+`git rev-parse HEAD` and `git rev-parse HEAD^{tree}`; both become frozen launch
+identities, and any subsequent tracked change invalidates the packet. Create
+only the new Attempt-7 packet and schema-v2 manifest at
+`receipts/wave-3-attempt-7-launch-packet.md` and
+`receipts/wave-3-attempt-7-command-manifest.json`, bound to the new absent
+`outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7` target,
+its private cache, exact configs/argv, new absent review path
+`receipts/wave-3-attempt-7-pre-cost-review.json`, new absent marker path
+`receipts/wave-3-attempt-7-attempt-marker.json`, and new absent outer path
+`receipts/wave-3-attempt-7-outer-terminal-receipt.json`. Bind the exact clean
+HEAD/tree, manifest and packet bytes/SHA-256, retained physical-index-to-UUID
+map, exact per-command CPU mode, matching bound and required-rank arrays,
+bounded artifact-summary limits, and the same `world_size=2`, at-most-two-GPU,
 three-arm comparison and quantitative bounds. Success commands declare CPU
 mode `per_rank`, CPU ranks `[0, 1]`,
 `gpu_measurement_source: torch_allocator_high_water`, artifact GPU ranks
@@ -746,12 +778,13 @@ mode `per_rank`, CPU ranks `[0, 1]`,
 parent/child row policies. The other four commands declare
 `command_tree_aggregate`, empty required-rank arrays, and the exact
 `max_cpu_rss_command_tree_bytes` bound. The two arm receipt schemas are v2. Do
-not edit attempts 1-5 or reuse the Attempt-4 or Attempt-5 target. Before
-freezing, deterministically render all three role configs against the `-r6`
-artifact root and compare the rendered bytes and SHA-256 against the manifest
-`config_files` entries; the rendered configs embed `run.artifact_root` and the
-child's `resume.checkpoint_dir`, so no role-config digest may be copied forward
-from Attempt 4 or Attempt 5. In the same pre-freeze pass, bind the
+not edit attempts 1-6 or reuse any Attempt-6 `-r6` target, packet, manifest,
+review, digest, or launch authority. Before freezing, deterministically render
+all three role configs against the `-r7` artifact root and compare their exact
+bytes and SHA-256 against the new manifest `config_files` entries; the rendered
+configs embed `run.artifact_root` and the child's `resume.checkpoint_dir`, so no
+role-config digest or resolved fingerprint may be copied forward from any
+earlier attempt. In the same pre-freeze pass, bind the
 accumulation invariant through its three separate authorities. Load each
 rendered role config through production `load_train_config` and require
 `effective_batch_size` to resolve to `2`, recording each role's config bytes
@@ -766,11 +799,11 @@ path
 `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml`
 with SHA-256
 `44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f`
-plus the resolved fingerprint and its digest in the manifest and packet. Validate the v2
-manifest with the executor tests and
+plus the newly rendered resolved fingerprint and its digest in the manifest
+and packet. Validate the v2 manifest with the executor tests and
 read-only hash/path/GPU/disk preflight. Obtain one independent signed
 `coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` receipt at the bound
-path and resolve every P0/P1, including both Attempt-5 P0s. The signed review
+Attempt-7 review path and resolve every P0/P1. The signed review
 MUST independently verify each accumulation authority against its own owner:
 the absolute base-config path/SHA-256 and role config bytes/digest with
 `load_train_config` resolving `effective_batch_size` to `2`, the frozen
@@ -780,16 +813,33 @@ argv/manifest binding of `world_size = 2`, and
 the manifest hash; the manifest does not bind a review hash.
 
 Expected: if and only if that external signed review is valid, independent,
-exactly bound, and `READY`, the lead-only executor may proceed under the
+exactly bound to the new clean HEAD/tree/manifest/packet/config/target
+identities, and `READY`, the lead-only executor may proceed under the
 current goal-level authority without another user prompt. Manifest
 self-`READY` never authorizes. Any implementation, manifest, packet, review
-path, config, command, target, map, or bound mutation invalidates `READY` and
+path, config, command, target, map, tree, or bound mutation invalidates `READY` and
 returns to re-freeze/re-review; it does not create a repeated prompt.
 
-- [ ] **Step 6: Execute exactly once through the packet executor**
+- [ ] **Step 6: Execute Attempt 7 exactly once through the packet executor**
 
-Invoke only the frozen Attempt-6 executor CLI from Step 5. Before marker acquisition it
-validates the exact signed review and physical-index-to-UUID map. The executor
+After Step 5 records the exact hashes, invoke only this frozen Attempt-7 CLI,
+substituting the two recorded full SHA-256 values without changing any other
+argument:
+
+```bash
+cd /data/CoordExp/.worktrees/CoordExp-swift
+conda run -n ms python scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py execute \
+  --manifest openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-command-manifest.json \
+  --packet openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-launch-packet.md \
+  --manifest-sha256 <ATTEMPT7_MANIFEST_SHA256> \
+  --packet-sha256 <ATTEMPT7_PACKET_SHA256> \
+  --attempt-marker openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-attempt-marker.json \
+  --terminal-receipt openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-outer-terminal-receipt.json
+```
+
+Before marker acquisition it validates the exact clean HEAD/tree, signed review,
+packet/manifest/config identities, target absence, and physical-index-to-UUID
+map. The executor
 then claims the `O_EXCL` marker and runs the exact six commands in order, at
 most once each, owning one returned Popen-like process and process group at a
 time. Immediately after setup it must validate the prepare receipt,
@@ -811,7 +861,8 @@ bad receipt/run/log binding, state, topology, step, field, or numeric domain,
 or any per-rank or command-tree aggregate bound failure. Optional NVML process
 rows never satisfy missing artifacts.
 
-Expected: before the signed outer receipt is finalized, every launched process
+Expected: the command is launched only by the lead executor, once, with no
+automatic retry. Before the signed outer receipt is finalized, every launched process
 group has been TERM/KILL/reaped and its absence checked by PID/starttime. The
 receipt accounts for every attempted command, launcher/runtime identity,
 each CPU mode and bound, optional NVML observations, artifact source paths and
@@ -823,9 +874,9 @@ reached. The inner evidence compares the required boundary/first-update state
 and exactly verifies the schema-v2 rank-failure/interruption semantic fields.
 Exit zero or an inner receipt without the outer receipt is insufficient.
 
-- [ ] **Step 7: Verify durable Attempt-6 artifacts and commit bounded evidence**
+- [ ] **Step 7: Verify durable Attempt-7 artifacts and commit bounded evidence**
 
-Use the Attempt-6 outer receipt and bound inner verifier receipt, not console
+Use the Attempt-7 outer receipt and bound inner verifier receipt, not console
 status, to prove exact six-command order, valid external review authorization, every
 required success CPU and artifact-GPU rank and every semantic arm branch, an owned aggregate
 sample and bounded concurrent command-tree RSS for each model-free command,
@@ -836,11 +887,12 @@ derived `resolved_grad_accum_steps: 1` that together make the recorded
 consumed-pack progress exact,
 launcher/runtime and target identity, exact arm schema/rank/error/boundary fields, bounded artifact-tree
 summaries, process-group cleanup, comparison results, and the same-world-size
-optimizer-step claim boundary. Stage only the successor implementation/tests
-and change-local Attempt-6 evidence with explicit paths, leaving every
-attempt 1-5 receipt untouched; inspect the staged
-diff before committing. Large probe payloads remain in their bound artifact
-root.
+optimizer-step claim boundary. The outer receipt MUST bind the exact clean
+HEAD/tree and Attempt-7 manifest/packet/review/config/target identities recorded
+in Step 5. Stage only change-local Attempt-7 evidence with explicit paths,
+leaving every attempt 1-6 receipt byte-for-byte untouched; inspect the staged
+diff before committing. Large probe payloads remain in their bound `-r7`
+artifact root.
 
 ### Task 5: Qualify Cache Admission and Non-secret Provenance
 
