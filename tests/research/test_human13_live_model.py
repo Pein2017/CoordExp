@@ -38,6 +38,24 @@ def test_successor_r1_r2_reuse_the_exact_low_dose_live_surface() -> None:
         live.validate_human13_live_model_plan(plan)
 
 
+def test_on_policy_arms_reuse_surface_with_eight_attempt_milestones() -> None:
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
+    for arm_id in ("O-Full-Safe", "O-First-Safe"):
+        on_policy = replace(
+            base,
+            unit_id=live.ON_POLICY_UNIT_ID,
+            arm_id=arm_id,
+            milestones=live.ON_POLICY_MILESTONES,
+        )
+        plan = live.build_human13_live_model_plan(on_policy)
+        assert plan.unit_id == live.ON_POLICY_UNIT_ID
+        assert plan.arm_id == arm_id
+        assert plan.milestones == tuple(range(9))
+        live.validate_human13_live_model_plan(plan)
+
+
 def _validation(plan: live.Human13LiveModelPlan) -> live.Human13PlanValidationReceipt:
     return live.Human13PlanValidationReceipt(
         schema_version="human13_live_model_validation.v1",

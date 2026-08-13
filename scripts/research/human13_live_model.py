@@ -21,6 +21,7 @@ LIVE_PLAN_SCHEMA_VERSION = "human13_live_model_plan.v1"
 VALIDATION_SCHEMA_VERSION = "human13_live_model_validation.v1"
 UNIT_ID = "2026-08-12-human13-k-union-to-greedy-overfit-screen"
 SUCCESSOR_UNIT_ID = "2026-08-13-human13-row-contrast-geometry-preservation-successor"
+ON_POLICY_UNIT_ID = "2026-08-13-human13-on-policy-first-bottleneck-successor"
 SOURCE_CHECKPOINT_PATH = (
     "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/"
     "2026-08-05-closeout/artifacts/training/four-coordinate-xy/"
@@ -76,6 +77,7 @@ HUMAN13_IMAGE_IDS = (
 )
 MILESTONES = (0, 1, 2, 4, 8, 16)
 SUCCESSOR_MILESTONES = (0, 1, 2)
+ON_POLICY_MILESTONES = tuple(range(9))
 CHECKPOINT_STEPS = (1, 2, 4, 8, 16)
 ZERO_MODEL_ACTIONS = {
     "model_imports": 0,
@@ -102,6 +104,8 @@ _UPDATED_ARM_IDS = frozenset(
         "A8-prime",
         "R1",
         "R2",
+        "O-Full-Safe",
+        "O-First-Safe",
     }
 )
 
@@ -522,7 +526,11 @@ def build_human13_live_model_plan(
             raise Human13LiveModelError(f"invalid Human-13 arm config: {exc}") from exc
     else:
         config = arm_config
-    if getattr(config, "unit_id", None) not in {UNIT_ID, SUCCESSOR_UNIT_ID}:
+    if getattr(config, "unit_id", None) not in {
+        UNIT_ID,
+        SUCCESSOR_UNIT_ID,
+        ON_POLICY_UNIT_ID,
+    }:
         raise Human13LiveModelError("arm config is not bound to the Human-13 unit")
     if getattr(config, "updates", None) is not True:
         raise Human13LiveModelError("live training assembly requires an updated arm")
@@ -1105,10 +1113,14 @@ def _is_sha256(value: Any) -> bool:
 
 
 def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
-    if plan.unit_id not in {UNIT_ID, SUCCESSOR_UNIT_ID}:
+    if plan.unit_id not in {UNIT_ID, SUCCESSOR_UNIT_ID, ON_POLICY_UNIT_ID}:
         raise Human13LiveModelError("plan has an unknown Human-13 unit identity")
     if (plan.unit_id == SUCCESSOR_UNIT_ID) != (plan.arm_id in {"R1", "R2"}):
         raise Human13LiveModelError("successor unit and R1/R2 arm identity differ")
+    if (plan.unit_id == ON_POLICY_UNIT_ID) != (
+        plan.arm_id in {"O-Full-Safe", "O-First-Safe"}
+    ):
+        raise Human13LiveModelError("on-policy unit and O-arm identity differ")
     expected = {
         "schema_version": LIVE_PLAN_SCHEMA_VERSION,
         "unit_id": plan.unit_id,
@@ -1142,7 +1154,11 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         "max_grad_norm": 1.0,
         "world_size": 1,
         "milestones": (
-            SUCCESSOR_MILESTONES if plan.unit_id == SUCCESSOR_UNIT_ID else MILESTONES
+            SUCCESSOR_MILESTONES
+            if plan.unit_id == SUCCESSOR_UNIT_ID
+            else ON_POLICY_MILESTONES
+            if plan.unit_id == ON_POLICY_UNIT_ID
+            else MILESTONES
         ),
     }
     drift = [name for name, value in expected.items() if getattr(plan, name) != value]
@@ -1328,6 +1344,8 @@ __all__ = [
     "HUMAN13_PANEL_SHA256",
     "HUMAN13_PROMPT_POLICY_FINGERPRINT",
     "MILESTONES",
+    "ON_POLICY_MILESTONES",
+    "ON_POLICY_UNIT_ID",
     "SOURCE_ADAPTER_SHA256",
     "SOURCE_BASE_CONFIG_SHA256",
     "SOURCE_BASE_MODEL_PATH",
