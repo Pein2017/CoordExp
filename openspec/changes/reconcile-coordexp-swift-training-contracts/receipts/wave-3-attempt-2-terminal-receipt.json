@@ -1,0 +1,84 @@
+{
+  "schema": "coordexp-swift-reconcile-resume-probe-attempt-terminal-receipt-v1",
+  "attempt": 2,
+  "status": "stopped_after_parent_before_child_update",
+  "implementation_commit": "47dd04a29828c90fe0f7507acbf41284733bd5d1",
+  "command_manifest": {
+    "path": "receipts/wave-3-attempt-2-command-manifest.json",
+    "sha256": "6b63caa3eefba86715f72330f7dc3d50f46299cfccbb2786fe9074f209be6836"
+  },
+  "launch_packet": {
+    "path": "receipts/wave-3-attempt-2-launch-packet.md",
+    "sha256": "1f705cd846b074d5524d321738b46ec84bc1c9d975317a570f4f7e4c4c6f4145"
+  },
+  "fresh_user_authorization": {
+    "present": true,
+    "scope": "the exact attempt-2 frozen packet",
+    "approval_text": "批准执行 r2 冻结包"
+  },
+  "commands": [
+    {
+      "name": "setup_command",
+      "argv_sha256": "7c3f06bb9629fe061561e43a1a5cef6888db68c80632248e81f980c7ab041671",
+      "started_utc": "2026-08-13T01:20:15Z",
+      "wall_time_seconds": 18.969840045,
+      "exit_code": 0,
+      "result": "prepared"
+    },
+    {
+      "name": "success.uninterrupted_control",
+      "argv_sha256": "68204e0a5009cffe7c60b59cb497718813f1e8bf245589cdc40d75ac6599e68b",
+      "started_utc": "2026-08-13T01:21:13Z",
+      "inner_wall_time_seconds": 54.720251120626926,
+      "exit_code": 0,
+      "result": "completed_two_steps"
+    },
+    {
+      "name": "success.resumed_child",
+      "argv_sha256": "8e975849239fb9494e4a5c4d43d896963b008fa3fdacbf50ea919dc90d2100eb",
+      "started_utc": "2026-08-13T01:23:10Z",
+      "failure_observed_utc": "2026-08-13T01:24:54Z",
+      "exit_code": 1,
+      "parent_result": "completed_two_steps",
+      "child_result": "failed_before_state_apply_or_forward"
+    }
+  ],
+  "failure": {
+    "outer_error_type": "ReconcileProbeError",
+    "outer_error_code": "reconcile_probe.launch_failed",
+    "distributed_error_code": "runtime.distributed_phase_failed",
+    "rank_error_code": "run_writer.exact_resume_publication_invalid",
+    "phase": "exact_resume_read_only_admission",
+    "failed_ranks": [0, 1],
+    "cause": "the parent completed checkpoint events at steps 1 and 2, so production read-only admission correctly rejected step 1 because it was no longer the latest completed publication event and parent top-level progress was bound to step 2",
+    "direct_admission_probe": {
+      "parent_step_1": "rejected:run_writer.exact_resume_publication_invalid",
+      "parent_step_2": "admitted:event_index=1"
+    }
+  },
+  "durable_inputs": {
+    "prepare_receipt_sha256": "d46bbc61ee9e1a534dd6b78e763c6badb5343478137dcda8df23d198dcecaaff",
+    "control_receipt_sha256": "ca19eab67328a351005dcfa77c764ca351b5f9114de1ee0a6841652a14ca4b93",
+    "parent_run_json_sha256": "1771fb2df345568d234cd6adb10966cd5a17bdabd1a3f586249e0b68bfae13dd",
+    "child_run_json_sha256": "e2e85607358dd9236e2731e01e163884c353fb61dc1aed1650f1125993fed16d",
+    "parent_step_1_manifest_sha256": "c4f1397bab91fe0fab89ef4aec7e8a5c6ebbb135f56a181dcc94e309dcda3a3a",
+    "parent_step_2_manifest_sha256": "63d68821ac30f25c211b4a2696b1a6c401d746381c3644c65f84df4b76491575"
+  },
+  "resource_observations": {
+    "control_max_cpu_rss_bytes": 9792720896,
+    "control_max_gpu_reserved_bytes": 10412359680,
+    "parent_max_cpu_rss_bytes": 9675526144,
+    "parent_max_gpu_reserved_bytes": 10412359680,
+    "cumulative_new_bytes": 1282935825,
+    "post_stop_gpu_6_memory_used_mib": 0,
+    "post_stop_gpu_7_memory_used_mib": 0
+  },
+  "post_stop": {
+    "live_probe_or_torchrun_processes": 0,
+    "rank_failure_command_executed": false,
+    "interruption_command_executed": false,
+    "verification_command_executed": false,
+    "retry_performed": false
+  },
+  "claim_boundary": "Attempt 2 proves setup, control, and parent publication stayed within bounds and that read-only admission failed closed before child state application or forward. It does not qualify exact resume."
+}

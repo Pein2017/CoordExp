@@ -105,6 +105,22 @@
 > `/usr/bin/env -u CUDA_VISIBLE_DEVICES`, a new absent target, a new commit and
 > manifest digest, independent pre-cost closure, and fresh user authorization.
 
+> **Wave 3 attempt 2 stopped at child read-only admission (2026-08-13):**
+> corrected CPU setup, two-step control, and two-step parent all completed
+> within bounds. The child failed closed on both ranks before state apply or a
+> forward with `run_writer.exact_resume_publication_invalid`: the parent had
+> completed both step-1 and step-2 events, so step 1 was no longer the latest
+> completed publication and the parent top-level progress was correctly bound
+> to step 2. A direct durable admission check rejected parent step 1 and
+> admitted parent step 2. No failure/interruption/verify command or retry ran;
+> GPU memory returned to zero. Immutable evidence is under
+> `receipts/wave-3-attempt-2-*`. The successor qualification tool MUST keep
+> parent/child resume-compatible while stopping the parent after its step-1
+> checkpoint becomes authoritative, then prove that interrupted parent record
+> admits step 1 before launching the child. This requires a test-first bounded
+> parent-interruption controller; changing admission to accept a stale event is
+> forbidden.
+
 ## 4. Reconcile Cache And Provenance Dependencies
 
 - [ ] 4.1 Trace the live cached-payload determinant registry, its independent completeness test, post-build determinant revalidation, immutable absent-target publication, and pre-model train/eval admission; remove any cache delta claim not supported by current source and focused tests.
