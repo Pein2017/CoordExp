@@ -269,13 +269,14 @@ def materialize_on_policy_segments(
         if arm_id == "O-First-Safe":
             if score.first_bottleneck_index is None:
                 raise ValueError("O-First-Safe candidate has no HF blocker")
+            aligned_reserve = max(0.0, float(score.max_surface_margin_drift or 0.0))
             primary = OnPolicyBinding(
                 "first_bottleneck",
                 score.path.owner_id,
                 score.path.owner_id,
                 (row_start + score.first_bottleneck_index,),
                 (row[score.first_bottleneck_index],),
-                required_margin=required_margin,
+                required_margin=required_margin + aligned_reserve,
             )
         else:
             primary = OnPolicyBinding(

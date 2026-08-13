@@ -178,6 +178,19 @@ def test_first_arm_rejects_candidate_without_hf_blocker() -> None:
         )
 
 
+def test_first_arm_margin_adds_candidate_aligned_surface_reserve() -> None:
+    score = replace(_score(), max_surface_margin_drift=0.75)
+    materialized = materialize_on_policy_segments(
+        {7: _frontier(duplicate=False)},
+        {7: _skeleton()},
+        selected_scores={7: score},
+        arm_id="O-First-Safe",
+        required_margin=0.25,
+    )
+    binding = materialized.segments[0].encoded_example.human13_on_policy_bindings[0]
+    assert binding.required_margin == 1.0
+
+
 def test_build_payload_packs_no_padding_and_dispatches_all_objectives() -> None:
     materialized = materialize_on_policy_segments(
         {7: _frontier()},
