@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import inspect
 import json
+import math
 import os
 import shutil
 import signal
@@ -30,6 +31,8 @@ MARKER_SCHEMA = "coordexp-swift-reconcile-resume-probe-attempt-marker-v1"
 OUTER_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-outer-terminal-receipt-v1"
 INNER_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1"
 REVIEW_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1"
+RUN_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-run-receipt-v1"
+GPU_MEASUREMENT_SOURCE = "torch_allocator_high_water"
 COMMAND_ORDER = (
     "setup",
     "success.uninterrupted_control",
@@ -471,6 +474,11 @@ def _validate_contract(
                 f"execution_contract.{field} drifted",
                 code="packet_executor.contract",
             )
+    if contract.get("gpu_measurement_source") != GPU_MEASUREMENT_SOURCE:
+        raise PacketExecutorError(
+            "execution_contract.gpu_measurement_source drifted",
+            code="packet_executor.contract",
+        )
 
     bindings = _mapping(contract.get("bindings"), "execution_contract.bindings")
     if (
@@ -574,6 +582,11 @@ def _validate_contract(
     if len({row["physical_index"] for row in device_bindings}) != 2:
         raise PacketExecutorError(
             "GPU physical-index bindings must be unique",
+            code="packet_executor.contract",
+        )
+    if [row["physical_index"] for row in device_bindings] != ["6", "7"]:
+        raise PacketExecutorError(
+            "GPU device order must match CUDA_VISIBLE_DEVICES 6,7",
             code="packet_executor.contract",
         )
 
@@ -741,6 +754,7 @@ def _validate_contract(
         "filesystem_path": filesystem_path,
         "device_bindings": device_bindings,
         "device_uuids": device_uuids,
+        "gpu_measurement_source": GPU_MEASUREMENT_SOURCE,
         "resource_bounds": normalized_bounds,
         "total_bounds": normalized_total,
         "setup_paths": setup_paths,
@@ -1295,24 +1309,16 @@ def _check_command_resources(
         )
     cpu_mode = str(bound["cpu_measurement_mode"])
     cpu = _rank_maxima(process_rows, "rss_bytes")
-    gpu = _rank_maxima(gpu_rows, "gpu_memory_bytes")
+    del gpu_rows
+    gpu: dict[str, int] = {}
     required_cpu = {str(rank) for rank in bound["required_cpu_ranks"]}
-    required_gpu = {str(rank) for rank in bound["required_gpu_ranks"]}
     if cpu_mode == "command_tree_aggregate":
         cpu = {}
-    if not required_gpu:
-        gpu = {}
     missing_cpu = sorted(required_cpu - set(cpu))
     if missing_cpu:
         raise PacketExecutorError(
             f"{name} is missing CPU RSS measurements for ranks {missing_cpu}",
             code="packet_executor.missing_process_rank",
-        )
-    missing_gpu = sorted(required_gpu - set(gpu))
-    if missing_gpu:
-        raise PacketExecutorError(
-            f"{name} is missing GPU measurements for ranks {missing_gpu}",
-            code="packet_executor.missing_gpu_rank",
         )
     if cpu_mode == "per_rank":
         if any(value > int(bound["max_cpu_rss_bytes_per_rank"]) for value in cpu.values()):
@@ -1332,12 +1338,6 @@ def _check_command_resources(
             raise PacketExecutorError(
                 f"{name} exceeded its CPU RSS bound", code="packet_executor.rss_bound"
             )
-    if any(
-        value > int(bound["max_gpu_memory_bytes_per_rank"]) for value in gpu.values()
-    ):
-        raise PacketExecutorError(
-            f"{name} exceeded its GPU-memory bound", code="packet_executor.gpu_bound"
-        )
     return cpu, gpu, cpu_rss_command_tree_max_bytes
 
 
@@ -1783,7 +1783,7 @@ def _run_command(
         - int((artifact_before or {}).get("total_bytes", 0)),
     )
     cpu = _rank_maxima(list(process_observations.values()), "rss_bytes")
-    gpu = _rank_maxima(list(gpu_observations.values()), "gpu_memory_bytes")
+    gpu: dict[str, int] = {}
     if error is None:
         try:
             cpu, gpu, cpu_rss_command_tree_max_bytes = _check_command_resources(
@@ -1811,6 +1811,8 @@ def _run_command(
         "max_cpu_rss_bytes_per_rank": bound.get("max_cpu_rss_bytes_per_rank"),
         "max_cpu_rss_command_tree_bytes": bound.get("max_cpu_rss_command_tree_bytes"),
         "gpu_memory_bytes_per_rank": gpu,
+        "gpu_measurement_source": None,
+        "gpu_artifact_evidence": None,
         "required_cpu_ranks": list(bound["required_cpu_ranks"]),
         "required_gpu_ranks": list(bound["required_gpu_ranks"]),
         "process_observations": sorted(
@@ -2007,6 +2009,583 @@ def _validate_setup(
     }
 
 
+def _require_gpu_artifact_file(path: Path) -> None:
+    _assert_no_symlink_components(path, include_leaf=True)
+    info = _lstat(path)
+    if info is None or not stat.S_ISREG(info.st_mode):
+        raise PacketExecutorError(
+            f"required GPU evidence artifact is missing: {path}",
+            code="packet_executor.gpu_artifact_missing",
+            context={"path": str(path)},
+        )
+
+
+def _load_gpu_logging_rows(path: Path) -> list[dict[str, Any]]:
+    _require_gpu_artifact_file(path)
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise PacketExecutorError(
+            f"cannot read GPU logging artifact: {path}",
+            code="packet_executor.gpu_artifact_missing",
+        ) from exc
+    lines = raw.splitlines()
+    if not lines or len(lines) > 16 or any(not line for line in lines):
+        raise PacketExecutorError(
+            "canonical GPU logging row inventory is invalid",
+            code="packet_executor.gpu_artifact_rows",
+            context={"path": str(path), "row_count": len(lines)},
+        )
+    return [
+        _strict_json_load_bytes(line, path=path)
+        for line in lines
+    ]
+
+
+def _gpu_metric_integer(value: Any, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PacketExecutorError(
+            f"{field} is not a JSON number",
+            code="packet_executor.gpu_artifact_metric",
+        )
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise PacketExecutorError(
+                f"{field} must be finite and integer-valued",
+                code="packet_executor.gpu_artifact_metric",
+            )
+    result = int(value)
+    if result < 0:
+        raise PacketExecutorError(
+            f"{field} must be nonnegative",
+            code="packet_executor.gpu_artifact_metric",
+        )
+    return result
+
+
+def _gpu_artifact_integer(
+    value: Any,
+    *,
+    field: str,
+    code: str,
+    expected: int | None = None,
+) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise PacketExecutorError(
+            f"{field} must be a nonnegative JSON integer",
+            code=code,
+        )
+    if expected is not None and value != expected:
+        raise PacketExecutorError(
+            f"{field} mismatched",
+            code=code,
+            context={"expected": expected, "observed": value},
+        )
+    return value
+
+
+def _validate_run_gpu_topology(
+    run_state: Mapping[str, Any],
+    *,
+    role: str,
+    contract: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    runtime = _mapping(run_state.get("runtime"), f"{role}.run.runtime")
+    _gpu_artifact_integer(
+        runtime.get("world_size"),
+        field=f"{role}.run.runtime.world_size",
+        code="packet_executor.gpu_artifact_run_state",
+        expected=2,
+    )
+    policy = _mapping(
+        run_state.get("policy_identities"), f"{role}.run.policy_identities"
+    )
+    determinism = _mapping(
+        policy.get("runtime_determinism"),
+        f"{role}.run.policy_identities.runtime_determinism",
+    )
+    attestations = determinism.get("launcher_attestations")
+    if not isinstance(attestations, list) or len(attestations) != 2:
+        raise PacketExecutorError(
+            f"{role} launcher topology inventory mismatched",
+            code="packet_executor.gpu_artifact_topology",
+        )
+    by_rank: dict[int, Mapping[str, Any]] = {}
+    for index, value in enumerate(attestations):
+        row = _mapping(value, f"{role}.launcher_attestations[{index}]")
+        rank = _gpu_artifact_integer(
+            row.get("rank"),
+            field=f"{role}.launcher_attestations[{index}].rank",
+            code="packet_executor.gpu_artifact_topology",
+        )
+        if rank in by_rank:
+            raise PacketExecutorError(
+                f"{role} launcher rank inventory mismatched",
+                code="packet_executor.gpu_artifact_topology",
+            )
+        by_rank[rank] = row
+    if set(by_rank) != {0, 1}:
+        raise PacketExecutorError(
+            f"{role} launcher rank inventory mismatched",
+            code="packet_executor.gpu_artifact_topology",
+        )
+    expected_devices = [row["physical_index"] for row in contract["device_bindings"]]
+    result: list[dict[str, Any]] = []
+    for rank in (0, 1):
+        row = by_rank[rank]
+        for field, expected in (
+            ("rank", rank),
+            ("local_rank", rank),
+            ("logical_cuda_device", rank),
+            ("world_size", 2),
+        ):
+            _gpu_artifact_integer(
+                row.get(field),
+                field=f"{role}.launcher_attestations.{rank}.{field}",
+                code="packet_executor.gpu_artifact_topology",
+                expected=expected,
+            )
+        if row.get("cuda_visible_devices") != expected_devices:
+            raise PacketExecutorError(
+                f"{role} launcher topology mismatched",
+                code="packet_executor.gpu_artifact_topology",
+            )
+        binding = contract["device_bindings"][rank]
+        result.append(
+            {
+                "rank": rank,
+                "local_rank": rank,
+                "logical_cuda_device": rank,
+                "physical_index": binding["physical_index"],
+                "gpu_uuid": binding["uuid"],
+            }
+        )
+    return result
+
+
+def _validate_gpu_run_state(
+    path: Path,
+    *,
+    role: str,
+    run_dir: Path,
+    expected_status: str,
+    expected_completed_steps: int,
+    expected_consumed_packs: int,
+    expected_checkpoint_steps: Sequence[int],
+    contract: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    _require_gpu_artifact_file(path)
+    state = _strict_json_load(path)
+    if (
+        state.get("run_dir") != str(run_dir)
+        or state.get("status") != expected_status
+    ):
+        raise PacketExecutorError(
+            f"{role} run state/progress mismatched",
+            code="packet_executor.gpu_artifact_run_state",
+        )
+    for field, expected in (
+        ("completed_steps", expected_completed_steps),
+        ("resolved_max_steps", 2),
+        ("consumed_packs", expected_consumed_packs),
+        ("checkpoint_event_count", len(expected_checkpoint_steps)),
+    ):
+        _gpu_artifact_integer(
+            state.get(field),
+            field=f"{role}.run.{field}",
+            code="packet_executor.gpu_artifact_run_state",
+            expected=expected,
+        )
+    if role == "resumed_parent" and (
+        state.get("completed_at") is not None
+    ):
+        raise PacketExecutorError(
+            "resumed parent is not the exact interrupted step-1 state",
+            code="packet_executor.gpu_artifact_run_state",
+        )
+    measurement = _mapping(
+        state.get("measurement"), f"{role}.run.measurement"
+    )
+    events = measurement.get("checkpoint_publication_events")
+    if not isinstance(events, list) or len(events) != len(expected_checkpoint_steps):
+        raise PacketExecutorError(
+            f"{role} checkpoint event inventory mismatched",
+            code="packet_executor.gpu_artifact_run_state",
+        )
+    for index, (event_value, expected_step) in enumerate(
+        zip(events, expected_checkpoint_steps, strict=True)
+    ):
+        event = _mapping(event_value, f"{role}.checkpoint_event[{index}]")
+        if event.get("status") != "completed":
+            raise PacketExecutorError(
+                f"{role} checkpoint event status mismatched",
+                code="packet_executor.gpu_artifact_run_state",
+            )
+        _gpu_artifact_integer(
+            event.get("step"),
+            field=f"{role}.checkpoint_event[{index}].step",
+            code="packet_executor.gpu_artifact_run_state",
+            expected=expected_step,
+        )
+        checkpoint_identity = _mapping(
+            event.get("checkpoint_identity"),
+            f"{role}.checkpoint_event[{index}].checkpoint_identity",
+        )
+        _gpu_artifact_integer(
+            checkpoint_identity.get("checkpoint_step"),
+            field=f"{role}.checkpoint_event[{index}].checkpoint_step",
+            code="packet_executor.gpu_artifact_run_state",
+            expected=expected_step,
+        )
+        progress = _mapping(
+            event.get("committed_progress"),
+            f"{role}.checkpoint_event[{index}].committed_progress",
+        )
+        for field in ("completed_steps", "consumed_packs"):
+            _gpu_artifact_integer(
+                progress.get(field),
+                field=f"{role}.checkpoint_event[{index}].{field}",
+                code="packet_executor.gpu_artifact_run_state",
+                expected=expected_step,
+            )
+    return state, _validate_run_gpu_topology(state, role=role, contract=contract)
+
+
+def _validate_success_receipt(
+    *,
+    name: str,
+    manifest: Mapping[str, Any],
+    contract: Mapping[str, Any],
+) -> tuple[dict[str, Any], Path, list[dict[str, Any]]]:
+    root: Path = contract["artifact_root"]
+    if name == "success.uninterrupted_control":
+        receipt_path = root / "receipts" / "success-control-receipt.json"
+    elif name == "success.resumed_child":
+        receipt_path = root / "receipts" / "success-resumed-receipt.json"
+    else:
+        raise PacketExecutorError(
+            f"unsupported GPU artifact command: {name}",
+            code="packet_executor.gpu_artifact_receipt_binding",
+        )
+    _require_gpu_artifact_file(receipt_path)
+    receipt = _verify_signed(
+        _strict_json_load(receipt_path),
+        field="receipt_payload_sha256",
+        code="packet_executor.gpu_artifact_receipt_digest",
+    )
+    if (
+        receipt.get("schema") != RUN_RECEIPT_SCHEMA
+        or receipt.get("commit") != manifest["implementation_commit"]
+    ):
+        raise PacketExecutorError(
+            "success receipt schema or commit mismatched",
+            code="packet_executor.gpu_artifact_receipt_binding",
+        )
+
+    run_specs: list[dict[str, Any]] = []
+    if name == "success.uninterrupted_control":
+        run_dir = root / "runs" / "uninterrupted_control"
+        expected = {
+            "role": "uninterrupted_control",
+            "config_sha256": contract["configs"]["uninterrupted_control"][
+                "expected_sha256"
+            ],
+            "run_dir": str(run_dir),
+        }
+        if any(receipt.get(field) != value for field, value in expected.items()):
+            raise PacketExecutorError(
+                "control success receipt binding mismatched",
+                code="packet_executor.gpu_artifact_receipt_binding",
+            )
+        for field, expected_integer in (
+            ("returncode", 0),
+            ("boundary_step", 1),
+            ("update_step", 2),
+        ):
+            _gpu_artifact_integer(
+                receipt.get(field),
+                field=f"control_receipt.{field}",
+                code="packet_executor.gpu_artifact_receipt_binding",
+                expected=expected_integer,
+            )
+        run_specs.append(
+            {
+                "role": "uninterrupted_control",
+                "run_dir": run_dir,
+                "status": "completed",
+                "completed_steps": 2,
+                "consumed_packs": 2,
+                "checkpoint_steps": [1, 2],
+                "train_steps": [1, 2],
+            }
+        )
+    else:
+        if receipt.get("role") != "resumed_child":
+            raise PacketExecutorError(
+                "resumed success receipt role mismatched",
+                code="packet_executor.gpu_artifact_receipt_binding",
+            )
+        setup = _mapping(receipt.get("setup"), "success_resumed.setup")
+        update = _mapping(receipt.get("update"), "success_resumed.update")
+        parent_dir = root / "runs" / "resumed_parent"
+        child_dir = root / "runs" / "resumed_child"
+        expected_setup = {
+            "config_sha256": contract["configs"]["resumed_parent"][
+                "expected_sha256"
+            ],
+            "run_dir": str(parent_dir),
+        }
+        expected_update = {
+            "config_sha256": contract["configs"]["resumed_child"][
+                "expected_sha256"
+            ],
+            "run_dir": str(child_dir),
+        }
+        authenticated = setup.get("authenticated_step_one")
+        checkpoint_identity = (
+            authenticated.get("checkpoint_identity")
+            if isinstance(authenticated, Mapping)
+            else None
+        )
+        committed_progress = (
+            authenticated.get("committed_progress")
+            if isinstance(authenticated, Mapping)
+            else None
+        )
+        returncode = setup.get("returncode")
+        termination_signals = setup.get("termination_signals")
+        if (
+            any(setup.get(field) != value for field, value in expected_setup.items())
+            or any(update.get(field) != value for field, value in expected_update.items())
+            or setup.get("controlled_parent_exit") is not True
+            or isinstance(returncode, bool)
+            or not isinstance(returncode, int)
+            or returncode == 0
+            or not isinstance(termination_signals, list)
+            or "SIGTERM" not in termination_signals
+            or not isinstance(checkpoint_identity, Mapping)
+            or not isinstance(committed_progress, Mapping)
+        ):
+            raise PacketExecutorError(
+                "resumed success receipt binding mismatched",
+                code="packet_executor.gpu_artifact_receipt_binding",
+            )
+        for field, expected_integer in (
+            ("boundary_step", 1),
+            ("completed_steps", 1),
+            ("consumed_packs", 1),
+            ("checkpoint_event_count", 1),
+        ):
+            _gpu_artifact_integer(
+                setup.get(field),
+                field=f"resumed_receipt.setup.{field}",
+                code="packet_executor.gpu_artifact_receipt_binding",
+                expected=expected_integer,
+            )
+        _gpu_artifact_integer(
+            checkpoint_identity.get("checkpoint_step"),
+            field="resumed_receipt.setup.authenticated_step_one.checkpoint_step",
+            code="packet_executor.gpu_artifact_receipt_binding",
+            expected=1,
+        )
+        _gpu_artifact_integer(
+            committed_progress.get("completed_steps"),
+            field="resumed_receipt.setup.authenticated_step_one.completed_steps",
+            code="packet_executor.gpu_artifact_receipt_binding",
+            expected=1,
+        )
+        for field, expected_integer in (("returncode", 0), ("update_step", 2)):
+            _gpu_artifact_integer(
+                update.get(field),
+                field=f"resumed_receipt.update.{field}",
+                code="packet_executor.gpu_artifact_receipt_binding",
+                expected=expected_integer,
+            )
+        run_specs.extend(
+            [
+                {
+                    "role": "resumed_parent",
+                    "run_dir": parent_dir,
+                    "status": "running",
+                    "completed_steps": 1,
+                    "consumed_packs": 1,
+                    "checkpoint_steps": [1],
+                    "train_steps": [1],
+                },
+                {
+                    "role": "resumed_child",
+                    "run_dir": child_dir,
+                    "status": "completed",
+                    "completed_steps": 2,
+                    "consumed_packs": 2,
+                    "checkpoint_steps": [2],
+                    "train_steps": [2],
+                },
+            ]
+        )
+
+    for role in {spec["role"] for spec in run_specs}:
+        config_path = Path(contract["configs"][role]["path"])
+        _require_gpu_artifact_file(config_path)
+        if _sha256_file(config_path) != contract["configs"][role]["expected_sha256"]:
+            raise PacketExecutorError(
+                f"{role} config drifted before GPU artifact validation",
+                code="packet_executor.gpu_artifact_receipt_binding",
+            )
+    return receipt, receipt_path, run_specs
+
+
+def _validate_success_gpu_artifacts(
+    *,
+    name: str,
+    manifest: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    observation: Mapping[str, Any],
+) -> dict[str, Any]:
+    if (
+        observation.get("returncode") != 0
+        or not isinstance(observation.get("cleanup"), Mapping)
+        or observation["cleanup"].get("status") != "confirmed_absent"
+        or not isinstance(observation.get("artifact_tree"), Mapping)
+        or not isinstance(observation["artifact_tree"].get("after"), Mapping)
+        or not observation["artifact_tree"]["after"].get("inventory_sha256")
+    ):
+        raise PacketExecutorError(
+            "GPU artifacts were requested before terminal command cleanup and summary",
+            code="packet_executor.gpu_artifact_order",
+        )
+    receipt, receipt_path, run_specs = _validate_success_receipt(
+        name=name, manifest=manifest, contract=contract
+    )
+    del receipt
+    source_files: list[dict[str, Any]] = [
+        {
+            "kind": "signed_success_receipt",
+            "path": str(receipt_path),
+            "sha256": _sha256_file(receipt_path),
+        }
+    ]
+    raw_maxima = {
+        "0": {"allocated_bytes": 0, "reserved_bytes": 0},
+        "1": {"allocated_bytes": 0, "reserved_bytes": 0},
+    }
+    step_inventory: list[dict[str, Any]] = []
+    row_inventory: list[dict[str, Any]] = []
+    topology_by_role: dict[str, list[dict[str, Any]]] = {}
+    for spec in run_specs:
+        role = str(spec["role"])
+        run_dir = Path(spec["run_dir"])
+        run_path = run_dir / "run.json"
+        logging_path = run_dir / "logging.jsonl"
+        _state, topology = _validate_gpu_run_state(
+            run_path,
+            role=role,
+            run_dir=run_dir,
+            expected_status=str(spec["status"]),
+            expected_completed_steps=int(spec["completed_steps"]),
+            expected_consumed_packs=int(spec["consumed_packs"]),
+            expected_checkpoint_steps=list(spec["checkpoint_steps"]),
+            contract=contract,
+        )
+        topology_by_role[role] = topology
+        rows = _load_gpu_logging_rows(logging_path)
+        train_rows = [row for row in rows if row.get("split") == "train"]
+        expected_steps = list(spec["train_steps"])
+        observed_steps = [
+            _gpu_artifact_integer(
+                row.get("step"),
+                field=f"{role}.logging[{index}].step",
+                code="packet_executor.gpu_artifact_rows",
+            )
+            for index, row in enumerate(train_rows, start=1)
+        ]
+        if observed_steps != expected_steps:
+            raise PacketExecutorError(
+                f"{role} canonical train-row inventory mismatched",
+                code="packet_executor.gpu_artifact_rows",
+                context={"expected_steps": expected_steps, "observed_steps": observed_steps},
+            )
+        source_files.extend(
+            [
+                {"kind": "run_json", "role": role, "path": str(run_path), "sha256": _sha256_file(run_path)},
+                {"kind": "logging_jsonl", "role": role, "path": str(logging_path), "sha256": _sha256_file(logging_path)},
+            ]
+        )
+        for line_index, row in enumerate(train_rows, start=1):
+            step = row.get("step")
+            measurements = _mapping(
+                row.get("per_rank_measurement"),
+                f"{role}.logging[{line_index}].per_rank_measurement",
+            )
+            if set(measurements) != {"0", "1"}:
+                raise PacketExecutorError(
+                    f"{role} logging rank inventory mismatched",
+                    code="packet_executor.gpu_artifact_rows",
+                )
+            step_inventory.append({"role": role, "step": step})
+            row_inventory.append(
+                {
+                    "role": role,
+                    "step": step,
+                    "line": line_index,
+                    "ranks": [0, 1],
+                }
+            )
+            for rank in ("0", "1"):
+                rank_values = _mapping(
+                    measurements[rank],
+                    f"{role}.logging[{line_index}].per_rank_measurement.{rank}",
+                )
+                allocated = _gpu_metric_integer(
+                    rank_values.get("resource/gpu_max_memory_allocated_bytes"),
+                    field=f"{role}.rank{rank}.gpu_max_memory_allocated_bytes",
+                )
+                reserved = _gpu_metric_integer(
+                    rank_values.get("resource/gpu_max_memory_reserved_bytes"),
+                    field=f"{role}.rank{rank}.gpu_max_memory_reserved_bytes",
+                )
+                raw_maxima[rank]["allocated_bytes"] = max(
+                    raw_maxima[rank]["allocated_bytes"], allocated
+                )
+                raw_maxima[rank]["reserved_bytes"] = max(
+                    raw_maxima[rank]["reserved_bytes"], reserved
+                )
+    conservative = {
+        rank: max(values["allocated_bytes"], values["reserved_bytes"])
+        for rank, values in raw_maxima.items()
+    }
+    required_ranks = {str(rank) for rank in contract["resource_bounds"][name]["required_gpu_ranks"]}
+    if required_ranks != set(conservative):
+        raise PacketExecutorError(
+            f"{name} artifact GPU rank inventory mismatched",
+            code="packet_executor.gpu_artifact_rows",
+        )
+    bound = int(
+        contract["resource_bounds"][name]["max_gpu_memory_bytes_per_rank"]
+    )
+    if any(value > bound for value in conservative.values()):
+        raise PacketExecutorError(
+            f"{name} exceeded its GPU-memory bound",
+            code="packet_executor.gpu_bound",
+        )
+    common_topology = topology_by_role[next(iter(topology_by_role))]
+    if any(value != common_topology for value in topology_by_role.values()):
+        raise PacketExecutorError(
+            "success branch launcher topologies differ",
+            code="packet_executor.gpu_artifact_topology",
+        )
+    return {
+        "gpu_measurement_source": GPU_MEASUREMENT_SOURCE,
+        "source_files": source_files,
+        "step_inventory": step_inventory,
+        "row_inventory": row_inventory,
+        "raw_maxima": raw_maxima,
+        "conservative_maxima": conservative,
+        "topology_mapping": common_topology,
+        "topology_by_role": topology_by_role,
+    }
+
+
 def _validate_inner(
     manifest: Mapping[str, Any], contract: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -2189,6 +2768,20 @@ def execute(
                     f"{name} exited nonzero",
                     code="packet_executor.command_nonzero",
                     context={"returncode": observation["returncode"]},
+                )
+            if name in MODEL_COMMANDS:
+                gpu_evidence = _validate_success_gpu_artifacts(
+                    name=name,
+                    manifest=manifest,
+                    contract=contract,
+                    observation=observation,
+                )
+                observation["gpu_measurement_source"] = gpu_evidence[
+                    "gpu_measurement_source"
+                ]
+                observation["gpu_artifact_evidence"] = gpu_evidence
+                observation["gpu_memory_bytes_per_rank"] = dict(
+                    gpu_evidence["conservative_maxima"]
                 )
             if name == "setup":
                 setup_observation = _validate_setup(manifest, contract)

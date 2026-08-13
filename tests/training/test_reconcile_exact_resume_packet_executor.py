@@ -93,6 +93,113 @@ def _write_json(path: Path, value: Any) -> None:
     path.write_bytes(_canonical(value) + b"\n")
 
 
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"".join(_canonical(row) + b"\n" for row in rows))
+
+
+def _launcher_attestations() -> list[dict[str, Any]]:
+    return [
+        {
+            "cuda_visible_devices": ["6", "7"],
+            "local_rank": rank,
+            "logical_cuda_device": rank,
+            "rank": rank,
+            "world_size": 2,
+        }
+        for rank in (0, 1)
+    ]
+
+
+def _run_state(
+    run_dir: Path,
+    *,
+    status: str,
+    completed_steps: int,
+    checkpoint_steps: list[int] | None = None,
+) -> dict[str, Any]:
+    checkpoint_steps = checkpoint_steps or list(range(1, completed_steps + 1))
+    return {
+        "artifact_root": str(run_dir.parent.parent),
+        "checkpoint_event_count": len(checkpoint_steps),
+        "collision_outcome": "created",
+        "completed_at": "2026-08-13T00:00:02+00:00"
+        if status == "completed"
+        else None,
+        "completed_steps": completed_steps,
+        "config_fingerprint": "f" * 64,
+        "consumed_packs": completed_steps,
+        "continuation": {"parent": None},
+        "created_at": "2026-08-13T00:00:00+00:00",
+        "final_finite_status": "finite",
+        "final_optimizer_update_status": "applied",
+        "forward_input_provider_mode": "synchronous",
+        "forward_input_provider_resolution": {},
+        "materializations": {},
+        "measurement": {
+            "checkpoint_publication_events": [
+                {
+                    "checkpoint_identity": {"checkpoint_step": step},
+                    "committed_progress": {
+                        "completed_steps": step,
+                        "consumed_packs": step,
+                    },
+                    "status": "completed",
+                    "step": step,
+                }
+                for step in checkpoint_steps
+            ]
+        },
+        "policy_identities": {
+            "runtime_determinism": {
+                "launcher_attestations": _launcher_attestations(),
+                "mode": "strict_cuda_replay_v1",
+                "schema_version": 1,
+                "seed": 17,
+            }
+        },
+        "provenance": {},
+        "resolved_config_path": str(run_dir / "resolved_config.json"),
+        "resolved_max_steps": 2,
+        "run_dir": str(run_dir),
+        "run_id": f"fixture-{run_dir.name}",
+        "run_name": run_dir.name,
+        "runtime": {"world_size": 2},
+        "status": status,
+        "terminal_error": None,
+        "updated_at": "2026-08-13T00:00:02+00:00",
+        "warning_counts": {},
+    }
+
+
+def _train_row(
+    step: int,
+    *,
+    rank0_allocated: Any,
+    rank0_reserved: Any,
+    rank1_allocated: Any,
+    rank1_reserved: Any,
+) -> dict[str, Any]:
+    return {
+        "finite_status": "finite",
+        "loss/total": 1.5,
+        "micro_step_count": 1,
+        "optimizer_update_status": "applied",
+        "per_rank_measurement": {
+            "0": {
+                "resource/gpu_max_memory_allocated_bytes": rank0_allocated,
+                "resource/gpu_max_memory_reserved_bytes": rank0_reserved,
+            },
+            "1": {
+                "resource/gpu_max_memory_allocated_bytes": rank1_allocated,
+                "resource/gpu_max_memory_reserved_bytes": rank1_reserved,
+            },
+        },
+        "split": "train",
+        "step": step,
+    }
+
+
 @pytest.fixture(scope="module")
 def executor() -> ModuleType:
     assert SCRIPT.is_file(), "packet executor is not implemented yet"
@@ -169,13 +276,13 @@ def _gpu_rows(*, include_rank1: bool = True) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = [
         {
             "kind": "device",
-            "physical_index": "0",
+            "physical_index": "6",
             "gpu_uuid": "GPU-a",
             "memory_used_bytes": 0,
         },
         {
             "kind": "device",
-            "physical_index": "1",
+            "physical_index": "7",
             "gpu_uuid": "GPU-b",
             "memory_used_bytes": 0,
         },
@@ -245,6 +352,7 @@ def _fixture(
         resource_bounds[name] = row
     contract = {
         "command_order": ORDER,
+        "gpu_measurement_source": "torch_allocator_high_water",
         "marker_creation": "O_EXCL",
         "stop_on_first_failure": True,
         "retry_count": 0,
@@ -303,8 +411,8 @@ def _fixture(
             "filesystem_path": str(repo),
             "required_free_disk_bytes": 1,
             "gpu_devices": [
-                {"physical_index": "0", "uuid": "GPU-a"},
-                {"physical_index": "1", "uuid": "GPU-b"},
+                {"physical_index": "6", "uuid": "GPU-a"},
+                {"physical_index": "7", "uuid": "GPU-b"},
             ],
             "max_gpu_occupancy_bytes": 1024,
         },
@@ -449,6 +557,158 @@ def _fixture(
             receipt["receipt_payload_sha256"] = "f" * 64
         _write_json(inner, receipt)
 
+    def write_success(name: str) -> None:
+        receipts_dir = artifact_root / "receipts"
+        if name == "success.uninterrupted_control":
+            run_dir = artifact_root / "runs" / "uninterrupted_control"
+            _write_json(
+                run_dir / "run.json",
+                _run_state(run_dir, status="completed", completed_steps=2),
+            )
+            _write_jsonl(
+                run_dir / "logging.jsonl",
+                [
+                    _train_row(
+                        1,
+                        rank0_allocated=64,
+                        rank0_reserved=80,
+                        rank1_allocated=48,
+                        rank1_reserved=60,
+                    ),
+                    _train_row(
+                        2,
+                        rank0_allocated=96,
+                        rank0_reserved=110,
+                        rank1_allocated=70,
+                        rank1_reserved=90,
+                    ),
+                ],
+            )
+            body = {
+                "argv": commands[name],
+                "boundary_step": 1,
+                "commit": commit,
+                "config_sha256": _sha256(
+                    config_bytes["uninterrupted_control"]
+                ),
+                "returncode": 0,
+                "role": "uninterrupted_control",
+                "run_dir": str(run_dir),
+                "schema": "coordexp-swift-reconcile-resume-probe-run-receipt-v1",
+                "update_step": 2,
+                "wall_time_seconds": 1.0,
+            }
+            _write_json(
+                receipts_dir / "success-control-receipt.json", _signed(body)
+            )
+            return
+
+        if name != "success.resumed_child":
+            raise AssertionError(f"unexpected success command: {name}")
+        parent_dir = artifact_root / "runs" / "resumed_parent"
+        child_dir = artifact_root / "runs" / "resumed_child"
+        _write_json(
+            parent_dir / "run.json",
+            _run_state(parent_dir, status="running", completed_steps=1),
+        )
+        _write_json(
+            child_dir / "run.json",
+            _run_state(
+                child_dir,
+                status="completed",
+                completed_steps=2,
+                checkpoint_steps=[2],
+            ),
+        )
+        _write_jsonl(
+            parent_dir / "logging.jsonl",
+            [
+                _train_row(
+                    1,
+                    rank0_allocated=100,
+                    rank0_reserved=120,
+                    rank1_allocated=80,
+                    rank1_reserved=90,
+                )
+            ],
+        )
+        _write_jsonl(
+            child_dir / "logging.jsonl",
+            [
+                _train_row(
+                    2,
+                    rank0_allocated=130,
+                    rank0_reserved=125,
+                    rank1_allocated=85,
+                    rank1_reserved=100,
+                )
+            ],
+        )
+        body = {
+            "commit": commit,
+            "role": "resumed_child",
+            "schema": "coordexp-swift-reconcile-resume-probe-run-receipt-v1",
+            "setup": {
+                "argv": ["held-parent", str(config_paths["resumed_parent"])],
+                "authenticated_step_one": {
+                    "checkpoint_dir": str(parent_dir / "checkpoints" / "step-1"),
+                    "checkpoint_identity": {
+                        "checkpoint_step": 1,
+                        "resolved_path": str(
+                            parent_dir / "checkpoints" / "step-1"
+                        ),
+                    },
+                    "committed_progress": {
+                        "completed_steps": 1,
+                        "consumed_packs": 1,
+                        "finite_status": "finite",
+                        "optimizer_update_status": "applied",
+                    },
+                    "event_index": 0,
+                    "manifest_aggregate_digest": "a" * 64,
+                    "manifest_file_sha256": "b" * 64,
+                    "manifest_path": str(
+                        parent_dir
+                        / "checkpoints"
+                        / "step-1"
+                        / "training_state"
+                        / "manifest.json"
+                    ),
+                    "inference_payload_identity": {
+                        "aggregate_digest": "c" * 64,
+                        "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+                    },
+                    "parent_run_id": "fixture-parent-run",
+                    "parent_segment_id": "fixture-parent-segment",
+                },
+                "boundary_step": 1,
+                "boundary_wait_duration_seconds": 0.25,
+                "checkpoint_event_count": 1,
+                "completed_steps": 1,
+                "config_sha256": _sha256(config_bytes["resumed_parent"]),
+                "consumed_packs": 1,
+                "controlled_parent_exit": True,
+                "parent_pgid": 1234,
+                "parent_pid": 1234,
+                "returncode": -15,
+                "run_dir": str(parent_dir),
+                "stderr_tail": "",
+                "stdout_tail": "",
+                "termination_duration_seconds": 0.1,
+                "termination_signals": ["SIGTERM"],
+                "wall_time_seconds": 1.0,
+            },
+            "update": {
+                "argv": commands[name],
+                "config_sha256": _sha256(config_bytes["resumed_child"]),
+                "returncode": 0,
+                "run_dir": str(child_dir),
+                "update_step": 2,
+                "wall_time_seconds": 1.0,
+            },
+        }
+        _write_json(receipts_dir / "success-resumed-receipt.json", _signed(body))
+
     def launch(
         argv: list[str],
         *,
@@ -463,6 +723,8 @@ def _fixture(
         name = argv[1]
         if name == "setup":
             write_setup(tamper=setup_tamper)
+        elif name.startswith("success.") and name != fail_name:
+            write_success(name)
         elif artifact_bytes:
             (artifact_root / f"{name}.bin").write_bytes(b"x" * artifact_bytes)
         if name == "verification" and fail_name != "missing_inner":
@@ -487,6 +749,7 @@ def _fixture(
         "launch": launch,
         "write_setup": write_setup,
         "write_inner": write_inner,
+        "write_success": write_success,
     }
 
 
@@ -1334,13 +1597,13 @@ def test_resource_bound_failure_stops_later_commands(
             return [
                 {
                     "kind": "device",
-                    "physical_index": "0",
+                    "physical_index": "6",
                     "gpu_uuid": "GPU-a",
                     "memory_used_bytes": 1,
                 },
                 {
                     "kind": "device",
-                    "physical_index": "1",
+                    "physical_index": "7",
                     "gpu_uuid": "GPU-b",
                     "memory_used_bytes": 0,
                 },
@@ -1418,19 +1681,394 @@ def test_swapped_physical_index_uuid_mapping_rejects_before_marker(
     assert not case["marker"].exists()
 
 
-def test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank(
+def test_nvml_host_pid_rows_are_observational_not_gpu_rank_gate(
     executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     case = _fixture(tmp_path, monkeypatch)
-    foreign = _gpu_rows()
-    for row in foreign:
-        if row["kind"] == "process":
-            row["pid"] += 9000
+    device_rows = [row for row in _gpu_rows() if row["kind"] == "device"]
 
-    receipt = _execute(executor, case, gpu_sampler=lambda: foreign)
+    receipt = _execute(executor, case, gpu_sampler=lambda: device_rows)
+
+    assert receipt["status"] == "verified"
+    assert receipt["resource_maxima"]["gpu_memory_bytes_per_rank"] == {
+        "0": 130,
+        "1": 100,
+    }
+
+
+@pytest.mark.parametrize(
+    ("missing", "expected_code"),
+    [
+        ("receipt", "packet_executor.gpu_artifact_missing"),
+        ("run", "packet_executor.gpu_artifact_missing"),
+        ("logging", "packet_executor.gpu_artifact_missing"),
+    ],
+)
+def test_success_gpu_metrics_require_signed_receipt_run_and_logging_join(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing: str,
+    expected_code: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] == "success.uninterrupted_control":
+            run_dir = case["artifact_root"] / "runs" / "uninterrupted_control"
+            paths = {
+                "receipt": case["artifact_root"]
+                / "receipts"
+                / "success-control-receipt.json",
+                "run": run_dir / "run.json",
+                "logging": run_dir / "logging.jsonl",
+            }
+            paths[missing].unlink()
+        return process
+
+    receipt = _execute(executor, case, launch=launch)
 
     assert receipt["status"] == "stopped"
-    assert receipt["stop_outcome"]["code"] == "packet_executor.missing_gpu_rank"
+    assert receipt["attempted_order"] == [
+        "setup",
+        "success.uninterrupted_control",
+    ]
+    assert receipt["stop_outcome"]["code"] == expected_code
+
+
+@pytest.mark.parametrize(
+    ("invalid", "expected_code"),
+    [
+        ("steps", "packet_executor.gpu_artifact_rows"),
+        ("topology", "packet_executor.gpu_artifact_topology"),
+        ("value", "packet_executor.gpu_artifact_metric"),
+    ],
+)
+def test_control_gpu_metrics_require_exact_steps_topology_and_values(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+    expected_code: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] != "success.uninterrupted_control":
+            return process
+        run_dir = case["artifact_root"] / "runs" / "uninterrupted_control"
+        if invalid == "steps":
+            rows = [
+                json.loads(line)
+                for line in (run_dir / "logging.jsonl").read_text().splitlines()
+            ]
+            rows[1]["step"] = 3
+            _write_jsonl(run_dir / "logging.jsonl", rows)
+        elif invalid == "topology":
+            state = json.loads((run_dir / "run.json").read_text())
+            state["policy_identities"]["runtime_determinism"][
+                "launcher_attestations"
+            ][1]["logical_cuda_device"] = 0
+            _write_json(run_dir / "run.json", state)
+        else:
+            rows = [
+                json.loads(line)
+                for line in (run_dir / "logging.jsonl").read_text().splitlines()
+            ]
+            rows[0]["per_rank_measurement"]["0"][
+                "resource/gpu_max_memory_allocated_bytes"
+            ] = True
+            _write_jsonl(run_dir / "logging.jsonl", rows)
+        return process
+
+    receipt = _execute(executor, case, launch=launch)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == expected_code
+
+
+def test_resumed_gpu_metrics_merge_parent_and_child_lifetimes(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    device_rows = [row for row in _gpu_rows() if row["kind"] == "device"]
+
+    receipt = _execute(executor, case, gpu_sampler=lambda: device_rows)
+
+    resumed = next(
+        row
+        for row in receipt["commands"]
+        if row["name"] == "success.resumed_child"
+    )
+    assert resumed["gpu_measurement_source"] == "torch_allocator_high_water"
+    assert resumed["gpu_memory_bytes_per_rank"] == {"0": 130, "1": 100}
+    assert resumed["gpu_artifact_evidence"]["step_inventory"] == [
+        {"role": "resumed_parent", "step": 1},
+        {"role": "resumed_child", "step": 2},
+    ]
+    assert resumed["gpu_artifact_evidence"]["raw_maxima"] == {
+        "0": {"allocated_bytes": 130, "reserved_bytes": 125},
+        "1": {"allocated_bytes": 85, "reserved_bytes": 100},
+    }
+    assert resumed["gpu_artifact_evidence"]["topology_mapping"] == [
+        {
+            "gpu_uuid": "GPU-a",
+            "local_rank": 0,
+            "logical_cuda_device": 0,
+            "physical_index": "6",
+            "rank": 0,
+        },
+        {
+            "gpu_uuid": "GPU-b",
+            "local_rank": 1,
+            "logical_cuda_device": 1,
+            "physical_index": "7",
+            "rank": 1,
+        },
+    ]
+    for source in resumed["gpu_artifact_evidence"]["source_files"]:
+        assert source["sha256"] == _sha256(Path(source["path"]).read_bytes())
+
+
+@pytest.mark.parametrize(
+    ("invalid", "expected_code"),
+    [
+        ("receipt_binding", "packet_executor.gpu_artifact_receipt_binding"),
+        ("duplicate_rows", "packet_executor.gpu_artifact_rows"),
+        ("bound", "packet_executor.gpu_bound"),
+    ],
+)
+def test_success_gpu_metrics_reject_bad_bindings_rows_and_bound_excess(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+    expected_code: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    if invalid == "bound":
+        case["manifest"]["execution_contract"]["resource_bounds"][
+            "success.uninterrupted_control"
+        ]["max_gpu_memory_bytes_per_rank"] = 109
+        _refresh_manifest_and_review(case)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] != "success.uninterrupted_control":
+            return process
+        run_dir = case["artifact_root"] / "runs" / "uninterrupted_control"
+        if invalid == "receipt_binding":
+            path = (
+                case["artifact_root"]
+                / "receipts"
+                / "success-control-receipt.json"
+            )
+            payload = json.loads(path.read_text())
+            payload.pop("receipt_payload_sha256")
+            payload["config_sha256"] = "0" * 64
+            _write_json(path, _signed(payload))
+        elif invalid == "duplicate_rows":
+            rows = [
+                json.loads(line)
+                for line in (run_dir / "logging.jsonl").read_text().splitlines()
+            ]
+            _write_jsonl(run_dir / "logging.jsonl", [*rows, rows[-1]])
+        return process
+
+    receipt = _execute(executor, case, launch=launch)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == expected_code
+
+
+def test_fake_nvml_rows_cannot_satisfy_missing_gpu_artifacts(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] == "success.uninterrupted_control":
+            (
+                case["artifact_root"]
+                / "receipts"
+                / "success-control-receipt.json"
+            ).unlink()
+        return process
+
+    receipt = _execute(
+        executor,
+        case,
+        launch=launch,
+        gpu_sampler=lambda: _gpu_rows(),
+    )
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.gpu_artifact_missing"
+
+
+def test_gpu_artifacts_validate_after_return_cleanup_and_summary(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    validator = getattr(executor, "_validate_success_gpu_artifacts", None)
+    assert callable(validator), "artifact GPU validator is not implemented"
+    calls: list[str] = []
+
+    def ordered_validator(**kwargs: Any) -> dict[str, Any]:
+        observation = kwargs["observation"]
+        assert observation["returncode"] == 0
+        assert observation["cleanup"]["status"] == "confirmed_absent"
+        assert observation["artifact_tree"]["after"]["inventory_sha256"]
+        calls.append(kwargs["name"])
+        return validator(**kwargs)
+
+    monkeypatch.setattr(executor, "_validate_success_gpu_artifacts", ordered_validator)
+    receipt = _execute(
+        executor,
+        case,
+        gpu_sampler=lambda: [row for row in _gpu_rows() if row["kind"] == "device"],
+    )
+
+    assert receipt["status"] == "verified"
+    assert calls == [
+        "success.uninterrupted_control",
+        "success.resumed_child",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "command", "expected_code"),
+    [
+        ("logging_step", "success.uninterrupted_control", "packet_executor.gpu_artifact_rows"),
+        ("per_rank_key", "success.uninterrupted_control", "packet_executor.gpu_artifact_rows"),
+        ("topology_rank", "success.uninterrupted_control", "packet_executor.gpu_artifact_topology"),
+        ("topology_local_rank", "success.uninterrupted_control", "packet_executor.gpu_artifact_topology"),
+        ("topology_logical_device", "success.uninterrupted_control", "packet_executor.gpu_artifact_topology"),
+        ("receipt_boundary_step", "success.uninterrupted_control", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_update_step", "success.uninterrupted_control", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_parent_boundary_step", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_parent_completed_steps", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_parent_consumed_packs", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_parent_checkpoint_count", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_authenticated_checkpoint_step", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_authenticated_completed_steps", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("receipt_child_update_step", "success.resumed_child", "packet_executor.gpu_artifact_receipt_binding"),
+        ("run_completed_steps", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_consumed_packs", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_checkpoint_count", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_checkpoint_event_step", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_checkpoint_identity_step", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_event_completed_steps", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_event_consumed_packs", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+        ("run_resolved_max_steps", "success.resumed_child", "packet_executor.gpu_artifact_run_state"),
+    ],
+)
+def test_gpu_artifact_integer_identity_and_progress_fields_reject_json_booleans(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    command: str,
+    expected_code: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] != command:
+            return process
+        control_dir = case["artifact_root"] / "runs" / "uninterrupted_control"
+        parent_dir = case["artifact_root"] / "runs" / "resumed_parent"
+        if field.startswith("logging_") or field == "per_rank_key":
+            path = control_dir / "logging.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            if field == "logging_step":
+                rows[0]["step"] = True
+            else:
+                rank_zero = rows[0]["per_rank_measurement"].pop("0")
+                rows[0]["per_rank_measurement"]["true"] = rank_zero
+            _write_jsonl(path, rows)
+            return process
+        if field.startswith("topology_"):
+            path = control_dir / "run.json"
+            state = json.loads(path.read_text())
+            row = state["policy_identities"]["runtime_determinism"][
+                "launcher_attestations"
+            ][1]
+            key = {
+                "topology_rank": "rank",
+                "topology_local_rank": "local_rank",
+                "topology_logical_device": "logical_cuda_device",
+            }[field]
+            row[key] = True
+            _write_json(path, state)
+            return process
+        if field.startswith("receipt_"):
+            path = (
+                case["artifact_root"]
+                / "receipts"
+                / (
+                    "success-control-receipt.json"
+                    if command == "success.uninterrupted_control"
+                    else "success-resumed-receipt.json"
+                )
+            )
+            payload = json.loads(path.read_text())
+            payload.pop("receipt_payload_sha256")
+            target: dict[str, Any] = payload
+            key = field.removeprefix("receipt_")
+            if key.startswith("parent_"):
+                target = payload["setup"]
+                key = key.removeprefix("parent_")
+                if key == "checkpoint_count":
+                    key = "checkpoint_event_count"
+            elif key.startswith("authenticated_"):
+                target = payload["setup"]["authenticated_step_one"]
+                key = key.removeprefix("authenticated_")
+                if key == "checkpoint_step":
+                    target = target["checkpoint_identity"]
+                else:
+                    target = target["committed_progress"]
+            elif key.startswith("child_"):
+                target = payload["update"]
+                key = key.removeprefix("child_")
+            target[key] = True
+            _write_json(path, _signed(payload))
+            return process
+        path = parent_dir / "run.json"
+        state = json.loads(path.read_text())
+        key = field.removeprefix("run_")
+        if key == "checkpoint_count":
+            key = "checkpoint_event_count"
+        if key == "checkpoint_event_step":
+            state["measurement"]["checkpoint_publication_events"][0]["step"] = True
+        elif key == "checkpoint_identity_step":
+            state["measurement"]["checkpoint_publication_events"][0][
+                "checkpoint_identity"
+            ]["checkpoint_step"] = True
+        elif key == "event_completed_steps":
+            state["measurement"]["checkpoint_publication_events"][0][
+                "committed_progress"
+            ]["completed_steps"] = True
+        elif key == "event_consumed_packs":
+            state["measurement"]["checkpoint_publication_events"][0][
+                "committed_progress"
+            ]["consumed_packs"] = True
+        else:
+            state[key] = True
+        _write_json(path, state)
+        return process
+
+    receipt = _execute(executor, case, launch=launch)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["command"] == command
+    assert receipt["stop_outcome"]["code"] == expected_code
 
 
 def test_unranked_model_free_cpu_subtree_needs_no_rank_environment(
@@ -1578,19 +2216,10 @@ def test_command_tree_cpu_bound_and_missing_owned_sample_fail_closed(
     assert observation["execution_error"]["code"] == expected_code
 
 
-@pytest.mark.parametrize(
-    ("missing", "expected_code"),
-    [
-        ("cpu", "packet_executor.missing_process_rank"),
-        ("gpu", "packet_executor.missing_gpu_rank"),
-    ],
-)
-def test_success_commands_still_require_both_cpu_and_gpu_ranks(
+def test_success_commands_still_require_both_cpu_ranks(
     executor: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    missing: str,
-    expected_code: str,
 ) -> None:
     case = _fixture(tmp_path, monkeypatch)
     active = ""
@@ -1605,20 +2234,13 @@ def test_success_commands_still_require_both_cpu_and_gpu_ranks(
         case,
         launch=launch,
         process_sampler=lambda: _process_rows(
-            include_rank1=not (
-                missing == "cpu" and active == "success.uninterrupted_control"
-            )
-        ),
-        gpu_sampler=lambda: _gpu_rows(
-            include_rank1=not (
-                missing == "gpu" and active == "success.uninterrupted_control"
-            )
+            include_rank1=active != "success.uninterrupted_control"
         ),
     )
 
     assert receipt["status"] == "stopped"
     assert receipt["stop_outcome"]["command"] == "success.uninterrupted_control"
-    assert receipt["stop_outcome"]["code"] == expected_code
+    assert receipt["stop_outcome"]["code"] == "packet_executor.missing_process_rank"
 
 
 def test_outer_receipt_binds_launcher_runtime_groups_and_bounded_artifact_summaries(
@@ -1709,32 +2331,21 @@ def test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_g
     assert receipt["commands"][0]["cleanup"]["status"] == "confirmed_absent"
 
 
-@pytest.mark.parametrize("missing", ["process", "gpu"])
-def test_missing_required_rank_measurement_stops(
+def test_missing_required_cpu_rank_measurement_stops(
     executor: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    missing: str,
 ) -> None:
     case = _fixture(tmp_path, monkeypatch)
     receipt = _execute(
         executor,
         case,
-        process_sampler=(
-            (lambda: _process_rows(include_rank1=False))
-            if missing == "process"
-            else (lambda: _process_rows())
-        ),
-        gpu_sampler=(
-            (lambda: _gpu_rows(include_rank1=False))
-            if missing == "gpu"
-            else (lambda: _gpu_rows())
-        ),
+        process_sampler=lambda: _process_rows(include_rank1=False),
     )
 
     assert receipt["status"] == "stopped"
     assert receipt["attempted_order"] == ["setup", "success.uninterrupted_control"]
-    assert receipt["stop_outcome"]["code"] == f"packet_executor.missing_{missing}_rank"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.missing_process_rank"
 
 
 @pytest.mark.parametrize("inner", ["missing_inner", "failed", "bad_digest"])

@@ -181,6 +181,23 @@ success or failure. No attempt-3 command, GPU/model work, cache preparation, or
 artifact-target mutation has executed. The manifest and packet are immutable
 evidence and MUST NOT be edited to repair these gaps.
 
+Attempt 4 is also immutable historical evidence. It is frozen at
+implementation commit `5d68a41081aecc3282cb44ce70bcb5bcdcc7c19e`,
+manifest SHA-256
+`b3538fb6167186cd5063f343a447ef1ed8f3024dc07f96284c7628c1ab08d3a9`,
+and packet SHA-256
+`45afe6475e2aa3cae6e106bc446725de4b60197b77ba3d0a3a8ff45263242a87`.
+Setup and `success.uninterrupted_control` both returned zero and cleanup was
+confirmed after each command, but the signed outer receipt stopped at
+`packet_executor.missing_gpu_rank`; no later command or retry ran. The failure
+is evidentiary, not a training failure: NVML/`nvidia-smi` returned host PIDs
+while the executor observed `/proc` in a container PID namespace, and there is
+no verifiable mapping between those identities. Consequently a selected UUID
+plus an NVML PID/starttime process row cannot own semantic GPU-rank coverage.
+The attempt-4 manifest, packet, marker, review, outer receipt, and produced
+artifacts remain immutable and MUST NOT be edited or reinterpreted as a
+successful qualification.
+
 The only authorized parent repair is probe-local and test-first in
 `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`: the resumed
 parent alone uses a synchronous held-parent entry route that wraps the real
@@ -210,7 +227,7 @@ After that validation, the executor claims an absent attempt marker with
 `O_EXCL`, stops on the first failure with no retry, and launches exactly one
 Popen-like process for one command at a time. That returned process is the
 sole command/process-group owner. Every post-launch exit path -- including
-process/GPU sampler failure, artifact summarization failure, timeout, bound
+process/NVML sampler failure, artifact summarization failure, timeout, bound
 failure, launch-observation error, nonzero exit, or executor exception -- runs
 the same bounded process-group cleanup: identify the group by leader PID and
 Linux process starttime, send `TERM`, escalate to `KILL` if needed, reap the
@@ -218,29 +235,68 @@ returned process, and check group absence without accepting PID reuse. A
 cleanup or absence-check failure is recorded and forces a failed terminal
 outcome; no successful terminal receipt may precede confirmed group absence.
 
-The schema-v2 contract retains the frozen physical-GPU mapping as exact
-`physical_index` to UUID pairs. The executor revalidates it before marker
-creation and immediately before the first GPU command. A GPU process/rank row
-counts only when its UUID is selected by that mapping and its PID plus Linux
-starttime belongs to the current command's observed descendant tree; a
-foreign, stale, index-swapped, or unowned row fails closed. Required resource
-coverage is command-specific. `success.uninterrupted_control` and
-`success.resumed_child` use CPU mode `per_rank` with
-`required_cpu_ranks: [0, 1]`, and also require GPU ranks `[0, 1]`. `setup`,
+The successor contract retains `nvidia-smi` only for the frozen exact
+`physical_index` to UUID map and initial occupancy/headroom preflight. The
+executor revalidates that map before marker creation and immediately before
+the first GPU command. NVML process rows may be retained as optional
+observations, but host/container PID-namespace ambiguity means no such row can
+satisfy or fail semantic GPU-rank coverage.
+
+Success GPU coverage instead comes from a target-bound three-way artifact
+join. The signed success receipt binds the implementation commit, exact config,
+run directory, and role. That run's `run.json` binds `runtime.world_size`,
+completed progress, and immutable
+`policy_identities.runtime_determinism.launcher_attestations` for rank,
+local rank, logical CUDA device, and `cuda_visible_devices`. Canonical train
+rows in `logging.jsonl` bind each rank's
+`per_rank_measurement.<rank>["resource/gpu_max_memory_allocated_bytes"]` and
+`per_rank_measurement.<rank>["resource/gpu_max_memory_reserved_bytes"]`. The accepted
+rank inventory is exactly integer ranks `0` and `1`; each value MUST be a JSON
+number that is finite, nonnegative, integer-valued, and not a boolean. The
+conservative bounded value for each rank is the maximum of allocated and
+reserved high-water marks. The outer receipt declares
+`gpu_measurement_source: torch_allocator_high_water` and retains the raw
+allocated and reserved maxima, accepted row/step inventory, each source file
+path and SHA-256, and the complete
+rank -> local rank -> logical CUDA device -> physical index -> UUID mapping.
+
+For `success.uninterrupted_control`, the signed control receipt MUST bind a
+completed `world_size=2` run with `completed_steps=2`; `logging.jsonl` MUST
+contain exactly one train row for each of steps 1 and 2 and no other accepted
+train step, and maxima cover both rows. For `success.resumed_child`, the signed
+resumed receipt spans both lifetimes: the parent MUST have an authenticated,
+controlled exit at exactly step 1 rather than normal completion and exactly
+one parent train row at step 1; the child MUST be completed with
+`world_size=2`, `completed_steps=2`, and exactly one child train row at step 2.
+Its maxima merge parent and child rows. Control, parent, and child MUST each
+attest exact topology `cuda_visible_devices: ["6", "7"]`, ranks/local
+ranks/logical devices `0 -> 0 -> 0` and `1 -> 1 -> 1`, joined through the
+manifest's physical-index-to-UUID map.
+
+Missing or invalid receipt digest, commit, config, run-directory, or role
+binding; invalid run state, progress, or topology; duplicate, wrong-step, or
+missing train rows; missing ranks or fields; non-finite, boolean, negative, or
+non-integer-valued measurements; or a conservative maximum above its frozen
+bound fails closed. Fake or otherwise admissible-looking NVML process rows
+cannot replace any missing receipt, `run.json`, `logging.jsonl`, or topology
+binding.
+
+Required CPU coverage remains command-specific.
+`success.uninterrupted_control` and `success.resumed_child` use CPU mode
+`per_rank` with `required_cpu_ranks: [0, 1]`. `setup`,
 `rank_failure`, `interruption`, and `verification` use CPU mode
 `command_tree_aggregate` with `required_cpu_ranks: []`; their accepted CPU
 evidence is an owned command-tree sample and
 `cpu_rss_command_tree_max_bytes`, the maximum across sampler snapshots of the
 concurrent RSS sum for all exact PID/starttime-owned processes in that
-snapshot, bounded by the frozen `max_cpu_rss_command_tree_bytes`. GPU rank
-requirements are empty for those four commands. The
+snapshot, bounded by the frozen `max_cpu_rss_command_tree_bytes`. The
 executor MUST NOT infer semantic rank inventory from unranked model-free OS
 process rows or turn the failure-shaped arms into `torchrun` commands. Missing
-required success rows, a missing owned aggregate sample, or either kind of CPU
-bound exceedance is a terminal evidence failure.
+required success CPU rows, a missing owned aggregate sample, or either kind of
+CPU bound exceedance is a terminal evidence failure.
 
 Rank meaning for the two model-free arms belongs to their signed semantic arm
-receipts. Their experiment-local schemas are bumped to
+receipts. Their existing experiment-local schemas remain
 `coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2` and
 `coordexp-swift-reconcile-resume-probe-interruption-receipt-v2`. Every
 rank-failure injection records exact `expected_ranks: [0, 1]`,
@@ -253,11 +309,18 @@ an explicit `rank_state_boundary_reached` field is false. The verifier checks
 every field exactly and rejects missing, stale-schema, re-signed-tampered, or
 digest-tampered arm receipts.
 
+Only after a command returns zero, its process-group cleanup is confirmed, and
+its bounded artifact summary is complete does the executor validate the
+command's artifact GPU metrics; resource success is impossible before that
+ordering completes.
+
 The executor always attempts one signed outer terminal receipt. It binds the
 implementation, manifest, packet, and review identities; exact argv
 observations; marker and command process-group identities; launcher callable
-and Python runtime identity; per-command required-rank coverage and accepted
-process/GPU rows; per-rank success maxima and aggregate
+and Python runtime identity; per-command CPU coverage and optional process/NVML
+observations; artifact-derived GPU source, bindings, topology, inventories,
+hashes, raw allocated/reserved maxima, and conservative per-rank maxima; and
+aggregate
 `cpu_rss_command_tree_max_bytes` values; bounded artifact-tree summaries under
 only the declared roots and numeric entry/depth/path/byte limits; cleanup
 outcome; stop outcome; and the inner verifier receipt when verification is

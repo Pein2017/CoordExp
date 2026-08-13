@@ -329,20 +329,34 @@ inference-runtime implementation change is included. Rollback removes only the
 new tests/evidence and restores affected matrix rows to `gap`; it does not
 re-introduce the invalid exact-without-path clause.
 
-### Task 4: Close the Attempt-3 HOLD and Qualify the Successor Packet
+### Task 4: Close the Attempt-4 GPU-Evidence Stop and Qualify Attempt 5
 
 **Files:**
 - Read only: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-command-manifest.json`
 - Read only: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-launch-packet.md`
 - Read: `openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-3-pre-cost-review.md`
+- Read only: every `wave-3-attempt-4-*` manifest, packet, marker, review,
+  terminal receipt, and produced artifact.
 - Modify: `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`
 - Test: `tests/training/test_reconcile_exact_resume_probe.py`
-- Create: `scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py`
-- Create: `tests/training/test_reconcile_exact_resume_packet_executor.py`
+- Modify: `scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py`
+- Test: `tests/training/test_reconcile_exact_resume_packet_executor.py`
 - Create after the TDD repairs: successor schema-v2 command manifest, packet, pre-cost review, attempt marker, and outer terminal receipt under the change-local receipts/artifact roots.
 - Modify after executed evidence: `openspec/changes/reconcile-coordexp-swift-training-contracts/evidence-matrix.md` and `tasks.md`.
 
 **Attempt-3 disposition:** implementation commit `037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest SHA-256 `c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`, and packet SHA-256 `70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02` are frozen evidence. Pre-cost review is `HOLD` on two P1s: the external observation-to-signal controller has a parent step-2 TOCTOU, and direct execution has no outer attempt receipt. No attempt-3 command, GPU/model work, cache preparation, or artifact-target mutation executed. Do not edit the manifest or packet.
+
+**Attempt-4 disposition:** implementation commit
+`5d68a41081aecc3282cb44ce70bcb5bcdcc7c19e`, manifest SHA-256
+`b3538fb6167186cd5063f343a447ef1ed8f3024dc07f96284c7628c1ab08d3a9`,
+and packet SHA-256
+`45afe6475e2aa3cae6e106bc446725de4b60197b77ba3d0a3a8ff45263242a87`
+are frozen evidence. Setup and `success.uninterrupted_control` both returned
+zero, each cleanup was confirmed, and the signed outer receipt stopped at
+`packet_executor.missing_gpu_rank`; no later command or retry ran. The selected
+UUID plus PID/starttime gate is unverifiable because NVML/`nvidia-smi` reports
+host PIDs while executor `/proc` observes a container PID namespace and no
+authenticated mapping exists. Preserve every Attempt-4 file and output.
 
 **Interfaces:**
 - Held parent: only `success-resumed` routes the parent through a probe-local synchronous entry that wraps the real pipeline checkpoint handler, calls the real handler first, and blocks after committed step 1. Control and child continue to use `-m src.train`. No `src/` edit or compatibility weakening is allowed.
@@ -366,25 +380,51 @@ re-introduce the invalid exact-without-path clause.
   the canonical review payload excluding that digest and its signature
   envelope. The executor validates the signed receipt and all bindings before
   marker creation; manifest self-`READY` alone has no authority.
-- Retain the frozen exact `physical_index` to GPU UUID map and validate it
-  before marker creation and immediately before the first GPU command. GPU
-  rank evidence counts only when the UUID is selected and the row's PID plus
-  Linux starttime is in the current command's observed descendant tree.
+- Retain `nvidia-smi` for the frozen exact `physical_index` to GPU UUID map and
+  initial occupancy/headroom preflight, validating the map before marker
+  creation and immediately before the first GPU command. NVML process rows are
+  optional observations only and never a GPU-rank gate.
 - Resource coverage is exact per command. The true two-rank torchrun commands
   `success.uninterrupted_control` and `success.resumed_child` use CPU mode
-  `per_rank`, `required_cpu_ranks: [0, 1]`, and
-  `required_gpu_ranks: [0, 1]`. The model-free `setup`, `rank_failure`,
+  `per_rank` and `required_cpu_ranks: [0, 1]`. Their GPU coverage uses
+  `gpu_measurement_source: torch_allocator_high_water` and exact ranks
+  `[0, 1]` from a target-bound signed-success-receipt + `run.json` + canonical
+  `logging.jsonl` join. The model-free `setup`, `rank_failure`,
   `interruption`, and `verification` commands use CPU mode
   `command_tree_aggregate`, `required_cpu_ranks: []`, and
-  `required_gpu_ranks: []`. Their CPU bound and observed maximum are
+  no GPU artifact requirement. Their CPU bound and observed maximum are
   `max_cpu_rss_command_tree_bytes` and `cpu_rss_command_tree_max_bytes`,
   respectively. The observed value is the maximum, across sampler snapshots,
   of the concurrent RSS sum for all exact PID/starttime-owned processes in that
   snapshot. It is never the sum of independent per-PID high-water marks and it
   requires at least one owned sample. OS sampler rows do not own semantic rank
   meaning and the model-free arms MUST NOT be changed to torchrun.
-- Signed arm receipts own model-free rank semantics. Bump the experiment-local
-  schemas to `coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2`
+- The signed success receipt binds exact implementation commit, config,
+  `run_dir`, and role. `run.json` binds `runtime.world_size`, completed
+  progress, and immutable
+  `policy_identities.runtime_determinism.launcher_attestations`. Every accepted
+  run has `cuda_visible_devices: ["6", "7"]`, rank/local/logical tuples
+  `0/0/0` and `1/1/1`, joined through the manifest physical-index-to-UUID map.
+  Canonical train rows provide exact
+  `per_rank_measurement.<rank>["resource/gpu_max_memory_allocated_bytes"]` and
+  `per_rank_measurement.<rank>["resource/gpu_max_memory_reserved_bytes"]`;
+  values must be finite,
+  nonnegative, integer-valued JSON numbers and not booleans. The bounded value
+  is `max(allocated, reserved)`.
+- Control requires a signed control receipt, completed `world_size=2` run with
+  `completed_steps=2`, and exactly one train row at steps 1 and 2; maxima span
+  both. Resumed coverage requires a signed resumed receipt spanning parent and
+  child: the parent has an authenticated controlled exit at exactly step 1
+  (not normal completion) and exactly one train row at step 1; the child is
+  completed at `world_size=2`, `completed_steps=2`, with exactly one train row
+  at step 2; maxima merge both lifetimes.
+- Missing or bad receipt digest/commit/config/run-dir/role, run state/progress
+  or topology, duplicate/wrong/missing rows or steps, missing rank/field,
+  non-finite/boolean/negative/non-integer measurement, or bound excess fails
+  closed. Fake NVML rows cannot satisfy missing artifacts.
+- Signed arm receipts own model-free rank semantics. Retain the existing
+  experiment-local schemas
+  `coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2`
   and `coordexp-swift-reconcile-resume-probe-interruption-receipt-v2`.
   Rank-failure receipts record exact expected `[0, 1]`, serialized `[0, 1]`,
   injection-derived published ranks, and exact production error code; the
@@ -397,14 +437,18 @@ re-introduce the invalid exact-without-path clause.
 - The outer receipt records resolved launcher module/qualname/file digest,
   Python executable realpath/version, each command leader PID/starttime and
   process-group cleanup outcome, and bounded artifact-tree summaries under
-  declared roots and numeric entry/depth/path/byte ceilings. It retains the
-  success commands' per-rank maxima and records aggregate-mode
+  declared roots and numeric entry/depth/path/byte ceilings. Only after command
+  return zero, confirmed cleanup, and artifact summary does the executor
+  validate artifact GPU metrics and permit resource success. The receipt
+  records `gpu_measurement_source`, source paths and SHA-256, exact row/step
+  inventory, raw allocated/reserved maxima, conservative per-rank maxima, and
+  rank-to-local/logical/physical/UUID mapping. It also records aggregate-mode
   `cpu_rss_command_tree_max_bytes`. Exceeding a summary or resource ceiling, or
   failing to obtain one owned aggregate sample, fails closed.
 
-- [ ] **Step 1: Write the held-parent RED tests**
+- [ ] **Step 1: Preserve the completed held-parent regression seam**
 
-Add and run exactly:
+Run exactly, without changing production `src/`:
 
 ```bash
 cd /data/CoordExp/.worktrees/CoordExp-swift
@@ -415,25 +459,32 @@ conda run -n ms pytest -q \
   tests/training/test_exact_resume.py::test_resume_compatibility_keeps_max_steps_and_checkpoint_cadence_strict
 ```
 
-Expected RED: the new route assertions fail before implementation; the existing compatibility node stays green. The tests require the real handler to return successfully before the step-1 hold, propagate handler failure without holding, and prove the trainer cannot enter step 2 while held.
+Expected GREEN: the already implemented route assertions and compatibility node
+pass. They remain a prerequisite for Attempt 5: the real handler returns before
+the step-1 hold, handler failure propagates without holding, and the trainer
+cannot enter step 2 while held.
 
-- [ ] **Step 2: Implement only the synchronous held-parent route and turn GREEN**
+- [ ] **Step 2: Confirm the immutable Attempt-4 stop boundary**
 
-Modify only `reconcile_exact_resume_probe.py`. The resumed-parent argv uses its probe-local held-parent route; the route wraps the real pipeline checkpoint handler synchronously, invokes it first, then blocks after successful committed step 1 until the existing bounded controller terminates the process group. Do not poll to decide when the trainer may advance. Keep uninterrupted-control and resumed-child argv on `src.train`; do not edit `src/`, admission, config compatibility, `training.max_steps`, or checkpoint cadence.
+Read the immutable Attempt-4 manifest, packet, marker, signed review, signed
+outer terminal receipt, control receipt, control `run.json`, and control
+`logging.jsonl`. Verify their recorded SHA-256 identities, both command return
+codes, both confirmed cleanup outcomes, stop code, and absent later-command
+inventory. Compare NVML host-PID observations with executor container-namespace
+`/proc` identities only to establish that no authenticated mapping exists; do
+not edit, re-sign, or reinterpret any Attempt-4 file.
 
-Run the exact four nodes from Step 1, then:
-
-```bash
-conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_probe.py tests/training/test_exact_resume.py
-```
-
-Expected: all pass; the broader files catch route, failure propagation, publication, and compatibility regressions without launching a GPU/model.
+Expected: the durable artifacts reproduce `packet_executor.missing_gpu_rank`
+after successful control and show that the control logging rows already carry
+ranked torch-allocator allocated/reserved high-water marks. This is root-cause
+evidence and a fixture source, not qualification success.
 
 - [ ] **Step 3: Write the packet-executor RED tests**
 
-Create `tests/training/test_reconcile_exact_resume_packet_executor.py` and
-extend `tests/training/test_reconcile_exact_resume_probe.py` with focused tests
-for the unchanged callable/CLI, hash/schema/packet validation, exclusive
+Extend `tests/training/test_reconcile_exact_resume_packet_executor.py` and keep
+the existing `tests/training/test_reconcile_exact_resume_probe.py` semantic-arm
+regressions in the focused selection. Cover the unchanged callable/CLI,
+hash/schema/packet validation, exclusive
 absent-marker creation, exact six-command order, stop/no-retry, resource-mode
 accounting, semantic arm receipts, and outer/inner receipt bindings. Add these
 exact nodes:
@@ -443,24 +494,34 @@ exact nodes:
 - `test_launch_returns_one_popen_like_process`
 - `test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_group`
 - `test_swapped_physical_index_uuid_mapping_rejects_before_marker`
-- `test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank`
+- `test_nvml_host_pid_rows_are_observational_not_gpu_rank_gate`
 - `test_unranked_model_free_cpu_subtree_needs_no_rank_environment`
 - `test_command_tree_cpu_peak_is_max_concurrent_snapshot_sum`
 - `test_command_tree_cpu_bound_and_missing_owned_sample_fail_closed`
-- `test_success_commands_still_require_both_cpu_and_gpu_ranks`
+- `test_success_gpu_metrics_require_signed_receipt_run_and_logging_join`
+- `test_control_gpu_metrics_require_exact_steps_topology_and_values`
+- `test_resumed_gpu_metrics_merge_parent_and_child_lifetimes`
+- `test_success_gpu_metrics_reject_bad_bindings_rows_and_bound_excess`
+- `test_fake_nvml_rows_cannot_satisfy_missing_gpu_artifacts`
+- `test_gpu_artifacts_validate_after_return_cleanup_and_summary`
 - `test_rank_failure_v2_records_exact_semantic_ranks_for_every_injection`
 - `test_interruption_v2_records_exact_semantic_ranks_for_every_boundary`
 - `test_verify_rejects_tampered_semantic_arm_rank_fields`
 
-The post-launch cleanup test is parameterized over process sampler, injected
-GPU sampler, artifact summarizer, timeout, nonzero exit, and executor-error
+The post-launch cleanup test is parameterized over process sampler, optional
+NVML sampler, artifact summarizer, timeout, nonzero exit, and executor-error
 paths. It launches only a harmless sleeping CPU subprocess in a fresh process
 group and proves TERM, bounded KILL escalation, reap, and PID/starttime-safe
 group absence before inspecting the terminal receipt; it does not touch a GPU.
 The CPU-mode tests launch an unranked real subprocess tree with both `RANK` and
 `LOCAL_RANK` absent, prove aggregate peak is the maximum concurrent per-snapshot
 sum, reject both a missing owned sample and an aggregate bound exceedance, and
-preserve success CPU/GPU rank requirements `[0, 1]`. The semantic tests cover
+preserve success CPU rank requirements `[0, 1]`. GPU tests use fixture receipts,
+`run.json`, and `logging.jsonl` only: they require the exact bindings, states,
+steps, topology, ranks, fields, numeric domain, conservative bound, hashes,
+inventory, and parent+child merge above; prove NVML rows cannot substitute;
+and assert validation ordering after return zero, confirmed cleanup, and
+artifact summary. The semantic tests cover
 every injection rank/kind and every interruption boundary, then prove exact
 field and signature tampering is rejected.
 The review tests prove that manifest self-`READY`, a signed `HOLD`, or a review
@@ -474,27 +535,33 @@ conda run -n ms pytest -q \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_launch_returns_one_popen_like_process \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_group \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_swapped_physical_index_uuid_mapping_rejects_before_marker \
-  tests/training/test_reconcile_exact_resume_packet_executor.py::test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_nvml_host_pid_rows_are_observational_not_gpu_rank_gate \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_unranked_model_free_cpu_subtree_needs_no_rank_environment \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_command_tree_cpu_peak_is_max_concurrent_snapshot_sum \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_command_tree_cpu_bound_and_missing_owned_sample_fail_closed \
-  tests/training/test_reconcile_exact_resume_packet_executor.py::test_success_commands_still_require_both_cpu_and_gpu_ranks \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_success_gpu_metrics_require_signed_receipt_run_and_logging_join \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_control_gpu_metrics_require_exact_steps_topology_and_values \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_resumed_gpu_metrics_merge_parent_and_child_lifetimes \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_success_gpu_metrics_reject_bad_bindings_rows_and_bound_excess \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_fake_nvml_rows_cannot_satisfy_missing_gpu_artifacts \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_gpu_artifacts_validate_after_return_cleanup_and_summary \
   tests/training/test_reconcile_exact_resume_probe.py::test_rank_failure_v2_records_exact_semantic_ranks_for_every_injection \
   tests/training/test_reconcile_exact_resume_probe.py::test_interruption_v2_records_exact_semantic_ranks_for_every_boundary \
   tests/training/test_reconcile_exact_resume_probe.py::test_verify_rejects_tampered_semantic_arm_rank_fields
 ```
 
-Expected RED: collection succeeds; the new interface/behavior nodes fail
-against the pre-correction executor/arm schemas. Existing exact-resume behavior
-remains untouched, and no packet, artifact root, cache, GPU, or model is
+Expected RED: collection succeeds; the new artifact-GPU nodes fail against the
+pre-correction executor while existing arm-schema and exact-resume behavior
+remain untouched, and no packet, artifact root, cache, GPU, or model is
 executed.
 
-- [ ] **Step 4: Implement the executor resource contract and arm schema v2**
+- [ ] **Step 4: Implement only the artifact-derived GPU resource contract**
 
-Modify only the two experiment-local scripts
-`reconcile_exact_resume_packet_executor.py` and
-`reconcile_exact_resume_probe.py`. Preserve the executor callable/CLI and
-accept only the v2 manifest whose machine-readable `execution_contract` fixes:
+Modify only the experiment-local packet executor and, only if the existing
+signed success-receipt verifier needs a bounded helper, the experiment-local
+probe script. Preserve the executor callable/CLI, held-parent behavior, arm
+receipt schema v2, and accept only the v2 manifest whose machine-readable
+`execution_contract` fixes:
 
 ```text
 setup
@@ -521,11 +588,11 @@ marker is terminal and executes nothing. Revalidate the frozen exact
 GPU command. After ownership, call `launch` once per attempted command and
 require exactly one Popen-like return value. Record its leader PID and Linux
 starttime; form the observed descendant tree from PID/starttime pairs so PID
-reuse cannot satisfy ownership. Sample only through the injected process/GPU
-samplers. A GPU row is admissible only when its UUID is selected by the frozen
-map and its PID/starttime belongs to that command tree; foreign/stale rows fail
-closed. Enforce the CPU mode and exact required-rank matrix from the interface
-section. For `per_rank`, retain rank `[0, 1]` CPU maxima. For
+reuse cannot satisfy CPU ownership. Sample CPU through the injected process
+sampler. Keep the injected NVML sampler only for physical-index-to-UUID and
+initial occupancy observations; process rows are optional and never satisfy or
+fail GPU-rank coverage. Enforce the CPU mode and exact required-rank matrix
+from the interface section. For `per_rank`, retain rank `[0, 1]` CPU maxima. For
 `command_tree_aggregate`, accept real owned PID/starttime rows without `RANK`
 or `LOCAL_RANK`, require at least one owned sample, sum the concurrent RSS of
 the exact owned tree separately in each snapshot, and retain the maximum of
@@ -534,16 +601,26 @@ per-PID high-water marks. Apply the command's matching numeric bound and fail
 closed on a missing sample or exceedance. Do not add torchrun to setup, rank
 failure, interruption, or verification.
 
-Bump the two experiment-local arm receipt constants from v1 to v2. Rank
-failure records exact `expected_ranks`, `serialized_ranks`,
-injection-derived `published_ranks`, and exact production `error_code`; for
-missing rank 1 these are `[0, 1]`, `[0, 1]`, `[0]`, and
-`training_state.incomplete_rank_set`. Interruption records exact expected,
-serialized, and published ranks plus `rank_state_boundary_reached`; at
-`stop_after=1`, the latter three values are `[]`, `[]`, and false. Update the
-probe verifier's comparison policy so every named field, schema, status, and
-signature/digest must match exactly for every injection and interruption
-boundary.
+After a success command returns zero, process-group cleanup is confirmed, and
+the bounded artifact summary is complete, validate its GPU metrics from the
+target-bound three-way join only. Authenticate the signed success receipt and
+its exact commit/config/run-dir/role bindings; hash and parse the bound
+`run.json` and canonical `logging.jsonl`; validate run state/progress and exact
+launcher topology; then validate exact rows, steps, ranks, field presence,
+finite nonnegative integer-valued non-boolean values, and the frozen bound.
+Control accepts exactly steps 1 and 2 once each from a completed world-size-2,
+completed-step-2 run. Resumed accepts exactly parent step 1 after authenticated
+controlled exit and child step 2 after completed world-size-2,
+completed-step-2 state, and merges both lifetimes. Record
+`gpu_measurement_source: torch_allocator_high_water`, source file paths and
+SHA-256, row/step inventory, raw allocated/reserved maxima, conservative
+per-rank maxima, and rank-to-local/logical/physical/UUID mapping. Any missing
+or malformed binding/artifact/value, topology or step mismatch, duplicate row,
+or bound excess fails closed; NVML process rows cannot repair it.
+
+Preserve the existing experiment-local rank-failure and interruption receipt
+schema-v2 semantics and verifier checks exactly; this correction does not
+change arm meaning or production training artifacts.
 
 Put all logic after a successful launch behind one terminal cleanup path. On
 normal completion, sampler failure, artifact-summary failure, timeout, bound
@@ -554,9 +631,10 @@ or absence-check failure; such a failure forces a failed outer receipt. Write
 the signed outer receipt to an absent `terminal_receipt_path` only after this
 check. Bind all frozen identities including the review payload digest, exact
 argv observations, resolved launcher and Python runtime identity,
-PID/starttime/process-group observations, accepted rank rows, per-rank success
-maxima, aggregate-mode `cpu_rss_command_tree_max_bytes`, bounded per-root
-artifact-tree summaries, cleanup and stop reason, and the validated inner
+PID/starttime/process-group observations, optional NVML observations,
+artifact-derived GPU bindings/inventory/hashes/raw and conservative maxima,
+per-rank CPU maxima, aggregate-mode `cpu_rss_command_tree_max_bytes`, bounded
+per-root artifact-tree summaries, cleanup and stop reason, and the validated inner
 verifier receipt if verification completed. Do not duplicate probe comparison
 logic or add general orchestration.
 
@@ -569,11 +647,16 @@ conda run -n ms pytest -q \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_launch_returns_one_popen_like_process \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_group \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_swapped_physical_index_uuid_mapping_rejects_before_marker \
-  tests/training/test_reconcile_exact_resume_packet_executor.py::test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_nvml_host_pid_rows_are_observational_not_gpu_rank_gate \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_unranked_model_free_cpu_subtree_needs_no_rank_environment \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_command_tree_cpu_peak_is_max_concurrent_snapshot_sum \
   tests/training/test_reconcile_exact_resume_packet_executor.py::test_command_tree_cpu_bound_and_missing_owned_sample_fail_closed \
-  tests/training/test_reconcile_exact_resume_packet_executor.py::test_success_commands_still_require_both_cpu_and_gpu_ranks \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_success_gpu_metrics_require_signed_receipt_run_and_logging_join \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_control_gpu_metrics_require_exact_steps_topology_and_values \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_resumed_gpu_metrics_merge_parent_and_child_lifetimes \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_success_gpu_metrics_reject_bad_bindings_rows_and_bound_excess \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_fake_nvml_rows_cannot_satisfy_missing_gpu_artifacts \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_gpu_artifacts_validate_after_return_cleanup_and_summary \
   tests/training/test_reconcile_exact_resume_probe.py::test_rank_failure_v2_records_exact_semantic_ranks_for_every_injection \
   tests/training/test_reconcile_exact_resume_probe.py::test_interruption_v2_records_exact_semantic_ranks_for_every_boundary \
   tests/training/test_reconcile_exact_resume_probe.py::test_verify_rejects_tampered_semantic_arm_rank_fields
@@ -583,22 +666,28 @@ conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_probe.py te
 
 Expected GREEN: every exact node from Step 3 and the full packet-executor file
 pass; the harmless CPU subprocess tests leave no live process group; the
-model-free arms retain ordinary single-process execution; and the existing
+artifact fixtures prove exact GPU fail-closed behavior without NVML PID
+ownership; the model-free arms retain ordinary single-process execution; and
+the existing
 probe and exact-resume files pass without packet, cache, GPU, or model
 execution.
 
-- [ ] **Step 5: Re-freeze and pass pre-cost review**
+- [ ] **Step 5: Re-freeze Attempt 5 and pass pre-cost review**
 
-Create a successor packet and schema-v2 manifest bound to the post-repair
+Create the Attempt-5 packet and schema-v2 manifest bound to the post-repair
 commit, new absent target/marker/outer-receipt paths, exact configs/argv, the
 exact immutable review-receipt path, retained physical-index-to-UUID map, exact
 per-command CPU mode, matching bound, and required-rank arrays, bounded
 artifact-summary limits, and the same `world_size=2`, at-most-two-GPU,
-three-arm comparison and quantitative bounds. Success commands declare
-`per_rank` and CPU/GPU ranks `[0, 1]`; the other four commands declare
+three-arm comparison and quantitative bounds. Success commands declare CPU
+mode `per_rank`, CPU ranks `[0, 1]`,
+`gpu_measurement_source: torch_allocator_high_water`, artifact GPU ranks
+`[0, 1]`, the target-bound receipt/run/log join, and their exact control or
+parent/child row policies. The other four commands declare
 `command_tree_aggregate`, empty required-rank arrays, and the exact
 `max_cpu_rss_command_tree_bytes` bound. The two arm receipt schemas are v2. Do
-not edit attempts 1-3. Validate the v2 manifest with the executor tests and
+not edit attempts 1-4 or reuse Attempt 4's target. Validate the v2 manifest
+with the executor tests and
 read-only hash/path/GPU/disk preflight. Obtain one independent signed
 `coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` receipt at the bound
 path and resolve every P0/P1. The review binds the manifest hash; the manifest
@@ -619,17 +708,24 @@ then claims the `O_EXCL` marker and runs the exact six commands in order, at
 most once each, owning one returned Popen-like process and process group at a
 time. Immediately after setup it must validate the prepare receipt,
 implementation commit, private-cache receipt, all generated config hashes, and
-the GPU map again before the first model command. It stops without retry on
-drift, foreign/stale GPU ownership, missing required CPU/GPU rank rows,
+the GPU map again before the first model command. For each success command it
+waits for return zero, confirms cleanup, completes the artifact summary, and
+only then validates the signed receipt + `run.json` + `logging.jsonl` GPU join
+before resource success. It stops without retry on
+drift, missing required CPU or artifact-GPU rank rows,
 missing owned aggregate samples, occupied paths, insufficient headroom,
 timeout/hang/OOM, nonzero exit, artifact-summary overflow, cleanup failure,
-missing measurements, or any per-rank or command-tree aggregate bound failure.
+bad receipt/run/log binding, state, topology, step, field, or numeric domain,
+or any per-rank or command-tree aggregate bound failure. Optional NVML process
+rows never satisfy missing artifacts.
 
 Expected: before the signed outer receipt is finalized, every launched process
 group has been TERM/KILL/reaped and its absence checked by PID/starttime. The
 receipt accounts for every attempted command, launcher/runtime identity,
-accepted descendant-owned rank observation, each CPU mode and bound, per-rank
-success maxima, aggregate `cpu_rss_command_tree_max_bytes`, bounded
+each CPU mode and bound, optional NVML observations, artifact source paths and
+hashes, exact row/step inventory, raw allocated/reserved maxima, conservative
+per-rank GPU maxima, exact topology mapping, aggregate
+`cpu_rss_command_tree_max_bytes`, bounded
 artifact-tree summary, cleanup outcome, and the inner verified receipt when
 reached. The inner evidence compares the required boundary/first-update state
 and exactly verifies the schema-v2 rank-failure/interruption semantic fields.
@@ -639,10 +735,10 @@ Exit zero or an inner receipt without the outer receipt is insufficient.
 
 Use the outer receipt and bound inner verifier receipt, not console status, to
 prove exact six-command order, valid external review authorization, every
-required success CPU/GPU rank and every semantic arm branch, an owned aggregate
+required success CPU and artifact-GPU rank and every semantic arm branch, an owned aggregate
 sample and bounded concurrent command-tree RSS for each model-free command,
-selected-UUID/descendant-tree GPU ownership, launcher/runtime and target
-identity, exact arm schema/rank/error/boundary fields, bounded artifact-tree
+the target-bound receipt/run/log join and exact launcher-to-UUID topology,
+launcher/runtime and target identity, exact arm schema/rank/error/boundary fields, bounded artifact-tree
 summaries, process-group cleanup, comparison results, and the same-world-size
 optimizer-step claim boundary. Stage only the successor implementation/tests
 and change-local successor evidence with explicit paths; inspect the staged
