@@ -50,8 +50,12 @@ class LeaseIdentity:
 class RuntimeConfig:
     runtime_base: Path = Path("/data/CoordExp/.codex/serena/shared")
     serena_command: tuple[str, ...] = ("/root/.local/bin/serena",)
+    bridge_command: tuple[str, ...] = (
+        "/data/CoordExp/.codex/serena/runtime/bridge/bin/mcp-proxy",
+    )
     context: str = "coordexp-minimal"
     startup_timeout: float = 60.0
+    retirement_grace: float = 60.0
     port_min: int = 23000
     port_count: int = 10000
 
@@ -472,10 +476,25 @@ def ensure_backend(slot: Slot, config: RuntimeConfig) -> Backend:
                 raise
 
 
-def reap_slot(slot: Slot, grace_seconds: float = 60.0) -> bool:
+def reap_slot(
+    slot: Slot,
+    grace_seconds: float = 60.0,
+    departing_lease: Path | None = None,
+) -> bool:
     """Retire an idle backend after grace; return whether one was stopped."""
     if grace_seconds < 0:
         raise RuntimeFailure("grace_seconds must not be negative")
+    if departing_lease is not None:
+        expected_parent = slot.path / "clients"
+        try:
+            departing_lease.relative_to(expected_parent)
+        except ValueError as exc:
+            raise RuntimeFailure("departing lease is outside the slot client directory") from exc
+        handoff_deadline = time.monotonic() + 5
+        while departing_lease.exists() and time.monotonic() < handoff_deadline:
+            time.sleep(0.01)
+        if departing_lease.exists():
+            return False
     time.sleep(grace_seconds)
     with _slot_lock(slot):
         _bind_slot_root(slot)
@@ -525,6 +544,8 @@ def release_and_schedule_reap(lease: SlotLease, grace_seconds: float = 60.0) -> 
             os.fspath(lease.slot.path.parent),
             "--grace-seconds",
             str(grace_seconds),
+            "--departing-lease",
+            os.fspath(lease.path),
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -559,9 +580,59 @@ def doctor_slot(slot: Slot) -> dict[str, object]:
         }
 
 
+def serve(start: Path, config: RuntimeConfig | None = None) -> int:
+    """Serve one stdio MCP client through its worktree's shared backend."""
+    selected = config or RuntimeConfig()
+    root = resolve_worktree(start)
+    slot = slot_for(root, selected.runtime_base)
+    lease = SlotLease.acquire(slot)
+    bridge: subprocess.Popen[bytes] | None = None
+    previous_handlers: dict[int, object] = {}
+    try:
+        backend = ensure_backend(slot, selected)
+        bridge = subprocess.Popen(
+            [
+                *selected.bridge_command,
+                "--transport",
+                "streamablehttp",
+                f"http://127.0.0.1:{backend.port}/mcp",
+            ],
+            stdin=None,
+            stdout=None,
+            stderr=None,
+            env=_proxy_free_environment(),
+        )
+
+        def forward_signal(signum: int, _frame: object) -> None:
+            if bridge is not None and bridge.poll() is None:
+                bridge.send_signal(signum)
+
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, forward_signal)
+        return bridge.wait()
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+        if bridge is not None and bridge.poll() is None:
+            bridge.terminate()
+            try:
+                bridge.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                bridge.kill()
+                bridge.wait(timeout=5)
+        try:
+            release_and_schedule_reap(lease, selected.retirement_grace)
+        except OSError:
+            lease.release()
+            raise
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest="command", required=True)
+    serve_command = subcommands.add_parser("serve")
+    serve_command.add_argument("--start", type=Path, default=Path.cwd())
     for name in ("doctor", "reap"):
         command = subcommands.add_parser(name)
         command.add_argument("--root", type=Path, required=True)
@@ -572,17 +643,24 @@ def _parser() -> argparse.ArgumentParser:
         )
         if name == "reap":
             command.add_argument("--grace-seconds", type=float, default=60.0)
+            command.add_argument("--departing-lease", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "serve":
+        return serve(args.start)
     slot = slot_for(args.root, args.runtime_base)
     if args.command == "doctor":
         print(json.dumps(doctor_slot(slot), sort_keys=True))
         return 0
     if args.command == "reap":
-        reap_slot(slot, grace_seconds=args.grace_seconds)
+        reap_slot(
+            slot,
+            grace_seconds=args.grace_seconds,
+            departing_lease=args.departing_lease,
+        )
         return 0
     raise RuntimeFailure(f"unsupported command: {args.command}")
 

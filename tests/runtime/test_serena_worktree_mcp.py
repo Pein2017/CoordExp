@@ -61,6 +61,23 @@ while True:
     return (sys.executable, str(script), str(tmp_path / "starts.txt"))
 
 
+def _fake_bridge_command(tmp_path: Path, exit_code: int = 17) -> tuple[str, ...]:
+    script = tmp_path / "fake_bridge.py"
+    script.write_text(
+        """
+import json
+import os
+import sys
+
+output = os.environ["BRIDGE_OBSERVATION"]
+with open(output, "w", encoding="utf-8") as stream:
+    json.dump({"argv": sys.argv[1:], "environment": dict(os.environ)}, stream, sort_keys=True)
+raise SystemExit(int(os.environ["BRIDGE_EXIT_CODE"]))
+"""
+    )
+    return (sys.executable, str(script))
+
+
 def _stop_backend_process(pid: int) -> None:
     try:
         os.killpg(pid, signal.SIGTERM)
@@ -334,6 +351,33 @@ def test_new_lease_during_grace_cancels_backend_retirement(tmp_path: Path) -> No
         _stop_backend_process(backend.identity.pid)
 
 
+def test_reaper_waits_for_departing_lease_handoff(tmp_path: Path) -> None:
+    module = _load_module()
+    root = tmp_path / "repo"
+    root.mkdir()
+    slot = module.slot_for(root, tmp_path / "runtime")
+    config = module.RuntimeConfig(
+        runtime_base=tmp_path / "runtime",
+        serena_command=_fake_backend_command(tmp_path),
+        startup_timeout=5,
+    )
+    backend = module.ensure_backend(slot, config)
+    lease = module.SlotLease.acquire(slot)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(module.reap_slot, slot, 0.0, lease.path)
+        time.sleep(0.05)
+        assert not future.done()
+        lease.release()
+        assert future.result(timeout=5)
+
+    assert module.read_process_identity(backend.identity.pid) is None
+    try:
+        os.waitpid(backend.identity.pid, 0)
+    except ChildProcessError:
+        pass
+
+
 def test_release_schedules_detached_reaper_that_stops_backend(tmp_path: Path) -> None:
     module = _load_module()
     root = tmp_path / "repo"
@@ -396,3 +440,39 @@ def test_reaper_spawn_failure_preserves_live_lease(tmp_path: Path, monkeypatch: 
     assert lease.path.exists()
     lease.release()
     assert not lease.path.exists()
+
+
+def test_serve_forwards_bridge_exit_scrubs_proxy_and_releases_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["/usr/bin/git", "init", "-q", str(root)], check=True)
+    observation = tmp_path / "bridge.json"
+    monkeypatch.setenv("BRIDGE_OBSERVATION", str(observation))
+    monkeypatch.setenv("BRIDGE_EXIT_CODE", "17")
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9090")
+    monkeypatch.setenv("https_proxy", "http://127.0.0.1:9090")
+    config = module.RuntimeConfig(
+        runtime_base=tmp_path / "runtime",
+        serena_command=_fake_backend_command(tmp_path),
+        bridge_command=_fake_bridge_command(tmp_path),
+        startup_timeout=5,
+        retirement_grace=0.05,
+    )
+
+    assert module.serve(root, config) == 17
+
+    payload = json.loads(observation.read_text())
+    assert payload["argv"][0:2] == ["--transport", "streamablehttp"]
+    assert payload["argv"][2].startswith("http://127.0.0.1:")
+    assert payload["argv"][2].endswith("/mcp")
+    assert all(not key.upper().endswith("_PROXY") for key in payload["environment"])
+    slot = module.slot_for(root, config.runtime_base)
+    deadline = time.monotonic() + 5
+    while (slot.path / "backend.json").exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert list((slot.path / "clients").glob("*.json")) == []
+    assert not (slot.path / "backend.json").exists()
