@@ -77,7 +77,13 @@ def _frontier_without_excluded_candidates(
     images: Mapping[int, Any],
     excluded_candidates: tuple[CandidateKey, ...],
 ) -> dict[int, Any]:
-    excluded = set(excluded_candidates)
+    # The controller is also a direct-script entrypoint, so its CandidateKey can
+    # exist once as ``__main__.CandidateKey`` and once under the importable module
+    # name.  Dataclass equality is class-sensitive; keep the runtime boundary
+    # structural so a retry cannot silently re-admit the rejected alias.
+    excluded = {
+        (item.image_id, item.owner_id, item.alias_id) for item in excluded_candidates
+    }
     if len(excluded) != len(excluded_candidates):
         raise ValueError("candidate exclusions must be unique")
     return {
@@ -86,7 +92,7 @@ def _frontier_without_excluded_candidates(
             candidate_aliases=tuple(
                 alias
                 for alias in image.candidate_aliases
-                if CandidateKey(image_id, alias.owner_id, alias.row_id) not in excluded
+                if (image_id, alias.owner_id, alias.row_id) not in excluded
             ),
         )
         for image_id, image in images.items()

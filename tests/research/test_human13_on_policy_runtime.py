@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 from pathlib import Path
@@ -407,6 +407,21 @@ def test_retry_exclusion_filters_full_candidate_key_before_scoring() -> None:
     filtered = helper(
         {1: image},
         (CandidateKey(image_id=1, owner_id="h0", alias_id="shared"),),
+    )
+
+    assert [(item.owner_id, item.row_id) for item in filtered[1].candidate_aliases] == [
+        ("h1", "shared")
+    ]
+
+    @dataclass(frozen=True)
+    class DirectScriptCandidateKey:
+        image_id: int
+        owner_id: str
+        alias_id: str
+
+    filtered = helper(
+        {1: image},
+        (DirectScriptCandidateKey(image_id=1, owner_id="h0", alias_id="shared"),),
     )
 
     assert [(item.owner_id, item.row_id) for item in filtered[1].candidate_aliases] == [
