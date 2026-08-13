@@ -25,8 +25,13 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
-from src.config.loader import load_train_config
-from src.config.resolve import resolve_effective_batch_runtime
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.config.loader import load_train_config  # noqa: E402
+from src.config.resolve import resolve_effective_batch_runtime  # noqa: E402
 
 
 MANIFEST_SCHEMA = "coordexp-swift-reconcile-resume-probe-command-manifest-v2"
@@ -581,6 +586,18 @@ def _validate_contract(
             code="packet_executor.contract",
         )
     setup_argv = _command_argv(manifest, "setup")
+    base_config_indices = [
+        index for index, value in enumerate(setup_argv) if value == "--base-config"
+    ]
+    if (
+        len(base_config_indices) != 1
+        or base_config_indices[0] + 1 >= len(setup_argv)
+        or setup_argv[base_config_indices[0] + 1] != str(base_config_path)
+    ):
+        raise PacketExecutorError(
+            "setup argv base-config binding drifted",
+            code="packet_executor.base_config_binding",
+        )
     world_size_indices = [
         index for index, value in enumerate(setup_argv) if value == "--world-size"
     ]

@@ -24,6 +24,7 @@ SCRIPT = (
     REPO_ROOT
     / "scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py"
 )
+PROBE_SCRIPT = REPO_ROOT / "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py"
 ORDER = [
     "setup",
     "success.uninterrupted_control",
@@ -410,7 +411,9 @@ def _fixture(
         for role in config_paths
     }
     commands = {name: ["packet-fake", name] for name in ORDER}
-    commands["setup"].extend(["--world-size", "2"])
+    commands["setup"].extend(
+        ["--base-config", str(BASE_CONFIG), "--world-size", "2"]
+    )
     resource_bounds = {}
     for name in ORDER:
         per_rank = name.startswith("success.")
@@ -2695,6 +2698,76 @@ def test_cli_execute_parses_exact_public_flags(
     assert captured["packet_path"] == tmp_path / "packet.md"
     assert captured["attempt_marker_path"] == tmp_path / "marker.json"
     assert captured["terminal_receipt_path"] == tmp_path / "receipt.json"
+
+
+def test_file_path_cli_help_bootstraps_repo_imports(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--help"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout
+
+
+@pytest.mark.parametrize("drift", ["wrong_path", "duplicate", "missing"])
+def test_setup_base_config_drift_rejects_before_marker(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drift: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    setup_argv = case["manifest"]["setup_command"]
+    base_index = setup_argv.index("--base-config")
+    if drift == "wrong_path":
+        setup_argv[base_index + 1] = str(case["repo"] / "wrong-base.yaml")
+    elif drift == "duplicate":
+        setup_argv.extend(["--base-config", str(BASE_CONFIG)])
+    else:
+        del setup_argv[base_index : base_index + 2]
+    _refresh_manifest_and_review(case)
+    launched: list[list[str]] = []
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        launched.append(argv)
+        return case["launch"](argv, **kwargs)
+
+    with pytest.raises(executor.PacketExecutorError) as exc_info:
+        _execute(executor, case, launch=launch)
+
+    assert exc_info.value.code == "packet_executor.base_config_binding"
+    assert launched == []
+    assert not case["marker"].exists()
+
+
+def test_role_launch_argv_matches_real_probe_for_every_role(
+    executor: ModuleType,
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "reconcile_exact_resume_probe_launch_contract",
+        PROBE_SCRIPT,
+    )
+    assert spec is not None and spec.loader is not None
+    probe = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = probe
+    try:
+        spec.loader.exec_module(probe)
+        for role in (
+            "uninterrupted_control",
+            "resumed_parent",
+            "resumed_child",
+        ):
+            config_path = Path("/abs/configs") / f"{role}.yaml"
+            held_parent = role == "resumed_parent"
+            assert executor._expected_role_launch_argv(role, config_path) == (
+                probe._launch_argv(str(config_path), held_parent=held_parent)
+            )
+    finally:
+        sys.modules.pop(spec.name, None)
 
 
 def test_accumulation_contract_accepts_exact_role_bindings(
