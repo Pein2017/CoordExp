@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import random
+import signal
 import stat
 import subprocess
 import sys
@@ -70,6 +71,9 @@ from src.artifacts.training_state import (  # noqa: E402
     load_training_state_manifest,
     publish_rank_training_state_contribution,
     serialize_rank_training_state,
+)
+from src.artifacts.run_writer import (  # noqa: E402
+    admit_exact_resume_checkpoint_publication,
 )
 from src.common.errors import ArtifactContractError, CoordExpError  # noqa: E402
 from src.config.fingerprint import sha256_json  # noqa: E402
@@ -794,6 +798,330 @@ class LaunchResult:
 LaunchCallable = Callable[[Sequence[str], Path, Mapping[str, str]], LaunchResult]
 
 
+@dataclass(frozen=True)
+class ProcessGroupTermination:
+    signals: tuple[str, ...]
+    returncode: int
+    duration_seconds: float
+
+
+@dataclass(frozen=True)
+class ParentInterruptionResult:
+    pid: int
+    pgid: int
+    signals: tuple[str, ...]
+    returncode: int
+    termination_duration_seconds: float
+    stdout_tail: str
+    stderr_tail: str
+    authenticated_step_one: Mapping[str, Any]
+    boundary_wait_duration_seconds: float = 0.0
+    launch_duration_seconds: float = 0.0
+
+
+ParentInterruptCallable = Callable[
+    [Sequence[str], Path, Mapping[str, str], Path], ParentInterruptionResult
+]
+
+
+def _process_group_exists(pgid: int) -> bool:
+    """Return whether a non-zombie process remains in the captured group."""
+
+    proc_root = Path("/proc")
+    if proc_root.is_dir():
+        for stat_path in proc_root.glob("[0-9]*/stat"):
+            try:
+                raw = stat_path.read_text(encoding="utf-8")
+                after_name = raw[raw.rfind(")") + 2 :].split()
+                state = after_name[0]
+                process_group = int(after_name[2])
+            except (FileNotFoundError, IndexError, OSError, ValueError):
+                continue
+            if process_group == pgid and state != "Z":
+                return True
+        return False
+    try:  # pragma: no cover - Linux qualification hosts always expose /proc
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_process_group_exit(
+    process: subprocess.Popen[Any],
+    *,
+    pgid: int,
+    timeout_seconds: float,
+    poll_seconds: float,
+) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        process.poll()
+        if not _process_group_exists(pgid):
+            if process.poll() is None:
+                try:
+                    process.wait(timeout=max(0.0, deadline - time.monotonic()))
+                except subprocess.TimeoutExpired:
+                    return False
+            return process.poll() is not None
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))
+
+
+def _terminate_process_group(
+    process: subprocess.Popen[Any],
+    *,
+    pgid: int,
+    term_grace_seconds: float,
+    kill_grace_seconds: float,
+    poll_seconds: float,
+) -> ProcessGroupTermination:
+    """Boundedly terminate and reap one launcher's dedicated process group."""
+
+    started = time.monotonic()
+    signals: list[str] = []
+    if _process_group_exists(pgid):
+        os.killpg(pgid, signal.SIGTERM)
+        signals.append("SIGTERM")
+    exited = _wait_for_process_group_exit(
+        process,
+        pgid=pgid,
+        timeout_seconds=term_grace_seconds,
+        poll_seconds=poll_seconds,
+    )
+    if not exited:
+        if _process_group_exists(pgid):
+            os.killpg(pgid, signal.SIGKILL)
+            signals.append("SIGKILL")
+        exited = _wait_for_process_group_exit(
+            process,
+            pgid=pgid,
+            timeout_seconds=kill_grace_seconds,
+            poll_seconds=poll_seconds,
+        )
+    if not exited or _process_group_exists(pgid) or process.poll() is None:
+        raise ReconcileProbeError(
+            "parent launcher process group survived bounded termination",
+            code="reconcile_probe.parent_termination_failed",
+            context={"pid": process.pid, "pgid": pgid, "signals": signals},
+        )
+    returncode = process.wait(timeout=0)
+    return ProcessGroupTermination(
+        signals=tuple(signals),
+        returncode=returncode,
+        duration_seconds=max(0.0, time.monotonic() - started),
+    )
+
+
+def _require_parent_boundary_progress(run_state: Mapping[str, Any]) -> None:
+    expected = {
+        "completed_steps": 1,
+        "consumed_packs": 1,
+        "checkpoint_event_count": 1,
+    }
+    observed = {field: run_state.get(field) for field in expected}
+    measurement = run_state.get("measurement")
+    events = (
+        measurement.get("checkpoint_publication_events")
+        if isinstance(measurement, Mapping)
+        else None
+    )
+    completed_event_count = (
+        sum(
+            1
+            for event in events
+            if isinstance(event, Mapping) and event.get("status") == "completed"
+        )
+        if isinstance(events, list)
+        else None
+    )
+    if observed != expected or completed_event_count != 1:
+        raise ReconcileProbeError(
+            "interrupted parent progress is not exactly one completed step/pack/event",
+            code="reconcile_probe.parent_boundary_progress_invalid",
+            context={
+                "expected": expected,
+                "observed": observed,
+                "completed_event_count": completed_event_count,
+            },
+        )
+
+
+def _authenticate_parent_step_one(parent_run_dir: Path) -> dict[str, Any]:
+    checkpoint_dir = parent_run_dir / "checkpoints" / "step-1"
+    manifest_path = checkpoint_dir / "training_state" / "manifest.json"
+    try:
+        manifest = load_training_state_manifest(checkpoint_dir)
+        if manifest.checkpoint_step != 1 or manifest.world_size != WORLD_SIZE:
+            raise ValueError("step-1 manifest has the wrong boundary or world size")
+        manifest_file_sha256 = _sha256_file(manifest_path)
+        admitted = admit_exact_resume_checkpoint_publication(
+            checkpoint_dir,
+            checkpoint_step=1,
+            training_state_manifest_file_sha256=manifest_file_sha256,
+            training_state_aggregate_digest=manifest.aggregate_digest,
+            parent_run_id=manifest.parent_run_id,
+            parent_segment_id=manifest.parent_segment_id,
+        )
+        run_state = _load_run_state(parent_run_dir)
+        _require_parent_boundary_progress(run_state)
+    except ReconcileProbeError:
+        raise
+    except Exception as exc:
+        raise ReconcileProbeError(
+            "parent step 1 is not one authoritative exact-resume publication",
+            code="reconcile_probe.parent_boundary_invalid",
+            context={
+                "checkpoint_dir": str(checkpoint_dir),
+                "observed_error_code": getattr(exc, "code", type(exc).__name__),
+            },
+        ) from exc
+    return {
+        "checkpoint_dir": str(checkpoint_dir.resolve()),
+        "manifest_path": str(manifest_path.resolve()),
+        "manifest_file_sha256": manifest_file_sha256,
+        "manifest_aggregate_digest": manifest.aggregate_digest,
+        "parent_run_id": manifest.parent_run_id,
+        "parent_segment_id": manifest.parent_segment_id,
+        "event_index": admitted["event_index"],
+        "checkpoint_identity": dict(admitted["checkpoint_identity"]),
+        "inference_payload_identity": dict(admitted["inference_payload_identity"]),
+        "committed_progress": dict(admitted["committed_progress"]),
+    }
+
+
+def _read_bounded_tail(handle: Any, *, limit: int = 2000) -> str:
+    handle.flush()
+    handle.seek(0, os.SEEK_END)
+    size = handle.tell()
+    handle.seek(max(0, size - limit))
+    return handle.read()[-limit:]
+
+
+def _interrupt_parent_at_authoritative_step_one(
+    argv: Sequence[str],
+    cwd: Path,
+    env: Mapping[str, str],
+    parent_run_dir: Path,
+    *,
+    boundary_timeout_seconds: float = 600.0,
+    term_grace_seconds: float = 30.0,
+    kill_grace_seconds: float = 10.0,
+    poll_seconds: float = 0.05,
+) -> ParentInterruptionResult:
+    """Launch a parent once, stop it at its authenticated step-1 boundary."""
+
+    launch_started = time.monotonic()
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stdout_file, tempfile.TemporaryFile(
+        mode="w+t", encoding="utf-8"
+    ) as stderr_file:
+        process = subprocess.Popen(
+            list(argv),
+            cwd=str(cwd),
+            env=dict(env),
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=True,
+            start_new_session=True,
+        )
+        pid = process.pid
+        pgid = os.getpgid(pid)
+        try:
+            if pgid != pid:
+                raise ReconcileProbeError(
+                    "parent launcher did not create its own session/process group",
+                    code="reconcile_probe.parent_session_invalid",
+                    context={"pid": pid, "pgid": pgid},
+                )
+            deadline = launch_started + boundary_timeout_seconds
+            authenticated: dict[str, Any] | None = None
+            last_error_code: str | None = None
+            while authenticated is None:
+                if process.poll() is not None:
+                    process.wait()
+                    raise ReconcileProbeError(
+                        "parent launcher exited before step 1 became authoritative",
+                        code="reconcile_probe.parent_exited_early",
+                        context={
+                            "pid": pid,
+                            "pgid": pgid,
+                            "returncode": process.returncode,
+                            "stdout_tail": _read_bounded_tail(stdout_file),
+                            "stderr_tail": _read_bounded_tail(stderr_file),
+                            "last_error_code": last_error_code,
+                        },
+                    )
+                try:
+                    authenticated = _authenticate_parent_step_one(parent_run_dir)
+                except ReconcileProbeError as exc:
+                    last_error_code = exc.code
+                if authenticated is not None:
+                    break
+                if time.monotonic() >= deadline:
+                    termination = _terminate_process_group(
+                        process,
+                        pgid=pgid,
+                        term_grace_seconds=term_grace_seconds,
+                        kill_grace_seconds=kill_grace_seconds,
+                        poll_seconds=poll_seconds,
+                    )
+                    raise ReconcileProbeError(
+                        "parent step-1 authority boundary timed out",
+                        code="reconcile_probe.parent_boundary_timeout",
+                        context={
+                            "pid": pid,
+                            "pgid": pgid,
+                            "last_error_code": last_error_code,
+                            "termination_signals": list(termination.signals),
+                            "returncode": termination.returncode,
+                            "stdout_tail": _read_bounded_tail(stdout_file),
+                            "stderr_tail": _read_bounded_tail(stderr_file),
+                        },
+                    )
+                time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))
+
+            boundary_wait_duration = max(0.0, time.monotonic() - launch_started)
+            termination = _terminate_process_group(
+                process,
+                pgid=pgid,
+                term_grace_seconds=term_grace_seconds,
+                kill_grace_seconds=kill_grace_seconds,
+                poll_seconds=poll_seconds,
+            )
+            return ParentInterruptionResult(
+                pid=pid,
+                pgid=pgid,
+                signals=termination.signals,
+                returncode=termination.returncode,
+                termination_duration_seconds=termination.duration_seconds,
+                stdout_tail=_read_bounded_tail(stdout_file),
+                stderr_tail=_read_bounded_tail(stderr_file),
+                authenticated_step_one=authenticated,
+                boundary_wait_duration_seconds=boundary_wait_duration,
+                launch_duration_seconds=max(0.0, time.monotonic() - launch_started),
+            )
+        except BaseException as exc:
+            if process.poll() is None or _process_group_exists(pgid):
+                try:
+                    _terminate_process_group(
+                        process,
+                        pgid=pgid,
+                        term_grace_seconds=term_grace_seconds,
+                        kill_grace_seconds=kill_grace_seconds,
+                        poll_seconds=poll_seconds,
+                    )
+                except BaseException as cleanup_exc:
+                    raise ReconcileProbeError(
+                        "parent controller failed and process-group cleanup did not complete",
+                        code="reconcile_probe.parent_cleanup_failed",
+                        context={"pid": pid, "pgid": pgid},
+                    ) from cleanup_exc
+            raise
+
+
 def _default_launch(argv: Sequence[str], cwd: Path, env: Mapping[str, str]) -> LaunchResult:
     completed = subprocess.run(
         list(argv), cwd=str(cwd), env=dict(env), capture_output=True, text=True, check=False
@@ -934,6 +1262,7 @@ def success_resumed(
     artifact_root: str | Path,
     commit: str,
     launch: LaunchCallable = _default_launch,
+    interrupt_parent: ParentInterruptCallable = _interrupt_parent_at_authoritative_step_one,
 ) -> dict[str, Any]:
     root = _assert_absolute_existing_root(artifact_root, field="artifact_root")
     receipt = _load_prepare_receipt(root)
@@ -943,14 +1272,24 @@ def success_resumed(
 
     parent_config = _run_config_path(receipt, ROLE_RESUMED_PARENT)
     parent_argv = _launch_argv(parent_config)
-    setup_started = time.monotonic()
-    setup_result = launch(parent_argv, REPO_ROOT, _launch_env(receipt))
-    setup_wall_time = time.monotonic() - setup_started
-    _require_launch_ok(setup_result, role=ROLE_RESUMED_PARENT)
     parent_run_dir = _run_dir(receipt, ROLE_RESUMED_PARENT)
+    setup_result = interrupt_parent(
+        parent_argv, REPO_ROOT, _launch_env(receipt), parent_run_dir
+    )
+    if not isinstance(setup_result, ParentInterruptionResult):
+        raise ReconcileProbeError(
+            "parent interruption controller returned an invalid result",
+            code="reconcile_probe.parent_controller_invalid",
+        )
+    post_termination_admission = _authenticate_parent_step_one(parent_run_dir)
+    if dict(setup_result.authenticated_step_one) != post_termination_admission:
+        raise ReconcileProbeError(
+            "parent step-1 authority changed across process-group termination",
+            code="reconcile_probe.parent_boundary_mutated",
+        )
     parent_state = _load_run_state(parent_run_dir)
     _require_world_size_in_state(parent_state, role=ROLE_RESUMED_PARENT)
-    _require_completed_steps(parent_state, expected=2, role=ROLE_RESUMED_PARENT)
+    _require_parent_boundary_progress(parent_state)
 
     child_config = _run_config_path(receipt, ROLE_RESUMED_CHILD)
     child_argv = _launch_argv(child_config)
@@ -970,8 +1309,20 @@ def success_resumed(
         "setup": {
             "argv": parent_argv,
             "config_sha256": receipt["configs"][ROLE_RESUMED_PARENT]["file_sha256"],
+            "parent_pid": setup_result.pid,
+            "parent_pgid": setup_result.pgid,
+            "termination_signals": list(setup_result.signals),
             "returncode": setup_result.returncode,
-            "wall_time_seconds": setup_wall_time,
+            "wall_time_seconds": setup_result.launch_duration_seconds,
+            "boundary_wait_duration_seconds": setup_result.boundary_wait_duration_seconds,
+            "termination_duration_seconds": setup_result.termination_duration_seconds,
+            "stdout_tail": setup_result.stdout_tail,
+            "stderr_tail": setup_result.stderr_tail,
+            "controlled_parent_exit": True,
+            "completed_steps": parent_state["completed_steps"],
+            "consumed_packs": parent_state["consumed_packs"],
+            "checkpoint_event_count": parent_state["checkpoint_event_count"],
+            "authenticated_step_one": post_termination_admission,
             "boundary_step": 1,
             "run_dir": str(parent_run_dir),
         },

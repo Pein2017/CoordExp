@@ -79,12 +79,16 @@
 > exact_same_world_size` with a null path (the Task 2.5 publish-only
 > contract) instead of `disabled`, which would have skipped exact-state
 > publication entirely; eval forward is disabled in every role so the
-> declared numeric forward ceiling (control=2/rank, resumed_parent=2/rank,
+> declared numeric forward ceiling (control=2/rank, resumed_parent=1/rank,
 > resumed_child=1/rank) counts only train-split forwards. Parent and child
 > intentionally share `training.max_steps: 2`, `checkpoint.steps: [1, 2]`,
 > and `save_final: true`, so their resume-compatibility projections match;
-> the parent still supplies the step-1 comparison boundary while completing
-> two setup forwards, and the child restores step 1 and executes only step 2.
+> the parent supplies the step-1 comparison boundary and is then stopped by a
+> bounded process-group interruption controller before step 2, while the child
+> restores step 1 and executes only step 2. The controller authenticates the
+> authoritative step-1 event and manifest before termination, re-authenticates
+> unchanged one-step parent progress afterward, and records the controlled exit
+> without treating it as normal parent completion.
 > `rank-failure`/
 > `interruption` no longer call `torch.cuda.current_device()` through
 > `rng_snapshot=None`; they build CPU-only RNG state explicitly and are

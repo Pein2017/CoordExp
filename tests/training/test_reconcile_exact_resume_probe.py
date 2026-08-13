@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from scripts.probes.coordexp_swift import reconcile_exact_resume_probe as probe
+import src.artifacts.run_writer as run_writer_module
+from src.artifacts.run_writer import RunWriter
 
 
 BASE_CONFIG = (
@@ -119,6 +124,76 @@ def _write_real_checkpoint(
     probe.commit_training_state_contributions(checkpoint_dir, session)
 
 
+def _record_authoritative_parent_checkpoint(
+    writer: RunWriter, *, step: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_dir = writer.run_dir / "checkpoints" / f"step-{step}"
+    _write_real_checkpoint(checkpoint_dir, step=step)
+    manifest_path = checkpoint_dir / "training_state" / "manifest.json"
+    manifest = probe.load_training_state_manifest(checkpoint_dir)
+    payload_identity = {
+        "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+        "schema_version": 2,
+        "manifest_relative_path": "inference_payload_manifest.json",
+        "manifest_file_sha256": "c" * 64,
+        "aggregate_digest": "d" * 64,
+    }
+    monkeypatch.setattr(
+        run_writer_module,
+        "admit_inference_checkpoint_payload_identity",
+        lambda _checkpoint_dir, _expected: dict(payload_identity),
+    )
+    writer.record_checkpoint_publication_event(
+        step=step,
+        status="completed",
+        started_at="2026-08-13T00:00:00+00:00",
+        completed_at="2026-08-13T00:00:01+00:00",
+        duration_seconds=1.0,
+        is_final=step == 2,
+        exact_training_state_enabled=True,
+        checkpoint_identity={
+            "checkpoint_step": step,
+            "resolved_path": str(checkpoint_dir.resolve()),
+            "training_state_manifest_file_sha256": hashlib.sha256(
+                manifest_path.read_bytes()
+            ).hexdigest(),
+            "training_state_aggregate_digest": manifest.aggregate_digest,
+        },
+        inference_payload_identity=payload_identity,
+        committed_progress={
+            "schema": "coordexp-swift-checkpoint-committed-progress",
+            "schema_version": 1,
+            "completed_steps": step,
+            "consumed_packs": step,
+            "optimizer_update_status": "applied",
+            "finite_status": "finite",
+        },
+        failure_code=None,
+    )
+
+
+def _write_authoritative_parent_step_one(
+    parent_run_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict:
+    """Author a real step-1 manifest plus its authoritative RunWriter event."""
+
+    writer = RunWriter.initialize(
+        run_dir=parent_run_dir,
+        run_id="fixture-run",
+        run_name="resumed-parent",
+        artifact_root=parent_run_dir.parent.parent,
+        collision_outcome="created",
+        created_at="2026-08-13T00:00:00+00:00",
+        config_fingerprint="f" * 64,
+        resolved_config={},
+        world_size=2,
+        resolved_max_steps=2,
+        segment_id="fixture-segment",
+    )
+    _record_authoritative_parent_checkpoint(writer, step=1, monkeypatch=monkeypatch)
+    return probe._authenticate_parent_step_one(parent_run_dir)
+
+
 def _write_matched_success_fixture(target: Path, receipt: dict) -> tuple[dict, dict]:
     """Author a fully matched control/resumed pair: two real, equal boundaries."""
 
@@ -127,10 +202,8 @@ def _write_matched_success_fixture(target: Path, receipt: dict) -> tuple[dict, d
     child_run_dir = target / "runs" / "resumed_child"
 
     _write_run_json(control_run_dir, completed_steps=2)
-    _write_run_json(parent_run_dir, completed_steps=2)
     _write_run_json(child_run_dir, completed_steps=2)
     _write_real_checkpoint(control_run_dir / "checkpoints" / "step-1", step=1)
-    _write_real_checkpoint(parent_run_dir / "checkpoints" / "step-1", step=1)
     _write_real_checkpoint(control_run_dir / "checkpoints" / "step-2", step=2)
     _write_real_checkpoint(child_run_dir / "checkpoints" / "step-2", step=2)
     _write_train_row(control_run_dir, step=2, loss=1.5, duration=0.01)
@@ -139,12 +212,33 @@ def _write_matched_success_fixture(target: Path, receipt: dict) -> tuple[dict, d
     def fake_launch(argv, cwd, env):
         return probe.LaunchResult(0, "ok", "")
 
+    local_monkeypatch = pytest.MonkeyPatch()
+    admitted = _write_authoritative_parent_step_one(parent_run_dir, local_monkeypatch)
+
+    def fake_parent_interrupt(argv, cwd, env, run_dir):
+        return probe.ParentInterruptionResult(
+            pid=303,
+            pgid=303,
+            signals=("SIGTERM",),
+            returncode=-signal.SIGTERM,
+            termination_duration_seconds=0.1,
+            stdout_tail="",
+            stderr_tail="",
+            authenticated_step_one=admitted,
+        )
+
     control_receipt = probe.success_control(
         artifact_root=target, commit=receipt["commit"], launch=fake_launch
     )
-    resumed_receipt = probe.success_resumed(
-        artifact_root=target, commit=receipt["commit"], launch=fake_launch
-    )
+    try:
+        resumed_receipt = probe.success_resumed(
+            artifact_root=target,
+            commit=receipt["commit"],
+            launch=fake_launch,
+            interrupt_parent=fake_parent_interrupt,
+        )
+    finally:
+        local_monkeypatch.undo()
     return control_receipt, resumed_receipt
 
 
@@ -594,43 +688,245 @@ def test_success_control_rejects_missing_ranks(tmp_path: Path) -> None:
     assert exc_info.value.code == "reconcile_probe.missing_ranks"
 
 
-def test_success_resumed_counts_setup_separately_from_update(tmp_path: Path) -> None:
-    target, receipt = _prepared(tmp_path)
-    calls = []
+def test_completed_two_step_parent_makes_step_one_stale_and_never_launches_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches restoring attempt-2's blocking parent launch before interruption."""
 
-    def fake_launch(argv, cwd, env):
-        calls.append(tuple(argv))
-        if "resumed_parent.yaml" in argv[argv.index("--config") + 1]:
-            _write_run_json(target / "runs" / "resumed_parent", completed_steps=2)
-        else:
-            _write_run_json(target / "runs" / "resumed_child", completed_steps=2)
-        return probe.LaunchResult(0, "ok", "")
+    target, receipt = _prepared(tmp_path)
+    parent_run_dir = target / "runs" / "resumed_parent"
+    _write_authoritative_parent_step_one(parent_run_dir, monkeypatch)
+    _record_authoritative_parent_checkpoint(
+        RunWriter(run_dir=parent_run_dir), step=2, monkeypatch=monkeypatch
+    )
+    child_calls = []
+
+    def stale_parent_controller(argv, cwd, env, run_dir):
+        return probe._authenticate_parent_step_one(run_dir)
+
+    def child_launch(argv, cwd, env):
+        child_calls.append(tuple(argv))
+        return probe.LaunchResult(0, "", "")
+
+    with pytest.raises(probe.ReconcileProbeError):
+        probe.success_resumed(
+            artifact_root=target,
+            commit=receipt["commit"],
+            launch=child_launch,
+            interrupt_parent=stale_parent_controller,
+        )
+    assert child_calls == []
+
+
+def test_authoritative_step_one_is_admitted_then_parent_termination_is_recorded_before_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches child launch before authenticating and terminating the parent."""
+
+    target, receipt = _prepared(tmp_path)
+    parent_run_dir = target / "runs" / "resumed_parent"
+    admitted = _write_authoritative_parent_step_one(parent_run_dir, monkeypatch)
+    order = []
+
+    def interrupted_parent(argv, cwd, env, run_dir):
+        order.append("parent_terminated")
+        assert run_dir == parent_run_dir
+        return probe.ParentInterruptionResult(
+            pid=101,
+            pgid=101,
+            signals=("SIGTERM",),
+            returncode=-signal.SIGTERM,
+            termination_duration_seconds=0.25,
+            stdout_tail="parent-out",
+            stderr_tail="parent-err",
+            authenticated_step_one=admitted,
+        )
+
+    def child_launch(argv, cwd, env):
+        order.append("child_launched")
+        _write_run_json(target / "runs" / "resumed_child", completed_steps=2)
+        return probe.LaunchResult(0, "child-out", "")
 
     result = probe.success_resumed(
-        artifact_root=target, commit=receipt["commit"], launch=fake_launch
+        artifact_root=target,
+        commit=receipt["commit"],
+        launch=child_launch,
+        interrupt_parent=interrupted_parent,
     )
 
-    assert len(calls) == 2
-    assert result["setup"]["boundary_step"] == 1
+    assert order == ["parent_terminated", "child_launched"]
+    assert result["setup"]["parent_pid"] == 101
+    assert result["setup"]["parent_pgid"] == 101
+    assert result["setup"]["termination_signals"] == ["SIGTERM"]
+    assert result["setup"]["returncode"] == -signal.SIGTERM
+    assert result["setup"]["completed_steps"] == 1
+    assert result["setup"]["consumed_packs"] == 1
+    assert result["setup"]["checkpoint_event_count"] == 1
+    assert result["setup"]["authenticated_step_one"] == admitted
     assert result["update"]["update_step"] == 2
-    assert result["setup"]["config_sha256"] == receipt["configs"]["resumed_parent"]["file_sha256"]
-    assert result["update"]["config_sha256"] == receipt["configs"]["resumed_child"]["file_sha256"]
 
 
-def test_success_resumed_stops_before_child_when_setup_fails(tmp_path: Path) -> None:
+@pytest.mark.parametrize("failure_code", ["parent_boundary_timeout", "parent_exited_early"])
+def test_parent_timeout_or_early_exit_never_launches_child(
+    tmp_path: Path, failure_code: str
+) -> None:
+    """Catches fail-open child launch after a missing live step-1 boundary."""
+
     target, receipt = _prepared(tmp_path)
-    calls = []
+    child_calls = []
 
-    def failing_setup_launch(argv, cwd, env):
-        calls.append(tuple(argv))
-        return probe.LaunchResult(1, "", "setup failed")
+    def failed_parent(argv, cwd, env, run_dir):
+        raise probe.ReconcileProbeError("parent failed", code=f"reconcile_probe.{failure_code}")
+
+    def child_launch(argv, cwd, env):
+        child_calls.append(tuple(argv))
+        return probe.LaunchResult(0, "", "")
 
     with pytest.raises(probe.ReconcileProbeError) as exc_info:
         probe.success_resumed(
-            artifact_root=target, commit=receipt["commit"], launch=failing_setup_launch
+            artifact_root=target,
+            commit=receipt["commit"],
+            launch=child_launch,
+            interrupt_parent=failed_parent,
         )
-    assert exc_info.value.code == "reconcile_probe.launch_failed"
-    assert len(calls) == 1
+    assert exc_info.value.code == f"reconcile_probe.{failure_code}"
+    assert child_calls == []
+
+
+def test_post_termination_parent_progress_mutation_never_launches_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches trusting the pre-TERM admission after durable progress mutates."""
+
+    target, receipt = _prepared(tmp_path)
+    parent_run_dir = target / "runs" / "resumed_parent"
+    admitted = _write_authoritative_parent_step_one(parent_run_dir, monkeypatch)
+    child_calls = []
+
+    def mutating_parent(argv, cwd, env, run_dir):
+        state = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+        state["completed_steps"] = 2
+        (run_dir / "run.json").write_text(json.dumps(state), encoding="utf-8")
+        return probe.ParentInterruptionResult(
+            pid=202,
+            pgid=202,
+            signals=("SIGTERM",),
+            returncode=-signal.SIGTERM,
+            termination_duration_seconds=0.1,
+            stdout_tail="",
+            stderr_tail="",
+            authenticated_step_one=admitted,
+        )
+
+    def child_launch(argv, cwd, env):
+        child_calls.append(tuple(argv))
+        return probe.LaunchResult(0, "", "")
+
+    with pytest.raises(probe.ReconcileProbeError):
+        probe.success_resumed(
+            artifact_root=target,
+            commit=receipt["commit"],
+            launch=child_launch,
+            interrupt_parent=mutating_parent,
+        )
+    assert child_calls == []
+
+
+def test_term_timeout_escalates_to_kill_and_reaps_launcher(tmp_path: Path) -> None:
+    """Catches returning while a SIGTERM-resistant launcher is still alive."""
+
+    ready_path = tmp_path / "ready"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import pathlib,signal,time;"
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+            f"pathlib.Path({str(ready_path)!r}).touch();"
+            "time.sleep(60)",
+        ],
+        start_new_session=True,
+    )
+    deadline = time.monotonic() + 2.0
+    while not ready_path.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ready_path.exists()
+    pgid = os.getpgid(process.pid)
+    result = probe._terminate_process_group(
+        process,
+        pgid=pgid,
+        term_grace_seconds=0.05,
+        kill_grace_seconds=1.0,
+        poll_seconds=0.01,
+    )
+
+    assert result.signals == ("SIGTERM", "SIGKILL")
+    assert process.returncode is not None
+    assert not probe._process_group_exists(pgid)
+
+
+def test_real_subprocess_cleanup_leaves_no_process_group_member(tmp_path: Path) -> None:
+    """Catches signaling only the torchrun launcher while a worker survives."""
+
+    child_pid_path = tmp_path / "child.pid"
+    launcher = (
+        "import pathlib,subprocess,sys,time;"
+        f"p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(p.pid));"
+        "time.sleep(60)"
+    )
+    process = subprocess.Popen([sys.executable, "-c", launcher], start_new_session=True)
+    deadline = time.monotonic() + 2.0
+    while not child_pid_path.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert child_pid_path.exists()
+    pgid = os.getpgid(process.pid)
+
+    result = probe._terminate_process_group(
+        process,
+        pgid=pgid,
+        term_grace_seconds=0.5,
+        kill_grace_seconds=1.0,
+        poll_seconds=0.01,
+    )
+
+    assert result.signals == ("SIGTERM",)
+    assert process.returncode is not None
+    assert not probe._process_group_exists(pgid)
+
+
+def test_parent_controller_cleans_group_after_unexpected_authentication_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches leaking torchrun descendants when boundary inspection raises unexpectedly."""
+
+    pid_path = tmp_path / "launcher.pid"
+    def unexpected_after_launcher_is_ready(_run_dir):
+        if not pid_path.exists():
+            raise probe.ReconcileProbeError("not ready", code="reconcile_probe.parent_boundary_invalid")
+        raise RuntimeError("unexpected auth error")
+
+    monkeypatch.setattr(probe, "_authenticate_parent_step_one", unexpected_after_launcher_is_ready)
+    argv = [
+        sys.executable,
+        "-c",
+        f"import os,pathlib,time; pathlib.Path({str(pid_path)!r}).write_text(str(os.getpid())); time.sleep(60)",
+    ]
+
+    with pytest.raises(RuntimeError, match="unexpected auth error"):
+        probe._interrupt_parent_at_authoritative_step_one(
+            argv,
+            probe.REPO_ROOT,
+            os.environ,
+            tmp_path / "parent",
+            boundary_timeout_seconds=1.0,
+            term_grace_seconds=0.5,
+            kill_grace_seconds=1.0,
+            poll_seconds=0.01,
+        )
+
+    pid = int(pid_path.read_text(encoding="utf-8"))
+    assert not probe._process_group_exists(pid)
 
 
 # --------------------------------------------------------------------------
@@ -770,18 +1066,21 @@ def test_verify_fails_closed_without_success_receipts(tmp_path: Path) -> None:
 def test_verify_fails_closed_without_durable_checkpoints(tmp_path: Path) -> None:
     target, receipt = _prepared(tmp_path)
 
-    def fake_launch(argv, cwd, env):
-        config_arg = argv[argv.index("--config") + 1]
-        if "uninterrupted_control.yaml" in config_arg:
-            _write_run_json(target / "runs" / "uninterrupted_control", completed_steps=2)
-        elif "resumed_parent.yaml" in config_arg:
-            _write_run_json(target / "runs" / "resumed_parent", completed_steps=2)
-        else:
-            _write_run_json(target / "runs" / "resumed_child", completed_steps=2)
-        return probe.LaunchResult(0, "ok", "")
-
-    probe.success_control(artifact_root=target, commit=receipt["commit"], launch=fake_launch)
-    probe.success_resumed(artifact_root=target, commit=receipt["commit"], launch=fake_launch)
+    receipts_dir = target / probe.RECEIPTS_DIR_NAME
+    probe._write_run_receipt(
+        receipts_dir,
+        "success-control-receipt.json",
+        {"commit": receipt["commit"], "run_dir": str(target / "runs/control")},
+    )
+    probe._write_run_receipt(
+        receipts_dir,
+        "success-resumed-receipt.json",
+        {
+            "commit": receipt["commit"],
+            "setup": {"run_dir": str(target / "runs/parent")},
+            "update": {"run_dir": str(target / "runs/child")},
+        },
+    )
     _write_representative_failure_arms(target)
 
     result = probe.verify_artifacts(artifact_root=target)
