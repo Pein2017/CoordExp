@@ -929,6 +929,123 @@ def test_parent_controller_cleans_group_after_unexpected_authentication_error(
     assert not probe._process_group_exists(pid)
 
 
+def test_parent_controller_cleans_descendant_when_leader_exits_before_getpgid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches the post-Popen/pre-getpgid race leaking a leaderless process group."""
+
+    leader_pid_path = tmp_path / "leader.pid"
+    child_pid_path = tmp_path / "child.pid"
+    original_getpgid = probe.os.getpgid
+
+    def getpgid_after_leader_exit(pid: int) -> int:
+        deadline = time.monotonic() + 2.0
+        while not child_pid_path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert child_pid_path.exists()
+        os.waitpid(pid, 0)
+        return original_getpgid(pid)
+
+    monkeypatch.setattr(probe.os, "getpgid", getpgid_after_leader_exit)
+    launcher = (
+        "import os,pathlib,subprocess,sys;"
+        f"pathlib.Path({str(leader_pid_path)!r}).write_text(str(os.getpid()));"
+        f"p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
+        f"pathlib.Path({str(child_pid_path)!r}).write_text(str(p.pid))"
+    )
+    try:
+        with pytest.raises(probe.ReconcileProbeError) as exc_info:
+            probe._interrupt_parent_at_authoritative_step_one(
+                [sys.executable, "-c", launcher],
+                probe.REPO_ROOT,
+                os.environ,
+                tmp_path / "parent",
+                boundary_timeout_seconds=1.0,
+                term_grace_seconds=0.5,
+                kill_grace_seconds=1.0,
+                poll_seconds=0.01,
+            )
+        assert exc_info.value.code == "reconcile_probe.parent_exited_early"
+        expected_pgid = int(leader_pid_path.read_text(encoding="utf-8"))
+        assert not probe._process_group_exists(expected_pgid)
+    finally:
+        if child_pid_path.exists():
+            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+            try:
+                cleanup_pgid = original_getpgid(child_pid)
+            except ProcessLookupError:
+                cleanup_pgid = None
+            if cleanup_pgid is not None and probe._process_group_exists(cleanup_pgid):
+                os.killpg(cleanup_pgid, signal.SIGKILL)
+
+
+def test_parent_normal_exit_after_admission_is_not_a_controlled_interruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches a zero-signal returncode-0 parent being receipted as interrupted."""
+
+    target, receipt = _prepared(tmp_path)
+    parent_run_dir = target / "runs" / "resumed_parent"
+    admitted = _write_authoritative_parent_step_one(parent_run_dir, monkeypatch)
+    real_authenticate = probe._authenticate_parent_step_one
+    ready_path = tmp_path / "ready"
+    release_path = tmp_path / "release"
+    calls = 0
+
+    def release_parent_then_admit(run_dir: Path) -> dict:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            deadline = time.monotonic() + 2.0
+            while not ready_path.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert ready_path.exists()
+            release_path.touch()
+            time.sleep(0.1)
+            return admitted
+        return real_authenticate(run_dir)
+
+    monkeypatch.setattr(probe, "_authenticate_parent_step_one", release_parent_then_admit)
+    parent_argv = [
+        sys.executable,
+        "-c",
+        "import os,pathlib,time;"
+        f"pathlib.Path({str(ready_path)!r}).write_text(str(os.getpid()));"
+        f"release=pathlib.Path({str(release_path)!r});"
+        "deadline=time.monotonic()+5;"
+        "exec('while not release.exists() and time.monotonic() < deadline:\\n time.sleep(0.01)')",
+    ]
+    child_calls = []
+
+    def normal_exit_parent(argv, cwd, env, run_dir):
+        return probe._interrupt_parent_at_authoritative_step_one(
+            parent_argv,
+            cwd,
+            env,
+            run_dir,
+            boundary_timeout_seconds=2.0,
+            term_grace_seconds=0.5,
+            kill_grace_seconds=1.0,
+            poll_seconds=0.01,
+        )
+
+    def child_launch(argv, cwd, env):
+        child_calls.append(tuple(argv))
+        _write_run_json(target / "runs" / "resumed_child", completed_steps=2)
+        return probe.LaunchResult(0, "", "")
+
+    with pytest.raises(probe.ReconcileProbeError) as exc_info:
+        probe.success_resumed(
+            artifact_root=target,
+            commit=receipt["commit"],
+            launch=child_launch,
+            interrupt_parent=normal_exit_parent,
+        )
+    assert exc_info.value.code == "reconcile_probe.parent_termination_not_signal_driven"
+    assert child_calls == []
+    assert not (target / probe.RECEIPTS_DIR_NAME / "success-resumed-receipt.json").exists()
+
+
 # --------------------------------------------------------------------------
 # rank-failure (real, model-free, no GPU)
 # --------------------------------------------------------------------------

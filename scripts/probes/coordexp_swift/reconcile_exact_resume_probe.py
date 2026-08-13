@@ -1028,14 +1028,11 @@ def _interrupt_parent_at_authoritative_step_one(
             start_new_session=True,
         )
         pid = process.pid
-        pgid = os.getpgid(pid)
+        # start_new_session=True makes the child a new session and process-group
+        # leader before exec; the intended PGID therefore remains its PID even
+        # if that leader exits while same-group descendants are still alive.
+        pgid = pid
         try:
-            if pgid != pid:
-                raise ReconcileProbeError(
-                    "parent launcher did not create its own session/process group",
-                    code="reconcile_probe.parent_session_invalid",
-                    context={"pid": pid, "pgid": pgid},
-                )
             deadline = launch_started + boundary_timeout_seconds
             authenticated: dict[str, Any] | None = None
             last_error_code: str | None = None
@@ -1091,6 +1088,17 @@ def _interrupt_parent_at_authoritative_step_one(
                 kill_grace_seconds=kill_grace_seconds,
                 poll_seconds=poll_seconds,
             )
+            if "SIGTERM" not in termination.signals or termination.returncode == 0:
+                raise ReconcileProbeError(
+                    "parent exited without a signal-driven controlled interruption",
+                    code="reconcile_probe.parent_termination_not_signal_driven",
+                    context={
+                        "pid": pid,
+                        "pgid": pgid,
+                        "signals": list(termination.signals),
+                        "returncode": termination.returncode,
+                    },
+                )
             return ParentInterruptionResult(
                 pid=pid,
                 pgid=pgid,
@@ -1280,6 +1288,17 @@ def success_resumed(
         raise ReconcileProbeError(
             "parent interruption controller returned an invalid result",
             code="reconcile_probe.parent_controller_invalid",
+        )
+    if "SIGTERM" not in setup_result.signals or setup_result.returncode == 0:
+        raise ReconcileProbeError(
+            "parent controller did not prove a signal-driven interruption",
+            code="reconcile_probe.parent_termination_not_signal_driven",
+            context={
+                "pid": setup_result.pid,
+                "pgid": setup_result.pgid,
+                "signals": list(setup_result.signals),
+                "returncode": setup_result.returncode,
+            },
         )
     post_termination_admission = _authenticate_parent_step_one(parent_run_dir)
     if dict(setup_result.authenticated_step_one) != post_termination_admission:
