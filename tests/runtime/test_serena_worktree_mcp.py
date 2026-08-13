@@ -110,6 +110,44 @@ def test_resolve_worktree_uses_exact_git_root(tmp_path: Path) -> None:
     assert module.resolve_worktree(nested) == tmp_path.resolve()
 
 
+def test_resolve_worktree_is_not_blocked_by_cross_owner_git_worktrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed["argv"] = argv
+        observed["env"] = kwargs["env"]
+        return subprocess.CompletedProcess(argv, 0, stdout=f"{tmp_path}\n", stderr="")
+
+    module = _load_module()
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    assert module.resolve_worktree(tmp_path) == tmp_path.resolve()
+    assert observed["argv"] == [
+        "/usr/bin/git",
+        "-c",
+        "safe.directory=*",
+        "-C",
+        str(tmp_path),
+        "rev-parse",
+        "--show-toplevel",
+    ]
+    assert observed["env"] == {
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/bin:/bin",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/data/CoordExp/.codex/serena/gitconfig",
+    }
+
+
+def test_service_git_config_only_trusts_worktree_discovery() -> None:
+    gitconfig = REPO_ROOT / ".codex" / "serena" / "gitconfig"
+
+    assert gitconfig.read_text() == "[safe]\n\tdirectory = *\n"
+    assert gitconfig.stat().st_mode & 0o777 == 0o600
+
+
 def test_slot_records_full_root_and_stable_key(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()

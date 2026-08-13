@@ -70,12 +70,25 @@ class Backend:
 def resolve_worktree(start: Path) -> Path:
     """Return the canonical Git worktree root containing *start*."""
     result = subprocess.run(
-        ["/usr/bin/git", "-C", os.fspath(start), "rev-parse", "--show-toplevel"],
+        [
+            "/usr/bin/git",
+            "-c",
+            "safe.directory=*",
+            "-C",
+            os.fspath(start),
+            "rev-parse",
+            "--show-toplevel",
+        ],
         check=False,
         capture_output=True,
         text=True,
         timeout=5,
-        env={"LANG": "C.UTF-8", "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1"},
+        env={
+            "LANG": "C.UTF-8",
+            "PATH": "/usr/bin:/bin",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": "/data/CoordExp/.codex/serena/gitconfig",
+        },
     )
     if result.returncode != 0:
         detail = result.stderr.strip() or "not inside a Git worktree"

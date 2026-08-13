@@ -96,7 +96,9 @@ trace_lsp_communication: false
 # Maps the language key to the options.
 # Have a look at the docstring of the constructors of the LS implementations within solidlsp (e.g., for C# or PHP) to see which options are available.
 # No documentation on options means no options are available.
-ls_specific_settings: {}
+ls_specific_settings:
+  python:
+    ls_path: /data/CoordExp/.codex/serena/runtime/language-servers/pyright/bin/pyright-langserver
 
 # mapping from language server keys to integer priority values (higher = more preferred), which determine
 # language server selection during automatic project creation and are used to break ties when multiple
@@ -212,7 +214,10 @@ trusted_project_path_patterns:
 # the list of registered project paths (updated automatically).
 projects:
 - /data/CoordExp
+- /data/CoordExp/.worktrees/CoordExp-swift
+- /data/CoordExp/.worktrees/research-probes
 - /data/CoordExp/cc-plugin-codex
+- /data/CoordExp/cc-plugin-codex-dev
 - /data/CoordExp/codex-usage-ledger
 - /data/CoordExp/codex-wake-me-up
 - /data/CoordExp/serena-light

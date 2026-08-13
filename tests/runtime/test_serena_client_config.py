@@ -18,7 +18,10 @@ EXPECTED_ARGS = [
 ]
 EXPECTED_ENV = {
     "CONDA_PREFIX": "/root/miniconda3/envs/ms",
-    "PATH": "/root/miniconda3/envs/ms/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin",
+    "PATH": (
+        "/data/CoordExp/.codex/serena/runtime/node/bin:"
+        "/root/miniconda3/envs/ms/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
+    ),
     "SERENA_HOME": "/data/CoordExp/.codex/serena",
     "VIRTUAL_ENV": "/root/miniconda3/envs/ms",
 }
@@ -78,3 +81,11 @@ def test_blocking_serena_reminders_remain_registered() -> None:
 
     assert codex_text.count("serena-hooks remind --client=codex") == 3
     assert claude_text.count("serena-hooks remind --client=claude-code") == 1
+
+
+def test_serena_uses_service_owned_pyright_without_uvx() -> None:
+    config = yaml.safe_load((ROOT / ".codex" / "serena" / "serena_config.yml").read_text())
+
+    assert config["ls_specific_settings"]["python"]["ls_path"] == (
+        "/data/CoordExp/.codex/serena/runtime/language-servers/pyright/bin/pyright-langserver"
+    )
