@@ -9,6 +9,8 @@ readonly pyright_bin="${pyright_dir}/bin/pyright-langserver"
 readonly pyright_complete="${pyright_dir}/.complete"
 readonly node_dir="${runtime_root}/node"
 readonly node_bin="${node_dir}/bin/node"
+readonly npm_bin="${node_dir}/bin/npm"
+readonly npm_package_dir="${node_dir}/lib/node_modules/npm"
 readonly node_complete="${node_dir}/.complete"
 readonly typescript_dir="${repo_root}/.codex/serena/language_servers/static/TypeScriptLanguageServer/ts-lsp"
 readonly typescript_bin="${typescript_dir}/node_modules/.bin/typescript-language-server"
@@ -46,14 +48,16 @@ check_pyright() {
 }
 
 check_node() {
-    local expected_hash expected_version observed_hash observed_version
+    local expected_hash expected_npm_version expected_version observed_hash observed_npm_version observed_version
     expected_hash="$(read_lock node.sha256)"
+    expected_npm_version="$(read_lock npm.version)"
     expected_version="v$(read_lock node.version)"
-    [[ -f "${node_complete}" && -x "${node_bin}" ]] || {
+    [[ -f "${node_complete}" && -x "${node_bin}" && -x "${npm_bin}" && -d "${npm_package_dir}" ]] || {
         echo "Node runtime is incomplete at ${node_dir}" >&2
         return 1
     }
     observed_hash="$(sha256sum "${node_bin}" | awk '{print $1}')"
+    observed_npm_version="$(PATH="${node_dir}/bin:/usr/local/bin:/usr/bin:/bin" "${npm_bin}" --version)"
     observed_version="$("${node_bin}" --version)"
     [[ "${observed_hash}" == "${expected_hash}" ]] || {
         echo "Node digest mismatch: ${observed_hash} != ${expected_hash}" >&2
@@ -63,7 +67,12 @@ check_node() {
         echo "Node version mismatch: ${observed_version} != ${expected_version}" >&2
         return 1
     }
+    [[ "${observed_npm_version}" == "${expected_npm_version}" ]] || {
+        echo "npm version mismatch: ${observed_npm_version} != ${expected_npm_version}" >&2
+        return 1
+    }
     printf 'node %s\n' "${observed_version}"
+    printf 'npm %s\n' "${observed_npm_version}"
 }
 
 check_typescript() {
@@ -148,9 +157,24 @@ if [[ ! -e "${node_dir}" ]]; then
     mkdir -p "${node_dir}/bin"
     chmod 700 "${node_dir}" "${node_dir}/bin"
     install -m 0755 "${node_source}" "${node_bin}"
-    : > "${node_complete}"
-    chmod 600 "${node_complete}"
 fi
+
+if [[ ! -x "${npm_bin}" || ! -d "${npm_package_dir}" ]]; then
+    readonly npm_version="$(read_lock npm.version)"
+    readonly node_source_root="/root/.nvm/versions/node/v$(read_lock node.version)"
+    readonly npm_source="${node_source_root}/lib/node_modules/npm"
+    readonly observed_source_npm_version="$("${node_source_root}/bin/node" -p "require('${npm_source}/package.json').version")"
+    [[ "${observed_source_npm_version}" == "${npm_version}" ]] || {
+        echo "npm source version mismatch: ${observed_source_npm_version} != ${npm_version}" >&2
+        exit 1
+    }
+    mkdir -p "${node_dir}/lib/node_modules"
+    cp -a "${npm_source}" "${npm_package_dir}"
+    ln -s ../lib/node_modules/npm/bin/npm-cli.js "${npm_bin}"
+fi
+
+: > "${node_complete}"
+chmod 600 "${node_complete}"
 check_node
 
 if [[ ! -x "${typescript_bin}" || ! -f "${typescript_complete}" ]]; then

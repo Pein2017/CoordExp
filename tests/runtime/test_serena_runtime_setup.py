@@ -21,6 +21,7 @@ def test_language_server_check_accepts_exact_installed_pyright() -> None:
     assert result.returncode == 0, result.stderr
     assert "pyright 1.1.403" in result.stdout
     assert "node v22.22.0" in result.stdout
+    assert "npm 11.13.0" in result.stdout
     assert "typescript-language-server 5.1.3" in result.stdout
     assert "bash-language-server 5.6.0" in result.stdout
     assert "ShellCheck 0.10.0" in result.stdout
@@ -39,6 +40,7 @@ def test_full_setup_checks_official_serena_and_all_runtime_components() -> None:
     assert "Serena 1.7.0" in result.stdout
     assert "mcp-proxy" not in result.stdout
     assert "pyright 1.1.403" in result.stdout
+    assert "npm 11.13.0" in result.stdout
     assert "typescript-language-server 5.1.3" in result.stdout
     assert "bash-language-server 5.6.0" in result.stdout
     assert "official Serena stdio runtime is ready" in result.stdout
