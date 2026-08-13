@@ -38,6 +38,7 @@
 !.cursorignore
 !.cursorindexingignore
 !pytest.ini
+!pyrightconfig.json
 !*.md
 !public_data/**/
 !public_data/**/*.py
@@ -78,6 +79,7 @@
 
 # Serena project memories (track these, keep other .serena/* ignored)
 !.serena/
+!.serena/project.yml
 !.serena/memories/
 !.serena/memories/**
 
