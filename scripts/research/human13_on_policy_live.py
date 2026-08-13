@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, is_dataclass, replace
 import hashlib
 from types import SimpleNamespace
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence, cast
 
 import torch
 
@@ -89,6 +89,14 @@ class OnPolicyDenominators:
     positive_owners: int
     rectangle_rows: int
     duplicate_images: int
+    duplicate_events_by_image: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True)
+class OnPolicyLossConfig:
+    required_margin: float
+    rectangle_margin: float
+    duplicate_margin: float
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,7 @@ class OnPolicyPayload:
     micro_steps: tuple[SupervisedMicroStep, ...]
     denominators: OnPolicyDenominators
     prefix_receipts: tuple[PrefixReceipt, ...]
+    loss_config: OnPolicyLossConfig
 
 
 @dataclass(frozen=True)
@@ -113,6 +122,7 @@ class OnPolicyPackContext:
 class OnPolicyLossPlan:
     denominators: OnPolicyDenominators
     micro_step_count: int
+    loss_config: OnPolicyLossConfig
 
 
 @dataclass(frozen=True)
@@ -142,13 +152,27 @@ def _training_prefix(image: FrontierImage) -> tuple[tuple[int, ...], PrefixRecei
         event.duplicate_generated_order for event in image.duplicate_events
     }
     raw = tuple(image.generated_token_ids)
+    terminal_removed = image.stop_reason == "im_end" and bool(raw)
+    body_end = len(raw) - 1 if terminal_removed else len(raw)
+    removed_positions: set[int] = set()
+    for row in image.rows:
+        if (
+            row.token_start < 0
+            or row.token_end <= row.token_start
+            or row.token_end > body_end
+        ):
+            raise ValueError("frontier row span escapes the natural pre-terminal body")
+        if tuple(raw[row.token_start : row.token_end]) != row.token_ids:
+            raise ValueError(
+                "frontier row span tokens differ from the natural trajectory"
+            )
+        if row.generated_order in duplicate_orders:
+            removed_positions.update(range(row.token_start, row.token_end))
     kept = tuple(
         token
-        for row in image.rows
-        if row.generated_order not in duplicate_orders
-        for token in row.token_ids
+        for index, token in enumerate(raw[:body_end])
+        if index not in removed_positions
     )
-    terminal_removed = len(raw) > max((row.token_end for row in image.rows), default=0)
     return kept, PrefixReceipt(
         image_id=image.image_id,
         raw_natural_token_sha256=_sha256_tokens(raw),
@@ -167,12 +191,7 @@ def _row_coordinate_offsets(tokens: tuple[int, ...]) -> tuple[int, int, int, int
         if _COORD_TOKEN_START <= token < _COORD_TOKEN_END_EXCLUSIVE
     )
     if len(offsets) != 4:
-        # Synthetic tests and old native aliases may not expose the canonical
-        # coordinate-token range. Their last four row-body tokens remain the
-        # only mechanically bound coordinate positions.
-        if len(tokens) < 4:
-            raise ValueError("selected native row lacks four coordinate tokens")
-        offsets = tuple(range(len(tokens) - 4, len(tokens)))
+        raise ValueError("selected native row lacks four canonical coordinate tokens")
     return offsets  # type: ignore[return-value]
 
 
@@ -181,12 +200,14 @@ def _segment(
     *,
     image_id: int,
     segment_id: str,
-    role: str,
+    role: base.LogicalRole,
     input_ids: tuple[int, ...],
     bindings: tuple[OnPolicyBinding, ...],
 ) -> base.LogicalPanelSegment:
-    if is_dataclass(skeleton):
-        encoded = replace(skeleton, example_id=segment_id, input_ids=input_ids)
+    if is_dataclass(skeleton) and not isinstance(skeleton, type):
+        encoded = replace(
+            cast(Any, skeleton), example_id=segment_id, input_ids=input_ids
+        )
         object.__setattr__(encoded, "human13_on_policy_bindings", bindings)
     else:
         values = dict(vars(skeleton))
@@ -367,12 +388,20 @@ def _denominators(
         if site.objective in {"full_row_ce", "first_bottleneck"}
     }
     rectangles = {site.unit_id for site in sites if site.objective == "rectangle"}
-    duplicate_images = {
-        site.image_id for site in sites if site.objective == "duplicate_pair"
-    }
+    duplicate_event_counts: dict[int, int] = {}
+    for site in sites:
+        if site.objective == "duplicate_pair":
+            duplicate_event_counts[site.image_id] = (
+                duplicate_event_counts.get(site.image_id, 0) + 1
+            )
     if not positives or not rectangles:
         raise ValueError("on-policy payload requires positive and rectangle sites")
-    return OnPolicyDenominators(len(positives), len(rectangles), len(duplicate_images))
+    return OnPolicyDenominators(
+        len(positives),
+        len(rectangles),
+        len(duplicate_event_counts),
+        tuple(sorted(duplicate_event_counts.items())),
+    )
 
 
 def build_on_policy_payload(
@@ -386,7 +415,18 @@ def build_on_policy_payload(
     rectangle_margin: float,
     duplicate_margin: float,
 ) -> OnPolicyPayload:
-    del required_margin, rectangle_margin, duplicate_margin
+    loss_config = OnPolicyLossConfig(
+        float(required_margin), float(rectangle_margin), float(duplicate_margin)
+    )
+    if any(
+        value <= 0
+        for value in (
+            loss_config.required_margin,
+            loss_config.rectangle_margin,
+            loss_config.duplicate_margin,
+        )
+    ):
+        raise ValueError("on-policy loss margins must be positive")
     if materialized.arm_id != arm_id:
         raise ValueError("on-policy materialized arm differs")
     materialized.preflight(global_max_length)
@@ -415,6 +455,7 @@ def build_on_policy_payload(
                 metadata={
                     "human13_on_policy_sites": sites,
                     "human13_on_policy_denominators": denominators,
+                    "human13_on_policy_loss_config": loss_config,
                 },
                 expected_vocab_size=expected_vocab_size,
                 calibration_metadata=base.Human13CompactLogitsMetadata(positions),
@@ -428,6 +469,7 @@ def build_on_policy_payload(
         tuple(steps),
         denominators,
         materialized.prefix_receipts,
+        loss_config,
     )
 
 
@@ -471,6 +513,14 @@ class OnPolicyLossRunner:
     rectangle_margin: float
     duplicate_margin: float
 
+    @property
+    def loss_config(self) -> OnPolicyLossConfig:
+        return OnPolicyLossConfig(
+            float(self.required_margin),
+            float(self.rectangle_margin),
+            float(self.duplicate_margin),
+        )
+
     def prepare_planned_step(
         self,
         micro_steps: Sequence[SupervisedMicroStep],
@@ -482,7 +532,13 @@ class OnPolicyLossRunner:
         del denominator_gatherer, rank
         if world_size != 1 or not micro_steps:
             raise ValueError("on-policy step requires world-size one physical packs")
-        return OnPolicyLossPlan(self.denominators, len(micro_steps))
+        configs = {
+            (step.metadata or {}).get("human13_on_policy_loss_config")
+            for step in micro_steps
+        }
+        if configs != {self.loss_config}:
+            raise ValueError("on-policy runner loss configuration differs from payload")
+        return OnPolicyLossPlan(self.denominators, len(micro_steps), self.loss_config)
 
     def compute_micro_step(
         self,
@@ -518,8 +574,13 @@ class OnPolicyLossRunner:
             elif site.objective == "rectangle":
                 valid = torch.zeros_like(logits, dtype=torch.bool)
                 for row_index, lower in enumerate(site.lower_coordinate_token_ids):
-                    if lower + 1 < logits.shape[-1]:
-                        valid[row_index, lower + 1 :] = True
+                    if not _COORD_TOKEN_START <= lower < _COORD_TOKEN_END_EXCLUSIVE:
+                        raise ValueError(
+                            "rectangle lower coordinate is outside vocabulary"
+                        )
+                    valid_end = min(int(logits.shape[-1]), _COORD_TOKEN_END_EXCLUSIVE)
+                    if lower + 1 < valid_end:
+                        valid[row_index, lower + 1 : valid_end] = True
                 result = rectangle_valid_argmax_hinge(
                     logits,
                     valid,
@@ -542,7 +603,14 @@ class OnPolicyLossRunner:
                     image_ids=torch.tensor((site.image_id,), device=logits.device),
                     required_margin=self.duplicate_margin,
                 )
-                numerators["duplicate"] = numerators["duplicate"] + result.numerator
+                event_count = dict(plan.denominators.duplicate_events_by_image).get(
+                    site.image_id
+                )
+                if event_count is None or event_count <= 0:
+                    raise ValueError("duplicate event lacks its image denominator")
+                numerators["duplicate"] = (
+                    numerators["duplicate"] + result.numerator / event_count
+                )
                 counts["duplicate"] += 1
         denominator_values = {
             "positive": plan.denominators.positive_owners,
@@ -624,6 +692,7 @@ __all__ = [
     "BehaviorGateObservation",
     "BehaviorGateVerdict",
     "MaterializedOnPolicySegments",
+    "OnPolicyLossConfig",
     "OnPolicyLossRunner",
     "OnPolicyPackContext",
     "OnPolicyPayload",
