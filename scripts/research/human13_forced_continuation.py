@@ -8,6 +8,8 @@ teacher-forced or re-tokenized before generation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+import re
 from typing import Any, Mapping, Sequence
 
 from scripts.research.run_local_branch_causal_value import (
@@ -26,8 +28,31 @@ class ForcedContinuationResult:
     generated_text: str
     forced_row_parse_evidence: Mapping[str, Any]
     parse_evidence: Mapping[str, Any]
+    natural_prefix_token_ids_sha256: str
+    forced_row_token_ids_sha256: str
     forced_context_sha256: str
     released_token_ids_sha256: str
+    requested_continuation_cap: int
+    minimum_continuation_cap: int
+    repetition_penalty: float
+    current_checkpoint_payload_sha256: str
+
+
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def source_continuation_cap(
+    *, source_row_count: int, source_token_count: int
+) -> int:
+    """Return the declared per-image continuation-cap lower bound."""
+
+    for label, value in (
+        ("source_row_count", source_row_count),
+        ("source_token_count", source_token_count),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{label} must be a non-negative integer")
+    return max(2 * source_row_count, source_token_count + 512)
 
 
 def _token_tuple(
@@ -52,6 +77,9 @@ def forced_complete_row_then_natural_continuation(
     image_height: int,
     repetition_penalty: float,
     continuation_cap: int,
+    source_row_count: int,
+    source_token_count: int,
+    current_checkpoint_payload_sha256: str,
 ) -> ForcedContinuationResult:
     """Force one complete native row, then release exactly one greedy suffix."""
 
@@ -67,10 +95,31 @@ def forced_complete_row_then_natural_continuation(
         label="forced_row_token_ids",
         allow_empty=False,
     )
-    if int(continuation_cap) <= 0:
-        raise ValueError("continuation_cap must be positive")
-    if float(repetition_penalty) <= 0:
-        raise ValueError("repetition_penalty must be positive")
+    minimum_cap = source_continuation_cap(
+        source_row_count=source_row_count,
+        source_token_count=source_token_count,
+    )
+    if (
+        isinstance(continuation_cap, bool)
+        or not isinstance(continuation_cap, int)
+        or continuation_cap < minimum_cap
+    ):
+        raise ValueError(
+            "continuation_cap is below the Source-derived minimum "
+            f"{minimum_cap}"
+        )
+    if (
+        isinstance(repetition_penalty, bool)
+        or not isinstance(repetition_penalty, (int, float))
+        or not math.isfinite(float(repetition_penalty))
+        or float(repetition_penalty) <= 0
+    ):
+        raise ValueError("repetition_penalty must be finite and positive")
+    if (
+        not isinstance(current_checkpoint_payload_sha256, str)
+        or _SHA256_RE.fullmatch(current_checkpoint_payload_sha256) is None
+    ):
+        raise ValueError("current checkpoint payload SHA-256 is invalid")
     if "input_ids" not in native_inputs:
         raise ValueError("native_inputs must contain input_ids")
 
@@ -136,12 +185,19 @@ def forced_complete_row_then_natural_continuation(
         generated_text=generated_text,
         forced_row_parse_evidence=forced_parsed.to_artifact_dict(),
         parse_evidence=parsed.to_artifact_dict(),
+        natural_prefix_token_ids_sha256=hash_prefix_token_ids(natural_prefix),
+        forced_row_token_ids_sha256=hash_prefix_token_ids(forced_row),
         forced_context_sha256=hash_prefix_token_ids(forced_context),
         released_token_ids_sha256=hash_prefix_token_ids(released),
+        requested_continuation_cap=continuation_cap,
+        minimum_continuation_cap=minimum_cap,
+        repetition_penalty=float(repetition_penalty),
+        current_checkpoint_payload_sha256=current_checkpoint_payload_sha256,
     )
 
 
 __all__ = [
     "ForcedContinuationResult",
     "forced_complete_row_then_natural_continuation",
+    "source_continuation_cap",
 ]

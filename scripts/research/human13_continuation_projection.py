@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+import hashlib
+import json
 import math
+import re
 from typing import Any, Literal, Mapping, Sequence
 
 from scripts.research.build_human13_k_union_manifest import ImageRecord
-from scripts.research.build_human13_on_policy_frontier import FrontierImage
+from scripts.research.build_human13_on_policy_frontier import (
+    FrontierImage,
+    natural_pre_stop_prefix,
+)
 from scripts.research.compare_clean_rollout_owner_coverage import (
     _global_matches,
     iou_xyxy,
 )
-from scripts.research.human13_forced_continuation import ForcedContinuationResult
+from scripts.research.human13_forced_continuation import (
+    ForcedContinuationResult,
+    source_continuation_cap,
+)
 from scripts.research.human13_frontier_selection import (
     CandidateScore,
     ContinuationOutcome,
     protected_owner_coverable,
     select_continuation,
 )
+from scripts.research.run_local_branch_causal_value import hash_prefix_token_ids
 from src.eval.detection_categories import normalize_coco_category_name
 
 
@@ -26,6 +36,7 @@ _DUPLICATE_IOU = 0.95
 _OWNER_IOU = 0.5
 _PARSE_STATUSES = {"accepted", "accepted_with_drops", "all_spans_dropped", "empty"}
 _TERMINATION_STATUSES = {"natural_im_end", "cap_hit", "nonterminal_return"}
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -50,6 +61,7 @@ class ContinuationProjection:
     malformed_count: int
     row_count: int
     generated_tokens: int
+    artifact_sha256: str
 
 
 def project_continuation(
@@ -57,10 +69,22 @@ def project_continuation(
     frontier: FrontierImage,
     score: CandidateScore,
     result: ForcedContinuationResult,
+    *,
+    expected_continuation_cap: int,
+    expected_repetition_penalty: float,
+    current_checkpoint_payload_sha256: str,
 ) -> ContinuationProjection:
     """Compose and audit one forced row plus its released natural continuation."""
 
-    _validate_binding(image, frontier, score, result)
+    _validate_binding(
+        image,
+        frontier,
+        score,
+        result,
+        expected_continuation_cap=expected_continuation_cap,
+        expected_repetition_penalty=expected_repetition_penalty,
+        current_checkpoint_payload_sha256=current_checkpoint_payload_sha256,
+    )
     forced, forced_dropped = _parse_artifact(
         result.forced_row_parse_evidence,
         label="forced row",
@@ -149,7 +173,7 @@ def project_continuation(
         row_count=row_count,
         generated_tokens=generated_tokens,
     )
-    return ContinuationProjection(
+    projection = ContinuationProjection(
         score=score,
         result=result,
         outcome=outcome,
@@ -164,7 +188,9 @@ def project_continuation(
         malformed_count=malformed_count,
         row_count=row_count,
         generated_tokens=generated_tokens,
+        artifact_sha256="",
     )
+    return replace(projection, artifact_sha256=_projection_sha256(projection))
 
 
 def select_projected_continuation(
@@ -174,6 +200,8 @@ def select_projected_continuation(
 
     if not projections:
         raise ValueError("no continuation projections")
+    if any(item.artifact_sha256 != _projection_sha256(item) for item in projections):
+        raise ValueError("continuation projection artifact hash differs")
     selected = select_continuation(tuple(item.outcome for item in projections))
     return next(item for item in projections if item.outcome is selected)
 
@@ -183,6 +211,10 @@ def _validate_binding(
     frontier: FrontierImage,
     score: CandidateScore,
     result: ForcedContinuationResult,
+    *,
+    expected_continuation_cap: int,
+    expected_repetition_penalty: float,
+    current_checkpoint_payload_sha256: str,
 ) -> None:
     if image.image_id != frontier.image_id or score.path.image_id != image.image_id:
         raise ValueError("image, frontier, and candidate identities differ")
@@ -221,9 +253,61 @@ def _validate_binding(
         raise ValueError("forced row differs from selected candidate")
     _valid_tokens(result.forced_row_token_ids, label="forced row")
     _valid_tokens(result.released_token_ids, label="released continuation")
+    natural_prefix = natural_pre_stop_prefix(frontier)
+    if result.natural_prefix_token_ids_sha256 != hash_prefix_token_ids(natural_prefix):
+        raise ValueError("forced continuation natural prefix identity differs")
+    if result.forced_row_token_ids_sha256 != hash_prefix_token_ids(
+        score.path.token_ids
+    ):
+        raise ValueError("forced row token identity differs")
+    if result.forced_context_sha256 != hash_prefix_token_ids(
+        (*natural_prefix, *score.path.token_ids)
+    ):
+        raise ValueError("forced context identity differs")
+    if result.released_token_ids_sha256 != hash_prefix_token_ids(
+        result.released_token_ids
+    ):
+        raise ValueError("released continuation token identity differs")
+    source = image.trajectories[0] if image.trajectories else None
+    if source is None or source.request.mode != "source_greedy":
+        raise ValueError("image lacks its bound Source trajectory")
+    minimum_cap = source_continuation_cap(
+        source_row_count=len(source.rows),
+        source_token_count=len(source.raw_token_ids),
+    )
+    if result.minimum_continuation_cap != minimum_cap:
+        raise ValueError("forced continuation minimum cap differs from Source")
+    if (
+        isinstance(expected_continuation_cap, bool)
+        or not isinstance(expected_continuation_cap, int)
+        or expected_continuation_cap < minimum_cap
+        or result.requested_continuation_cap != expected_continuation_cap
+    ):
+        raise ValueError("forced continuation requested cap differs")
+    if (
+        isinstance(expected_repetition_penalty, bool)
+        or not isinstance(expected_repetition_penalty, (int, float))
+        or not math.isfinite(float(expected_repetition_penalty))
+        or expected_repetition_penalty <= 0
+        or result.repetition_penalty != float(expected_repetition_penalty)
+    ):
+        raise ValueError("forced continuation repetition penalty differs")
+    if (
+        _SHA256_RE.fullmatch(current_checkpoint_payload_sha256) is None
+        or result.current_checkpoint_payload_sha256
+        != current_checkpoint_payload_sha256
+    ):
+        raise ValueError("forced continuation checkpoint payload differs")
     if result.termination_status not in _TERMINATION_STATUSES:
         raise ValueError("forced continuation termination status is invalid")
-    if result.cap_hit != (result.termination_status == "cap_hit"):
+    cap_hit_from_length = (
+        len(result.released_token_ids) >= result.requested_continuation_cap
+    )
+    if (
+        len(result.released_token_ids) > result.requested_continuation_cap
+        or result.cap_hit != cap_hit_from_length
+        or result.cap_hit != (result.termination_status == "cap_hit")
+    ):
         raise ValueError("forced continuation cap status is inconsistent")
 
 
@@ -329,6 +413,19 @@ def _matched_owner_ids(
     ]
     matches = _global_matches(gt, pred, _OWNER_IOU)
     return tuple(sorted(owners[owner_index][0] for owner_index, _, _ in matches))
+
+
+def _projection_sha256(projection: ContinuationProjection) -> str:
+    payload = asdict(projection)
+    payload.pop("artifact_sha256", None)
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 __all__ = [

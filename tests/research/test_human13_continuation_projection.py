@@ -8,23 +8,32 @@ import pytest
 from scripts.research.build_human13_k_union_manifest import (
     ImageRecord,
     OwnerRecord,
+    PredictionRowInput,
+    PrefixRecord,
+    RequestIdentity,
     SelectedRowRecord,
+    TrajectoryRecord,
 )
 from scripts.research.build_human13_on_policy_frontier import (
     FrontierCandidateAlias,
     FrontierDuplicateEvent,
     FrontierImage,
     FrontierRow,
+    natural_pre_stop_prefix,
 )
 from scripts.research.human13_continuation_projection import (
     project_continuation,
     select_projected_continuation,
 )
-from scripts.research.human13_forced_continuation import ForcedContinuationResult
+from scripts.research.human13_forced_continuation import (
+    ForcedContinuationResult,
+    source_continuation_cap,
+)
 from scripts.research.human13_frontier_selection import (
     CandidatePath,
     CandidateScore,
 )
+from scripts.research.run_local_branch_causal_value import hash_prefix_token_ids
 
 
 def _owner(
@@ -66,12 +75,30 @@ def _image() -> ImageRecord:
             (("h1", (101, 102)), ("h2", (201, 202))), start=1
         )
     )
+    source = TrajectoryRecord(
+        trajectory_id="source",
+        request=RequestIdentity("hf", "test", "source_greedy", 1, None, 0, 0.0, 1.0, 1.0, 64),
+        raw_token_ids=(1, 2, 3, 4, 5, 99),
+        terminal_token_index=5,
+        stop_reason="im_end",
+        parser_status="accepted",
+        rows=(
+            PredictionRowInput("source:row:0", 0, "person", (0.0, 0.0, 10.0, 10.0), 0, 2, 1),
+            PredictionRowInput("source:row:1", 1, "person", (60.0, 0.0, 70.0, 10.0), 2, 5, 4),
+        ),
+        prefix=PrefixRecord((1, 2, 3, 4, 5), (1, 2, 3, 4, 5), ()),
+        retained_row_ids=("source:row:0", "source:row:1"),
+        duplicate_row_ids=(),
+        matched_row_ids=("source:row:0",),
+        replay_token_mask=(True, True, True, True, True, False),
+        duplicate_target_mask=(False, False, False, False, False, False),
+    )
     return ImageRecord(
         image_id=7,
         panel_row_sha256=None,
         image_sha256=None,
         owners=owners,
-        trajectories=(),
+        trajectories=(source,),
         duplicate_events=(),
         selected_rows=selected,
         g_owner_ids=("g1",),
@@ -106,6 +133,8 @@ def _frontier() -> FrontierImage:
         uncovered_h_owner_ids=("h1", "h2"),
         candidate_aliases=aliases,
         duplicate_events=(FrontierDuplicateEvent(1, 0, 0.98),),
+        terminal_token_index=4,
+        malformed_row_count=0,
     )
 
 
@@ -170,6 +199,8 @@ def _result(
         else _prediction("cat", (40.0, 0.0, 50.0, 10.0))
     )
     forced_tokens = (101, 102) if owner_id == "h1" else (201, 202)
+    natural_prefix = natural_pre_stop_prefix(_frontier())
+    minimum_cap = source_continuation_cap(source_row_count=2, source_token_count=6)
     return ForcedContinuationResult(
         forced_row_token_ids=forced_tokens,
         released_token_ids=released_tokens,
@@ -178,8 +209,33 @@ def _result(
         generated_text="ignored by pure projection",
         forced_row_parse_evidence=_parse(forced),
         parse_evidence=_parse(*released_predictions, dropped=dropped),
-        forced_context_sha256="a" * 64,
-        released_token_ids_sha256="b" * 64,
+        natural_prefix_token_ids_sha256=hash_prefix_token_ids(natural_prefix),
+        forced_row_token_ids_sha256=hash_prefix_token_ids(forced_tokens),
+        forced_context_sha256=hash_prefix_token_ids((*natural_prefix, *forced_tokens)),
+        released_token_ids_sha256=hash_prefix_token_ids(released_tokens),
+        requested_continuation_cap=minimum_cap,
+        minimum_continuation_cap=minimum_cap,
+        repetition_penalty=1.0,
+        current_checkpoint_payload_sha256="c" * 64,
+    )
+
+
+def _project(
+    score: CandidateScore,
+    result: ForcedContinuationResult,
+    *,
+    expected_continuation_cap: int = 518,
+    expected_repetition_penalty: float = 1.0,
+    current_checkpoint_payload_sha256: str = "c" * 64,
+):
+    return project_continuation(
+        _image(),
+        _frontier(),
+        score,
+        result,
+        expected_continuation_cap=expected_continuation_cap,
+        expected_repetition_penalty=expected_repetition_penalty,
+        current_checkpoint_payload_sha256=current_checkpoint_payload_sha256,
     )
 
 
@@ -192,9 +248,7 @@ def test_projection_composes_branch_without_awarding_duplicate_owner_credit() ->
             generated_order=1,
         ),
     )
-    projection = project_continuation(
-        _image(),
-        _frontier(),
+    projection = _project(
         _score(),
         _result(released_predictions=released, dropped=({"reason": "junk"},)),
     )
@@ -254,7 +308,39 @@ def test_projection_composes_branch_without_awarding_duplicate_owner_credit() ->
 )
 def test_projection_fails_closed_on_invalid_forced_row(mutation, message: str) -> None:
     with pytest.raises(ValueError, match=message):
-        project_continuation(_image(), _frontier(), _score(), mutation(_result()))
+        _project(_score(), mutation(_result()))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "kwargs", "message"),
+    (
+        (lambda result: replace(result, natural_prefix_token_ids_sha256="d" * 64), {}, "natural prefix"),
+        (lambda result: replace(result, forced_row_token_ids_sha256="d" * 64), {}, "forced row"),
+        (lambda result: replace(result, forced_context_sha256="d" * 64), {}, "forced context"),
+        (lambda result: replace(result, released_token_ids_sha256="d" * 64), {}, "released"),
+        (lambda result: replace(result, requested_continuation_cap=517), {}, "cap"),
+        (lambda result: result, {"expected_continuation_cap": 519}, "cap"),
+        (lambda result: replace(result, minimum_continuation_cap=519), {}, "minimum"),
+        (
+            lambda result: replace(
+                result,
+                termination_status="cap_hit",
+                cap_hit=True,
+            ),
+            {},
+            "cap status",
+        ),
+        (lambda result: replace(result, repetition_penalty=1.1), {}, "repetition"),
+        (lambda result: result, {"expected_repetition_penalty": 1.1}, "repetition"),
+        (lambda result: replace(result, current_checkpoint_payload_sha256="d" * 64), {}, "checkpoint"),
+        (lambda result: result, {"current_checkpoint_payload_sha256": "d" * 64}, "checkpoint"),
+    ),
+)
+def test_projection_fails_closed_on_continuation_binding_mismatch(
+    mutation, kwargs: dict, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _project(_score(), mutation(_result()), **kwargs)
 
 
 def test_projection_rejects_forged_frontier_alias_not_bound_to_manifest() -> None:
@@ -271,7 +357,15 @@ def test_projection_rejects_forged_frontier_alias_not_bound_to_manifest() -> Non
     result = replace(_result(), forced_row_token_ids=(777,))
 
     with pytest.raises(ValueError, match="manifest"):
-        project_continuation(_image(), frontier, score, result)
+        project_continuation(
+            _image(),
+            frontier,
+            score,
+            result,
+            expected_continuation_cap=518,
+            expected_repetition_penalty=1.0,
+            current_checkpoint_payload_sha256="c" * 64,
+        )
 
 
 def test_projection_rejects_nonchronological_released_parse_rows() -> None:
@@ -280,18 +374,11 @@ def test_projection_rejects_nonchronological_released_parse_rows() -> None:
         _prediction("dog", (60.0, 0.0, 70.0, 10.0)),
     )
     with pytest.raises(ValueError, match="generated order"):
-        project_continuation(
-            _image(),
-            _frontier(),
-            _score(),
-            _result(released_predictions=released),
-        )
+        _project(_score(), _result(released_predictions=released))
 
 
 def test_select_projected_continuation_returns_the_score_and_result_pair() -> None:
-    h1 = project_continuation(
-        _image(),
-        _frontier(),
+    h1 = _project(
         _score("h1", barrier=4.0),
         _result(
             owner_id="h1",
@@ -300,15 +387,19 @@ def test_select_projected_continuation_returns_the_score_and_result_pair() -> No
             ),
         ),
     )
-    h2 = project_continuation(
-        _image(),
-        _frontier(),
-        _score("h2", barrier=0.1),
-        _result(owner_id="h2"),
-    )
+    h2 = _project(_score("h2", barrier=0.1), _result(owner_id="h2"))
 
     selected = select_projected_continuation((h2, h1))
 
     assert selected is h1
     assert selected.score is h1.score
     assert selected.result is h1.result
+    assert len(selected.artifact_sha256) == 64
+
+
+def test_selector_rejects_a_projection_whose_artifact_hash_was_forged() -> None:
+    projection = _project(_score(), _result())
+    with pytest.raises(ValueError, match="artifact"):
+        select_projected_continuation(
+            (replace(projection, artifact_sha256="d" * 64),)
+        )
