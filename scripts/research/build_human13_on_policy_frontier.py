@@ -25,6 +25,9 @@ SCHEMA_VERSION = "human13_on_policy_frontier.v1"
 _DUPLICATE_IOU = 0.95
 _OWNER_IOU = 0.5
 _AUTHORIZED_PARSER = "compact_object_box_closed_only"
+_AUTHORIZED_PARSE_STATUSES = frozenset(
+    {"accepted", "accepted_with_drops", "empty", "all_spans_dropped"}
+)
 
 
 @dataclass(frozen=True)
@@ -201,7 +204,10 @@ def build_frontier_iteration(
 def _project_image(
     image: ImageRecord, decode: CurrentDecode, *, protected: set[str]
 ) -> FrontierImage:
-    if decode.parser != _AUTHORIZED_PARSER or decode.parser_status != "complete":
+    if (
+        decode.parser != _AUTHORIZED_PARSER
+        or decode.parser_status not in _AUTHORIZED_PARSE_STATUSES
+    ):
         raise ValueError("current decode parser identity or status is not authorized")
     rows = _rows(decode)
     retained: list[FrontierRow] = []

@@ -233,8 +233,13 @@ def current_decodes_from_outputs(
         if parser != expected_parser:
             raise ValueError("output parser differs from the manifest surface")
         parser_status = _nonempty(record.get("parser_status"), "output.parser_status")
-        if parser_status != "complete":
-            raise ValueError("output parser status is not complete")
+        if parser_status not in {
+            "accepted",
+            "accepted_with_drops",
+            "empty",
+            "all_spans_dropped",
+        }:
+            raise ValueError("output parser status is outside the canonical parser")
         token_ids_value = record.get("generated_token_ids")
         if not isinstance(token_ids_value, list) or not token_ids_value:
             raise ValueError("output.generated_token_ids must be a non-empty list")

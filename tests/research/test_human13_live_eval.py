@@ -87,7 +87,7 @@ def _panel_outputs(
                 },
             ),
             parser="compact_object_box_closed_only",
-            parser_status="complete",
+            parser_status="accepted",
             stop_reason="im_end",
             malformed_row_count=0,
             runtime={"decode_seconds": 1.0},
@@ -141,7 +141,7 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
             {"generated_order": 0, "description": "person", "bbox": [1, 2, 3, 4]},
         ),
         parser="compact_object_box_closed_only",
-        parser_status="complete",
+        parser_status="accepted",
         stop_reason="im_end",
         malformed_row_count=2,
         runtime={"decode_seconds": 1.5},
@@ -154,7 +154,7 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
     provenance = cast(dict[str, object], result["provenance"])
     assert predictions[0]["description"] == "person"
     assert result["parser"] == "compact_object_box_closed_only"
-    assert result["parser_status"] == "complete"
+    assert result["parser_status"] == "accepted"
     assert provenance["manifest_sha256"] == "c" * 64
     assert provenance["checkpoint_path"] == "/run/checkpoints/step-4"
     assert provenance["physical_batch_size"] == 1
@@ -179,7 +179,7 @@ def test_build_analyzer_output_rejects_non_digest_or_wrong_image() -> None:
             generated_token_ids=(1,),
             predictions=(),
             parser="compact_object_box_closed_only",
-            parser_status="complete",
+            parser_status="accepted",
             stop_reason="im_end",
             malformed_row_count=0,
             runtime={},
@@ -206,8 +206,25 @@ def test_current_decodes_from_outputs_preserves_same_decode_identity_and_order()
     assert decodes[6].predictions[0].token_start == 0
     assert decodes[6].predictions[0].token_end == 2
     assert decodes[6].parser == "compact_object_box_closed_only"
-    assert decodes[6].parser_status == "complete"
+    assert decodes[6].parser_status == "accepted"
     assert decodes[6].checkpoint == checkpoint
+
+
+def test_current_decodes_accepts_real_canonical_parser_status() -> None:
+    manifest = _panel_manifest()
+    checkpoint = CheckpointIdentity("/checkpoint", "d" * 64)
+    outputs = list(_panel_outputs(manifest, checkpoint))
+    for output in outputs:
+        output["parser_status"] = "accepted"
+
+    decodes = live_eval.current_decodes_from_outputs(
+        manifest=manifest,
+        manifest_sha256="c" * 64,
+        outputs=outputs,
+        checkpoint=checkpoint,
+    )
+
+    assert {decode.parser_status for decode in decodes} == {"accepted"}
 
 
 @pytest.mark.parametrize(

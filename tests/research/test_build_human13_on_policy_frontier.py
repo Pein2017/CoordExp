@@ -57,7 +57,7 @@ def _manifest(
         token_ids=(100, 11, 12, 13, 14, 999),
         terminal_token_index=5,
         stop_reason="im_end",
-        parser_status="complete",
+        parser_status="accepted",
         rows=(
             manifest_builder.PredictionRowInput(
                 "source-g", 0, "person", (0.0, 0.0, 10.0, 10.0), 1, 5, 3
@@ -82,7 +82,7 @@ def _manifest(
                 token_ids=tokens,
                 terminal_token_index=len(tokens) - 1,
                 stop_reason="im_end",
-                parser_status="complete",
+                parser_status="accepted",
                 rows=rows,
             )
         )
@@ -130,7 +130,7 @@ def _decode(
         generated_token_ids=tokens,
         predictions=tuple(rows),
         parser="compact_object_box_closed_only",
-        parser_status="complete",
+        parser_status="accepted",
         stop_reason="im_end",
         checkpoint=checkpoint,
     )
@@ -162,6 +162,22 @@ def test_frontier_binds_current_natural_tokens_matching_and_k_neutrality(
     assert len(image.duplicate_events) == 1
     assert image.duplicate_events[0].duplicate_generated_order == 1
     assert frontier.protected_owner_ages == (("gt:2299:g", 1),)
+
+
+def test_frontier_accepts_real_canonical_parser_status(tmp_path: Path) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    decode = replace(_decode(checkpoint=checkpoint), parser_status="accepted")
+
+    frontier = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=0,
+        checkpoint=checkpoint,
+        decodes=(decode,),
+    )
+
+    assert frontier.images[0].parser_status == "accepted"
 
 
 def test_frontier_promotes_h_only_after_a_second_accepted_iteration(
