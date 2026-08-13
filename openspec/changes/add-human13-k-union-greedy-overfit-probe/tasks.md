@@ -55,3 +55,34 @@ budget, so A8-prime remained unavailable. The final execution audit found no
 P0 and narrowed the supported claims; A4 was omitted by its frozen atomic
 packing bound and A6 failed closed before model load. Neither is a scientific
 null. The change is intentionally not archive-ready while 5.2/5.3 remain open.
+
+## 8. Authorized Missing-Arm Successor — 2026-08-13
+
+- [x] 8.1 Revise the OpenSpec contract and write a bounded execution plan that
+  defines A4 as one logical per-image union objective with exact fixed-theta
+  two-pass physical streaming, keeps chunk-local normalization forbidden, and
+  limits execution to fresh A4/A6/A8-prime arms.
+- [ ] 8.2 Add RED/GREEN coverage and repair A6 so donor treatment prefixes
+  delete every earlier frozen duplicate-row span and byte-match the sealed
+  clean-prefix binding for all eligible donors.
+- [ ] 8.3 Add RED/GREEN coverage and repair A8 census skeleton cloning so image
+  identity, prompt boundary, and owner-row-token metadata survive every packed
+  and HF clone; publish the census only as a complete immutable output plus
+  receipt.
+- [ ] 8.4 Add pure gradient-equivalence and runner tests for A4 two-pass
+  streaming, then implement no-grad global candidate scoring, fp32 per-image
+  weights, unchanged-parameter gradient replay, and one AdamW step per panel
+  exposure without chunk-local losses.
+- [ ] 8.5 Pass the targeted CPU suite, strict OpenSpec validation, immutable
+  root preflight, exact manifest/Source/K binding, A6 full-ledger prefix audit,
+  and one production-shaped A4 vertical slice before broad execution.
+- [ ] 8.6 Run a fresh immutable no-update census; if its finite drift admits
+  A8-prime, launch fresh A4/A6/A8-prime arms at exposures `1,2,4,8,16` with
+  isolated Source/AdamW/output roots, then run original-prompt HF fp32/SDPA
+  batch-size-one repetition-penalty-1.0 greedy evaluation. If A8 remains
+  mechanically blocked, record the exact complete census disposition and run
+  only A4/A6.
+- [ ] 8.7 Publish one bounded successor analysis against the frozen Source,
+  update the owning research record, run conclusion-changing verification,
+  and stop without a 100-update continuation, K-miss supervision, checkpoint
+  promotion, stable-spec sync, or OpenSpec archive.

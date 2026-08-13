@@ -24,9 +24,11 @@ and production contracts.
 - Reuse the accepted no-padding varlen FlashAttention-2 path.  Within one arm,
   deterministically length-pack isolated segments under the existing 12,000
   token bound and accumulate the complete panel objective before one AdamW
-  update.  Across the available eight GPUs, run independent arms as independent
-  one-rank Accelerate processes rather than introducing a new multi-rank
-  choreography.
+  update. A4 remains one logical per-image union objective but MAY use exact
+  fixed-parameter two-pass score/gradient replay when its complete candidate
+  set exceeds one physical pack. Across the available eight GPUs, run
+  independent arms as independent one-rank Accelerate processes rather than
+  introducing a new multi-rank choreography.
 - Add a no-update bottleneck census, dry-run materialization, one-image
   production-shaped vertical slice, compact performance counters, and the
   original-prompt batch-size-one HF clean-greedy analyzer needed to support a
@@ -39,11 +41,15 @@ and production contracts.
   add no speculative general framework or duplicate evidence journal, and stop
   after conclusion-changing checks.  This operationalizes the user requirement
   **not to over-audit or over-design**.
+- Repair the A6 clean-donor-prefix materialization seam and the A8 no-update
+  census skeleton-metadata seam, then execute only the previously unavailable
+  A4/A6/A8-prime successor arms from fresh Source and AdamW states under new
+  immutable artifact roots.
 - Do not implement or launch A2, A5, native candidate-tree training, online
   frontier refresh, GT-IoU coordinate search, K-miss supervision, an external
-  owner bridge, checkpoint promotion, or any GPU/model execution in this
-  planning change.  Implementation and all accelerator execution remain behind
-  a later explicit user authorization.
+  owner bridge, checkpoint promotion, or a 100-update continuation. The user
+  has explicitly authorized this bounded missing-arm implementation and GPU
+  execution; all other expansion remains out of scope.
 
 ## Capabilities
 
@@ -71,5 +77,6 @@ weakened or duplicated.
 - A new OpenSpec delta for the probe only.  The owning research unit remains the
   sole authority for the cohort, `G/H/M` interpretation, arm meanings, primary
   outcome, stop rules, and permitted scientific claims.
-- No new dependency, no production blind-policy exception, no execution-model
-  architecture change, and no launch or material-cost authorization.
+- No new dependency, no production blind-policy exception, and no
+  execution-model architecture change. Execution authority is limited to the
+  fresh census and A4/A6/A8-prime successor described above.

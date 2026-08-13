@@ -174,10 +174,18 @@ optimizer continuation from the short run.
 ### Requirement: Once-Per-Image Any-Valid Row Mass
 
 A4 SHALL score exact-token-deduplicated, complete, row-terminated native K-hit
-candidate rows from one image as one atomic objective. It SHALL compute the
+candidate rows from one image as one logically atomic objective. It SHALL compute the
 negative log probability of their prefix-free union once per image exposure,
 not once per owner. It SHALL report candidate weights and effective owner count
 and SHALL NOT describe length-normalized row energy as probability.
+
+The logical objective MAY span several physical packs only through an exact
+fixed-parameter two-pass implementation: first score every candidate without
+gradients, compute one fp32 global per-image softmax over the complete candidate
+set, then replay the identical candidates with detached global weights and
+accumulate all gradients before one AdamW step. Chunk-local union losses,
+optimizer changes between score and replay, incomplete candidate coverage, or
+score/replay identity drift are forbidden.
 
 #### Scenario: One easy and two hard candidate rows are scored
 
@@ -186,13 +194,21 @@ and SHALL NOT describe length-normalized row energy as probability.
 - **AND** it SHALL report all three normalized candidate weights and
   `1 / sum(weight^2)`.
 
-#### Scenario: Atomic candidate group exceeds the pack limit
+#### Scenario: Logical candidate group exceeds one physical pack
 
-- **WHEN** the complete candidate group cannot fit one 12,000-token atomic
-  forward
-- **THEN** A4 SHALL fail its length preflight before model execution
-- **AND** this change SHALL NOT synthesize a multi-pass candidate engine or
-  silently split the union objective.
+- **WHEN** every candidate segment fits the 12,000-token bound but their
+  complete logical group does not fit one physical forward
+- **THEN** A4 SHALL use exact two-pass global score/gradient replay across
+  deterministic isolated packs at one parameter state
+- **AND** it SHALL emit one logical union loss and one global weight vector per
+  image, not one loss per pack.
+
+#### Scenario: One candidate segment or global binding is invalid
+
+- **WHEN** an individual candidate segment exceeds 12,000 tokens, the complete
+  set cannot be enumerated, or score/replay candidate identities differ
+- **THEN** A4 SHALL fail before optimizer mutation
+- **AND** it SHALL NOT approximate the missing mass or renormalize per chunk.
 
 ### Requirement: Coherent Full-Residual Bottleneck Objective
 
@@ -261,7 +277,8 @@ position reset for each logical segment under `global_max_length=12000`.
 Independent segments SHALL be deterministically ordered by descending encoded
 length with stable identity tie-breakers and first-fit into physical packs. A1,
 A8-prime, and full-GT SHALL keep one coherent segment per image; A4 SHALL keep
-one image's candidate group atomic.
+one image's candidate group logically atomic while permitting its exact
+two-pass candidate segments to occupy several physical packs.
 
 All packs in one panel exposure SHALL use the complete panel denominator and
 accumulate before exactly one AdamW update. Packing SHALL be reported only as a
@@ -315,6 +332,29 @@ or general candidate-tree framework.
   token-role counts, ties, viable-child status, and cross-surface drift
 - **AND** the selected rows and order SHALL remain byte-identical.
 
+#### Scenario: Census processor skeleton is cloned
+
+- **WHEN** an image-aware encoded skeleton is cloned for packed or HF scoring
+- **THEN** its exact image identity, prompt boundary, and owner-row token
+  metadata SHALL remain present and value-identical
+- **AND** missing dynamic metadata SHALL fail before a model forward rather
+  than producing a partial census artifact.
+
+#### Scenario: A6 donor prefix is materialized
+
+- **WHEN** an eligible A6 target has earlier frozen duplicate rows in its donor
+  trajectory
+- **THEN** the materialized donor prefix SHALL remove exactly those earlier
+  duplicate token spans and byte-match the sealed clean-prefix binding
+- **AND** the runner SHALL reject any raw-prefix fallback before model load.
+
+#### Scenario: Census run does not reach complete publication
+
+- **WHEN** packed/HF scoring, alignment, finite checks, or receipt publication
+  fails
+- **THEN** no A8 margin SHALL be inferred from the plan or partial state
+- **AND** the next attempt SHALL use a new immutable output root.
+
 #### Scenario: Training is requested before full-panel discovery freezes
 
 - **WHEN** any target-dependent update is requested with missing Source rows,
@@ -330,13 +370,13 @@ or general candidate-tree framework.
 - **AND** the missing telemetry SHALL be marked unavailable rather than causing
   another audit or receipt family.
 
-#### Scenario: Full matrix has not been separately authorized
+#### Scenario: Work outside the authorized successor is requested
 
-- **WHEN** planning, tests, or the one-image cost proposal completes without a
-  later explicit execution decision
-- **THEN** the workflow SHALL stop before model execution or full-matrix launch
-- **AND** it SHALL present the measured scope and remaining authorization gate
-  without auto-continuing.
+- **WHEN** execution requests A2, A5, K-miss supervision, online refresh, a
+  100-update continuation, checkpoint promotion, or another undeclared arm
+- **THEN** the workflow SHALL stop before model execution
+- **AND** the current authorization SHALL apply only to the fresh census and
+  A4/A6/A8-prime missing-arm successor.
 
 ### Requirement: Scope-Limited Outcome Projection
 

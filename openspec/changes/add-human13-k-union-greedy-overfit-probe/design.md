@@ -11,9 +11,10 @@ well-defined arm events without weakening the generic blind-image policy.
 
 This is an overfit-only laboratory. The research unit owns `G/H/M`, prefix and
 suffix meanings, the arm matrix, and interpretation. The OpenSpec change owns
-only the mechanical path needed to execute that unit faithfully. Planning is
-currently authorized; implementation and every model/GPU action remain behind
-a later user decision.
+only the mechanical path needed to execute that unit faithfully. The original
+bounded table is complete; the user has now authorized one successor that
+repairs the unavailable A4/A6/A8-prime mechanics and executes only those arms
+from fresh Source and optimizer states.
 
 ## Goals / Non-Goals
 
@@ -37,8 +38,10 @@ a later user decision.
 - Generalizing StateBank admission, candidate-tree search, online target
   refresh, GT-derived coordinate search, K-miss supervision, or an owner
   bridge.
-- Prefix-KV or image-encoder reuse, a new distributed trainer, multi-pass A4,
-  exact optimizer resume, or a new artifact/evidence framework.
+- Prefix-KV or image-encoder reuse, a new distributed trainer, chunk-local A4
+  union objectives, exact optimizer resume, or a new artifact/evidence
+  framework. Exact fixed-parameter A4 score/gradient replay is in scope because
+  it preserves the original logical objective.
 - Validation, checkpoint promotion, production readiness, or any claim beyond
   fitting the exact thirteen images.
 - Launching a model, allocating a GPU, or changing parameters during this
@@ -138,7 +141,10 @@ diagnostics suitable for the existing planned-step finite gate.
 A8-prime and A1 share exactly one coherent full-H chain per image. A8-prime's
 competitor index is detached and its required margin is sealed by the
 no-update cross-surface census. A4 keeps each image's entire candidate set in
-one graph and fails CPU length preflight if it cannot fit.
+one logical normalization. If that set exceeds one physical pack, the runner
+first scores every candidate at unchanged parameters, computes the global
+fp32 softmax weights, then replays the same candidates with detached weights
+and accumulates all gradients before one AdamW step.
 
 **Alternatives rejected:** extending the generic rollout-calibration objective
 registry with research-specific owner policy, or implementing independent H1
@@ -152,8 +158,23 @@ The experiment runner emits logical segments into the accepted no-padding
 varlen path. Every segment repeats its own image/prompt/prefix and receives an
 independent causal-attention boundary and MRoPE reset. Independent segments are
 stably sorted by descending encoded length and first-fit under 12,000 tokens.
-A1, A8-prime, and full-GT keep one coherent segment per image; A4 keeps one
-atomic candidate group per image.
+A1, A8-prime, and full-GT keep one coherent segment per image. A4 keeps one
+logical atomic candidate group per image, while its candidate segments MAY be
+distributed across physical packs.
+
+For A4, let `s_j(theta)` be the summed token log-probability of candidate row
+`j`. The reference loss is `-logsumexp_j s_j`. Its exact gradient is
+`-sum_j softmax(s)_j * grad(s_j)`. The implementation therefore performs:
+
+1. a no-grad score pass over all candidate packs at one unchanged `theta`;
+2. one fp32 global per-image `logsumexp` and normalized weight vector;
+3. a differentiable replay of the same candidate packs using detached global
+   weights; and
+4. one optimizer step only after every replay/background pack contributes.
+
+This is physical streaming of one logical objective, not multiple union
+losses. Chunk-local `-logsumexp` terms, parameter updates between passes,
+incomplete candidate coverage, or stale/mismatched scores fail closed.
 
 Before backward, the runner knows complete panel denominators for owner,
 image, and duplicate-event terms. Each physical pack contributes a globally
@@ -169,10 +190,24 @@ coefficient ablations; the runner never automatically normalizes the sum of
 active family weights.
 
 **Alternatives rejected:** padding the panel, stepping after each event or
-pack, adding prefix-cache reuse, or splitting A4 across forwards. Padding
-wastes the dominant variable-length space; intermediate steps change the
-estimand; cache reuse needs a different causal/gradient design; split A4 no
-longer computes one union normalization.
+pack, adding prefix-cache reuse, or computing one A4 union loss per chunk.
+Padding wastes the dominant variable-length space; intermediate steps change
+the estimand; cache reuse needs a different causal/gradient design; chunk-local
+normalization is not the declared union objective.
+
+### 5a. A6 and A8 repairs preserve sealed provenance
+
+A6's donor treatment prefix is the exact donor trajectory prefix before the
+selected target row after deletion of all earlier frozen duplicate-row spans.
+The manifest binding, materializer, runner validation, and receipt SHALL derive
+the same bytes; no raw-prefix fallback is permitted.
+
+The A8 census may clone processor skeletons for packed and HF surfaces, but the
+clone SHALL preserve experiment-local prompt-boundary, owner-row-token, and
+image-identity metadata. Census publication is all-or-nothing under a new
+immutable root. Only a complete output plus execution receipt can freeze the
+packed-versus-HF drift and required margin; an abandoned plan or partial run is
+not evidence.
 
 ### 6. Eight GPUs parallelize arms, not one arm
 
@@ -239,8 +274,10 @@ unavailable and does not create another audit cycle.
 - **[Packed and HF logits may differ near ties]** -> Seal aligned strict-margin
   drift before training and mechanically block A8-prime if finite alignment or
   the bounded drift criterion fails.
-- **[A4 atomic groups may exceed 12,000 tokens]** -> Fail CPU preflight; do not
-  change objective semantics with an unreviewed split.
+- **[A4 logical groups exceed 12,000 tokens]** -> Require every physical
+  segment to fit, then use exact fixed-theta two-pass streaming with global
+  weights; fail if coverage, score/replay identity, or parameter-state
+  invariance cannot be proven.
 - **[Repeated complete segments do not save prefix FLOPs]** -> Claim only
   measured padding/launch efficiency and report actual runtime counters.
 - **[World-size-one arms leave some GPUs idle when fewer than eight apply]** ->
@@ -254,16 +291,17 @@ unavailable and does not create another audit cycle.
 ## Migration Plan
 
 This is additive and experiment-local; no production migration is required.
-After later implementation authorization:
+For the authorized missing-arm successor:
 
 1. land pure records, manifest validation, and loss tests with all model paths
    disabled by default;
 2. land the runner/config/analyzer path and verify CPU dry-run behavior;
-3. after separate model/GPU authority, acquire the full Source/K ledger and run
-   the no-update census;
-4. run the separately authorized one-image vertical slice and inspect its
-   checkpoint/readout receipt;
-5. request a distinct user decision before launching any matrix; and
+3. retain the already sealed full Source/K ledger and run a fresh immutable
+   no-update census after the A8 metadata repair;
+4. verify the A6 clean-prefix repair and the A4 two-pass gradient equivalence
+   through CPU tests and a production-shaped vertical slice;
+5. execute only A4/A6/A8-prime under the user's bounded successor authority;
+   and
 6. retain or delete the experiment-local surfaces based on the unit's final
    disposition without changing stable production defaults.
 
