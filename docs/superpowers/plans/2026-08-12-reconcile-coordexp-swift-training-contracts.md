@@ -18,7 +18,7 @@
 - Do not add changed-order packing, a cache materialization campaign, an efficiency claim, logging, loss/RL behavior, orchestration decomposition, dependency upgrades, historical migration, cross-world-size resume, or mid-accumulation resume.
 - Preserve unrelated dirty work. Never reset, clean, bulk-stage, overwrite user edits, repair an occupied immutable cache target, or rewrite historical evidence.
 - Tests precede any production repair. A failing acceptance test may demonstrate a gap; it does not authorize a source change until Task 2's stop/re-plan checkpoint has produced an amended OpenSpec task and an amended execution task with exact interfaces and a red/green command.
-- The distributed probe requires an exact frozen packet and independent pre-cost `READY` bound to the implementation commit, configs, artifact roots, commands, comparison policy, and quantitative bounds. Once that exact packet is `READY`, the lead-only executor proceeds under the current goal-level authority without asking the user again. Any mutation invalidates `READY` and requires re-freeze/re-review, not a repeated authorization prompt. Its success arm is a matched pair: one uninterrupted control branch and one parent-to-resumed-child branch, each executing the corresponding next forward and at most one optimizer update.
+- The distributed probe requires an exact frozen packet and an external signed independent pre-cost review receipt whose `READY` binds the implementation commit, manifest and packet hashes, configs, artifact roots, commands, comparison policy, and quantitative bounds. The manifest cannot authorize itself. Once that exact review is valid and `READY`, the lead-only executor proceeds under the current goal-level authority without asking the user again. Any mutation invalidates `READY` and requires re-freeze/re-review, not a repeated authorization prompt. Its success arm is a matched pair: one uninterrupted control branch and one parent-to-resumed-child branch, each executing the corresponding next forward and at most one optimizer update.
 - Commits below are future execution checkpoints. Stage only the paths named by the step, inspect `git diff --cached`, and never include unrelated work.
 
 ---
@@ -348,7 +348,36 @@ re-introduce the invalid exact-without-path clause.
 - Held parent: only `success-resumed` routes the parent through a probe-local synchronous entry that wraps the real pipeline checkpoint handler, calls the real handler first, and blocks after committed step 1. Control and child continue to use `-m src.train`. No `src/` edit or compatibility weakening is allowed.
 - Packet executor callable: `execute(*, manifest_path: Path, packet_path: Path, expected_manifest_sha256: str, expected_packet_sha256: str, attempt_marker_path: Path, terminal_receipt_path: Path, launch=..., gpu_sampler=..., process_sampler=...) -> dict`.
 - Packet executor CLI: `execute --manifest ... --packet ... --manifest-sha256 ... --packet-sha256 ... --attempt-marker ... --terminal-receipt ...`.
-- Schema v2 adds only `execution_contract`: exact six-command order, `O_EXCL` marker creation, stop-on-failure, retry count zero, required resource observations, and required outer-receipt/inner-receipt bindings.
+- Preserve that public callable/CLI and the exact six-command order. Do not add
+  a runner framework or another launch abstraction. `launch` returns exactly
+  one Popen-like process; the executor owns that process and its process group
+  through terminal cleanup.
+- Schema v2 adds only `execution_contract`: exact six-command order, `O_EXCL`
+  marker creation, stop-on-failure, retry count zero, required resource
+  observations, required outer-receipt/inner-receipt bindings, and the exact
+  immutable signed pre-cost review receipt path. It MUST NOT include the
+  review receipt hash: the review binds the manifest hash, so adding the
+  reverse hash would make the freeze circular.
+- The review schema is
+  `coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` and requires
+  `status: READY`, exact implementation commit, manifest SHA-256, packet
+  SHA-256, independent reviewer identity, and `receipt_payload_sha256` over
+  the canonical review payload excluding that digest and its signature
+  envelope. The executor validates the signed receipt and all bindings before
+  marker creation; manifest self-`READY` alone has no authority.
+- Retain the frozen exact `physical_index` to GPU UUID map and validate it
+  before marker creation and immediately before the first GPU command. GPU
+  rank evidence counts only when the UUID is selected and the row's PID plus
+  Linux starttime is in the current command's observed descendant tree.
+- Resource coverage is exact per command: `required_cpu_ranks: [0, 1]` for
+  `success.uninterrupted_control`, `success.resumed_child`, `rank_failure`, and
+  `interruption`; `required_gpu_ranks: [0, 1]` only for the two success
+  commands; both arrays are empty for `setup` and `verification`.
+- The outer receipt records resolved launcher module/qualname/file digest,
+  Python executable realpath/version, each command leader PID/starttime and
+  process-group cleanup outcome, and bounded artifact-tree summaries under
+  declared roots and numeric entry/depth/path/byte ceilings. Exceeding a
+  summary ceiling fails closed rather than truncating evidence.
 
 - [ ] **Step 1: Write the held-parent RED tests**
 
@@ -379,13 +408,42 @@ Expected: all pass; the broader files catch route, failure propagation, publicat
 
 - [ ] **Step 3: Write the packet-executor RED tests**
 
-Create `tests/training/test_reconcile_exact_resume_packet_executor.py` with focused tests that require: the exact callable and CLI interfaces above; hash/schema/packet validation before marker acquisition; exclusive absent-marker creation with `O_EXCL`; exact order `setup`, `success.uninterrupted_control`, `success.resumed_child`, `rank_failure`, `interruption`, `verification`; immediate stop and no retry after any nonzero/exception/bound failure; and one signed outer receipt after marker ownership binding manifest/packet/implementation, argv observations, process/GPU maxima, stop outcome, plus the verified inner terminal receipt when reached. Run:
+Create `tests/training/test_reconcile_exact_resume_packet_executor.py` with
+focused tests for the unchanged callable/CLI, hash/schema/packet validation,
+exclusive absent-marker creation, exact six-command order, stop/no-retry, and
+outer/inner receipt bindings. Add these exact executor-contract nodes:
+
+- `test_manifest_self_ready_without_signed_review_rejects_before_marker`
+- `test_hold_or_stale_review_rejects_before_marker`
+- `test_launch_returns_one_popen_like_process`
+- `test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_group`
+- `test_swapped_physical_index_uuid_mapping_rejects_before_marker`
+- `test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank`
+- `test_missing_failure_arm_cpu_rank_rejects_terminal_evidence`
+
+The post-launch cleanup test is parameterized over process sampler, injected
+GPU sampler, artifact summarizer, timeout, nonzero exit, and executor-error
+paths. It launches only a harmless sleeping CPU subprocess in a fresh process
+group and proves TERM, bounded KILL escalation, reap, and PID/starttime-safe
+group absence before inspecting the terminal receipt; it does not touch a GPU.
+The review tests prove that manifest self-`READY`, a signed `HOLD`, or a review
+whose commit/manifest/packet identity is stale executes nothing and creates no
+marker. Run the exact RED selection:
 
 ```bash
-conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_packet_executor.py
+conda run -n ms pytest -q \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_manifest_self_ready_without_signed_review_rejects_before_marker \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_hold_or_stale_review_rejects_before_marker \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_launch_returns_one_popen_like_process \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_group \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_swapped_physical_index_uuid_mapping_rejects_before_marker \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_missing_failure_arm_cpu_rank_rejects_terminal_evidence
 ```
 
-Expected RED: collection succeeds and the new interface/behavior tests fail because the executor does not exist.
+Expected RED: collection succeeds; the new interface/behavior nodes fail
+because the executor does not exist. Existing probe/exact-resume tests remain
+untouched, and no packet, artifact root, cache, GPU, or model is executed.
 
 - [ ] **Step 4: Implement the experiment-local executor and schema-v2 contract**
 
@@ -400,32 +458,117 @@ interruption
 verification
 ```
 
-Validate both expected SHA-256 bindings, packet binding, commit/cwd/targets, and contract before creating the marker. Claim `attempt_marker_path` atomically with `O_CREAT|O_EXCL`; an existing marker is terminal and executes nothing. After ownership, run each frozen argv at most once via `launch`, sample via the injected process/GPU samplers, stop on the first failure with retry count zero, and write the signed outer receipt to an absent `terminal_receipt_path`. The outer receipt binds all frozen identities and command observations, resource maxima and stop reason, and validates/binds the inner verifier receipt if verification completed. Do not duplicate probe comparison logic or add general orchestration.
+Validate both expected SHA-256 bindings, packet binding, commit/cwd/targets,
+and contract before creating the marker. Open the contract-bound review path as
+one non-symlink regular file, validate its signature,
+`receipt_payload_sha256`, exact schema, `READY`, independent reviewer, and
+commit/manifest/packet bindings from that same open file, and retain its
+device/inode identity through marker acquisition. A missing, `HOLD`, stale,
+replaced, malformed, or invalid review and any manifest self-authorization
+execute nothing. This intentionally omits a review-file hash from the
+manifest; the signed review binds the already frozen manifest hash.
+
+Claim `attempt_marker_path` atomically with `O_CREAT|O_EXCL`; an existing
+marker is terminal and executes nothing. Revalidate the frozen exact
+`physical_index` to UUID map both before marker creation and before the first
+GPU command. After ownership, call `launch` once per attempted command and
+require exactly one Popen-like return value. Record its leader PID and Linux
+starttime; form the observed descendant tree from PID/starttime pairs so PID
+reuse cannot satisfy ownership. Sample only through the injected process/GPU
+samplers. A GPU row is admissible only when its UUID is selected by the frozen
+map and its PID/starttime belongs to that command tree; foreign/stale rows fail
+closed. Enforce the exact `required_cpu_ranks`/`required_gpu_ranks` matrix from
+the interface section, including both CPU ranks for the two failure-shaped
+arms.
+
+Put all logic after a successful launch behind one terminal cleanup path. On
+normal completion, sampler failure, artifact-summary failure, timeout, bound
+failure, nonzero exit, or exception, send process-group `TERM`, escalate to
+`KILL` after the declared grace, reap the returned process, and confirm group
+absence keyed by leader PID/starttime. Record cleanup actions and any cleanup
+or absence-check failure; such a failure forces a failed outer receipt. Write
+the signed outer receipt to an absent `terminal_receipt_path` only after this
+check. Bind all frozen identities including the review payload digest, exact
+argv observations, resolved launcher and Python runtime identity,
+PID/starttime/process-group observations, accepted rank rows, resource maxima,
+bounded per-root artifact-tree summaries, cleanup and stop reason, and the
+validated inner verifier receipt if verification completed. Do not duplicate
+probe comparison logic or add general orchestration.
 
 Run:
 
 ```bash
+conda run -n ms pytest -q \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_manifest_self_ready_without_signed_review_rejects_before_marker \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_hold_or_stale_review_rejects_before_marker \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_launch_returns_one_popen_like_process \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_post_launch_sampler_artifact_timeout_and_error_paths_leave_no_process_group \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_swapped_physical_index_uuid_mapping_rejects_before_marker \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank \
+  tests/training/test_reconcile_exact_resume_packet_executor.py::test_missing_failure_arm_cpu_rank_rejects_terminal_evidence
 conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_packet_executor.py
 conda run -n ms pytest -q tests/training/test_reconcile_exact_resume_probe.py tests/training/test_exact_resume.py
 ```
 
-Expected: all pass without packet, cache, GPU, or model execution.
+Expected GREEN: every exact node from Step 3 and the full packet-executor file
+pass; the harmless CPU subprocess tests leave no live process group; the
+existing probe and exact-resume files pass without packet, cache, GPU, or
+model execution.
 
 - [ ] **Step 5: Re-freeze and pass pre-cost review**
 
-Create a successor packet and schema-v2 manifest bound to the post-repair commit, new absent target/marker/outer-receipt paths, exact configs/argv, and the same `world_size=2`, at-most-two-GPU, three-arm comparison and quantitative bounds. Do not edit attempt 3. Validate the v2 manifest with the executor tests and read-only hash/path/GPU/disk preflight. Obtain one independent pre-cost review of the exact successor hashes and resolve every P0/P1.
+Create a successor packet and schema-v2 manifest bound to the post-repair
+commit, new absent target/marker/outer-receipt paths, exact configs/argv, the
+exact immutable review-receipt path, retained physical-index-to-UUID map, exact
+per-command required-rank arrays, bounded artifact-summary limits, and the
+same `world_size=2`, at-most-two-GPU, three-arm comparison and quantitative
+bounds. Do not edit attempt 3. Validate the v2 manifest with the executor tests
+and read-only hash/path/GPU/disk preflight. Obtain one independent signed
+`coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` receipt at the bound
+path and resolve every P0/P1. The review binds the manifest hash; the manifest
+does not bind a review hash.
 
-Expected: if and only if the exact frozen successor is `READY`, the lead-only executor may proceed under the current goal-level authority without another user prompt. Any implementation, manifest, packet, config, command, target, or bound mutation invalidates `READY` and returns to re-freeze/re-review; it does not create a repeated prompt.
+Expected: if and only if that external signed review is valid, independent,
+exactly bound, and `READY`, the lead-only executor may proceed under the
+current goal-level authority without another user prompt. Manifest
+self-`READY` never authorizes. Any implementation, manifest, packet, review
+path, config, command, target, map, or bound mutation invalidates `READY` and
+returns to re-freeze/re-review; it does not create a repeated prompt.
 
 - [ ] **Step 6: Execute exactly once through the packet executor**
 
-Invoke only the frozen executor CLI from Step 5. The executor claims the `O_EXCL` marker and runs the exact six commands in order, at most once each. Immediately after setup it must validate the prepare receipt, implementation commit, private-cache receipt, and all generated config hashes before the first model command. It stops without retry on drift, occupied paths, insufficient headroom, timeout/hang/OOM, nonzero exit, missing measurements, or any declared bound failure.
+Invoke only the frozen executor CLI from Step 5. Before marker acquisition it
+validates the exact signed review and physical-index-to-UUID map. The executor
+then claims the `O_EXCL` marker and runs the exact six commands in order, at
+most once each, owning one returned Popen-like process and process group at a
+time. Immediately after setup it must validate the prepare receipt,
+implementation commit, private-cache receipt, all generated config hashes, and
+the GPU map again before the first model command. It stops without retry on
+drift, foreign/stale GPU ownership, missing required CPU/GPU rank rows,
+occupied paths, insufficient headroom, timeout/hang/OOM, nonzero exit,
+artifact-summary overflow, cleanup failure, missing measurements, or any
+declared bound failure.
 
-Expected: the signed outer receipt accounts for every attempted command and resource observation and binds the inner verified receipt when reached. The inner evidence compares the required boundary/first-update state and proves failure/interruption publication semantics. Exit zero or an inner receipt without the outer receipt is insufficient.
+Expected: before the signed outer receipt is finalized, every launched process
+group has been TERM/KILL/reaped and its absence checked by PID/starttime. The
+receipt accounts for every attempted command, launcher/runtime identity,
+accepted descendant-owned rank observation, bounded artifact-tree summary,
+cleanup outcome, and the inner verified receipt when reached. The inner
+evidence compares the required boundary/first-update state and proves
+failure/interruption publication semantics. Exit zero or an inner receipt
+without the outer receipt is insufficient.
 
 - [ ] **Step 7: Verify durable artifacts and commit bounded evidence**
 
-Use the outer receipt and bound inner verifier receipt, not console status, to prove exact six-command order, every required rank/branch, target identity, comparison results, and the same-world-size optimizer-step claim boundary. Stage only the successor implementation/tests and change-local successor evidence with explicit paths; inspect the staged diff before committing. Large probe payloads remain in their bound artifact root.
+Use the outer receipt and bound inner verifier receipt, not console status, to
+prove exact six-command order, valid external review authorization, every
+required CPU/GPU rank and branch, selected-UUID/descendant-tree GPU ownership,
+launcher/runtime and target identity, bounded artifact-tree summaries,
+process-group cleanup, comparison results, and the same-world-size
+optimizer-step claim boundary. Stage only the successor implementation/tests
+and change-local successor evidence with explicit paths; inspect the staged
+diff before committing. Large probe payloads remain in their bound artifact
+root.
 
 ### Task 5: Qualify Cache Admission and Non-secret Provenance
 

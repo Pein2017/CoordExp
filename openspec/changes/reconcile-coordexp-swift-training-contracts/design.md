@@ -142,11 +142,13 @@ failure and interruption behavior.
 
 This probe is acceptance evidence, not implicit launch authority. The executor
 MUST freeze a launch packet bound to the exact commit, config, artifact root,
-and commands and pass an independent pre-cost review. If that exact frozen
-packet is `READY`, the lead-only executor proceeds under the current goal-level
-authority without asking the user again. Any implementation, manifest, packet,
-config, command, target, or bound mutation invalidates `READY` and requires a
-new freeze plus review; it does not require a repeated authorization prompt.
+and commands and pass an independent pre-cost review. If the external signed
+review receipt for that exact frozen packet is valid and `READY`, the lead-only
+executor proceeds under the current goal-level authority without asking the
+user again. The manifest cannot authorize itself. Any implementation,
+manifest, packet, review path, config, command, target, or bound mutation
+invalidates `READY` and requires a new freeze plus review; it does not require
+a repeated authorization prompt.
 The packet fixes `world_size=2`, uses at most two GPUs, permits at most
 three bounded semantic arms: one success arm comprising the matched control and
 resumed branches, one rank-failure arm, and one interruption arm. Each success
@@ -185,13 +187,51 @@ compatibility, and provider support remain unchanged.
 The only authorized execution repair is a separate experiment-local
 `reconcile_exact_resume_packet_executor.py`. Its manifest schema v2 carries a
 machine-readable `execution_contract` fixing the command order to setup,
-control, resumed, rank failure, interruption, verification; the executor
-claims an absent attempt marker with `O_EXCL`, stops on the first failure with
-no retry, samples the declared process/GPU resources, and always attempts one
-signed outer terminal receipt. That outer receipt binds the implementation,
-manifest and packet hashes, exact argv observations, marker, resource maxima,
-stop outcome, and the inner verifier receipt when verification is reached.
-These two seams are qualification tooling, not production orchestration.
+control, resumed, rank failure, interruption, verification. The same
+`execution_contract` binds the exact immutable pre-cost review receipt path;
+it does not bind that receipt's hash, because the review in turn binds the
+manifest hash. The independently signed review uses schema
+`coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` and contains
+`status: READY`, the exact implementation commit, manifest SHA-256, packet
+SHA-256, independent reviewer identity, and `receipt_payload_sha256`. The
+executor validates that signature, self-digest, schema, independence, status,
+and all three frozen identities before marker creation. A manifest-side
+`READY`, missing review, `HOLD`, stale identity, mutable/replaced review path,
+or invalid signature never authorizes execution.
+
+After that validation, the executor claims an absent attempt marker with
+`O_EXCL`, stops on the first failure with no retry, and launches exactly one
+Popen-like process for one command at a time. That returned process is the
+sole command/process-group owner. Every post-launch exit path -- including
+process/GPU sampler failure, artifact summarization failure, timeout, bound
+failure, launch-observation error, nonzero exit, or executor exception -- runs
+the same bounded process-group cleanup: identify the group by leader PID and
+Linux process starttime, send `TERM`, escalate to `KILL` if needed, reap the
+returned process, and check group absence without accepting PID reuse. A
+cleanup or absence-check failure is recorded and forces a failed terminal
+outcome; no successful terminal receipt may precede confirmed group absence.
+
+The schema-v2 contract retains the frozen physical-GPU mapping as exact
+`physical_index` to UUID pairs. The executor revalidates it before marker
+creation and immediately before the first GPU command. A GPU process/rank row
+counts only when its UUID is selected by that mapping and its PID plus Linux
+starttime belongs to the current command's observed descendant tree; a
+foreign, stale, index-swapped, or unowned row fails closed. Required resource
+coverage is command-specific: `required_cpu_ranks: [0, 1]` for
+`success.uninterrupted_control`, `success.resumed_child`, `rank_failure`, and
+`interruption`; `required_gpu_ranks: [0, 1]` only for the two success commands;
+and both lists empty for `setup` and `verification`. Missing required rows are
+terminal evidence failures, including on failure-shaped arms.
+
+The executor always attempts one signed outer terminal receipt. It binds the
+implementation, manifest, packet, and review identities; exact argv
+observations; marker and command process-group identities; launcher callable
+and Python runtime identity; per-command required-rank coverage and accepted
+process/GPU rows; resource maxima; bounded artifact-tree summaries under only
+the declared roots and numeric entry/depth/path/byte limits; cleanup outcome;
+stop outcome; and the inner verifier receipt when verification is reached.
+Artifact-summary overflow fails instead of silently truncating. These two
+seams are qualification tooling, not production orchestration.
 
 ### 5. Make historical interpretation conservative and explicit
 
