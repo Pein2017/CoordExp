@@ -253,3 +253,90 @@ architecture necessity, full-set mastery, safe optimizer direction, or
 duplicate-free decoding is claimed. The result does not establish that K-miss
 owners are learned representations; only their same-panel supervised
 recoverability was observed.
+
+## 2026-08-13 missing-arm successor
+
+This bounded successor repaired and executed the three mechanically missing
+contrasts without changing the sealed `13/392` owner ledger or reusing a
+trained checkpoint. Its authoritative analysis is
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-13-human13-missing-arms-successor/analysis/a4-a6-final.json`
+(SHA-256 `2f2ac938ad9fe553c2cd87c3684a65afe2f4331d01d4b0e806fb923992b64e98`).
+
+### Mechanical recovery
+
+- A4 now preserves its one-per-image prefix-free union estimand while allowing
+  physical splitting. At fixed parameters it scores every candidate, forms one
+  global fp32 softmax weight vector per image, replays the identical candidates
+  with detached weights, accumulates gradients over all packs, and applies one
+  AdamW step. The production-shaped image-14038 slice covered 31 candidates in
+  five score forwards and six replay packs, produced a finite gradient, and
+  wrote/read checkpoint step 1. The full panel used 309 candidates, 44 score
+  forwards plus 45 replay forwards per exposure, and no padding.
+- A6 cleanly removed every earlier frozen duplicate-row span from each donor
+  prefix. All `73/73` sealed donor bindings matched, including image 16228 owner
+  `gt:16228:19`; the full arm then completed sixteen finite updates.
+- A8 produced a complete immutable no-update census rather than another partial
+  failure. Across 680 aligned sites all values were finite, but maximum packed
+  versus HF target-margin drift was `1.4143247604`, yielding required margin
+  `1.4144247604 > 0.5`. A8-prime was therefore mechanically omitted, not
+  interpreted as an algorithmic null. The census is
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-13-human13-missing-arms-successor/census/v2/no-update-census.json`
+  (SHA-256 `82d3f87883121ca7e215dc9d919660c5e426e4fc190a5e69f5406b35fa27235d`).
+
+### Original-prompt clean-greedy outcome
+
+All rows below use HF fp32/SDPA, physical batch size one, greedy decoding, and
+repetition penalty 1.0. `H+` is newly recovered frozen K-hit owners, `G-` is
+lost Source owners, and `M+` is incidental K-miss recovery.
+
+| Arm | Exposure | Unique owners | H+ | G- | M+ | Rows | Duplicates | Unmatched | Malformed | Cap stops |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Source | 0 | 173 | 0 | 0 | 0 | 255 | 9 | 62 | 11 | 0 |
+| A4 | 1 | 175 | 4 | 2 | 0 | 310 | 34 | 86 | 15 | 0 |
+| A4 | 2 | 181 | 8 | 5 | 5 | 311 | 32 | 84 | 14 | 0 |
+| A4 | 4 | 182 | 9 | 8 | 8 | 554 | 88 | 130 | 154 | 1 |
+| A4 | 8 | 171 | 8 | 19 | 9 | 2432 | 570 | 206 | 1485 | 7 |
+| A4 | 16 | 184 | 17 | 14 | 8 | 2438 | 483 | 238 | 1533 | 7 |
+| A6 | 1 | 169 | 2 | 6 | 0 | 238 | 11 | 58 | 0 | 0 |
+| A6 | 2 | 175 | 7 | 5 | 0 | 244 | 11 | 51 | 7 | 0 |
+| A6 | 4 | 168 | 13 | 19 | 1 | 632 | 112 | 86 | 266 | 1 |
+| A6 | 8 | 168 | 13 | 19 | 1 | 576 | 76 | 67 | 265 | 1 |
+| A6 | 16 | 171 | 14 | 17 | 1 | 571 | 69 | 66 | 265 | 1 |
+
+### Interpretation
+
+A4 supplies direct same-panel evidence that globally fused K-native union
+information can be compiled into greedy coverage: at exposure two it reaches
+`181` unique owners (`H+8/G-5/M+5`), and at exposure four it reaches `182`.
+This is not a safe recipe. Output burden grows first and then collapses into a
+long-generation regime; exposures eight and sixteen each generate about 22.5k
+tokens with seven cap stops. Their five-checkpoint evaluation takes 4272.3 s,
+while A4 training takes 2483.3 s and 45 replay packs per exposure.
+
+A6 has a narrower low-dose window. Exposure two reaches `175` owners with
+`H+7/G-5`, 244 rows, and 11 duplicates, but later exposures exchange owners and
+inflate output. A6 training takes 505.0 s with 13 packs per exposure; it is much
+cheaper than A4 but does not snowball safely.
+
+Both arms did receive frozen duplicate-event unlikelihood. That objective only
+covered 12 selected duplicate atoms from the frozen Source/K ledger, versus
+309 A4 union candidates and 2909 H target tokens. During A4 exposures one
+through eight, the H raw loss falls `20.43 -> 15.05`, while duplicate raw loss
+stays approximately `0.031-0.033`: the registered old duplicate branches are
+already low-probability. The later greedy duplicates arise at newly reached
+prefixes or token/box aliases that the static ledger never supervised.
+Consequently this result does not reject duplicate unlikelihood; it rejects a
+static twelve-event unlikelihood set as sufficient preservation for repeated
+union updates.
+
+### Successor disposition
+
+The bounded successor is complete. A4 and A6 are promoted only as low-dose
+same-panel algorithm evidence, not checkpoints or general recipes. No
+100-exposure continuation, K-miss supervision, checkpoint promotion, stable
+spec sync, or OpenSpec archive is authorized. The smallest next discriminator
+is a fresh-Source low-dose A4 contrast in which duplicate negatives are
+refreshed from the current natural rollout and STOP/row-count preservation is
+co-primary. It must retain the exact global union normalization; chunk-local
+softmax remains an invalid substitute. Blindly increasing the coefficient on
+the same static twelve duplicate events is not the preferred contrast.

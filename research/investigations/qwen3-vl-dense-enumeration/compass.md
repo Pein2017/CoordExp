@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -19,6 +19,20 @@ paper thesis. It does not own executed facts, runtime behavior, a final
 architecture, or an implementation contract.
 
 ## Current Live Route
+
+As of `2026-08-13`, the completed bounded [Human-13 K-union-to-greedy
+overfit screen](experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/results.md)
+and its missing-arm successor are the current evidence owner for native
+same-panel K-hit consolidation. Exact global A4 union streaming reaches 181
+owners at exposure two versus Source 173, but repeated dosing produces severe
+row/duplicate/malformed/cap burden; A6 has a cheaper exposure-two window and
+also degrades with repetition. A complete no-update census mechanically blocks
+A8-prime because aligned packed-versus-HF margin drift requires margin 1.414,
+above the frozen 0.5 limit. The smallest next discriminator is fresh-Source,
+low-dose A4 with current-rollout duplicate-negative refresh plus STOP/row-count
+preservation. Static twelve-event duplicate unlikelihood is insufficient;
+chunk-local union normalization remains invalid. This is overfit-only evidence,
+not checkpoint promotion, validation, or architecture authority.
 
 As of `2026-08-12`, the separate interrupted-checkpoint [Owner Bridge Step-611
 Natural-Decode Recall Probe](experiments/2026-08-12-owner-bridge-step611-recall-probe/results.md)
