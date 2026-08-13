@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -172,6 +174,8 @@ def test_frontier_promotes_h_only_after_a_second_accepted_iteration(
         checkpoint=first_checkpoint,
         decodes=(_decode(checkpoint=first_checkpoint, include_h=True),),
     )
+    first_path = tmp_path / "frontier-0.json"
+    canonical_write(first, first_path)
     second_checkpoint = CheckpointIdentity("/accepted/step-1", "b" * 64)
     second = build_frontier_iteration(
         manifest,
@@ -179,6 +183,7 @@ def test_frontier_promotes_h_only_after_a_second_accepted_iteration(
         iteration=1,
         checkpoint=second_checkpoint,
         previous=first,
+        previous_path=first_path,
         decodes=(_decode(checkpoint=second_checkpoint, include_h=True),),
     )
 
@@ -251,6 +256,14 @@ def test_frontier_is_canonical_content_addressed_and_fails_closed(
             checkpoint=checkpoint,
             decodes=(replace(_decode(checkpoint=checkpoint), parser_status="partial"),),
         )
+    with pytest.raises(ValueError, match="parser"):
+        build_frontier_iteration(
+            manifest,
+            manifest_path=manifest_path,
+            iteration=0,
+            checkpoint=checkpoint,
+            decodes=(replace(_decode(checkpoint=checkpoint), parser="wrong"),),
+        )
 
     document = json.loads(output.read_text(encoding="utf-8"))
     document["manifest_sha256"] = "0" * 64
@@ -264,3 +277,126 @@ def test_frontier_is_canonical_content_addressed_and_fails_closed(
     )
     with pytest.raises(ValueError, match="manifest|digest"):
         load_frontier_iteration(output)
+
+
+def _rewrite_canonical(path: Path, document: dict[str, object]) -> None:
+    payload = (
+        json.dumps(document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        + "\n"
+    ).encode()
+    path.write_bytes(payload)
+    Path(f"{path}.sha256").write_text(
+        f"{hashlib.sha256(payload).hexdigest()}  {path.name}\n", encoding="ascii"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("canonical_owner_ids", []),
+        ("covered_h_owner_ids", ["gt:2299:h"]),
+        ("uncovered_h_owner_ids", []),
+        ("duplicate_events", []),
+    ),
+)
+def test_load_rederives_semantic_image_fields(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    frontier = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=0,
+        checkpoint=checkpoint,
+        decodes=(_decode(checkpoint=checkpoint),),
+    )
+    output = tmp_path / "frontier.json"
+    canonical_write(frontier, output)
+    document = json.loads(output.read_text(encoding="utf-8"))
+    document["images"][0][field] = value
+    _rewrite_canonical(output, document)
+    with pytest.raises(ValueError, match="semantic|derive|match|duplicate|coverage"):
+        load_frontier_iteration(output)
+
+
+def test_write_rejects_inconsistent_row_slice(tmp_path: Path) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    frontier = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=0,
+        checkpoint=checkpoint,
+        decodes=(_decode(checkpoint=checkpoint),),
+    )
+    image = frontier.images[0]
+    bad_row = replace(image.rows[0], token_ids=(999,))
+    bad = replace(frontier, images=(replace(image, rows=(bad_row, *image.rows[1:])),))
+    with pytest.raises(ValueError, match="slice|semantic"):
+        canonical_write(bad, tmp_path / "bad-frontier.json")
+
+
+def test_load_rederives_protected_owner_ages(tmp_path: Path) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    frontier = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=0,
+        checkpoint=checkpoint,
+        decodes=(_decode(checkpoint=checkpoint),),
+    )
+    output = tmp_path / "frontier.json"
+    canonical_write(frontier, output)
+    document = json.loads(output.read_text(encoding="utf-8"))
+    document["protected_owner_ages"] = [["gt:2299:g", 99]]
+    _rewrite_canonical(output, document)
+    with pytest.raises(ValueError, match="protection ages"):
+        load_frontier_iteration(output)
+
+
+def test_build_rejects_manifest_object_that_differs_from_bound_path(
+    tmp_path: Path,
+) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    owner = manifest.images[0].owners[1]
+    different_image = replace(
+        manifest.images[0],
+        owners=(
+            manifest.images[0].owners[0],
+            replace(owner, category="cat"),
+            *manifest.images[0].owners[2:],
+        ),
+    )
+    different = replace(manifest, images=(different_image,))
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    with pytest.raises(ValueError, match="manifest.*bound|bound.*manifest"):
+        build_frontier_iteration(
+            different,
+            manifest_path=manifest_path,
+            iteration=0,
+            checkpoint=checkpoint,
+            decodes=(_decode(checkpoint=checkpoint),),
+        )
+
+
+@pytest.mark.parametrize("value", (math.nan, math.inf, -math.inf))
+def test_build_rejects_nonfinite_current_boxes(tmp_path: Path, value: float) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    decode = _decode(checkpoint=checkpoint)
+    bad_prediction = replace(decode.predictions[0], bbox=(value, 0.0, 1.0, 1.0))
+    with pytest.raises(ValueError, match="finite|bbox"):
+        build_frontier_iteration(
+            manifest,
+            manifest_path=manifest_path,
+            iteration=0,
+            checkpoint=checkpoint,
+            decodes=(
+                replace(
+                    decode,
+                    predictions=(bad_prediction, *decode.predictions[1:]),
+                ),
+            ),
+        )

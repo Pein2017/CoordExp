@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from scripts.research.build_human13_k_union_manifest import (
     Human13KUnionManifest,
     ImageRecord,
+    load_manifest,
 )
 from scripts.research.compare_clean_rollout_owner_coverage import (
     _global_matches,
@@ -22,6 +24,7 @@ from src.eval.detection_categories import normalize_coco_category_name
 SCHEMA_VERSION = "human13_on_policy_frontier.v1"
 _DUPLICATE_IOU = 0.95
 _OWNER_IOU = 0.5
+_AUTHORIZED_PARSER = "compact_object_box_closed_only"
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,8 @@ class FrontierImage:
     image_id: int
     trajectory_id: str
     generated_token_ids: tuple[int, ...]
+    parser: str
+    parser_status: str
     stop_reason: str
     rows: tuple[FrontierRow, ...]
     canonical_owner_ids: tuple[str, ...]
@@ -105,6 +110,8 @@ class Human13FrontierIteration:
     panel_sha256: str
     iteration: int
     checkpoint: CheckpointIdentity
+    previous_frontier_path: str | None
+    previous_frontier_sha256: str | None
     protected_owner_ids: tuple[str, ...]
     protected_owner_ages: tuple[tuple[str, int], ...]
     images: tuple[FrontierImage, ...]
@@ -118,6 +125,7 @@ def build_frontier_iteration(
     checkpoint: CheckpointIdentity,
     decodes: Sequence[CurrentDecode],
     previous: Human13FrontierIteration | None = None,
+    previous_path: str | Path | None = None,
 ) -> Human13FrontierIteration:
     """Project one accepted natural panel decode into a sealed frontier."""
 
@@ -126,15 +134,30 @@ def build_frontier_iteration(
     _validate_checkpoint(checkpoint)
     target = Path(manifest_path).resolve(strict=True)
     manifest_sha256 = _verify_adjacent_digest(target, "manifest")
+    bound_manifest = load_manifest(target, require_full_panel=manifest.full_panel)
+    if bound_manifest != manifest:
+        raise ValueError("caller manifest differs from the bound manifest path")
     if previous is not None:
         if iteration != previous.iteration + 1:
             raise ValueError("frontier iteration does not follow previous")
         if previous.manifest_sha256 != manifest_sha256:
             raise ValueError("previous frontier manifest differs")
+        if previous_path is None:
+            raise ValueError("a previous frontier path is required")
+        previous_target = Path(previous_path).resolve(strict=True)
+        loaded_previous = load_frontier_iteration(previous_target)
+        if loaded_previous != previous:
+            raise ValueError("previous frontier object differs from bound receipt")
+        previous_sha256 = _verify_adjacent_digest(previous_target, "frontier")
     elif iteration != 0:
         raise ValueError("a nonzero frontier requires previous")
+    elif previous_path is not None:
+        raise ValueError("iteration zero cannot bind a previous frontier")
+    else:
+        previous_target = None
+        previous_sha256 = None
 
-    manifest_images = {image.image_id: image for image in manifest.images}
+    manifest_images = {image.image_id: image for image in bound_manifest.images}
     decode_images = {decode.image_id: decode for decode in decodes}
     if len(decode_images) != len(decodes) or set(decode_images) != set(manifest_images):
         raise ValueError("decodes must cover every manifest image exactly once")
@@ -151,18 +174,8 @@ def build_frontier_iteration(
         projected.append(projected_image)
         visible.update(projected_image.canonical_owner_ids)
 
-    all_g = {owner_id for image in manifest.images for owner_id in image.g_owner_ids}
-    all_h = {owner_id for image in manifest.images for owner_id in image.h_owner_ids}
-    ages: dict[str, int] = {}
-    for owner_id in sorted((all_g | all_h) & visible):
-        ages[owner_id] = prior_ages.get(owner_id, 0) + 1
-    for owner_id in all_g:
-        if owner_id in visible:
-            ages[owner_id] = max(1, ages.get(owner_id, 1))
-    protected = tuple(
-        sorted(
-            owner_id for owner_id, age in ages.items() if owner_id in all_g or age >= 2
-        )
+    protected, ages = _derive_protection(
+        bound_manifest, visible=visible, prior_ages=prior_ages
     )
     protected_set = set(protected)
     projected = [_with_constrained_protected(item, protected_set) for item in projected]
@@ -170,24 +183,26 @@ def build_frontier_iteration(
         schema_version=SCHEMA_VERSION,
         manifest_path=str(target),
         manifest_sha256=manifest_sha256,
-        panel_sha256=manifest.binding.panel.panel_sha256,
+        panel_sha256=bound_manifest.binding.panel.panel_sha256,
         iteration=iteration,
         checkpoint=checkpoint,
+        previous_frontier_path=(
+            None if previous_target is None else str(previous_target)
+        ),
+        previous_frontier_sha256=previous_sha256,
         protected_owner_ids=protected,
         protected_owner_ages=tuple(sorted(ages.items())),
         images=tuple(projected),
     )
-    validate_frontier_iteration(result, manifest=manifest)
+    validate_frontier_iteration(result, manifest=bound_manifest)
     return result
 
 
 def _project_image(
     image: ImageRecord, decode: CurrentDecode, *, protected: set[str]
 ) -> FrontierImage:
-    if decode.parser_status != "complete":
-        raise ValueError("current decode parser status is not complete")
-    if not decode.parser:
-        raise ValueError("current decode parser identity is empty")
+    if decode.parser != _AUTHORIZED_PARSER or decode.parser_status != "complete":
+        raise ValueError("current decode parser identity or status is not authorized")
     rows = _rows(decode)
     retained: list[FrontierRow] = []
     duplicates: list[FrontierDuplicateEvent] = []
@@ -245,6 +260,8 @@ def _project_image(
         image_id=image.image_id,
         trajectory_id=decode.trajectory_id,
         generated_token_ids=decode.generated_token_ids,
+        parser=decode.parser,
+        parser_status=decode.parser_status,
         stop_reason=decode.stop_reason,
         rows=rows,
         canonical_owner_ids=canonical,
@@ -284,8 +301,12 @@ def _rows(decode: CurrentDecode) -> tuple[FrontierRow, ...]:
             or prediction.token_end > len(decode.generated_token_ids) - 1
         ):
             raise ValueError("prediction token span is invalid")
-        if len(prediction.bbox) != 4 or not prediction.category:
-            raise ValueError("prediction row is invalid")
+        if (
+            len(prediction.bbox) != 4
+            or not prediction.category
+            or any(not math.isfinite(float(value)) for value in prediction.bbox)
+        ):
+            raise ValueError("prediction bbox is not finite or row is invalid")
         prior_end = prediction.token_end
         rows.append(
             FrontierRow(
@@ -314,6 +335,34 @@ def validate_frontier_iteration(
         sorted(image.image_id for image in manifest.images)
     ):
         raise ValueError("frontier image order or coverage differs from manifest")
+    manifest_images = {image.image_id: image for image in manifest.images}
+    for image in frontier.images:
+        reconstructed = CurrentDecode(
+            image_id=image.image_id,
+            trajectory_id=image.trajectory_id,
+            generated_token_ids=image.generated_token_ids,
+            predictions=tuple(
+                CurrentPrediction(
+                    generated_order=row.generated_order,
+                    category=row.category,
+                    bbox=row.bbox,
+                    token_start=row.token_start,
+                    token_end=row.token_end,
+                )
+                for row in image.rows
+            ),
+            parser=image.parser,
+            parser_status=image.parser_status,
+            stop_reason=image.stop_reason,
+            checkpoint=frontier.checkpoint,
+        )
+        derived = _project_image(
+            manifest_images[image.image_id],
+            reconstructed,
+            protected=set(frontier.protected_owner_ids),
+        )
+        if derived != image:
+            raise ValueError("frontier image semantic fields do not rederive")
     m_ids = {owner_id for image in manifest.images for owner_id in image.m_owner_ids}
     if any(
         alias.owner_id in m_ids
@@ -323,6 +372,40 @@ def validate_frontier_iteration(
         raise ValueError("K-miss owner entered frontier candidate aliases")
     if set(frontier.protected_owner_ids) - set(dict(frontier.protected_owner_ages)):
         raise ValueError("protected owner lacks an age")
+    if frontier.iteration == 0:
+        if (
+            frontier.previous_frontier_path is not None
+            or frontier.previous_frontier_sha256 is not None
+        ):
+            raise ValueError("iteration zero has a previous frontier")
+        prior_ages: dict[str, int] = {}
+    else:
+        if (
+            frontier.previous_frontier_path is None
+            or frontier.previous_frontier_sha256 is None
+        ):
+            raise ValueError("frontier previous receipt is missing")
+        previous_target = Path(frontier.previous_frontier_path).resolve(strict=True)
+        if (
+            _verify_adjacent_digest(previous_target, "frontier")
+            != frontier.previous_frontier_sha256
+        ):
+            raise ValueError("frontier previous receipt digest differs")
+        previous = load_frontier_iteration(previous_target)
+        if previous.iteration + 1 != frontier.iteration:
+            raise ValueError("frontier previous iteration is not adjacent")
+        prior_ages = dict(previous.protected_owner_ages)
+    visible = {
+        owner_id for image in frontier.images for owner_id in image.canonical_owner_ids
+    }
+    expected_protected, expected_ages = _derive_protection(
+        manifest, visible=visible, prior_ages=prior_ages
+    )
+    if (
+        frontier.protected_owner_ids != expected_protected
+        or frontier.protected_owner_ages != tuple(sorted(expected_ages.items()))
+    ):
+        raise ValueError("frontier protection ages do not rederive")
 
 
 def canonical_write(frontier: Human13FrontierIteration, path: str | Path) -> str:
@@ -382,6 +465,8 @@ def _from_dict(document: Mapping[str, Any]) -> Human13FrontierIteration:
             generated_token_ids=tuple(
                 int(value) for value in item["generated_token_ids"]
             ),
+            parser=str(item["parser"]),
+            parser_status=str(item["parser_status"]),
             stop_reason=str(item["stop_reason"]),
             rows=tuple(row(value) for value in item["rows"]),
             canonical_owner_ids=tuple(
@@ -420,6 +505,16 @@ def _from_dict(document: Mapping[str, Any]) -> Human13FrontierIteration:
         panel_sha256=str(document["panel_sha256"]),
         iteration=int(document["iteration"]),
         checkpoint=checkpoint,
+        previous_frontier_path=(
+            None
+            if document["previous_frontier_path"] is None
+            else str(document["previous_frontier_path"])
+        ),
+        previous_frontier_sha256=(
+            None
+            if document["previous_frontier_sha256"] is None
+            else str(document["previous_frontier_sha256"])
+        ),
         protected_owner_ids=tuple(
             str(value) for value in document["protected_owner_ids"]
         ),
@@ -431,9 +526,27 @@ def _from_dict(document: Mapping[str, Any]) -> Human13FrontierIteration:
 
 
 def _load_bound_manifest(frontier: Human13FrontierIteration) -> Human13KUnionManifest:
-    from scripts.research.build_human13_k_union_manifest import load_manifest
-
     return load_manifest(frontier.manifest_path, require_full_panel=False)
+
+
+def _derive_protection(
+    manifest: Human13KUnionManifest,
+    *,
+    visible: set[str],
+    prior_ages: Mapping[str, int],
+) -> tuple[tuple[str, ...], dict[str, int]]:
+    all_g = {owner_id for image in manifest.images for owner_id in image.g_owner_ids}
+    all_h = {owner_id for image in manifest.images for owner_id in image.h_owner_ids}
+    ages = {
+        owner_id: int(prior_ages.get(owner_id, 0)) + 1
+        for owner_id in sorted((all_g | all_h) & visible)
+    }
+    protected = tuple(
+        sorted(
+            owner_id for owner_id, age in ages.items() if owner_id in all_g or age >= 2
+        )
+    )
+    return protected, ages
 
 
 def _validate_checkpoint(checkpoint: CheckpointIdentity) -> None:
@@ -459,7 +572,13 @@ def _verify_adjacent_digest(path: Path, label: str) -> str:
 
 def _canonical_bytes(frontier: Human13FrontierIteration) -> bytes:
     return (
-        json.dumps(asdict(frontier), sort_keys=True, separators=(",", ":")) + "\n"
+        json.dumps(
+            asdict(frontier),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
     ).encode("utf-8")
 
 
