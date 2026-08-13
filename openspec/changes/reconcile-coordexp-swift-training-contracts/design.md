@@ -230,22 +230,39 @@ may be copied forward from any earlier attempt. Attempt 6 MUST also bind the
 accumulation invariant that the artifact-progress contract assumes. The
 executor requires top-level `consumed_packs` of 1 and 2 and every checkpoint
 event's `committed_progress.consumed_packs` to equal its step, which is true
-only at exactly one pack per optimizer step. Production derives that ratio as
-`resolved_grad_accum_steps = effective_batch_size // world_size`
-(`src/config/resolve.py:resolve_effective_batch_runtime`), so the manifest and
-packet MUST bind the absolute base-config path
-`configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml`
-with SHA-256
-`44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f`, and, for
-each of `uninterrupted_control`, `resumed_parent`, and `resumed_child`,
-`world_size: 2`, `effective_batch_size: 2`, and
-`resolved_grad_accum_steps: 1`. Before freezing, each rendered role config MUST
-be loaded through production `load_train_config` and MUST resolve to exactly
-those three values and to expected consumed progress `1` at step 1 and `2` at
-step 2; the resolved fingerprint and its digest are recorded in the manifest
-and packet. The executor revalidates these bindings before marker creation and
-in setup validation, and the independent `READY` review MUST verify them; any
-drift stops the attempt and requires re-freeze and re-review. This round keeps
+only at exactly one pack per optimizer step. That ratio is not a config field.
+Production computes it in
+`src/config/resolve.py:resolve_effective_batch_runtime` as
+`resolved_grad_accum_steps = effective_batch_size // world_size`, where
+`effective_batch_size` is a resolved config value and `world_size` is a
+launch-time property passed in by the caller. Attempt 6 therefore binds three
+distinct authorities and verifies each with its own owner.
+
+First, config identity: the manifest and packet bind the absolute base-config
+path
+`/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml`
+with SHA-256 `44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f`, plus each rendered role config's bytes and SHA-256 for
+`uninterrupted_control`, `resumed_parent`, and `resumed_child`. Before
+freezing, each rendered role config is loaded through production
+`load_train_config`, MUST resolve `effective_batch_size` to `2`, and its config
+bytes/digest and resolved fingerprint are recorded.
+
+Second, launch topology: `world_size` is never read from a role config. The
+frozen launch argv and manifest MUST bind `world_size = 2` -- the setup
+`--world-size 2` argument and the two-rank `torchrun` success commands -- and
+that binding is verified against the frozen argv, not against the YAML.
+
+Third, derived accumulation: for each role, production
+`resolve_effective_batch_runtime(config, world_size=2)` is invoked on the
+loaded config with the argv-bound world size and MUST return
+`resolved_grad_accum_steps: 1`, hence expected consumed progress `1` at step 1
+and `2` at step 2. The resolved fingerprint and its digest are recorded in the
+manifest and packet.
+
+The executor revalidates all three bindings before marker creation and in setup
+validation, and the independent signed `READY` review MUST verify each of them
+against its own authority; any drift stops the attempt and requires re-freeze
+and re-review. This round keeps
 the experiment-local packet fixed at one pack per step and does not generalize
 the executor to arbitrary accumulation. Attempts 1-5 and every one of
 their receipts remain readable evidence and MUST NOT be edited or deleted to
