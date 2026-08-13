@@ -543,8 +543,8 @@ class ProductionRuntimeServices:
                 "required_margin": required_margin,
                 "candidate_surface_reserve": reserve,
                 "payload": {
-                    "logical_segment_count": len(payload.logical_segments),
-                    "physical_pack_count": len(payload.micro_steps),
+                    "logical_segment_count": _payload_counts(payload)[0],
+                    "physical_pack_count": _payload_counts(payload)[1],
                 },
                 "training_result": _jsonable(result),
             },
@@ -962,6 +962,14 @@ def _bbox4(values: Any) -> tuple[float, float, float, float]:
     if len(result) != 4:
         raise ValueError("owner bbox must contain four coordinates")
     return cast(tuple[float, float, float, float], result)
+
+
+def _payload_counts(payload: Any) -> tuple[int, int]:
+    selected_segments = getattr(payload, "selected_segments", None)
+    micro_steps = getattr(payload, "micro_steps", None)
+    if not isinstance(selected_segments, tuple) or not isinstance(micro_steps, tuple):
+        raise ValueError("on-policy payload lacks selected segments or micro-steps")
+    return len(selected_segments), len(micro_steps)
 
 
 def _prompt_only_native_inputs(

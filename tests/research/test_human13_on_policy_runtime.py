@@ -22,6 +22,7 @@ from scripts.research.human13_on_policy_runtime import (
     _config_sha256,
     _continuation_caps,
     _frontier_observation,
+    _payload_counts,
     build_runtime,
 )
 from scripts.research.human13_frontier_selection import (
@@ -374,6 +375,14 @@ def test_continuation_caps_are_bound_per_source_image() -> None:
     }
 
     assert _continuation_caps(records) == {7: 532, 8: 600}
+
+
+def test_payload_receipt_counts_use_live_selected_segment_field() -> None:
+    payload = SimpleNamespace(
+        selected_segments=(object(), object()), micro_steps=(object(),)
+    )
+
+    assert _payload_counts(payload) == (2, 1)
 
 
 @pytest.mark.parametrize(
