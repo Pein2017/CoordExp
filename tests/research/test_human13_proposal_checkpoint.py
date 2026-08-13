@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from scripts.research.human13_proposal_checkpoint import private_proposal_checkpoint
+from scripts.research.human13_proposal_checkpoint import (
+    private_proposal_checkpoint,
+    promote_private_proposal_checkpoint,
+)
 
 
 def _write_payload(run_dir: Path) -> Path:
@@ -46,3 +49,25 @@ def test_private_proposal_rejects_wrong_writer_target(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="transaction-private root"):
         with private_proposal_checkpoint(parent, writer=outside):
             pass
+
+
+def test_private_proposal_promotes_exact_bytes_once(tmp_path: Path) -> None:
+    parent = tmp_path / "private"
+    accepted_run = tmp_path / "accepted"
+    with private_proposal_checkpoint(parent, writer=_write_payload) as checkpoint:
+        (checkpoint / "adapter" / "weights.safetensors").write_bytes(b"weights")
+        (checkpoint / "special_token_embeddings" / "delta.safetensors").write_bytes(
+            b"delta"
+        )
+        promoted = promote_private_proposal_checkpoint(
+            checkpoint, accepted_run_dir=accepted_run, accepted_step=3
+        )
+        assert (promoted / "adapter" / "weights.safetensors").read_bytes() == b"weights"
+        assert (
+            promoted / "special_token_embeddings" / "delta.safetensors"
+        ).read_bytes() == b"delta"
+        with pytest.raises(ValueError, match="already exists"):
+            promote_private_proposal_checkpoint(
+                checkpoint, accepted_run_dir=accepted_run, accepted_step=3
+            )
+    assert promoted == accepted_run / "checkpoints" / "step-3"
