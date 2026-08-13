@@ -12,9 +12,16 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import hashlib
 import json
+import math
 from pathlib import Path
 import time
 from typing import Any
+
+from scripts.research.build_human13_on_policy_frontier import (
+    CheckpointIdentity,
+    CurrentDecode,
+    CurrentPrediction,
+)
 
 
 def _digest(value: object, field: str) -> str:
@@ -33,6 +40,23 @@ def _nonempty(value: object, field: str) -> str:
     return value
 
 
+def trajectory_analyzer_predictions(
+    trajectory: Any,
+) -> tuple[dict[str, object], ...]:
+    """Project parser rows without losing their exact generated-token spans."""
+
+    return tuple(
+        {
+            "generated_order": int(row.row_index),
+            "description": str(row.category),
+            "bbox": [float(value) for value in row.bbox],
+            "token_start": int(row.token_start),
+            "token_end": int(row.token_end),
+        }
+        for row in trajectory.rows
+    )
+
+
 def build_analyzer_output(
     *,
     manifest: Any,
@@ -49,6 +73,8 @@ def build_analyzer_output(
     trajectory_id: str,
     generated_token_ids: Sequence[int],
     predictions: Sequence[Mapping[str, object]],
+    parser: str,
+    parser_status: str,
     stop_reason: str,
     malformed_row_count: int,
     runtime: Mapping[str, int | float],
@@ -73,6 +99,7 @@ def build_analyzer_output(
     source_identity = binding.source
     surface = binding.surface
     image_id = int(image.image_id)
+    bound_trajectory_id = _nonempty(trajectory_id, "trajectory_id")
     provenance = {
         "unit_id": binding.unit_id,
         "purpose": binding.purpose,
@@ -113,7 +140,7 @@ def build_analyzer_output(
         "wrapper": surface.wrapper,
         "parser": surface.parser,
         "source_trajectory_id": source.trajectory_id,
-        "trajectory_id": _nonempty(trajectory_id, "trajectory_id"),
+        "trajectory_id": bound_trajectory_id,
     }
     return {
         "image_id": image_id,
@@ -123,11 +150,165 @@ def build_analyzer_output(
         "repetition_penalty": 1.0,
         "predictions": [dict(item) for item in predictions],
         "generated_token_ids": list(ids),
+        "trajectory_id": bound_trajectory_id,
+        "parser": _nonempty(parser, "parser"),
+        "parser_status": _nonempty(parser_status, "parser_status"),
         "stop_reason": _nonempty(stop_reason, "stop_reason"),
         "malformed_row_count": malformed_row_count,
         "runtime": dict(runtime),
         "provenance": provenance,
     }
+
+
+def current_decodes_from_outputs(
+    *,
+    manifest: Any,
+    manifest_sha256: str,
+    outputs: Sequence[Mapping[str, Any]],
+    checkpoint: CheckpointIdentity,
+) -> tuple[CurrentDecode, ...]:
+    """Bind one analyzer-output panel to its same-decode frontier inputs.
+
+    The adapter is deliberately pure: it only validates and projects the raw
+    records returned by :func:`evaluate_hf_checkpoint`; it has no decoder or
+    model session from which a second trajectory could be produced.
+    """
+
+    expected_manifest_sha = _digest(manifest_sha256, "manifest_sha256")
+    manifest_images = tuple(manifest.images)
+    if not bool(getattr(manifest, "full_panel", False)) or len(manifest_images) != 13:
+        raise ValueError("current decode binding requires the full 13-image panel")
+    expected_image_ids = tuple(int(image.image_id) for image in manifest_images)
+    if len(set(expected_image_ids)) != 13:
+        raise ValueError("manifest image ids must be unique")
+    records = tuple(outputs)
+    observed_image_ids = tuple(
+        _strict_integer(record.get("image_id"), "output.image_id") for record in records
+    )
+    if observed_image_ids != expected_image_ids:
+        raise ValueError("outputs must preserve exact manifest image order")
+    checkpoint_path = _nonempty(checkpoint.path, "checkpoint.path")
+    checkpoint_sha = _digest(checkpoint.payload_sha256, "checkpoint.payload_sha256")
+    expected_panel_sha = str(manifest.binding.panel.panel_sha256)
+    expected_parser = str(manifest.binding.surface.parser)
+
+    decodes: list[CurrentDecode] = []
+    for manifest_image, record in zip(manifest_images, records, strict=True):
+        if (
+            record.get("decode_mode") != "original_prompt_clean_greedy"
+            or record.get("repetition_penalty") != 1.0
+        ):
+            raise ValueError("output differs from the bound clean-greedy surface")
+        provenance = record.get("provenance")
+        if not isinstance(provenance, Mapping):
+            raise ValueError("output.provenance must be an object")
+        if (
+            provenance.get("backend") != "hf"
+            or provenance.get("physical_batch_size") != 1
+            or provenance.get("do_sample") is not False
+        ):
+            raise ValueError("output differs from the bound clean-greedy surface")
+        if provenance.get("manifest_sha256") != expected_manifest_sha:
+            raise ValueError("output provenance manifest_sha256 differs")
+        if provenance.get("panel_sha256") != expected_panel_sha:
+            raise ValueError("output provenance panel_sha256 differs")
+        image_id = _strict_integer(record.get("image_id"), "output.image_id")
+        if provenance.get("image_id") != image_id:
+            raise ValueError("output provenance image_id differs")
+        if provenance.get("panel_row_sha256") != manifest_image.panel_row_sha256:
+            raise ValueError("output provenance panel_row_sha256 differs")
+        if provenance.get("image_sha256") != manifest_image.image_sha256:
+            raise ValueError("output provenance image_sha256 differs")
+        if (
+            provenance.get("checkpoint_path") != checkpoint_path
+            or provenance.get("checkpoint_payload_sha256") != checkpoint_sha
+        ):
+            raise ValueError("output provenance checkpoint identity differs")
+        trajectory_id = _nonempty(
+            provenance.get("trajectory_id"), "output.provenance.trajectory_id"
+        )
+        if record.get("trajectory_id") != trajectory_id:
+            raise ValueError("output trajectory identity differs from provenance")
+        parser = _nonempty(record.get("parser"), "output.parser")
+        if parser != expected_parser:
+            raise ValueError("output parser differs from the manifest surface")
+        parser_status = _nonempty(record.get("parser_status"), "output.parser_status")
+        if parser_status != "complete":
+            raise ValueError("output parser status is not complete")
+        token_ids_value = record.get("generated_token_ids")
+        if not isinstance(token_ids_value, list) or not token_ids_value:
+            raise ValueError("output.generated_token_ids must be a non-empty list")
+        token_ids = tuple(
+            _strict_integer(value, "output.generated_token_ids")
+            for value in token_ids_value
+        )
+        if any(value < 0 for value in token_ids):
+            raise ValueError("output.generated_token_ids must be nonnegative")
+        predictions_value = record.get("predictions")
+        if not isinstance(predictions_value, list):
+            raise ValueError("output.predictions must be a list")
+        predictions: list[CurrentPrediction] = []
+        for expected_order, value in enumerate(predictions_value):
+            if not isinstance(value, Mapping):
+                raise ValueError("every output prediction must be an object")
+            generated_order = _strict_integer(
+                value.get("generated_order"), "prediction.generated_order"
+            )
+            if generated_order != expected_order:
+                raise ValueError("predictions must preserve exact generated order")
+            token_start = _strict_integer(
+                value.get("token_start"), "prediction.token_start"
+            )
+            token_end = _strict_integer(value.get("token_end"), "prediction.token_end")
+            if not 0 <= token_start < token_end <= len(token_ids):
+                raise ValueError("prediction token span is outside generated tokens")
+            bbox_value = value.get("bbox")
+            if (
+                not isinstance(bbox_value, list)
+                or len(bbox_value) != 4
+                or any(
+                    isinstance(item, bool)
+                    or not isinstance(item, (int, float))
+                    or not math.isfinite(float(item))
+                    for item in bbox_value
+                )
+            ):
+                raise ValueError("prediction.bbox must contain four finite numbers")
+            predictions.append(
+                CurrentPrediction(
+                    generated_order=generated_order,
+                    category=_nonempty(
+                        value.get("description"), "prediction.description"
+                    ),
+                    bbox=(
+                        float(bbox_value[0]),
+                        float(bbox_value[1]),
+                        float(bbox_value[2]),
+                        float(bbox_value[3]),
+                    ),
+                    token_start=token_start,
+                    token_end=token_end,
+                )
+            )
+        decodes.append(
+            CurrentDecode(
+                image_id=image_id,
+                trajectory_id=trajectory_id,
+                generated_token_ids=token_ids,
+                predictions=tuple(predictions),
+                parser=parser,
+                parser_status=parser_status,
+                stop_reason=_nonempty(record.get("stop_reason"), "output.stop_reason"),
+                checkpoint=checkpoint,
+            )
+        )
+    return tuple(decodes)
+
+
+def _strict_integer(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer")
+    return value
 
 
 def checkpoint_payload_sha256(path: str | Path) -> str:
@@ -194,6 +375,8 @@ def source_outputs_from_manifest(
                 "generated_order": int(row["row_index"]),
                 "description": str(row["category"]),
                 "bbox": list(row["bbox"]),
+                "token_start": int(row["token_start"]),
+                "token_end": int(row["token_end"]),
             }
             for row in rows
         )
@@ -216,6 +399,8 @@ def source_outputs_from_manifest(
                 trajectory_id=trajectory_id,
                 generated_token_ids=tuple(int(item) for item in token_ids),
                 predictions=predictions,
+                parser=binding.surface.parser,
+                parser_status=str(parse["parse_status"]),
                 stop_reason=str(trajectory["stop_reason"]),
                 malformed_row_count=len(dropped),
                 runtime={
@@ -326,14 +511,10 @@ def evaluate_hf_checkpoint(
                 image_width=int(example.image.width),
                 image_height=int(example.image.height),
             )
-            predictions = tuple(
-                {
-                    "generated_order": row.row_index,
-                    "description": row.category,
-                    "bbox": list(row.bbox),
-                }
-                for row in trajectory.rows
-            )
+            dropped_predictions = parse.get("dropped_predictions")
+            if not isinstance(dropped_predictions, list):
+                raise ValueError("HF decode parse lacks dropped-prediction evidence")
+            predictions = trajectory_analyzer_predictions(trajectory)
             outputs.append(
                 build_analyzer_output(
                     manifest=manifest,
@@ -350,8 +531,10 @@ def evaluate_hf_checkpoint(
                     trajectory_id=request.request_id,
                     generated_token_ids=trajectory.token_ids,
                     predictions=predictions,
+                    parser=manifest.binding.surface.parser,
+                    parser_status=trajectory.parser_status,
                     stop_reason=trajectory.stop_reason,
-                    malformed_row_count=len(parse["dropped_predictions"]),
+                    malformed_row_count=len(dropped_predictions),
                     runtime={"decode_seconds": elapsed},
                 )
             )
@@ -384,7 +567,9 @@ def write_outputs_jsonl(path: str | Path, outputs: Sequence[Mapping[str, Any]]) 
 __all__ = [
     "build_analyzer_output",
     "checkpoint_payload_sha256",
+    "current_decodes_from_outputs",
     "evaluate_hf_checkpoint",
     "source_outputs_from_manifest",
+    "trajectory_analyzer_predictions",
     "write_outputs_jsonl",
 ]

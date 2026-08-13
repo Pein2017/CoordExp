@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from types import SimpleNamespace
+from typing import cast
 
+import pytest
+
+from scripts.research import human13_live_eval as live_eval
+from scripts.research.build_human13_on_policy_frontier import CheckpointIdentity
 from scripts.research.human13_live_eval import build_analyzer_output
 
 
@@ -23,23 +29,96 @@ def _manifest() -> SimpleNamespace:
                 tokenizer_sha256="tokenizer",
                 tokenizer_class="Tokenizer",
                 wrapper="wrapper",
-                parser="parser",
+                parser="compact_object_box_closed_only",
             ),
         )
     )
 
 
-def _image() -> SimpleNamespace:
+def _image(image_id: int = 7) -> SimpleNamespace:
     return SimpleNamespace(
-        image_id=7,
-        panel_row_sha256="row",
-        image_sha256="image",
+        image_id=image_id,
+        panel_row_sha256=f"row-{image_id}",
+        image_sha256=f"image-{image_id}",
         trajectories=(
             SimpleNamespace(
-                trajectory_id="human13:7:source",
+                trajectory_id=f"human13:{image_id}:source",
                 request=SimpleNamespace(backend_version="4.57.1", max_new_tokens=3084),
             ),
         ),
+    )
+
+
+def _panel_manifest() -> SimpleNamespace:
+    base = _manifest()
+    return SimpleNamespace(
+        binding=base.binding,
+        images=tuple(_image(image_id) for image_id in range(1, 14)),
+        full_panel=True,
+    )
+
+
+def _panel_outputs(
+    manifest: SimpleNamespace,
+    checkpoint: CheckpointIdentity,
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        build_analyzer_output(
+            manifest=manifest,
+            manifest_sha256="c" * 64,
+            image=image,
+            arm_id="O-First-Safe",
+            milestone=3,
+            checkpoint_path=checkpoint.path,
+            checkpoint_payload_sha256=checkpoint.payload_sha256,
+            run_id="run",
+            run_root="/run",
+            resolved_arm_plan_sha256="e" * 64,
+            resolved_config_sha256="f" * 64,
+            trajectory_id=f"eval:O-First-Safe:3:{image.image_id}",
+            generated_token_ids=(100 + image.image_id, 200 + image.image_id, 999),
+            predictions=(
+                {
+                    "generated_order": 0,
+                    "description": "person",
+                    "bbox": [1.0, 2.0, 3.0, 4.0],
+                    "token_start": 0,
+                    "token_end": 2,
+                },
+            ),
+            parser="compact_object_box_closed_only",
+            parser_status="complete",
+            stop_reason="im_end",
+            malformed_row_count=0,
+            runtime={"decode_seconds": 1.0},
+        )
+        for image in manifest.images
+    )
+
+
+def test_trajectory_analyzer_predictions_preserve_exact_token_spans() -> None:
+    trajectory = SimpleNamespace(
+        rows=(
+            SimpleNamespace(
+                row_index=0,
+                category="person",
+                bbox=(1.0, 2.0, 3.0, 4.0),
+                token_start=7,
+                token_end=13,
+            ),
+        )
+    )
+
+    predictions = live_eval.trajectory_analyzer_predictions(trajectory)
+
+    assert predictions == (
+        {
+            "generated_order": 0,
+            "description": "person",
+            "bbox": [1.0, 2.0, 3.0, 4.0],
+            "token_start": 7,
+            "token_end": 13,
+        },
     )
 
 
@@ -61,6 +140,8 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
         predictions=(
             {"generated_order": 0, "description": "person", "bbox": [1, 2, 3, 4]},
         ),
+        parser="compact_object_box_closed_only",
+        parser_status="complete",
         stop_reason="im_end",
         malformed_row_count=2,
         runtime={"decode_seconds": 1.5},
@@ -69,37 +150,137 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
     assert result["decode_mode"] == "original_prompt_clean_greedy"
     assert result["repetition_penalty"] == 1.0
     assert result["generated_token_ids"] == [1, 2, 3]
-    assert result["predictions"][0]["description"] == "person"
-    assert result["provenance"]["manifest_sha256"] == "c" * 64
-    assert result["provenance"]["checkpoint_path"] == "/run/checkpoints/step-4"
-    assert result["provenance"]["physical_batch_size"] == 1
-    assert result["provenance"]["do_sample"] is False
+    predictions = cast(list[dict[str, object]], result["predictions"])
+    provenance = cast(dict[str, object], result["provenance"])
+    assert predictions[0]["description"] == "person"
+    assert result["parser"] == "compact_object_box_closed_only"
+    assert result["parser_status"] == "complete"
+    assert provenance["manifest_sha256"] == "c" * 64
+    assert provenance["checkpoint_path"] == "/run/checkpoints/step-4"
+    assert provenance["physical_batch_size"] == 1
+    assert provenance["do_sample"] is False
 
 
 def test_build_analyzer_output_rejects_non_digest_or_wrong_image() -> None:
-    kwargs = dict(
-        manifest=_manifest(),
+    with pytest.raises(ValueError, match="checkpoint_payload_sha256"):
+        build_analyzer_output(
+            manifest=_manifest(),
+            manifest_sha256="c" * 64,
+            image=_image(),
+            arm_id="A1",
+            milestone=1,
+            checkpoint_path="/checkpoint",
+            checkpoint_payload_sha256="not-a-digest",
+            run_id="run",
+            run_root="/run",
+            resolved_arm_plan_sha256="e" * 64,
+            resolved_config_sha256="f" * 64,
+            trajectory_id="trajectory",
+            generated_token_ids=(1,),
+            predictions=(),
+            parser="compact_object_box_closed_only",
+            parser_status="complete",
+            stop_reason="im_end",
+            malformed_row_count=0,
+            runtime={},
+        )
+
+
+def test_current_decodes_from_outputs_preserves_same_decode_identity_and_order() -> (
+    None
+):
+    manifest = _panel_manifest()
+    checkpoint = CheckpointIdentity("/checkpoint", "d" * 64)
+    outputs = _panel_outputs(manifest, checkpoint)
+
+    decodes = live_eval.current_decodes_from_outputs(
+        manifest=manifest,
         manifest_sha256="c" * 64,
-        image=_image(),
-        arm_id="A1",
-        milestone=1,
-        checkpoint_path="/checkpoint",
-        checkpoint_payload_sha256="not-a-digest",
-        run_id="run",
-        run_root="/run",
-        resolved_arm_plan_sha256="e" * 64,
-        resolved_config_sha256="f" * 64,
-        trajectory_id="trajectory",
-        generated_token_ids=(1,),
-        predictions=(),
-        stop_reason="im_end",
-        malformed_row_count=0,
-        runtime={},
+        outputs=outputs,
+        checkpoint=checkpoint,
     )
 
-    try:
-        build_analyzer_output(**kwargs)
-    except ValueError as exc:
-        assert "checkpoint_payload_sha256" in str(exc)
-    else:  # pragma: no cover - assertion aid
-        raise AssertionError("invalid digest was accepted")
+    assert tuple(decode.image_id for decode in decodes) == tuple(range(1, 14))
+    assert decodes[6].trajectory_id == "eval:O-First-Safe:3:7"
+    assert decodes[6].generated_token_ids == (107, 207, 999)
+    assert decodes[6].predictions[0].token_start == 0
+    assert decodes[6].predictions[0].token_end == 2
+    assert decodes[6].parser == "compact_object_box_closed_only"
+    assert decodes[6].parser_status == "complete"
+    assert decodes[6].checkpoint == checkpoint
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (
+            lambda outputs: tuple(reversed(outputs)),
+            "manifest image order",
+        ),
+        (
+            lambda outputs: (
+                {
+                    **outputs[0],
+                    "provenance": {
+                        **cast(Mapping[str, object], outputs[0]["provenance"]),
+                        "manifest_sha256": "0" * 64,
+                    },
+                },
+                *outputs[1:],
+            ),
+            "manifest_sha256",
+        ),
+        (
+            lambda outputs: (
+                {
+                    **outputs[0],
+                    "provenance": {
+                        **cast(Mapping[str, object], outputs[0]["provenance"]),
+                        "checkpoint_payload_sha256": "0" * 64,
+                    },
+                },
+                *outputs[1:],
+            ),
+            "checkpoint identity",
+        ),
+        (
+            lambda outputs: (
+                {
+                    **outputs[0],
+                    "provenance": {
+                        **cast(Mapping[str, object], outputs[0]["provenance"]),
+                        "image_sha256": "wrong",
+                    },
+                },
+                *outputs[1:],
+            ),
+            "image_sha256",
+        ),
+        (
+            lambda outputs: ({**outputs[0], "decode_mode": "sampled"}, *outputs[1:]),
+            "clean-greedy surface",
+        ),
+        (
+            lambda outputs: (
+                {**outputs[0], "parser_status": "partial"},
+                *outputs[1:],
+            ),
+            "parser status",
+        ),
+    ),
+)
+def test_current_decodes_from_outputs_rejects_order_or_sha_drift(
+    mutation: Callable[[tuple[dict[str, object], ...]], tuple[dict[str, object], ...]],
+    message: str,
+) -> None:
+    manifest = _panel_manifest()
+    checkpoint = CheckpointIdentity("/checkpoint", "d" * 64)
+    outputs = _panel_outputs(manifest, checkpoint)
+
+    with pytest.raises(ValueError, match=message):
+        live_eval.current_decodes_from_outputs(
+            manifest=manifest,
+            manifest_sha256="c" * 64,
+            outputs=mutation(outputs),
+            checkpoint=checkpoint,
+        )
