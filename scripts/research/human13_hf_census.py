@@ -139,6 +139,12 @@ class Human13HFCensusScorer:
                 "HF census encoded prompt identity differs from canonical requests"
             )
         observed_grid = getattr(encoded_example, "image_grid_thw", None)
+        if observed_grid is None:
+            observed_grid = getattr(
+                getattr(encoded_example, "image_encoding", None),
+                "image_grid_thw",
+                None,
+            )
         if request.expected_image_grid_thw is not None and (
             tuple(observed_grid) if observed_grid is not None else None
         ) != tuple(request.expected_image_grid_thw):

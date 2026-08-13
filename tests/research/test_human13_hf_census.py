@@ -226,6 +226,28 @@ def test_scorer_selects_exact_causal_rows_from_literal_continuation(
     assert tokenizer.decode_calls == []
 
 
+def test_scorer_reads_grid_from_canonical_encoded_image_encoding(tmp_path: Any) -> None:
+    from scripts.research.human13_hf_census import Human13HFCensusScorer
+
+    model = PositionModel()
+    scorer = Human13HFCensusScorer(
+        session=_session(model=model),
+        requests_by_image={1: _request(tmp_path)},
+    )
+    encoded = SimpleNamespace(
+        example_id="a1:1",
+        input_ids=(11, 12, 13),
+        prompt_token_count=2,
+        human13_image_id=1,
+        image_encoding=SimpleNamespace(image_grid_thw=(1, 1, 2)),
+    )
+
+    output = scorer.score_causal_logits(encoded, (1,))
+
+    assert output.logits_position_ids == (1,)
+    assert len(model.forward_calls) == 1
+
+
 def test_scorer_routes_thirteen_shared_prompts_by_true_image_identity(
     tmp_path: Any,
 ) -> None:
