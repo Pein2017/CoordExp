@@ -1,13 +1,13 @@
-description: Minimal official Serena context shared by Agents in one Git worktree.
+description: Minimal official Serena context for one Agent session and one active worktree.
 prompt: |
-  This Serena process is shared by Agents started in the same Git worktree and is
-  permanently bound to that exact startup worktree.
+  This official Serena stdio process is private to this Agent session. It starts from
+  the nearest Git worktree and does not share active-project state with other Agents.
   Use Serena first for source-code symbol overview, declaration, reference,
   implementation, and diagnostics queries. Use the Agent's native shell and file tools
   for lexical search, non-code files, diffs, tests, and edits. Do not use Serena memories.
-  You may activate or confirm the bound worktree, but never switch this shared process to another project.
-  If the shell moves to another worktree, start a fresh Agent there so it receives an isolated
-  Serena runtime. Report Serena friction to the user.
+  Before semantic work, use activate_project to confirm the intended absolute worktree.
+  If the shell moves to another worktree, call activate_project for that exact root before
+  the next semantic query. Report any Serena friction or transport failure to the user.
 
 fixed_tools:
   - initial_instructions

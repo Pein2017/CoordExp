@@ -8,13 +8,22 @@ import yaml
 
 
 ROOT = Path("/data/CoordExp")
-EXPECTED_COMMAND = "/usr/bin/setpriv"
+EXPECTED_COMMAND = "/root/.local/bin/serena"
 EXPECTED_ARGS = [
-    "--pdeathsig",
-    "TERM",
-    "/root/miniconda3/envs/ms/bin/python",
-    "/data/CoordExp/.codex/serena/serena_worktree_mcp.py",
-    "serve",
+    "start-mcp-server",
+    "--transport",
+    "stdio",
+    "--project-from-cwd",
+    "--context",
+    "coordexp-minimal",
+    "--enable-web-dashboard",
+    "false",
+    "--enable-gui-log-window",
+    "false",
+    "--open-web-dashboard",
+    "false",
+    "--log-level",
+    "ERROR",
 ]
 EXPECTED_ENV = {
     "CONDA_PREFIX": "/root/miniconda3/envs/ms",
@@ -50,7 +59,7 @@ def _assert_registration(registration: dict[str, object]) -> None:
     assert registration["env"] == EXPECTED_ENV
 
 
-def test_all_codex_and_claude_registrations_use_shared_wrapper() -> None:
+def test_all_codex_and_claude_registrations_use_independent_official_stdio() -> None:
     codex = tomllib.loads((ROOT / ".codex" / "config.toml").read_text())["mcp_servers"]["serena"]
     root_mcp = json.loads((ROOT / ".mcp.json").read_text())["mcpServers"]["serena"]
     light_mcp = json.loads((ROOT / "serena-light" / ".mcp.json").read_text())["mcpServers"]["serena"]
@@ -69,8 +78,8 @@ def test_context_is_worktree_bound_with_exact_tool_surface() -> None:
     # The user-approved surface requires the tool for explicit root confirmation.
     assert context["single_project"] is False
     assert context["fixed_tools"] == EXPECTED_TOOLS
-    assert "shared by Agents started in the same Git worktree" in context["prompt"]
-    assert "never switch this shared process to another project" in context["prompt"]
+    assert "private to this Agent session" in context["prompt"]
+    assert "activate_project" in context["prompt"]
 
 
 def test_blocking_serena_reminders_remain_registered() -> None:
