@@ -198,6 +198,38 @@ The attempt-4 manifest, packet, marker, review, outer receipt, and produced
 artifacts remain immutable and MUST NOT be edited or reinterpreted as a
 successful qualification.
 
+Attempt 5 is likewise immutable historical evidence and executed nothing. It is
+frozen at implementation commit `9ef726085d2118dca90b373ccde4a88d068bf516`,
+manifest SHA-256
+`ee9227fdb310f7e9a2d629000df137ac5dbc2b472461a83f729df56909d58c24`,
+and packet SHA-256
+`48b7bb924f960bb5f65a87dfa4be4b9f5289b79b9e02b5375b253dd7b4caf897`,
+with target root `reconcile_exact_resume_2026-08-13-r5`. Its independent
+pre-cost review
+(`receipts/wave-3-attempt-5-pre-cost-review.json`, reviewer
+`cc-opus5-xhigh-attempt5-20260813`) returned `HOLD` on two P0s, so no attempt-5
+command, marker, cache preparation, model, `torchrun`, GPU allocation, or
+artifact-target mutation ran. The first P0 is stale role-config identity: all
+three `config_files` digests
+(`08eae66e...` control, `7e24e6bf...` parent, `2daf76ee...` child) were carried
+forward from the Attempt-4 target, but the rendered role configs embed
+`run.artifact_root` (and, for the child, `resume.checkpoint_dir`), so every
+digest changes with the target root and setup would have failed closed at
+`packet_executor.setup_config_mismatch` after the marker and target were
+already consumed. The second P0 is the resumed-parent run-state binding
+corrected below. The attempt-5 manifest, packet, and signed `HOLD` review keep
+their exact recorded hashes and MUST NOT be edited, re-signed, or reused; they
+are the durable record of a pre-cost stop, not a failed launch.
+
+A successor Attempt 6 is authorized only after the resumed-parent run-state
+correction is committed and reviewed. It MUST use a new absent `-r6` target
+root with its own marker and outer-receipt paths, and it MUST deterministically
+render all three role configs against that `-r6` root and compare the rendered
+bytes and SHA-256 against the manifest before freezing. No role-config digest
+may be copied forward from any earlier attempt. Attempts 1-5 and every one of
+their receipts remain readable evidence and MUST NOT be edited or deleted to
+make room for Attempt 6.
+
 The only authorized parent repair is probe-local and test-first in
 `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`: the resumed
 parent alone uses a synchronous held-parent entry route that wraps the real
@@ -266,7 +298,11 @@ contain exactly one train row for each of steps 1 and 2 and no other accepted
 train step, and maxima cover both rows. For `success.resumed_child`, the signed
 resumed receipt spans both lifetimes: the parent MUST have an authenticated,
 controlled exit at exactly step 1 rather than normal completion and exactly
-one parent train row at step 1; the child MUST be completed with
+one parent train row at step 1; because a `SIGTERM`-terminated held parent
+never reaches `RunWriter.finalize()`, its durable `run.json` `status` MUST be
+the creation-time `initialized` with a null `completed_at`, and `completed`,
+`failed`, or any other status fails closed while the exact completed-progress,
+checkpoint-event, and topology checks stay unchanged; the child MUST be completed with
 `world_size=2`, `completed_steps=2`, and exactly one child train row at step 2.
 Its maxima merge parent and child rows. Control, parent, and child MUST each
 attest exact topology `cuda_visible_devices: ["6", "7"]`, ranks/local

@@ -2406,7 +2406,10 @@ def _validate_success_receipt(
                 {
                     "role": "resumed_parent",
                     "run_dir": parent_dir,
-                    "status": "running",
+                    # A SIGTERM-terminated held parent never reaches
+                    # RunWriter.finalize(), so its durable state stays at the
+                    # creation-time status.
+                    "status": "initialized",
                     "completed_steps": 1,
                     "consumed_packs": 1,
                     "checkpoint_steps": [1],

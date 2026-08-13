@@ -609,7 +609,7 @@ def _fixture(
         child_dir = artifact_root / "runs" / "resumed_child"
         _write_json(
             parent_dir / "run.json",
-            _run_state(parent_dir, status="running", completed_steps=1),
+            _run_state(parent_dir, status="initialized", completed_steps=1),
         )
         _write_json(
             child_dir / "run.json",
@@ -1786,6 +1786,167 @@ def test_control_gpu_metrics_require_exact_steps_topology_and_values(
     receipt = _execute(executor, case, launch=launch)
 
     assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == expected_code
+
+
+def _parent_run_state_launch(
+    case: dict[str, Any], mutate: Callable[[dict[str, Any]], None]
+) -> Callable[..., Any]:
+    """Rewrite the resumed parent `run.json` after the arm publishes it."""
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] == "success.resumed_child":
+            path = (
+                case["artifact_root"] / "runs" / "resumed_parent" / "run.json"
+            )
+            state = json.loads(path.read_text())
+            mutate(state)
+            _write_json(path, state)
+        return process
+
+    return launch
+
+
+def _controlled_exit_parent(state: dict[str, Any]) -> None:
+    """The real SIGTERM-terminated held parent never reaches finalize()."""
+
+    state["status"] = "initialized"
+    state["completed_at"] = None
+
+
+def test_resumed_parent_accepts_real_controlled_exit_initialized_run_state(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    device_rows = [row for row in _gpu_rows() if row["kind"] == "device"]
+
+    receipt = _execute(
+        executor,
+        case,
+        launch=_parent_run_state_launch(case, _controlled_exit_parent),
+        gpu_sampler=lambda: device_rows,
+    )
+
+    assert receipt["status"] == "verified"
+    resumed = next(
+        row
+        for row in receipt["commands"]
+        if row["name"] == "success.resumed_child"
+    )
+    parent_source = next(
+        source
+        for source in resumed["gpu_artifact_evidence"]["source_files"]
+        if source.get("kind") == "run_json"
+        and source.get("role") == "resumed_parent"
+    )
+    parent_state = json.loads(Path(parent_source["path"]).read_text())
+    assert parent_state["status"] == "initialized"
+    assert parent_state["completed_at"] is None
+    assert resumed["gpu_artifact_evidence"]["step_inventory"] == [
+        {"role": "resumed_parent", "step": 1},
+        {"role": "resumed_child", "step": 2},
+    ]
+    assert resumed["gpu_memory_bytes_per_rank"] == {"0": 130, "1": 100}
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "running"])
+def test_resumed_parent_rejects_completed_failed_and_running_run_states(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    device_rows = [row for row in _gpu_rows() if row["kind"] == "device"]
+
+    def mutate(state: dict[str, Any]) -> None:
+        _controlled_exit_parent(state)
+        state["status"] = status
+
+    receipt = _execute(
+        executor,
+        case,
+        launch=_parent_run_state_launch(case, mutate),
+        gpu_sampler=lambda: device_rows,
+    )
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["command"] == "success.resumed_child"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.gpu_artifact_run_state"
+
+
+@pytest.mark.parametrize(
+    ("tamper", "expected_code"),
+    [
+        (None, None),
+        ("completed_at", "packet_executor.gpu_artifact_run_state"),
+        ("completed_steps", "packet_executor.gpu_artifact_run_state"),
+        ("consumed_packs", "packet_executor.gpu_artifact_run_state"),
+        ("resolved_max_steps", "packet_executor.gpu_artifact_run_state"),
+        ("checkpoint_event_count", "packet_executor.gpu_artifact_run_state"),
+        ("checkpoint_event_step", "packet_executor.gpu_artifact_run_state"),
+        ("checkpoint_event_status", "packet_executor.gpu_artifact_run_state"),
+        ("run_dir", "packet_executor.gpu_artifact_run_state"),
+        ("topology_world_size", "packet_executor.gpu_artifact_topology"),
+        ("topology_devices", "packet_executor.gpu_artifact_topology"),
+    ],
+)
+def test_initialized_resumed_parent_still_requires_exact_state_progress_and_topology(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper: str | None,
+    expected_code: str | None,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    device_rows = [row for row in _gpu_rows() if row["kind"] == "device"]
+
+    def mutate(state: dict[str, Any]) -> None:
+        _controlled_exit_parent(state)
+        events = state["measurement"]["checkpoint_publication_events"]
+        if tamper == "completed_at":
+            state["completed_at"] = "2026-08-13T00:00:02+00:00"
+        elif tamper == "completed_steps":
+            state["completed_steps"] = 2
+        elif tamper == "consumed_packs":
+            state["consumed_packs"] = 2
+        elif tamper == "resolved_max_steps":
+            state["resolved_max_steps"] = 3
+        elif tamper == "checkpoint_event_count":
+            state["checkpoint_event_count"] = 2
+            events.append(json.loads(json.dumps(events[0])))
+        elif tamper == "checkpoint_event_step":
+            events[0]["step"] = 2
+        elif tamper == "checkpoint_event_status":
+            events[0]["status"] = "failed"
+        elif tamper == "run_dir":
+            state["run_dir"] = str(Path(state["run_dir"]).parent / "other")
+        elif tamper == "topology_world_size":
+            for row in state["policy_identities"]["runtime_determinism"][
+                "launcher_attestations"
+            ]:
+                row["world_size"] = 1
+        elif tamper == "topology_devices":
+            for row in state["policy_identities"]["runtime_determinism"][
+                "launcher_attestations"
+            ]:
+                row["cuda_visible_devices"] = ["0", "1"]
+        elif tamper is not None:
+            raise AssertionError(f"unexpected tamper: {tamper}")
+
+    receipt = _execute(
+        executor,
+        case,
+        launch=_parent_run_state_launch(case, mutate),
+        gpu_sampler=lambda: device_rows,
+    )
+
+    if expected_code is None:
+        assert receipt["status"] == "verified"
+        return
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["command"] == "success.resumed_child"
     assert receipt["stop_outcome"]["code"] == expected_code
 
 
