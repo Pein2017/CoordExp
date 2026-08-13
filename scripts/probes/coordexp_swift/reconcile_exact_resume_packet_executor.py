@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -26,9 +27,7 @@ from typing import Any, Protocol
 
 MANIFEST_SCHEMA = "coordexp-swift-reconcile-resume-probe-command-manifest-v2"
 MARKER_SCHEMA = "coordexp-swift-reconcile-resume-probe-attempt-marker-v1"
-OUTER_RECEIPT_SCHEMA = (
-    "coordexp-swift-reconcile-resume-probe-outer-terminal-receipt-v1"
-)
+OUTER_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-outer-terminal-receipt-v1"
 INNER_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1"
 REVIEW_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1"
 COMMAND_ORDER = (
@@ -39,9 +38,7 @@ COMMAND_ORDER = (
     "interruption",
     "verification",
 )
-MODEL_COMMANDS = frozenset(
-    {"success.uninterrupted_control", "success.resumed_child"}
-)
+MODEL_COMMANDS = frozenset({"success.uninterrupted_control", "success.resumed_child"})
 REQUIRED_RESOURCE_OBSERVATIONS = (
     "wall_time",
     "cpu_rss_per_rank",
@@ -139,7 +136,7 @@ def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _strict_json_load(path: Path) -> dict[str, Any]:
+def _strict_json_load_bytes(raw: bytes, *, path: Path) -> dict[str, Any]:
     def reject_duplicate(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in pairs:
@@ -153,7 +150,7 @@ def _strict_json_load(path: Path) -> dict[str, Any]:
 
     try:
         value = json.loads(
-            path.read_text(encoding="utf-8"),
+            raw.decode("utf-8"),
             object_pairs_hook=reject_duplicate,
             parse_constant=lambda value: (_ for _ in ()).throw(
                 ValueError(f"non-finite JSON number: {value}")
@@ -173,6 +170,70 @@ def _strict_json_load(path: Path) -> dict[str, Any]:
             code="packet_executor.invalid_json",
         )
     return value
+
+
+def _strict_json_load(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise PacketExecutorError(
+            f"cannot read strict JSON: {path}",
+            code="packet_executor.invalid_json",
+            context={"path": str(path)},
+        ) from exc
+    return _strict_json_load_bytes(raw, path=path)
+
+
+def _open_immutable_review(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise PacketExecutorError(
+            "independent pre-cost review must be an immutable regular file",
+            code="packet_executor.review_missing_or_mutable",
+        ) from exc
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o222:
+            raise PacketExecutorError(
+                "independent pre-cost review must be an immutable regular file",
+                code="packet_executor.review_missing_or_mutable",
+            )
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+        payload = _strict_json_load_bytes(raw, path=path)
+        return payload, {
+            "descriptor": descriptor,
+            "path": path,
+            "device": info.st_dev,
+            "inode": info.st_ino,
+            "sha256": _sha256_bytes(raw),
+        }
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _review_path_matches(guard: Mapping[str, Any]) -> bool:
+    try:
+        descriptor_info = os.fstat(int(guard["descriptor"]))
+        path_info = os.lstat(Path(guard["path"]))
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
+    expected = (int(guard["device"]), int(guard["inode"]))
+    return (
+        stat.S_ISREG(path_info.st_mode)
+        and not stat.S_ISLNK(path_info.st_mode)
+        and not path_info.st_mode & 0o222
+        and (descriptor_info.st_dev, descriptor_info.st_ino) == expected
+        and (path_info.st_dev, path_info.st_ino) == expected
+    )
 
 
 def _mapping(value: Any, field: str) -> Mapping[str, Any]:
@@ -361,7 +422,9 @@ def _flatten_config_files(manifest: Mapping[str, Any]) -> dict[str, dict[str, st
         digest = _string(
             row.get("expected_sha256"), f"config_files.{role}.expected_sha256"
         )
-        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        if len(digest) != 64 or any(
+            character not in "0123456789abcdef" for character in digest
+        ):
             raise PacketExecutorError(
                 f"config digest for {role} is invalid",
                 code="packet_executor.contract",
@@ -410,10 +473,17 @@ def _validate_contract(
             )
 
     bindings = _mapping(contract.get("bindings"), "execution_contract.bindings")
-    if _absolute_path(bindings.get("packet_path"), "bindings.packet_path") != packet_path:
-        raise PacketExecutorError("packet path binding drifted", code="packet_executor.binding")
+    if (
+        _absolute_path(bindings.get("packet_path"), "bindings.packet_path")
+        != packet_path
+    ):
+        raise PacketExecutorError(
+            "packet path binding drifted", code="packet_executor.binding"
+        )
     if bindings.get("packet_sha256") != packet_sha256:
-        raise PacketExecutorError("packet digest binding drifted", code="packet_executor.binding")
+        raise PacketExecutorError(
+            "packet digest binding drifted", code="packet_executor.binding"
+        )
 
     review = _mapping(
         contract.get("pre_cost_review"), "execution_contract.pre_cost_review"
@@ -452,10 +522,13 @@ def _validate_contract(
         raise PacketExecutorError(
             "targets.must_be_absent is invalid", code="packet_executor.contract"
         )
-    absent_paths = [_absolute_path(value, "targets.must_be_absent") for value in absent_values]
+    absent_paths = [
+        _absolute_path(value, "targets.must_be_absent") for value in absent_values
+    ]
     if len(absent_paths) != len(set(absent_paths)):
         raise PacketExecutorError(
-            "targets.must_be_absent contains duplicates", code="packet_executor.contract"
+            "targets.must_be_absent contains duplicates",
+            code="packet_executor.contract",
         )
     for required in (artifact_root, attempt_marker_path, terminal_receipt_path):
         if required not in absent_paths:
@@ -465,7 +538,9 @@ def _validate_contract(
             )
 
     preflight = _mapping(contract.get("preflight"), "execution_contract.preflight")
-    filesystem_path = _absolute_path(preflight.get("filesystem_path"), "preflight.filesystem_path")
+    filesystem_path = _absolute_path(
+        preflight.get("filesystem_path"), "preflight.filesystem_path"
+    )
     if not filesystem_path.is_dir():
         raise PacketExecutorError(
             "preflight filesystem path is not a directory",
@@ -493,14 +568,18 @@ def _validate_contract(
         )
     device_uuids = [row["uuid"] for row in device_bindings]
     if len(set(device_uuids)) != 2:
-        raise PacketExecutorError("GPU UUID bindings must be unique", code="packet_executor.contract")
+        raise PacketExecutorError(
+            "GPU UUID bindings must be unique", code="packet_executor.contract"
+        )
     if len({row["physical_index"] for row in device_bindings}) != 2:
         raise PacketExecutorError(
             "GPU physical-index bindings must be unique",
             code="packet_executor.contract",
         )
 
-    bounds = _mapping(contract.get("resource_bounds"), "execution_contract.resource_bounds")
+    bounds = _mapping(
+        contract.get("resource_bounds"), "execution_contract.resource_bounds"
+    )
     if set(bounds) != set(COMMAND_ORDER):
         raise PacketExecutorError(
             "resource bounds must name exactly the six commands",
@@ -535,7 +614,8 @@ def _validate_contract(
             )
         normalized_bounds[name] = {
             "wall_time_seconds": _number(
-                row.get("wall_time_seconds"), f"resource_bounds.{name}.wall_time_seconds"
+                row.get("wall_time_seconds"),
+                f"resource_bounds.{name}.wall_time_seconds",
             ),
             "max_cpu_rss_bytes_per_rank": _integer(
                 row.get("max_cpu_rss_bytes_per_rank"),
@@ -562,7 +642,9 @@ def _validate_contract(
         ),
     }
 
-    setup = _mapping(contract.get("setup_validation"), "execution_contract.setup_validation")
+    setup = _mapping(
+        contract.get("setup_validation"), "execution_contract.setup_validation"
+    )
     setup_paths = {
         field: _absolute_path(setup.get(field), f"setup_validation.{field}")
         for field in (
@@ -584,9 +666,16 @@ def _validate_contract(
     inner = _mapping(contract.get("inner_receipt"), "execution_contract.inner_receipt")
     inner_path = _absolute_path(inner.get("path"), "inner_receipt.path")
     if inner_path != artifact_root / "terminal-receipt.json":
-        raise PacketExecutorError("inner receipt path drifted", code="packet_executor.contract")
-    if inner.get("schema") != INNER_RECEIPT_SCHEMA or inner.get("required_status") != "verified":
-        raise PacketExecutorError("inner receipt contract drifted", code="packet_executor.contract")
+        raise PacketExecutorError(
+            "inner receipt path drifted", code="packet_executor.contract"
+        )
+    if (
+        inner.get("schema") != INNER_RECEIPT_SCHEMA
+        or inner.get("required_status") != "verified"
+    ):
+        raise PacketExecutorError(
+            "inner receipt contract drifted", code="packet_executor.contract"
+        )
 
     summary = _mapping(
         contract.get("artifact_tree_summary"),
@@ -654,7 +743,14 @@ def _pre_marker_validate(
     expected_packet_sha256: str,
     attempt_marker_path: Path,
     terminal_receipt_path: Path,
-) -> tuple[dict[str, Any], dict[str, Any], str, str, dict[str, Any]]:
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    str,
+    str,
+    dict[str, Any],
+    dict[str, Any],
+]:
     for path, field in ((manifest_path, "manifest"), (packet_path, "packet")):
         if not path.is_absolute() or not path.is_file() or path.is_symlink():
             raise PacketExecutorError(
@@ -702,24 +798,17 @@ def _pre_marker_validate(
         terminal_receipt_path=terminal_receipt_path,
     )
     review_path: Path = contract["review_path"]
-    review_info = _lstat(review_path)
-    if (
-        review_info is None
-        or not stat.S_ISREG(review_info.st_mode)
-        or stat.S_ISLNK(review_info.st_mode)
-        or review_info.st_mode & 0o222
-    ):
-        raise PacketExecutorError(
-            "independent pre-cost review must be an immutable regular file",
-            code="packet_executor.review_missing_or_mutable",
-        )
+    for index, target in enumerate(contract["absent_paths"]):
+        _assert_absent(target, f"targets.must_be_absent[{index}]")
+    review_payload, review_guard = _open_immutable_review(review_path)
     try:
         review = _verify_signed(
-            _strict_json_load(review_path),
+            review_payload,
             field="receipt_payload_sha256",
             code="packet_executor.review_digest",
         )
     except PacketExecutorError as exc:
+        os.close(int(review_guard["descriptor"]))
         raise PacketExecutorError(
             "independent pre-cost review digest mismatched",
             code="packet_executor.review_digest",
@@ -733,32 +822,49 @@ def _pre_marker_validate(
     }
     for field, expected in expected_review.items():
         if review.get(field) != expected:
+            os.close(int(review_guard["descriptor"]))
             raise PacketExecutorError(
                 f"independent pre-cost review {field} mismatched",
                 code="packet_executor.review_mismatch",
             )
-    reviewer_identity = _string(
-        review.get("reviewer_identity"), "review.reviewer_identity"
-    )
-    if reviewer_identity == contract["packet_author_identity"]:
-        raise PacketExecutorError(
-            "pre-cost reviewer is not independent from the packet author",
-            code="packet_executor.review_not_independent",
+    try:
+        reviewer_identity = _string(
+            review.get("reviewer_identity"), "review.reviewer_identity"
         )
-    for index, target in enumerate(contract["absent_paths"]):
-        _assert_absent(target, f"targets.must_be_absent[{index}]")
-    return manifest, contract, manifest_sha, packet_sha, {
-        "path": str(review_path),
-        "sha256": _sha256_file(review_path),
-        "payload": review,
-    }
+        if reviewer_identity == contract["packet_author_identity"]:
+            raise PacketExecutorError(
+                "pre-cost reviewer is not independent from the packet author",
+                code="packet_executor.review_not_independent",
+            )
+    except BaseException:
+        os.close(int(review_guard["descriptor"]))
+        raise
+    return (
+        manifest,
+        contract,
+        manifest_sha,
+        packet_sha,
+        {
+            "path": str(review_path),
+            "sha256": review_guard["sha256"],
+            "device": review_guard["device"],
+            "inode": review_guard["inode"],
+            "payload": review,
+        },
+        review_guard,
+    )
 
 
 def _pid_starttime(pid: int) -> int | None:
+    identity = _proc_identity(pid)
+    return None if identity is None else identity[2]
+
+
+def _proc_identity(pid: int) -> tuple[int, int, int] | None:
     try:
         text = (Path("/proc") / str(pid) / "stat").read_text(encoding="ascii")
         tail = text[text.rfind(")") + 2 :].split()
-        return int(tail[19])
+        return int(tail[1]), int(tail[2]), int(tail[19])
     except (OSError, ValueError, IndexError):
         return None
 
@@ -901,7 +1007,9 @@ def _normalize_process_rows(rows: Any) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, Mapping):
-            raise PacketExecutorError("invalid process sample", code="packet_executor.process_sample")
+            raise PacketExecutorError(
+                "invalid process sample", code="packet_executor.process_sample"
+            )
         pid = _integer(row.get("pid"), "process.pid", minimum=1)
         starttime = _integer(row.get("starttime"), "process.starttime", minimum=1)
         rank = row.get("rank")
@@ -931,7 +1039,9 @@ def _normalize_gpu_rows(rows: Any) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, Mapping):
-            raise PacketExecutorError("invalid GPU sample", code="packet_executor.gpu_sample")
+            raise PacketExecutorError(
+                "invalid GPU sample", code="packet_executor.gpu_sample"
+            )
         kind = row.get("kind")
         uuid = _string(row.get("gpu_uuid"), "gpu.gpu_uuid")
         if kind == "device":
@@ -966,7 +1076,9 @@ def _normalize_gpu_rows(rows: Any) -> list[dict[str, Any]]:
                 }
             )
         else:
-            raise PacketExecutorError("invalid GPU sample kind", code="packet_executor.gpu_sample")
+            raise PacketExecutorError(
+                "invalid GPU sample kind", code="packet_executor.gpu_sample"
+            )
     return result
 
 
@@ -1049,23 +1161,48 @@ def _sample_resources(
 
 
 def _owned_process_rows(
-    rows: Sequence[Mapping[str, Any]], *, leader_pid: int, leader_starttime: int
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    leader_pid: int,
+    leader_starttime: int,
+    retained_identities: set[tuple[int, int]] | None = None,
 ) -> list[dict[str, Any]]:
-    by_pid = {int(row["pid"]): row for row in rows}
-    owned: set[int] = set()
-    leader = by_pid.get(leader_pid)
-    if leader is not None and int(leader["starttime"]) == leader_starttime:
-        owned.add(leader_pid)
-    frontier = {leader_pid}
-    while frontier:
-        children = {
-            int(row["pid"])
+    retained = retained_identities or set()
+    leader = next(
+        (
+            row
             for row in rows
-            if row.get("ppid") in frontier and int(row["pid"]) not in owned
-        }
-        owned.update(children)
-        frontier = children
-    return [dict(row) for row in rows if int(row["pid"]) in owned]
+            if int(row["pid"]) == leader_pid
+            and int(row["starttime"]) == leader_starttime
+        ),
+        None,
+    )
+    owned_identities = {
+        (int(row["pid"]), int(row["starttime"]))
+        for row in rows
+        if (int(row["pid"]), int(row["starttime"])) in retained
+    }
+    if leader is not None:
+        owned_identities.add((leader_pid, leader_starttime))
+    if not owned_identities:
+        return []
+    frontier = {pid for pid, _ in owned_identities}
+    while frontier:
+        children = [
+            row
+            for row in rows
+            if row.get("ppid") in frontier
+            and (int(row["pid"]), int(row["starttime"])) not in owned_identities
+        ]
+        owned_identities.update(
+            (int(row["pid"]), int(row["starttime"])) for row in children
+        )
+        frontier = {int(row["pid"]) for row in children}
+    return [
+        dict(row)
+        for row in rows
+        if (int(row["pid"]), int(row["starttime"])) in owned_identities
+    ]
 
 
 def _owned_gpu_rows(
@@ -1074,9 +1211,7 @@ def _owned_gpu_rows(
     owned_processes: Sequence[Mapping[str, Any]],
     selected_uuids: set[str],
 ) -> list[dict[str, Any]]:
-    identities = {
-        (int(row["pid"]), int(row["starttime"])) for row in owned_processes
-    }
+    identities = {(int(row["pid"]), int(row["starttime"])) for row in owned_processes}
     return [
         dict(row)
         for row in rows
@@ -1111,9 +1246,7 @@ def _merge_gpu_samples(
             target[key] = dict(row)
 
 
-def _rank_maxima(
-    rows: Sequence[Mapping[str, Any]], value_field: str
-) -> dict[str, int]:
+def _rank_maxima(rows: Sequence[Mapping[str, Any]], value_field: str) -> dict[str, int]:
     maxima: dict[str, int] = {}
     for row in rows:
         rank = row.get("rank")
@@ -1167,7 +1300,9 @@ def _check_command_resources(
         raise PacketExecutorError(
             f"{name} exceeded its CPU RSS bound", code="packet_executor.rss_bound"
         )
-    if any(value > int(bound["max_gpu_memory_bytes_per_rank"]) for value in gpu.values()):
+    if any(
+        value > int(bound["max_gpu_memory_bytes_per_rank"]) for value in gpu.values()
+    ):
         raise PacketExecutorError(
             f"{name} exceeded its GPU-memory bound", code="packet_executor.gpu_bound"
         )
@@ -1184,8 +1319,7 @@ def _is_popen_like(process: Any) -> bool:
 def _process_group_absent(
     *, leader_pid: int, leader_starttime: int, process_group_id: int
 ) -> bool:
-    if _pid_starttime(leader_pid) == leader_starttime:
-        return False
+    del leader_pid, leader_starttime
     for path in Path("/proc").iterdir():
         if not path.name.isdigit():
             continue
@@ -1201,71 +1335,184 @@ def _process_group_absent(
 
 def _process_identity(process: PopenLike) -> tuple[int, int, int]:
     leader_pid = int(process.pid)
-    leader_starttime = _pid_starttime(leader_pid)
-    if leader_starttime is None:
-        leader_starttime = getattr(process, "starttime", None)
+    declared_starttime = getattr(process, "starttime", None)
+    declared_group = getattr(process, "process_group_id", None)
+    live_identity = _proc_identity(leader_pid)
+    if live_identity is not None and live_identity[0] == os.getpid():
+        leader_starttime = live_identity[2]
+        process_group_id = live_identity[1]
+    elif isinstance(declared_starttime, int) and isinstance(declared_group, int):
+        leader_starttime = declared_starttime
+        process_group_id = declared_group
+    else:
+        raise PacketExecutorError(
+            "launched process PID is not a direct child of the executor",
+            code="packet_executor.foreign_process",
+        )
     if not isinstance(leader_starttime, int) or leader_starttime < 1:
         raise PacketExecutorError(
             "launched process starttime is unavailable",
             code="packet_executor.launch_identity",
         )
-    try:
-        process_group_id = os.getpgid(leader_pid)
-    except OSError:
-        process_group_id = getattr(process, "process_group_id", leader_pid)
     if not isinstance(process_group_id, int) or process_group_id < 1:
         raise PacketExecutorError(
             "launched process group is unavailable",
             code="packet_executor.launch_identity",
         )
+    if process_group_id == os.getpgrp():
+        raise PacketExecutorError(
+            "launched process uses the executor's own process group",
+            code="packet_executor.own_process_group",
+        )
     return leader_pid, leader_starttime, process_group_id
 
 
+def _current_group_identities(process_group_id: int) -> set[tuple[int, int]]:
+    identities: set[tuple[int, int]] = set()
+    for path in Path("/proc").iterdir():
+        if not path.name.isdigit():
+            continue
+        identity = _proc_identity(int(path.name))
+        if identity is not None and identity[1] == process_group_id:
+            identities.add((int(path.name), identity[2]))
+    return identities
+
+
+def _identities_absent(identities: set[tuple[int, int]]) -> bool:
+    return all(_pid_starttime(pid) != starttime for pid, starttime in identities)
+
+
+def _signal_exact_identities(
+    identities: set[tuple[int, int]], sig: signal.Signals, errors: list[str]
+) -> bool:
+    sent = False
+    for pid, starttime in sorted(identities):
+        if pid == os.getpid() or _pid_starttime(pid) != starttime:
+            continue
+        try:
+            os.kill(pid, sig)
+            sent = True
+        except ProcessLookupError:
+            continue
+        except BaseException as exc:
+            errors.append(f"{sig.name.lower()}:{pid}:{exc}")
+    return sent
+
+
 def _cleanup_process(
-    process: PopenLike, *, leader_starttime: int, process_group_id: int
+    process: PopenLike,
+    *,
+    leader_starttime: int,
+    process_group_id: int,
+    retained_identities: set[tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
     leader_pid = int(process.pid)
+    retained = set(retained_identities or set())
+    retained.add((leader_pid, leader_starttime))
     sent: list[str] = []
     errors: list[str] = []
+    current_leader_starttime = _pid_starttime(leader_pid)
+    group_is_owned = current_leader_starttime in (None, leader_starttime)
+    group_identities = (
+        _current_group_identities(process_group_id) if group_is_owned else set()
+    )
+    confirmed_identities = retained | group_identities
+    term_targets = {
+        identity for identity in retained if _pid_starttime(identity[0]) == identity[1]
+    } | group_identities
+    term_sent = _signal_exact_identities(term_targets, signal.SIGTERM, errors)
     try:
         running = process.poll() is None
     except BaseException as exc:
         running = True
         errors.append(f"poll:{exc}")
-    if running:
+    if running and not term_sent:
         try:
-            if _pid_starttime(leader_pid) == leader_starttime:
-                os.killpg(process_group_id, signal.SIGTERM)
-            else:
-                process.terminate()
-            sent.append("TERM")
+            process.terminate()
+            term_sent = True
         except BaseException as exc:
             errors.append(f"term:{exc}")
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            if _pid_starttime(leader_pid) == leader_starttime:
-                os.killpg(process_group_id, signal.SIGKILL)
-            else:
-                process.kill()
-            sent.append("KILL")
-        except BaseException as exc:
-            errors.append(f"kill:{exc}")
-        try:
-            process.wait(timeout=5)
-        except BaseException as exc:
-            errors.append(f"reap:{exc}")
-    except BaseException as exc:
-        errors.append(f"reap:{exc}")
-    try:
-        absent = _process_group_absent(
+    if term_sent:
+        sent.append("TERM")
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        group_absent = _process_group_absent(
             leader_pid=leader_pid,
             leader_starttime=leader_starttime,
             process_group_id=process_group_id,
         )
+        descendants_absent = _identities_absent(confirmed_identities)
+        try:
+            reaped = process.poll() is not None
+        except BaseException as exc:
+            reaped = False
+            errors.append(f"poll:{exc}")
+        if group_absent and descendants_absent and reaped:
+            break
+        time.sleep(0.05)
+
+    group_absent = _process_group_absent(
+        leader_pid=leader_pid,
+        leader_starttime=leader_starttime,
+        process_group_id=process_group_id,
+    )
+    descendants_absent = _identities_absent(confirmed_identities)
+    try:
+        reaped = process.poll() is not None
     except BaseException as exc:
-        absent = False
+        reaped = False
+        errors.append(f"poll:{exc}")
+    if not (group_absent and descendants_absent and reaped):
+        kill_targets = {
+            identity
+            for identity in confirmed_identities
+            if _pid_starttime(identity[0]) == identity[1]
+        }
+        if group_is_owned:
+            current_group = _current_group_identities(process_group_id)
+            confirmed_identities.update(current_group)
+            kill_targets.update(current_group)
+        kill_sent = _signal_exact_identities(kill_targets, signal.SIGKILL, errors)
+        try:
+            if process.poll() is None and not kill_sent:
+                process.kill()
+                kill_sent = True
+        except BaseException as exc:
+            errors.append(f"kill:{exc}")
+        if kill_sent:
+            sent.append("KILL")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            group_absent = _process_group_absent(
+                leader_pid=leader_pid,
+                leader_starttime=leader_starttime,
+                process_group_id=process_group_id,
+            )
+            descendants_absent = _identities_absent(confirmed_identities)
+            try:
+                reaped = process.poll() is not None
+            except BaseException:
+                reaped = False
+            if group_absent and descendants_absent and reaped:
+                break
+            time.sleep(0.05)
+    try:
+        process.wait(timeout=0)
+    except subprocess.TimeoutExpired:
+        pass
+    except BaseException as exc:
+        errors.append(f"reap:{exc}")
+    try:
+        group_absent = _process_group_absent(
+            leader_pid=leader_pid,
+            leader_starttime=leader_starttime,
+            process_group_id=process_group_id,
+        )
+        descendants_absent = _identities_absent(confirmed_identities)
+    except BaseException as exc:
+        group_absent = False
+        descendants_absent = False
         errors.append(f"absence:{exc}")
     try:
         reaped = process.poll() is not None
@@ -1273,17 +1520,36 @@ def _cleanup_process(
         reaped = False
         errors.append(f"final_poll:{exc}")
     return {
-        "status": "confirmed_absent" if absent and reaped and not errors else "failed",
+        "status": "confirmed_absent"
+        if group_absent and descendants_absent and reaped and not errors
+        else "failed",
         "sent_signals": sent,
         "reaped": reaped,
-        "group_absent": absent,
+        "group_absent": group_absent,
+        "descendants_absent": descendants_absent,
+        "retained_descendant_identities": [
+            {"pid": pid, "starttime": starttime}
+            for pid, starttime in sorted(confirmed_identities)
+            if (pid, starttime) != (leader_pid, leader_starttime)
+        ],
         "errors": errors,
     }
 
 
-def _cleanup_unidentified_process(process: PopenLike) -> dict[str, Any]:
+def _cleanup_unidentified_process(
+    process: PopenLike, *, allow_process_signals: bool = True
+) -> dict[str, Any]:
     sent: list[str] = []
     errors = ["process-group identity unavailable"]
+    if not allow_process_signals:
+        return {
+            "status": "failed",
+            "sent_signals": sent,
+            "reaped": False,
+            "group_absent": False,
+            "descendants_absent": False,
+            "errors": errors + ["unsafe process identity; no signal sent"],
+        }
     try:
         if process.poll() is None:
             process.terminate()
@@ -1308,6 +1574,7 @@ def _cleanup_unidentified_process(process: PopenLike) -> dict[str, Any]:
         "sent_signals": sent,
         "reaped": reaped,
         "group_absent": False,
+        "descendants_absent": False,
         "errors": errors,
     }
 
@@ -1328,6 +1595,7 @@ def _run_command(
     artifact_before: dict[str, Any] | None = None
     artifact_after: dict[str, Any] | None = None
     process_observations: dict[tuple[int, int], dict[str, Any]] = {}
+    retained_process_identities: set[tuple[int, int]] = set()
     gpu_observations: dict[tuple[str, int, int], dict[str, Any]] = {}
     launched: PopenLike | None = None
     process_group: dict[str, int] | None = None
@@ -1362,6 +1630,10 @@ def _run_command(
                 process_rows,
                 leader_pid=leader_pid,
                 leader_starttime=leader_starttime,
+                retained_identities=retained_process_identities,
+            )
+            retained_process_identities.update(
+                (int(row["pid"]), int(row["starttime"])) for row in owned_processes
             )
             owned_gpu = _owned_gpu_rows(
                 gpu_rows,
@@ -1386,6 +1658,7 @@ def _run_command(
                 launched,
                 leader_starttime=process_group["leader_starttime"],
                 process_group_id=process_group["process_group_id"],
+                retained_identities=retained_process_identities,
             )
             try:
                 returncode = launched.poll()
@@ -1398,7 +1671,13 @@ def _run_command(
                     context={"cleanup": cleanup},
                 )
         elif launched is not None:
-            cleanup = _cleanup_unidentified_process(launched)
+            unsafe_identity = isinstance(error, PacketExecutorError) and error.code in {
+                "packet_executor.foreign_process",
+                "packet_executor.own_process_group",
+            }
+            cleanup = _cleanup_unidentified_process(
+                launched, allow_process_signals=not unsafe_identity
+            )
             error = PacketExecutorError(
                 "process-group cleanup could not be confirmed",
                 code="packet_executor.cleanup_failed",
@@ -1442,7 +1721,8 @@ def _run_command(
         "required_cpu_ranks": list(bound["required_cpu_ranks"]),
         "required_gpu_ranks": list(bound["required_gpu_ranks"]),
         "process_observations": sorted(
-            process_observations.values(), key=lambda row: (row["pid"], row["starttime"])
+            process_observations.values(),
+            key=lambda row: (row["pid"], row["starttime"]),
         ),
         "gpu_observations": sorted(
             gpu_observations.values(),
@@ -1479,15 +1759,16 @@ def _preflight_resources(
         if row["kind"] == "device"
     }
     required_pairs = {
-        (row["physical_index"], row["uuid"])
-        for row in contract["device_bindings"]
+        (row["physical_index"], row["uuid"]) for row in contract["device_bindings"]
     }
     if not required_pairs <= set(device_rows):
         raise PacketExecutorError(
             "selected physical-index to GPU-UUID inventory drifted",
             code="packet_executor.gpu_uuid_drift",
         )
-    maximum = int(_mapping(contract["preflight"], "preflight")["max_gpu_occupancy_bytes"])
+    maximum = int(
+        _mapping(contract["preflight"], "preflight")["max_gpu_occupancy_bytes"]
+    )
     occupied = {
         f"{index}:{uuid}": int(device_rows[(index, uuid)]["memory_used_bytes"])
         for index, uuid in sorted(required_pairs)
@@ -1518,8 +1799,7 @@ def _preflight_gpu_mapping(
         if row["kind"] == "device"
     }
     expected = {
-        (row["physical_index"], row["uuid"])
-        for row in contract["device_bindings"]
+        (row["physical_index"], row["uuid"]) for row in contract["device_bindings"]
     }
     if not expected <= observed:
         raise PacketExecutorError(
@@ -1529,8 +1809,7 @@ def _preflight_gpu_mapping(
     return {
         "phase": "before_marker",
         "physical_index_uuid_pairs": [
-            {"physical_index": index, "uuid": uuid}
-            for index, uuid in sorted(expected)
+            {"physical_index": index, "uuid": uuid} for index, uuid in sorted(expected)
         ],
     }
 
@@ -1591,7 +1870,11 @@ def _validate_setup(
         }
     cache_root: Path = paths["pack_cache_root"]
     cache_receipt_path: Path = paths["pack_cache_receipt_path"]
-    if not cache_root.is_dir() or cache_root.is_symlink() or not cache_receipt_path.is_file():
+    if (
+        not cache_root.is_dir()
+        or cache_root.is_symlink()
+        or not cache_receipt_path.is_file()
+    ):
         raise PacketExecutorError(
             "setup did not publish the private cache and receipt",
             code="packet_executor.setup_cache_missing",
@@ -1614,11 +1897,9 @@ def _validate_setup(
         code="packet_executor.setup_cache_digest",
     )
     cache_result = _mapping(cache_receipt.get("result"), "cache.result")
-    if (
-        cache_receipt.get("terminal_status") != "completed"
-        or cache_result.get("resolved_config_fingerprint")
-        != cache_binding.get("resolved_config_fingerprint")
-    ):
+    if cache_receipt.get("terminal_status") != "completed" or cache_result.get(
+        "resolved_config_fingerprint"
+    ) != cache_binding.get("resolved_config_fingerprint"):
         raise PacketExecutorError(
             "private cache receipt mismatched",
             code="packet_executor.setup_cache_mismatch",
@@ -1677,6 +1958,22 @@ def _error_record(exc: BaseException, *, command: str | None) -> dict[str, Any]:
     }
 
 
+def _launcher_identity(launch: Callable[..., Any]) -> dict[str, Any]:
+    target: Any = launch
+    try:
+        source = inspect.getsourcefile(target) or inspect.getfile(target)
+    except (TypeError, OSError):
+        target = type(launch)
+        source = inspect.getsourcefile(target) or inspect.getfile(target)
+    source_path = Path(source).resolve(strict=True)
+    return {
+        "module": str(getattr(launch, "__module__", type(launch).__module__)),
+        "qualname": str(getattr(launch, "__qualname__", type(launch).__qualname__)),
+        "source_realpath": str(source_path),
+        "source_sha256": _sha256_file(source_path),
+    }
+
+
 def execute(
     *,
     manifest_path: Path,
@@ -1701,7 +1998,14 @@ def execute(
     packet_path = Path(packet_path)
     attempt_marker_path = Path(attempt_marker_path)
     terminal_receipt_path = Path(terminal_receipt_path)
-    manifest, contract, manifest_sha, packet_sha, pre_cost_review = _pre_marker_validate(
+    (
+        manifest,
+        contract,
+        manifest_sha,
+        packet_sha,
+        pre_cost_review,
+        review_guard,
+    ) = _pre_marker_validate(
         manifest_path=manifest_path,
         packet_path=packet_path,
         expected_manifest_sha256=expected_manifest_sha256,
@@ -1709,21 +2013,42 @@ def execute(
         attempt_marker_path=attempt_marker_path,
         terminal_receipt_path=terminal_receipt_path,
     )
-    mapping_preflight = _preflight_gpu_mapping(contract, gpu_sampler)
-    marker_body = {
-        "schema": MARKER_SCHEMA,
-        "created_at": _utc_now(),
-        "implementation_commit": manifest["implementation_commit"],
-        "manifest_path": str(manifest_path),
-        "manifest_sha256": manifest_sha,
-        "packet_path": str(packet_path),
-        "packet_sha256": packet_sha,
-        "attempt_marker_path": str(attempt_marker_path),
-        "terminal_receipt_path": str(terminal_receipt_path),
-    }
-    marker = _signed(marker_body)
-    _write_new_file(attempt_marker_path, _canonical_json_bytes(marker) + b"\n")
-    marker_sha = _sha256_file(attempt_marker_path)
+    try:
+        mapping_preflight = _preflight_gpu_mapping(contract, gpu_sampler)
+        if not _review_path_matches(review_guard):
+            raise PacketExecutorError(
+                "independent pre-cost review was replaced before marker creation",
+                code="packet_executor.review_replaced",
+            )
+        marker_body = {
+            "schema": MARKER_SCHEMA,
+            "created_at": _utc_now(),
+            "implementation_commit": manifest["implementation_commit"],
+            "manifest_path": str(manifest_path),
+            "manifest_sha256": manifest_sha,
+            "packet_path": str(packet_path),
+            "packet_sha256": packet_sha,
+            "attempt_marker_path": str(attempt_marker_path),
+            "terminal_receipt_path": str(terminal_receipt_path),
+            "pre_cost_review_device": review_guard["device"],
+            "pre_cost_review_inode": review_guard["inode"],
+        }
+        marker = _signed(marker_body)
+        marker_bytes = _canonical_json_bytes(marker) + b"\n"
+        _write_new_file(attempt_marker_path, marker_bytes)
+        marker_sha = _sha256_bytes(marker_bytes)
+        if not _review_path_matches(review_guard):
+            try:
+                if _sha256_file(attempt_marker_path) == marker_sha:
+                    attempt_marker_path.unlink()
+            except OSError:
+                pass
+            raise PacketExecutorError(
+                "independent pre-cost review was replaced during marker creation",
+                code="packet_executor.review_replaced",
+            )
+    finally:
+        os.close(int(review_guard["descriptor"]))
 
     started_at = _utc_now()
     started_monotonic = time.monotonic()
@@ -1741,7 +2066,9 @@ def execute(
         initial_artifact_summary = _summarize_artifact_tree(
             contract["artifact_summary"]
         )
-        preflights.append(_preflight_resources(contract, gpu_sampler, phase="before_setup"))
+        preflights.append(
+            _preflight_resources(contract, gpu_sampler, phase="before_setup")
+        )
         for name in COMMAND_ORDER:
             current_command = name
             attempted_order.append(name)
@@ -1773,7 +2100,9 @@ def execute(
             if name == "setup":
                 setup_observation = _validate_setup(manifest, contract)
                 preflights.append(
-                    _preflight_resources(contract, gpu_sampler, phase="before_first_gpu_command")
+                    _preflight_resources(
+                        contract, gpu_sampler, phase="before_first_gpu_command"
+                    )
                 )
             if name == "verification":
                 inner_receipt = _validate_inner(manifest, contract)
@@ -1790,7 +2119,9 @@ def execute(
                     "packet exceeded its total wall-time bound",
                     code="packet_executor.total_wall_bound",
                 )
-            if total_new_bytes > int(contract["total_bounds"]["max_new_artifact_bytes"]):
+            if total_new_bytes > int(
+                contract["total_bounds"]["max_new_artifact_bytes"]
+            ):
                 raise PacketExecutorError(
                     "packet exceeded its total artifact-byte bound",
                     code="packet_executor.total_artifact_bound",
@@ -1846,6 +2177,9 @@ def execute(
         "finished_at": _utc_now(),
         "wall_time_seconds": max(0.0, time.monotonic() - started_monotonic),
         "implementation_commit": manifest["implementation_commit"],
+        "manifest_sha256": manifest_sha,
+        "packet_sha256": packet_sha,
+        "marker_sha256": marker_sha,
         "cwd": manifest["cwd"],
         "world_size": 2,
         "manifest": {"path": str(manifest_path), "sha256": manifest_sha},
@@ -1870,14 +2204,10 @@ def execute(
             for name in attempted_order
         ],
         "commands": observations,
-        "launcher_identity": {
-            "module": str(getattr(launch, "__module__", type(launch).__module__)),
-            "qualname": str(
-                getattr(launch, "__qualname__", type(launch).__qualname__)
-            ),
-        },
+        "launcher_identity": _launcher_identity(launch),
         "runtime_identity": {
             "python_executable": sys.executable,
+            "python_executable_realpath": os.path.realpath(sys.executable),
             "python_implementation": sys.implementation.name,
             "python_version": list(sys.version_info[:3]),
         },
@@ -1886,10 +2216,13 @@ def execute(
             for row in observations
         ],
         "cleanup_outcomes": [
-            {"name": row["name"], "cleanup": row["cleanup"]}
-            for row in observations
+            {"name": row["name"], "cleanup": row["cleanup"]} for row in observations
         ],
         "artifact_tree": {
+            "initial": initial_artifact_summary,
+            "final": final_artifact_summary,
+        },
+        "artifact_tree_summaries": {
             "initial": initial_artifact_summary,
             "final": final_artifact_summary,
         },
@@ -1903,6 +2236,13 @@ def execute(
         "stop_outcome": stop_outcome,
         "inner_receipt": inner_receipt,
     }
+    missing_outer_bindings = set(REQUIRED_OUTER_BINDINGS) - set(body)
+    if missing_outer_bindings:
+        raise PacketExecutorError(
+            "outer receipt is missing required top-level bindings",
+            code="packet_executor.outer_receipt_binding",
+            context={"missing": sorted(missing_outer_bindings)},
+        )
     receipt = _signed(body)
     _write_new_file(terminal_receipt_path, _canonical_json_bytes(receipt) + b"\n")
     return _strict_json_load(terminal_receipt_path)
@@ -1933,7 +2273,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             terminal_receipt_path=args.terminal_receipt,
         )
     except BaseException as exc:
-        print(f"{getattr(exc, 'code', 'packet_executor.unexpected')}: {exc}", file=sys.stderr)
+        print(
+            f"{getattr(exc, 'code', 'packet_executor.unexpected')}: {exc}",
+            file=sys.stderr,
+        )
         return 1
     return 0 if receipt.get("status") == "verified" else 1
 
