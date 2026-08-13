@@ -375,6 +375,14 @@ def test_a4_two_pass_scores_globally_then_replays_exact_gradient() -> None:
     assert calls == ["forward:0", "forward:1", "forward:0", "forward:1"]
     assert torch.allclose(streamed_gradient, reference_gradient)
 
+    finalized = loss_runner.finalize_planned_step(
+        tuple(bundle.to_artifact_dict() for bundle in bundles), plan
+    )
+    h_term = next(term for term in finalized["terms"] if term["name"] == "h")
+    assert h_term["diagnostics"]["reference_nll_by_image"] == {
+        "1": pytest.approx(plan.reference_nll_by_image[0][1])
+    }
+
 
 def test_a4_two_pass_rejects_parameter_change_before_replay() -> None:
     denominators = runner.Human13PanelDenominators(family_counts=(("h", 1),))

@@ -1112,7 +1112,10 @@ class Human13A4TwoPassLossRunner(Human13PanelLossRunner):
                     "two_pass_exact": True,
                     "score_forward_count": plan.score_forward_count,
                     "replay_forward_count": plan.micro_step_count,
-                    "reference_nll_by_image": dict(plan.reference_nll_by_image),
+                    "reference_nll_by_image": {
+                        str(image_id): value
+                        for image_id, value in plan.reference_nll_by_image
+                    },
                     "candidate_groups": groups,
                 }
         artifact["two_pass_a4"] = {
