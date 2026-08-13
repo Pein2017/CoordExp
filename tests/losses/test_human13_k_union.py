@@ -8,12 +8,110 @@ import torch
 from src.common.errors import LossContractError
 from src.losses.human13_k_union import (
     coherent_full_chain_bottleneck_hinge,
+    first_bottleneck_argmax_hinge,
+    image_balanced_duplicate_token_contrast,
     image_balanced_duplicate_token_unlikelihood,
     owner_mean_masked_row_cross_entropy,
     prefix_free_union_detached_weight_surrogate,
     prefix_free_union_negative_log_mass,
     prefix_free_union_streaming_weights,
 )
+
+
+def test_first_bottleneck_hinge_updates_only_the_selected_hf_blocker() -> None:
+    logits = torch.tensor(
+        ((2.0, 1.0, 0.0), (0.5, 1.0, -1.0), (3.0, 0.0, -2.0)),
+        requires_grad=True,
+    )
+    result = first_bottleneck_argmax_hinge(
+        logits,
+        torch.tensor((0, 0, 0)),
+        torch.tensor((False, True, False)),
+        required_margin=0.25,
+    )
+    result.raw_loss.backward()
+
+    assert result.denominator == 1
+    assert result.selected_token_count == 1
+    assert result.competitor_token_ids.tolist() == [-1, 1, -1]
+    assert result.minimum_target_margin == pytest.approx(-0.5)
+    assert torch.equal(logits.grad[0], torch.zeros_like(logits.grad[0]))
+    assert logits.grad[1].tolist() == pytest.approx((-1.0, 1.0, 0.0))
+    assert torch.equal(logits.grad[2], torch.zeros_like(logits.grad[2]))
+
+
+def test_first_bottleneck_hinge_is_noop_for_already_greedy_row() -> None:
+    logits = torch.tensor(((3.0, 1.0), (2.0, 0.0)), requires_grad=True)
+    result = first_bottleneck_argmax_hinge(
+        logits,
+        torch.tensor((0, 0)),
+        torch.tensor((False, False)),
+        required_margin=0.0,
+    )
+    result.raw_loss.backward()
+
+    assert result.denominator == 0
+    assert result.minimum_target_margin is None
+    assert torch.equal(logits.grad, torch.zeros_like(logits))
+
+
+def test_first_bottleneck_hinge_rejects_multiple_selected_sites() -> None:
+    with pytest.raises(LossContractError) as exc_info:
+        first_bottleneck_argmax_hinge(
+            torch.zeros((2, 3)),
+            torch.tensor((0, 1)),
+            torch.tensor((True, True)),
+            required_margin=0.0,
+        )
+
+    assert exc_info.value.code == "loss.human13_first_bottleneck_count"
+
+
+def test_first_bottleneck_hinge_uses_deterministic_global_tie_competitor() -> None:
+    logits = torch.tensor(((1.0, 2.0, 2.0),), requires_grad=True)
+    result = first_bottleneck_argmax_hinge(
+        logits,
+        torch.tensor((0,)),
+        torch.tensor((True,)),
+        required_margin=0.0,
+    )
+
+    assert result.competitor_token_ids.tolist() == [1]
+    assert result.minimum_target_margin == pytest.approx(-1.0)
+
+
+def test_duplicate_token_contrast_moves_mass_to_selected_uncovered_token() -> None:
+    logits = torch.tensor(((2.0, 0.0, -1.0), (0.0, 2.0, -1.0)), requires_grad=True)
+    result = image_balanced_duplicate_token_contrast(
+        logits,
+        duplicate_token_ids=torch.tensor((0, 1)),
+        selected_token_ids=torch.tensor((1, 0)),
+        image_ids=torch.tensor((7, 7)),
+        required_margin=0.5,
+    )
+    result.raw_loss.backward()
+
+    assert result.raw_event_count == 2
+    assert result.consumed_event_count == 2
+    assert result.eligible_image_count == 1
+    assert logits.grad[0, 0].item() > 0.0
+    assert logits.grad[0, 1].item() < 0.0
+    assert logits.grad[1, 1].item() > 0.0
+    assert logits.grad[1, 0].item() < 0.0
+    assert logits.grad[:, 2].tolist() == [0.0, 0.0]
+
+
+def test_duplicate_token_contrast_rejects_shared_prefix_token() -> None:
+    with pytest.raises(LossContractError) as exc_info:
+        image_balanced_duplicate_token_contrast(
+            torch.zeros((1, 3)),
+            duplicate_token_ids=torch.tensor((1,)),
+            selected_token_ids=torch.tensor((1,)),
+            image_ids=torch.tensor((7,)),
+            required_margin=0.0,
+        )
+
+    assert exc_info.value.code == "loss.human13_duplicate_tokens_not_distinct"
 
 
 def test_owner_mean_ce_masks_tokens_and_normalizes_each_owner_first() -> None:
@@ -36,6 +134,19 @@ def test_owner_mean_ce_masks_tokens_and_normalizes_each_owner_first() -> None:
     assert result.raw_loss.item() == pytest.approx(1.25 * math.log(2.0), rel=1e-4)
     assert result.eligible_owner_count == 2
     assert result.selected_token_count == 3
+
+
+def test_owner_mean_ce_terminal_mask_prevents_terminal_gradient() -> None:
+    logits = torch.zeros((1, 3, 2), requires_grad=True)
+    result = owner_mean_masked_row_cross_entropy(
+        logits,
+        torch.tensor(((0, 1, 1),)),
+        torch.tensor(((True, True, False),)),
+    )
+    result.raw_loss.backward()
+
+    assert result.selected_token_count == 2
+    assert torch.equal(logits.grad[0, 2], torch.zeros_like(logits.grad[0, 2]))
 
 
 def test_owner_mean_ce_returns_differentiable_zero_for_zero_denominator() -> None:
@@ -119,9 +230,7 @@ def test_streamed_union_surrogate_has_exact_reference_gradient() -> None:
 
     reference = -torch.logsumexp(reference_scores.float(), dim=0)
     weights = prefix_free_union_streaming_weights(streamed_scores)
-    streamed = prefix_free_union_detached_weight_surrogate(
-        streamed_scores, weights
-    )
+    streamed = prefix_free_union_detached_weight_surrogate(streamed_scores, weights)
     reference_gradient = torch.autograd.grad(reference, reference_scores)[0]
     streamed_gradient = torch.autograd.grad(streamed.raw_loss, streamed_scores)[0]
 
@@ -147,9 +256,7 @@ def test_streamed_union_rejects_non_normalized_or_misaligned_weights() -> None:
     with pytest.raises(LossContractError, match="aligned"):
         prefix_free_union_detached_weight_surrogate(scores, torch.tensor((1.0,)))
     with pytest.raises(LossContractError, match="sum to one"):
-        prefix_free_union_detached_weight_surrogate(
-            scores, torch.tensor((0.2, 0.2))
-        )
+        prefix_free_union_detached_weight_surrogate(scores, torch.tensor((0.2, 0.2)))
 
 
 def test_bottleneck_hinge_averages_tokens_within_owner_then_owners() -> None:

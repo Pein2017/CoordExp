@@ -614,6 +614,159 @@ def coherent_full_chain_bottleneck_hinge(
     )
 
 
+def first_bottleneck_argmax_hinge(
+    logits: torch.Tensor,
+    target_token_ids: torch.Tensor,
+    selected_site_mask: torch.Tensor,
+    *,
+    required_margin: float,
+) -> CoherentBottleneckResult:
+    """Repair at most one caller-selected HF greedy blocker.
+
+    Selection is deliberately external to this pure objective: the caller owns
+    HF evidence and supplies either one earliest non-greedy site or an empty
+    mask when the complete native row is already strictly greedy-feasible.
+    """
+
+    margin = _checked_nonnegative_margin(required_margin)
+    checked = _checked_logits(logits, ndim=2)
+    site_count, vocab_size = checked.shape
+    _require_shape(target_token_ids, torch.Size((site_count,)), name="target_token_ids")
+    _require_shape(
+        selected_site_mask, torch.Size((site_count,)), name="selected_site_mask"
+    )
+    if selected_site_mask.dtype != torch.bool:
+        raise LossContractError(
+            "selected_site_mask must be boolean",
+            code="loss.human13_mask_dtype",
+        )
+    if vocab_size < 2:
+        raise LossContractError(
+            "first bottleneck requires at least one non-target token",
+            code="loss.human13_competitor_missing",
+        )
+    selected = selected_site_mask.to(device=checked.device)
+    selected_count = int(selected.sum().item())
+    if selected_count > 1:
+        raise LossContractError(
+            "first bottleneck objective accepts at most one selected site",
+            code="loss.human13_first_bottleneck_count",
+            context={"selected_site_count": selected_count},
+        )
+    targets = target_token_ids.to(device=checked.device, dtype=torch.long)
+    _check_target_ids(targets, vocab_size=vocab_size)
+    non_target_logits = checked.scatter(
+        1,
+        targets.unsqueeze(1),
+        float("-inf"),
+    )
+    competitor_ids = non_target_logits.argmax(dim=1).detach()
+    target_logits = checked.gather(1, targets.unsqueeze(1)).squeeze(1)
+    competitor_logits = checked.gather(1, competitor_ids.unsqueeze(1)).squeeze(1)
+    target_margins = target_logits - competitor_logits
+    site_losses = F.relu(checked.new_tensor(margin) - target_margins)
+    numerator = site_losses[selected].sum()
+    denominator = selected_count
+    raw_loss = numerator if denominator else checked.sum() * 0.0
+    selected_margins = target_margins[selected]
+    _require_finite_outputs(raw_loss=raw_loss, numerator=numerator)
+    return CoherentBottleneckResult(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        denominator=denominator,
+        competitor_token_ids=torch.where(
+            selected,
+            competitor_ids,
+            torch.full_like(competitor_ids, -1),
+        ).detach(),
+        minimum_target_margin=(
+            float(selected_margins.detach().min().item()) if selected_count else None
+        ),
+        violating_site_count=int(((target_margins < margin) & selected).sum().item()),
+        satisfied_site_count=int(((target_margins >= margin) & selected).sum().item()),
+        selected_token_count=selected_count,
+        all_finite=True,
+    )
+
+
+def image_balanced_duplicate_token_contrast(
+    logits: torch.Tensor,
+    *,
+    duplicate_token_ids: torch.Tensor,
+    selected_token_ids: torch.Tensor,
+    image_ids: torch.Tensor,
+    required_margin: float,
+) -> DuplicateUnlikelihoodResult:
+    """Move one duplicate-branch decision toward a selected uncovered branch.
+
+    Each row is already the caller-selected earliest owner-distinguishing site;
+    consequently shared openers/descriptions and terminal tokens never enter
+    this tensor objective. Events are averaged within image before images.
+    """
+
+    margin = _checked_nonnegative_margin(required_margin)
+    checked = _checked_logits(logits, ndim=2)
+    event_count = int(checked.shape[0])
+    expected_shape = torch.Size((event_count,))
+    _require_shape(duplicate_token_ids, expected_shape, name="duplicate_token_ids")
+    _require_shape(selected_token_ids, expected_shape, name="selected_token_ids")
+    _require_shape(image_ids, expected_shape, name="image_ids")
+    _require_integer_ids(image_ids, name="image_ids")
+    duplicate_ids = duplicate_token_ids.to(device=checked.device, dtype=torch.long)
+    selected_ids = selected_token_ids.to(device=checked.device, dtype=torch.long)
+    _check_target_ids(duplicate_ids, vocab_size=int(checked.shape[-1]))
+    _check_target_ids(selected_ids, vocab_size=int(checked.shape[-1]))
+    if bool((duplicate_ids == selected_ids).any().item()):
+        raise LossContractError(
+            "duplicate and selected tokens must differ at every contrast site",
+            code="loss.human13_duplicate_tokens_not_distinct",
+        )
+    if event_count == 0:
+        zero = checked.sum() * 0.0
+        return DuplicateUnlikelihoodResult(
+            raw_loss=zero,
+            numerator=zero,
+            denominator=0,
+            raw_event_count=0,
+            consumed_event_count=0,
+            capped_event_count=0,
+            eligible_image_count=0,
+            minimum_target_margin=None,
+            all_finite=True,
+        )
+    images = image_ids.to(device=checked.device, dtype=torch.long)
+    duplicate_logits = checked.gather(1, duplicate_ids.unsqueeze(1)).squeeze(1)
+    selected_logits = checked.gather(1, selected_ids.unsqueeze(1)).squeeze(1)
+    selected_margins = selected_logits - duplicate_logits
+    event_losses = F.softplus(checked.new_tensor(margin) - selected_margins)
+    image_means = torch.stack(
+        tuple(
+            event_losses[images == image_id].mean()
+            for image_id in torch.unique(images, sorted=True)
+        )
+    )
+    numerator = image_means.sum()
+    denominator = int(image_means.numel())
+    raw_loss = numerator / denominator
+    _require_finite_outputs(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        event_losses=event_losses,
+        selected_margins=selected_margins,
+    )
+    return DuplicateUnlikelihoodResult(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        denominator=denominator,
+        raw_event_count=event_count,
+        consumed_event_count=event_count,
+        capped_event_count=0,
+        eligible_image_count=denominator,
+        minimum_target_margin=float(selected_margins.detach().min().item()),
+        all_finite=True,
+    )
+
+
 def image_balanced_duplicate_token_unlikelihood(
     logits: torch.Tensor,
     target_token_ids: torch.Tensor,
@@ -825,6 +978,8 @@ __all__ = [
     "PrefixFreeUnionResult",
     "StreamedPrefixFreeUnionResult",
     "coherent_full_chain_bottleneck_hinge",
+    "first_bottleneck_argmax_hinge",
+    "image_balanced_duplicate_token_contrast",
     "image_balanced_duplicate_token_unlikelihood",
     "owner_mean_masked_row_cross_entropy",
     "prefix_free_union_negative_log_mass",
