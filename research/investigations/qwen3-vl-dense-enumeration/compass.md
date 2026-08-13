@@ -20,22 +20,25 @@ architecture, or an implementation contract.
 
 ## Current Live Route
 
-As of `2026-08-13`, the completed bounded [Human-13 K-union-to-greedy
-overfit screen](experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/results.md),
-its missing-arm recovery, and the [row-contrast/geometry-preservation
-successor](experiments/2026-08-13-human13-row-contrast-geometry-preservation-successor/results.md)
-are the current evidence owner for native same-panel K-hit consolidation.
-Exact global A4 union streaming reaches 181 owners at exposure two versus
-Source 173. R1/R2 reach 183 (`H+9/G-6/M+7`) and reduce malformed rows to three,
-but increase duplicate burden to `39--40`; R2's aggregate G-coordinate
-projection never activates because both raw dot products are positive. The
-rectangle-valid gate remains a promising component, while complete-row
-contrast at twelve static states and one aggregate G watch are insufficient.
-If a new route is authorized, the smallest discriminator is fresh-Source and
-low-dose with next-batch duplicate-negative refresh or a state-general
-anti-repeat relation, plus owner-level preservation evidence. Chunk-local union
-normalization remains invalid. This is overfit-only evidence, not checkpoint
-promotion, validation, or architecture authority.
+As of `2026-08-13`, the completed [Human-13 On-Policy First-Bottleneck
+Successor](experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md)
+is the current evidence owner for native same-panel K-hit consolidation. Its
+transactional vertical proves exact rollback. Its bounded pilot tests eight
+aliases per arm across five owners and four images. All 16 one-update proposals
+lose protected Source owners and are rejected, although each gains some K-hit
+H owners; the selected target itself compiles only 9/16 times. Duplicate,
+malformed, and row burden vary by candidate and objective, but owner exchange
+does not. No checkpoint is promoted.
+
+Therefore full-row CE is demoted for this route. First-bottleneck hinge is the
+narrower primitive, but it is not safe at the tested fixed dose. If a new
+successor is authorized, the smallest discriminator is an adaptive/lower-dose
+first-bottleneck update or explicit owner-preserving objective; another suffix
+alias under the same update is no longer the primary uncertainty. It must keep the
+direct clean-greedy gate and cannot infer safety from net recall or a gradient
+watch.  The completed K-union and row-contrast screens remain the static
+substrate.  This is overfit-only evidence, not checkpoint promotion,
+validation, or architecture authority.
 
 As of `2026-08-12`, the separate interrupted-checkpoint [Owner Bridge Step-611
 Natural-Decode Recall Probe](experiments/2026-08-12-owner-bridge-step611-recall-probe/results.md)

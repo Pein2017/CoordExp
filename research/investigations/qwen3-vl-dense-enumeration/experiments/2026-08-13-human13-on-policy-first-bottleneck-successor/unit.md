@@ -5,11 +5,11 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: planned
+implementation_status: complete_for_unit
 unit_id: 2026-08-13-human13-on-policy-first-bottleneck-successor
 topic: qwen3-vl-dense-enumeration
-status: authorized_planned
-evidence_status: predecessor_complete_vertical_pending
+status: complete
+evidence_status: verified_bounded_panel
 updated: 2026-08-13
 ---
 
@@ -256,6 +256,35 @@ same update displaced four existing owners and created eight duplicates.  The
 bounded two-arm pilot remains useful because `O-Full-Safe` can test whether
 distributed row supervision changes that tradeoff, while both arms retain the
 same direct gate.
+
+### 2026-08-13 bounded two-arm result
+
+Both fresh world-size-one arms completed the declared eight-attempt bound from
+restored Source. The shared candidate sequence covered eight aliases, five
+owners, and four images. All 16 proposals lost at least one protected Source
+owner and were rejected; every rollback reproduced Source and restored an
+identical within-attempt transaction digest. No accepted checkpoint exists, so
+K16 refresh and final-checkpoint evaluation are zero-item obligations.
+
+| Arm | Attempts | Accepted | Selected target compiled | H gained | G lost | Unique owners | Duplicates | Malformed | Rows |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Source | — | — | — | 0 | 0 | 173 | 9 | 11 | 244 |
+| O-First | 8 | 0 | 4/8 | 3–6 | 1–4 | 174–177 | 9–34 | 1–14 | 243–299 |
+| O-Full | 8 | 0 | 5/8 | 1–5 | 1–5 | 172–177 | 8–54 | 0–15 | 249–310 |
+
+This resolves the earlier top-candidate-only gap. Alternative native aliases
+and owners change duplicate/malformed/row burden, but not the invariant
+protected-owner loss. Full-row CE is not a safe remedy; first-bottleneck avoids
+its worst tails but also fails the owner-preservation contract in every trial.
+Forced-continuation success is not sufficient to predict post-update target
+compilation: the selected target appears in clean greedy in only 9/16 proposals.
+
+The verified summary is `matrix-retry-v5/bounded-pilot-summary.json`, SHA256
+`9b71d436e501948f1232e2c10d9d2c582b0828038c2610f6d7cd2c9e5a3e41e7`.
+Earlier `matrix/` summaries remain immutable one-proposal history but no longer
+own the bounded-pilot conclusion. The supported next discriminator is a new,
+separately authorized lower/adaptive-dose or explicit preservation objective,
+not more execution of these frozen arms.
 
 ## Decision-owning evidence and stop rules
 

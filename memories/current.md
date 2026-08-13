@@ -1,12 +1,13 @@
 # Current Project Memory
 
-Last verified for the dense-enumeration route: 2026-08-12.
+Last verified for the dense-enumeration route: 2026-08-13.
 
 ## Authority boundary
 
 This file is continuity, not evidence. The current evidence owners are:
 
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md` and its `review.md` for the active plan and review closure
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md` for the latest executed native consolidation result
 - `openspec/changes/add-human13-k-union-greedy-overfit-probe/` for conditional implementation scope; it is not current executed behavior
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-07-s-k10-h20-natural-crossover/results.md` and its `review.md`
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/results.md` and its `review.md`
@@ -28,6 +29,27 @@ HOLD, not a model null. These boundaries are recorded in the
 [prior-evidence semantic audit](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md).
 
 ## Latest executed route
+
+The Human-13 on-policy first-bottleneck successor is complete.  Its real
+force-reject vertical passed the full packed/HF/update/private-checkpoint/
+clean-decode/rollback chain and restored the exact model, AdamW, scheduler,
+counters, CPU/CUDA RNG, 173-owner set, 9 duplicates, and 244 rows.  The
+authoritative result is
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md`;
+the concise continuity note is
+`memories/notes/2026-08-13-human13-on-policy-first-bottleneck-result.md`.
+
+The bounded pilot completed eight distinct candidates per arm (five owners on
+four images). All 16 one-update proposals lost protected Source owners and were
+rejected; every rollback reproduced Source and restored exact within-attempt
+state. O-First gained 3–6 H while losing 1–4 G per proposal; O-Full gained 1–5 H
+while losing 1–5 G. The selected target itself compiled only 4/8 and 5/8 times.
+No accepted checkpoint or K16 refresh exists. This demonstrates usable
+K-native support but a systematic fixed-dose greedy-interference problem. Do
+not resume either frozen arm or promote full-row CE. A successor must change
+the dose/preservation objective, not merely search more suffix aliases.
+
+## Prior Human-13 static substrate
 
 The Human-13 K-union-to-greedy overfit screen on S four-coordinate
 `geo_sorted_xy` step-2444 completed its bounded same-panel matrix. The evidence

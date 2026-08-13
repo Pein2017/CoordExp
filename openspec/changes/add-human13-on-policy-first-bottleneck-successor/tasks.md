@@ -25,12 +25,12 @@
 
 ## 5. Execute the Bounded Two-Arm Pilot
 
-- [ ] 5.1 Launch fresh independent `O-Full-Safe` and `O-First-Safe` runs, each with at most eight attempted updates, transactional behavior gates, immutable accepted/rejected receipts, and declared early-stop handling.
-- [ ] 5.2 Refresh K16 support only after two accepted iterations or bank exhaustion using batch size four and repetition penalty 1.10, binding any refresh to the accepted checkpoint before use.
-- [ ] 5.3 Evaluate every accepted final checkpoint under original-prompt unconstrained HF fp32/SDPA batch-one greedy `rp=1.0`, then run the canonical Human-13 analyzer.
+- [x] 5.1 Launch fresh independent `O-Full-Safe` and `O-First-Safe` runs, each with at most eight attempted updates, transactional behavior gates, immutable accepted/rejected receipts, and declared early-stop handling.
+- [x] 5.2 Refresh K16 support only after two accepted iterations or bank exhaustion using batch size four and repetition penalty 1.10, binding any refresh to the accepted checkpoint before use. Not triggered: both arms reached the eight-attempt cap with zero accepted updates, before either refresh condition.
+- [x] 5.3 Evaluate every accepted final checkpoint under original-prompt unconstrained HF fp32/SDPA batch-one greedy `rp=1.0`, then run the canonical Human-13 analyzer. Zero-item disposition: no accepted checkpoint existed; all 16 rollbacks reproduced Source under the same decision surface.
 
 ## 6. Close the Research Evidence
 
-- [ ] 6.1 Publish artifact hashes, per-iteration candidate/update/rollback tables, full G/H/M and protected-owner identities, duplicate/malformed/cap burden, and forward/decode/runtime counters.
-- [ ] 6.2 Update the owning research unit and results with supported, falsified, unresolved, and next-decision statements without validation, promotion, or architecture claims.
-- [ ] 6.3 Re-run targeted verification, strict OpenSpec validation, standards review, intent-contract review, and project-continuity check; stop after the bounded pilot regardless of outcome.
+- [x] 6.1 Publish artifact hashes, per-iteration candidate/update/rollback tables, full G/H/M and protected-owner identities, duplicate/malformed/cap burden, and forward/decode/runtime counters.
+- [x] 6.2 Update the owning research unit and results with supported, falsified, unresolved, and next-decision statements without validation, promotion, or architecture claims.
+- [x] 6.3 Re-run targeted verification, strict OpenSpec validation, standards review, intent-contract review, and project-continuity check; stop after the bounded pilot regardless of outcome.
