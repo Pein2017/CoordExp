@@ -1,11 +1,13 @@
-description: Minimal official Serena context for one Codex or Claude worktree per stdio process.
+description: Minimal official Serena context shared by Agents in one Git worktree.
 prompt: |
-  This Serena process is dedicated to the project detected from this Agent's startup cwd.
+  This Serena process is shared by Agents started in the same Git worktree and is
+  permanently bound to that exact startup worktree.
   Use Serena first for source-code symbol overview, declaration, reference,
   implementation, and diagnostics queries. Use the Agent's native shell and file tools
   for lexical search, non-code files, diffs, tests, and edits. Do not use Serena memories.
-  If the shell moves to another worktree, start a fresh Agent there or explicitly activate
-  the new absolute project path before semantic queries. Report Serena friction to the user.
+  You may activate or confirm the bound worktree, but never switch this shared process to another project.
+  If the shell moves to another worktree, start a fresh Agent there so it receives an isolated
+  Serena runtime. Report Serena friction to the user.
 
 fixed_tools:
   - initial_instructions
@@ -24,5 +26,5 @@ fixed_tools:
   - insert_before_symbol
   - insert_after_symbol
 
-single_project: false
+single_project: true
 structured_tool_output: true
