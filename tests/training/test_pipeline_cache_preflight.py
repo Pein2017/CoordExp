@@ -5,9 +5,11 @@ import json
 import multiprocessing as mp
 from datetime import timedelta
 from pathlib import Path
-from queue import Empty
+from queue import Empty, Queue
 import socket
+import time
 from types import SimpleNamespace
+from typing import Protocol, Sequence
 
 import pytest
 import torch.distributed as dist
@@ -81,6 +83,29 @@ def _synthetic_registry_determinants(purpose: str) -> dict[str, object]:
 DETERMINANTS = _synthetic_registry_determinants("model-free-preflight")
 FINGERPRINT = str(DETERMINANTS["aggregate_fingerprint"])
 _WORLD_SIZE = 2
+_DISTRIBUTED_TEST_DEADLINE_SECONDS = 150.0
+_DISTRIBUTED_TEST_POLL_SECONDS = 0.1
+_DISTRIBUTED_TEST_TERMINATE_GRACE_SECONDS = 5.0
+
+
+class _RankProcess(Protocol):
+    @property
+    def pid(self) -> int | None: ...
+
+    @property
+    def exitcode(self) -> int | None: ...
+
+    def is_alive(self) -> bool: ...
+
+    def join(self, timeout: float | None = None) -> None: ...
+
+    def terminate(self) -> None: ...
+
+
+class _ResultQueue(Protocol):
+    def get(self, block: bool = True, timeout: float | None = None) -> object: ...
+
+    def get_nowait(self) -> object: ...
 
 
 def _runtime_baseline_receipt() -> dict[str, object]:
@@ -106,6 +131,144 @@ def _free_port() -> int:
         sock.bind(("127.0.0.1", 0))
         sock.listen(1)
         return int(sock.getsockname()[1])
+
+
+def _reap_spawned_rank_processes(
+    ranked_processes: Sequence[tuple[int, _RankProcess]],
+    output: _ResultQueue,
+    *,
+    description: str,
+    expected_results: int,
+    deadline_seconds: float = _DISTRIBUTED_TEST_DEADLINE_SECONDS,
+    poll_seconds: float = _DISTRIBUTED_TEST_POLL_SECONDS,
+) -> list[dict[str, object]]:
+    deadline = time.monotonic() + deadline_seconds
+    messages: list[dict[str, object]] = []
+    timed_out = False
+    try:
+        while True:
+            while len(messages) < expected_results:
+                try:
+                    message = output.get_nowait()
+                except Empty:
+                    break
+                if not isinstance(message, dict):
+                    raise AssertionError(
+                        f"{description} returned a non-mapping result: {message!r}"
+                    )
+                messages.append(message)
+
+            alive: list[tuple[int, _RankProcess]] = []
+            for rank, process in ranked_processes:
+                process.join(timeout=0)
+                if process.is_alive():
+                    alive.append((rank, process))
+            if not alive and len(messages) >= expected_results:
+                break
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            try:
+                message = output.get(timeout=min(poll_seconds, remaining))
+            except Empty:
+                continue
+            if not isinstance(message, dict):
+                raise AssertionError(
+                    f"{description} returned a non-mapping result: {message!r}"
+                )
+            messages.append(message)
+    except BaseException:
+        for _, process in ranked_processes:
+            if process.is_alive():
+                process.terminate()
+        for _, process in ranked_processes:
+            process.join(timeout=_DISTRIBUTED_TEST_TERMINATE_GRACE_SECONDS)
+        raise
+
+    if timed_out:
+        before_cleanup = [
+            {
+                "rank": rank,
+                "pid": process.pid,
+                "exitcode": process.exitcode,
+                "alive": process.is_alive(),
+            }
+            for rank, process in ranked_processes
+        ]
+        for _, process in ranked_processes:
+            if process.is_alive():
+                process.terminate()
+        for _, process in ranked_processes:
+            process.join(timeout=_DISTRIBUTED_TEST_TERMINATE_GRACE_SECONDS)
+        after_cleanup = [
+            {
+                "rank": rank,
+                "pid": process.pid,
+                "exitcode": process.exitcode,
+                "alive": process.is_alive(),
+            }
+            for rank, process in ranked_processes
+        ]
+        pytest.fail(
+            f"{description} timed out after {deadline_seconds:.1f}s; "
+            f"results={len(messages)}/{expected_results}; "
+            f"before_cleanup={before_cleanup}; after_cleanup={after_cleanup}"
+        )
+    return messages
+
+
+def test_rank_process_reaper_polls_past_legacy_one_pass_join_window() -> None:
+    class _ScriptedDelayedProcess:
+        def __init__(self, *, rank: int, extra_polls_before_exit: int) -> None:
+            self.pid = 10_000 + rank
+            self.exitcode: int | None = None
+            self._alive = True
+            self._extra_polls_before_exit = extra_polls_before_exit
+            self.join_calls: list[float | None] = []
+            self.terminated = False
+
+        def is_alive(self) -> bool:
+            return self._alive
+
+        def join(self, timeout: float | None = None) -> None:
+            self.join_calls.append(timeout)
+            if not self._alive:
+                return
+            if self._extra_polls_before_exit > 0:
+                self._extra_polls_before_exit -= 1
+                return
+            self._alive = False
+            self.exitcode = 0
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self._alive = False
+            self.exitcode = -15
+
+    output: Queue[object] = Queue()
+    output.put({"rank": 0, "status": "done"})
+    output.put({"rank": 1, "status": "done"})
+    immediate = _ScriptedDelayedProcess(rank=0, extra_polls_before_exit=0)
+    delayed = _ScriptedDelayedProcess(rank=1, extra_polls_before_exit=1)
+
+    messages = _reap_spawned_rank_processes(
+        [(0, immediate), (1, delayed)],
+        output,
+        description="scripted delayed worker",
+        expected_results=2,
+        deadline_seconds=0.1,
+        poll_seconds=0.001,
+    )
+
+    assert messages == [
+        {"rank": 0, "status": "done"},
+        {"rank": 1, "status": "done"},
+    ]
+    assert len(delayed.join_calls) >= 2
+    assert immediate.terminated is False
+    assert delayed.terminated is False
 
 
 def _micro_step() -> SupervisedMicroStep:
@@ -1452,8 +1615,10 @@ def _distributed_accelerator_identity_mismatch_worker(
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
 def test_two_rank_rank_one_required_payload_failure_converges_and_tears_down(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "config.yaml").write_text("test: true\n", encoding="utf-8")
+    monkeypatch.setenv("GLOO_SOCKET_IFNAME", "lo")
     cache_root = tmp_path / "cache-root"
     cache_dir = cache_dir_for_fingerprint(cache_root, FINGERPRINT)
     manifest = write_micro_step_cache(
@@ -1482,29 +1647,12 @@ def test_two_rank_rank_one_required_payload_failure_converges_and_tears_down(
     ]
     for process in processes:
         process.start()
-    try:
-        for process in processes:
-            process.join(timeout=30)
-        alive = [process for process in processes if process.is_alive()]
-        if alive:
-            for process in alive:
-                process.terminate()
-            pytest.fail(
-                "distributed preflight failure hung; "
-                f"alive_pids={[process.pid for process in alive]}"
-            )
-    finally:
-        for process in processes:
-            if process.is_alive():
-                process.terminate()
-            process.join(timeout=5)
-
-    messages: list[dict[str, object]] = []
-    while True:
-        try:
-            messages.append(output.get_nowait())
-        except Empty:
-            break
+    messages = _reap_spawned_rank_processes(
+        list(enumerate(processes)),
+        output,
+        description="distributed preflight failure",
+        expected_results=_WORLD_SIZE,
+    )
     assert [process.exitcode for process in processes] == [0, 0]
     assert not [message for message in messages if "worker_error" in message]
     by_rank = {int(message["rank"]): message for message in messages}
@@ -1536,8 +1684,10 @@ def test_two_rank_rank_one_required_payload_failure_converges_and_tears_down(
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
 def test_two_rank_provider_env_source_mismatch_fails_before_cache_and_model(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "config.yaml").write_text("test: true\n", encoding="utf-8")
+    monkeypatch.setenv("GLOO_SOCKET_IFNAME", "lo")
     context = mp.get_context("spawn")
     output: mp.Queue = context.Queue()
     port = _free_port()
@@ -1551,29 +1701,12 @@ def test_two_rank_provider_env_source_mismatch_fails_before_cache_and_model(
     ]
     for process in processes:
         process.start()
-    try:
-        for process in processes:
-            process.join(timeout=30)
-        alive = [process for process in processes if process.is_alive()]
-        if alive:
-            for process in alive:
-                process.terminate()
-            pytest.fail(
-                "distributed provider resolution mismatch hung; "
-                f"alive_pids={[process.pid for process in alive]}"
-            )
-    finally:
-        for process in processes:
-            if process.is_alive():
-                process.terminate()
-            process.join(timeout=5)
-
-    messages: list[dict[str, object]] = []
-    while True:
-        try:
-            messages.append(output.get_nowait())
-        except Empty:
-            break
+    messages = _reap_spawned_rank_processes(
+        list(enumerate(processes)),
+        output,
+        description="distributed provider resolution mismatch",
+        expected_results=_WORLD_SIZE,
+    )
     assert [process.exitcode for process in processes] == [0, 0]
     assert not [message for message in messages if "worker_error" in message]
     by_rank = {int(message["rank"]): message for message in messages}
@@ -1604,8 +1737,10 @@ def test_two_rank_provider_env_source_mismatch_fails_before_cache_and_model(
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
 def test_two_rank_preflight_success_tears_down_gloo_before_accelerator_transition(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "config.yaml").write_text("test: true\n", encoding="utf-8")
+    monkeypatch.setenv("GLOO_SOCKET_IFNAME", "lo")
     cache_root = tmp_path / "cache-root"
     cache_dir = cache_dir_for_fingerprint(cache_root, FINGERPRINT)
     write_micro_step_cache(
@@ -1641,29 +1776,12 @@ def test_two_rank_preflight_success_tears_down_gloo_before_accelerator_transitio
     ]
     for process in processes:
         process.start()
-    try:
-        for process in processes:
-            process.join(timeout=30)
-        alive = [process for process in processes if process.is_alive()]
-        if alive:
-            for process in alive:
-                process.terminate()
-            pytest.fail(
-                "distributed preflight success transition hung; "
-                f"alive_pids={[process.pid for process in alive]}"
-            )
-    finally:
-        for process in processes:
-            if process.is_alive():
-                process.terminate()
-            process.join(timeout=5)
-
-    messages: list[dict[str, object]] = []
-    while True:
-        try:
-            messages.append(output.get_nowait())
-        except Empty:
-            break
+    messages = _reap_spawned_rank_processes(
+        list(enumerate(processes)),
+        output,
+        description="distributed preflight success transition",
+        expected_results=_WORLD_SIZE,
+    )
     assert [process.exitcode for process in processes] == [0, 0]
     assert not [message for message in messages if "worker_error" in message]
     by_rank = {int(message["rank"]): message for message in messages}
@@ -1685,8 +1803,10 @@ def test_two_rank_preflight_success_tears_down_gloo_before_accelerator_transitio
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
 def test_two_rank_rank_one_accelerator_identity_mismatch_converges_and_tears_down(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / "config.yaml").write_text("test: true\n", encoding="utf-8")
+    monkeypatch.setenv("GLOO_SOCKET_IFNAME", "lo")
     cache_root = tmp_path / "cache-root"
     cache_dir = cache_dir_for_fingerprint(cache_root, FINGERPRINT)
     write_micro_step_cache(
@@ -1722,29 +1842,12 @@ def test_two_rank_rank_one_accelerator_identity_mismatch_converges_and_tears_dow
     ]
     for process in processes:
         process.start()
-    try:
-        for process in processes:
-            process.join(timeout=30)
-        alive = [process for process in processes if process.is_alive()]
-        if alive:
-            for process in alive:
-                process.terminate()
-            pytest.fail(
-                "distributed Accelerator identity mismatch hung; "
-                f"alive_pids={[process.pid for process in alive]}"
-            )
-    finally:
-        for process in processes:
-            if process.is_alive():
-                process.terminate()
-            process.join(timeout=5)
-
-    messages: list[dict[str, object]] = []
-    while True:
-        try:
-            messages.append(output.get_nowait())
-        except Empty:
-            break
+    messages = _reap_spawned_rank_processes(
+        list(enumerate(processes)),
+        output,
+        description="distributed Accelerator identity mismatch",
+        expected_results=_WORLD_SIZE,
+    )
     assert [process.exitcode for process in processes] == [0, 0]
     assert not [message for message in messages if "worker_error" in message]
     by_rank = {int(message["rank"]): message for message in messages}
