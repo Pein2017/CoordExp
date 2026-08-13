@@ -92,7 +92,9 @@ def _prediction_category(value: Mapping[str, Any]) -> str:
     )
 
 
-def _prediction_box(value: Mapping[str, Any]) -> tuple[float, float, float, float] | None:
+def _prediction_box(
+    value: Mapping[str, Any],
+) -> tuple[float, float, float, float] | None:
     return _box(value.get("bbox", value.get("bbox_xyxy")))
 
 
@@ -177,7 +179,9 @@ def _match_prefix(
         }
         for owner_index, prediction_index, overlap in matches
     }
-    matched_prediction_indices = {prediction_index for _, prediction_index, _ in matches}
+    matched_prediction_indices = {
+        prediction_index for _, prediction_index, _ in matches
+    }
     unmatched_rows = [
         {"generated_order": int(item["generated_order"])}
         for index, item in enumerate(retained)
@@ -325,13 +329,14 @@ def _analyze_one(
     fixed_row_budgets: tuple[int, ...],
     duplicate_iou_threshold: float,
     owner_iou_threshold: float,
+    allowed_arm_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     image_id = _integer(output.get("image_id"), "output.image_id")
     arm_id = output.get("arm_id")
     if not isinstance(arm_id, str) or not arm_id:
         raise ValueError("output.arm_id must be a non-empty string")
     milestone = _integer(output.get("milestone"), "output.milestone")
-    declared_arms = {arm.arm_id for arm in manifest.arms}
+    declared_arms = {arm.arm_id for arm in manifest.arms} | set(allowed_arm_ids)
     if arm_id not in declared_arms:
         raise ValueError("output.arm_id is absent from the frozen manifest arms")
     provenance = _provenance(
@@ -343,9 +348,10 @@ def _analyze_one(
     )
     if output.get("decode_mode") != "original_prompt_clean_greedy":
         raise ValueError("output must be an original-prompt clean-greedy decode")
-    if _finite_number(
-        output.get("repetition_penalty"), "output.repetition_penalty"
-    ) != 1.0:
+    if (
+        _finite_number(output.get("repetition_penalty"), "output.repetition_penalty")
+        != 1.0
+    ):
         raise ValueError("clean-greedy output repetition_penalty must equal 1.0")
     predictions = _ordered_predictions(output)
     malformed = _integer(
@@ -457,13 +463,12 @@ def _add_source_comparison(
     record["safe_in_panel_consolidation"] = bool(
         record["k_hit_gained_owner_ids"]
         and not record["source_lost_owner_ids"]
-        and record["burden"]["malformed_rows"]
-        <= source_burden["malformed_rows"]
+        and record["burden"]["malformed_rows"] <= source_burden["malformed_rows"]
         and record["burden"]["cap_stops"] <= source_burden["cap_stops"]
     )
-    record["full_h_mastery"] = set(image.g_owner_ids) | set(
-        image.h_owner_ids
-    ) <= set(record["final_unique_owner_ids"])
+    record["full_h_mastery"] = set(image.g_owner_ids) | set(image.h_owner_ids) <= set(
+        record["final_unique_owner_ids"]
+    )
 
 
 def _sum_coverage(records: Sequence[Mapping[str, Any]], field: str) -> dict[str, Any]:
@@ -598,25 +603,15 @@ def _aggregate_fixed_budgets(
                 for record in records
             ),
             "source_owner_count": sum(
-                int(
-                    record["fixed_budget_coverage"][str(budget)][
-                        "source_owner_count"
-                    ]
-                )
+                int(record["fixed_budget_coverage"][str(budget)]["source_owner_count"])
                 for record in records
             ),
             "k_hit_owner_count": sum(
-                int(
-                    record["fixed_budget_coverage"][str(budget)]["k_hit_owner_count"]
-                )
+                int(record["fixed_budget_coverage"][str(budget)]["k_hit_owner_count"])
                 for record in records
             ),
             "k_miss_owner_count": sum(
-                int(
-                    record["fixed_budget_coverage"][str(budget)][
-                        "k_miss_owner_count"
-                    ]
-                )
+                int(record["fixed_budget_coverage"][str(budget)]["k_miss_owner_count"])
                 for record in records
             ),
         }
@@ -629,11 +624,17 @@ def _analyze_outputs_unsafe(
     outputs: Sequence[Mapping[str, Any]],
     *,
     fixed_row_budgets: Sequence[int] = DEFAULT_FIXED_ROW_BUDGETS,
+    allowed_arm_ids: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Fixture-only projection that skips full-panel manifest validation."""
 
     budgets = tuple(
-        sorted({_integer(item, "fixed_row_budget", minimum=1) for item in fixed_row_budgets})
+        sorted(
+            {
+                _integer(item, "fixed_row_budget", minimum=1)
+                for item in fixed_row_budgets
+            }
+        )
     )
     if not budgets:
         raise ValueError("at least one fixed row budget is required")
@@ -663,6 +664,7 @@ def _analyze_outputs_unsafe(
             fixed_row_budgets=budgets,
             duplicate_iou_threshold=matcher.duplicate_iou_threshold,
             owner_iou_threshold=matcher.owner_iou_threshold,
+            allowed_arm_ids=allowed_arm_ids,
         )
         identity = (record["arm_id"], record["milestone"], image_id)
         if identity in seen:
@@ -678,7 +680,9 @@ def _analyze_outputs_unsafe(
             raise ValueError("frozen_source outputs must use milestone zero")
         source_by_image[int(record["image_id"])] = record
     if set(source_by_image) != set(images):
-        raise ValueError("outputs require exactly one frozen_source row per manifest image")
+        raise ValueError(
+            "outputs require exactly one frozen_source row per manifest image"
+        )
 
     group_images: dict[tuple[str, int], set[int]] = defaultdict(set)
     for record in records:
@@ -691,7 +695,9 @@ def _analyze_outputs_unsafe(
         if image_ids != set(images)
     }
     if incomplete:
-        raise ValueError(f"arm/milestone outputs do not cover the manifest: {incomplete}")
+        raise ValueError(
+            f"arm/milestone outputs do not cover the manifest: {incomplete}"
+        )
 
     group_evidence_fields = (
         "manifest_sha256",
@@ -756,7 +762,9 @@ def _analyze_outputs_unsafe(
         "pooled": [],
     }
     for record in records:
-        public = {key: value for key, value in record.items() if not key.startswith("_")}
+        public = {
+            key: value for key, value in record.items() if not key.startswith("_")
+        }
         result["per_image"].append(public)
     for (arm_id, milestone), group in sorted(grouped.items()):
         for panel, selected in (

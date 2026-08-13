@@ -16,8 +16,8 @@
 
 ## 4. Retire the real-entry risk
 
-- [ ] 4.1 Run the authorized image-14038 R1 production-shaped vertical slice through real encode/pack/forward/backward/AdamW/checkpoint write/read/HF fp32-SDPA batch-one greedy/analyzer.
-- [ ] 4.2 Inspect the bound receipt, losses, gradients, pack counters, memory, checkpoint identity, decoded output, and analyzer row; stop on any declared gate failure.
+- [x] 4.1 Run the authorized image-14038 R1 production-shaped vertical slice through real encode/pack/forward/backward/AdamW/checkpoint write/read/HF fp32-SDPA batch-one greedy/analyzer.
+- [x] 4.2 Inspect the bound receipt, losses, gradients, pack counters, memory, checkpoint identity, decoded output, and analyzer row; stop on any declared gate failure.
 
 ## 5. Execute the bounded two-arm benchmark
 
