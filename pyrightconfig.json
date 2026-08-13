@@ -1,4 +1,7 @@
 {
+  "venvPath": "/root/miniconda3/envs",
+  "venv": "ms",
+  "pythonVersion": "3.12",
   "include": [
     ".codex",
     "public_data",

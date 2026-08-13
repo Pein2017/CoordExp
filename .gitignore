@@ -97,6 +97,8 @@ handoff/*
 
 # Serena runtime state is local. The portable context lives under
 # .codex/serena/ instead of creating a second project-memory authority.
+!.serena/
+!.serena/project.yml
 
 # Shared self-improving memory for this workspace
 !.self-improving/
