@@ -365,30 +365,56 @@ def test_load_rederives_protected_owner_ages(tmp_path: Path) -> None:
 
 
 def test_write_rejects_predecessor_from_different_manifest(tmp_path: Path) -> None:
-    manifest, manifest_path = _manifest(tmp_path / "first")
-    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    manifest, manifest_path = _manifest(tmp_path / "current")
+    source_checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
     previous = build_frontier_iteration(
         manifest,
         manifest_path=manifest_path,
         iteration=0,
-        checkpoint=checkpoint,
-        decodes=(_decode(checkpoint=checkpoint, include_h=True),),
+        checkpoint=source_checkpoint,
+        decodes=(_decode(checkpoint=source_checkpoint, include_h=True),),
     )
-    previous_path = tmp_path / "previous.json"
+    previous_path = tmp_path / "current-previous.json"
     canonical_write(previous, previous_path)
-
-    other, other_path = _manifest(tmp_path / "other", h_tokens=(31, 32, 33, 34))
     current_checkpoint = CheckpointIdentity("/accepted/step-1", "b" * 64)
+    current = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=1,
+        checkpoint=current_checkpoint,
+        previous=previous,
+        previous_path=previous_path,
+        decodes=(_decode(checkpoint=current_checkpoint, include_h=True),),
+    )
+
+    foreign, foreign_path = _manifest(tmp_path / "foreign", h_tokens=(31, 32, 33, 34))
+    foreign_previous = build_frontier_iteration(
+        foreign,
+        manifest_path=foreign_path,
+        iteration=0,
+        checkpoint=source_checkpoint,
+        decodes=(_decode(checkpoint=source_checkpoint, include_h=True),),
+    )
+    foreign_previous_path = tmp_path / "foreign-previous.json"
+    foreign_digest = canonical_write(foreign_previous, foreign_previous_path)
+    poisoned = replace(
+        current,
+        previous_frontier_path=str(foreign_previous_path.resolve()),
+        previous_frontier_sha256=foreign_digest,
+    )
+    bad_output = tmp_path / "bad-current.json"
     with pytest.raises(ValueError, match="previous.*manifest|manifest.*previous"):
-        build_frontier_iteration(
-            other,
-            manifest_path=other_path,
-            iteration=1,
-            checkpoint=current_checkpoint,
-            previous=previous,
-            previous_path=previous_path,
-            decodes=(_decode(checkpoint=current_checkpoint, include_h=True),),
-        )
+        canonical_write(poisoned, bad_output)
+    assert not bad_output.exists()
+
+    valid_output = tmp_path / "valid-current.json"
+    canonical_write(current, valid_output)
+    document = json.loads(valid_output.read_text(encoding="utf-8"))
+    document["previous_frontier_path"] = str(foreign_previous_path.resolve())
+    document["previous_frontier_sha256"] = foreign_digest
+    _rewrite_canonical(valid_output, document)
+    with pytest.raises(ValueError, match="previous.*manifest|manifest.*previous"):
+        load_frontier_iteration(valid_output)
 
 
 def test_build_rejects_manifest_object_that_differs_from_bound_path(
