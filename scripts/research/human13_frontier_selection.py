@@ -41,11 +41,33 @@ class TokenDecision:
 
 
 @dataclass(frozen=True)
+class PackedCandidateScore:
+    path: CandidatePath
+    sites: tuple[TokenDecision, ...]
+    barrier: float
+    first_bottleneck_index: int | None
+
+
+@dataclass(frozen=True)
+class AlignedSurfaceSite:
+    position: int
+    packed: TokenDecision
+    hf: TokenDecision
+    strict_margin_drift: float
+    argmax_disagreement: bool
+    bottleneck_disagreement: bool
+
+
+@dataclass(frozen=True)
 class CandidateScore:
     path: CandidatePath
     hf_sites: tuple[TokenDecision, ...]
+    packed_sites: tuple[TokenDecision, ...]
+    aligned_sites: tuple[AlignedSurfaceSite, ...]
     hf_barrier: float
     first_bottleneck_index: int | None
+    packed_first_bottleneck_index: int | None
+    first_bottleneck_disagreement: bool | None
     packed_barrier: float | None
     max_surface_margin_drift: float | None
     surface_rank_disagreement: bool | None
@@ -57,6 +79,7 @@ class ContinuationOutcome:
     hf_barrier: float
     protected_coverable: bool
     unique_owner_delta: int
+    termination_status: str
     cap_hit: bool
     duplicate_increase: int
     malformed_increase: int
@@ -90,6 +113,8 @@ def score_candidate(
         if packed.surface != "packed_bf16_fa2":
             raise ValueError("packed evidence surface identity differs")
         packed_sites = _decisions(path, packed)
+        if len(packed.logits[0]) != len(hf.logits[0]):
+            raise ValueError("packed/HF vocabulary sizes differ")
     barrier = sum(max(0.0, -site.strict_margin) for site in hf_sites)
     first = next(
         (site.position for site in hf_sites if site.strict_margin <= 0.0), None
@@ -99,30 +124,79 @@ def score_candidate(
         if packed_sites is None
         else sum(max(0.0, -site.strict_margin) for site in packed_sites)
     )
+    packed_first = (
+        None
+        if packed_sites is None
+        else next(
+            (site.position for site in packed_sites if site.strict_margin <= 0.0),
+            None,
+        )
+    )
+    aligned = (
+        ()
+        if packed_sites is None
+        else tuple(
+            AlignedSurfaceSite(
+                position=hf_site.position,
+                packed=packed_site,
+                hf=hf_site,
+                strict_margin_drift=float(
+                    abs(hf_site.strict_margin - packed_site.strict_margin)
+                ),
+                argmax_disagreement=(
+                    hf_site.actual_argmax_token_id != packed_site.actual_argmax_token_id
+                ),
+                bottleneck_disagreement=(
+                    (hf_site.strict_margin <= 0.0) != (packed_site.strict_margin <= 0.0)
+                ),
+            )
+            for hf_site, packed_site in zip(hf_sites, packed_sites, strict=True)
+        )
+    )
     drift = (
         None
         if packed_sites is None
-        else max(
-            abs(left.strict_margin - right.strict_margin)
-            for left, right in zip(hf_sites, packed_sites, strict=True)
-        )
+        else max(site.strict_margin_drift for site in aligned)
     )
     disagreement = (
         None
         if packed_sites is None
         else any(
-            left.actual_argmax_token_id != right.actual_argmax_token_id
-            for left, right in zip(hf_sites, packed_sites, strict=True)
+            site.argmax_disagreement or site.bottleneck_disagreement for site in aligned
         )
     )
     return CandidateScore(
         path=path,
         hf_sites=hf_sites,
+        packed_sites=() if packed_sites is None else packed_sites,
+        aligned_sites=aligned,
         hf_barrier=float(barrier),
         first_bottleneck_index=first,
+        packed_first_bottleneck_index=packed_first,
+        first_bottleneck_disagreement=(
+            None if packed_sites is None else first != packed_first
+        ),
         packed_barrier=None if packed_barrier is None else float(packed_barrier),
         max_surface_margin_drift=None if drift is None else float(drift),
         surface_rank_disagreement=disagreement,
+    )
+
+
+def score_packed_candidate(
+    path: CandidatePath, packed: SurfaceEvidence
+) -> PackedCandidateScore:
+    """Create packed-only prefilter evidence without requiring HF execution."""
+
+    if packed.surface != "packed_bf16_fa2":
+        raise ValueError("packed evidence surface identity differs")
+    sites = _decisions(path, packed)
+    return PackedCandidateScore(
+        path=path,
+        sites=sites,
+        barrier=float(sum(max(0.0, -site.strict_margin) for site in sites)),
+        first_bottleneck_index=next(
+            (site.position for site in sites if site.strict_margin <= 0.0), None
+        ),
     )
 
 
@@ -152,23 +226,21 @@ def shortlist_candidates(
 
 
 def packed_prefilter(
-    scores: Sequence[CandidateScore], *, aliases_per_owner: int = 2
-) -> tuple[CandidateScore, ...]:
+    scores: Sequence[PackedCandidateScore], *, aliases_per_owner: int = 2
+) -> tuple[PackedCandidateScore, ...]:
     """Bound HF work without promoting packed scores to a decision surface."""
 
-    if aliases_per_owner < 1:
-        raise ValueError("aliases_per_owner must be positive")
-    grouped: dict[str, list[CandidateScore]] = {}
+    if aliases_per_owner < 1 or aliases_per_owner > 2:
+        raise ValueError("aliases_per_owner must be one or two, at most two")
+    grouped: dict[str, list[PackedCandidateScore]] = {}
     for score in scores:
-        if score.packed_barrier is None:
-            raise ValueError("packed prefilter requires packed evidence")
         grouped.setdefault(score.path.owner_id, []).append(score)
-    retained: list[CandidateScore] = []
+    retained: list[PackedCandidateScore] = []
     for owner_id in sorted(grouped):
         retained.extend(
             sorted(
                 grouped[owner_id],
-                key=lambda item: (item.packed_barrier, item.path.alias_id),
+                key=lambda item: (item.barrier, item.path.alias_id),
             )[:aliases_per_owner]
         )
     return tuple(retained)
@@ -184,6 +256,7 @@ def select_continuation(
         for outcome in outcomes
         if outcome.protected_coverable
         and outcome.unique_owner_delta > 0
+        and outcome.termination_status == "natural_im_end"
         and not outcome.cap_hit
     )
     if not eligible:
@@ -376,11 +449,14 @@ __all__ = [
     "CandidatePath",
     "CandidateScore",
     "ContinuationOutcome",
+    "AlignedSurfaceSite",
+    "PackedCandidateScore",
     "SurfaceEvidence",
     "TokenDecision",
     "packed_prefilter",
     "protected_owner_coverable",
     "score_candidate",
+    "score_packed_candidate",
     "select_continuation",
     "shortlist_candidates",
 ]
