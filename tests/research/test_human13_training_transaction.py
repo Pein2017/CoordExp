@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 
 import pytest
 import torch
@@ -11,7 +12,13 @@ from scripts.research.human13_training_transaction import (
 )
 
 
-def _make_stack(seed: int = 17):
+@dataclass
+class _ToyRuntime:
+    optimizer_step_count: int
+    scheduler_step_count: int
+
+
+def _make_stack(seed: int = 17, *, runtime: _ToyRuntime | None = None):
     torch.manual_seed(seed)
     model = torch.nn.Linear(3, 2)
     model.bias.requires_grad_(False)
@@ -25,9 +32,32 @@ def _make_stack(seed: int = 17):
         optimizer=optimizer,
         scheduler=scheduler,
         update_counter=counter,
+        runtime=runtime,
         capture_cuda=torch.cuda.is_available(),
     )
     return model, optimizer, scheduler, counter, transaction
+
+
+def test_runtime_step_counters_participate_in_digest_and_rejected_restore() -> None:
+    runtime = _ToyRuntime(optimizer_step_count=4, scheduler_step_count=3)
+    _, _, _, _, transaction = _make_stack(runtime=runtime)
+    snapshot = transaction.begin()
+
+    assert snapshot.runtime_optimizer_step_count == 4
+    assert snapshot.runtime_scheduler_step_count == 3
+
+    runtime.optimizer_step_count = 5
+    optimizer_counter_digest = transaction.state_digest()
+    assert optimizer_counter_digest != snapshot.state_digest
+    runtime.scheduler_step_count = 7
+    assert transaction.state_digest() != optimizer_counter_digest
+
+    receipt = transaction.reject(snapshot)
+
+    assert runtime.optimizer_step_count == 4
+    assert runtime.scheduler_step_count == 3
+    assert receipt.after_state_digest == snapshot.state_digest
+    assert transaction.state_digest() == snapshot.state_digest
 
 
 def _step(model, optimizer, scheduler, counter, x, target) -> None:

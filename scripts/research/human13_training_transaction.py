@@ -28,6 +28,8 @@ class TrainingStateSnapshot:
     optimizer_state: dict[str, Any]
     scheduler_state: dict[str, Any] | None
     update_count: int
+    runtime_optimizer_step_count: int | None
+    runtime_scheduler_step_count: int | None
     cpu_rng_state: torch.Tensor
     cuda_rng_states: tuple[torch.Tensor, ...] | None
     state_digest: str
@@ -103,6 +105,7 @@ class TrainingStateTransaction:
         optimizer: torch.optim.Optimizer,
         scheduler: Any | None,
         update_counter: UpdateCounter,
+        runtime: Any | None = None,
         capture_cuda: bool = True,
     ) -> None:
         bound = tuple(named_trainable_parameters)
@@ -133,6 +136,18 @@ class TrainingStateTransaction:
         self._optimizer = optimizer
         self._scheduler = scheduler
         self._update_counter = update_counter
+        self._runtime = runtime
+        if runtime is not None:
+            for name in ("optimizer_step_count", "scheduler_step_count"):
+                if not hasattr(runtime, name):
+                    raise ValueError(f"bound runtime is missing mutable {name}")
+                value = getattr(runtime, name)
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise TypeError(f"bound runtime {name} must be an integer")
+                try:
+                    setattr(runtime, name, value)
+                except (AttributeError, TypeError) as error:
+                    raise ValueError(f"bound runtime {name} must be mutable") from error
         self._capture_cuda = bool(capture_cuda)
         self._active_transaction_id: str | None = None
 
@@ -154,6 +169,16 @@ class TrainingStateTransaction:
                 else None
             ),
             "update_count": int(self._update_counter.value),
+            "runtime_optimizer_step_count": (
+                int(self._runtime.optimizer_step_count)
+                if self._runtime is not None
+                else None
+            ),
+            "runtime_scheduler_step_count": (
+                int(self._runtime.scheduler_step_count)
+                if self._runtime is not None
+                else None
+            ),
             "cpu_rng": torch.get_rng_state().clone(),
             "cuda_rng": self._cuda_rng_states(),
         }
@@ -174,6 +199,8 @@ class TrainingStateTransaction:
             optimizer_state=payload["optimizer"],
             scheduler_state=payload["scheduler"],
             update_count=payload["update_count"],
+            runtime_optimizer_step_count=payload["runtime_optimizer_step_count"],
+            runtime_scheduler_step_count=payload["runtime_scheduler_step_count"],
             cpu_rng_state=payload["cpu_rng"],
             cuda_rng_states=payload["cuda_rng"],
             state_digest=digest,
@@ -202,6 +229,23 @@ class TrainingStateTransaction:
         elif snapshot.scheduler_state is not None:
             raise RuntimeError("snapshot unexpectedly contains scheduler state")
         self._update_counter.value = int(snapshot.update_count)
+        if self._runtime is not None:
+            if (
+                snapshot.runtime_optimizer_step_count is None
+                or snapshot.runtime_scheduler_step_count is None
+            ):
+                raise RuntimeError("snapshot is missing bound runtime step counters")
+            self._runtime.optimizer_step_count = int(
+                snapshot.runtime_optimizer_step_count
+            )
+            self._runtime.scheduler_step_count = int(
+                snapshot.runtime_scheduler_step_count
+            )
+        elif (
+            snapshot.runtime_optimizer_step_count is not None
+            or snapshot.runtime_scheduler_step_count is not None
+        ):
+            raise RuntimeError("snapshot unexpectedly contains runtime step counters")
         torch.set_rng_state(snapshot.cpu_rng_state.clone())
         if snapshot.cuda_rng_states is not None:
             if not torch.cuda.is_available():
