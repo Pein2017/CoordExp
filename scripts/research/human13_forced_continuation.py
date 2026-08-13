@@ -41,9 +41,7 @@ class ForcedContinuationResult:
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
-def source_continuation_cap(
-    *, source_row_count: int, source_token_count: int
-) -> int:
+def source_continuation_cap(*, source_row_count: int, source_token_count: int) -> int:
     """Return the declared per-image continuation-cap lower bound."""
 
     for label, value in (
@@ -105,8 +103,7 @@ def forced_complete_row_then_natural_continuation(
         or continuation_cap < minimum_cap
     ):
         raise ValueError(
-            "continuation_cap is below the Source-derived minimum "
-            f"{minimum_cap}"
+            f"continuation_cap is below the Source-derived minimum {minimum_cap}"
         )
     if (
         isinstance(repetition_penalty, bool)
