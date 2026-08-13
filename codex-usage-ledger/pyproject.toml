@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-usage-ledger"
+version = "0.1.0"
+description = "Offline token and approximate cost reports for Codex rollout sessions"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+codex-usage-ledger = "codex_usage_ledger.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_usage_ledger*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

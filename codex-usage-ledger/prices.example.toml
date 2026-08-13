@@ -1,0 +1,17 @@
+# Copy this file to a private prices.toml and replace the placeholder values.
+# Keep one entry per provider/model pair. Prices are per one million tokens.
+# Do not commit private or time-sensitive provider rates without a source/date.
+
+[[rates]]
+provider = "openai"
+model = "gpt-5.6-luna"
+currency = "USD"
+input_per_million = 0.0
+cached_input_per_million = 0.0
+cache_write_per_million = 0.0
+output_per_million = 0.0
+# Set this only when reasoning tokens have a separate price dimension.
+# reasoning_per_million = 0.0
+cache_write_is_in_input = false
+reasoning_is_in_output = true
+source = "replace-with-provider-pricing-page-and-effective-date"

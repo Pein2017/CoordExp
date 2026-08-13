@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Usage Ledger"
+  short_description: "Audit subagent usage, routes, and costs"
+  default_prompt: "Use $codex-usage-ledger to audit recent or explicitly scoped subagent sessions and report route costs with evidence boundaries."
