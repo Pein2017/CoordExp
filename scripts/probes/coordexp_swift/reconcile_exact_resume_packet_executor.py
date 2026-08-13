@@ -1338,7 +1338,12 @@ def _process_identity(process: PopenLike) -> tuple[int, int, int]:
     declared_starttime = getattr(process, "starttime", None)
     declared_group = getattr(process, "process_group_id", None)
     live_identity = _proc_identity(leader_pid)
-    if live_identity is not None and live_identity[0] == os.getpid():
+    if live_identity is not None:
+        if live_identity[0] != os.getpid():
+            raise PacketExecutorError(
+                "launched process PID is not a direct child of the executor",
+                code="packet_executor.foreign_process",
+            )
         leader_starttime = live_identity[2]
         process_group_id = live_identity[1]
     elif isinstance(declared_starttime, int) and isinstance(declared_group, int):

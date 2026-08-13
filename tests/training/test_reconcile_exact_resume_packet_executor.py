@@ -943,6 +943,80 @@ def test_live_foreign_pid_is_rejected_without_signalling_it(
         owner.wait(timeout=5)
 
 
+def test_live_foreign_pid_with_declared_identity_is_rejected_without_signalling(
+    executor: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess,time; "
+                "p=subprocess.Popen(['/bin/sleep','30'], start_new_session=True); "
+                "print(p.pid, flush=True); time.sleep(30)"
+            ),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert owner.stdout is not None
+    foreign_pid = int(owner.stdout.readline().strip())
+    live_identity = executor._proc_identity(foreign_pid)
+    assert live_identity is not None
+    foreign_ppid, process_group_id, starttime = live_identity
+    assert foreign_ppid == owner.pid
+    assert foreign_ppid != os.getpid()
+    object_signals: list[str] = []
+    os_signals: list[tuple[str, int, int]] = []
+    original_kill = os.kill
+
+    class DeclaredForeignProcess:
+        pid = foreign_pid
+        returncode = None
+
+        def poll(self) -> None:
+            return None
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            return 0
+
+        def terminate(self) -> None:
+            object_signals.append("TERM")
+
+        def kill(self) -> None:
+            object_signals.append("KILL")
+
+    process = DeclaredForeignProcess()
+    process.starttime = starttime
+    process.process_group_id = process_group_id
+    monkeypatch.setattr(
+        executor.os,
+        "kill",
+        lambda pid, sig: os_signals.append(("kill", pid, int(sig))),
+    )
+    monkeypatch.setattr(
+        executor.os,
+        "killpg",
+        lambda pgid, sig: os_signals.append(("killpg", pgid, int(sig))),
+    )
+
+    try:
+        with pytest.raises(executor.PacketExecutorError, match="child") as exc_info:
+            executor._process_identity(process)
+        assert exc_info.value.code == "packet_executor.foreign_process"
+        assert object_signals == []
+        assert os_signals == []
+    finally:
+        for pid in (foreign_pid, owner.pid):
+            try:
+                original_kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        owner.wait(timeout=5)
+
+
 def test_executor_own_process_group_is_rejected_without_signalling(
     executor: ModuleType,
 ) -> None:
