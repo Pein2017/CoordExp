@@ -1,21 +1,21 @@
 ## 1. Freeze Dynamic Frontier Semantics
 
-- [ ] 1.1 Add the canonical current-frontier ledger and CPU tests for accepted-decode identity, covered/protected/H candidate sets, current duplicate states, K-miss neutrality, deterministic hashing, and fail-closed span/matcher behavior.
-- [ ] 1.2 Add pure packed-prefilter/HF-decision score contracts and tests for complete-row barrier, first strict bottleneck, actual argmax/tie evidence, aligned cross-surface drift, and two-to-four-owner shortlisting.
-- [ ] 1.3 Add forced-row continuation projection and matching-audit tests for protected-coverability, positive unique delta, natural termination/cap harm, and lexicographic candidate selection.
+- [x] 1.1 Add the canonical current-frontier ledger and CPU tests for accepted-decode identity, covered/protected/H candidate sets, current duplicate states, K-miss neutrality, deterministic hashing, and fail-closed span/matcher behavior.
+- [x] 1.2 Add pure packed-prefilter/HF-decision score contracts and tests for complete-row barrier, first strict bottleneck, actual argmax/tie evidence, aligned cross-surface drift, and two-to-four-owner shortlisting.
+- [x] 1.3 Add forced-row continuation projection and matching-audit tests for protected-coverability, positive unique delta, natural termination/cap harm, and lexicographic candidate selection.
 
 ## 2. Implement Safe Treatment Math
 
-- [ ] 2.1 Add TDD coverage and fp32 helpers for full-row body CE, first-bottleneck target-versus-global hinge, rectangle-valid gates, and earliest owner-distinguishing duplicate contrast without terminal supervision.
-- [ ] 2.2 Add an experiment-local transaction helper with tests for trainable parameters, complete AdamW/scheduler/update/RNG snapshots, accepted commit, exact rejection restore, and post-rollback state hashes.
-- [ ] 2.3 Add constrained protected-owner matching tests so equal-cardinality canonical matcher churn does not create false loss verdicts.
+- [x] 2.1 Add TDD coverage and fp32 helpers for full-row body CE, first-bottleneck target-versus-global hinge, rectangle-valid gates, and earliest owner-distinguishing duplicate contrast without terminal supervision.
+- [x] 2.2 Add an experiment-local transaction helper with tests for trainable parameters, complete AdamW/scheduler/update/RNG snapshots, accepted commit, exact rejection restore, and post-rollback state hashes.
+- [x] 2.3 Add constrained protected-owner matching tests so equal-cardinality canonical matcher churn does not create false loss verdicts.
 
 ## 3. Extend the Existing Human-13 Live Spine
 
-- [ ] 3.1 Materialize current-prefix full-row and first-bottleneck packed segments with exact causal positions while reusing the predecessor's no-padding, rectangle, model assembly, checkpoint, and analyzer seams.
-- [ ] 3.2 Add `O-Full-Safe` and `O-First-Safe` resolved plans, world-size-one fresh-Source execution, at-most-eight attempts, one update per ledger, unique roots, default dry-run, and no hidden arm/retry behavior.
-- [ ] 3.3 Add production-shaped HF fp32/SDPA scoring and forced-continuation adapters plus immutable iteration and cross-surface receipts.
-- [ ] 3.4 Run focused and adjacent CPU tests, Ruff/format/compile checks, strict OpenSpec validation, and residue inspection; resolve every P0/P1 implementation finding before model execution.
+- [x] 3.1 Materialize current-prefix full-row and first-bottleneck packed segments with exact causal positions while reusing the predecessor's no-padding, rectangle, model assembly, checkpoint, and analyzer seams.
+- [x] 3.2 Add `O-Full-Safe` and `O-First-Safe` resolved plans, world-size-one fresh-Source execution, at-most-eight attempts, one update per ledger, unique roots, default dry-run, and no hidden arm/retry behavior.
+- [x] 3.3 Add production-shaped HF fp32/SDPA scoring and forced-continuation adapters plus immutable iteration and cross-surface receipts.
+- [x] 3.4 Run focused and adjacent CPU tests, Ruff/format/compile checks, strict OpenSpec validation, and residue inspection; resolve every P0/P1 implementation finding before model execution.
 
 ## 4. Retire the Real-Entry and Rollback Risk
 
