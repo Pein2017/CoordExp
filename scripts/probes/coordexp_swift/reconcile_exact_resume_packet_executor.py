@@ -590,18 +590,16 @@ def _validate_contract(
         row = _mapping(bounds[name], f"resource_bounds.{name}")
         required_cpu_ranks = row.get("required_cpu_ranks")
         required_gpu_ranks = row.get("required_gpu_ranks")
-        expected_cpu_ranks = (
-            [0, 1]
-            if name
-            in {
-                "success.uninterrupted_control",
-                "success.resumed_child",
-                "rank_failure",
-                "interruption",
-            }
-            else []
-        )
+        expected_cpu_ranks = [0, 1] if name in MODEL_COMMANDS else []
         expected_gpu_ranks = [0, 1] if name in MODEL_COMMANDS else []
+        expected_cpu_mode = (
+            "per_rank" if name in MODEL_COMMANDS else "command_tree_aggregate"
+        )
+        if row.get("cpu_measurement_mode") != expected_cpu_mode:
+            raise PacketExecutorError(
+                f"resource_bounds.{name}.cpu_measurement_mode drifted",
+                code="packet_executor.contract",
+            )
         if required_cpu_ranks != expected_cpu_ranks:
             raise PacketExecutorError(
                 f"resource_bounds.{name}.required_cpu_ranks drifted",
@@ -612,15 +610,12 @@ def _validate_contract(
                 f"resource_bounds.{name}.required_gpu_ranks drifted",
                 code="packet_executor.contract",
             )
-        normalized_bounds[name] = {
+        normalized_bound = {
             "wall_time_seconds": _number(
                 row.get("wall_time_seconds"),
                 f"resource_bounds.{name}.wall_time_seconds",
             ),
-            "max_cpu_rss_bytes_per_rank": _integer(
-                row.get("max_cpu_rss_bytes_per_rank"),
-                f"resource_bounds.{name}.max_cpu_rss_bytes_per_rank",
-            ),
+            "cpu_measurement_mode": expected_cpu_mode,
             "max_gpu_memory_bytes_per_rank": _integer(
                 row.get("max_gpu_memory_bytes_per_rank"),
                 f"resource_bounds.{name}.max_gpu_memory_bytes_per_rank",
@@ -632,6 +627,27 @@ def _validate_contract(
             "required_cpu_ranks": list(required_cpu_ranks),
             "required_gpu_ranks": list(required_gpu_ranks),
         }
+        if expected_cpu_mode == "per_rank":
+            if "max_cpu_rss_command_tree_bytes" in row:
+                raise PacketExecutorError(
+                    f"resource_bounds.{name} mixes CPU measurement modes",
+                    code="packet_executor.contract",
+                )
+            normalized_bound["max_cpu_rss_bytes_per_rank"] = _integer(
+                row.get("max_cpu_rss_bytes_per_rank"),
+                f"resource_bounds.{name}.max_cpu_rss_bytes_per_rank",
+            )
+        else:
+            if "max_cpu_rss_bytes_per_rank" in row:
+                raise PacketExecutorError(
+                    f"resource_bounds.{name} mixes CPU measurement modes",
+                    code="packet_executor.contract",
+                )
+            normalized_bound["max_cpu_rss_command_tree_bytes"] = _integer(
+                row.get("max_cpu_rss_command_tree_bytes"),
+                f"resource_bounds.{name}.max_cpu_rss_command_tree_bytes",
+            )
+        normalized_bounds[name] = normalized_bound
     total = _mapping(contract.get("total_bounds"), "execution_contract.total_bounds")
     normalized_total = {
         "wall_time_seconds": _number(
@@ -1265,7 +1281,8 @@ def _check_command_resources(
     new_artifact_bytes: int,
     process_rows: Sequence[Mapping[str, Any]],
     gpu_rows: Sequence[Mapping[str, Any]],
-) -> tuple[dict[str, int], dict[str, int]]:
+    cpu_rss_command_tree_max_bytes: int | None,
+) -> tuple[dict[str, int], dict[str, int], int | None]:
     if elapsed > float(bound["wall_time_seconds"]):
         raise PacketExecutorError(
             f"{name} exceeded its wall-time bound",
@@ -1276,11 +1293,12 @@ def _check_command_resources(
             f"{name} exceeded its artifact-byte bound",
             code="packet_executor.artifact_bound",
         )
+    cpu_mode = str(bound["cpu_measurement_mode"])
     cpu = _rank_maxima(process_rows, "rss_bytes")
     gpu = _rank_maxima(gpu_rows, "gpu_memory_bytes")
     required_cpu = {str(rank) for rank in bound["required_cpu_ranks"]}
     required_gpu = {str(rank) for rank in bound["required_gpu_ranks"]}
-    if not required_cpu:
+    if cpu_mode == "command_tree_aggregate":
         cpu = {}
     if not required_gpu:
         gpu = {}
@@ -1296,17 +1314,31 @@ def _check_command_resources(
             f"{name} is missing GPU measurements for ranks {missing_gpu}",
             code="packet_executor.missing_gpu_rank",
         )
-    if any(value > int(bound["max_cpu_rss_bytes_per_rank"]) for value in cpu.values()):
-        raise PacketExecutorError(
-            f"{name} exceeded its CPU RSS bound", code="packet_executor.rss_bound"
-        )
+    if cpu_mode == "per_rank":
+        if any(value > int(bound["max_cpu_rss_bytes_per_rank"]) for value in cpu.values()):
+            raise PacketExecutorError(
+                f"{name} exceeded its CPU RSS bound", code="packet_executor.rss_bound"
+            )
+        cpu_rss_command_tree_max_bytes = None
+    else:
+        if cpu_rss_command_tree_max_bytes is None:
+            raise PacketExecutorError(
+                f"{name} has no owned command-tree CPU RSS sample",
+                code="packet_executor.missing_owned_process_sample",
+            )
+        if cpu_rss_command_tree_max_bytes > int(
+            bound["max_cpu_rss_command_tree_bytes"]
+        ):
+            raise PacketExecutorError(
+                f"{name} exceeded its CPU RSS bound", code="packet_executor.rss_bound"
+            )
     if any(
         value > int(bound["max_gpu_memory_bytes_per_rank"]) for value in gpu.values()
     ):
         raise PacketExecutorError(
             f"{name} exceeded its GPU-memory bound", code="packet_executor.gpu_bound"
         )
-    return cpu, gpu
+    return cpu, gpu, cpu_rss_command_tree_max_bytes
 
 
 def _is_popen_like(process: Any) -> bool:
@@ -1640,6 +1672,7 @@ def _run_command(
     process_observations: dict[tuple[int, int], dict[str, Any]] = {}
     retained_process_identities: set[tuple[int, int]] = set()
     gpu_observations: dict[tuple[str, int, int], dict[str, Any]] = {}
+    cpu_rss_command_tree_max_bytes: int | None = None
     launched: PopenLike | None = None
     process_group: dict[str, int | bool] | None = None
     cleanup: dict[str, Any] | None = None
@@ -1681,6 +1714,14 @@ def _run_command(
             retained_process_identities.update(
                 (int(row["pid"]), int(row["starttime"])) for row in owned_processes
             )
+            if (
+                bound["cpu_measurement_mode"] == "command_tree_aggregate"
+                and owned_processes
+            ):
+                snapshot_sum = sum(int(row["rss_bytes"]) for row in owned_processes)
+                cpu_rss_command_tree_max_bytes = max(
+                    cpu_rss_command_tree_max_bytes or 0, snapshot_sum
+                )
             owned_gpu = _owned_gpu_rows(
                 gpu_rows,
                 owned_processes=owned_processes,
@@ -1745,13 +1786,14 @@ def _run_command(
     gpu = _rank_maxima(list(gpu_observations.values()), "gpu_memory_bytes")
     if error is None:
         try:
-            cpu, gpu = _check_command_resources(
+            cpu, gpu, cpu_rss_command_tree_max_bytes = _check_command_resources(
                 name=name,
                 bound=bound,
                 elapsed=elapsed,
                 new_artifact_bytes=new_bytes,
                 process_rows=list(process_observations.values()),
                 gpu_rows=list(gpu_observations.values()),
+                cpu_rss_command_tree_max_bytes=cpu_rss_command_tree_max_bytes,
             )
         except BaseException as exc:
             error = exc
@@ -1763,7 +1805,11 @@ def _run_command(
         "returncode": returncode,
         "wall_time_seconds": elapsed,
         "new_artifact_bytes": new_bytes,
+        "cpu_measurement_mode": bound["cpu_measurement_mode"],
         "cpu_rss_bytes_per_rank": cpu,
+        "cpu_rss_command_tree_max_bytes": cpu_rss_command_tree_max_bytes,
+        "max_cpu_rss_bytes_per_rank": bound.get("max_cpu_rss_bytes_per_rank"),
+        "max_cpu_rss_command_tree_bytes": bound.get("max_cpu_rss_command_tree_bytes"),
         "gpu_memory_bytes_per_rank": gpu,
         "required_cpu_ranks": list(bound["required_cpu_ranks"]),
         "required_gpu_ranks": list(bound["required_gpu_ranks"]),
@@ -2184,11 +2230,15 @@ def execute(
 
     cpu_max: dict[str, int] = {}
     gpu_max: dict[str, int] = {}
+    cpu_tree_max: dict[str, int] = {}
     for observation in observations:
         for rank, value in observation["cpu_rss_bytes_per_rank"].items():
             cpu_max[rank] = max(cpu_max.get(rank, 0), int(value))
         for rank, value in observation["gpu_memory_bytes_per_rank"].items():
             gpu_max[rank] = max(gpu_max.get(rank, 0), int(value))
+        tree_value = observation["cpu_rss_command_tree_max_bytes"]
+        if tree_value is not None:
+            cpu_tree_max[observation["name"]] = int(tree_value)
     total_new_bytes = max(
         0,
         int((final_artifact_summary or {}).get("total_bytes", 0))
@@ -2277,6 +2327,7 @@ def execute(
         "setup_validation": setup_observation,
         "resource_maxima": {
             "cpu_rss_bytes_per_rank": cpu_max,
+            "cpu_rss_command_tree_max_bytes": cpu_tree_max,
             "gpu_memory_bytes_per_rank": gpu_max,
             "new_artifact_bytes": total_new_bytes,
         },

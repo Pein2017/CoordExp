@@ -1225,6 +1225,38 @@ def test_rank_failure_converges_without_admitting_a_manifest(
     assert receipt["error_code"].startswith("training_state.")
 
 
+@pytest.mark.parametrize("kind", sorted(probe.INJECT_KINDS))
+@pytest.mark.parametrize("injected_rank", [0, 1])
+def test_rank_failure_v2_records_exact_semantic_ranks_for_every_injection(
+    tmp_path: Path, kind: str, injected_rank: int
+) -> None:
+    receipt = probe.rank_failure(
+        artifact_root=tmp_path / f"rf-v2-{kind}-{injected_rank}",
+        inject={"rank": injected_rank, "kind": kind},
+    )
+    expected_published = {
+        "missing": [1 - injected_rank],
+        "duplicate": [0, 1],
+        "malformed": [0, 1],
+        "corrupt": [0, 1],
+    }[kind]
+    expected_error = {
+        "missing": "training_state.incomplete_rank_set",
+        "duplicate": "training_state.immutable_collision",
+        "malformed": "training_state.contribution_commit_failed",
+        "corrupt": "training_state.contribution_commit_failed",
+    }[kind]
+
+    assert (
+        receipt["schema"]
+        == "coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2"
+    )
+    assert receipt["expected_ranks"] == [0, 1]
+    assert receipt["serialized_ranks"] == [0, 1]
+    assert receipt["published_ranks"] == expected_published
+    assert receipt["error_code"] == expected_error
+
+
 def test_rank_failure_and_interruption_make_no_cuda_call_under_cuda_visible_devices_empty(
     tmp_path: Path,
 ) -> None:
@@ -1291,6 +1323,25 @@ def test_interruption_after_manifest_staging_before_event_commit(tmp_path: Path)
     assert receipt["inference_payload_only"] is False
     assert receipt["event_recorded"] is False
     assert receipt["exact_state_commit_owner"] == "production_training_state_primitives"
+
+
+@pytest.mark.parametrize("stop_after", probe.INTERRUPTION_BOUNDARIES)
+def test_interruption_v2_records_exact_semantic_ranks_for_every_boundary(
+    tmp_path: Path, stop_after: int
+) -> None:
+    receipt = probe.interruption(
+        artifact_root=tmp_path / f"ib-v2-{stop_after}", stop_after=stop_after
+    )
+    reached = stop_after == 2
+
+    assert (
+        receipt["schema"]
+        == "coordexp-swift-reconcile-resume-probe-interruption-receipt-v2"
+    )
+    assert receipt["expected_ranks"] == [0, 1]
+    assert receipt["serialized_ranks"] == ([0, 1] if reached else [])
+    assert receipt["published_ranks"] == ([0, 1] if reached else [])
+    assert receipt["rank_state_boundary_reached"] is reached
 
 
 # --------------------------------------------------------------------------
@@ -1410,6 +1461,7 @@ def test_verify_fails_closed_on_wrong_rank_failure_schema_status_and_shape(
         payload["schema"] = "wrong-schema"
         payload["status"] = "wrong-status"
         payload.pop("manifest_admitted")
+        payload.pop("serialized_ranks")
         payload["selector_admitted"] = True
 
     _resign_receipt(failure_path, mutate)
@@ -1421,6 +1473,7 @@ def test_verify_fails_closed_on_wrong_rank_failure_schema_status_and_shape(
         "rank_failure_arm.schema",
         "rank_failure_arm.status",
         "rank_failure_arm.manifest_admitted",
+        "rank_failure_arm.serialized_ranks",
         "rank_failure_arm.selector_admitted",
     } <= mismatch_paths
 
@@ -1437,6 +1490,7 @@ def test_verify_fails_closed_on_wrong_interruption_schema_status_and_shape(
         payload["schema"] = "wrong-schema"
         payload["status"] = "wrong-status"
         payload.pop("exact_state_present")
+        payload.pop("rank_state_boundary_reached")
         payload["stop_after"] = 2
 
     _resign_receipt(interruption_path, mutate)
@@ -1448,8 +1502,41 @@ def test_verify_fails_closed_on_wrong_interruption_schema_status_and_shape(
         "interruption_arm.schema",
         "interruption_arm.status",
         "interruption_arm.exact_state_present",
+        "interruption_arm.rank_state_boundary_reached",
         "interruption_arm.stop_after",
     } <= mismatch_paths
+
+
+@pytest.mark.parametrize(
+    ("arm", "field", "tampered"),
+    [
+        ("rank_failure", "published_ranks", [0, 1]),
+        ("rank_failure", "error_code", "training_state.immutable_collision"),
+        ("interruption", "serialized_ranks", [0, 1]),
+        ("interruption", "rank_state_boundary_reached", True),
+    ],
+)
+def test_verify_rejects_tampered_semantic_arm_rank_fields(
+    tmp_path: Path, arm: str, field: str, tampered: object
+) -> None:
+    target, receipt = _prepared(tmp_path)
+    _write_matched_success_fixture(target, receipt)
+    _write_representative_failure_arms(target)
+    path = (
+        target
+        / "arms"
+        / arm
+        / ("rank-failure-receipt.json" if arm == "rank_failure" else "interruption-receipt.json")
+    )
+    _resign_receipt(path, lambda payload: payload.__setitem__(field, tampered))
+
+    result = probe.verify_artifacts(artifact_root=target)
+
+    assert result["status"] == "failed"
+    assert any(
+        item["path"] == f"{arm}_arm.{field}"
+        for item in result["bounded_mismatches"]
+    )
 
 
 def test_verify_fails_closed_on_a_mismatched_boundary_checkpoint(tmp_path: Path) -> None:

@@ -55,6 +55,19 @@ class _FinishedProcess:
         self.returncode = -9
 
 
+class _PollingFinishedProcess(_FinishedProcess):
+    def __init__(self, polls: list[int | None]) -> None:
+        super().__init__(returncode=0)
+        self._polls = iter(polls)
+
+    def poll(self) -> int | None:
+        try:
+            self.returncode = next(self._polls)
+        except StopIteration:
+            self.returncode = 0
+        return self.returncode
+
+
 def _canonical(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -212,27 +225,24 @@ def _fixture(
     }
     config_bytes = {role: f"role: {role}\n".encode() for role in config_paths}
     commands = {name: ["packet-fake", name] for name in ORDER}
-    resource_bounds = {
-        name: {
+    resource_bounds = {}
+    for name in ORDER:
+        per_rank = name.startswith("success.")
+        row = {
             "wall_time_seconds": 10.0,
-            "max_cpu_rss_bytes_per_rank": 1024,
+            "cpu_measurement_mode": (
+                "per_rank" if per_rank else "command_tree_aggregate"
+            ),
             "max_gpu_memory_bytes_per_rank": 1024 if name.startswith("success.") else 0,
             "max_new_artifact_bytes": 1024 * 1024,
-            "required_cpu_ranks": (
-                [0, 1]
-                if name
-                in {
-                    "success.uninterrupted_control",
-                    "success.resumed_child",
-                    "rank_failure",
-                    "interruption",
-                }
-                else []
-            ),
+            "required_cpu_ranks": [0, 1] if per_rank else [],
             "required_gpu_ranks": [0, 1] if name.startswith("success.") else [],
         }
-        for name in ORDER
-    }
+        if per_rank:
+            row["max_cpu_rss_bytes_per_rank"] = 1024
+        else:
+            row["max_cpu_rss_command_tree_bytes"] = 1024
+        resource_bounds[name] = row
     contract = {
         "command_order": ORDER,
         "marker_creation": "O_EXCL",
@@ -545,6 +555,28 @@ def _launch_sleep(
     process = subprocess.Popen(["/bin/sleep", "30"], cwd=cwd, start_new_session=True)
     launched.append(process)
     return process
+
+
+def _aggregate_bound(*, max_cpu_bytes: int) -> dict[str, Any]:
+    return {
+        "wall_time_seconds": 5.0,
+        "cpu_measurement_mode": "command_tree_aggregate",
+        "max_cpu_rss_command_tree_bytes": max_cpu_bytes,
+        "max_gpu_memory_bytes_per_rank": 0,
+        "max_new_artifact_bytes": 1024,
+        "required_cpu_ranks": [],
+        "required_gpu_ranks": [],
+    }
+
+
+def _small_artifact_summary(root: Path) -> dict[str, Any]:
+    return {
+        "roots": [root],
+        "max_entries": 10,
+        "max_depth": 3,
+        "max_path_bytes": 256,
+        "max_total_bytes": 1024,
+    }
 
 
 @pytest.mark.parametrize(
@@ -1401,18 +1433,164 @@ def test_foreign_gpu_pid_starttime_cannot_satisfy_required_gpu_rank(
     assert receipt["stop_outcome"]["code"] == "packet_executor.missing_gpu_rank"
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        "rank_failure",
-        "interruption",
-    ],
-)
-def test_missing_failure_arm_cpu_rank_rejects_terminal_evidence(
+def test_unranked_model_free_cpu_subtree_needs_no_rank_environment(
+    executor: ModuleType,
+    tmp_path: Path,
+) -> None:
+    artifact_root = tmp_path / "artifacts"
+    env = {key: value for key, value in os.environ.items() if key not in {"RANK", "LOCAL_RANK"}}
+    script = (
+        "import os,subprocess,sys,time;"
+        "assert 'RANK' not in os.environ and 'LOCAL_RANK' not in os.environ;"
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(0.7)'],"
+        "env=os.environ.copy());"
+        "time.sleep(0.7); child.wait()"
+    )
+
+    def launch(_argv: list[str], *, cwd: Path) -> subprocess.Popen[Any]:
+        return subprocess.Popen(
+            [sys.executable, "-c", script],
+            cwd=cwd,
+            env=env,
+            start_new_session=True,
+        )
+
+    observation = executor._run_command(
+        name="rank_failure",
+        argv=["unranked-model-free"],
+        cwd=tmp_path,
+        bound=_aggregate_bound(max_cpu_bytes=512 * 1024 * 1024),
+        artifact_summary_bounds=_small_artifact_summary(artifact_root),
+        launch=launch,
+        gpu_sampler=lambda: [],
+        process_sampler=executor._default_process_sampler,
+        selected_uuids=set(),
+    )
+
+    assert observation["execution_error"] is None
+    assert observation["cpu_measurement_mode"] == "command_tree_aggregate"
+    assert observation["cpu_rss_bytes_per_rank"] == {}
+    assert observation["cpu_rss_command_tree_max_bytes"] > 0
+    assert observation["process_observations"]
+    assert all(row["rank"] is None for row in observation["process_observations"])
+    assert observation["cleanup"]["status"] == "confirmed_absent"
+
+
+def test_command_tree_cpu_peak_is_max_concurrent_snapshot_sum(
     executor: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    command: str,
+) -> None:
+    leader_pid = 9_999_000
+    child_a_pid = 9_999_001
+    child_b_pid = 9_999_002
+    identity_budget = 1
+
+    def proc_identity(pid: int) -> tuple[int, int, int] | None:
+        nonlocal identity_budget
+        if pid == leader_pid and identity_budget:
+            identity_budget -= 1
+            return os.getpid(), 2_147_483_647, 50
+        return None
+
+    monkeypatch.setattr(executor, "_proc_identity", proc_identity)
+    snapshots = iter(
+        [
+            [
+                {"pid": leader_pid, "ppid": os.getpid(), "starttime": 50, "rank": None, "rss_bytes": 10},
+                {"pid": child_a_pid, "ppid": leader_pid, "starttime": 100, "rank": None, "rss_bytes": 90},
+            ],
+            [
+                {"pid": leader_pid, "ppid": os.getpid(), "starttime": 50, "rank": None, "rss_bytes": 10},
+                {"pid": child_a_pid, "ppid": leader_pid, "starttime": 100, "rank": None, "rss_bytes": 20},
+                {"pid": child_b_pid, "ppid": leader_pid, "starttime": 101, "rank": None, "rss_bytes": 80},
+            ],
+            [
+                {"pid": leader_pid, "ppid": os.getpid(), "starttime": 50, "rank": None, "rss_bytes": 10}
+            ],
+        ]
+    )
+    process = _PollingFinishedProcess([None, None, 0])
+    process.pid = leader_pid
+    observation = executor._run_command(
+        name="setup",
+        argv=["synthetic-aggregate"],
+        cwd=tmp_path,
+        bound=_aggregate_bound(max_cpu_bytes=1024),
+        artifact_summary_bounds=_small_artifact_summary(tmp_path / "artifacts"),
+        launch=lambda _argv, *, cwd: process,
+        gpu_sampler=lambda: [],
+        process_sampler=lambda: next(snapshots),
+        selected_uuids=set(),
+    )
+
+    assert observation["execution_error"] is None
+    assert observation["cpu_rss_command_tree_max_bytes"] == 110
+    assert sum(row["rss_bytes"] for row in observation["process_observations"]) == 180
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        ("bound", "packet_executor.rss_bound"),
+        ("missing_sample", "packet_executor.missing_owned_process_sample"),
+    ],
+)
+def test_command_tree_cpu_bound_and_missing_owned_sample_fail_closed(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    expected_code: str,
+) -> None:
+    leader_pid = 9_999_100
+    identity_budget = 1
+
+    def proc_identity(pid: int) -> tuple[int, int, int] | None:
+        nonlocal identity_budget
+        if pid == leader_pid and identity_budget:
+            identity_budget -= 1
+            return os.getpid(), 2_147_483_647, 50
+        return None
+
+    monkeypatch.setattr(executor, "_proc_identity", proc_identity)
+    rows = (
+        []
+        if failure == "missing_sample"
+        else [
+            {"pid": leader_pid, "ppid": os.getpid(), "starttime": 50, "rank": None, "rss_bytes": 42}
+        ]
+    )
+    process = _FinishedProcess(0)
+    process.pid = leader_pid
+    observation = executor._run_command(
+        name="verification",
+        argv=["synthetic-aggregate"],
+        cwd=tmp_path,
+        bound=_aggregate_bound(max_cpu_bytes=41),
+        artifact_summary_bounds=_small_artifact_summary(tmp_path / "artifacts"),
+        launch=lambda _argv, *, cwd: process,
+        gpu_sampler=lambda: [],
+        process_sampler=lambda: rows,
+        selected_uuids=set(),
+    )
+
+    assert observation["execution_error"]["code"] == expected_code
+
+
+@pytest.mark.parametrize(
+    ("missing", "expected_code"),
+    [
+        ("cpu", "packet_executor.missing_process_rank"),
+        ("gpu", "packet_executor.missing_gpu_rank"),
+    ],
+)
+def test_success_commands_still_require_both_cpu_and_gpu_ranks(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing: str,
+    expected_code: str,
 ) -> None:
     case = _fixture(tmp_path, monkeypatch)
     active = ""
@@ -1422,14 +1600,25 @@ def test_missing_failure_arm_cpu_rank_rejects_terminal_evidence(
         active = argv[1]
         return case["launch"](argv, **kwargs)
 
-    def process_sampler() -> list[dict[str, Any]]:
-        return _process_rows(include_rank1=active != command)
-
-    receipt = _execute(executor, case, launch=launch, process_sampler=process_sampler)
+    receipt = _execute(
+        executor,
+        case,
+        launch=launch,
+        process_sampler=lambda: _process_rows(
+            include_rank1=not (
+                missing == "cpu" and active == "success.uninterrupted_control"
+            )
+        ),
+        gpu_sampler=lambda: _gpu_rows(
+            include_rank1=not (
+                missing == "gpu" and active == "success.uninterrupted_control"
+            )
+        ),
+    )
 
     assert receipt["status"] == "stopped"
-    assert receipt["stop_outcome"]["command"] == command
-    assert receipt["stop_outcome"]["code"] == "packet_executor.missing_process_rank"
+    assert receipt["stop_outcome"]["command"] == "success.uninterrupted_control"
+    assert receipt["stop_outcome"]["code"] == expected_code
 
 
 def test_outer_receipt_binds_launcher_runtime_groups_and_bounded_artifact_summaries(

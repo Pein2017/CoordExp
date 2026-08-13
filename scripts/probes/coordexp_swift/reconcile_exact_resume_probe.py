@@ -87,10 +87,10 @@ WORLD_SIZE = 2
 SCHEMA_PREPARE_RECEIPT = "coordexp-swift-reconcile-resume-probe-prepare-receipt-v1"
 SCHEMA_RUN_RECEIPT = "coordexp-swift-reconcile-resume-probe-run-receipt-v1"
 SCHEMA_RANK_FAILURE_RECEIPT = (
-    "coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v1"
+    "coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2"
 )
 SCHEMA_INTERRUPTION_RECEIPT = (
-    "coordexp-swift-reconcile-resume-probe-interruption-receipt-v1"
+    "coordexp-swift-reconcile-resume-probe-interruption-receipt-v2"
 )
 SCHEMA_TERMINAL_RECEIPT = "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1"
 
@@ -1560,10 +1560,10 @@ def rank_failure(
                 checkpoint_dir, session, payloads[rank]
             )
             contributed_ranks.append(rank)
-            if rank == injected_rank and kind == "duplicate":
-                publish_rank_training_state_contribution(
-                    checkpoint_dir, session, payloads[rank]
-                )
+        if kind == "duplicate":
+            publish_rank_training_state_contribution(
+                checkpoint_dir, session, payloads[injected_rank]
+            )
         if kind == "malformed":
             _corrupt_rank_contribution(session.stage_path, injected_rank, garbage=True)
         elif kind == "corrupt":
@@ -1585,6 +1585,9 @@ def rank_failure(
         "schema": SCHEMA_RANK_FAILURE_RECEIPT,
         "status": "converged_failure",
         "world_size": world_size,
+        "expected_ranks": list(range(world_size)),
+        "serialized_ranks": sorted(payloads),
+        "published_ranks": contributed_ranks,
         "injected_rank": injected_rank,
         "kind": kind,
         "error_code": error.code,
@@ -1696,6 +1699,8 @@ def interruption(
 
     training_state_manifest_digest: str | None = None
     event_recorded = False
+    serialized_ranks: list[int] = []
+    published_ranks: list[int] = []
 
     if stop_after >= 0:
         pass  # boundary 0: nothing committed yet.
@@ -1704,11 +1709,13 @@ def interruption(
     if stop_after >= 2:
         plan = _synthetic_plan()
         payloads = {rank: _synthetic_payload(rank) for rank in range(WORLD_SIZE)}
+        serialized_ranks = sorted(payloads)
         session = begin_training_state_contributions(checkpoint_dir, plan)
         for rank in range(WORLD_SIZE):
             publish_rank_training_state_contribution(
                 checkpoint_dir, session, payloads[rank]
             )
+            published_ranks.append(rank)
         published = commit_training_state_contributions(checkpoint_dir, session)
         training_state_manifest_digest = published.manifest.aggregate_digest
     # The authoritative event/alias commit (RunWriter.record_checkpoint_publication_event)
@@ -1743,6 +1750,10 @@ def interruption(
         "schema": SCHEMA_INTERRUPTION_RECEIPT,
         "status": "converged_partial_state",
         "world_size": world_size,
+        "expected_ranks": list(range(world_size)),
+        "serialized_ranks": serialized_ranks,
+        "published_ranks": published_ranks,
+        "rank_state_boundary_reached": training_state_present,
         "stop_after": stop_after,
         "checkpoint_dir": str(checkpoint_dir),
         "inference_payload_present": inference_present,
@@ -1812,6 +1823,10 @@ _COMPARISON_POLICY = {
             "world_size": WORLD_SIZE,
             "injected_rank": REPRESENTATIVE_FAILURE_RANK,
             "kind": REPRESENTATIVE_FAILURE_KIND,
+            "expected_ranks": [0, 1],
+            "serialized_ranks": [0, 1],
+            "published_ranks": [0],
+            "error_code": "training_state.incomplete_rank_set",
             "manifest_admitted": False,
             "residue": [],
         },
@@ -1824,6 +1839,10 @@ _COMPARISON_POLICY = {
             "status": "converged_partial_state",
             "world_size": WORLD_SIZE,
             "stop_after": REPRESENTATIVE_INTERRUPTION_STOP_AFTER,
+            "expected_ranks": [0, 1],
+            "serialized_ranks": [],
+            "published_ranks": [],
+            "rank_state_boundary_reached": False,
             "inference_payload_present": True,
             "inference_payload_only": True,
             "inference_commit_owner": "stub_not_production",

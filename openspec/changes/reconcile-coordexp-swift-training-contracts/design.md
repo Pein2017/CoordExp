@@ -156,13 +156,19 @@ branch executes exactly one next forward and at most one applied optimizer
 update; each failure-shaped arm executes no more than one forward and one
 applied update per rank. The packet declares numeric, config-derived ceilings
 for model forwards and collectives per rank and per branch/arm, plus per-arm and
-total wall time, per-rank CPU RSS and GPU-memory high-water marks, new artifact
-bytes across both success branches and the failure-shaped arms, and required
-free disk. Missing bounds, changed commands/commit, an occupied artifact
-target, or any exceeded bound stops the launch and requires a new packet rather
-than an automatic retry.
+total wall time, command-specific CPU RSS measurement modes and bounds,
+per-rank GPU-memory high-water marks, new artifact bytes across both success
+branches and the failure-shaped arms, and required free disk. The two success
+commands retain per-rank CPU RSS maxima. Setup, rank failure, interruption, and
+verification instead use the maximum concurrent sum of RSS across the exact
+owned command tree in any one sampler snapshot; this command-tree aggregate is
+not the sum of independent per-PID high-water marks and requires at least one
+owned sample. Missing bounds or samples, changed commands/commit, an occupied
+artifact target, or any exceeded bound stops the launch and requires a new
+packet rather than an automatic retry.
 
-Wave-3 attempt 3 is frozen at implementation commit
+Wave-3 attempts 1-3 and all of their receipts are immutable historical
+evidence. Attempt 3 is frozen at implementation commit
 `037ab6683f9eeeb99157960f9fcf5bb3176a7044`, manifest SHA-256
 `c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42`,
 and packet SHA-256
@@ -187,10 +193,11 @@ compatibility, and provider support remain unchanged.
 The only authorized execution repair is a separate experiment-local
 `reconcile_exact_resume_packet_executor.py`. Its manifest schema v2 carries a
 machine-readable `execution_contract` fixing the command order to setup,
-control, resumed, rank failure, interruption, verification. The same
-`execution_contract` binds the exact immutable pre-cost review receipt path;
-it does not bind that receipt's hash, because the review in turn binds the
-manifest hash. The independently signed review uses schema
+control, resumed, rank failure, interruption, verification, and declaring each
+command's CPU measurement mode, required rank rows, and corresponding numeric
+bound. The same `execution_contract` binds the exact immutable pre-cost review
+receipt path; it does not bind that receipt's hash, because the review in turn
+binds the manifest hash. The independently signed review uses schema
 `coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` and contains
 `status: READY`, the exact implementation commit, manifest SHA-256, packet
 SHA-256, independent reviewer identity, and `receipt_payload_sha256`. The
@@ -217,19 +224,44 @@ creation and immediately before the first GPU command. A GPU process/rank row
 counts only when its UUID is selected by that mapping and its PID plus Linux
 starttime belongs to the current command's observed descendant tree; a
 foreign, stale, index-swapped, or unowned row fails closed. Required resource
-coverage is command-specific: `required_cpu_ranks: [0, 1]` for
-`success.uninterrupted_control`, `success.resumed_child`, `rank_failure`, and
-`interruption`; `required_gpu_ranks: [0, 1]` only for the two success commands;
-and both lists empty for `setup` and `verification`. Missing required rows are
-terminal evidence failures, including on failure-shaped arms.
+coverage is command-specific. `success.uninterrupted_control` and
+`success.resumed_child` use CPU mode `per_rank` with
+`required_cpu_ranks: [0, 1]`, and also require GPU ranks `[0, 1]`. `setup`,
+`rank_failure`, `interruption`, and `verification` use CPU mode
+`command_tree_aggregate` with `required_cpu_ranks: []`; their accepted CPU
+evidence is an owned command-tree sample and
+`cpu_rss_command_tree_max_bytes`, the maximum across sampler snapshots of the
+concurrent RSS sum for all exact PID/starttime-owned processes in that
+snapshot, bounded by the frozen `max_cpu_rss_command_tree_bytes`. GPU rank
+requirements are empty for those four commands. The
+executor MUST NOT infer semantic rank inventory from unranked model-free OS
+process rows or turn the failure-shaped arms into `torchrun` commands. Missing
+required success rows, a missing owned aggregate sample, or either kind of CPU
+bound exceedance is a terminal evidence failure.
+
+Rank meaning for the two model-free arms belongs to their signed semantic arm
+receipts. Their experiment-local schemas are bumped to
+`coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2` and
+`coordexp-swift-reconcile-resume-probe-interruption-receipt-v2`. Every
+rank-failure injection records exact `expected_ranks: [0, 1]`,
+`serialized_ranks: [0, 1]`, and injection-derived `published_ranks`; the frozen
+representative `rank=1, kind=missing` therefore records `[0]` and exact
+`error_code: training_state.incomplete_rank_set`. Every interruption boundary
+records exact `expected_ranks: [0, 1]`, serialized ranks, and published ranks;
+at the frozen `stop_after=1`, serialized and published ranks are both `[]` and
+an explicit `rank_state_boundary_reached` field is false. The verifier checks
+every field exactly and rejects missing, stale-schema, re-signed-tampered, or
+digest-tampered arm receipts.
 
 The executor always attempts one signed outer terminal receipt. It binds the
 implementation, manifest, packet, and review identities; exact argv
 observations; marker and command process-group identities; launcher callable
 and Python runtime identity; per-command required-rank coverage and accepted
-process/GPU rows; resource maxima; bounded artifact-tree summaries under only
-the declared roots and numeric entry/depth/path/byte limits; cleanup outcome;
-stop outcome; and the inner verifier receipt when verification is reached.
+process/GPU rows; per-rank success maxima and aggregate
+`cpu_rss_command_tree_max_bytes` values; bounded artifact-tree summaries under
+only the declared roots and numeric entry/depth/path/byte limits; cleanup
+outcome; stop outcome; and the inner verifier receipt when verification is
+reached.
 Artifact-summary overflow fails instead of silently truncating. These two
 seams are qualification tooling, not production orchestration.
 
