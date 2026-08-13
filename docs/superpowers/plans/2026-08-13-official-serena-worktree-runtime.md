@@ -1,5 +1,11 @@
 # Official Serena Per-Worktree Runtime Implementation Plan
 
+> **RETIRED (2026-08-13):** Do not execute this plan. Live Codex acceptance
+> exposed transport closure in the shared HTTP/bridge lifecycle. The wrapper,
+> bridge installer, lease state, and dedicated tests were removed; the active
+> configuration launches one official Serena stdio process per Agent session
+> with `--project-from-cwd`. The plan remains only as historical evidence.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Run one unmodified official Serena backend per Git worktree, shared by concurrent Codex and Claude Code clients through stdio bridges, with guarded startup and automatic lease-based retirement.

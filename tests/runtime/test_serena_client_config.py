@@ -69,6 +69,17 @@ def test_all_codex_and_claude_registrations_use_independent_official_stdio() -> 
         _assert_registration(registration)
 
 
+def test_retired_shared_transport_is_absent() -> None:
+    retired_paths = (
+        ROOT / ".codex" / "serena" / "serena_worktree_mcp.py",
+        ROOT / ".codex" / "serena" / "setup_shared_runtime.sh",
+        ROOT / ".codex" / "serena" / "bridge.lock",
+        ROOT / "tests" / "runtime" / "test_serena_worktree_mcp.py",
+    )
+
+    assert all(not path.exists() for path in retired_paths)
+
+
 def test_context_is_worktree_bound_with_exact_tool_surface() -> None:
     context = yaml.safe_load(
         (ROOT / ".codex" / "serena" / "contexts" / "coordexp-minimal.yml").read_text()

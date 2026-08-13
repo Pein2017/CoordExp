@@ -1,5 +1,12 @@
 # Official Serena Per-Worktree Runtime Design
 
+> **RETIRED (2026-08-13):** This shared Streamable HTTP/stdio-bridge design was
+> removed after live Codex sessions experienced transport closure during
+> lifecycle handoff. The active architecture is one unmodified official Serena
+> stdio process per Agent session, started with `--project-from-cwd`. This file
+> is retained only as historical design evidence and is not implementation
+> authority.
+
 ## Goal
 
 Use unmodified official Serena while allowing Codex and Claude Code agents to
