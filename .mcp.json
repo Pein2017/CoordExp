@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "serena": {
+      "type": "stdio",
+      "command": "/root/.local/bin/serena",
+      "args": [
+        "start-mcp-server",
+        "--transport",
+        "stdio",
+        "--project-from-cwd",
+        "--context",
+        "coordexp-minimal",
+        "--enable-web-dashboard",
+        "false",
+        "--enable-gui-log-window",
+        "false",
+        "--open-web-dashboard",
+        "false",
+        "--log-level",
+        "CRITICAL"
+      ],
+      "env": {
+        "SERENA_HOME": "/data/CoordExp/.codex/serena"
+      }
+    }
+  }
+}

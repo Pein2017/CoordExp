@@ -1,0 +1,28 @@
+description: Minimal official Serena context for one Codex or Claude worktree per stdio process.
+prompt: |
+  This Serena process is dedicated to the project detected from this Agent's startup cwd.
+  Use Serena first for source-code symbol overview, declaration, reference,
+  implementation, and diagnostics queries. Use the Agent's native shell and file tools
+  for lexical search, non-code files, diffs, tests, and edits. Do not use Serena memories.
+  If the shell moves to another worktree, start a fresh Agent there or explicitly activate
+  the new absolute project path before semantic queries. Report Serena friction to the user.
+
+fixed_tools:
+  - initial_instructions
+  - activate_project
+  - get_current_config
+  - search_for_pattern
+  - get_symbols_overview
+  - find_symbol
+  - find_referencing_symbols
+  - find_implementations
+  - find_declaration
+  - get_diagnostics_for_file
+  - get_diagnostics_for_symbol
+  - rename_symbol
+  - replace_symbol_body
+  - insert_before_symbol
+  - insert_after_symbol
+
+single_project: false
+structured_tool_output: true

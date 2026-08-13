@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "serena-hooks activate --client=codex"
+            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks activate --client=codex"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "serena-hooks remind --client=codex"
+            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks remind --client=codex"
           },
           {
             "type": "command",
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "serena-hooks remind --client=codex"
+            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks remind --client=codex"
           },
           {
             "type": "command",
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "serena-hooks remind --client=codex"
+            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks remind --client=codex"
           },
           {
             "type": "command",
@@ -54,12 +54,12 @@
         ]
       }
     ],
-    "Stop": [
+    "SessionEnd": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "serena-hooks cleanup --client=codex"
+            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks cleanup --client=codex"
           }
         ]
       }
