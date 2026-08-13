@@ -789,6 +789,27 @@ def test_checkpoint_writer_and_cpu_readback_bind_exact_composed_payload(
         "expected_tokenizer_sha256": live.SOURCE_TOKENIZER_SHA256,
     }
 
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    on_policy_config = replace(
+        load_arm_config(CONFIG_ROOT / "05_a4.yaml"),
+        unit_id=live.ON_POLICY_UNIT_ID,
+        arm_id="O-First-Safe",
+        milestones=live.ON_POLICY_MILESTONES,
+    )
+    on_policy_assembly = replace(
+        assembly, plan=live.build_human13_live_model_plan(on_policy_config)
+    )
+    step_three = run_dir / "checkpoints" / "step-3"
+    (step_three / "adapter").mkdir(parents=True)
+    (step_three / "special_token_embeddings").mkdir()
+    assert (
+        live.readback_human13_checkpoint(
+            step_three, expected_step=3, assembly=on_policy_assembly
+        ).step
+        == 3
+    )
+
 
 def test_default_backend_projects_exact_runtime_configs_with_cpu_mocks(
     monkeypatch: pytest.MonkeyPatch,

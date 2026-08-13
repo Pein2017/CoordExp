@@ -910,13 +910,18 @@ def readback_human13_checkpoint(
 ) -> Human13CheckpointReadback:
     """CPU-validate one written adapter+delta checkpoint against the assembly."""
 
+    allowed_steps = (
+        frozenset(range(1, 9))
+        if assembly.plan.unit_id == ON_POLICY_UNIT_ID
+        else frozenset(CHECKPOINT_STEPS)
+    )
     if (
         isinstance(expected_step, bool)
         or not isinstance(expected_step, int)
-        or expected_step not in CHECKPOINT_STEPS
+        or expected_step not in allowed_steps
     ):
         raise Human13LiveModelError(
-            "checkpoint readback step must be one of 1,2,4,8,16"
+            "checkpoint readback step is outside the owning unit schedule"
         )
     root = _regular_directory(checkpoint_dir, "Human-13 checkpoint")
     if root.name != f"step-{expected_step}" or root.parent.name != "checkpoints":
