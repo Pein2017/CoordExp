@@ -329,6 +329,9 @@ def validate_frontier_iteration(
     if frontier.schema_version != SCHEMA_VERSION:
         raise ValueError("frontier schema version does not match")
     _validate_checkpoint(frontier.checkpoint)
+    manifest_target = Path(frontier.manifest_path).resolve(strict=True)
+    if _verify_adjacent_digest(manifest_target, "manifest") != frontier.manifest_sha256:
+        raise ValueError("frontier manifest digest does not match live manifest")
     if frontier.panel_sha256 != manifest.binding.panel.panel_sha256:
         raise ValueError("frontier panel identity does not match manifest")
     if tuple(image.image_id for image in frontier.images) != tuple(
@@ -394,6 +397,11 @@ def validate_frontier_iteration(
         previous = load_frontier_iteration(previous_target)
         if previous.iteration + 1 != frontier.iteration:
             raise ValueError("frontier previous iteration is not adjacent")
+        if (
+            previous.manifest_sha256 != frontier.manifest_sha256
+            or previous.panel_sha256 != frontier.panel_sha256
+        ):
+            raise ValueError("frontier previous manifest differs")
         prior_ages = dict(previous.protected_owner_ages)
     visible = {
         owner_id for image in frontier.images for owner_id in image.canonical_owner_ids

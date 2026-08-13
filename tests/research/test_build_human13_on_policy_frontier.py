@@ -48,7 +48,9 @@ def _request(mode: str, *, seed: int | None = None) -> manifest_builder.RequestI
     )
 
 
-def _manifest(tmp_path: Path) -> tuple[manifest_builder.Human13KUnionManifest, Path]:
+def _manifest(
+    tmp_path: Path, *, h_tokens: tuple[int, int, int, int] = (21, 22, 23, 24)
+) -> tuple[manifest_builder.Human13KUnionManifest, Path]:
     source = manifest_builder.TrajectoryInput(
         trajectory_id="source",
         request=_request("source_greedy"),
@@ -67,7 +69,7 @@ def _manifest(tmp_path: Path) -> tuple[manifest_builder.Human13KUnionManifest, P
         rows = ()
         tokens = (200, 999)
         if seed == 21001:
-            tokens = (200, 21, 22, 23, 24, 999)
+            tokens = (200, *h_tokens, 999)
             rows = (
                 manifest_builder.PredictionRowInput(
                     "k-h", 0, "person", (20.0, 0.0, 30.0, 10.0), 1, 5, 3
@@ -335,6 +337,12 @@ def test_write_rejects_inconsistent_row_slice(tmp_path: Path) -> None:
     bad = replace(frontier, images=(replace(image, rows=(bad_row, *image.rows[1:])),))
     with pytest.raises(ValueError, match="slice|semantic"):
         canonical_write(bad, tmp_path / "bad-frontier.json")
+    wrong_manifest_digest = replace(frontier, manifest_sha256="0" * 64)
+    wrong_output = tmp_path / "wrong-manifest-frontier.json"
+    with pytest.raises(ValueError, match="manifest.*digest"):
+        canonical_write(wrong_manifest_digest, wrong_output)
+    assert not wrong_output.exists()
+    assert not Path(f"{wrong_output}.sha256").exists()
 
 
 def test_load_rederives_protected_owner_ages(tmp_path: Path) -> None:
@@ -354,6 +362,33 @@ def test_load_rederives_protected_owner_ages(tmp_path: Path) -> None:
     _rewrite_canonical(output, document)
     with pytest.raises(ValueError, match="protection ages"):
         load_frontier_iteration(output)
+
+
+def test_write_rejects_predecessor_from_different_manifest(tmp_path: Path) -> None:
+    manifest, manifest_path = _manifest(tmp_path / "first")
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    previous = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=0,
+        checkpoint=checkpoint,
+        decodes=(_decode(checkpoint=checkpoint, include_h=True),),
+    )
+    previous_path = tmp_path / "previous.json"
+    canonical_write(previous, previous_path)
+
+    other, other_path = _manifest(tmp_path / "other", h_tokens=(31, 32, 33, 34))
+    current_checkpoint = CheckpointIdentity("/accepted/step-1", "b" * 64)
+    with pytest.raises(ValueError, match="previous.*manifest|manifest.*previous"):
+        build_frontier_iteration(
+            other,
+            manifest_path=other_path,
+            iteration=1,
+            checkpoint=current_checkpoint,
+            previous=previous,
+            previous_path=previous_path,
+            decodes=(_decode(checkpoint=current_checkpoint, include_h=True),),
+        )
 
 
 def test_build_rejects_manifest_object_that_differs_from_bound_path(
