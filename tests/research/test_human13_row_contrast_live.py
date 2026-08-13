@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import torch
 
+from src.artifacts.json_values import validate_json_value
+
 from scripts.research.build_human13_row_contrast_successor import (
     DuplicateContrastEvent,
     Human13RowContrastLedger,
@@ -203,6 +205,7 @@ def test_loss_runner_scores_then_replays_exact_cross_pack_objective() -> None:
     assert artifact["two_pass_exact"] is True
     assert artifact["row_contrast"]["event_count"] == 1
     assert artifact["union"]["candidate_count"] == 1
+    validate_json_value(artifact)
 
 
 def test_r2_payload_has_same_training_sites_and_declares_watch_projection() -> None:

@@ -753,7 +753,9 @@ class SuccessorLossRunner:
             "replay_forward_count": plan.micro_step_count,
             "union": {
                 "candidate_count": len(plan.union_weights),
-                "reference_nll_by_image": dict(plan.union_reference_nll),
+                "reference_nll_by_image": {
+                    str(image_id): value for image_id, value in plan.union_reference_nll
+                },
             },
             "row_contrast": {
                 "event_count": len(plan.contrast_reference_losses),
