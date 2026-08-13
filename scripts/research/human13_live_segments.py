@@ -129,11 +129,11 @@ def materialize_segments(
             if donor is None:
                 raise ValueError(f"missing A6 donor trajectory {row.trajectory_id}")
             source_row = next((r for r in donor.rows if r.row_id == row.row_id), None)
-            donor_prefix = (
-                tuple(donor.raw_token_ids[: source_row.token_start])
-                if source_row is not None
-                else tuple(donor.prefix.clean_token_ids)
-            )
+            if source_row is None:
+                raise ValueError(
+                    f"missing A6 donor target row {row.row_id} in {row.trajectory_id}"
+                )
+            donor_prefix = _clean_donor_prefix(donor, source_row)
             segments.append(
                 add(
                     "a6_donor_h1",
@@ -257,6 +257,25 @@ def _source_trajectory(image: Any) -> Any:
             "one source_greedy trajectory"
         )
     return sources[0]
+
+
+def _clean_donor_prefix(trajectory: Any, target_row: Any) -> tuple[int, ...]:
+    """Return the exact pre-target prefix after earlier duplicate-row deletion."""
+
+    duplicate_ids = set(getattr(trajectory, "duplicate_row_ids", ()))
+    removed = {
+        index
+        for row in getattr(trajectory, "rows", ())
+        if row.row_id in duplicate_ids and row.token_end <= target_row.token_start
+        for index in range(row.token_start, row.token_end)
+    }
+    return tuple(
+        int(token)
+        for index, token in enumerate(
+            trajectory.raw_token_ids[: target_row.token_start]
+        )
+        if index not in removed
+    )
 
 
 def _bindings(

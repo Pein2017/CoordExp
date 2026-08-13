@@ -5,6 +5,7 @@ import pytest
 
 from scripts.research.build_human13_k_union_manifest import (
     DuplicateEventRecord,
+    PredictionRowInput,
     PrefixRecord,
     RequestIdentity,
     SelectedRowRecord,
@@ -51,11 +52,15 @@ def _manifest():
         4,
         "im_end",
         "complete",
-        (),
+        (
+            PredictionRowInput(
+                "k-row", 0, "object", (0.1, 0.1, 0.2, 0.2), 1, 3, 2
+            ),
+        ),
         PrefixRecord((20, 21, 22, 23), (20, 21, 22, 23), ()),
+        ("k-row",),
         (),
-        (),
-        (),
+        ("k-row",),
         (False,) * 5,
         (False,) * 5,
     )
@@ -210,6 +215,58 @@ def test_materialized_a4_candidates_are_independent_runner_segments():
     a4 = [item for item in result.segments if item.role == "a4_union"]
     assert len(a4) == 1
     assert runner.build_logical_segments(a4)[0].role == "a4_union"
+
+
+def test_a6_donor_prefix_removes_earlier_duplicate_row_tokens():
+    manifest = _manifest()
+    image = manifest.images[0]
+    source, sampled = image.trajectories
+    duplicate = PredictionRowInput(
+        "dup-row", 0, "object", (0.0, 0.0, 0.1, 0.1), 0, 2, 1
+    )
+    retained = PredictionRowInput(
+        "keep-row", 1, "object", (0.2, 0.2, 0.3, 0.3), 2, 3, 2
+    )
+    target = PredictionRowInput(
+        "k-row", 2, "object", (0.4, 0.4, 0.5, 0.5), 3, 5, 4
+    )
+    sampled_with_duplicate = TrajectoryRecord(
+        sampled.trajectory_id,
+        sampled.request,
+        (40, 41, 42, 21, 22, 99),
+        5,
+        sampled.stop_reason,
+        sampled.parser_status,
+        (duplicate, retained, target),
+        PrefixRecord((40, 41, 42, 21, 22), (42, 21, 22), ("dup-row",)),
+        ("keep-row", "k-row"),
+        ("dup-row",),
+        ("k-row",),
+        (False,) * 6,
+        (False,) * 6,
+    )
+    manifest_with_duplicate = SimpleNamespace(
+        images=(
+            SimpleNamespace(
+                image_id=image.image_id,
+                trajectories=(source, sampled_with_duplicate),
+                owners=image.owners,
+                selected_rows=image.selected_rows,
+                duplicate_events=image.duplicate_events,
+                replay_row_ids=image.replay_row_ids,
+                target_row_ids=image.target_row_ids,
+                candidate_row_ids=image.candidate_row_ids,
+            ),
+        )
+    )
+    skeleton = Skeleton("image:1", (7, 8, 9), 3, {"gt:1:0": (30, 31)})
+
+    result = materialize_segments(manifest_with_duplicate, {1: skeleton})
+
+    donor = next(item for item in result.segments if item.role == "a6_donor_h1")
+    assert donor.encoded_example.input_ids == (7, 8, 9, 42, 21, 22)
+    binding = donor.encoded_example.human13_row_bindings[0]
+    assert (binding.token_start, binding.token_end) == (4, 6)
 
 
 def test_source_replay_binding_is_offset_after_multimodal_prompt():
