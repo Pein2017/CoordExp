@@ -596,10 +596,17 @@ def run_one_iteration(
                 accepted=True,
             )
         if receipt.decision == "rejected":
-            rollback = runtime.clean_decode(
-                config, frontier.frontier.checkpoint, purpose="rollback_reproduction"
-            )
-            _validate_clean_decode(config, rollback, frontier.frontier.checkpoint)
+            audit_snapshot = runtime.transaction.begin()
+            try:
+                rollback = runtime.clean_decode(
+                    config,
+                    frontier.frontier.checkpoint,
+                    purpose="rollback_reproduction",
+                )
+                _validate_clean_decode(config, rollback, frontier.frontier.checkpoint)
+            finally:
+                audit_restore = runtime.transaction.reject(audit_snapshot)
+                _require_restored_transaction(audit_restore)
             receipt = replace(
                 receipt,
                 rollback_decode_path=rollback.artifact_path,

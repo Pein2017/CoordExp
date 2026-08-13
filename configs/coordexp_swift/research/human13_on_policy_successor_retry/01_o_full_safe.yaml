@@ -9,7 +9,7 @@ manifest_sha256: a8f88716c1227054ab29dc698f89462c9369c47c8d6415de3783c0937f60a6f
 source_trajectory_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-12-human13-k-union-to-greedy-overfit-screen/discovery/source/trajectories.jsonl
 k_trajectory_path: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-12-human13-k-union-to-greedy-overfit-screen/discovery/k/trajectories.jsonl
 source_infer_config: configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml
-output_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-13-human13-on-policy-first-bottleneck-successor/matrix-retry-v2/o-full-safe
+output_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-13-human13-on-policy-first-bottleneck-successor/matrix-retry-v3/o-full-safe
 world_size: 1
 max_attempts: 8
 one_update_per_ledger: true

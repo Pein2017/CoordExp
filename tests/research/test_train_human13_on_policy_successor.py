@@ -478,6 +478,14 @@ class _BadRollbackRuntime(_Runtime):
         return replace(receipt, observation=observation)
 
 
+class _RngConsumingRollbackRuntime(_Runtime):
+    def clean_decode(self, config, checkpoint, *, purpose: str):
+        receipt = super().clean_decode(config, checkpoint, purpose=purpose)
+        if purpose == "rollback_reproduction":
+            torch.rand(1)
+        return receipt
+
+
 def _config(arm_id: str = "O-First-Safe"):
     filename = (
         "02_o_first_safe.yaml" if arm_id == "O-First-Safe" else "01_o_full_safe.yaml"
@@ -716,6 +724,20 @@ def test_reject_continues_past_three_while_an_eligible_candidate_remains(
         grandchild["parent_selection_evidence_sha256"]
         == hashlib.sha256(expected_evidence.read_bytes()).hexdigest()
     )
+
+
+def test_rollback_reproduction_rng_is_restored_before_retry_child(
+    tmp_path: Path,
+) -> None:
+    config = replace(_config(), output_root=str(tmp_path / "rng-safe-retry"))
+    runtime = _RngConsumingRollbackRuntime(Path(config.output_root), accept=False)
+    before = runtime.transaction.state_digest()
+
+    receipt = run_on_policy_loop(config, runtime=runtime, execute_authorized=True)
+
+    assert receipt.stop_reason == "repeated_rejection_no_eligible_candidate"
+    assert receipt.attempted_update_count == 4
+    assert runtime.transaction.state_digest() == before
 
 
 class _WrongRetryChildRuntime(_Runtime):
