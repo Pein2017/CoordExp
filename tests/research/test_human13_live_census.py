@@ -18,6 +18,7 @@ from scripts.research.materialize_human13_no_update_census import (
     run_census_with_exact_logits,
 )
 from src.inference.backend import token_ids_sha256
+from src.qwen.encoding import EncodedExample
 
 
 IMAGE_TOKEN_ID = 151655
@@ -53,6 +54,40 @@ class Skeleton:
 class FakeTokenizer:
     def __len__(self) -> int:
         return 512
+
+
+def test_clone_real_encoded_skeleton_preserves_human13_dynamic_metadata():
+    skeleton = EncodedExample(
+        example_id="image:1",
+        chat_text="prompt",
+        base_input_ids=PROMPT_IDS,
+        input_ids=PROMPT_IDS,
+        base_offset_mapping=((0, 0),) * len(PROMPT_IDS),
+        base_to_physical_start=tuple(range(len(PROMPT_IDS))),
+        image_token_count=4,
+        image_encoding=FakeImageEncoding(),
+        assistant_content_start_char=0,
+        image_pad_base_index=1,
+        image_pad_physical_start=1,
+        image_pad_physical_end=5,
+        supervised_token_spans=(),
+        ignored_token_spans=(),
+        global_max_length=12_000,
+    )
+    object.__setattr__(skeleton, "human13_image_id", 1)
+    object.__setattr__(skeleton, "prompt_token_count", len(PROMPT_IDS))
+    object.__setattr__(skeleton, "owner_row_tokens", {"owner-a": (100, 101)})
+
+    cloned = live._clone_skeleton(
+        skeleton,
+        segment_id="a1:1",
+        image_id=1,
+        input_ids=(*PROMPT_IDS, 100, 101),
+    )
+
+    assert cloned.human13_image_id == 1
+    assert cloned.prompt_token_count == len(PROMPT_IDS)
+    assert cloned.owner_row_tokens == {"owner-a": (100, 101)}
 
 
 def _plan() -> Human13CensusPlan:

@@ -86,6 +86,9 @@ def _clone_skeleton(
 ) -> Any:
     if is_dataclass(skeleton):
         encoded = replace(skeleton, example_id=segment_id, input_ids=input_ids)
+        for name in ("prompt_token_count", "owner_row_tokens"):
+            if hasattr(skeleton, name):
+                object.__setattr__(encoded, name, getattr(skeleton, name))
         object.__setattr__(encoded, "human13_image_id", image_id)
         return encoded
     values = dict(vars(skeleton))
