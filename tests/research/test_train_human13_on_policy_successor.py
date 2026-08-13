@@ -30,6 +30,7 @@ from scripts.research.human13_training_transaction import (
 )
 from scripts.research.train_human13_on_policy_successor import (
     CandidateSelectionReceipt,
+    CandidateKey,
     CleanDecodeReceipt,
     DurableArtifact,
     FrontierHandle,
@@ -37,6 +38,7 @@ from scripts.research.train_human13_on_policy_successor import (
     OnPolicyArmConfig,
     OnPolicySuccessorError,
     RuntimeIdentity,
+    RetryChildLedgerHandle,
     build_dry_run_receipt,
     execute_cli,
     load_on_policy_config,
@@ -213,6 +215,7 @@ class _Runtime:
         self.events: list[str] = []
         self.published: list[str] = []
         self.written_receipts = []
+        self.written_receipt_artifacts: list[DurableArtifact] = []
         self.staged_paths: list[Path] = []
         self.model = torch.nn.Linear(1, 1, bias=False)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=0.01)
@@ -259,24 +262,77 @@ class _Runtime:
             duplicate_count=0,
         )
 
-    def select_candidate(self, config: OnPolicyArmConfig, frontier: FrontierHandle):
+    def select_candidate(
+        self,
+        config: OnPolicyArmConfig,
+        frontier: FrontierHandle,
+        *,
+        attempt_index: int = 0,
+        retry_child: RetryChildLedgerHandle | None = None,
+    ):
         del config
-        self.events.append(f"candidate:{frontier.frontier.iteration}")
+        excluded_candidates = (
+            () if retry_child is None else retry_child.ledger.excluded_candidates
+        )
+        excluded_alias_ids = tuple(item.alias_id for item in excluded_candidates)
+        self.events.append(
+            "candidate:"
+            f"{frontier.frontier.iteration}:{attempt_index}:"
+            f"{','.join(excluded_alias_ids)}"
+        )
         if not self.endless and frontier.frontier.iteration > 0:
             return None
-        shortlisted = (_candidate("h0"), _candidate("h1"))
+        shortlisted = tuple(
+            _candidate(owner_id)
+            for owner_id in ("h0", "h1", "h2", "h3")
+            if CandidateKey(7, owner_id, f"alias-{owner_id}")
+            not in set(excluded_candidates)
+        )
+        if not shortlisted:
+            return None
+        candidate_ledger = _write_artifact(
+            self.output_root
+            / "iterations"
+            / f"attempt-{attempt_index:03d}"
+            / "candidate-scoring.json",
+            {
+                "frontier_sha256": frontier.artifact_sha256,
+                "excluded_candidates": [asdict(item) for item in excluded_candidates],
+                "selected_alias_id": shortlisted[0].path.alias_id,
+            },
+        )
         return CandidateSelectionReceipt(
             decision_surface="hf_fp32_sdpa_batch1",
-            eligible_owner_count=2,
+            source_frontier_sha256=frontier.artifact_sha256,
+            candidate_ledger_path=(
+                candidate_ledger.path
+                if retry_child is None
+                else retry_child.artifact_path
+            ),
+            candidate_ledger_sha256=(
+                candidate_ledger.sha256
+                if retry_child is None
+                else retry_child.artifact_sha256
+            ),
+            eligible_owner_count=len(shortlisted),
             shortlisted=shortlisted,
-            forced_continuation_count=2,
+            forced_continuation_count=len(shortlisted),
             selected=shortlisted[0],
-            continuation_projection_sha256s=("1" * 64, "2" * 64),
-            continuation_outcomes=(_outcome("h0"), _outcome("h1")),
+            continuation_projection_sha256s=tuple(
+                f"{index + 1:x}" * 64 for index in range(len(shortlisted))
+            ),
+            continuation_outcomes=tuple(
+                _outcome(item.path.owner_id) for item in shortlisted
+            ),
+            attempt_index=attempt_index,
+            selection_evidence_path=candidate_ledger.path,
+            selection_evidence_sha256=candidate_ledger.sha256,
+            excluded_candidates=excluded_candidates,
+            retry_depth=0 if retry_child is None else retry_child.ledger.retry_depth,
         )
 
     def apply_one_update(self, config, frontier, selection):
-        del config, selection
+        del config
         self.events.append(f"update:{frontier.frontier.iteration}")
         self.optimizer.zero_grad(set_to_none=True)
         loss = self.model(torch.ones((1, 1))).sum()
@@ -285,7 +341,7 @@ class _Runtime:
         self.scheduler.step()
         self.counter.value += 1
         return OneUpdateReceipt(
-            ledger_sha256=frontier.artifact_sha256,
+            ledger_sha256=selection.candidate_ledger_sha256,
             applied_optimizer_updates=1,
             finite=True,
         )
@@ -386,6 +442,7 @@ class _Runtime:
             / f"attempt-{receipt.attempt_index}-{receipt.decision}.json",
             asdict(receipt),
         )
+        self.written_receipt_artifacts.append(artifact)
         self.staged_paths.append(Path(artifact.path))
         if self.fail_at == "receipt":
             raise RuntimeError("injected receipt failure")
@@ -489,6 +546,7 @@ def test_execute_fails_closed_without_authority_or_injected_runtime(
                 receipt.continuation_outcomes[1],
             ),
         ),
+        lambda receipt: replace(receipt, selection_evidence_sha256="e" * 64),
     ),
 )
 def test_selection_requires_unique_path_aligned_eligible_continuation_evidence(
@@ -498,7 +556,9 @@ def test_selection_requires_unique_path_aligned_eligible_continuation_evidence(
     config = replace(_config(), output_root=str(tmp_path / "bad-selection"))
     runtime = _Runtime(Path(config.output_root), accept=True)
     frontier = runtime.initial_frontier(config)
-    selection = runtime.select_candidate(config, frontier)
+    selection = runtime.select_candidate(
+        config, frontier, attempt_index=0, retry_child=None
+    )
     assert selection is not None
 
     with pytest.raises(OnPolicySuccessorError, match="candidate selection"):
@@ -588,7 +648,7 @@ def test_acceptance_artifact_failure_restores_full_transaction_and_cleans_stagin
     assert not any((Path(config.output_root) / "receipts").glob("*"))
 
 
-def test_reject_restores_before_reproduction_and_never_publishes(
+def test_reject_continues_past_three_while_an_eligible_candidate_remains(
     tmp_path: Path,
 ) -> None:
     config = replace(_config(), output_root=str(tmp_path / "rejected-run"))
@@ -597,8 +657,8 @@ def test_reject_restores_before_reproduction_and_never_publishes(
 
     receipt = run_on_policy_loop(config, runtime=runtime, execute_authorized=True)
 
-    assert receipt.stop_reason == "scientific_rejection"
-    assert receipt.attempted_update_count == 1
+    assert receipt.stop_reason == "repeated_rejection_no_eligible_candidate"
+    assert receipt.attempted_update_count == 4
     assert receipt.accepted_update_count == 0
     assert runtime.counter.value == 0
     assert torch.equal(runtime.model.weight, before)
@@ -607,12 +667,83 @@ def test_reject_restores_before_reproduction_and_never_publishes(
         "decode:rollback_reproduction"
     )
     assert list((Path(config.output_root) / "private").iterdir()) == []
-    assert receipt.attempts[0].accepted_checkpoint_path is None
-    assert receipt.attempts[0].accepted_checkpoint_sha256 is None
-    assert receipt.attempts[0].next_ledger_sha256 is None
-    assert receipt.attempts[0].transaction_before_sha256 == (
-        receipt.attempts[0].transaction_after_sha256
+    assert [attempt.selected_alias_id for attempt in receipt.attempts] == [
+        "alias-h0",
+        "alias-h1",
+        "alias-h2",
+        "alias-h3",
+    ]
+    assert [event for event in runtime.events if event.startswith("candidate:")] == [
+        "candidate:0:0:",
+        "candidate:0:1:alias-h0",
+        "candidate:0:2:alias-h0,alias-h1",
+        "candidate:0:3:alias-h0,alias-h1,alias-h2",
+        "candidate:0:4:alias-h0,alias-h1,alias-h2,alias-h3",
+    ]
+    for attempt in receipt.attempts:
+        assert attempt.accepted_checkpoint_path is None
+        assert attempt.accepted_checkpoint_sha256 is None
+        assert attempt.next_ledger_sha256 is None
+        assert attempt.transaction_before_sha256 == attempt.transaction_after_sha256
+
+    first, second = receipt.attempts[:2]
+    child_path = Path(second.ledger_path)
+    assert child_path.parent.name == "candidate-ledgers"
+    assert child_path.name == f"{second.ledger_sha256}.json"
+    child = json.loads(child_path.read_text(encoding="utf-8"))
+    assert child["source_frontier_sha256"] == "0" * 64
+    assert child["parent_candidate_ledger_sha256"] == first.ledger_sha256
+    assert (
+        child["rejected_attempt_sha256"]
+        == hashlib.sha256(
+            Path(runtime.written_receipt_artifacts[0].path).read_bytes()
+        ).hexdigest()
     )
+    assert child["rollback_decode_sha256"] == first.rollback_decode_sha256
+    assert child["restored_transaction_sha256"] == first.transaction_after_sha256
+    assert child["excluded_candidates"] == [
+        {"alias_id": "alias-h0", "image_id": 7, "owner_id": "h0"}
+    ]
+    grandchild = json.loads(Path(receipt.attempts[2].ledger_path).read_text())
+    expected_evidence = (
+        Path(config.output_root)
+        / "iterations"
+        / "attempt-001"
+        / "candidate-scoring.json"
+    )
+    assert grandchild["parent_selection_evidence_path"] == str(expected_evidence)
+    assert (
+        grandchild["parent_selection_evidence_sha256"]
+        == hashlib.sha256(expected_evidence.read_bytes()).hexdigest()
+    )
+
+
+class _WrongRetryChildRuntime(_Runtime):
+    def select_candidate(self, config, frontier, *, attempt_index=0, retry_child=None):
+        selection = super().select_candidate(
+            config,
+            frontier,
+            attempt_index=attempt_index,
+            retry_child=retry_child,
+        )
+        if selection is None or retry_child is None:
+            return selection
+        forged = _write_artifact(
+            self.output_root / "forged-child.json", {"forged": True}
+        )
+        return replace(
+            selection,
+            candidate_ledger_path=forged.path,
+            candidate_ledger_sha256=forged.sha256,
+        )
+
+
+def test_retry_selection_must_use_the_exact_controller_child(tmp_path: Path) -> None:
+    config = replace(_config(), output_root=str(tmp_path / "forged-retry"))
+    runtime = _WrongRetryChildRuntime(Path(config.output_root), accept=False)
+
+    with pytest.raises(OnPolicySuccessorError, match="retry child"):
+        run_on_policy_loop(config, runtime=runtime, execute_authorized=True)
 
 
 def test_loop_attempts_at_most_eight_and_updates_each_ledger_once(
@@ -720,9 +851,17 @@ def test_empty_runtime_reported_frontier_cannot_claim_same_decode_lineage(
     assert "transaction:accept" not in runtime.events
 
 
-def test_execute_cli_dry_run_never_requires_a_runtime() -> None:
+def test_execute_cli_dry_run_never_requires_a_runtime(tmp_path: Path) -> None:
+    source = CONFIG_ROOT / "02_o_first_safe.yaml"
+    fresh_config = tmp_path / source.name
+    fresh_config.write_text(
+        source.read_text(encoding="utf-8").replace(
+            _config().output_root, str(tmp_path / "fresh-dry-run")
+        ),
+        encoding="utf-8",
+    )
     receipt = execute_cli(
-        config_path=CONFIG_ROOT / "02_o_first_safe.yaml",
+        config_path=fresh_config,
         repo_root=ROOT,
         execute=False,
         authority=False,

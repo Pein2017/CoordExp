@@ -119,6 +119,39 @@ class FrontierHandle:
     source_decode_artifact_sha256: str | None = None
 
 
+@dataclass(frozen=True, order=True)
+class CandidateKey:
+    image_id: int
+    owner_id: str
+    alias_id: str
+
+
+@dataclass(frozen=True)
+class RetryChildLedger:
+    schema_version: str
+    source_frontier_path: str
+    source_frontier_sha256: str
+    checkpoint_payload_sha256: str
+    parent_candidate_ledger_path: str
+    parent_candidate_ledger_sha256: str
+    parent_selection_evidence_path: str
+    parent_selection_evidence_sha256: str
+    rejected_attempt_path: str
+    rejected_attempt_sha256: str
+    rollback_decode_path: str
+    rollback_decode_sha256: str
+    restored_transaction_sha256: str
+    retry_depth: int
+    excluded_candidates: tuple[CandidateKey, ...]
+
+
+@dataclass(frozen=True)
+class RetryChildLedgerHandle:
+    artifact_path: str
+    artifact_sha256: str
+    ledger: RetryChildLedger
+
+
 @dataclass(frozen=True)
 class RuntimeIdentity:
     source_checkpoint_path: str
@@ -129,12 +162,20 @@ class RuntimeIdentity:
 @dataclass(frozen=True)
 class CandidateSelectionReceipt:
     decision_surface: str
+    source_frontier_sha256: str
+    candidate_ledger_path: str
+    candidate_ledger_sha256: str
     eligible_owner_count: int
     shortlisted: tuple[CandidateScore, ...]
     forced_continuation_count: int
     selected: CandidateScore
     continuation_projection_sha256s: tuple[str, ...]
     continuation_outcomes: tuple[ContinuationOutcome, ...]
+    attempt_index: int = 0
+    selection_evidence_path: str | None = None
+    selection_evidence_sha256: str | None = None
+    excluded_candidates: tuple[CandidateKey, ...] = ()
+    retry_depth: int = 0
 
 
 @dataclass(frozen=True)
@@ -193,6 +234,7 @@ class AttemptReceipt:
 @dataclass(frozen=True)
 class OneIterationResult:
     receipt: AttemptReceipt
+    attempt_artifact: DurableArtifact
     next_frontier: FrontierHandle | None
     accepted: bool
 
@@ -225,7 +267,12 @@ class OnPolicyRuntime(Protocol):
     ) -> BehaviorGateObservation: ...
 
     def select_candidate(
-        self, config: OnPolicyArmConfig, frontier: FrontierHandle
+        self,
+        config: OnPolicyArmConfig,
+        frontier: FrontierHandle,
+        *,
+        attempt_index: int,
+        retry_child: RetryChildLedgerHandle | None,
     ) -> CandidateSelectionReceipt | None: ...
 
     def apply_one_update(
@@ -416,7 +463,7 @@ def run_one_iteration(
     try:
         update = runtime.apply_one_update(config, frontier, selection)
         if (
-            update.ledger_sha256 != frontier.artifact_sha256
+            update.ledger_sha256 != selection.candidate_ledger_sha256
             or update.applied_optimizer_updates != 1
             or update.finite is not True
         ):
@@ -449,7 +496,7 @@ def run_one_iteration(
             proposal = PrivateProposal(
                 proposal_id=f"attempt-{attempt_index}",
                 checkpoint=proposal_identity,
-                source_ledger_sha256=frontier.artifact_sha256,
+                source_ledger_sha256=selection.candidate_ledger_sha256,
             )
             _validate_private_checkpoint(config, proposal.checkpoint)
             proposed_decode = runtime.clean_decode(
@@ -484,8 +531,8 @@ def run_one_iteration(
                 after_digest = _transaction_state_digest(runtime.transaction)
                 receipt = AttemptReceipt(
                     attempt_index=attempt_index,
-                    ledger_path=frontier.artifact_path,
-                    ledger_sha256=frontier.artifact_sha256,
+                    ledger_path=selection.candidate_ledger_path,
+                    ledger_sha256=selection.candidate_ledger_sha256,
                     selected_owner_id=selection.selected.path.owner_id,
                     selected_alias_id=selection.selected.path.alias_id,
                     proposal_checkpoint_path=proposal.checkpoint.path,
@@ -511,8 +558,8 @@ def run_one_iteration(
                 _require_restored_transaction(transaction_receipt)
                 receipt = AttemptReceipt(
                     attempt_index=attempt_index,
-                    ledger_path=frontier.artifact_path,
-                    ledger_sha256=frontier.artifact_sha256,
+                    ledger_path=selection.candidate_ledger_path,
+                    ledger_sha256=selection.candidate_ledger_sha256,
                     selected_owner_id=selection.selected.path.owner_id,
                     selected_alias_id=selection.selected.path.alias_id,
                     proposal_checkpoint_path=proposal.checkpoint.path,
@@ -544,6 +591,7 @@ def run_one_iteration(
                 )
             return OneIterationResult(
                 receipt=receipt,
+                attempt_artifact=cast(DurableArtifact, receipt_artifact),
                 next_frontier=next_frontier,
                 accepted=True,
             )
@@ -577,6 +625,7 @@ def run_one_iteration(
         _validate_durable_receipt(receipt, rejected_artifact)
         return OneIterationResult(
             receipt=receipt,
+            attempt_artifact=rejected_artifact,
             next_frontier=next_frontier,
             accepted=receipt.decision == "accepted",
         )
@@ -597,6 +646,83 @@ def run_one_iteration(
                 receipt_artifact,
             )
         raise
+
+
+def _candidate_key(score: CandidateScore) -> CandidateKey:
+    return CandidateKey(
+        image_id=score.path.image_id,
+        owner_id=score.path.owner_id,
+        alias_id=score.path.alias_id,
+    )
+
+
+def _write_retry_child_ledger(
+    config: OnPolicyArmConfig,
+    *,
+    runtime: OnPolicyRuntime,
+    frontier: FrontierHandle,
+    selection: CandidateSelectionReceipt,
+    result: OneIterationResult,
+) -> RetryChildLedgerHandle:
+    if result.accepted or result.receipt.decision != "rejected":
+        raise OnPolicySuccessorError("retry child requires a rejected proposal")
+    attempt_artifact = Path(result.attempt_artifact.path).resolve(strict=True)
+    rollback_path = result.receipt.rollback_decode_path
+    rollback_sha256 = result.receipt.rollback_decode_sha256
+    if (
+        _sha256_file(attempt_artifact) != result.attempt_artifact.sha256
+        or rollback_path is None
+        or rollback_sha256 is None
+    ):
+        raise OnPolicySuccessorError("retry child lacks durable rejection evidence")
+    rollback_artifact = Path(rollback_path).resolve(strict=True)
+    parent_ledger = Path(selection.candidate_ledger_path).resolve(strict=True)
+    evidence_path = Path(
+        selection.selection_evidence_path or selection.candidate_ledger_path
+    ).resolve(strict=True)
+    evidence_sha256 = (
+        selection.selection_evidence_sha256 or selection.candidate_ledger_sha256
+    )
+    restored_digest = _transaction_state_digest(runtime.transaction)
+    if (
+        _sha256_file(rollback_artifact) != rollback_sha256
+        or _sha256_file(parent_ledger) != selection.candidate_ledger_sha256
+        or _sha256_file(evidence_path) != evidence_sha256
+        or restored_digest != result.receipt.transaction_after_sha256
+        or restored_digest != result.receipt.transaction_before_sha256
+    ):
+        raise OnPolicySuccessorError("retry child lineage or restored state differs")
+    rejected_key = _candidate_key(selection.selected)
+    excluded = tuple(sorted((*selection.excluded_candidates, rejected_key)))
+    if len(set(excluded)) != len(excluded):
+        raise OnPolicySuccessorError("retry child repeats an excluded candidate")
+    ledger = RetryChildLedger(
+        schema_version="human13_on_policy_retry_child.v1",
+        source_frontier_path=frontier.artifact_path,
+        source_frontier_sha256=frontier.artifact_sha256,
+        checkpoint_payload_sha256=frontier.frontier.checkpoint.payload_sha256,
+        parent_candidate_ledger_path=str(parent_ledger),
+        parent_candidate_ledger_sha256=selection.candidate_ledger_sha256,
+        parent_selection_evidence_path=str(evidence_path),
+        parent_selection_evidence_sha256=evidence_sha256,
+        rejected_attempt_path=str(attempt_artifact),
+        rejected_attempt_sha256=result.attempt_artifact.sha256,
+        rollback_decode_path=str(rollback_artifact),
+        rollback_decode_sha256=rollback_sha256,
+        restored_transaction_sha256=restored_digest,
+        retry_depth=selection.retry_depth + 1,
+        excluded_candidates=excluded,
+    )
+    payload = _canonical_bytes(ledger)
+    digest = hashlib.sha256(payload).hexdigest()
+    target = Path(config.output_root) / "candidate-ledgers" / f"{digest}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if target.read_bytes() != payload:
+            raise OnPolicySuccessorError("content-addressed retry child differs")
+    else:
+        target.write_bytes(payload)
+    return RetryChildLedgerHandle(str(target), digest, ledger)
 
 
 def run_on_policy_loop(
@@ -633,16 +759,54 @@ def run_on_policy_loop(
 
     attempts: list[AttemptReceipt] = []
     accepted = 0
-    updated_ledgers: set[str] = set()
+    attempted_candidate_ledgers: set[str] = set()
+    retry_child: RetryChildLedgerHandle | None = None
+    consecutive_rejections = 0
     stop_reason = "attempt_cap"
     for attempt_index in range(config.max_attempts):
-        if frontier.artifact_sha256 in updated_ledgers:
-            raise OnPolicySuccessorError("one ledger cannot drive more than one update")
-        selection = runtime.select_candidate(config, frontier)
-        if selection is None:
-            stop_reason = "no_candidate"
+        excluded_keys = (
+            () if retry_child is None else retry_child.ledger.excluded_candidates
+        )
+        raw_selection = runtime.select_candidate(
+            config,
+            frontier,
+            attempt_index=attempt_index,
+            retry_child=retry_child,
+        )
+        if raw_selection is None:
+            stop_reason = (
+                "repeated_rejection_no_eligible_candidate"
+                if consecutive_rejections >= 3
+                else "no_candidate"
+            )
             break
-        updated_ledgers.add(frontier.artifact_sha256)
+        if retry_child is not None and (
+            raw_selection.candidate_ledger_path != retry_child.artifact_path
+            or raw_selection.candidate_ledger_sha256 != retry_child.artifact_sha256
+        ):
+            raise OnPolicySuccessorError(
+                "runtime selection is not bound to the active retry child"
+            )
+        selection_evidence_path = (
+            raw_selection.selection_evidence_path or raw_selection.candidate_ledger_path
+        )
+        selection_evidence_sha256 = (
+            raw_selection.selection_evidence_sha256
+            or raw_selection.candidate_ledger_sha256
+        )
+        selection = replace(
+            raw_selection,
+            attempt_index=attempt_index,
+            selection_evidence_path=selection_evidence_path,
+            selection_evidence_sha256=selection_evidence_sha256,
+            excluded_candidates=excluded_keys,
+            retry_depth=0 if retry_child is None else retry_child.ledger.retry_depth,
+        )
+        if selection.candidate_ledger_sha256 in attempted_candidate_ledgers:
+            raise OnPolicySuccessorError(
+                "one candidate ledger cannot drive more than one update"
+            )
+        attempted_candidate_ledgers.add(selection.candidate_ledger_sha256)
         result = run_one_iteration(
             config,
             runtime=runtime,
@@ -653,12 +817,21 @@ def run_on_policy_loop(
         )
         attempts.append(result.receipt)
         if not result.accepted:
-            stop_reason = "scientific_rejection"
-            break
+            consecutive_rejections += 1
+            retry_child = _write_retry_child_ledger(
+                config,
+                runtime=runtime,
+                frontier=frontier,
+                selection=selection,
+                result=result,
+            )
+            continue
         if result.next_frontier is None:
             raise OnPolicySuccessorError("accepted update lacks its next frontier")
         frontier = result.next_frontier
         accepted += 1
+        consecutive_rejections = 0
+        retry_child = None
     return LoopReceipt(
         schema_version=RECEIPT_SCHEMA_VERSION,
         unit_id=config.unit_id,
@@ -767,11 +940,51 @@ def _validate_selection(
 ) -> None:
     projection_sha256s = selection.continuation_projection_sha256s
     outcomes = selection.continuation_outcomes
+    excluded = selection.excluded_candidates
+    candidate_ledger = Path(selection.candidate_ledger_path).resolve(strict=True)
+    evidence_path_value = selection.selection_evidence_path
+    evidence_sha256 = selection.selection_evidence_sha256
+    evidence_path = (
+        None
+        if evidence_path_value is None
+        else Path(evidence_path_value).resolve(strict=True)
+    )
+    is_retry = selection.retry_depth > 0
+    minimum_shortlist = 1 if is_retry else config.shortlist_min
+    retry_payload: Mapping[str, Any] | None = None
+    if is_retry:
+        decoded = json.loads(candidate_ledger.read_text(encoding="utf-8"))
+        if isinstance(decoded, Mapping):
+            retry_payload = decoded
     if (
         selection.decision_surface != DECISION_SURFACE
-        or not config.shortlist_min
-        <= len(selection.shortlisted)
-        <= config.shortlist_max
+        or selection.source_frontier_sha256 != frontier.artifact_sha256
+        or not _is_digest(selection.candidate_ledger_sha256)
+        or _sha256_file(candidate_ledger) != selection.candidate_ledger_sha256
+        or evidence_path is None
+        or not _is_digest(evidence_sha256)
+        or _sha256_file(evidence_path) != evidence_sha256
+        or (
+            is_retry
+            and candidate_ledger.name != f"{selection.candidate_ledger_sha256}.json"
+        )
+        or (is_retry and candidate_ledger.parent.name != "candidate-ledgers")
+        or (is_retry and retry_payload is None)
+        or (
+            is_retry
+            and retry_payload is not None
+            and (
+                retry_payload.get("schema_version")
+                != "human13_on_policy_retry_child.v1"
+                or retry_payload.get("source_frontier_sha256")
+                != frontier.artifact_sha256
+                or retry_payload.get("excluded_candidates")
+                != [asdict(item) for item in excluded]
+            )
+        )
+        or len(set(excluded)) != len(excluded)
+        or any(_candidate_key(item) in set(excluded) for item in selection.shortlisted)
+        or not minimum_shortlist <= len(selection.shortlisted) <= config.shortlist_max
         or selection.forced_continuation_count != len(selection.shortlisted)
         or len(projection_sha256s) != len(selection.shortlisted)
         or len(outcomes) != len(selection.shortlisted)

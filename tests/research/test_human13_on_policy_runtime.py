@@ -9,8 +9,11 @@ from typing import Any, cast
 
 import pytest
 
+import scripts.research.human13_on_policy_runtime as runtime_module
+
 from scripts.research.build_human13_on_policy_frontier import (
     CheckpointIdentity,
+    FrontierCandidateAlias,
     FrontierImage,
     FrontierRow,
     Human13FrontierIteration,
@@ -34,6 +37,7 @@ from scripts.research.human13_on_policy_live import BehaviorGateObservation
 from scripts.research.human13_training_transaction import UpdateCounter
 from scripts.research.train_human13_on_policy_successor import (
     AttemptReceipt,
+    CandidateKey,
     CandidateSelectionReceipt,
     CleanDecodeReceipt,
     DurableArtifact,
@@ -137,23 +141,29 @@ class _Services:
         state.active_frontier = self.frontier
         return self.frontier
 
-    def select_candidate(self, state, frontier):
+    def select_candidate(
+        self, state, frontier, *, attempt_index: int, retry_child=None
+    ):
         self.calls.append("select")
         score = _score()
         return CandidateSelectionReceipt(
             decision_surface="hf_fp32_sdpa_batch1",
+            source_frontier_sha256=frontier.artifact_sha256,
+            candidate_ledger_path="candidate.json",
+            candidate_ledger_sha256="d" * 64,
             eligible_owner_count=1,
             shortlisted=(score,),
             forced_continuation_count=1,
             selected=score,
             continuation_projection_sha256s=("f" * 64,),
             continuation_outcomes=(_outcome(),),
+            attempt_index=attempt_index,
         )
 
     def apply_one_update(self, state, frontier, selection):
         self.calls.append("update")
         state.update_counter.value += 1
-        return OneUpdateReceipt(frontier.artifact_sha256, 1, True)
+        return OneUpdateReceipt(selection.candidate_ledger_sha256, 1, True)
 
     def write_private_proposal(
         self, state, frontier, selection, update, *, proposal_run_dir
@@ -264,7 +274,9 @@ def test_runtime_is_a_thin_typed_adapter_over_production_services(
 
     assert runtime.initial_frontier(config) == frontier
     assert runtime.frontier_observation(frontier).unique_owner_ids == ()
-    selection = runtime.select_candidate(config, frontier)
+    selection = runtime.select_candidate(
+        config, frontier, attempt_index=0, retry_child=None
+    )
     assert selection is not None
     assert selection.decision_surface == "hf_fp32_sdpa_batch1"
     update = runtime.apply_one_update(config, frontier, selection)
@@ -366,6 +378,40 @@ def test_frontier_observation_uses_joint_protected_coverability_not_canonical_id
 
     assert observation.protected_owner_ids == ("g0",)
     assert observation.jointly_coverable_protected_owner_ids == ("g0",)
+
+
+def test_retry_exclusion_filters_full_candidate_key_before_scoring() -> None:
+    image = FrontierImage(
+        image_id=1,
+        trajectory_id="decode:1",
+        generated_token_ids=(10, 11, 99),
+        parser="compact_object_box_closed_only",
+        parser_status="accepted",
+        stop_reason="im_end",
+        rows=(),
+        canonical_owner_ids=(),
+        constrained_protected_owner_ids=(),
+        covered_h_owner_ids=(),
+        uncovered_h_owner_ids=("h0", "h1"),
+        candidate_aliases=(
+            FrontierCandidateAlias("h0", "shared", "t0", 1, 0.9, (1, 2)),
+            FrontierCandidateAlias("h1", "shared", "t1", 2, 0.9, (3, 4)),
+        ),
+        duplicate_events=(),
+        terminal_token_index=2,
+        malformed_row_count=0,
+    )
+    helper = getattr(runtime_module, "_frontier_without_excluded_candidates", None)
+    assert helper is not None
+
+    filtered = helper(
+        {1: image},
+        (CandidateKey(image_id=1, owner_id="h0", alias_id="shared"),),
+    )
+
+    assert [(item.owner_id, item.row_id) for item in filtered[1].candidate_aliases] == [
+        ("h1", "shared")
+    ]
 
 
 def test_continuation_caps_are_bound_per_source_image() -> None:

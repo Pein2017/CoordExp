@@ -32,6 +32,7 @@ from scripts.research.human13_training_transaction import (
 )
 from scripts.research.train_human13_on_policy_successor import (
     AttemptReceipt,
+    CandidateKey,
     CandidateSelectionReceipt,
     CleanDecodeReceipt,
     DurableArtifact,
@@ -39,6 +40,7 @@ from scripts.research.train_human13_on_policy_successor import (
     OneUpdateReceipt,
     OnPolicyArmConfig,
     PrivateProposal,
+    RetryChildLedgerHandle,
     RuntimeIdentity,
     _canonical_bytes as _controller_canonical_bytes,
     successor_model_config,
@@ -68,13 +70,39 @@ class RuntimeBuildState:
     selected_scores: dict[str, Any] = field(default_factory=dict)
     staged_prior_frontier: FrontierHandle | None = None
     decode_serial: int = 0
+    active_attempt_index: int | None = None
+
+
+def _frontier_without_excluded_candidates(
+    images: Mapping[int, Any],
+    excluded_candidates: tuple[CandidateKey, ...],
+) -> dict[int, Any]:
+    excluded = set(excluded_candidates)
+    if len(excluded) != len(excluded_candidates):
+        raise ValueError("candidate exclusions must be unique")
+    return {
+        image_id: replace(
+            image,
+            candidate_aliases=tuple(
+                alias
+                for alias in image.candidate_aliases
+                if CandidateKey(image_id, alias.owner_id, alias.row_id) not in excluded
+            ),
+        )
+        for image_id, image in images.items()
+    }
 
 
 class RuntimeServices(Protocol):
     def initial_frontier(self, state: RuntimeBuildState) -> FrontierHandle: ...
 
     def select_candidate(
-        self, state: RuntimeBuildState, frontier: FrontierHandle
+        self,
+        state: RuntimeBuildState,
+        frontier: FrontierHandle,
+        *,
+        attempt_index: int,
+        retry_child: RetryChildLedgerHandle | None,
     ) -> CandidateSelectionReceipt | None: ...
 
     def apply_one_update(
@@ -163,10 +191,20 @@ class Human13OnPolicyRuntime:
         return _frontier_observation(frontier.frontier, manifest=self._state.manifest)
 
     def select_candidate(
-        self, config: OnPolicyArmConfig, frontier: FrontierHandle
+        self,
+        config: OnPolicyArmConfig,
+        frontier: FrontierHandle,
+        *,
+        attempt_index: int,
+        retry_child: RetryChildLedgerHandle | None,
     ) -> CandidateSelectionReceipt | None:
         self._bind(config)
-        return self._services.select_candidate(self._state, frontier)
+        return self._services.select_candidate(
+            self._state,
+            frontier,
+            attempt_index=attempt_index,
+            retry_child=retry_child,
+        )
 
     def apply_one_update(
         self,
@@ -303,7 +341,12 @@ class ProductionRuntimeServices:
         return handle
 
     def select_candidate(
-        self, state: RuntimeBuildState, frontier: FrontierHandle
+        self,
+        state: RuntimeBuildState,
+        frontier: FrontierHandle,
+        *,
+        attempt_index: int,
+        retry_child: RetryChildLedgerHandle | None,
     ) -> CandidateSelectionReceipt | None:
         from scripts.research.human13_continuation_projection import (
             project_continuation,
@@ -320,7 +363,16 @@ class ProductionRuntimeServices:
         )
 
         _require_active(state, frontier)
-        images = {image.image_id: image for image in frontier.frontier.images}
+        if attempt_index < 0:
+            raise ValueError("candidate retry identity is invalid")
+        state.active_attempt_index = attempt_index
+        excluded_candidates = (
+            () if retry_child is None else retry_child.ledger.excluded_candidates
+        )
+        images = _frontier_without_excluded_candidates(
+            {image.image_id: image for image in frontier.frontier.images},
+            excluded_candidates,
+        )
         with open_checkpoint_hf_census_scorer(
             repo_root=state.repo_root,
             checkpoint_path=frontier.frontier.checkpoint.path,
@@ -342,17 +394,20 @@ class ProductionRuntimeServices:
                 for score in scored.shortlist_by_image[image_id]
             )
             iteration_dir = (
-                state.output_root
-                / "iterations"
-                / f"attempt-{frontier.frontier.iteration:03d}"
+                state.output_root / "iterations" / f"attempt-{attempt_index:03d}"
             )
-            if len(shortlist) < self._config.shortlist_min:
+            minimum_shortlist = (
+                1 if retry_child is not None else self._config.shortlist_min
+            )
+            if len(shortlist) < minimum_shortlist:
                 _write_candidate_receipt(
                     iteration_dir / "candidate-scoring.json",
                     frontier=frontier,
                     scored=scored,
                     projections=(),
                     selected=None,
+                    excluded_candidates=excluded_candidates,
+                    retry_child=retry_child,
                 )
                 return None
             cross_by_path = {
@@ -428,20 +483,37 @@ class ProductionRuntimeServices:
             selected = select_projected_continuation(projections)
         except ValueError:
             selected = None
-        _write_candidate_receipt(
-            iteration_dir / "candidate-scoring.json",
+        selection_evidence_path = iteration_dir / "candidate-scoring.json"
+        selection_evidence_sha256 = _write_candidate_receipt(
+            selection_evidence_path,
             frontier=frontier,
             scored=scored,
             projections=tuple(projections),
             selected=selected,
+            excluded_candidates=excluded_candidates,
+            retry_child=retry_child,
         )
         if selected is None:
             return None
-        state.selected_scores[frontier.artifact_sha256] = selected.score
+        candidate_ledger_path = (
+            selection_evidence_path
+            if retry_child is None
+            else Path(retry_child.artifact_path)
+        )
+        candidate_ledger_sha256 = (
+            selection_evidence_sha256
+            if retry_child is None
+            else retry_child.artifact_sha256
+        )
+        state.selected_scores[candidate_ledger_sha256] = selected.score
         return CandidateSelectionReceipt(
             decision_surface=self._config.decision_surface,
+            source_frontier_sha256=frontier.artifact_sha256,
+            candidate_ledger_path=str(candidate_ledger_path),
+            candidate_ledger_sha256=candidate_ledger_sha256,
             eligible_owner_count=sum(
-                len(image.uncovered_h_owner_ids) for image in images.values()
+                len({alias.owner_id for alias in image.candidate_aliases})
+                for image in images.values()
             ),
             shortlisted=shortlist,
             forced_continuation_count=len(projections),
@@ -450,6 +522,11 @@ class ProductionRuntimeServices:
                 item.artifact_sha256 for item in projections
             ),
             continuation_outcomes=tuple(item.outcome for item in projections),
+            attempt_index=attempt_index,
+            selection_evidence_path=str(selection_evidence_path),
+            selection_evidence_sha256=selection_evidence_sha256,
+            excluded_candidates=excluded_candidates,
+            retry_depth=0 if retry_child is None else retry_child.ledger.retry_depth,
         )
 
     def apply_one_update(
@@ -468,7 +545,7 @@ class ProductionRuntimeServices:
         from src.training.supervised_trainer import SupervisedTrainer
 
         _require_active(state, frontier)
-        score = state.selected_scores.get(frontier.artifact_sha256)
+        score = state.selected_scores.get(selection.candidate_ledger_sha256)
         if score != selection.selected:
             raise ValueError("selected continuation differs from scored frontier")
         image_id = selection.selected.path.image_id
@@ -535,7 +612,7 @@ class ProductionRuntimeServices:
         _write_receipt(
             state.output_root
             / "iterations"
-            / f"attempt-{frontier.frontier.iteration:03d}"
+            / f"attempt-{selection.attempt_index:03d}"
             / "one-update.json",
             {
                 "schema_version": "human13_on_policy_one_update.v1",
@@ -549,7 +626,7 @@ class ProductionRuntimeServices:
                 "training_result": _jsonable(result),
             },
         )
-        return OneUpdateReceipt(frontier.artifact_sha256, 1, True)
+        return OneUpdateReceipt(selection.candidate_ledger_sha256, 1, True)
 
     def write_private_proposal(
         self,
@@ -567,9 +644,8 @@ class ProductionRuntimeServices:
             readback_human13_checkpoint,
         )
 
-        del selection
-        if update.ledger_sha256 != frontier.artifact_sha256:
-            raise ValueError("private proposal update differs from frontier")
+        if update.ledger_sha256 != selection.candidate_ledger_sha256:
+            raise ValueError("private proposal update differs from candidate ledger")
         writer = build_human13_checkpoint_writer(proposal_run_dir)
         written = writer.write_checkpoint(
             step=1,
@@ -586,11 +662,12 @@ class ProductionRuntimeServices:
         _write_receipt(
             state.output_root
             / "iterations"
-            / f"attempt-{frontier.frontier.iteration:03d}"
+            / f"attempt-{selection.attempt_index:03d}"
             / "private-proposal.json",
             {
                 "schema_version": "human13_on_policy_private_proposal.v1",
                 "frontier_sha256": frontier.artifact_sha256,
+                "candidate_ledger_sha256": selection.candidate_ledger_sha256,
                 "checkpoint": _jsonable(identity),
                 "readback": _jsonable(readback),
                 "accepted": False,
@@ -1087,18 +1164,25 @@ def _write_candidate_receipt(
     scored: Any,
     projections: tuple[Any, ...],
     selected: Any | None,
-) -> None:
+    excluded_candidates: tuple[CandidateKey, ...],
+    retry_child: RetryChildLedgerHandle | None,
+) -> str:
     _write_receipt(
         path,
         {
             "schema_version": "human13_on_policy_candidate_selection.v1",
             "frontier_sha256": frontier.artifact_sha256,
+            "retry_child_sha256": (
+                None if retry_child is None else retry_child.artifact_sha256
+            ),
+            "excluded_candidates": _jsonable(excluded_candidates),
             "scoring": _jsonable(scored.receipt),
             "cross_surface": _jsonable(scored.cross_surface_receipts),
             "continuations": _jsonable(projections),
             "selected": _jsonable(selected),
         },
     )
+    return _sha256_file(path)
 
 
 def _write_canonical_attempt(path: Path, receipt: AttemptReceipt) -> None:
