@@ -221,6 +221,42 @@ Stop before pilot on wrong trainable surface, non-finite state, site/pack
 mismatch, rollback mismatch, checkpoint/readback mismatch, cap harm, or an
 unresolved real-entry error.  Do not patch around a scientific failure.
 
+### 2026-08-13 real vertical evidence
+
+The third fresh-root `O-First-Safe` force-reject run completed the entire
+full-panel chain on one A100.  The first two fresh roots remain immutable
+real-entry failures: projection had still validated only the legacy 73
+`selected_rows` instead of all 309 metric-valid native aliases, then the live
+payload receipt referenced the obsolete `logical_segments` field after the
+optimizer update.  Both were reproduced by focused tests and repaired at their
+source; neither is model-quality evidence.
+
+The successful vertical restored 309 frontier aliases, packed/HF-scored 129
+per-owner-capped candidates, released four natural forced continuations, and
+selected `image 6040 / gt:6040:14 / seed 21016 row 009`.  Its forced branch
+added that owner (`unique_owner_delta=+1`, HF barrier `1.0347023`) without a cap
+hit.  One packed `O-First-Safe` AdamW update then changed clean greedy from
+173 to 174 unique owners, but this was owner exchange: five owners gained and
+four protected owners lost.  Duplicates rose from 9 to 17 and rows from 244 to
+263; malformed rows fell from 11 to 1.  The direct behavior gate therefore
+rejected the proposal for `protected_owner_loss` and `duplicate_burden` before
+the predeclared forced-rejection reason was added.
+
+Rollback reproduced all 173 Source owners, 9 duplicates, 11 malformed rows,
+and 244 rows.  The complete model/AdamW/scheduler/counter/RNG state digest was
+byte-identical before and after rollback:
+`ad5a176df0417652dfe6ac068f4c79340924321242dfcf72158bc93b1f1071cb`.
+No accepted checkpoint survived.  The immutable vertical summary is
+`vertical/o-first-safe-force-reject-v3/vertical-summary.json`, SHA256
+`64d688a07a5f3979339903d789777b85bef69c2cd3cd2dba03b91c41f8601a61`.
+
+This passes the mechanics/rollback gate but is negative scientific evidence
+for an unqualified one-site update: the selected owner was compiled, yet the
+same update displaced four existing owners and created eight duplicates.  The
+bounded two-arm pilot remains useful because `O-Full-Safe` can test whether
+distributed row supervision changes that tradeoff, while both arms retain the
+same direct gate.
+
 ## Decision-owning evidence and stop rules
 
 The primary tuple is:
