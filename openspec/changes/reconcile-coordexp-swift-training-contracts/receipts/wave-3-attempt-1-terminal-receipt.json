@@ -1,0 +1,66 @@
+{
+  "schema": "coordexp-swift-reconcile-resume-probe-attempt-terminal-receipt-v1",
+  "attempt": 1,
+  "status": "stopped_pre_gpu",
+  "implementation_commit": "fcd05b38c12de5b522b5bd29b61bfd15cbacc28d",
+  "command_manifest": {
+    "path": "receipts/wave-3-attempt-1-command-manifest.json",
+    "sha256": "39ff5851853ded501e8cba87c1ccc9de80cbbf26b86598814528c5b8aa1c47da"
+  },
+  "launch_packet": {
+    "path": "receipts/wave-3-attempt-1-launch-packet.md",
+    "sha256": "6290ebe023d552906e1e0f35ed2b45c7787e1fed09d23a1860a53a787b4f2d8a"
+  },
+  "fresh_user_authorization": {
+    "present": true,
+    "scope": "the exact frozen packet above",
+    "approval_text": "批准执行该冻结包"
+  },
+  "executed_command": {
+    "name": "setup_command",
+    "argv_sha256": "2dbd3e95204fb58b334b9ad5de0db645915ebdc7480cb81aa6a744d0cf87888b",
+    "argv": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=30s",
+      "600s",
+      "/usr/bin/env",
+      "CUDA_VISIBLE_DEVICES=",
+      "/root/miniconda3/bin/conda",
+      "run",
+      "-n",
+      "ms",
+      "/root/miniconda3/envs/ms/bin/python",
+      "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+      "prepare",
+      "--artifact-root",
+      "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1",
+      "--base-config",
+      "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+      "--world-size",
+      "2"
+    ],
+    "started_utc": "2026-08-13T01:05:53Z",
+    "failure_observed_utc": "2026-08-13T01:06:51Z",
+    "subprocess_wall_time_seconds": 12.536340076,
+    "exit_code": 1
+  },
+  "failure": {
+    "error_type": "ReconcileProbeError",
+    "error_code": "reconcile_probe.pack_cache_prepare_failed",
+    "primary_cause_type": "RuntimeContractError",
+    "primary_cause_code": "runtime.determinism_launcher_mapping_invalid",
+    "cause": "the frozen setup set CUDA_VISIBLE_DEVICES to an empty string; the strict single-rank launcher mapping accepts an absent variable but rejects an empty device entry"
+  },
+  "post_stop": {
+    "artifact_root_absent": true,
+    "private_cache_root_absent": true,
+    "private_cache_receipt_absent": true,
+    "stage_residue_count": 0,
+    "gpu_6_memory_used_mib": 0,
+    "gpu_7_memory_used_mib": 0,
+    "remaining_manifest_commands_executed": false,
+    "retry_performed": false
+  },
+  "claim_boundary": "The authorized attempt stopped during model-free setup before cache publication, model loading, torchrun, or GPU work. It does not qualify exact resume."
+}

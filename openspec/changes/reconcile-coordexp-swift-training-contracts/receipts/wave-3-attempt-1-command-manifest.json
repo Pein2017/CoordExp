@@ -1,0 +1,180 @@
+{
+  "schema": "coordexp-swift-reconcile-resume-probe-command-manifest-v1",
+  "implementation_commit": "fcd05b38c12de5b522b5bd29b61bfd15cbacc28d",
+  "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+  "world_size": 2,
+  "arms": [
+    "success",
+    "rank_failure",
+    "interruption"
+  ],
+  "setup_command": [
+    "/usr/bin/timeout",
+    "--signal=TERM",
+    "--kill-after=30s",
+    "600s",
+    "/usr/bin/env",
+    "CUDA_VISIBLE_DEVICES=",
+    "/root/miniconda3/bin/conda",
+    "run",
+    "-n",
+    "ms",
+    "/root/miniconda3/envs/ms/bin/python",
+    "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+    "prepare",
+    "--artifact-root",
+    "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1",
+    "--base-config",
+    "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+    "--world-size",
+    "2"
+  ],
+  "commands": {
+    "success": {
+      "uninterrupted_control": [
+        "/usr/bin/timeout",
+        "--signal=TERM",
+        "--kill-after=30s",
+        "600s",
+        "/usr/bin/env",
+        "CUDA_VISIBLE_DEVICES=6,7",
+        "/root/miniconda3/bin/conda",
+        "run",
+        "-n",
+        "ms",
+        "/root/miniconda3/envs/ms/bin/python",
+        "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+        "success-control",
+        "--artifact-root",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1",
+        "--commit",
+        "fcd05b38c12de5b522b5bd29b61bfd15cbacc28d"
+      ],
+      "resumed_child": [
+        "/usr/bin/timeout",
+        "--signal=TERM",
+        "--kill-after=30s",
+        "1200s",
+        "/usr/bin/env",
+        "CUDA_VISIBLE_DEVICES=6,7",
+        "/root/miniconda3/bin/conda",
+        "run",
+        "-n",
+        "ms",
+        "/root/miniconda3/envs/ms/bin/python",
+        "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+        "success-resumed",
+        "--artifact-root",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1",
+        "--commit",
+        "fcd05b38c12de5b522b5bd29b61bfd15cbacc28d"
+      ]
+    },
+    "rank_failure": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=30s",
+      "120s",
+      "/usr/bin/env",
+      "CUDA_VISIBLE_DEVICES=",
+      "/root/miniconda3/bin/conda",
+      "run",
+      "-n",
+      "ms",
+      "/root/miniconda3/envs/ms/bin/python",
+      "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+      "rank-failure",
+      "--artifact-root",
+      "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1/arms/rank_failure",
+      "--inject",
+      "{\"rank\":1,\"kind\":\"missing\"}",
+      "--world-size",
+      "2"
+    ],
+    "interruption": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=30s",
+      "120s",
+      "/usr/bin/env",
+      "CUDA_VISIBLE_DEVICES=",
+      "/root/miniconda3/bin/conda",
+      "run",
+      "-n",
+      "ms",
+      "/root/miniconda3/envs/ms/bin/python",
+      "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+      "interruption",
+      "--artifact-root",
+      "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1/arms/interruption",
+      "--stop-after",
+      "1",
+      "--world-size",
+      "2"
+    ]
+  },
+  "config_files": {
+    "success": {
+      "uninterrupted_control": {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1/configs/uninterrupted_control.yaml",
+        "expected_sha256": "c71c937b924fd795803a920f3c02bd34d41918b7457d0fde8e3797d51f82dc40"
+      },
+      "resumed_child": {
+        "setup_parent": {
+          "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1/configs/resumed_parent.yaml",
+          "expected_sha256": "50cec54512ba0db1f49fcdfe53941ffa03de039d8585a4654651399b9c320a98"
+        },
+        "resumed_child": {
+          "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1/configs/resumed_child.yaml",
+          "expected_sha256": "2f74f823e79659b6ef61bf6ac6e864374866a088291672d47f9ae4c9c5a80b48"
+        }
+      }
+    },
+    "rank_failure": null,
+    "interruption": null
+  },
+  "artifact_root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1",
+  "comparison_policy": {
+    "boundary": {
+      "left": "uninterrupted_control/checkpoints/step-1",
+      "right": "resumed_parent/checkpoints/step-1",
+      "rule": "admit both exact-state manifests and require exact equality for every production-strict identity except the intentionally role-specific resolved_config identity, plus cursor including next pack ordinal and pending state, trainable model, optimizer, scheduler, scaler, every rank's python/numpy/torch_cpu/torch_cuda RNG, CUDA topology, and structure signature"
+    },
+    "post_update": {
+      "left": "uninterrupted_control/checkpoints/step-2",
+      "right": "resumed_child/checkpoints/step-2",
+      "rule": "same admitted-state exact comparison after each branch's one corresponding next forward and optimizer update; tensor and scalar state equality is exact"
+    },
+    "objective": {
+      "source": "exactly one split=train,step=2 row from each logging.jsonl",
+      "rule": "exact equality for all objective, loss, finite, update, LR, count, and accuracy fields; exclude only per_rank_measurement, input_build_seconds, input_wait_seconds, and keys containing duration/resource/wall/timing"
+    },
+    "rank_failure": {
+      "representative": "rank=1,kind=missing",
+      "rule": "signed converged_failure receipt, world_size=2, no admitted manifest, no stage residue, and no selector/event claim"
+    },
+    "interruption": {
+      "representative": "stop_after=1",
+      "rule": "signed converged_partial_state receipt proving only the non-production inference stub survives; no exact state and no event; this does not qualify the production inference writer"
+    },
+    "fail_closed": true
+  },
+  "verification_command": [
+    "/usr/bin/timeout",
+    "--signal=TERM",
+    "--kill-after=30s",
+    "600s",
+    "/usr/bin/env",
+    "CUDA_VISIBLE_DEVICES=",
+    "/root/miniconda3/bin/conda",
+    "run",
+    "-n",
+    "ms",
+    "/root/miniconda3/envs/ms/bin/python",
+    "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+    "verify",
+    "--artifact-root",
+    "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-12-r1"
+  ],
+  "authorization_status": "not_requested"
+}

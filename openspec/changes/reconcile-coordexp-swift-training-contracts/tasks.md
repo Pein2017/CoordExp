@@ -94,6 +94,17 @@
 - [ ] 3.6 Execute only the authorized smallest production-shaped probe. The success receipt MUST bind the matched branch pair and compare next input/pack identity; pre-forward trainable/optimizer/scheduler/scaler/RNG/cursor state; objective/loss fields; and resulting trainable parameters after the first post-resume optimizer update under the declared exact policy. Stop without retry on command/commit drift, occupied targets, insufficient headroom, timeout/hang, OOM, or any declared-bound exceedance; bind launcher/runtime identity, world size, artifact trees, terminal status, resource maxima, and stop outcome in immutable change-local receipts.
 - [ ] 3.7 Gate Wave 3 only when the matched success-pair and failure/interruption receipts are target-bound, every required rank and branch is accounted for, focused artifact verification passes, no P0/P1 pre-cost audit finding remains, and the supported claim stays limited to same-world-size optimizer-step-boundary continuation; publication/admission alone is insufficient.
 
+> **Wave 3 attempt 1 stopped before GPU (2026-08-13):** the freshly
+> authorized frozen setup command exited `1` before cache publication because
+> it set `CUDA_VISIBLE_DEVICES` to the empty string. The production strict
+> single-rank launcher mapping accepts an absent variable but rejects an empty
+> device entry. The artifact root, private cache, and cache receipt were all
+> absent after cleanup; no later command, model, torchrun, GPU work, or retry
+> ran. The immutable attempt-1 manifest, packet, and terminal receipt are under
+> `receipts/wave-3-attempt-1-*`. A successor packet MUST use
+> `/usr/bin/env -u CUDA_VISIBLE_DEVICES`, a new absent target, a new commit and
+> manifest digest, independent pre-cost closure, and fresh user authorization.
+
 ## 4. Reconcile Cache And Provenance Dependencies
 
 - [ ] 4.1 Trace the live cached-payload determinant registry, its independent completeness test, post-build determinant revalidation, immutable absent-target publication, and pre-model train/eval admission; remove any cache delta claim not supported by current source and focused tests.
