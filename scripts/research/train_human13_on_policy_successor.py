@@ -28,6 +28,7 @@ if __package__ in {None, ""}:
 
 from scripts.research.build_human13_on_policy_frontier import (  # noqa: E402
     CheckpointIdentity,
+    CurrentDecode,
     Human13FrontierIteration,
 )
 from scripts.research.human13_frontier_selection import (  # noqa: E402
@@ -112,6 +113,7 @@ class FrontierHandle:
     artifact_path: str
     artifact_sha256: str
     frontier: Human13FrontierIteration
+    source_decode_artifact_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,13 @@ class CleanDecodeReceipt:
     artifact_path: str
     artifact_sha256: str
     observation: BehaviorGateObservation
+    current_decodes: tuple[CurrentDecode, ...]
+
+
+@dataclass(frozen=True)
+class DurableArtifact:
+    path: str
+    sha256: str
 
 
 @dataclass(frozen=True)
@@ -161,14 +170,19 @@ class AttemptReceipt:
     selected_owner_id: str
     selected_alias_id: str
     proposal_checkpoint_path: str
+    proposal_checkpoint_sha256: str
     proposed_decode_path: str
+    proposed_decode_sha256: str
     decision: str
     decision_reasons: tuple[str, ...]
     transaction_before_sha256: str
     transaction_after_sha256: str
     accepted_checkpoint_path: str | None
+    accepted_checkpoint_sha256: str | None
     next_ledger_path: str | None
+    next_ledger_sha256: str | None
     rollback_decode_path: str | None
+    rollback_decode_sha256: str | None
 
 
 @dataclass(frozen=True)
@@ -251,6 +265,14 @@ class OnPolicyRuntime(Protocol):
 
     def write_attempt_receipt(
         self, config: OnPolicyArmConfig, receipt: AttemptReceipt
+    ) -> DurableArtifact: ...
+
+    def abort_staged_acceptance(
+        self,
+        config: OnPolicyArmConfig,
+        accepted_checkpoint: CheckpointIdentity | None,
+        next_frontier: FrontierHandle | None,
+        receipt_artifact: DurableArtifact | None,
     ) -> None: ...
 
 
@@ -382,6 +404,10 @@ def run_one_iteration(
     prior_observation = runtime.frontier_observation(frontier)
     snapshot = runtime.transaction.begin()
     transaction_closed = False
+    accepted_checkpoint: CheckpointIdentity | None = None
+    next_frontier: FrontierHandle | None = None
+    receipt_artifact: DurableArtifact | None = None
+    acceptance_staging_started = False
     try:
         update = runtime.apply_one_update(config, frontier, selection)
         if (
@@ -420,6 +446,7 @@ def run_one_iteration(
                 checkpoint=proposal_identity,
                 source_ledger_sha256=frontier.artifact_sha256,
             )
+            _validate_private_checkpoint(config, proposal.checkpoint)
             proposed_decode = runtime.clean_decode(
                 config, proposal.checkpoint, purpose="proposal_gate"
             )
@@ -432,19 +459,24 @@ def run_one_iteration(
                     False, (*gate.reasons, "forced_rejection_drill")
                 )
             if gate.accepted:
-                transaction_receipt = runtime.transaction.accept(snapshot)
-                transaction_closed = True
+                acceptance_staging_started = True
                 accepted_checkpoint = runtime.publish_accepted_checkpoint(
                     config, frontier, proposal
                 )
-                if Path(accepted_checkpoint.path) == checkpoint_path:
-                    raise OnPolicySuccessorError(
-                        "accepted checkpoint cannot remain the private proposal"
-                    )
+                _validate_accepted_checkpoint(
+                    config, frontier, proposal.checkpoint, accepted_checkpoint
+                )
                 next_frontier = runtime.materialize_next_frontier(
                     config, frontier, proposed_decode, accepted_checkpoint
                 )
-                _validate_next_frontier(frontier, next_frontier, accepted_checkpoint)
+                _validate_next_frontier(
+                    frontier,
+                    next_frontier,
+                    accepted_checkpoint,
+                    proposed_decode,
+                )
+                before_digest = str(snapshot.state_digest)
+                after_digest = _transaction_state_digest(runtime.transaction)
                 receipt = AttemptReceipt(
                     attempt_index=attempt_index,
                     ledger_path=frontier.artifact_path,
@@ -452,18 +484,26 @@ def run_one_iteration(
                     selected_owner_id=selection.selected.path.owner_id,
                     selected_alias_id=selection.selected.path.alias_id,
                     proposal_checkpoint_path=proposal.checkpoint.path,
+                    proposal_checkpoint_sha256=proposal.checkpoint.payload_sha256,
                     proposed_decode_path=proposed_decode.artifact_path,
+                    proposed_decode_sha256=proposed_decode.artifact_sha256,
                     decision="accepted",
                     decision_reasons=(),
-                    transaction_before_sha256=transaction_receipt.before_state_digest,
-                    transaction_after_sha256=transaction_receipt.after_state_digest,
+                    transaction_before_sha256=before_digest,
+                    transaction_after_sha256=after_digest,
                     accepted_checkpoint_path=accepted_checkpoint.path,
+                    accepted_checkpoint_sha256=accepted_checkpoint.payload_sha256,
                     next_ledger_path=next_frontier.artifact_path,
+                    next_ledger_sha256=next_frontier.artifact_sha256,
                     rollback_decode_path=None,
+                    rollback_decode_sha256=None,
                 )
+                receipt_artifact = runtime.write_attempt_receipt(config, receipt)
+                _validate_durable_receipt(receipt, receipt_artifact)
             else:
                 transaction_receipt = runtime.transaction.reject(snapshot)
                 transaction_closed = True
+                _require_restored_transaction(transaction_receipt)
                 receipt = AttemptReceipt(
                     attempt_index=attempt_index,
                     ledger_path=frontier.artifact_path,
@@ -471,22 +511,47 @@ def run_one_iteration(
                     selected_owner_id=selection.selected.path.owner_id,
                     selected_alias_id=selection.selected.path.alias_id,
                     proposal_checkpoint_path=proposal.checkpoint.path,
+                    proposal_checkpoint_sha256=proposal.checkpoint.payload_sha256,
                     proposed_decode_path=proposed_decode.artifact_path,
+                    proposed_decode_sha256=proposed_decode.artifact_sha256,
                     decision="rejected",
                     decision_reasons=gate.reasons,
                     transaction_before_sha256=transaction_receipt.before_state_digest,
                     transaction_after_sha256=transaction_receipt.after_state_digest,
                     accepted_checkpoint_path=None,
+                    accepted_checkpoint_sha256=None,
                     next_ledger_path=None,
+                    next_ledger_sha256=None,
                     rollback_decode_path=None,
+                    rollback_decode_sha256=None,
                 )
-                next_frontier = None
+        if gate.accepted:
+            transaction_receipt = runtime.transaction.accept(snapshot)
+            transaction_closed = True
+            if (
+                transaction_receipt.before_state_digest
+                != receipt.transaction_before_sha256
+                or transaction_receipt.after_state_digest
+                != receipt.transaction_after_sha256
+            ):
+                raise OnPolicySuccessorError(
+                    "accepted transaction digest differs from its durable receipt"
+                )
+            return OneIterationResult(
+                receipt=receipt,
+                next_frontier=next_frontier,
+                accepted=True,
+            )
         if receipt.decision == "rejected":
             rollback = runtime.clean_decode(
                 config, frontier.frontier.checkpoint, purpose="rollback_reproduction"
             )
             _validate_clean_decode(config, rollback, frontier.frontier.checkpoint)
-            receipt = replace(receipt, rollback_decode_path=rollback.artifact_path)
+            receipt = replace(
+                receipt,
+                rollback_decode_path=rollback.artifact_path,
+                rollback_decode_sha256=rollback.artifact_sha256,
+            )
             if set(rollback.observation.unique_owner_ids) != set(
                 prior_observation.unique_owner_ids
             ):
@@ -498,11 +563,13 @@ def run_one_iteration(
                         "rollback_owner_non_reproduction",
                     ),
                 )
-                runtime.write_attempt_receipt(config, receipt)
+                terminal_artifact = runtime.write_attempt_receipt(config, receipt)
+                _validate_durable_receipt(receipt, terminal_artifact)
                 raise OnPolicySuccessorError(
                     "rollback clean decode did not reproduce the prior owner set"
                 )
-        runtime.write_attempt_receipt(config, receipt)
+        rejected_artifact = runtime.write_attempt_receipt(config, receipt)
+        _validate_durable_receipt(receipt, rejected_artifact)
         return OneIterationResult(
             receipt=receipt,
             next_frontier=next_frontier,
@@ -510,7 +577,20 @@ def run_one_iteration(
         )
     except BaseException:
         if not transaction_closed:
-            runtime.transaction.reject(snapshot)
+            rollback_receipt = runtime.transaction.reject(snapshot)
+            _require_restored_transaction(rollback_receipt)
+        if (
+            acceptance_staging_started
+            or accepted_checkpoint is not None
+            or next_frontier is not None
+            or receipt_artifact is not None
+        ):
+            runtime.abort_staged_acceptance(
+                config,
+                accepted_checkpoint,
+                next_frontier,
+                receipt_artifact,
+            )
         raise
 
 
@@ -716,10 +796,33 @@ def _validate_clean_decode(
         receipt.decision_surface != config.decision_surface
         or receipt.checkpoint != checkpoint
         or not receipt.artifact_path
-        or len(receipt.artifact_sha256) != 64
+        or not _is_digest(receipt.artifact_sha256)
     ):
         raise OnPolicySuccessorError(
             "clean decode is not bound to the HF decision surface"
+        )
+    artifact = Path(receipt.artifact_path).expanduser()
+    if (
+        artifact.is_symlink()
+        or not artifact.is_file()
+        or _sha256_file(artifact) != receipt.artifact_sha256
+    ):
+        raise OnPolicySuccessorError("clean decode artifact/hash differs")
+    decodes = receipt.current_decodes
+    if (
+        len(decodes) != 13
+        or len({decode.image_id for decode in decodes}) != 13
+        or any(
+            decode.checkpoint != checkpoint
+            or not decode.trajectory_id
+            or not decode.generated_token_ids
+            or decode.parser != "compact_object_box_closed_only"
+            or decode.parser_status != "complete"
+            for decode in decodes
+        )
+    ):
+        raise OnPolicySuccessorError(
+            "clean decode lacks complete same-decode Human-13 lineage"
         )
 
 
@@ -727,16 +830,183 @@ def _validate_next_frontier(
     prior: FrontierHandle,
     proposed: FrontierHandle,
     accepted_checkpoint: CheckpointIdentity,
+    proposed_decode: CleanDecodeReceipt,
 ) -> None:
     if (
         proposed.frontier.iteration != prior.frontier.iteration + 1
         or proposed.frontier.checkpoint != accepted_checkpoint
         or proposed.frontier.previous_frontier_sha256 != prior.artifact_sha256
         or proposed.artifact_sha256 == prior.artifact_sha256
+        or proposed.source_decode_artifact_sha256 != proposed_decode.artifact_sha256
     ):
         raise OnPolicySuccessorError(
             "accepted decode did not create the sole next ledger"
         )
+    artifact = Path(proposed.artifact_path).expanduser()
+    expected_bytes = _canonical_bytes(proposed.frontier)
+    if (
+        artifact.is_symlink()
+        or not artifact.is_file()
+        or artifact.read_bytes() != expected_bytes
+        or _sha256_file(artifact) != proposed.artifact_sha256
+    ):
+        raise OnPolicySuccessorError("next frontier artifact/hash differs")
+    images = tuple(proposed.frontier.images)
+    decodes = proposed_decode.current_decodes
+    if len(images) != 13 or len(decodes) != 13:
+        raise OnPolicySuccessorError(
+            "next frontier is not derived from the same clean decode"
+        )
+    for image, decode in zip(images, decodes, strict=True):
+        expected_rows = tuple(
+            (
+                prediction.generated_order,
+                prediction.category,
+                prediction.bbox,
+                prediction.token_start,
+                prediction.token_end,
+                decode.generated_token_ids[
+                    prediction.token_start : prediction.token_end
+                ],
+            )
+            for prediction in decode.predictions
+        )
+        observed_rows = tuple(
+            (
+                row.generated_order,
+                row.category,
+                row.bbox,
+                row.token_start,
+                row.token_end,
+                row.token_ids,
+            )
+            for row in image.rows
+        )
+        if (
+            image.image_id != decode.image_id
+            or image.trajectory_id != decode.trajectory_id
+            or image.generated_token_ids != decode.generated_token_ids
+            or image.parser != decode.parser
+            or image.parser_status != decode.parser_status
+            or image.stop_reason != decode.stop_reason
+            or image.terminal_token_index != decode.terminal_token_index
+            or image.malformed_row_count != decode.malformed_row_count
+            or observed_rows != expected_rows
+        ):
+            raise OnPolicySuccessorError(
+                "next frontier is not derived from the same clean decode"
+            )
+
+
+def _validate_private_checkpoint(
+    config: OnPolicyArmConfig, checkpoint: CheckpointIdentity
+) -> None:
+    path = Path(checkpoint.path).expanduser()
+    private_root = (Path(config.output_root).expanduser() / "private").resolve()
+    if (
+        path.is_symlink()
+        or not path.is_dir()
+        or not path.resolve().is_relative_to(private_root)
+        or not _is_digest(checkpoint.payload_sha256)
+        or _checkpoint_payload_sha256(path) != checkpoint.payload_sha256
+    ):
+        raise OnPolicySuccessorError("private proposal checkpoint identity differs")
+
+
+def _validate_accepted_checkpoint(
+    config: OnPolicyArmConfig,
+    frontier: FrontierHandle,
+    proposal: CheckpointIdentity,
+    accepted: CheckpointIdentity,
+) -> None:
+    path = Path(accepted.path).expanduser()
+    expected = (
+        Path(config.output_root).expanduser()
+        / "accepted"
+        / "checkpoints"
+        / f"step-{frontier.frontier.iteration + 1}"
+    )
+    if (
+        path.is_symlink()
+        or not path.is_dir()
+        or path.resolve() != expected.resolve()
+        or not _is_digest(accepted.payload_sha256)
+        or accepted.payload_sha256 != proposal.payload_sha256
+        or _checkpoint_payload_sha256(path) != accepted.payload_sha256
+    ):
+        raise OnPolicySuccessorError(
+            "accepted checkpoint path/content/hash differs from private proposal"
+        )
+
+
+def _validate_durable_receipt(
+    receipt: AttemptReceipt, artifact: DurableArtifact
+) -> None:
+    path = Path(artifact.path).expanduser()
+    expected = _canonical_bytes(receipt)
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or not _is_digest(artifact.sha256)
+        or path.read_bytes() != expected
+        or _sha256_file(path) != artifact.sha256
+    ):
+        raise OnPolicySuccessorError(
+            "durable attempt receipt path/content/hash differs"
+        )
+
+
+def _require_restored_transaction(receipt: Any) -> None:
+    if receipt.before_state_digest != receipt.after_state_digest:
+        raise OnPolicySuccessorError(
+            "rejected transaction did not restore its full state digest"
+        )
+
+
+def _transaction_state_digest(transaction: Any) -> str:
+    digest_method = getattr(transaction, "state_digest", None)
+    if not callable(digest_method):
+        raise OnPolicySuccessorError("transaction lacks a live state digest")
+    digest = digest_method()
+    if not _is_digest(digest):
+        raise OnPolicySuccessorError("transaction state digest is invalid")
+    return str(digest)
+
+
+def _checkpoint_payload_sha256(path: Path) -> str:
+    files = tuple(sorted(item for item in path.rglob("*") if item.is_file()))
+    if not files:
+        raise OnPolicySuccessorError("checkpoint payload is empty")
+    digest = hashlib.sha256()
+    root = path.resolve()
+    for item in files:
+        relative = item.resolve().relative_to(root).as_posix().encode()
+        payload = item.read_bytes()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def _canonical_bytes(value: Any) -> bytes:
+    return (
+        json.dumps(
+            asdict(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _is_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _load_runtime_factory(spec: str) -> RuntimeFactory:
@@ -812,6 +1082,7 @@ __all__ = [
     "AttemptReceipt",
     "CandidateSelectionReceipt",
     "CleanDecodeReceipt",
+    "DurableArtifact",
     "FrontierHandle",
     "LoopReceipt",
     "OneIterationResult",
