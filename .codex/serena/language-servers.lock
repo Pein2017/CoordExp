@@ -4,3 +4,6 @@ node.version=22.22.0
 node.sha256=1bec56ef7cfa9a76f3e0b7c0a87f220eb73f23102b9c0b4c7529a3f7c3ce7c31
 typescript.version=5.9.3
 typescript-language-server.version=5.1.3
+bash-language-server.version=5.6.0
+shellcheck.version=0.10.0
+shellcheck.linux-x64.sha256=6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87

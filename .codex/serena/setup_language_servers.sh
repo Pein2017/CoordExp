@@ -13,6 +13,11 @@ readonly node_complete="${node_dir}/.complete"
 readonly typescript_dir="${repo_root}/.codex/serena/language_servers/static/TypeScriptLanguageServer/ts-lsp"
 readonly typescript_bin="${typescript_dir}/node_modules/.bin/typescript-language-server"
 readonly typescript_complete="${typescript_dir}/.complete"
+readonly bash_dir="${repo_root}/.codex/serena/language_servers/static/BashLanguageServer/bash-lsp"
+readonly bash_bin="${bash_dir}/node_modules/.bin/bash-language-server"
+readonly bash_complete="${bash_dir}/.complete"
+readonly shellcheck_version="$(awk -F= '$1 == "shellcheck.version" {print $2}' "${lock_file}")"
+readonly shellcheck_bin="${bash_dir}/shellcheck/shellcheck-v${shellcheck_version}/shellcheck"
 
 read_lock() {
     local key="$1"
@@ -82,10 +87,32 @@ check_typescript() {
     printf 'typescript-language-server %s (typescript %s)\n' "${observed_server}" "${observed_typescript}"
 }
 
+check_bash() {
+    local expected_bash expected_shellcheck observed_bash observed_shellcheck
+    expected_bash="$(read_lock bash-language-server.version)"
+    expected_shellcheck="$(read_lock shellcheck.version)"
+    [[ -f "${bash_complete}" && -x "${bash_bin}" && -x "${shellcheck_bin}" ]] || {
+        echo "Bash runtime is incomplete at ${bash_dir}" >&2
+        return 1
+    }
+    observed_bash="$("${node_bin}" -p "require('${bash_dir}/node_modules/bash-language-server/package.json').version")"
+    observed_shellcheck="$("${shellcheck_bin}" --version | awk '$1 == "version:" {print $2}')"
+    [[ "${observed_bash}" == "${expected_bash}" ]] || {
+        echo "bash-language-server mismatch: ${observed_bash} != ${expected_bash}" >&2
+        return 1
+    }
+    [[ "${observed_shellcheck}" == "${expected_shellcheck}" ]] || {
+        echo "ShellCheck mismatch: ${observed_shellcheck} != ${expected_shellcheck}" >&2
+        return 1
+    }
+    printf 'bash-language-server %s (ShellCheck %s)\n' "${observed_bash}" "${observed_shellcheck}"
+}
+
 check_runtime() {
     check_pyright
     check_node
     check_typescript
+    check_bash
 }
 
 if [[ "${1:-}" == "--check" ]]; then
@@ -146,3 +173,35 @@ if [[ ! -x "${typescript_bin}" || ! -f "${typescript_complete}" ]]; then
     chmod 600 "${typescript_complete}"
 fi
 check_typescript
+
+if [[ ! -x "${bash_bin}" || ! -x "${shellcheck_bin}" || ! -f "${bash_complete}" ]]; then
+    readonly npm_bin="/root/.nvm/versions/node/v$(read_lock node.version)/bin/npm"
+    readonly bash_version="$(read_lock bash-language-server.version)"
+    readonly shellcheck_hash="$(read_lock shellcheck.linux-x64.sha256)"
+    readonly shellcheck_url="https://github.com/koalaman/shellcheck/releases/download/v${shellcheck_version}/shellcheck-v${shellcheck_version}.linux.x86_64.tar.xz"
+    readonly shellcheck_parent="${bash_dir}/shellcheck"
+    readonly shellcheck_archive="$(mktemp /tmp/serena-shellcheck.XXXXXX.tar.xz)"
+    cleanup_shellcheck() {
+        rm -f -- "${shellcheck_archive}"
+    }
+    trap cleanup_shellcheck EXIT
+    mkdir -p "${bash_dir}" "${shellcheck_parent}"
+    chmod 700 "${repo_root}/.codex/serena/language_servers/static/BashLanguageServer" \
+        "${bash_dir}" "${shellcheck_parent}"
+    PATH="${node_dir}/bin:/root/.nvm/versions/node/v$(read_lock node.version)/bin:/usr/local/bin:/usr/bin:/bin" \
+        "${npm_bin}" install \
+        --prefix "${bash_dir}" \
+        --no-audit \
+        --no-fund \
+        --no-save \
+        "bash-language-server@${bash_version}"
+    curl --fail --location --silent --show-error "${shellcheck_url}" --output "${shellcheck_archive}"
+    printf '%s  %s\n' "${shellcheck_hash}" "${shellcheck_archive}" | sha256sum --check --status
+    tar -xJf "${shellcheck_archive}" -C "${shellcheck_parent}"
+    chmod 755 "${shellcheck_bin}"
+    : > "${bash_complete}"
+    chmod 600 "${bash_complete}"
+    cleanup_shellcheck
+    trap - EXIT
+fi
+check_bash
