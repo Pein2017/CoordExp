@@ -77,6 +77,7 @@ def _panel_outputs(
             resolved_config_sha256="f" * 64,
             trajectory_id=f"eval:O-First-Safe:3:{image.image_id}",
             generated_token_ids=(100 + image.image_id, 200 + image.image_id, 999),
+            terminal_token_index=2,
             predictions=(
                 {
                     "generated_order": 0,
@@ -137,6 +138,7 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
         resolved_config_sha256="f" * 64,
         trajectory_id="eval:A1:4:7",
         generated_token_ids=(1, 2, 3),
+        terminal_token_index=2,
         predictions=(
             {"generated_order": 0, "description": "person", "bbox": [1, 2, 3, 4]},
         ),
@@ -150,6 +152,7 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
     assert result["decode_mode"] == "original_prompt_clean_greedy"
     assert result["repetition_penalty"] == 1.0
     assert result["generated_token_ids"] == [1, 2, 3]
+    assert result["terminal_token_index"] == 2
     predictions = cast(list[dict[str, object]], result["predictions"])
     provenance = cast(dict[str, object], result["provenance"])
     assert predictions[0]["description"] == "person"
@@ -177,6 +180,7 @@ def test_build_analyzer_output_rejects_non_digest_or_wrong_image() -> None:
             resolved_config_sha256="f" * 64,
             trajectory_id="trajectory",
             generated_token_ids=(1,),
+            terminal_token_index=0,
             predictions=(),
             parser="compact_object_box_closed_only",
             parser_status="accepted",
@@ -203,6 +207,8 @@ def test_current_decodes_from_outputs_preserves_same_decode_identity_and_order()
     assert tuple(decode.image_id for decode in decodes) == tuple(range(1, 14))
     assert decodes[6].trajectory_id == "eval:O-First-Safe:3:7"
     assert decodes[6].generated_token_ids == (107, 207, 999)
+    assert decodes[6].terminal_token_index == 2
+    assert decodes[6].malformed_row_count == 0
     assert decodes[6].predictions[0].token_start == 0
     assert decodes[6].predictions[0].token_end == 2
     assert decodes[6].parser == "compact_object_box_closed_only"
@@ -283,6 +289,20 @@ def test_current_decodes_accepts_real_canonical_parser_status() -> None:
                 *outputs[1:],
             ),
             "parser status",
+        ),
+        (
+            lambda outputs: (
+                {**outputs[0], "terminal_token_index": 0},
+                *outputs[1:],
+            ),
+            "terminal_token_index",
+        ),
+        (
+            lambda outputs: (
+                {**outputs[0], "malformed_row_count": -1},
+                *outputs[1:],
+            ),
+            "malformed_row_count",
         ),
     ),
 )

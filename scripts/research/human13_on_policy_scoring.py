@@ -2,7 +2,7 @@
 
 The module is deliberately runtime-injected: importing it does not load a model or
 touch a GPU.  Every native alias is encoded as an independent causal segment after
-the deduplicated accepted prefix.  The packed BF16/FA2 surface only bounds HF work;
+the exact natural pre-stop prefix.  The packed BF16/FA2 surface only bounds HF work;
 the exact HF fp32/SDPA surface owns all scientific ranking decisions.
 """
 
@@ -13,7 +13,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from scripts.research.build_human13_on_policy_frontier import FrontierImage
+from scripts.research.build_human13_on_policy_frontier import (
+    FrontierImage,
+    natural_pre_stop_prefix,
+)
 from scripts.research.human13_frontier_selection import (
     CandidatePath,
     CandidateScore,
@@ -30,7 +33,6 @@ from scripts.research.human13_live_census import (
     _position_rows,
     _vocab_size,
 )
-from scripts.research.human13_on_policy_live import PrefixReceipt, _training_prefix
 from scripts.research.run_human13_k_union_overfit import (
     GLOBAL_MAX_LENGTH,
     LogicalPanelSegment,
@@ -50,15 +52,26 @@ class CandidateSegmentBinding:
     segment_id: str
     local_causal_positions: tuple[int, ...]
     prompt_token_sha256: str
-    training_prefix_token_sha256: str
+    natural_pre_stop_prefix_token_sha256: str
     candidate_token_sha256: str
+
+
+@dataclass(frozen=True)
+class NaturalPrefixReceipt:
+    image_id: int
+    raw_natural_token_sha256: str
+    natural_pre_stop_prefix_token_sha256: str
+    raw_natural_token_count: int
+    natural_pre_stop_token_count: int
+    terminal_token_index: int | None
+    malformed_row_count: int
 
 
 @dataclass(frozen=True)
 class PreparedCandidateScoring:
     packed_plan: PackedPanelPlan
     bindings: tuple[CandidateSegmentBinding, ...]
-    prefix_receipts: tuple[PrefixReceipt, ...]
+    prefix_receipts: tuple[NaturalPrefixReceipt, ...]
 
 
 @dataclass(frozen=True)
@@ -124,7 +137,7 @@ def prepare_on_policy_candidate_scoring(
         raise ValueError("frontier and processor-skeleton image identities differ")
     logical: list[LogicalPanelSegment] = []
     bindings: list[CandidateSegmentBinding] = []
-    prefix_receipts: list[PrefixReceipt] = []
+    prefix_receipts: list[NaturalPrefixReceipt] = []
     seen_segments: set[str] = set()
     seen_paths: set[tuple[int, str, str]] = set()
 
@@ -133,7 +146,16 @@ def prepare_on_policy_candidate_scoring(
         if image.image_id != image_id:
             raise ValueError("frontier mapping key differs from its image identity")
         prompt = _prompt(prompt_skeletons[image_id], image_id=image_id)
-        training_prefix, prefix_receipt = _training_prefix(image)
+        natural_prefix = natural_pre_stop_prefix(image)
+        prefix_receipt = NaturalPrefixReceipt(
+            image_id=image_id,
+            raw_natural_token_sha256=token_ids_sha256(image.generated_token_ids),
+            natural_pre_stop_prefix_token_sha256=token_ids_sha256(natural_prefix),
+            raw_natural_token_count=len(image.generated_token_ids),
+            natural_pre_stop_token_count=len(natural_prefix),
+            terminal_token_index=image.terminal_token_index,
+            malformed_row_count=image.malformed_row_count,
+        )
         prefix_receipts.append(prefix_receipt)
         uncovered = set(image.uncovered_h_owner_ids)
         for alias in sorted(
@@ -172,11 +194,11 @@ def prepare_on_policy_candidate_scoring(
             if segment_id in seen_segments:
                 raise ValueError("candidate segment identities are not unique")
             seen_segments.add(segment_id)
-            row_start = len(prompt) + len(training_prefix)
+            row_start = len(prompt) + len(natural_prefix)
             local_positions = tuple(
                 row_start + offset - 1 for offset in range(len(path.token_ids))
             )
-            input_ids = (*prompt, *training_prefix, *path.token_ids)
+            input_ids = (*prompt, *natural_prefix, *path.token_ids)
             if any(
                 position < len(prompt) - 1
                 or position >= len(input_ids) - 1
@@ -210,8 +232,8 @@ def prepare_on_policy_candidate_scoring(
                     segment_id=segment_id,
                     local_causal_positions=local_positions,
                     prompt_token_sha256=token_ids_sha256(prompt),
-                    training_prefix_token_sha256=(
-                        prefix_receipt.training_prefix_token_sha256
+                    natural_pre_stop_prefix_token_sha256=(
+                        prefix_receipt.natural_pre_stop_prefix_token_sha256
                     ),
                     candidate_token_sha256=token_ids_sha256(path.token_ids),
                 )
@@ -453,6 +475,7 @@ def score_on_policy_frontier_candidates(
 __all__ = [
     "CandidateSegmentBinding",
     "CrossSurfaceCandidateReceipt",
+    "NaturalPrefixReceipt",
     "OnPolicyCandidateScoringResult",
     "PackedCandidateReceipt",
     "PreparedCandidateScoring",

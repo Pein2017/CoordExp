@@ -55,6 +55,8 @@ class CurrentDecode:
     parser_status: str
     stop_reason: str
     checkpoint: CheckpointIdentity
+    terminal_token_index: int | None = None
+    malformed_row_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,8 @@ class FrontierImage:
     uncovered_h_owner_ids: tuple[str, ...]
     candidate_aliases: tuple[FrontierCandidateAlias, ...]
     duplicate_events: tuple[FrontierDuplicateEvent, ...]
+    terminal_token_index: int | None = None
+    malformed_row_count: int = 0
 
     @property
     def candidate_owner_ids(self) -> tuple[str, ...]:
@@ -209,6 +213,7 @@ def _project_image(
         or decode.parser_status not in _AUTHORIZED_PARSE_STATUSES
     ):
         raise ValueError("current decode parser identity or status is not authorized")
+    natural_pre_stop_prefix(decode)
     rows = _rows(decode)
     retained: list[FrontierRow] = []
     duplicates: list[FrontierDuplicateEvent] = []
@@ -245,23 +250,7 @@ def _project_image(
     canonical_set = set(canonical)
     covered_h = tuple(sorted(canonical_set & set(image.h_owner_ids)))
     uncovered_h = tuple(sorted(set(image.h_owner_ids) - canonical_set))
-    aliases = tuple(
-        sorted(
-            (
-                FrontierCandidateAlias(
-                    owner_id=row.owner_id,
-                    row_id=row.row_id,
-                    trajectory_id=row.trajectory_id,
-                    seed=row.seed,
-                    owner_iou=row.owner_iou,
-                    token_ids=row.token_ids,
-                )
-                for row in image.selected_rows
-                if row.owner_id in uncovered_h
-            ),
-            key=lambda item: (item.owner_id, -item.owner_iou, item.seed, item.row_id),
-        )
-    )
+    aliases = candidate_aliases_for_owners(image, owner_ids=set(uncovered_h))
     return FrontierImage(
         image_id=image.image_id,
         trajectory_id=decode.trajectory_id,
@@ -276,7 +265,117 @@ def _project_image(
         uncovered_h_owner_ids=uncovered_h,
         candidate_aliases=aliases,
         duplicate_events=tuple(duplicates),
+        terminal_token_index=decode.terminal_token_index,
+        malformed_row_count=decode.malformed_row_count,
     )
+
+
+def candidate_aliases_for_owners(
+    image: ImageRecord, *, owner_ids: set[str]
+) -> tuple[FrontierCandidateAlias, ...]:
+    """Recover every exact native candidate alias from the sealed manifest."""
+
+    if not owner_ids <= set(image.h_owner_ids):
+        raise ValueError("candidate aliases may only be requested for H owners")
+    candidate_row_ids = set(image.candidate_row_ids)
+    row_owner: dict[str, str] = {}
+    owners = {owner.owner_id: owner for owner in image.owners}
+    for owner in image.owners:
+        for row_id in owner.sampled_row_ids:
+            if row_id in row_owner:
+                raise ValueError("manifest candidate row belongs to multiple owners")
+            row_owner[row_id] = owner.owner_id
+    if not candidate_row_ids <= set(row_owner):
+        raise ValueError("manifest candidate row lacks an owner binding")
+
+    aliases: list[FrontierCandidateAlias] = []
+    seen_rows: set[str] = set()
+    for trajectory in image.trajectories:
+        if trajectory.request.mode == "source_greedy":
+            continue
+        seed = trajectory.request.seed
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValueError("sampled candidate trajectory lacks an integer seed")
+        boundary = (
+            len(trajectory.raw_token_ids)
+            if trajectory.terminal_token_index is None
+            else trajectory.terminal_token_index
+        )
+        for row in trajectory.rows:
+            if row.row_id not in candidate_row_ids:
+                continue
+            if row.row_id in seen_rows:
+                raise ValueError("manifest candidate row identity is duplicated")
+            seen_rows.add(row.row_id)
+            owner_id = row_owner[row.row_id]
+            if not 0 <= row.token_start < row.token_end <= boundary:
+                raise ValueError("manifest candidate token span crosses its terminal")
+            owner = owners[owner_id]
+            if normalize_coco_category_name(owner.category) != (
+                normalize_coco_category_name(row.category)
+            ):
+                raise ValueError("manifest candidate category differs from its owner")
+            overlap = float(iou_xyxy(owner.bbox, row.bbox))
+            if not math.isfinite(overlap) or overlap < _OWNER_IOU:
+                raise ValueError("manifest candidate no longer matches its owner")
+            if owner_id in owner_ids:
+                aliases.append(
+                    FrontierCandidateAlias(
+                        owner_id=owner_id,
+                        row_id=row.row_id,
+                        trajectory_id=trajectory.trajectory_id,
+                        seed=seed,
+                        owner_iou=overlap,
+                        token_ids=trajectory.raw_token_ids[
+                            row.token_start : row.token_end
+                        ],
+                    )
+                )
+    if seen_rows != candidate_row_ids:
+        raise ValueError("manifest candidate rows do not resolve exactly once")
+    expected = {
+        row_id
+        for owner in image.owners
+        if owner.owner_id in owner_ids
+        for row_id in owner.sampled_row_ids
+        if row_id in candidate_row_ids
+    }
+    if {alias.row_id for alias in aliases} != expected:
+        raise ValueError("requested owner candidate aliases do not rederive")
+    return tuple(
+        sorted(
+            aliases,
+            key=lambda item: (item.owner_id, -item.owner_iou, item.seed, item.row_id),
+        )
+    )
+
+
+def natural_pre_stop_prefix(
+    value: CurrentDecode | FrontierImage,
+) -> tuple[int, ...]:
+    """Return the exact current natural prefix, excluding only its terminal."""
+
+    token_ids = tuple(value.generated_token_ids)
+    if not token_ids or any(
+        isinstance(token_id, bool)
+        or not isinstance(token_id, int)
+        or token_id < 0
+        for token_id in token_ids
+    ):
+        raise ValueError("generated token ids must be nonempty nonnegative integers")
+    malformed = value.malformed_row_count
+    if isinstance(malformed, bool) or not isinstance(malformed, int) or malformed < 0:
+        raise ValueError("malformed_row_count must be a nonnegative integer")
+    terminal = value.terminal_token_index
+    if terminal is None:
+        return token_ids
+    if (
+        isinstance(terminal, bool)
+        or not isinstance(terminal, int)
+        or terminal != len(token_ids) - 1
+    ):
+        raise ValueError("terminal_token_index must identify the final generated token")
+    return token_ids[:terminal]
 
 
 def _with_constrained_protected(
@@ -293,6 +392,7 @@ def _with_constrained_protected(
 
 
 def _rows(decode: CurrentDecode) -> tuple[FrontierRow, ...]:
+    natural_prefix = natural_pre_stop_prefix(decode)
     rows: list[FrontierRow] = []
     prior_end = 0
     seen_orders: set[int] = set()
@@ -304,7 +404,7 @@ def _rows(decode: CurrentDecode) -> tuple[FrontierRow, ...]:
             prediction.token_start < 0
             or prediction.token_end <= prediction.token_start
             or prediction.token_start < prior_end
-            or prediction.token_end > len(decode.generated_token_ids) - 1
+            or prediction.token_end > len(natural_prefix)
         ):
             raise ValueError("prediction token span is invalid")
         if (
@@ -364,6 +464,8 @@ def validate_frontier_iteration(
             parser_status=image.parser_status,
             stop_reason=image.stop_reason,
             checkpoint=frontier.checkpoint,
+            terminal_token_index=image.terminal_token_index,
+            malformed_row_count=image.malformed_row_count,
         )
         derived = _project_image(
             manifest_images[image.image_id],
@@ -509,6 +611,16 @@ def _from_dict(document: Mapping[str, Any]) -> Human13FrontierIteration:
             duplicate_events=tuple(
                 FrontierDuplicateEvent(**value) for value in item["duplicate_events"]
             ),
+            terminal_token_index=(
+                None
+                if item["terminal_token_index"] is None
+                else _strict_int(
+                    item["terminal_token_index"], "image.terminal_token_index"
+                )
+            ),
+            malformed_row_count=_strict_int(
+                item["malformed_row_count"], "image.malformed_row_count"
+            ),
         )
 
     checkpoint = CheckpointIdentity(**document["checkpoint"])
@@ -541,6 +653,12 @@ def _from_dict(document: Mapping[str, Any]) -> Human13FrontierIteration:
 
 def _load_bound_manifest(frontier: Human13FrontierIteration) -> Human13KUnionManifest:
     return load_manifest(frontier.manifest_path, require_full_panel=False)
+
+
+def _strict_int(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{field} must be an integer")
+    return value
 
 
 def _derive_protection(
@@ -606,7 +724,9 @@ __all__ = [
     "FrontierRow",
     "Human13FrontierIteration",
     "build_frontier_iteration",
+    "candidate_aliases_for_owners",
     "canonical_write",
     "load_frontier_iteration",
+    "natural_pre_stop_prefix",
     "validate_frontier_iteration",
 ]

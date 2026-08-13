@@ -72,6 +72,7 @@ def build_analyzer_output(
     resolved_config_sha256: str,
     trajectory_id: str,
     generated_token_ids: Sequence[int],
+    terminal_token_index: int | None,
     predictions: Sequence[Mapping[str, object]],
     parser: str,
     parser_status: str,
@@ -92,8 +93,19 @@ def build_analyzer_output(
     ):
         raise ValueError("malformed_row_count must be a non-negative integer")
     ids = tuple(generated_token_ids)
-    if any(isinstance(item, bool) or not isinstance(item, int) for item in ids):
-        raise ValueError("generated_token_ids must contain integers")
+    if not ids or any(
+        isinstance(item, bool) or not isinstance(item, int) or item < 0
+        for item in ids
+    ):
+        raise ValueError("generated_token_ids must contain nonnegative integers")
+    if terminal_token_index is not None and (
+        isinstance(terminal_token_index, bool)
+        or not isinstance(terminal_token_index, int)
+        or terminal_token_index != len(ids) - 1
+    ):
+        raise ValueError(
+            "terminal_token_index must identify the final generated token"
+        )
     source = tuple(getattr(image, "trajectories"))[0]
     binding = manifest.binding
     source_identity = binding.source
@@ -150,6 +162,7 @@ def build_analyzer_output(
         "repetition_penalty": 1.0,
         "predictions": [dict(item) for item in predictions],
         "generated_token_ids": list(ids),
+        "terminal_token_index": terminal_token_index,
         "trajectory_id": bound_trajectory_id,
         "parser": _nonempty(parser, "parser"),
         "parser_status": _nonempty(parser_status, "parser_status"),
@@ -249,6 +262,23 @@ def current_decodes_from_outputs(
         )
         if any(value < 0 for value in token_ids):
             raise ValueError("output.generated_token_ids must be nonnegative")
+        terminal_value = record.get("terminal_token_index")
+        terminal_token_index = (
+            None
+            if terminal_value is None
+            else _strict_integer(
+                terminal_value, "output.terminal_token_index"
+            )
+        )
+        if terminal_token_index is not None and terminal_token_index != len(token_ids) - 1:
+            raise ValueError(
+                "output.terminal_token_index must identify the final generated token"
+            )
+        malformed_row_count = _strict_integer(
+            record.get("malformed_row_count"), "output.malformed_row_count"
+        )
+        if malformed_row_count < 0:
+            raise ValueError("output.malformed_row_count must be nonnegative")
         predictions_value = record.get("predictions")
         if not isinstance(predictions_value, list):
             raise ValueError("output.predictions must be a list")
@@ -305,6 +335,8 @@ def current_decodes_from_outputs(
                 parser_status=parser_status,
                 stop_reason=_nonempty(record.get("stop_reason"), "output.stop_reason"),
                 checkpoint=checkpoint,
+                terminal_token_index=terminal_token_index,
+                malformed_row_count=malformed_row_count,
             )
         )
     return tuple(decodes)
@@ -403,6 +435,11 @@ def source_outputs_from_manifest(
                 resolved_config_sha256=resolved_config_sha256,
                 trajectory_id=trajectory_id,
                 generated_token_ids=tuple(int(item) for item in token_ids),
+                terminal_token_index=(
+                    None
+                    if trajectory.get("terminal_token_index") is None
+                    else int(trajectory["terminal_token_index"])
+                ),
                 predictions=predictions,
                 parser=binding.surface.parser,
                 parser_status=str(parse["parse_status"]),
@@ -535,6 +572,7 @@ def evaluate_hf_checkpoint(
                     resolved_config_sha256=resolved_config_sha256,
                     trajectory_id=request.request_id,
                     generated_token_ids=trajectory.token_ids,
+                    terminal_token_index=trajectory.terminal_token_index,
                     predictions=predictions,
                     parser=manifest.binding.surface.parser,
                     parser_status=trajectory.parser_status,

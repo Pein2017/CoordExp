@@ -14,8 +14,10 @@ from scripts.research.build_human13_on_policy_frontier import (
     CurrentDecode,
     CurrentPrediction,
     build_frontier_iteration,
+    candidate_aliases_for_owners,
     canonical_write,
     load_frontier_iteration,
+    natural_pre_stop_prefix,
 )
 
 
@@ -68,11 +70,18 @@ def _manifest(
     for seed in range(21001, 21017):
         rows = ()
         tokens = (200, 999)
-        if seed == 21001:
-            tokens = (200, *h_tokens, 999)
+        if seed in {21001, 21002}:
+            candidate_tokens = h_tokens if seed == 21001 else (31, 32, 33, 34)
+            tokens = (200, *candidate_tokens, 999)
             rows = (
                 manifest_builder.PredictionRowInput(
-                    "k-h", 0, "person", (20.0, 0.0, 30.0, 10.0), 1, 5, 3
+                    f"k-h-{seed}",
+                    0,
+                    "person",
+                    (20.0, 0.0, 30.0, 10.0),
+                    1,
+                    5,
+                    3,
                 ),
             )
         sampled.append(
@@ -133,6 +142,8 @@ def _decode(
         parser_status="accepted",
         stop_reason="im_end",
         checkpoint=checkpoint,
+        terminal_token_index=len(tokens) - 1,
+        malformed_row_count=0,
     )
 
 
@@ -157,11 +168,44 @@ def test_frontier_binds_current_natural_tokens_matching_and_k_neutrality(
     assert image.constrained_protected_owner_ids == ("gt:2299:g",)
     assert image.covered_h_owner_ids == ()
     assert image.uncovered_h_owner_ids == ("gt:2299:h",)
-    assert tuple(alias.owner_id for alias in image.candidate_aliases) == ("gt:2299:h",)
+    assert tuple(alias.owner_id for alias in image.candidate_aliases) == (
+        "gt:2299:h",
+        "gt:2299:h",
+    )
+    assert {alias.row_id for alias in image.candidate_aliases} == {
+        "k-h-21001",
+        "k-h-21002",
+    }
+    assert natural_pre_stop_prefix(image) == image.generated_token_ids[:-1]
+    assert image.terminal_token_index == len(image.generated_token_ids) - 1
+    assert image.malformed_row_count == 0
     assert "gt:2299:m" not in image.candidate_owner_ids
     assert len(image.duplicate_events) == 1
     assert image.duplicate_events[0].duplicate_generated_order == 1
     assert frontier.protected_owner_ages == (("gt:2299:g", 1),)
+
+
+def test_live_sealed_manifest_exposes_all_309_native_candidate_aliases() -> None:
+    manifest_path = Path(
+        "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
+        "2026-08-12-human13-k-union-to-greedy-overfit-screen/manifest/"
+        "human13-k-union-manifest.json"
+    )
+    if not manifest_path.is_file():
+        pytest.skip("live sealed Human-13 manifest is unavailable")
+    manifest = manifest_builder.load_manifest(manifest_path, require_full_panel=True)
+    aliases = tuple(
+        alias
+        for image in manifest.images
+        for alias in candidate_aliases_for_owners(
+            image, owner_ids=set(image.h_owner_ids)
+        )
+    )
+
+    assert len(aliases) == 309
+    assert {alias.row_id for alias in aliases} == {
+        row_id for image in manifest.images for row_id in image.candidate_row_ids
+    }
 
 
 def test_frontier_accepts_real_canonical_parser_status(tmp_path: Path) -> None:
@@ -294,6 +338,31 @@ def test_frontier_is_canonical_content_addressed_and_fails_closed(
         encoding="ascii",
     )
     with pytest.raises(ValueError, match="manifest|digest"):
+        load_frontier_iteration(output)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("terminal_token_index", 0), ("malformed_row_count", -1)),
+)
+def test_load_rejects_terminal_or_malformed_identity_drift(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    manifest, manifest_path = _manifest(tmp_path)
+    checkpoint = CheckpointIdentity("/accepted/step-0", "a" * 64)
+    frontier = build_frontier_iteration(
+        manifest,
+        manifest_path=manifest_path,
+        iteration=0,
+        checkpoint=checkpoint,
+        decodes=(_decode(checkpoint=checkpoint),),
+    )
+    output = tmp_path / "frontier.json"
+    canonical_write(frontier, output)
+    document = json.loads(output.read_text(encoding="utf-8"))
+    document["images"][0][field] = value
+    _rewrite_canonical(output, document)
+    with pytest.raises(ValueError, match="terminal|malformed|semantic|derive"):
         load_frontier_iteration(output)
 
 

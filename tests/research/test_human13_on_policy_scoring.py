@@ -80,6 +80,8 @@ def _frontier() -> FrontierImage:
             FrontierCandidateAlias("h1", "d", "k3", 4, 0.94, (130, 131)),
         ),
         duplicate_events=(FrontierDuplicateEvent(2, 1, 0.98),),
+        terminal_token_index=7,
+        malformed_row_count=0,
     )
 
 
@@ -186,7 +188,7 @@ def _kwargs() -> dict[str, Any]:
     }
 
 
-def test_prepare_materializes_every_alias_after_the_deduplicated_current_prefix() -> (
+def test_prepare_materializes_every_alias_after_the_exact_natural_pre_stop_prefix() -> (
     None
 ):
     prepared = prepare_on_policy_candidate_scoring(
@@ -213,7 +215,7 @@ def test_prepare_materializes_every_alias_after_the_deduplicated_current_prefix(
             for item in prepared.packed_plan.logical_segments
             if item.segment_id == binding.segment_id
         )
-        # Duplicate row (40, 49) and terminal 999 are absent; the natural boundary stays.
+        # The current duplicate row remains exact; only the terminal token is excluded.
         assert segment.encoded_example.input_ids == (
             *PROMPT_IDS,
             30,
@@ -221,14 +223,17 @@ def test_prepare_materializes_every_alias_after_the_deduplicated_current_prefix(
             777,
             40,
             41,
+            40,
+            49,
             *row,
         )
-        assert binding.local_causal_positions == (9, 10)
-        assert segment.encoded_example.human13_candidate_positions == (9, 10)
+        assert binding.local_causal_positions == (11, 12)
+        assert segment.encoded_example.human13_candidate_positions == (11, 12)
     prefix = prepared.prefix_receipts[0]
     assert prefix.raw_natural_token_count == 8
-    assert prefix.training_prefix_token_count == 5
-    assert prefix.removed_duplicate_row_orders == (2,)
+    assert prefix.natural_pre_stop_token_count == 7
+    assert prefix.terminal_token_index == 7
+    assert prefix.malformed_row_count == 0
 
 
 def test_packed_prefilter_hf_rescore_and_owner_shortlist_are_surface_aligned() -> None:
@@ -257,7 +262,7 @@ def test_packed_prefilter_hf_rescore_and_owner_shortlist_are_surface_aligned() -
     cross = {item.path.alias_id: item for item in result.cross_surface_receipts}
     assert set(cross) == {"b", "c", "d"}
     assert cross["c"].packed_causal_positions != cross["c"].hf_causal_positions
-    assert cross["c"].hf_causal_positions == (9, 10)
+    assert cross["c"].hf_causal_positions == (11, 12)
     assert len(cross["c"].packed_evidence.logits[0]) == VOCAB_SIZE
     assert len(cross["c"].hf_evidence.logits[0]) == VOCAB_SIZE
     assert cross["c"].score.hf_barrier == pytest.approx(1.0)
