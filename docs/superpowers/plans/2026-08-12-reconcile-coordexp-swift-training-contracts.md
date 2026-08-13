@@ -450,6 +450,21 @@ are the durable record of a pre-cost stop. Preserve every attempt 1-5 file.
   because the terminated held parent never reaches `RunWriter.finalize()`;
   `completed`, `failed`, and `running` fail closed, and the exact
   completed-progress, checkpoint-event, and topology checks are unchanged.
+- Accumulation invariant: the accepted top-level `consumed_packs` of `1` and
+  `2` and each checkpoint event's `committed_progress.consumed_packs` equal to
+  its step are correct only at exactly one pack per optimizer step. Production
+  derives `resolved_grad_accum_steps = effective_batch_size // world_size`
+  (`src/config/resolve.py:resolve_effective_batch_runtime`). The Attempt-6
+  manifest and packet MUST bind the absolute base-config path
+  `configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml`
+  with SHA-256
+  `44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f`, and
+  `world_size: 2`, `effective_batch_size: 2`, `resolved_grad_accum_steps: 1`
+  for each of `uninterrupted_control`, `resumed_parent`, and `resumed_child`.
+  The executor revalidates these bindings before marker creation and in setup
+  validation and stops without retry on drift. The packet stays experiment-local
+  and fixed at one pack per step; do not generalize the executor to arbitrary
+  accumulation in this round.
 - Missing or bad receipt digest/commit/config/run-dir/role, run state/progress
   or topology, duplicate/wrong/missing rows or steps, missing rank/field,
   non-finite/boolean/negative/non-integer measurement, or bound excess fails
@@ -725,11 +740,19 @@ freezing, deterministically render all three role configs against the `-r6`
 artifact root and compare the rendered bytes and SHA-256 against the manifest
 `config_files` entries; the rendered configs embed `run.artifact_root` and the
 child's `resume.checkpoint_dir`, so no role-config digest may be copied forward
-from Attempt 4 or Attempt 5. Validate the v2 manifest
-with the executor tests and
+from Attempt 4 or Attempt 5. In the same pre-freeze pass, load each rendered
+role config through production `load_train_config` and require that all three
+resolve to `world_size: 2`, `effective_batch_size: 2`, and
+`resolved_grad_accum_steps: 1`, and therefore to expected consumed progress `1`
+at step 1 and `2` at step 2; record the bound base-config path and SHA-256
+`44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f` plus the
+resolved fingerprint and its digest in the manifest and packet. Validate the v2
+manifest with the executor tests and
 read-only hash/path/GPU/disk preflight. Obtain one independent signed
 `coordexp-swift-reconcile-resume-probe-pre-cost-review-v1` receipt at the bound
-path and resolve every P0/P1, including both Attempt-5 P0s. The review binds
+path and resolve every P0/P1, including both Attempt-5 P0s. The review MUST
+verify the base-config path/SHA-256 binding and the three per-role resolved
+accumulation values. The review binds
 the manifest hash; the manifest does not bind a review hash.
 
 Expected: if and only if that external signed review is valid, independent,
@@ -746,7 +769,9 @@ validates the exact signed review and physical-index-to-UUID map. The executor
 then claims the `O_EXCL` marker and runs the exact six commands in order, at
 most once each, owning one returned Popen-like process and process group at a
 time. Immediately after setup it must validate the prepare receipt,
-implementation commit, private-cache receipt, all generated config hashes, and
+implementation commit, private-cache receipt, all generated config hashes, the
+bound base-config path/SHA-256 with each role's `world_size: 2`,
+`effective_batch_size: 2`, and `resolved_grad_accum_steps: 1`, and
 the GPU map again before the first model command. For each success command it
 waits for return zero, confirms cleanup, completes the artifact summary, and
 only then validates the signed receipt + `run.json` + `logging.jsonl` GPU join
@@ -778,6 +803,9 @@ status, to prove exact six-command order, valid external review authorization, e
 required success CPU and artifact-GPU rank and every semantic arm branch, an owned aggregate
 sample and bounded concurrent command-tree RSS for each model-free command,
 the target-bound receipt/run/log join and exact launcher-to-UUID topology,
+the bound base-config identity and the per-role `world_size: 2`,
+`effective_batch_size: 2`, `resolved_grad_accum_steps: 1` invariant that makes
+the recorded consumed-pack progress exact,
 launcher/runtime and target identity, exact arm schema/rank/error/boundary fields, bounded artifact-tree
 summaries, process-group cleanup, comparison results, and the same-world-size
 optimizer-step claim boundary. Stage only the successor implementation/tests
