@@ -38,7 +38,7 @@ class _FinishedProcess:
     def __init__(self, returncode: int) -> None:
         self.pid = 4000
         self.starttime = 50
-        self.process_group_id = 4000
+        self.process_group_id = 2_147_483_647
         self.returncode = returncode
 
     def poll(self) -> int:
@@ -502,18 +502,41 @@ def _execute(
     launch: Callable[..., Any] | None = None,
     gpu_sampler: Callable[[], list[dict[str, Any]]] | None = None,
     process_sampler: Callable[[], list[dict[str, Any]]] | None = None,
+    trust_finished_process: bool = True,
 ) -> dict[str, Any]:
-    return executor.execute(
-        manifest_path=case["manifest_path"],
-        packet_path=case["packet"],
-        expected_manifest_sha256=case["manifest_sha"],
-        expected_packet_sha256=case["packet_sha"],
-        attempt_marker_path=case["marker"],
-        terminal_receipt_path=case["outer"],
-        launch=launch or case["launch"],
-        gpu_sampler=gpu_sampler or (lambda: _gpu_rows()),
-        process_sampler=process_sampler or (lambda: _process_rows()),
-    )
+    original_launch = launch or case["launch"]
+    original_proc_identity = executor._proc_identity
+    synthetic_identity_budget = 0
+
+    def launch_with_live_identity(*args: Any, **kwargs: Any) -> Any:
+        nonlocal synthetic_identity_budget
+        process = original_launch(*args, **kwargs)
+        if trust_finished_process and isinstance(process, _FinishedProcess):
+            synthetic_identity_budget = 1
+        return process
+
+    def proc_identity(pid: int) -> tuple[int, int, int] | None:
+        nonlocal synthetic_identity_budget
+        if pid == 4000 and synthetic_identity_budget:
+            synthetic_identity_budget -= 1
+            return os.getpid(), 2_147_483_647, 50
+        return original_proc_identity(pid)
+
+    executor._proc_identity = proc_identity
+    try:
+        return executor.execute(
+            manifest_path=case["manifest_path"],
+            packet_path=case["packet"],
+            expected_manifest_sha256=case["manifest_sha"],
+            expected_packet_sha256=case["packet_sha"],
+            attempt_marker_path=case["marker"],
+            terminal_receipt_path=case["outer"],
+            launch=launch_with_live_identity,
+            gpu_sampler=gpu_sampler or (lambda: _gpu_rows()),
+            process_sampler=process_sampler or (lambda: _process_rows()),
+        )
+    finally:
+        executor._proc_identity = original_proc_identity
 
 
 def _launch_sleep(
@@ -883,7 +906,12 @@ def test_post_launch_untrusted_identity_fails_without_signalling_process(
     process.returncode = None
     process.terminate = terminate  # type: ignore[method-assign]
 
-    receipt = _execute(executor, case, launch=lambda *_args, **_kwargs: process)
+    receipt = _execute(
+        executor,
+        case,
+        launch=lambda *_args, **_kwargs: process,
+        trust_finished_process=False,
+    )
 
     assert terminated == []
     assert process.poll() is None
@@ -1032,6 +1060,78 @@ def test_executor_own_process_group_is_rejected_without_signalling(
     assert signals == []
 
 
+def test_absent_declared_pid_cannot_target_foreign_process_group(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    foreign = subprocess.Popen(["/bin/sleep", "30"], start_new_session=True)
+    assert os.getpgid(foreign.pid) == foreign.pid
+    exited = subprocess.Popen(["/bin/true"])
+    declared_starttime = executor._pid_starttime(exited.pid)
+    assert declared_starttime is not None
+    declared_pid = exited.pid
+    exited.wait(timeout=5)
+    assert executor._proc_identity(declared_pid) is None
+    object_signals: list[str] = []
+    os_signals: list[tuple[str, int, int]] = []
+    original_kill = os.kill
+    original_killpg = os.killpg
+
+    class DeclaredExitedProcess:
+        pid = declared_pid
+        starttime = declared_starttime
+        process_group_id = foreign.pid
+        returncode = 0
+
+        def poll(self) -> int:
+            return self.returncode
+
+        def wait(self, timeout: float | None = None) -> int:
+            del timeout
+            return self.returncode
+
+        def terminate(self) -> None:
+            object_signals.append("TERM")
+
+        def kill(self) -> None:
+            object_signals.append("KILL")
+
+    def record_kill(pid: int, sig: int) -> None:
+        os_signals.append(("kill", pid, int(sig)))
+        original_kill(pid, sig)
+
+    def record_killpg(pgid: int, sig: int) -> None:
+        os_signals.append(("killpg", pgid, int(sig)))
+        original_killpg(pgid, sig)
+
+    monkeypatch.setattr(executor.os, "kill", record_kill)
+    monkeypatch.setattr(executor.os, "killpg", record_killpg)
+
+    try:
+        receipt = _execute(
+            executor,
+            case,
+            launch=lambda *_args, **_kwargs: DeclaredExitedProcess(),
+        )
+
+        assert os_signals == []
+        assert object_signals == []
+        assert foreign.poll() is None
+        assert receipt["status"] == "stopped"
+        assert receipt["commands"][0]["process_group"]["trusted_group"] is False
+        assert receipt["commands"][0]["cleanup"]["status"] == "failed"
+        assert receipt["commands"][0]["cleanup"]["group_absent"] is False
+        assert receipt["stop_outcome"]["code"] == "packet_executor.cleanup_failed"
+    finally:
+        try:
+            original_killpg(foreign.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        foreign.wait(timeout=5)
+
+
 def test_owned_process_rows_require_exact_leader_and_retain_detached_identity(
     executor: ModuleType,
 ) -> None:
@@ -1084,8 +1184,11 @@ def test_cleanup_kills_group_member_after_real_leader_exits(
         ],
         start_new_session=True,
     )
-    leader_pid, leader_starttime, process_group_id = executor._process_identity(process)
+    leader_pid, leader_starttime, process_group_id, trusted_group = (
+        executor._process_identity(process)
+    )
     assert leader_pid == process.pid
+    assert trusted_group is True
     _wait_for_path(child_pid_path)
     child_pid = int(child_pid_path.read_text())
     process.wait(timeout=5)
@@ -1094,6 +1197,7 @@ def test_cleanup_kills_group_member_after_real_leader_exits(
         process,
         leader_starttime=leader_starttime,
         process_group_id=process_group_id,
+        trusted_group=trusted_group,
         retained_identities=set(),
     )
 
@@ -1126,9 +1230,10 @@ def test_cleanup_kills_and_confirms_real_detached_descendant(
         ],
         start_new_session=True,
     )
-    _leader_pid, leader_starttime, process_group_id = executor._process_identity(
-        process
+    _leader_pid, leader_starttime, process_group_id, trusted_group = (
+        executor._process_identity(process)
     )
+    assert trusted_group is True
     _wait_for_path(child_pid_path)
     child_pid = int(child_pid_path.read_text())
     child_starttime = executor._pid_starttime(child_pid)
@@ -1139,6 +1244,7 @@ def test_cleanup_kills_and_confirms_real_detached_descendant(
         process,
         leader_starttime=leader_starttime,
         process_group_id=process_group_id,
+        trusted_group=trusted_group,
         retained_identities={(child_pid, child_starttime)},
     )
 

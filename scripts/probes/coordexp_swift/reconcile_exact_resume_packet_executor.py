@@ -1317,9 +1317,15 @@ def _is_popen_like(process: Any) -> bool:
 
 
 def _process_group_absent(
-    *, leader_pid: int, leader_starttime: int, process_group_id: int
+    *,
+    leader_pid: int,
+    leader_starttime: int,
+    process_group_id: int,
+    trusted_group: bool,
 ) -> bool:
     del leader_pid, leader_starttime
+    if not trusted_group:
+        return False
     for path in Path("/proc").iterdir():
         if not path.name.isdigit():
             continue
@@ -1333,7 +1339,7 @@ def _process_group_absent(
     return True
 
 
-def _process_identity(process: PopenLike) -> tuple[int, int, int]:
+def _process_identity(process: PopenLike) -> tuple[int, int, int, bool]:
     leader_pid = int(process.pid)
     declared_starttime = getattr(process, "starttime", None)
     declared_group = getattr(process, "process_group_id", None)
@@ -1346,9 +1352,11 @@ def _process_identity(process: PopenLike) -> tuple[int, int, int]:
             )
         leader_starttime = live_identity[2]
         process_group_id = live_identity[1]
+        trusted_group = True
     elif isinstance(declared_starttime, int) and isinstance(declared_group, int):
         leader_starttime = declared_starttime
         process_group_id = declared_group
+        trusted_group = False
     else:
         raise PacketExecutorError(
             "launched process PID is not a direct child of the executor",
@@ -1369,10 +1377,14 @@ def _process_identity(process: PopenLike) -> tuple[int, int, int]:
             "launched process uses the executor's own process group",
             code="packet_executor.own_process_group",
         )
-    return leader_pid, leader_starttime, process_group_id
+    return leader_pid, leader_starttime, process_group_id, trusted_group
 
 
-def _current_group_identities(process_group_id: int) -> set[tuple[int, int]]:
+def _current_group_identities(
+    process_group_id: int, *, trusted_group: bool
+) -> set[tuple[int, int]]:
+    if not trusted_group:
+        return set()
     identities: set[tuple[int, int]] = set()
     for path in Path("/proc").iterdir():
         if not path.name.isdigit():
@@ -1388,8 +1400,14 @@ def _identities_absent(identities: set[tuple[int, int]]) -> bool:
 
 
 def _signal_exact_identities(
-    identities: set[tuple[int, int]], sig: signal.Signals, errors: list[str]
+    identities: set[tuple[int, int]],
+    sig: signal.Signals,
+    errors: list[str],
+    *,
+    trusted_group: bool,
 ) -> bool:
+    if not trusted_group:
+        return False
     sent = False
     for pid, starttime in sorted(identities):
         if pid == os.getpid() or _pid_starttime(pid) != starttime:
@@ -1409,8 +1427,16 @@ def _cleanup_process(
     *,
     leader_starttime: int,
     process_group_id: int,
+    trusted_group: bool,
     retained_identities: set[tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
+    if not trusted_group:
+        cleanup = _cleanup_unidentified_process(process)
+        cleanup["errors"][0] = (
+            "process-group identity was not launch-trusted; "
+            "OS group was not inspected or signalled"
+        )
+        return cleanup
     leader_pid = int(process.pid)
     retained = set(retained_identities or set())
     retained.add((leader_pid, leader_starttime))
@@ -1419,13 +1445,17 @@ def _cleanup_process(
     current_leader_starttime = _pid_starttime(leader_pid)
     group_is_owned = current_leader_starttime in (None, leader_starttime)
     group_identities = (
-        _current_group_identities(process_group_id) if group_is_owned else set()
+        _current_group_identities(process_group_id, trusted_group=trusted_group)
+        if group_is_owned
+        else set()
     )
     confirmed_identities = retained | group_identities
     term_targets = {
         identity for identity in retained if _pid_starttime(identity[0]) == identity[1]
     } | group_identities
-    term_sent = _signal_exact_identities(term_targets, signal.SIGTERM, errors)
+    term_sent = _signal_exact_identities(
+        term_targets, signal.SIGTERM, errors, trusted_group=trusted_group
+    )
     try:
         running = process.poll() is None
     except BaseException as exc:
@@ -1446,6 +1476,7 @@ def _cleanup_process(
             leader_pid=leader_pid,
             leader_starttime=leader_starttime,
             process_group_id=process_group_id,
+            trusted_group=trusted_group,
         )
         descendants_absent = _identities_absent(confirmed_identities)
         try:
@@ -1461,6 +1492,7 @@ def _cleanup_process(
         leader_pid=leader_pid,
         leader_starttime=leader_starttime,
         process_group_id=process_group_id,
+        trusted_group=trusted_group,
     )
     descendants_absent = _identities_absent(confirmed_identities)
     try:
@@ -1475,10 +1507,14 @@ def _cleanup_process(
             if _pid_starttime(identity[0]) == identity[1]
         }
         if group_is_owned:
-            current_group = _current_group_identities(process_group_id)
+            current_group = _current_group_identities(
+                process_group_id, trusted_group=trusted_group
+            )
             confirmed_identities.update(current_group)
             kill_targets.update(current_group)
-        kill_sent = _signal_exact_identities(kill_targets, signal.SIGKILL, errors)
+        kill_sent = _signal_exact_identities(
+            kill_targets, signal.SIGKILL, errors, trusted_group=trusted_group
+        )
         try:
             if process.poll() is None and not kill_sent:
                 process.kill()
@@ -1493,6 +1529,7 @@ def _cleanup_process(
                 leader_pid=leader_pid,
                 leader_starttime=leader_starttime,
                 process_group_id=process_group_id,
+                trusted_group=trusted_group,
             )
             descendants_absent = _identities_absent(confirmed_identities)
             try:
@@ -1513,6 +1550,7 @@ def _cleanup_process(
             leader_pid=leader_pid,
             leader_starttime=leader_starttime,
             process_group_id=process_group_id,
+            trusted_group=trusted_group,
         )
         descendants_absent = _identities_absent(confirmed_identities)
     except BaseException as exc:
@@ -1603,7 +1641,7 @@ def _run_command(
     retained_process_identities: set[tuple[int, int]] = set()
     gpu_observations: dict[tuple[str, int, int], dict[str, Any]] = {}
     launched: PopenLike | None = None
-    process_group: dict[str, int] | None = None
+    process_group: dict[str, int | bool] | None = None
     cleanup: dict[str, Any] | None = None
     error: BaseException | None = None
     returncode: int | None = None
@@ -1622,11 +1660,14 @@ def _run_command(
                 code="packet_executor.launch_protocol",
             )
         launched = candidate
-        leader_pid, leader_starttime, process_group_id = _process_identity(launched)
+        leader_pid, leader_starttime, process_group_id, trusted_group = (
+            _process_identity(launched)
+        )
         process_group = {
             "leader_pid": leader_pid,
             "leader_starttime": leader_starttime,
             "process_group_id": process_group_id,
+            "trusted_group": trusted_group,
         }
         while True:
             returncode = launched.poll()
@@ -1661,8 +1702,9 @@ def _run_command(
         if launched is not None and process_group is not None:
             cleanup = _cleanup_process(
                 launched,
-                leader_starttime=process_group["leader_starttime"],
-                process_group_id=process_group["process_group_id"],
+                leader_starttime=int(process_group["leader_starttime"]),
+                process_group_id=int(process_group["process_group_id"]),
+                trusted_group=bool(process_group["trusted_group"]),
                 retained_identities=retained_process_identities,
             )
             try:
