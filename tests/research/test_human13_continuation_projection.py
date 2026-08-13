@@ -42,6 +42,7 @@ def _owner(
     bbox: tuple[float, float, float, float],
     source_index: int,
     stratum: str,
+    sampled_row_ids: tuple[str, ...] = (),
 ) -> OwnerRecord:
     return OwnerRecord(
         owner_id=owner_id,
@@ -50,15 +51,29 @@ def _owner(
         source_object_index=source_index,
         stratum=stratum,  # type: ignore[arg-type]
         source_row_ids=(),
-        sampled_row_ids=(),
+        sampled_row_ids=sampled_row_ids,
     )
 
 
 def _image() -> ImageRecord:
     owners = (
         _owner("g1", "person", (0.0, 0.0, 10.0, 10.0), 0, "G"),
-        _owner("h1", "dog", (20.0, 0.0, 30.0, 10.0), 1, "H"),
-        _owner("h2", "cat", (40.0, 0.0, 50.0, 10.0), 2, "H"),
+        _owner(
+            "h1",
+            "dog",
+            (20.0, 0.0, 30.0, 10.0),
+            1,
+            "H",
+            ("row-h1", "row-h1-alt"),
+        ),
+        _owner(
+            "h2",
+            "cat",
+            (40.0, 0.0, 50.0, 10.0),
+            2,
+            "H",
+            ("row-h2",),
+        ),
     )
     selected = tuple(
         SelectedRowRecord(
@@ -77,14 +92,20 @@ def _image() -> ImageRecord:
     )
     source = TrajectoryRecord(
         trajectory_id="source",
-        request=RequestIdentity("hf", "test", "source_greedy", 1, None, 0, 0.0, 1.0, 1.0, 64),
+        request=RequestIdentity(
+            "hf", "test", "source_greedy", 1, None, 0, 0.0, 1.0, 1.0, 64
+        ),
         raw_token_ids=(1, 2, 3, 4, 5, 99),
         terminal_token_index=5,
         stop_reason="im_end",
         parser_status="accepted",
         rows=(
-            PredictionRowInput("source:row:0", 0, "person", (0.0, 0.0, 10.0, 10.0), 0, 2, 1),
-            PredictionRowInput("source:row:1", 1, "person", (60.0, 0.0, 70.0, 10.0), 2, 5, 4),
+            PredictionRowInput(
+                "source:row:0", 0, "person", (0.0, 0.0, 10.0, 10.0), 0, 2, 1
+            ),
+            PredictionRowInput(
+                "source:row:1", 1, "person", (60.0, 0.0, 70.0, 10.0), 2, 5, 4
+            ),
         ),
         prefix=PrefixRecord((1, 2, 3, 4, 5), (1, 2, 3, 4, 5), ()),
         retained_row_ids=("source:row:0", "source:row:1"),
@@ -93,12 +114,53 @@ def _image() -> ImageRecord:
         replay_token_mask=(True, True, True, True, True, False),
         duplicate_target_mask=(False, False, False, False, False, False),
     )
+    sampled = tuple(
+        TrajectoryRecord(
+            trajectory_id=trajectory_id,
+            request=RequestIdentity(
+                "vllm", "test", "sampled", 1, seed, seed, 0.4, 0.95, 1.1, 64
+            ),
+            raw_token_ids=(*tokens, 99),
+            terminal_token_index=len(tokens),
+            stop_reason="im_end",
+            parser_status="accepted",
+            rows=(
+                PredictionRowInput(
+                    row_id,
+                    0,
+                    category,
+                    bbox,
+                    0,
+                    len(tokens),
+                    len(tokens) - 1,
+                ),
+            ),
+            prefix=PrefixRecord(tokens, tokens, ()),
+            retained_row_ids=(row_id,),
+            duplicate_row_ids=(),
+            matched_row_ids=(row_id,),
+            replay_token_mask=tuple(True for _ in tokens) + (False,),
+            duplicate_target_mask=tuple(False for _ in range(len(tokens) + 1)),
+        )
+        for trajectory_id, row_id, seed, category, bbox, tokens in (
+            ("trajectory-h1", "row-h1", 1, "dog", (20.0, 0.0, 30.0, 10.0), (101, 102)),
+            (
+                "trajectory-h1-alt",
+                "row-h1-alt",
+                3,
+                "dog",
+                (20.0, 0.0, 30.0, 10.0),
+                (111, 112),
+            ),
+            ("trajectory-h2", "row-h2", 2, "cat", (40.0, 0.0, 50.0, 10.0), (201, 202)),
+        )
+    )
     return ImageRecord(
         image_id=7,
         panel_row_sha256=None,
         image_sha256=None,
         owners=owners,
-        trajectories=(source,),
+        trajectories=(source, *sampled),
         duplicate_events=(),
         selected_rows=selected,
         g_owner_ids=("g1",),
@@ -106,7 +168,7 @@ def _image() -> ImageRecord:
         m_owner_ids=(),
         replay_row_ids=(),
         target_row_ids=tuple(row.row_id for row in selected),
-        candidate_row_ids=tuple(row.row_id for row in selected),
+        candidate_row_ids=("row-h1", "row-h1-alt", "row-h2"),
     )
 
 
@@ -117,6 +179,9 @@ def _frontier() -> FrontierImage:
     )
     aliases = (
         FrontierCandidateAlias("h1", "row-h1", "trajectory-h1", 1, 1.0, (101, 102)),
+        FrontierCandidateAlias(
+            "h1", "row-h1-alt", "trajectory-h1-alt", 3, 1.0, (111, 112)
+        ),
         FrontierCandidateAlias("h2", "row-h2", "trajectory-h2", 2, 1.0, (201, 202)),
     )
     return FrontierImage(
@@ -138,10 +203,16 @@ def _frontier() -> FrontierImage:
     )
 
 
-def _score(owner_id: str = "h1", barrier: float = 2.0) -> CandidateScore:
-    tokens = (101, 102) if owner_id == "h1" else (201, 202)
+def _score(
+    owner_id: str = "h1",
+    barrier: float = 2.0,
+    *,
+    alias_id: str | None = None,
+    tokens: tuple[int, ...] | None = None,
+) -> CandidateScore:
+    selected_tokens = tokens or ((101, 102) if owner_id == "h1" else (201, 202))
     return CandidateScore(
-        path=CandidatePath(7, owner_id, f"row-{owner_id}", tokens),
+        path=CandidatePath(7, owner_id, alias_id or f"row-{owner_id}", selected_tokens),
         hf_sites=(),
         packed_sites=(),
         aligned_sites=(),
@@ -192,17 +263,20 @@ def _result(
     released_tokens: tuple[int, ...] = (301, 302, 99),
     termination_status: str = "natural_im_end",
     cap_hit: bool = False,
+    forced_tokens: tuple[int, ...] | None = None,
 ) -> ForcedContinuationResult:
     forced = (
         _prediction("dog", (20.0, 0.0, 30.0, 10.0))
         if owner_id == "h1"
         else _prediction("cat", (40.0, 0.0, 50.0, 10.0))
     )
-    forced_tokens = (101, 102) if owner_id == "h1" else (201, 202)
+    bound_forced_tokens = forced_tokens or (
+        (101, 102) if owner_id == "h1" else (201, 202)
+    )
     natural_prefix = natural_pre_stop_prefix(_frontier())
     minimum_cap = source_continuation_cap(source_row_count=2, source_token_count=6)
     return ForcedContinuationResult(
-        forced_row_token_ids=forced_tokens,
+        forced_row_token_ids=bound_forced_tokens,
         released_token_ids=released_tokens,
         termination_status=termination_status,
         cap_hit=cap_hit,
@@ -210,8 +284,10 @@ def _result(
         forced_row_parse_evidence=_parse(forced),
         parse_evidence=_parse(*released_predictions, dropped=dropped),
         natural_prefix_token_ids_sha256=hash_prefix_token_ids(natural_prefix),
-        forced_row_token_ids_sha256=hash_prefix_token_ids(forced_tokens),
-        forced_context_sha256=hash_prefix_token_ids((*natural_prefix, *forced_tokens)),
+        forced_row_token_ids_sha256=hash_prefix_token_ids(bound_forced_tokens),
+        forced_context_sha256=hash_prefix_token_ids(
+            (*natural_prefix, *bound_forced_tokens)
+        ),
         released_token_ids_sha256=hash_prefix_token_ids(released_tokens),
         requested_continuation_cap=minimum_cap,
         minimum_continuation_cap=minimum_cap,
@@ -274,6 +350,14 @@ def test_projection_composes_branch_without_awarding_duplicate_owner_credit() ->
     assert projection.outcome.malformed_increase == 1
 
 
+def test_projection_accepts_metric_valid_nonselected_native_alias() -> None:
+    score = _score(alias_id="row-h1-alt", tokens=(111, 112))
+    projection = _project(score, _result(forced_tokens=(111, 112)))
+
+    assert projection.score.path.alias_id == "row-h1-alt"
+    assert projection.matched_owner_ids == ("g1", "h1")
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
@@ -314,10 +398,26 @@ def test_projection_fails_closed_on_invalid_forced_row(mutation, message: str) -
 @pytest.mark.parametrize(
     ("mutation", "kwargs", "message"),
     (
-        (lambda result: replace(result, natural_prefix_token_ids_sha256="d" * 64), {}, "natural prefix"),
-        (lambda result: replace(result, forced_row_token_ids_sha256="d" * 64), {}, "forced row"),
-        (lambda result: replace(result, forced_context_sha256="d" * 64), {}, "forced context"),
-        (lambda result: replace(result, released_token_ids_sha256="d" * 64), {}, "released"),
+        (
+            lambda result: replace(result, natural_prefix_token_ids_sha256="d" * 64),
+            {},
+            "natural prefix",
+        ),
+        (
+            lambda result: replace(result, forced_row_token_ids_sha256="d" * 64),
+            {},
+            "forced row",
+        ),
+        (
+            lambda result: replace(result, forced_context_sha256="d" * 64),
+            {},
+            "forced context",
+        ),
+        (
+            lambda result: replace(result, released_token_ids_sha256="d" * 64),
+            {},
+            "released",
+        ),
         (lambda result: replace(result, requested_continuation_cap=517), {}, "cap"),
         (lambda result: result, {"expected_continuation_cap": 519}, "cap"),
         (lambda result: replace(result, minimum_continuation_cap=519), {}, "minimum"),
@@ -332,8 +432,16 @@ def test_projection_fails_closed_on_invalid_forced_row(mutation, message: str) -
         ),
         (lambda result: replace(result, repetition_penalty=1.1), {}, "repetition"),
         (lambda result: result, {"expected_repetition_penalty": 1.1}, "repetition"),
-        (lambda result: replace(result, current_checkpoint_payload_sha256="d" * 64), {}, "checkpoint"),
-        (lambda result: result, {"current_checkpoint_payload_sha256": "d" * 64}, "checkpoint"),
+        (
+            lambda result: replace(result, current_checkpoint_payload_sha256="d" * 64),
+            {},
+            "checkpoint",
+        ),
+        (
+            lambda result: result,
+            {"current_checkpoint_payload_sha256": "d" * 64},
+            "checkpoint",
+        ),
     ),
 )
 def test_projection_fails_closed_on_continuation_binding_mismatch(
@@ -382,9 +490,7 @@ def test_select_projected_continuation_returns_the_score_and_result_pair() -> No
         _score("h1", barrier=4.0),
         _result(
             owner_id="h1",
-            released_predictions=(
-                _prediction("cat", (40.0, 0.0, 50.0, 10.0)),
-            ),
+            released_predictions=(_prediction("cat", (40.0, 0.0, 50.0, 10.0)),),
         ),
     )
     h2 = _project(_score("h2", barrier=0.1), _result(owner_id="h2"))
@@ -400,6 +506,4 @@ def test_select_projected_continuation_returns_the_score_and_result_pair() -> No
 def test_selector_rejects_a_projection_whose_artifact_hash_was_forged() -> None:
     projection = _project(_score(), _result())
     with pytest.raises(ValueError, match="artifact"):
-        select_projected_continuation(
-            (replace(projection, artifact_sha256="d" * 64),)
-        )
+        select_projected_continuation((replace(projection, artifact_sha256="d" * 64),))

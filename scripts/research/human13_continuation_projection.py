@@ -12,6 +12,7 @@ from typing import Any, Literal, Mapping, Sequence
 from scripts.research.build_human13_k_union_manifest import ImageRecord
 from scripts.research.build_human13_on_policy_frontier import (
     FrontierImage,
+    candidate_aliases_for_owners,
     natural_pre_stop_prefix,
 )
 from scripts.research.compare_clean_rollout_owner_coverage import (
@@ -110,9 +111,7 @@ def project_continuation(
         for index, (category, bbox, origin) in enumerate(raw_predictions)
     )
     retained, duplicates = _chronological_dedup(branch)
-    current_retained, current_duplicates = _chronological_dedup(
-        branch[: len(current)]
-    )
+    current_retained, current_duplicates = _chronological_dedup(branch[: len(current)])
     if len(current_duplicates) != len(frontier.duplicate_events):
         raise ValueError("current duplicate projection differs from frontier")
 
@@ -234,7 +233,9 @@ def _validate_binding(
     manifest_alias = next(
         (
             item
-            for item in image.selected_rows
+            for item in candidate_aliases_for_owners(
+                image, owner_ids={score.path.owner_id}
+            )
             if item.owner_id == score.path.owner_id
             and item.row_id == score.path.alias_id
         ),
@@ -294,8 +295,7 @@ def _validate_binding(
         raise ValueError("forced continuation repetition penalty differs")
     if (
         _SHA256_RE.fullmatch(current_checkpoint_payload_sha256) is None
-        or result.current_checkpoint_payload_sha256
-        != current_checkpoint_payload_sha256
+        or result.current_checkpoint_payload_sha256 != current_checkpoint_payload_sha256
     ):
         raise ValueError("forced continuation checkpoint payload differs")
     if result.termination_status not in _TERMINATION_STATUSES:
@@ -312,7 +312,10 @@ def _validate_binding(
 
 
 def _valid_tokens(token_ids: Sequence[int], *, label: str) -> None:
-    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in token_ids):
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in token_ids
+    ):
         raise ValueError(f"{label} token IDs are invalid")
 
 
@@ -394,8 +397,7 @@ def _chronological_dedup(
     duplicates: list[BranchPrediction] = []
     for prediction in predictions:
         if any(
-            iou_xyxy(prior.bbox, prediction.bbox) > _DUPLICATE_IOU
-            for prior in retained
+            iou_xyxy(prior.bbox, prediction.bbox) > _DUPLICATE_IOU for prior in retained
         ):
             duplicates.append(prediction)
         else:
