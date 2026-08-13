@@ -62,7 +62,9 @@ def test_context_is_worktree_bound_with_exact_tool_surface() -> None:
         (ROOT / ".codex" / "serena" / "contexts" / "coordexp-minimal.yml").read_text()
     )
 
-    assert context["single_project"] is True
+    # Serena omits activate_project from the live tool list in single-project mode.
+    # The user-approved surface requires the tool for explicit root confirmation.
+    assert context["single_project"] is False
     assert context["fixed_tools"] == EXPECTED_TOOLS
     assert "shared by Agents started in the same Git worktree" in context["prompt"]
     assert "never switch this shared process to another project" in context["prompt"]

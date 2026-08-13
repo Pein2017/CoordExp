@@ -26,5 +26,5 @@ fixed_tools:
   - insert_before_symbol
   - insert_after_symbol
 
-single_project: true
+single_project: false
 structured_tool_output: true
