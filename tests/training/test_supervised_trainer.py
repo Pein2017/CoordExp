@@ -688,6 +688,47 @@ def test_supervised_trainer_streams_backward_before_next_forward_when_supported(
     ]
 
 
+def test_streaming_post_backward_transform_runs_before_clip_and_is_receipted() -> None:
+    log: list[str] = []
+
+    def transform(
+        _qwen_forward,
+        _model,
+        micro_steps,
+        plan,
+        runtime,
+        planned_step_id,
+    ):
+        assert len(micro_steps) == 2
+        assert plan["micro_step_count"] == 2
+        assert runtime is not None
+        log.append(f"transform:{planned_step_id}")
+        return {"schema_version": "test_transform.v1", "applied": True}
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2, log),
+        qwen_forward=_forward(log),
+        loss_context_factory=_loss_context(log),
+        loss_runner=StreamingFakeLossRunner(log),
+        runtime=FakeRuntime(log),
+        post_backward_transform=transform,
+    )
+
+    result = trainer.run()
+
+    assert (
+        log.index("runtime.post:1")
+        < log.index("transform:1")
+        < log.index("runtime.clip:1")
+    )
+    assert result.latest_observation.post_backward_artifact["transform"] == {
+        "schema_version": "test_transform.v1",
+        "applied": True,
+    }
+
+
 def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> None:
     log: list[str] = []
     trainer = SupervisedTrainer(

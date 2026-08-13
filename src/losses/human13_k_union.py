@@ -79,6 +79,304 @@ class DuplicateUnlikelihoodResult:
     math_dtype: str = "float32"
 
 
+@dataclass(frozen=True)
+class OwnerNormalizedRowContrastResult:
+    raw_loss: torch.Tensor
+    numerator: torch.Tensor
+    denominator: int
+    event_losses: torch.Tensor
+    valid_owner_log_mass: torch.Tensor
+    raw_event_count: int
+    consumed_event_count: int
+    candidate_alias_count: int
+    candidate_owner_count: int
+    eligible_image_count: int
+    all_finite: bool
+    math_dtype: str = "float32"
+
+
+@dataclass(frozen=True)
+class FourCoordinateUnlikelihoodResult:
+    raw_loss: torch.Tensor
+    numerator: torch.Tensor
+    denominator: int
+    raw_event_count: int
+    consumed_event_count: int
+    selected_coordinate_count: int
+    eligible_image_count: int
+    minimum_target_margin: float
+    all_finite: bool
+    math_dtype: str = "float32"
+
+
+@dataclass(frozen=True)
+class RectangleArgmaxResult:
+    raw_loss: torch.Tensor
+    numerator: torch.Tensor
+    denominator: int
+    selected_valid_token_ids: torch.Tensor
+    selected_invalid_token_ids: torch.Tensor
+    minimum_valid_margin: float
+    violating_site_count: int
+    satisfied_site_count: int
+    selected_site_count: int
+    eligible_row_count: int
+    all_finite: bool
+    math_dtype: str = "float32"
+
+
+def teacher_forced_mean_log_scores(
+    logits: torch.Tensor,
+    target_token_ids: torch.Tensor,
+    token_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Return one length-normalized fp32 log-probability score per row."""
+
+    checked = _checked_logits(logits, ndim=3)
+    _require_shape(target_token_ids, checked.shape[:2], name="target_token_ids")
+    _require_shape(token_mask, checked.shape[:2], name="token_mask")
+    if token_mask.dtype != torch.bool:
+        raise LossContractError(
+            "token_mask must be boolean",
+            code="loss.human13_mask_dtype",
+        )
+    targets = target_token_ids.to(device=checked.device, dtype=torch.long)
+    _check_target_ids(targets, vocab_size=int(checked.shape[-1]))
+    mask = token_mask.to(device=checked.device)
+    counts = mask.sum(dim=1)
+    if bool((counts == 0).any().item()):
+        raise LossContractError(
+            "every row score requires at least one selected token",
+            code="loss.human13_row_score_empty",
+        )
+    selected = (
+        torch.log_softmax(checked, dim=-1).gather(2, targets.unsqueeze(-1)).squeeze(-1)
+    )
+    scores = (selected * mask).sum(dim=1) / counts
+    _require_finite_outputs(row_scores=scores)
+    return scores
+
+
+def image_balanced_owner_normalized_row_contrast(
+    duplicate_scores: torch.Tensor,
+    candidate_scores: torch.Tensor,
+    *,
+    candidate_event_indices: torch.Tensor,
+    candidate_owner_ids: torch.Tensor,
+    event_image_ids: torch.Tensor,
+    required_margin: float,
+) -> OwnerNormalizedRowContrastResult:
+    """Contrast each duplicate row with alias-normalized uncovered owners."""
+
+    margin = _checked_nonnegative_margin(required_margin)
+    duplicates = _checked_vector(duplicate_scores, name="duplicate_scores")
+    candidates = _checked_vector(candidate_scores, name="candidate_scores")
+    event_count = int(duplicates.numel())
+    candidate_count = int(candidates.numel())
+    _require_shape(event_image_ids, torch.Size((event_count,)), name="event_image_ids")
+    _require_shape(
+        candidate_event_indices,
+        torch.Size((candidate_count,)),
+        name="candidate_event_indices",
+    )
+    _require_shape(
+        candidate_owner_ids,
+        torch.Size((candidate_count,)),
+        name="candidate_owner_ids",
+    )
+    _require_integer_ids(event_image_ids, name="event_image_ids")
+    _require_integer_ids(candidate_event_indices, name="candidate_event_indices")
+    _require_integer_ids(candidate_owner_ids, name="candidate_owner_ids")
+    if event_count == 0 or candidate_count == 0:
+        raise LossContractError(
+            "row contrast requires nonempty duplicate and candidate scores",
+            code="loss.human13_row_contrast_candidate_empty",
+        )
+    event_indices = candidate_event_indices.to(
+        device=duplicates.device, dtype=torch.long
+    )
+    owner_ids = candidate_owner_ids.to(device=duplicates.device, dtype=torch.long)
+    images = event_image_ids.to(device=duplicates.device, dtype=torch.long)
+    if bool(((event_indices < 0) | (event_indices >= event_count)).any().item()):
+        raise LossContractError(
+            "candidate event index is outside duplicate events",
+            code="loss.human13_row_contrast_event_index",
+        )
+    candidates = candidates.to(device=duplicates.device)
+    valid_masses: list[torch.Tensor] = []
+    owner_count = 0
+    for event_index in range(event_count):
+        event_mask = event_indices == event_index
+        if not bool(event_mask.any().item()):
+            raise LossContractError(
+                "every duplicate event requires a candidate owner",
+                code="loss.human13_row_contrast_candidate_missing",
+            )
+        event_scores = candidates[event_mask]
+        event_owners = owner_ids[event_mask]
+        owner_scores: list[torch.Tensor] = []
+        for owner_id in torch.unique(event_owners, sorted=True):
+            aliases = event_scores[event_owners == owner_id]
+            owner_scores.append(
+                torch.logsumexp(aliases, dim=0) - math.log(aliases.numel())
+            )
+        owner_count += len(owner_scores)
+        valid_masses.append(torch.logsumexp(torch.stack(owner_scores), dim=0))
+    valid = torch.stack(valid_masses)
+    event_losses = F.softplus(duplicates.new_tensor(margin) + duplicates - valid)
+    unique_images = torch.unique(images, sorted=True)
+    image_means = torch.stack(
+        tuple(event_losses[images == image_id].mean() for image_id in unique_images)
+    )
+    numerator = image_means.sum()
+    denominator = int(image_means.numel())
+    raw_loss = numerator / denominator
+    _require_finite_outputs(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        event_losses=event_losses,
+        valid_owner_log_mass=valid,
+    )
+    return OwnerNormalizedRowContrastResult(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        denominator=denominator,
+        event_losses=event_losses,
+        valid_owner_log_mass=valid,
+        raw_event_count=event_count,
+        consumed_event_count=event_count,
+        candidate_alias_count=candidate_count,
+        candidate_owner_count=owner_count,
+        eligible_image_count=denominator,
+        all_finite=True,
+    )
+
+
+def image_balanced_four_coordinate_unlikelihood(
+    logits: torch.Tensor,
+    target_token_ids: torch.Tensor,
+    image_ids: torch.Tensor,
+) -> FourCoordinateUnlikelihoodResult:
+    """Reject every coordinate in fallback duplicate rows, then balance images."""
+
+    checked = _checked_logits(logits, ndim=3)
+    event_count = int(checked.shape[0])
+    if checked.shape[1] != 4:
+        raise LossContractError(
+            "fallback duplicate logits must contain exactly four coordinates",
+            code="loss.human13_four_coordinate_shape",
+        )
+    _require_shape(target_token_ids, checked.shape[:2], name="target_token_ids")
+    _require_shape(image_ids, torch.Size((event_count,)), name="image_ids")
+    _require_integer_ids(image_ids, name="image_ids")
+    if event_count == 0:
+        raise LossContractError(
+            "four-coordinate unlikelihood requires at least one event",
+            code="loss.human13_four_coordinate_empty",
+        )
+    targets = target_token_ids.to(device=checked.device, dtype=torch.long)
+    _check_target_ids(targets, vocab_size=int(checked.shape[-1]))
+    images = image_ids.to(device=checked.device, dtype=torch.long)
+    target_logits = checked.gather(2, targets.unsqueeze(-1)).squeeze(-1)
+    non_target_logits = checked.scatter(2, targets.unsqueeze(-1), float("-inf"))
+    margins = target_logits - torch.logsumexp(non_target_logits, dim=2)
+    event_losses = F.softplus(margins).mean(dim=1)
+    image_means = torch.stack(
+        tuple(
+            event_losses[images == image_id].mean()
+            for image_id in torch.unique(images, sorted=True)
+        )
+    )
+    numerator = image_means.sum()
+    denominator = int(image_means.numel())
+    raw_loss = numerator / denominator
+    _require_finite_outputs(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        margins=margins,
+        event_losses=event_losses,
+    )
+    return FourCoordinateUnlikelihoodResult(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        denominator=denominator,
+        raw_event_count=event_count,
+        consumed_event_count=event_count,
+        selected_coordinate_count=event_count * 4,
+        eligible_image_count=denominator,
+        minimum_target_margin=float(margins.detach().min().item()),
+        all_finite=True,
+    )
+
+
+def rectangle_valid_argmax_hinge(
+    logits: torch.Tensor,
+    valid_token_mask: torch.Tensor,
+    *,
+    row_ids: torch.Tensor,
+    required_margin: float,
+) -> RectangleArgmaxResult:
+    """Require the best rectangle-valid coordinate to beat every invalid token."""
+
+    margin = _checked_nonnegative_margin(required_margin)
+    checked = _checked_logits(logits, ndim=2)
+    site_count, vocab_size = checked.shape
+    _require_shape(valid_token_mask, checked.shape, name="valid_token_mask")
+    _require_shape(row_ids, torch.Size((site_count,)), name="row_ids")
+    if valid_token_mask.dtype != torch.bool:
+        raise LossContractError(
+            "valid token mask must be boolean",
+            code="loss.human13_rectangle_valid_mask_dtype",
+        )
+    _require_integer_ids(row_ids, name="row_ids")
+    if site_count == 0 or vocab_size < 2:
+        raise LossContractError(
+            "rectangle gate requires nonempty logits and a competitor",
+            code="loss.human13_rectangle_empty",
+        )
+    valid = valid_token_mask.to(device=checked.device)
+    if bool((~valid.any(dim=1)).any().item()) or bool(valid.all(dim=1).any().item()):
+        raise LossContractError(
+            "every rectangle site requires valid and invalid token sets",
+            code="loss.human13_rectangle_valid_set",
+        )
+    valid_logits = checked.masked_fill(~valid, float("-inf"))
+    invalid_logits = checked.masked_fill(valid, float("-inf"))
+    valid_ids = valid_logits.argmax(dim=1).detach()
+    invalid_ids = invalid_logits.argmax(dim=1).detach()
+    best_valid = checked.gather(1, valid_ids.unsqueeze(1)).squeeze(1)
+    best_invalid = checked.gather(1, invalid_ids.unsqueeze(1)).squeeze(1)
+    valid_margins = best_valid - best_invalid
+    site_losses = F.relu(checked.new_tensor(margin) - valid_margins)
+    rows = row_ids.to(device=checked.device, dtype=torch.long)
+    unique_rows = torch.unique(rows, sorted=True)
+    row_means = torch.stack(
+        tuple(site_losses[rows == row_id].mean() for row_id in unique_rows)
+    )
+    numerator = row_means.sum()
+    denominator = int(row_means.numel())
+    raw_loss = numerator / denominator
+    _require_finite_outputs(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        valid_margins=valid_margins,
+        site_losses=site_losses,
+    )
+    return RectangleArgmaxResult(
+        raw_loss=raw_loss,
+        numerator=numerator,
+        denominator=denominator,
+        selected_valid_token_ids=valid_ids,
+        selected_invalid_token_ids=invalid_ids,
+        minimum_valid_margin=float(valid_margins.detach().min().item()),
+        violating_site_count=int((valid_margins < margin).sum().item()),
+        satisfied_site_count=int((valid_margins >= margin).sum().item()),
+        selected_site_count=int(site_count),
+        eligible_row_count=denominator,
+        all_finite=True,
+    )
+
+
 def owner_mean_masked_row_cross_entropy(
     logits: torch.Tensor,
     target_token_ids: torch.Tensor,
@@ -197,8 +495,10 @@ def prefix_free_union_detached_weight_surrogate(
 ) -> StreamedPrefixFreeUnionResult:
     """Return the exact-gradient replay surrogate for a globally scored union."""
 
-    if row_scores.ndim != 1 or candidate_weights.ndim != 1 or (
-        row_scores.shape != candidate_weights.shape
+    if (
+        row_scores.ndim != 1
+        or candidate_weights.ndim != 1
+        or (row_scores.shape != candidate_weights.shape)
     ):
         raise LossContractError(
             "row scores and candidate weights must be aligned vectors",
@@ -402,6 +702,48 @@ def _checked_logits(logits: torch.Tensor, *, ndim: int) -> torch.Tensor:
             code="loss.human13_nonfinite_logits",
         )
     return checked
+
+
+def _checked_vector(value: torch.Tensor, *, name: str) -> torch.Tensor:
+    if not isinstance(value, torch.Tensor) or value.ndim != 1:
+        raise LossContractError(
+            f"{name} must be a rank-1 tensor",
+            code="loss.human13_vector_shape",
+        )
+    if not value.is_floating_point():
+        raise LossContractError(
+            f"{name} must be floating point",
+            code="loss.human13_vector_dtype",
+        )
+    checked = value.float()
+    if not bool(torch.isfinite(checked.detach()).all().item()):
+        raise LossContractError(
+            f"{name} must be finite",
+            code="loss.human13_vector_nonfinite",
+        )
+    return checked
+
+
+def _checked_nonnegative_margin(value: float) -> float:
+    margin = float(value)
+    if not math.isfinite(margin) or margin < 0:
+        raise LossContractError(
+            "required margin must be finite and nonnegative",
+            code="loss.human13_nonnegative_margin",
+        )
+    return margin
+
+
+def _require_integer_ids(value: torch.Tensor, *, name: str) -> None:
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.dtype == torch.bool
+        or value.is_floating_point()
+    ):
+        raise LossContractError(
+            f"{name} must contain integer identifiers",
+            code="loss.human13_integer_ids",
+        )
 
 
 def _require_shape(value: torch.Tensor, shape: torch.Size, *, name: str) -> None:

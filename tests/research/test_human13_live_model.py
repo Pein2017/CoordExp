@@ -20,6 +20,24 @@ def _plan() -> live.Human13LiveModelPlan:
     return live.build_human13_live_model_plan(CONFIG_ROOT / "03_a1.yaml")
 
 
+def test_successor_r1_r2_reuse_the_exact_low_dose_live_surface() -> None:
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
+    for arm_id in ("R1", "R2"):
+        successor = replace(
+            base,
+            unit_id=live.SUCCESSOR_UNIT_ID,
+            arm_id=arm_id,
+            milestones=live.SUCCESSOR_MILESTONES,
+        )
+        plan = live.build_human13_live_model_plan(successor)
+        assert plan.unit_id == live.SUCCESSOR_UNIT_ID
+        assert plan.arm_id == arm_id
+        assert plan.milestones == (0, 1, 2)
+        live.validate_human13_live_model_plan(plan)
+
+
 def _validation(plan: live.Human13LiveModelPlan) -> live.Human13PlanValidationReceipt:
     return live.Human13PlanValidationReceipt(
         schema_version="human13_live_model_validation.v1",

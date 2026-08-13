@@ -135,6 +135,10 @@ LossContextFactory = Callable[[SupervisedMicroStep, Any], Any]
 PostUpdateReplayHandler = Callable[
     [QwenForwardFn, Any, Sequence[SupervisedMicroStep], Any, int], Mapping[str, float]
 ]
+PostBackwardTransformHandler = Callable[
+    [QwenForwardFn, Any, Sequence[SupervisedMicroStep], Any, RuntimeBoundary, int],
+    Mapping[str, Any],
+]
 CompletedStepHandler = Callable[[CompletedStepObservation], None]
 ScheduledStepHandler = Callable[[StepScheduleEvent, CompletedStepObservation], None]
 
@@ -151,6 +155,7 @@ class SupervisedTrainer:
         loss_runner: LossRunnerBoundary,
         runtime: RuntimeBoundary,
         on_completed_step: CompletedStepHandler | None = None,
+        post_backward_transform: PostBackwardTransformHandler | None = None,
         post_update_replay: PostUpdateReplayHandler | None = None,
         on_eval: ScheduledStepHandler | None = None,
         on_checkpoint: ScheduledStepHandler | None = None,
@@ -164,6 +169,7 @@ class SupervisedTrainer:
         self.loss_runner = loss_runner
         self.runtime = runtime
         self.on_completed_step = on_completed_step
+        self.post_backward_transform = post_backward_transform
         self.post_update_replay = post_update_replay
         self.on_eval = on_eval
         self.on_checkpoint = on_checkpoint
@@ -303,6 +309,7 @@ class SupervisedTrainer:
         post_decision: GateDecision | None = None
         optimizer_update_status = "not_started"
         finite_status = "unavailable"
+        transform_artifact: Mapping[str, Any] | None = None
 
         for local_micro_step_index, micro_step in enumerate(moved_micro_steps):
             sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
@@ -361,6 +368,22 @@ class SupervisedTrainer:
             optimizer_update_status = post_decision.optimizer_update_status
             finite_status = post_decision.finite_status
             if post_decision.should_call_optimizer_step:
+                if self.post_backward_transform is not None:
+                    transformed = self.post_backward_transform(
+                        self.qwen_forward,
+                        _runtime_model(self.runtime, self.model),
+                        tuple(moved_micro_steps),
+                        plan,
+                        self.runtime,
+                        planned_step_id,
+                    )
+                    if not isinstance(transformed, Mapping):
+                        raise RuntimeContractError(
+                            "post-backward transform must return an artifact mapping",
+                            code="trainer.post_backward_transform_invalid_result",
+                            context={"result_type": type(transformed).__name__},
+                        )
+                    transform_artifact = dict(transformed)
                 self.runtime.clip_gradients(planned_step_id=planned_step_id)
                 self.runtime.optimizer_step(planned_step_id=planned_step_id)
                 optimizer_update_status = "applied"
@@ -394,6 +417,8 @@ class SupervisedTrainer:
             optimizer_update_status=optimizer_update_status,
             require_nonzero_gradient=hasattr(self.loss_runner, "profile"),
         )
+        if transform_artifact is not None:
+            post_backward_artifact["transform"] = dict(transform_artifact)
 
         scheduler_artifact = _optional_artifact(
             self.runtime.scheduler_step(planned_step_id=planned_step_id)

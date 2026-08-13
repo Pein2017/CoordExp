@@ -20,6 +20,7 @@ from typing import Any, Protocol
 LIVE_PLAN_SCHEMA_VERSION = "human13_live_model_plan.v1"
 VALIDATION_SCHEMA_VERSION = "human13_live_model_validation.v1"
 UNIT_ID = "2026-08-12-human13-k-union-to-greedy-overfit-screen"
+SUCCESSOR_UNIT_ID = "2026-08-13-human13-row-contrast-geometry-preservation-successor"
 SOURCE_CHECKPOINT_PATH = (
     "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/"
     "2026-08-05-closeout/artifacts/training/four-coordinate-xy/"
@@ -74,6 +75,7 @@ HUMAN13_IMAGE_IDS = (
     16228,
 )
 MILESTONES = (0, 1, 2, 4, 8, 16)
+SUCCESSOR_MILESTONES = (0, 1, 2)
 CHECKPOINT_STEPS = (1, 2, 4, 8, 16)
 ZERO_MODEL_ACTIONS = {
     "model_imports": 0,
@@ -89,7 +91,18 @@ _SOURCE_ADAPTER_TARGET_MODULES = frozenset(
     {"q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"}
 )
 _UPDATED_ARM_IDS = frozenset(
-    {"full_gt_capacity", "A0", "A1", "A3", "A4", "A6", "A7", "A8-prime"}
+    {
+        "full_gt_capacity",
+        "A0",
+        "A1",
+        "A3",
+        "A4",
+        "A6",
+        "A7",
+        "A8-prime",
+        "R1",
+        "R2",
+    }
 )
 
 
@@ -509,7 +522,7 @@ def build_human13_live_model_plan(
             raise Human13LiveModelError(f"invalid Human-13 arm config: {exc}") from exc
     else:
         config = arm_config
-    if getattr(config, "unit_id", None) != UNIT_ID:
+    if getattr(config, "unit_id", None) not in {UNIT_ID, SUCCESSOR_UNIT_ID}:
         raise Human13LiveModelError("arm config is not bound to the Human-13 unit")
     if getattr(config, "updates", None) is not True:
         raise Human13LiveModelError("live training assembly requires an updated arm")
@@ -531,7 +544,7 @@ def build_human13_live_model_plan(
         raise Human13LiveModelError("updated arm must declare language-only DoRA")
     plan = Human13LiveModelPlan(
         schema_version=LIVE_PLAN_SCHEMA_VERSION,
-        unit_id=UNIT_ID,
+        unit_id=str(config.unit_id),
         arm_id=str(config.arm_id),
         source=Human13SourceContract(
             checkpoint_path=str(source.checkpoint_path),
@@ -1092,9 +1105,13 @@ def _is_sha256(value: Any) -> bool:
 
 
 def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
+    if plan.unit_id not in {UNIT_ID, SUCCESSOR_UNIT_ID}:
+        raise Human13LiveModelError("plan has an unknown Human-13 unit identity")
+    if (plan.unit_id == SUCCESSOR_UNIT_ID) != (plan.arm_id in {"R1", "R2"}):
+        raise Human13LiveModelError("successor unit and R1/R2 arm identity differ")
     expected = {
         "schema_version": LIVE_PLAN_SCHEMA_VERSION,
-        "unit_id": UNIT_ID,
+        "unit_id": plan.unit_id,
         "source": Human13SourceContract(
             checkpoint_path=SOURCE_CHECKPOINT_PATH,
             base_model_path=SOURCE_BASE_MODEL_PATH,
@@ -1124,7 +1141,9 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         "scheduler_horizon_updates": 16,
         "max_grad_norm": 1.0,
         "world_size": 1,
-        "milestones": MILESTONES,
+        "milestones": (
+            SUCCESSOR_MILESTONES if plan.unit_id == SUCCESSOR_UNIT_ID else MILESTONES
+        ),
     }
     drift = [name for name, value in expected.items() if getattr(plan, name) != value]
     if drift:
@@ -1314,6 +1333,8 @@ __all__ = [
     "SOURCE_BASE_MODEL_PATH",
     "SOURCE_SPECIAL_EMBEDDING_SHA256",
     "SOURCE_TOKENIZER_SHA256",
+    "SUCCESSOR_MILESTONES",
+    "SUCCESSOR_UNIT_ID",
     "ZERO_MODEL_ACTIONS",
     "assemble_human13_live_model",
     "build_human13_checkpoint_kwargs",
