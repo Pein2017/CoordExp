@@ -6,7 +6,7 @@ import json
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -27,6 +27,28 @@ ORDER = [
 ]
 OUTER_SCHEMA = "coordexp-swift-reconcile-resume-probe-outer-terminal-receipt-v1"
 INNER_SCHEMA = "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1"
+REVIEW_SCHEMA = "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1"
+
+
+class _FinishedProcess:
+    def __init__(self, returncode: int) -> None:
+        self.pid = 4000
+        self.starttime = 50
+        self.process_group_id = 4000
+        self.returncode = returncode
+
+    def poll(self) -> int:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        del timeout
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.returncode = -15
+
+    def kill(self) -> None:
+        self.returncode = -9
 
 
 def _canonical(value: Any) -> bytes:
@@ -84,19 +106,51 @@ def _init_repo(root: Path) -> str:
 
 def _process_rows(*, include_rank1: bool = True, reused: bool = False) -> list[dict[str, Any]]:
     rows = [
-        {"pid": 4100, "starttime": 100, "rank": 0, "rss_bytes": 16},
+        {
+            "pid": 4100,
+            "ppid": 4000,
+            "starttime": 100,
+            "rank": 0,
+            "rss_bytes": 16,
+        },
     ]
     if include_rank1:
-        rows.append({"pid": 4101, "starttime": 100, "rank": 1, "rss_bytes": 18})
+        rows.append(
+            {
+                "pid": 4101,
+                "ppid": 4000,
+                "starttime": 100,
+                "rank": 1,
+                "rss_bytes": 18,
+            }
+        )
     if reused:
-        rows.append({"pid": 4100, "starttime": 101, "rank": 0, "rss_bytes": 24})
+        rows.append(
+            {
+                "pid": 4100,
+                "ppid": 4000,
+                "starttime": 101,
+                "rank": 0,
+                "rss_bytes": 24,
+            }
+        )
     return rows
 
 
 def _gpu_rows(*, include_rank1: bool = True) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = [
-        {"kind": "device", "gpu_uuid": "GPU-a", "memory_used_bytes": 0},
-        {"kind": "device", "gpu_uuid": "GPU-b", "memory_used_bytes": 0},
+        {
+            "kind": "device",
+            "physical_index": "0",
+            "gpu_uuid": "GPU-a",
+            "memory_used_bytes": 0,
+        },
+        {
+            "kind": "device",
+            "physical_index": "1",
+            "gpu_uuid": "GPU-b",
+            "memory_used_bytes": 0,
+        },
         {
             "kind": "process",
             "gpu_uuid": "GPU-a",
@@ -133,6 +187,7 @@ def _fixture(
     artifact_root = repo / "artifact"
     marker = repo / "attempt-marker.json"
     outer = repo / "outer-terminal-receipt.json"
+    review = repo / "pre-cost-review.json"
     cache_root = repo / ".artifact.pack-cache"
     cache_receipt = repo / ".artifact.pack-cache-receipt.json"
     inner = artifact_root / "terminal-receipt.json"
@@ -148,7 +203,18 @@ def _fixture(
             "max_cpu_rss_bytes_per_rank": 1024,
             "max_gpu_memory_bytes_per_rank": 1024 if name.startswith("success.") else 0,
             "max_new_artifact_bytes": 1024 * 1024,
-            "required_ranks": [0, 1] if name.startswith("success.") else [],
+            "required_cpu_ranks": (
+                [0, 1]
+                if name
+                in {
+                    "success.uninterrupted_control",
+                    "success.resumed_child",
+                    "rank_failure",
+                    "interruption",
+                }
+                else []
+            ),
+            "required_gpu_ranks": [0, 1] if name.startswith("success.") else [],
         }
         for name in ORDER
     }
@@ -170,6 +236,12 @@ def _fixture(
             "marker_sha256",
             "argv_observations",
             "resource_maxima",
+            "pre_cost_review",
+            "launcher_identity",
+            "runtime_identity",
+            "command_process_groups",
+            "artifact_tree_summaries",
+            "cleanup_outcomes",
             "stop_outcome",
         ],
         "required_inner_receipt_bindings": [
@@ -183,6 +255,12 @@ def _fixture(
         "bindings": {
             "packet_path": str(packet),
             "packet_sha256": packet_sha,
+        },
+        "pre_cost_review": {
+            "path": str(review),
+            "schema": REVIEW_SCHEMA,
+            "required_status": "READY",
+            "packet_author_identity": "packet-author",
         },
         "targets": {
             "artifact_root": str(artifact_root),
@@ -219,6 +297,13 @@ def _fixture(
             "path": str(inner),
             "schema": INNER_SCHEMA,
             "required_status": "verified",
+        },
+        "artifact_tree_summary": {
+            "roots": [str(artifact_root), str(cache_root), str(cache_receipt)],
+            "max_entries": 100,
+            "max_depth": 8,
+            "max_path_bytes": 512,
+            "max_total_bytes": 8 * 1024 * 1024,
         },
     }
     manifest = {
@@ -263,6 +348,17 @@ def _fixture(
     }
     manifest_path = repo / "manifest.json"
     _write_json(manifest_path, manifest)
+    manifest_sha = _sha256(manifest_path.read_bytes())
+    review_body = {
+        "schema": REVIEW_SCHEMA,
+        "status": "READY",
+        "implementation_commit": commit,
+        "manifest_sha256": manifest_sha,
+        "packet_sha256": packet_sha,
+        "reviewer_identity": "independent-reviewer",
+    }
+    _write_json(review, _signed(review_body))
+    review.chmod(0o444)
 
     def write_setup(*, tamper: str | None = None) -> None:
         artifact_root.mkdir()
@@ -337,7 +433,7 @@ def _fixture(
         inner_status: str = "verified",
         valid_inner_digest: bool = True,
         artifact_bytes: int = 0,
-    ) -> SimpleNamespace:
+    ) -> _FinishedProcess:
         del cwd
         name = argv[1]
         if name == "setup":
@@ -346,7 +442,7 @@ def _fixture(
             (artifact_root / f"{name}.bin").write_bytes(b"x" * artifact_bytes)
         if name == "verification" and fail_name != "missing_inner":
             write_inner(status=inner_status, valid_digest=valid_inner_digest)
-        return SimpleNamespace(returncode=1 if name == fail_name else 0)
+        return _FinishedProcess(returncode=1 if name == fail_name else 0)
 
     return {
         "repo": repo,
@@ -355,7 +451,8 @@ def _fixture(
         "packet_sha": packet_sha,
         "manifest": manifest,
         "manifest_path": manifest_path,
-        "manifest_sha": _sha256(manifest_path.read_bytes()),
+        "manifest_sha": manifest_sha,
+        "review": review,
         "artifact_root": artifact_root,
         "marker": marker,
         "outer": outer,
@@ -366,6 +463,21 @@ def _fixture(
         "write_setup": write_setup,
         "write_inner": write_inner,
     }
+
+
+def _refresh_manifest_and_review(case: dict[str, Any]) -> None:
+    _write_json(case["manifest_path"], case["manifest"])
+    case["manifest_sha"] = _sha256(case["manifest_path"].read_bytes())
+    _rewrite_review(case, manifest_sha256=case["manifest_sha"])
+
+
+def _rewrite_review(case: dict[str, Any], **updates: Any) -> None:
+    review = json.loads(case["review"].read_text(encoding="utf-8"))
+    review.pop("receipt_payload_sha256", None)
+    review.update(updates)
+    case["review"].chmod(0o644)
+    _write_json(case["review"], _signed(review))
+    case["review"].chmod(0o444)
 
 
 def _execute(
@@ -387,6 +499,12 @@ def _execute(
         gpu_sampler=gpu_sampler or (lambda: _gpu_rows()),
         process_sampler=process_sampler or (lambda: _process_rows()),
     )
+
+
+def _launch_sleep(cwd: Path, launched: list[subprocess.Popen[Any]]) -> subprocess.Popen[Any]:
+    process = subprocess.Popen(["/bin/sleep", "30"], cwd=cwd, start_new_session=True)
+    launched.append(process)
+    return process
 
 
 @pytest.mark.parametrize("drift", ["schema", "manifest_digest", "packet_digest", "head", "target"])
@@ -431,6 +549,77 @@ def test_tracked_diff_fails_before_marker(
         _execute(executor, case)
 
     assert not case["marker"].exists()
+
+
+def test_manifest_self_ready_without_independent_review_fails_before_marker(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    case["review"].unlink()
+
+    with pytest.raises(executor.PacketExecutorError, match="review"):
+        _execute(executor, case)
+
+    assert not case["marker"].exists()
+    assert not case["outer"].exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("status", "HOLD"),
+        ("implementation_commit", "0" * 40),
+        ("manifest_sha256", "0" * 64),
+        ("packet_sha256", "0" * 64),
+        ("reviewer_identity", "packet-author"),
+    ],
+)
+def test_stale_hold_or_non_independent_review_fails_before_marker(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    _rewrite_review(case, **{field: value})
+
+    with pytest.raises(executor.PacketExecutorError, match="review"):
+        _execute(executor, case)
+
+    assert not case["marker"].exists()
+
+
+def test_review_digest_mismatch_fails_before_marker(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    review = json.loads(case["review"].read_text(encoding="utf-8"))
+    review["receipt_payload_sha256"] = "f" * 64
+    case["review"].chmod(0o644)
+    _write_json(case["review"], review)
+    case["review"].chmod(0o444)
+
+    with pytest.raises(executor.PacketExecutorError, match="review"):
+        _execute(executor, case)
+
+    assert not case["marker"].exists()
+
+
+def test_exact_signed_independent_ready_review_is_bound_in_outer_receipt(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    receipt = _execute(executor, case)
+
+    assert receipt["status"] == "verified"
+    assert receipt["pre_cost_review"]["path"] == str(case["review"])
+    assert receipt["pre_cost_review"]["payload"]["status"] == "READY"
+    assert (
+        receipt["pre_cost_review"]["payload"]["reviewer_identity"]
+        == "independent-reviewer"
+    )
 
 
 def test_existing_marker_is_terminal_and_launches_nothing(
@@ -515,6 +704,140 @@ def test_launch_exception_stops_once_and_records_failed_argv(
     assert receipt["stop_outcome"]["code"] == "packet_executor.launch_exception"
 
 
+def test_non_popen_launch_result_is_rejected_and_stops_next_command(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    calls: list[str] = []
+
+    def launch(argv: list[str], **_kwargs: Any) -> Any:
+        calls.append(argv[1])
+        return {"returncode": 0}
+
+    receipt = _execute(executor, case, launch=launch)
+
+    assert calls == ["setup"]
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.launch_protocol"
+
+
+@pytest.mark.parametrize("failing_sampler", ["process", "gpu"])
+def test_real_sleep_sampler_exception_is_cleaned_before_terminal_receipt(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_sampler: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    launched: list[subprocess.Popen[Any]] = []
+    process_calls = 0
+    gpu_calls = 0
+
+    def launch(_argv: list[str], *, cwd: Path) -> subprocess.Popen[Any]:
+        return _launch_sleep(cwd, launched)
+
+    def process_sampler() -> list[dict[str, Any]]:
+        nonlocal process_calls
+        process_calls += 1
+        if failing_sampler == "process" and process_calls >= 2:
+            raise RuntimeError("injected process sampler failure")
+        return executor._default_process_sampler()
+
+    def gpu_sampler() -> list[dict[str, Any]]:
+        nonlocal gpu_calls
+        gpu_calls += 1
+        if failing_sampler == "gpu" and gpu_calls >= 3:
+            raise RuntimeError("injected GPU sampler failure")
+        return _gpu_rows()
+
+    try:
+        receipt = _execute(
+            executor,
+            case,
+            launch=launch,
+            process_sampler=process_sampler,
+            gpu_sampler=gpu_sampler,
+        )
+        assert launched
+        assert launched[0].poll() is not None
+        assert receipt["status"] == "stopped"
+        assert receipt["commands"][0]["cleanup"]["status"] == "confirmed_absent"
+        assert case["outer"].stat().st_mtime_ns >= case["marker"].stat().st_mtime_ns
+    finally:
+        for process in launched:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+
+
+def test_real_sleep_timeout_is_cleaned_and_reaped_before_stopped_receipt(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    case["manifest"]["execution_contract"]["resource_bounds"]["setup"][
+        "wall_time_seconds"
+    ] = 0.01
+    _refresh_manifest_and_review(case)
+    launched: list[subprocess.Popen[Any]] = []
+
+    def launch(_argv: list[str], *, cwd: Path) -> subprocess.Popen[Any]:
+        return _launch_sleep(cwd, launched)
+
+    try:
+        receipt = _execute(executor, case, launch=launch)
+        assert launched[0].poll() is not None
+        assert receipt["status"] == "stopped"
+        assert receipt["stop_outcome"]["code"] == "packet_executor.wall_timeout"
+        assert receipt["commands"][0]["cleanup"]["reaped"] is True
+        assert receipt["commands"][0]["cleanup"]["status"] == "confirmed_absent"
+    finally:
+        for process in launched:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+
+
+def test_cleanup_absence_failure_is_explicit_terminal_failure(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        executor, "_process_group_absent", lambda **_kwargs: False, raising=False
+    )
+
+    receipt = _execute(executor, case)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.cleanup_failed"
+    assert receipt["commands"][0]["cleanup"]["status"] == "failed"
+
+
+def test_post_launch_identity_failure_still_terminates_and_reaps_process(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    process = _FinishedProcess(0)
+    del process.starttime
+    terminated: list[bool] = []
+
+    def terminate() -> None:
+        terminated.append(True)
+        process.returncode = -15
+
+    process.returncode = None
+    process.terminate = terminate  # type: ignore[method-assign]
+
+    receipt = _execute(executor, case, launch=lambda *_args, **_kwargs: process)
+
+    assert terminated == [True]
+    assert process.poll() is not None
+    assert receipt["status"] == "stopped"
+    assert receipt["commands"][0]["cleanup"]["status"] == "failed"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.cleanup_failed"
+
+
 @pytest.mark.parametrize("tamper", ["prepare_digest", "config", "cache"])
 def test_setup_mismatch_stops_before_first_gpu_command(
     executor: ModuleType,
@@ -560,8 +883,18 @@ def test_resource_bound_failure_stops_later_commands(
 
         def gpu_sampler() -> list[dict[str, Any]]:
             return [
-                {"kind": "device", "gpu_uuid": "GPU-a", "memory_used_bytes": 1},
-                {"kind": "device", "gpu_uuid": "GPU-b", "memory_used_bytes": 0},
+                {
+                    "kind": "device",
+                    "physical_index": "0",
+                    "gpu_uuid": "GPU-a",
+                    "memory_used_bytes": 1,
+                },
+                {
+                    "kind": "device",
+                    "physical_index": "1",
+                    "gpu_uuid": "GPU-b",
+                    "memory_used_bytes": 0,
+                },
             ]
     elif bound == "wall":
         contract["resource_bounds"]["setup"]["wall_time_seconds"] = 0.0
@@ -578,8 +911,7 @@ def test_resource_bound_failure_stops_later_commands(
             "max_new_artifact_bytes"
         ] = 1
         launch_kwargs["artifact_bytes"] = 2
-    _write_json(case["manifest_path"], case["manifest"])
-    case["manifest_sha"] = _sha256(case["manifest_path"].read_bytes())
+    _refresh_manifest_and_review(case)
     calls: list[str] = []
 
     def launch(argv: list[str], **kwargs: Any) -> Any:
@@ -621,6 +953,83 @@ def test_pid_reuse_is_keyed_by_pid_and_starttime(
     assert (4100, 100) in identities
     assert (4100, 101) in identities
     assert receipt["resource_maxima"]["cpu_rss_bytes_per_rank"]["0"] == 24
+
+
+def test_physical_index_uuid_pair_drift_fails_before_marker(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    swapped = _gpu_rows()
+    swapped[0]["physical_index"] = "1"
+    swapped[1]["physical_index"] = "0"
+
+    with pytest.raises(executor.PacketExecutorError, match="GPU"):
+        _execute(executor, case, gpu_sampler=lambda: swapped)
+
+    assert not case["marker"].exists()
+
+
+def test_foreign_rank_tagged_gpu_rows_do_not_satisfy_current_command(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    foreign = _gpu_rows()
+    for row in foreign:
+        if row["kind"] == "process":
+            row["pid"] += 9000
+
+    receipt = _execute(executor, case, gpu_sampler=lambda: foreign)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == "packet_executor.missing_gpu_rank"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "success.uninterrupted_control",
+        "success.resumed_child",
+        "rank_failure",
+        "interruption",
+    ],
+)
+def test_missing_required_cpu_rank_is_command_specific(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    active = ""
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        nonlocal active
+        active = argv[1]
+        return case["launch"](argv, **kwargs)
+
+    def process_sampler() -> list[dict[str, Any]]:
+        return _process_rows(include_rank1=active != command)
+
+    receipt = _execute(executor, case, launch=launch, process_sampler=process_sampler)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["command"] == command
+    assert receipt["stop_outcome"]["code"] == "packet_executor.missing_process_rank"
+
+
+def test_outer_receipt_binds_launcher_runtime_groups_and_bounded_artifact_summaries(
+    executor: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    receipt = _execute(executor, case)
+
+    assert receipt["launcher_identity"]["qualname"]
+    assert receipt["runtime_identity"]["python_executable"]
+    assert receipt["artifact_tree"]["initial"]["roots"]
+    assert receipt["artifact_tree"]["final"]["inventory_sha256"]
+    assert all(row["process_group"]["leader_pid"] for row in receipt["commands"])
+    assert all(row["cleanup"]["status"] == "confirmed_absent" for row in receipt["commands"])
 
 
 @pytest.mark.parametrize("missing", ["process", "gpu"])

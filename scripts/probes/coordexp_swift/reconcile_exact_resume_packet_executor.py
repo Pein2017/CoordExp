@@ -21,7 +21,7 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 MANIFEST_SCHEMA = "coordexp-swift-reconcile-resume-probe-command-manifest-v2"
@@ -30,6 +30,7 @@ OUTER_RECEIPT_SCHEMA = (
     "coordexp-swift-reconcile-resume-probe-outer-terminal-receipt-v1"
 )
 INNER_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1"
+REVIEW_RECEIPT_SCHEMA = "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1"
 COMMAND_ORDER = (
     "setup",
     "success.uninterrupted_control",
@@ -54,6 +55,12 @@ REQUIRED_OUTER_BINDINGS = (
     "marker_sha256",
     "argv_observations",
     "resource_maxima",
+    "pre_cost_review",
+    "launcher_identity",
+    "runtime_identity",
+    "command_process_groups",
+    "artifact_tree_summaries",
+    "cleanup_outcomes",
     "stop_outcome",
 )
 REQUIRED_INNER_BINDINGS = (
@@ -79,6 +86,19 @@ class PacketExecutorError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.context = dict(context or {})
+
+
+class PopenLike(Protocol):
+    pid: int
+    returncode: int | None
+
+    def poll(self) -> int | None: ...
+
+    def wait(self, timeout: float | None = None) -> int: ...
+
+    def terminate(self) -> None: ...
+
+    def kill(self) -> None: ...
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -363,11 +383,6 @@ def _validate_contract(
             "only the schema-v2 command manifest is accepted",
             code="packet_executor.schema",
         )
-    if manifest.get("authorization_status") != "READY":
-        raise PacketExecutorError(
-            "frozen packet does not have READY authorization",
-            code="packet_executor.authorization",
-        )
     if manifest.get("world_size") != 2 or manifest.get("arms") != [
         "success",
         "rank_failure",
@@ -399,6 +414,24 @@ def _validate_contract(
         raise PacketExecutorError("packet path binding drifted", code="packet_executor.binding")
     if bindings.get("packet_sha256") != packet_sha256:
         raise PacketExecutorError("packet digest binding drifted", code="packet_executor.binding")
+
+    review = _mapping(
+        contract.get("pre_cost_review"), "execution_contract.pre_cost_review"
+    )
+    review_path = _absolute_path(review.get("path"), "pre_cost_review.path")
+    if review.get("schema") != REVIEW_RECEIPT_SCHEMA:
+        raise PacketExecutorError(
+            "pre-cost review schema drifted", code="packet_executor.review_contract"
+        )
+    if review.get("required_status") != "READY":
+        raise PacketExecutorError(
+            "pre-cost review status contract drifted",
+            code="packet_executor.review_contract",
+        )
+    packet_author_identity = _string(
+        review.get("packet_author_identity"),
+        "pre_cost_review.packet_author_identity",
+    )
 
     artifact_root = _absolute_path(manifest.get("artifact_root"), "artifact_root")
     targets = _mapping(contract.get("targets"), "execution_contract.targets")
@@ -446,13 +479,26 @@ def _validate_contract(
             "exactly two GPU device bindings are required",
             code="packet_executor.contract",
         )
-    device_uuids: list[str] = []
+    device_bindings: list[dict[str, str]] = []
     for index, device in enumerate(devices):
         row = _mapping(device, f"gpu_devices[{index}]")
-        _string(row.get("physical_index"), f"gpu_devices[{index}].physical_index")
-        device_uuids.append(_string(row.get("uuid"), f"gpu_devices[{index}].uuid"))
+        device_bindings.append(
+            {
+                "physical_index": _string(
+                    row.get("physical_index"),
+                    f"gpu_devices[{index}].physical_index",
+                ),
+                "uuid": _string(row.get("uuid"), f"gpu_devices[{index}].uuid"),
+            }
+        )
+    device_uuids = [row["uuid"] for row in device_bindings]
     if len(set(device_uuids)) != 2:
         raise PacketExecutorError("GPU UUID bindings must be unique", code="packet_executor.contract")
+    if len({row["physical_index"] for row in device_bindings}) != 2:
+        raise PacketExecutorError(
+            "GPU physical-index bindings must be unique",
+            code="packet_executor.contract",
+        )
 
     bounds = _mapping(contract.get("resource_bounds"), "execution_contract.resource_bounds")
     if set(bounds) != set(COMMAND_ORDER):
@@ -463,11 +509,28 @@ def _validate_contract(
     normalized_bounds: dict[str, dict[str, Any]] = {}
     for name in COMMAND_ORDER:
         row = _mapping(bounds[name], f"resource_bounds.{name}")
-        required_ranks = row.get("required_ranks")
-        expected_ranks = [0, 1] if name in MODEL_COMMANDS else []
-        if required_ranks != expected_ranks:
+        required_cpu_ranks = row.get("required_cpu_ranks")
+        required_gpu_ranks = row.get("required_gpu_ranks")
+        expected_cpu_ranks = (
+            [0, 1]
+            if name
+            in {
+                "success.uninterrupted_control",
+                "success.resumed_child",
+                "rank_failure",
+                "interruption",
+            }
+            else []
+        )
+        expected_gpu_ranks = [0, 1] if name in MODEL_COMMANDS else []
+        if required_cpu_ranks != expected_cpu_ranks:
             raise PacketExecutorError(
-                f"resource_bounds.{name}.required_ranks drifted",
+                f"resource_bounds.{name}.required_cpu_ranks drifted",
+                code="packet_executor.contract",
+            )
+        if required_gpu_ranks != expected_gpu_ranks:
+            raise PacketExecutorError(
+                f"resource_bounds.{name}.required_gpu_ranks drifted",
                 code="packet_executor.contract",
             )
         normalized_bounds[name] = {
@@ -486,7 +549,8 @@ def _validate_contract(
                 row.get("max_new_artifact_bytes"),
                 f"resource_bounds.{name}.max_new_artifact_bytes",
             ),
-            "required_ranks": list(required_ranks),
+            "required_cpu_ranks": list(required_cpu_ranks),
+            "required_gpu_ranks": list(required_gpu_ranks),
         }
     total = _mapping(contract.get("total_bounds"), "execution_contract.total_bounds")
     normalized_total = {
@@ -524,6 +588,43 @@ def _validate_contract(
     if inner.get("schema") != INNER_RECEIPT_SCHEMA or inner.get("required_status") != "verified":
         raise PacketExecutorError("inner receipt contract drifted", code="packet_executor.contract")
 
+    summary = _mapping(
+        contract.get("artifact_tree_summary"),
+        "execution_contract.artifact_tree_summary",
+    )
+    summary_roots = [
+        _absolute_path(value, "artifact_tree_summary.roots")
+        for value in summary.get("roots", [])
+    ]
+    expected_summary_roots = [
+        artifact_root,
+        setup_paths["pack_cache_root"],
+        setup_paths["pack_cache_receipt_path"],
+    ]
+    if summary_roots != expected_summary_roots:
+        raise PacketExecutorError(
+            "artifact-tree summary roots drifted",
+            code="packet_executor.contract",
+        )
+    summary_bounds = {
+        "roots": summary_roots,
+        "max_entries": _integer(
+            summary.get("max_entries"), "artifact_tree_summary.max_entries", minimum=1
+        ),
+        "max_depth": _integer(
+            summary.get("max_depth"), "artifact_tree_summary.max_depth"
+        ),
+        "max_path_bytes": _integer(
+            summary.get("max_path_bytes"),
+            "artifact_tree_summary.max_path_bytes",
+            minimum=1,
+        ),
+        "max_total_bytes": _integer(
+            summary.get("max_total_bytes"),
+            "artifact_tree_summary.max_total_bytes",
+        ),
+    }
+
     commands = {name: _command_argv(manifest, name) for name in COMMAND_ORDER}
     configs = _flatten_config_files(manifest)
     return {
@@ -533,11 +634,15 @@ def _validate_contract(
         "commands": commands,
         "configs": configs,
         "filesystem_path": filesystem_path,
+        "device_bindings": device_bindings,
         "device_uuids": device_uuids,
         "resource_bounds": normalized_bounds,
         "total_bounds": normalized_total,
         "setup_paths": setup_paths,
         "inner_path": inner_path,
+        "review_path": review_path,
+        "packet_author_identity": packet_author_identity,
+        "artifact_summary": summary_bounds,
     }
 
 
@@ -549,7 +654,7 @@ def _pre_marker_validate(
     expected_packet_sha256: str,
     attempt_marker_path: Path,
     terminal_receipt_path: Path,
-) -> tuple[dict[str, Any], dict[str, Any], str, str]:
+) -> tuple[dict[str, Any], dict[str, Any], str, str, dict[str, Any]]:
     for path, field in ((manifest_path, "manifest"), (packet_path, "packet")):
         if not path.is_absolute() or not path.is_file() or path.is_symlink():
             raise PacketExecutorError(
@@ -596,9 +701,57 @@ def _pre_marker_validate(
         attempt_marker_path=attempt_marker_path,
         terminal_receipt_path=terminal_receipt_path,
     )
+    review_path: Path = contract["review_path"]
+    review_info = _lstat(review_path)
+    if (
+        review_info is None
+        or not stat.S_ISREG(review_info.st_mode)
+        or stat.S_ISLNK(review_info.st_mode)
+        or review_info.st_mode & 0o222
+    ):
+        raise PacketExecutorError(
+            "independent pre-cost review must be an immutable regular file",
+            code="packet_executor.review_missing_or_mutable",
+        )
+    try:
+        review = _verify_signed(
+            _strict_json_load(review_path),
+            field="receipt_payload_sha256",
+            code="packet_executor.review_digest",
+        )
+    except PacketExecutorError as exc:
+        raise PacketExecutorError(
+            "independent pre-cost review digest mismatched",
+            code="packet_executor.review_digest",
+        ) from exc
+    expected_review = {
+        "schema": REVIEW_RECEIPT_SCHEMA,
+        "status": "READY",
+        "implementation_commit": commit,
+        "manifest_sha256": manifest_sha,
+        "packet_sha256": packet_sha,
+    }
+    for field, expected in expected_review.items():
+        if review.get(field) != expected:
+            raise PacketExecutorError(
+                f"independent pre-cost review {field} mismatched",
+                code="packet_executor.review_mismatch",
+            )
+    reviewer_identity = _string(
+        review.get("reviewer_identity"), "review.reviewer_identity"
+    )
+    if reviewer_identity == contract["packet_author_identity"]:
+        raise PacketExecutorError(
+            "pre-cost reviewer is not independent from the packet author",
+            code="packet_executor.review_not_independent",
+        )
     for index, target in enumerate(contract["absent_paths"]):
         _assert_absent(target, f"targets.must_be_absent[{index}]")
-    return manifest, contract, manifest_sha, packet_sha
+    return manifest, contract, manifest_sha, packet_sha, {
+        "path": str(review_path),
+        "sha256": _sha256_file(review_path),
+        "payload": review,
+    }
 
 
 def _pid_starttime(pid: int) -> int | None:
@@ -651,6 +804,7 @@ def _default_process_sampler() -> list[dict[str, Any]]:
     return [
         {
             "pid": pid,
+            "ppid": records[pid][0],
             "starttime": records[pid][1],
             "rank": _pid_rank(pid),
             "rss_bytes": records[pid][2],
@@ -754,7 +908,18 @@ def _normalize_process_rows(rows: Any) -> list[dict[str, Any]]:
         if rank is not None:
             rank = _integer(rank, "process.rank")
         rss = _integer(row.get("rss_bytes"), "process.rss_bytes")
-        result.append({"pid": pid, "starttime": starttime, "rank": rank, "rss_bytes": rss})
+        ppid = row.get("ppid")
+        if ppid is not None:
+            ppid = _integer(ppid, "process.ppid")
+        result.append(
+            {
+                "pid": pid,
+                "ppid": ppid,
+                "starttime": starttime,
+                "rank": rank,
+                "rss_bytes": rss,
+            }
+        )
     return result
 
 
@@ -773,6 +938,9 @@ def _normalize_gpu_rows(rows: Any) -> list[dict[str, Any]]:
             result.append(
                 {
                     "kind": "device",
+                    "physical_index": _string(
+                        row.get("physical_index"), "gpu.physical_index"
+                    ),
                     "gpu_uuid": uuid,
                     "memory_used_bytes": _integer(
                         row.get("memory_used_bytes"), "gpu.memory_used_bytes"
@@ -802,25 +970,72 @@ def _normalize_gpu_rows(rows: Any) -> list[dict[str, Any]]:
     return result
 
 
-def _tree_bytes(paths: Sequence[Path]) -> int:
-    total = 0
-    for root in paths:
+def _summarize_artifact_tree(bounds: Mapping[str, Any]) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    total_bytes = 0
+    for root in bounds["roots"]:
         info = _lstat(root)
         if info is None:
             continue
-        if stat.S_ISREG(info.st_mode):
-            total += info.st_size
-            continue
-        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
-            continue
-        for directory, names, filenames in os.walk(root, followlinks=False):
-            del names
-            for filename in filenames:
-                path = Path(directory) / filename
-                child = _lstat(path)
-                if child is not None and stat.S_ISREG(child.st_mode):
-                    total += child.st_size
-    return total
+        paths = [root]
+        if stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+            paths.extend(sorted(root.rglob("*"), key=str))
+        for path in paths:
+            relative = "." if path == root else path.relative_to(root).as_posix()
+            depth = 0 if relative == "." else len(Path(relative).parts)
+            if depth > int(bounds["max_depth"]):
+                raise PacketExecutorError(
+                    "artifact-tree depth exceeds its frozen bound",
+                    code="packet_executor.artifact_summary_bound",
+                )
+            if len(relative.encode("utf-8")) > int(bounds["max_path_bytes"]):
+                raise PacketExecutorError(
+                    "artifact-tree path exceeds its frozen bound",
+                    code="packet_executor.artifact_summary_bound",
+                )
+            child = _lstat(path)
+            if child is None:
+                continue
+            kind = (
+                "symlink"
+                if stat.S_ISLNK(child.st_mode)
+                else "directory"
+                if stat.S_ISDIR(child.st_mode)
+                else "file"
+                if stat.S_ISREG(child.st_mode)
+                else "other"
+            )
+            size = child.st_size if kind == "file" else 0
+            total_bytes += size
+            entries.append(
+                {
+                    "root": str(root),
+                    "path": relative,
+                    "kind": kind,
+                    "size_bytes": size,
+                }
+            )
+            if len(entries) > int(bounds["max_entries"]):
+                raise PacketExecutorError(
+                    "artifact-tree entry count exceeds its frozen bound",
+                    code="packet_executor.artifact_summary_bound",
+                )
+            if total_bytes > int(bounds["max_total_bytes"]):
+                raise PacketExecutorError(
+                    "artifact-tree bytes exceed their frozen bound",
+                    code="packet_executor.artifact_summary_bound",
+                )
+    return {
+        "roots": [str(path) for path in bounds["roots"]],
+        "entry_count": len(entries),
+        "total_bytes": total_bytes,
+        "inventory_sha256": _sha256_bytes(_canonical_json_bytes(entries)),
+        "entries": entries,
+        "bounds": {
+            key: int(bounds[key])
+            for key in ("max_entries", "max_depth", "max_path_bytes", "max_total_bytes")
+        },
+    }
 
 
 def _sample_resources(
@@ -831,6 +1046,44 @@ def _sample_resources(
         _normalize_process_rows(process_sampler()),
         _normalize_gpu_rows(gpu_sampler()),
     )
+
+
+def _owned_process_rows(
+    rows: Sequence[Mapping[str, Any]], *, leader_pid: int, leader_starttime: int
+) -> list[dict[str, Any]]:
+    by_pid = {int(row["pid"]): row for row in rows}
+    owned: set[int] = set()
+    leader = by_pid.get(leader_pid)
+    if leader is not None and int(leader["starttime"]) == leader_starttime:
+        owned.add(leader_pid)
+    frontier = {leader_pid}
+    while frontier:
+        children = {
+            int(row["pid"])
+            for row in rows
+            if row.get("ppid") in frontier and int(row["pid"]) not in owned
+        }
+        owned.update(children)
+        frontier = children
+    return [dict(row) for row in rows if int(row["pid"]) in owned]
+
+
+def _owned_gpu_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    owned_processes: Sequence[Mapping[str, Any]],
+    selected_uuids: set[str],
+) -> list[dict[str, Any]]:
+    identities = {
+        (int(row["pid"]), int(row["starttime"])) for row in owned_processes
+    }
+    return [
+        dict(row)
+        for row in rows
+        if row.get("kind") == "process"
+        and str(row["gpu_uuid"]) in selected_uuids
+        and (int(row["pid"]), int(row["starttime"])) in identities
+    ]
 
 
 def _merge_process_samples(
@@ -892,20 +1145,19 @@ def _check_command_resources(
         )
     cpu = _rank_maxima(process_rows, "rss_bytes")
     gpu = _rank_maxima(gpu_rows, "gpu_memory_bytes")
-    required = {str(rank) for rank in bound["required_ranks"]}
-    # Model-free commands have no required rank inventory.  Their sampled
-    # host/device rows remain in the receipt, but unrelated shared-host ranks
-    # are not attributed to that command for per-rank limit enforcement.
-    if not required:
+    required_cpu = {str(rank) for rank in bound["required_cpu_ranks"]}
+    required_gpu = {str(rank) for rank in bound["required_gpu_ranks"]}
+    if not required_cpu:
         cpu = {}
+    if not required_gpu:
         gpu = {}
-    missing_cpu = sorted(required - set(cpu))
+    missing_cpu = sorted(required_cpu - set(cpu))
     if missing_cpu:
         raise PacketExecutorError(
             f"{name} is missing CPU RSS measurements for ranks {missing_cpu}",
             code="packet_executor.missing_process_rank",
         )
-    missing_gpu = sorted(required - set(gpu))
+    missing_gpu = sorted(required_gpu - set(gpu))
     if missing_gpu:
         raise PacketExecutorError(
             f"{name} is missing GPU measurements for ranks {missing_gpu}",
@@ -922,29 +1174,142 @@ def _check_command_resources(
     return cpu, gpu
 
 
-def _terminate_process(process: Any) -> None:
-    try:
-        pgid = os.getpgid(int(process.pid))
-        os.killpg(pgid, signal.SIGTERM)
-    except (AttributeError, OSError, ValueError):
+def _is_popen_like(process: Any) -> bool:
+    return isinstance(getattr(process, "pid", None), int) and all(
+        callable(getattr(process, name, None))
+        for name in ("poll", "wait", "terminate", "kill")
+    )
+
+
+def _process_group_absent(
+    *, leader_pid: int, leader_starttime: int, process_group_id: int
+) -> bool:
+    if _pid_starttime(leader_pid) == leader_starttime:
+        return False
+    for path in Path("/proc").iterdir():
+        if not path.name.isdigit():
+            continue
         try:
-            process.terminate()
-        except (AttributeError, OSError):
-            return
+            text = (path / "stat").read_text(encoding="ascii")
+            tail = text[text.rfind(")") + 2 :].split()
+            if int(tail[2]) == process_group_id:
+                return False
+        except (OSError, ValueError, IndexError):
+            continue
+    return True
+
+
+def _process_identity(process: PopenLike) -> tuple[int, int, int]:
+    leader_pid = int(process.pid)
+    leader_starttime = _pid_starttime(leader_pid)
+    if leader_starttime is None:
+        leader_starttime = getattr(process, "starttime", None)
+    if not isinstance(leader_starttime, int) or leader_starttime < 1:
+        raise PacketExecutorError(
+            "launched process starttime is unavailable",
+            code="packet_executor.launch_identity",
+        )
+    try:
+        process_group_id = os.getpgid(leader_pid)
+    except OSError:
+        process_group_id = getattr(process, "process_group_id", leader_pid)
+    if not isinstance(process_group_id, int) or process_group_id < 1:
+        raise PacketExecutorError(
+            "launched process group is unavailable",
+            code="packet_executor.launch_identity",
+        )
+    return leader_pid, leader_starttime, process_group_id
+
+
+def _cleanup_process(
+    process: PopenLike, *, leader_starttime: int, process_group_id: int
+) -> dict[str, Any]:
+    leader_pid = int(process.pid)
+    sent: list[str] = []
+    errors: list[str] = []
+    try:
+        running = process.poll() is None
+    except BaseException as exc:
+        running = True
+        errors.append(f"poll:{exc}")
+    if running:
+        try:
+            if _pid_starttime(leader_pid) == leader_starttime:
+                os.killpg(process_group_id, signal.SIGTERM)
+            else:
+                process.terminate()
+            sent.append("TERM")
+        except BaseException as exc:
+            errors.append(f"term:{exc}")
     try:
         process.wait(timeout=5)
-    except (AttributeError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
         try:
-            os.killpg(pgid, signal.SIGKILL)
-        except (UnboundLocalError, OSError):
-            try:
+            if _pid_starttime(leader_pid) == leader_starttime:
+                os.killpg(process_group_id, signal.SIGKILL)
+            else:
                 process.kill()
-            except (AttributeError, OSError):
-                pass
+            sent.append("KILL")
+        except BaseException as exc:
+            errors.append(f"kill:{exc}")
         try:
             process.wait(timeout=5)
-        except (AttributeError, subprocess.TimeoutExpired):
-            pass
+        except BaseException as exc:
+            errors.append(f"reap:{exc}")
+    except BaseException as exc:
+        errors.append(f"reap:{exc}")
+    try:
+        absent = _process_group_absent(
+            leader_pid=leader_pid,
+            leader_starttime=leader_starttime,
+            process_group_id=process_group_id,
+        )
+    except BaseException as exc:
+        absent = False
+        errors.append(f"absence:{exc}")
+    try:
+        reaped = process.poll() is not None
+    except BaseException as exc:
+        reaped = False
+        errors.append(f"final_poll:{exc}")
+    return {
+        "status": "confirmed_absent" if absent and reaped and not errors else "failed",
+        "sent_signals": sent,
+        "reaped": reaped,
+        "group_absent": absent,
+        "errors": errors,
+    }
+
+
+def _cleanup_unidentified_process(process: PopenLike) -> dict[str, Any]:
+    sent: list[str] = []
+    errors = ["process-group identity unavailable"]
+    try:
+        if process.poll() is None:
+            process.terminate()
+            sent.append("TERM")
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+            sent.append("KILL")
+            process.wait(timeout=5)
+        except BaseException as exc:
+            errors.append(f"kill_or_reap:{exc}")
+    except BaseException as exc:
+        errors.append(f"term_or_reap:{exc}")
+    try:
+        reaped = process.poll() is not None
+    except BaseException as exc:
+        reaped = False
+        errors.append(f"final_poll:{exc}")
+    return {
+        "status": "failed",
+        "sent_signals": sent,
+        "reaped": reaped,
+        "group_absent": False,
+        "errors": errors,
+    }
 
 
 def _run_command(
@@ -953,75 +1318,118 @@ def _run_command(
     argv: Sequence[str],
     cwd: Path,
     bound: Mapping[str, Any],
-    artifact_paths: Sequence[Path],
+    artifact_summary_bounds: Mapping[str, Any],
     launch: Callable[..., Any],
     gpu_sampler: Callable[[], list[dict[str, Any]]],
     process_sampler: Callable[[], list[dict[str, Any]]],
+    selected_uuids: set[str],
 ) -> dict[str, Any]:
     started = time.monotonic()
-    artifact_before = _tree_bytes(artifact_paths)
+    artifact_before: dict[str, Any] | None = None
+    artifact_after: dict[str, Any] | None = None
     process_observations: dict[tuple[int, int], dict[str, Any]] = {}
     gpu_observations: dict[tuple[str, int, int], dict[str, Any]] = {}
-
-    process_rows, gpu_rows = _sample_resources(process_sampler, gpu_sampler)
-    _merge_process_samples(process_observations, process_rows)
-    _merge_gpu_samples(gpu_observations, gpu_rows)
-    launched: Any = None
-    launch_error: BaseException | None = None
-    try:
-        launched = launch(list(argv), cwd=cwd)
-    except BaseException as exc:
-        launch_error = exc
+    launched: PopenLike | None = None
+    process_group: dict[str, int] | None = None
+    cleanup: dict[str, Any] | None = None
+    error: BaseException | None = None
     returncode: int | None = None
-    if launch_error is not None:
-        returncode = None
-    elif hasattr(launched, "poll") and callable(launched.poll):
+    try:
+        artifact_before = _summarize_artifact_tree(artifact_summary_bounds)
+        try:
+            candidate = launch(list(argv), cwd=cwd)
+        except BaseException as exc:
+            raise PacketExecutorError(
+                f"{name} launch raised: {exc}",
+                code="packet_executor.launch_exception",
+            ) from exc
+        if not _is_popen_like(candidate):
+            raise PacketExecutorError(
+                "launch must return exactly one Popen-like process",
+                code="packet_executor.launch_protocol",
+            )
+        launched = candidate
+        leader_pid, leader_starttime, process_group_id = _process_identity(launched)
+        process_group = {
+            "leader_pid": leader_pid,
+            "leader_starttime": leader_starttime,
+            "process_group_id": process_group_id,
+        }
         while True:
             returncode = launched.poll()
             process_rows, gpu_rows = _sample_resources(process_sampler, gpu_sampler)
-            _merge_process_samples(process_observations, process_rows)
-            _merge_gpu_samples(gpu_observations, gpu_rows)
-            elapsed = time.monotonic() - started
-            if elapsed > float(bound["wall_time_seconds"]):
-                _terminate_process(launched)
-                returncode = launched.poll()
-                break
+            owned_processes = _owned_process_rows(
+                process_rows,
+                leader_pid=leader_pid,
+                leader_starttime=leader_starttime,
+            )
+            owned_gpu = _owned_gpu_rows(
+                gpu_rows,
+                owned_processes=owned_processes,
+                selected_uuids=selected_uuids,
+            )
+            _merge_process_samples(process_observations, owned_processes)
+            _merge_gpu_samples(gpu_observations, owned_gpu)
             if returncode is not None:
                 break
+            if time.monotonic() - started > float(bound["wall_time_seconds"]):
+                raise PacketExecutorError(
+                    f"{name} exceeded its wall-time bound while running",
+                    code="packet_executor.wall_timeout",
+                )
             time.sleep(0.25)
-    elif isinstance(launched, int):
-        returncode = launched
-    elif isinstance(launched, Mapping):
-        value = launched.get("returncode")
-        returncode = int(value) if isinstance(value, int) else None
-    else:
-        value = getattr(launched, "returncode", None)
-        returncode = int(value) if isinstance(value, int) else None
-    process_rows, gpu_rows = _sample_resources(process_sampler, gpu_sampler)
-    _merge_process_samples(process_observations, process_rows)
-    _merge_gpu_samples(gpu_observations, gpu_rows)
+    except BaseException as exc:
+        error = exc
+    finally:
+        if launched is not None and process_group is not None:
+            cleanup = _cleanup_process(
+                launched,
+                leader_starttime=process_group["leader_starttime"],
+                process_group_id=process_group["process_group_id"],
+            )
+            try:
+                returncode = launched.poll()
+            except BaseException:
+                pass
+            if cleanup["status"] != "confirmed_absent":
+                error = PacketExecutorError(
+                    "process-group cleanup could not be confirmed",
+                    code="packet_executor.cleanup_failed",
+                    context={"cleanup": cleanup},
+                )
+        elif launched is not None:
+            cleanup = _cleanup_unidentified_process(launched)
+            error = PacketExecutorError(
+                "process-group cleanup could not be confirmed",
+                code="packet_executor.cleanup_failed",
+                context={"cleanup": cleanup},
+            )
+        try:
+            artifact_after = _summarize_artifact_tree(artifact_summary_bounds)
+        except BaseException as exc:
+            if error is None:
+                error = exc
     elapsed = max(0.0, time.monotonic() - started)
-    artifact_after = _tree_bytes(artifact_paths)
-    new_bytes = max(0, artifact_after - artifact_before)
-    required = {str(rank) for rank in bound["required_ranks"]}
+    new_bytes = max(
+        0,
+        int((artifact_after or {}).get("total_bytes", 0))
+        - int((artifact_before or {}).get("total_bytes", 0)),
+    )
     cpu = _rank_maxima(list(process_observations.values()), "rss_bytes")
     gpu = _rank_maxima(list(gpu_observations.values()), "gpu_memory_bytes")
-    if not required:
-        cpu = {}
-        gpu = {}
-    resource_error: dict[str, Any] | None = None
-    try:
-        cpu, gpu = _check_command_resources(
-            name=name,
-            bound=bound,
-            elapsed=elapsed,
-            new_artifact_bytes=new_bytes,
-            process_rows=list(process_observations.values()),
-            gpu_rows=list(gpu_observations.values()),
-        )
-    except BaseException as exc:
-        resource_error = _error_record(exc, command=name)
-    observation = {
+    if error is None:
+        try:
+            cpu, gpu = _check_command_resources(
+                name=name,
+                bound=bound,
+                elapsed=elapsed,
+                new_artifact_bytes=new_bytes,
+                process_rows=list(process_observations.values()),
+                gpu_rows=list(gpu_observations.values()),
+            )
+        except BaseException as exc:
+            error = exc
+    return {
         "name": name,
         "argv": list(argv),
         "argv_sha256": _sha256_bytes(_canonical_json_bytes(list(argv))),
@@ -1031,6 +1439,8 @@ def _run_command(
         "new_artifact_bytes": new_bytes,
         "cpu_rss_bytes_per_rank": cpu,
         "gpu_memory_bytes_per_rank": gpu,
+        "required_cpu_ranks": list(bound["required_cpu_ranks"]),
+        "required_gpu_ranks": list(bound["required_gpu_ranks"]),
         "process_observations": sorted(
             process_observations.values(), key=lambda row: (row["pid"], row["starttime"])
         ),
@@ -1038,12 +1448,13 @@ def _run_command(
             gpu_observations.values(),
             key=lambda row: (row["gpu_uuid"], row["pid"], row["starttime"]),
         ),
-        "launch_error": None
-        if launch_error is None
-        else _error_record(launch_error, command=name),
-        "resource_error": resource_error,
+        "process_group": process_group,
+        "cleanup": cleanup,
+        "artifact_tree": {"before": artifact_before, "after": artifact_after},
+        "execution_error": None
+        if error is None
+        else _error_record(error, command=name),
     }
-    return observation
 
 
 def _preflight_resources(
@@ -1062,16 +1473,24 @@ def _preflight_resources(
             code="packet_executor.free_disk_bound",
         )
     rows = _normalize_gpu_rows(gpu_sampler())
-    device_rows = {row["gpu_uuid"]: row for row in rows if row["kind"] == "device"}
-    required = set(contract["device_uuids"])
-    if set(device_rows) & required != required:
+    device_rows = {
+        (row["physical_index"], row["gpu_uuid"]): row
+        for row in rows
+        if row["kind"] == "device"
+    }
+    required_pairs = {
+        (row["physical_index"], row["uuid"])
+        for row in contract["device_bindings"]
+    }
+    if not required_pairs <= set(device_rows):
         raise PacketExecutorError(
-            "selected GPU UUID inventory drifted",
+            "selected physical-index to GPU-UUID inventory drifted",
             code="packet_executor.gpu_uuid_drift",
         )
     maximum = int(_mapping(contract["preflight"], "preflight")["max_gpu_occupancy_bytes"])
     occupied = {
-        uuid: int(device_rows[uuid]["memory_used_bytes"]) for uuid in sorted(required)
+        f"{index}:{uuid}": int(device_rows[(index, uuid)]["memory_used_bytes"])
+        for index, uuid in sorted(required_pairs)
     }
     if any(value > maximum for value in occupied.values()):
         raise PacketExecutorError(
@@ -1085,6 +1504,34 @@ def _preflight_resources(
         "required_free_disk_bytes": required_free,
         "gpu_occupancy_bytes": occupied,
         "max_gpu_occupancy_bytes": maximum,
+    }
+
+
+def _preflight_gpu_mapping(
+    contract: Mapping[str, Any],
+    gpu_sampler: Callable[[], list[dict[str, Any]]],
+) -> dict[str, Any]:
+    rows = _normalize_gpu_rows(gpu_sampler())
+    observed = {
+        (row["physical_index"], row["gpu_uuid"])
+        for row in rows
+        if row["kind"] == "device"
+    }
+    expected = {
+        (row["physical_index"], row["uuid"])
+        for row in contract["device_bindings"]
+    }
+    if not expected <= observed:
+        raise PacketExecutorError(
+            "selected physical-index to GPU-UUID inventory drifted",
+            code="packet_executor.gpu_uuid_drift",
+        )
+    return {
+        "phase": "before_marker",
+        "physical_index_uuid_pairs": [
+            {"physical_index": index, "uuid": uuid}
+            for index, uuid in sorted(expected)
+        ],
     }
 
 
@@ -1254,7 +1701,7 @@ def execute(
     packet_path = Path(packet_path)
     attempt_marker_path = Path(attempt_marker_path)
     terminal_receipt_path = Path(terminal_receipt_path)
-    manifest, contract, manifest_sha, packet_sha = _pre_marker_validate(
+    manifest, contract, manifest_sha, packet_sha, pre_cost_review = _pre_marker_validate(
         manifest_path=manifest_path,
         packet_path=packet_path,
         expected_manifest_sha256=expected_manifest_sha256,
@@ -1262,6 +1709,7 @@ def execute(
         attempt_marker_path=attempt_marker_path,
         terminal_receipt_path=terminal_receipt_path,
     )
+    mapping_preflight = _preflight_gpu_mapping(contract, gpu_sampler)
     marker_body = {
         "schema": MARKER_SCHEMA,
         "created_at": _utc_now(),
@@ -1280,20 +1728,19 @@ def execute(
     started_at = _utc_now()
     started_monotonic = time.monotonic()
     observations: list[dict[str, Any]] = []
-    preflights: list[dict[str, Any]] = []
+    preflights: list[dict[str, Any]] = [mapping_preflight]
     attempted_order: list[str] = []
     completed_order: list[str] = []
     setup_observation: dict[str, Any] | None = None
     inner_receipt: dict[str, Any] | None = None
     failure: dict[str, Any] | None = None
     current_command: str | None = None
-    artifact_paths = [
-        contract["artifact_root"],
-        contract["setup_paths"]["pack_cache_root"],
-        contract["setup_paths"]["pack_cache_receipt_path"],
-    ]
-    initial_artifact_bytes = _tree_bytes(artifact_paths)
+    initial_artifact_summary: dict[str, Any] | None = None
+    final_artifact_summary: dict[str, Any] | None = None
     try:
+        initial_artifact_summary = _summarize_artifact_tree(
+            contract["artifact_summary"]
+        )
         preflights.append(_preflight_resources(contract, gpu_sampler, phase="before_setup"))
         for name in COMMAND_ORDER:
             current_command = name
@@ -1303,21 +1750,15 @@ def execute(
                 argv=contract["commands"][name],
                 cwd=Path(manifest["cwd"]),
                 bound=contract["resource_bounds"][name],
-                artifact_paths=artifact_paths,
+                artifact_summary_bounds=contract["artifact_summary"],
                 launch=launch,
                 gpu_sampler=gpu_sampler,
                 process_sampler=process_sampler,
+                selected_uuids=set(contract["device_uuids"]),
             )
             observations.append(observation)
-            if observation["launch_error"] is not None:
-                error = observation["launch_error"]
-                raise PacketExecutorError(
-                    f"{name} launch raised: {error['message']}",
-                    code="packet_executor.launch_exception",
-                    context={"error_code": error["code"]},
-                )
-            if observation["resource_error"] is not None:
-                error = observation["resource_error"]
+            if observation["execution_error"] is not None:
+                error = observation["execution_error"]
                 raise PacketExecutorError(
                     error["message"],
                     code=error["code"],
@@ -1338,7 +1779,12 @@ def execute(
                 inner_receipt = _validate_inner(manifest, contract)
             completed_order.append(name)
             total_elapsed = time.monotonic() - started_monotonic
-            total_new_bytes = max(0, _tree_bytes(artifact_paths) - initial_artifact_bytes)
+            current_summary = _summarize_artifact_tree(contract["artifact_summary"])
+            total_new_bytes = max(
+                0,
+                current_summary["total_bytes"]
+                - initial_artifact_summary["total_bytes"],
+            )
             if total_elapsed > float(contract["total_bounds"]["wall_time_seconds"]):
                 raise PacketExecutorError(
                     "packet exceeded its total wall-time bound",
@@ -1352,6 +1798,12 @@ def execute(
     except BaseException as exc:
         failure = _error_record(exc, command=current_command)
 
+    try:
+        final_artifact_summary = _summarize_artifact_tree(contract["artifact_summary"])
+    except BaseException as exc:
+        if failure is None:
+            failure = _error_record(exc, command=current_command)
+
     cpu_max: dict[str, int] = {}
     gpu_max: dict[str, int] = {}
     for observation in observations:
@@ -1359,7 +1811,11 @@ def execute(
             cpu_max[rank] = max(cpu_max.get(rank, 0), int(value))
         for rank, value in observation["gpu_memory_bytes_per_rank"].items():
             gpu_max[rank] = max(gpu_max.get(rank, 0), int(value))
-    total_new_bytes = max(0, _tree_bytes(artifact_paths) - initial_artifact_bytes)
+    total_new_bytes = max(
+        0,
+        int((final_artifact_summary or {}).get("total_bytes", 0))
+        - int((initial_artifact_summary or {}).get("total_bytes", 0)),
+    )
     verified = (
         failure is None
         and attempted_order == list(COMMAND_ORDER)
@@ -1394,6 +1850,7 @@ def execute(
         "world_size": 2,
         "manifest": {"path": str(manifest_path), "sha256": manifest_sha},
         "packet": {"path": str(packet_path), "sha256": packet_sha},
+        "pre_cost_review": pre_cost_review,
         "attempt_marker": {
             "path": str(attempt_marker_path),
             "sha256": marker_sha,
@@ -1413,6 +1870,29 @@ def execute(
             for name in attempted_order
         ],
         "commands": observations,
+        "launcher_identity": {
+            "module": str(getattr(launch, "__module__", type(launch).__module__)),
+            "qualname": str(
+                getattr(launch, "__qualname__", type(launch).__qualname__)
+            ),
+        },
+        "runtime_identity": {
+            "python_executable": sys.executable,
+            "python_implementation": sys.implementation.name,
+            "python_version": list(sys.version_info[:3]),
+        },
+        "command_process_groups": [
+            {"name": row["name"], **(row["process_group"] or {})}
+            for row in observations
+        ],
+        "cleanup_outcomes": [
+            {"name": row["name"], "cleanup": row["cleanup"]}
+            for row in observations
+        ],
+        "artifact_tree": {
+            "initial": initial_artifact_summary,
+            "final": final_artifact_summary,
+        },
         "preflight_observations": preflights,
         "setup_validation": setup_observation,
         "resource_maxima": {
