@@ -12,8 +12,12 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
+import sys
 import time
 from typing import Any, Mapping, Sequence
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.research.build_human13_k_union_manifest import load_manifest
 from scripts.research.human13_live_eval import (
