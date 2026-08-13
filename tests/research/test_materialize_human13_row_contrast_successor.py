@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from src.artifacts.json_values import validate_json_value
+
 from scripts.research.materialize_human13_row_contrast_successor import (
     SuccessorMaterializationError,
     load_successor_config,
@@ -28,7 +30,8 @@ def test_r1_r2_configs_are_distinct_low_dose_exact_plans() -> None:
     }
     assert [plan["arm_id"] for plan in receipt["plans"]] == ["R1", "R2"]
     assert len({plan["output_root"] for plan in receipt["plans"]}) == 2
-    assert all(plan["milestones"] == (0, 1, 2) for plan in receipt["plans"])
+    assert all(plan["milestones"] == [0, 1, 2] for plan in receipt["plans"])
+    validate_json_value(receipt)
 
 
 def test_successor_model_projection_changes_no_live_surface_setting() -> None:

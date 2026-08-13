@@ -73,6 +73,7 @@ class SuccessorArmConfig:
     def to_artifact_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["loss_coefficients"] = dict(self.loss_coefficients)
+        value["milestones"] = list(self.milestones)
         value["schema_version"] = PLAN_SCHEMA_VERSION
         value["source_schema_version"] = self.schema_version
         value["actions"] = dict(ZERO_ACTIONS)
