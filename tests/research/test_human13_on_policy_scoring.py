@@ -112,7 +112,9 @@ class FakePackedForward:
         rows = []
         for position in returned:
             segment = next(
-                item for item in packed.pack.segments if item.start <= position < item.end
+                item
+                for item in packed.pack.segments
+                if item.start <= position < item.end
             )
             logical = next(
                 item
@@ -155,8 +157,10 @@ class FakeHFScorer:
         self, encoded_example: Any, causal_positions: tuple[int, ...]
     ) -> Any:
         self.calls.append((encoded_example, causal_positions))
-        returned = causal_positions[:-1] if self.omit_last else tuple(
-            reversed(causal_positions)
+        returned = (
+            causal_positions[:-1]
+            if self.omit_last
+            else tuple(reversed(causal_positions))
         )
         rows = []
         first = encoded_example.human13_candidate_positions[0]
@@ -175,18 +179,16 @@ class FakeHFScorer:
 def _kwargs() -> dict[str, Any]:
     return {
         "frontier_images": {7: _frontier()},
-        "prompt_skeletons": {
-            7: Skeleton("image:7", PROMPT_IDS, len(PROMPT_IDS))
-        },
+        "prompt_skeletons": {7: Skeleton("image:7", PROMPT_IDS, len(PROMPT_IDS))},
         "packed_model": object(),
-        "packed_runtime": SimpleNamespace(
-            accelerator=SimpleNamespace(device="cpu")
-        ),
+        "packed_runtime": SimpleNamespace(accelerator=SimpleNamespace(device="cpu")),
         "tokenizer": FakeTokenizer(),
     }
 
 
-def test_prepare_materializes_every_alias_after_the_deduplicated_current_prefix() -> None:
+def test_prepare_materializes_every_alias_after_the_deduplicated_current_prefix() -> (
+    None
+):
     prepared = prepare_on_policy_candidate_scoring(
         frontier_images={7: _frontier()},
         prompt_skeletons={7: Skeleton("image:7", PROMPT_IDS, len(PROMPT_IDS))},
@@ -194,7 +196,10 @@ def test_prepare_materializes_every_alias_after_the_deduplicated_current_prefix(
 
     assert len(prepared.bindings) == 4
     assert len(prepared.packed_plan.logical_segments) == 4
-    assert all(pack.pack.to_artifact_dict()["padding_tokens"] == 0 for pack in prepared.packed_plan.packs)
+    assert all(
+        pack.pack.to_artifact_dict()["padding_tokens"] == 0
+        for pack in prepared.packed_plan.packs
+    )
     by_alias = {binding.path.alias_id: binding for binding in prepared.bindings}
     for alias_id, row in {
         "a": (100, 101),
@@ -266,6 +271,51 @@ def test_packed_prefilter_hf_rescore_and_owner_shortlist_are_surface_aligned() -
         result.shortlist_by_image[7] = ()  # type: ignore[index]
 
 
+def test_shortlist_limit_is_global_not_multiplied_per_image() -> None:
+    images = {
+        image_id: replace(
+            _frontier(),
+            image_id=image_id,
+            candidate_aliases=tuple(
+                replace(
+                    alias,
+                    owner_id=f"gt:{image_id}:{index}",
+                    row_id=f"row:{image_id}:{index}",
+                )
+                for index, alias in enumerate(_frontier().candidate_aliases)
+            ),
+            uncovered_h_owner_ids=tuple(
+                f"gt:{image_id}:{index}"
+                for index, _alias in enumerate(_frontier().candidate_aliases)
+            ),
+        )
+        for image_id in (7, 8)
+    }
+    skeletons = {
+        image_id: Skeleton(f"image:{image_id}", PROMPT_IDS, len(PROMPT_IDS))
+        for image_id in images
+    }
+    deficits = {
+        alias.row_id: float(index + 1)
+        for image in images.values()
+        for index, alias in enumerate(image.candidate_aliases)
+    }
+    result = score_on_policy_frontier_candidates(
+        frontier_images=images,
+        prompt_skeletons=skeletons,
+        packed_model=object(),
+        packed_runtime=object(),
+        tokenizer=FakeTokenizer(),
+        hf_scorer=FakeHFScorer(deficits),
+        packed_forward=FakePackedForward(deficits),
+        aliases_per_owner=1,
+        shortlist_limit=2,
+    )
+
+    assert sum(len(values) for values in result.shortlist_by_image.values()) == 2
+    assert result.receipt["shortlisted_owner_count"] == 2
+
+
 @pytest.mark.parametrize(
     ("packed", "hf", "message"),
     (
@@ -287,9 +337,7 @@ def test_packed_prefilter_hf_rescore_and_owner_shortlist_are_surface_aligned() -
             "full vocabulary",
         ),
         (
-            FakePackedForward(
-                {"a": 4, "b": 1, "c": 2, "d": 3}, nonfinite=True
-            ),
+            FakePackedForward({"a": 4, "b": 1, "c": 2, "d": 3}, nonfinite=True),
             FakeHFScorer({"b": 1, "c": 1, "d": 1}),
             "finite",
         ),
@@ -323,7 +371,9 @@ def test_wrong_hf_surface_and_nonfrontier_alias_fail_before_forward() -> None:
         )
 
 
-def test_candidate_token_outside_full_tokenizer_vocabulary_fails_before_forward() -> None:
+def test_candidate_token_outside_full_tokenizer_vocabulary_fails_before_forward() -> (
+    None
+):
     frontier = _frontier()
     aliases = (
         replace(frontier.candidate_aliases[0], token_ids=(VOCAB_SIZE, 101)),

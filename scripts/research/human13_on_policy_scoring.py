@@ -138,20 +138,26 @@ def prepare_on_policy_candidate_scoring(
         uncovered = set(image.uncovered_h_owner_ids)
         for alias in sorted(
             image.candidate_aliases,
-            key=lambda item: (item.owner_id, item.row_id, item.trajectory_id, item.seed),
+            key=lambda item: (
+                item.owner_id,
+                item.row_id,
+                item.trajectory_id,
+                item.seed,
+            ),
         ):
             if alias.owner_id not in uncovered:
-                raise ValueError("candidate alias is outside the current uncovered H frontier")
-            if (
-                not alias.token_ids
-                or any(
-                    isinstance(token_id, bool)
-                    or not isinstance(token_id, int)
-                    or token_id < 0
-                    for token_id in alias.token_ids
+                raise ValueError(
+                    "candidate alias is outside the current uncovered H frontier"
                 )
+            if not alias.token_ids or any(
+                isinstance(token_id, bool)
+                or not isinstance(token_id, int)
+                or token_id < 0
+                for token_id in alias.token_ids
             ):
-                raise ValueError("candidate alias must contain nonnegative integer tokens")
+                raise ValueError(
+                    "candidate alias must contain nonnegative integer tokens"
+                )
             path = CandidatePath(
                 image_id=image_id,
                 owner_id=alias.owner_id,
@@ -179,7 +185,9 @@ def prepare_on_policy_candidate_scoring(
                     local_positions, path.token_ids, strict=True
                 )
             ):
-                raise ValueError("candidate causal positions differ from exact row targets")
+                raise ValueError(
+                    "candidate causal positions differ from exact row targets"
+                )
             encoded = _clone_skeleton(
                 prompt_skeletons[image_id],
                 segment_id=segment_id,
@@ -187,9 +195,7 @@ def prepare_on_policy_candidate_scoring(
                 input_ids=input_ids,
             )
             object.__setattr__(encoded, "human13_candidate_path", path)
-            object.__setattr__(
-                encoded, "human13_candidate_positions", local_positions
-            )
+            object.__setattr__(encoded, "human13_candidate_positions", local_positions)
             logical.append(
                 LogicalPanelSegment(
                     segment_id=segment_id,
@@ -234,12 +240,12 @@ def prepare_on_policy_candidate_scoring(
     )
 
 
-def _surface(rows: tuple[Any, ...], *, path: CandidatePath, name: str) -> SurfaceEvidence:
+def _surface(
+    rows: tuple[Any, ...], *, path: CandidatePath, name: str
+) -> SurfaceEvidence:
     return SurfaceEvidence(
         surface=name,
-        logits=tuple(
-            tuple(float(value) for value in row.tolist()) for row in rows
-        ),
+        logits=tuple(tuple(float(value) for value in row.tolist()) for row in rows),
         target_token_ids=path.token_ids,
     )
 
@@ -263,8 +269,7 @@ def _capture_packed_candidates(
             if binding is None:
                 raise ValueError("packed candidate segment has no causal binding")
             positions = tuple(
-                segment.start + position
-                for position in binding.local_causal_positions
+                segment.start + position for position in binding.local_causal_positions
             )
             if any(
                 position < segment.start or position >= segment.end - 1
@@ -273,7 +278,9 @@ def _capture_packed_candidates(
                 raise ValueError("packed candidate causal position escapes its segment")
             resolved.append((binding, positions))
         requested = tuple(
-            sorted({position for _binding, positions in resolved for position in positions})
+            sorted(
+                {position for _binding, positions in resolved for position in positions}
+            )
         )
         if not requested:
             raise ValueError("packed candidate micro-step has no causal positions")
@@ -344,7 +351,9 @@ def score_on_policy_frontier_candidates(
         for binding in prepared.bindings
         for token_id in binding.path.token_ids
     ):
-        raise ValueError("candidate target token is outside the full tokenizer vocabulary")
+        raise ValueError(
+            "candidate target token is outside the full tokenizer vocabulary"
+        )
     packed_receipts = _capture_packed_candidates(
         prepared=prepared,
         packed_model=packed_model,
@@ -364,9 +373,7 @@ def score_on_policy_frontier_candidates(
         image_scores = tuple(
             item.score for item in packed_receipts if item.path.image_id == image_id
         )
-        kept = packed_prefilter(
-            image_scores, aliases_per_owner=aliases_per_owner
-        )
+        kept = packed_prefilter(image_scores, aliases_per_owner=aliases_per_owner)
         survivors.extend(packed_by_key[_candidate_key(score.path)] for score in kept)
 
     cross_surface: list[CrossSurfaceCandidateReceipt] = []
@@ -406,38 +413,40 @@ def score_on_policy_frontier_candidates(
             )
         )
 
-    shortlist_by_image: dict[int, tuple[CandidateScore, ...]] = {}
-    for image_id in sorted(frontier_images):
-        scores = tuple(
-            item.score for item in cross_surface if item.path.image_id == image_id
-        )
-        shortlist_by_image[image_id] = (
-            shortlist_candidates(scores, limit=shortlist_limit) if scores else ()
-        )
-    shortlisted_owner_count = sum(
-        len(scores) for scores in shortlist_by_image.values()
+    all_scores = tuple(item.score for item in cross_surface)
+    globally_shortlisted = (
+        shortlist_candidates(all_scores, limit=shortlist_limit) if all_scores else ()
     )
+    shortlist_by_image: dict[int, tuple[CandidateScore, ...]] = {
+        image_id: tuple(
+            score for score in globally_shortlisted if score.path.image_id == image_id
+        )
+        for image_id in sorted(frontier_images)
+    }
+    shortlisted_owner_count = sum(len(scores) for scores in shortlist_by_image.values())
     return OnPolicyCandidateScoringResult(
         prepared=prepared,
         packed_receipts=packed_receipts,
         cross_surface_receipts=tuple(cross_surface),
         shortlist_by_image=MappingProxyType(shortlist_by_image),
-        receipt=MappingProxyType({
-            "schema_version": "human13_on_policy_candidate_scoring.v1",
-            "packed_surface": "packed_bf16_fa2",
-            "decision_surface": "hf_fp32_sdpa",
-            "image_count": len(frontier_images),
-            "logical_segment_count": len(prepared.bindings),
-            "physical_pack_count": len(prepared.packed_plan.packs),
-            "packed_forward_count": len(prepared.packed_plan.packs),
-            "packed_candidate_count": len(packed_receipts),
-            "hf_forward_count": len(cross_surface),
-            "hf_candidate_count": len(cross_surface),
-            "shortlisted_owner_count": shortlisted_owner_count,
-            "aliases_per_owner": aliases_per_owner,
-            "shortlist_limit": shortlist_limit,
-            "padding_tokens": 0,
-        }),
+        receipt=MappingProxyType(
+            {
+                "schema_version": "human13_on_policy_candidate_scoring.v1",
+                "packed_surface": "packed_bf16_fa2",
+                "decision_surface": "hf_fp32_sdpa",
+                "image_count": len(frontier_images),
+                "logical_segment_count": len(prepared.bindings),
+                "physical_pack_count": len(prepared.packed_plan.packs),
+                "packed_forward_count": len(prepared.packed_plan.packs),
+                "packed_candidate_count": len(packed_receipts),
+                "hf_forward_count": len(cross_surface),
+                "hf_candidate_count": len(cross_surface),
+                "shortlisted_owner_count": shortlisted_owner_count,
+                "aliases_per_owner": aliases_per_owner,
+                "shortlist_limit": shortlist_limit,
+                "padding_tokens": 0,
+            }
+        ),
     )
 
 
