@@ -73,11 +73,35 @@ def test_first_bottleneck_hinge_uses_deterministic_global_tie_competitor() -> No
         logits,
         torch.tensor((0,)),
         torch.tensor((True,)),
-        required_margin=0.0,
+        required_margin=0.25,
     )
 
     assert result.competitor_token_ids.tolist() == [1]
     assert result.minimum_target_margin == pytest.approx(-1.0)
+
+
+def test_first_bottleneck_hinge_requires_positive_margin_for_target_tie() -> None:
+    logits = torch.tensor(((2.0, 2.0, 0.0),), requires_grad=True)
+    result = first_bottleneck_argmax_hinge(
+        logits,
+        torch.tensor((0,)),
+        torch.tensor((True,)),
+        required_margin=0.25,
+    )
+    result.raw_loss.backward()
+
+    assert result.raw_loss.item() == pytest.approx(0.25)
+    assert result.violating_site_count == 1
+    assert logits.grad[0].tolist() == pytest.approx([-1.0, 1.0, 0.0])
+
+    with pytest.raises(LossContractError) as exc_info:
+        first_bottleneck_argmax_hinge(
+            logits.detach(),
+            torch.tensor((0,)),
+            torch.tensor((True,)),
+            required_margin=0.0,
+        )
+    assert exc_info.value.code == "loss.human13_first_bottleneck_margin"
 
 
 def test_duplicate_token_contrast_moves_mass_to_selected_uncovered_token() -> None:

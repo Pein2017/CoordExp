@@ -653,6 +653,11 @@ def first_bottleneck_argmax_hinge(
             code="loss.human13_first_bottleneck_count",
             context={"selected_site_count": selected_count},
         )
+    if selected_count and margin <= 0.0:
+        raise LossContractError(
+            "a selected strict-greedy blocker requires a positive margin",
+            code="loss.human13_first_bottleneck_margin",
+        )
     targets = target_token_ids.to(device=checked.device, dtype=torch.long)
     _check_target_ids(targets, vocab_size=vocab_size)
     non_target_logits = checked.scatter(
