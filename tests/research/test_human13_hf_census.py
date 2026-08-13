@@ -92,13 +92,33 @@ class PositionModel:
     def __call__(self, **kwargs: Any) -> SimpleNamespace:
         self.forward_calls.append(kwargs)
         input_ids = kwargs["input_ids"]
+        requested = kwargs["logits_to_keep"]
+        positions = (
+            requested.tolist()
+            if isinstance(requested, torch.Tensor)
+            else list(range(input_ids.shape[1]))
+        )
+        logits = torch.zeros(
+            (1, len(positions), self.vocab_size),
+            dtype=self.logits_dtype,
+            device=input_ids.device,
+        )
+        for output_index, position in enumerate(positions):
+            logits[0, output_index, 0] = position
+        return SimpleNamespace(logits=logits)
+
+
+class FullSequencePositionModel(PositionModel):
+    """Broken seam that ignores requested positions and materializes all logits."""
+
+    def __call__(self, **kwargs: Any) -> SimpleNamespace:
+        self.forward_calls.append(kwargs)
+        input_ids = kwargs["input_ids"]
         logits = torch.zeros(
             (1, input_ids.shape[1], self.vocab_size),
             dtype=self.logits_dtype,
             device=input_ids.device,
         )
-        for position in range(input_ids.shape[1]):
-            logits[0, position, 0] = position
         return SimpleNamespace(logits=logits)
 
 
@@ -221,9 +241,31 @@ def test_scorer_selects_exact_causal_rows_from_literal_continuation(
     assert output.logits_position_ids == (1, 3)
     assert output.logits[0, :, 0].tolist() == [1.0, 3.0]
     assert model.forward_calls[0]["input_ids"].tolist() == [[11, 12, 13, 14, 15]]
-    assert model.forward_calls[0]["logits_to_keep"] == 0
+    requested = model.forward_calls[0]["logits_to_keep"]
+    assert isinstance(requested, torch.Tensor)
+    assert requested.dtype == torch.long
+    assert requested.device == model._parameter.device
+    assert requested.tolist() == [1, 3]
     assert len(processor.calls) == 1
     assert tokenizer.decode_calls == []
+
+
+def test_scorer_rejects_model_that_materializes_full_sequence_logits(
+    tmp_path: Any,
+) -> None:
+    from scripts.research.human13_hf_census import Human13HFCensusScorer
+
+    model = FullSequencePositionModel()
+    scorer = Human13HFCensusScorer(
+        session=_session(model=model),
+        requests_by_image={1: _request(tmp_path)},
+    )
+
+    with pytest.raises(ValueError, match="position-selective"):
+        scorer.score_causal_logits(
+            Encoded("a1:1", (11, 12, 13, 14, 15), 2),
+            (1, 3),
+        )
 
 
 def test_scorer_reads_grid_from_canonical_encoded_image_encoding(tmp_path: Any) -> None:

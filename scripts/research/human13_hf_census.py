@@ -228,7 +228,9 @@ class Human13HFCensusScorer:
                 "position_ids": position_ids,
                 "use_cache": False,
                 "return_dict": True,
-                "logits_to_keep": 0,
+                "logits_to_keep": torch.tensor(
+                    causal_positions, dtype=torch.long, device=device
+                ),
             }
         )
         with torch.inference_mode():
@@ -237,9 +239,11 @@ class Human13HFCensusScorer:
         if (
             not isinstance(logits, torch.Tensor)
             or logits.ndim != 3
-            or tuple(logits.shape[:2]) != (1, len(input_ids))
+            or tuple(logits.shape[:2]) != (1, len(causal_positions))
         ):
-            raise ValueError("HF census model returned invalid causal logits")
+            raise ValueError(
+                "HF census model did not return position-selective causal logits"
+            )
         try:
             expected_vocab_size = len(self._tokenizer)
         except (AttributeError, TypeError) as exc:
@@ -248,9 +252,8 @@ class Human13HFCensusScorer:
             raise ValueError("HF census model did not return the full vocabulary")
         if logits.dtype != torch.float32:
             raise ValueError("HF census model logits must be fp32")
-        selected = logits[:, causal_positions, :].detach().cpu().contiguous()
         return HFCausalLogits(
-            logits=selected,
+            logits=logits.detach().cpu().contiguous(),
             logits_position_ids=causal_positions,
         )
 
