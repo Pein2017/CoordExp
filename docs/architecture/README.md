@@ -74,6 +74,6 @@ explicitly asks for provenance or reconstruction.
 
 When deciding whether an accepted architecture statement represents a real
 module owner, interface, or seam, use the live source and tests with the
-`improve-codebase-architecture` vocabulary: name the owner, caller knowledge,
-invariant, and verification surface. Do not add an abstraction merely because
-a proposal names one.
+`codebase-design` vocabulary: name the owner, caller knowledge, invariant, and
+verification surface. Do not add an abstraction merely because a proposal names
+one.

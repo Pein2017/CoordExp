@@ -32,14 +32,12 @@ owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
 
 ## External transfer helpers
 
-Baidu Netdisk upload/download helpers live in the repo-local Codex skill:
-
-- `.codex/skills/baidupcsgo-upload/scripts/upload_dir.sh`
-- `.codex/skills/baidupcsgo-upload/scripts/download_dir.sh`
-
-Use them for `output/` backups under `/CoordExp/output/`. Do not use Baidu
-Netdisk as the default sync surface for `model_cache/`, raw `public_data/`, or
-processed `public_data/` contents.
+No current transfer helper is owned by this directory or a first-party skill.
+For an explicitly authorized outputs transfer, follow
+`docs/standards/OUTPUT_SYNC_AND_DATA_PROVENANCE.md`, inspect the installed
+BaiduPCS-Go client, and bind exact local and remote roots before acting. Do not
+use Baidu Netdisk as the default sync surface for `model_cache/`, raw
+`public_data/`, or processed `public_data/` contents.
 
 ## Utilities (organized)
 

@@ -12,6 +12,8 @@
 !ops/
 !repo_lifecycle/
 !scripts/
+!codex-wake-me-up/
+!codex-usage-ledger/
 !manifests/
 !openspec/
 !reference/
@@ -30,6 +32,8 @@
 !ops/**
 !repo_lifecycle/**
 !scripts/**
+!codex-wake-me-up/**
+!codex-usage-ledger/**
 !manifests/**
 !openspec/**
 !reference/**
@@ -60,6 +64,9 @@
 /model_cache/
 /model_cache_remote/
 /external/
+/codex-usage-ledger/.ruff_cache/
+/codex-usage-ledger/**/__pycache__/
+/codex-usage-ledger/**/.pytest_cache/
 /baidupcsgo/
 /agent_discussion/
 /coco_bbox_*merged/

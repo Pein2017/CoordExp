@@ -5,7 +5,7 @@ doc_type: standard
 status: canonical
 domain: artifacts
 summary: Standard ownership split for output backup, public data provenance, and model cache recovery.
-updated: 2026-05-11
+updated: 2026-08-09
 ---
 
 # Output Sync And Data Provenance
@@ -97,9 +97,11 @@ export HTTP_PROXY=http://127.0.0.1:9090
 export HTTPS_PROXY=http://127.0.0.1:9090
 ```
 
-Use the repo skill `.codex/skills/baidu-netdisk-transfer` with
-`mode=union-sync` for append-only cross-machine sync on `/CoordExp/outputs`, and
-`mode=one-off` for one-off upload/download recovery.
+The former `.codex/skills/baidu-netdisk-transfer` wrapper is retired. For a
+user-authorized transfer, inspect the installed BaiduPCS-Go client, list the
+exact local and remote roots first, and apply this standard's conflict-first
+policy directly. Do not infer overwrite, deletion, or broad-tree scope from an
+old skill or historical plan.
 
 ## Duplicate Policy
 

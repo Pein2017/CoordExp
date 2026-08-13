@@ -216,6 +216,7 @@ projects:
 - /data/CoordExp
 - /data/CoordExp/.worktrees/CoordExp-swift
 - /data/CoordExp/.worktrees/research-probes
+- /data/CoordExp/.worktrees/research-probe-infras
 - /data/CoordExp/cc-plugin-codex
 - /data/CoordExp/cc-plugin-codex-dev
 - /data/CoordExp/codex-usage-ledger

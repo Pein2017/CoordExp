@@ -53,6 +53,13 @@
   concrete OOM or operational conflict.
 - Dirty changes are expected; inspect their ownership before treating them as
   task work.
+- For non-interactive long-running asynchronous work, use `yield_time_ms >=
+  180000` for empty `write_stdin` polls and `functions.wait`; prefer `300000`
+  when intermediate output is unnecessary.
+- Do not use a short poll merely to report that work is still running. In
+  `functions.exec`, set outer `@exec yield_time_ms` at least 30000 ms longer
+  than its longest nested wait. Completion returns early; exempt non-empty
+  interactive `write_stdin` calls and `wait_agent` from this rule.
 
 ## Records
 
