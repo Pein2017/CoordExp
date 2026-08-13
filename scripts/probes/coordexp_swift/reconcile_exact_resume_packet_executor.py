@@ -25,6 +25,9 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
+from src.config.loader import load_train_config
+from src.config.resolve import resolve_effective_batch_runtime
+
 
 MANIFEST_SCHEMA = "coordexp-swift-reconcile-resume-probe-command-manifest-v2"
 MARKER_SCHEMA = "coordexp-swift-reconcile-resume-probe-attempt-marker-v1"
@@ -42,6 +45,16 @@ COMMAND_ORDER = (
     "verification",
 )
 MODEL_COMMANDS = frozenset({"success.uninterrupted_control", "success.resumed_child"})
+ACCUMULATION_ROLES = (
+    "uninterrupted_control",
+    "resumed_parent",
+    "resumed_child",
+)
+BASE_CONFIG_PATH = Path(
+    "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/"
+    "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml"
+)
+BASE_CONFIG_SHA256 = "44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f"
 REQUIRED_RESOURCE_OBSERVATIONS = (
     "wall_time",
     "cpu_rss_per_rank",
@@ -255,6 +268,18 @@ def _string(value: Any, field: str) -> str:
     return value
 
 
+def _sha256_string(value: Any, field: str) -> str:
+    digest = _string(value, field)
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        raise PacketExecutorError(
+            f"{field} must be a lowercase SHA-256 string",
+            code="packet_executor.contract",
+        )
+    return digest
+
+
 def _integer(value: Any, field: str, *, minimum: int = 0) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise PacketExecutorError(
@@ -396,6 +421,28 @@ def _command_argv(manifest: Mapping[str, Any], name: str) -> list[str]:
     return list(value)
 
 
+def _expected_role_launch_argv(role: str, config_path: Path) -> list[str]:
+    held_parent = role == "resumed_parent"
+    argv = [
+        sys.executable,
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        "--nproc_per_node",
+        "2",
+        "-m",
+        (
+            "scripts.probes.coordexp_swift.reconcile_exact_resume_probe"
+            if held_parent
+            else "src.train"
+        ),
+    ]
+    if held_parent:
+        argv.append("held-parent")
+    argv.extend(["--config", str(config_path)])
+    return argv
+
+
 def _flatten_config_files(manifest: Mapping[str, Any]) -> dict[str, dict[str, str]]:
     config_files = _mapping(manifest.get("config_files"), "config_files")
     success = _mapping(config_files.get("success"), "config_files.success")
@@ -449,7 +496,7 @@ def _validate_contract(
             "only the schema-v2 command manifest is accepted",
             code="packet_executor.schema",
         )
-    if manifest.get("world_size") != 2 or manifest.get("arms") != [
+    if _integer(manifest.get("world_size"), "world_size", minimum=1) != 2 or manifest.get("arms") != [
         "success",
         "rank_failure",
         "interruption",
@@ -479,6 +526,164 @@ def _validate_contract(
             "execution_contract.gpu_measurement_source drifted",
             code="packet_executor.contract",
         )
+
+    configs = _flatten_config_files(manifest)
+    accumulation = _mapping(
+        contract.get("accumulation"), "execution_contract.accumulation"
+    )
+    if set(accumulation) != {
+        "base_config",
+        "world_size",
+        "expected_consumed_packs_by_step",
+        "roles",
+    }:
+        raise PacketExecutorError(
+            "execution_contract.accumulation fields drifted",
+            code="packet_executor.contract",
+        )
+    base_config = _mapping(
+        accumulation.get("base_config"), "execution_contract.accumulation.base_config"
+    )
+    if set(base_config) != {"path", "sha256"}:
+        raise PacketExecutorError(
+            "execution_contract.accumulation.base_config fields drifted",
+            code="packet_executor.contract",
+        )
+    base_config_path = _absolute_path(
+        base_config.get("path"), "execution_contract.accumulation.base_config.path"
+    )
+    base_config_sha256 = _sha256_string(
+        base_config.get("sha256"),
+        "execution_contract.accumulation.base_config.sha256",
+    )
+    if base_config_path != BASE_CONFIG_PATH or base_config_sha256 != BASE_CONFIG_SHA256:
+        raise PacketExecutorError(
+            "base config identity is not the fixed Attempt-6 input",
+            code="packet_executor.base_config_binding",
+        )
+    if (
+        not base_config_path.is_file()
+        or base_config_path.is_symlink()
+        or _sha256_file(base_config_path) != base_config_sha256
+    ):
+        raise PacketExecutorError(
+            "base config bytes drifted",
+            code="packet_executor.base_config_drift",
+        )
+    accumulation_world_size = _integer(
+        accumulation.get("world_size"),
+        "execution_contract.accumulation.world_size",
+        minimum=1,
+    )
+    if accumulation_world_size != 2:
+        raise PacketExecutorError(
+            "accumulation world size is not the fixed two-rank launch",
+            code="packet_executor.contract",
+        )
+    setup_argv = _command_argv(manifest, "setup")
+    world_size_indices = [
+        index for index, value in enumerate(setup_argv) if value == "--world-size"
+    ]
+    if (
+        len(world_size_indices) != 1
+        or world_size_indices[0] + 1 >= len(setup_argv)
+        or setup_argv[world_size_indices[0] + 1] != str(accumulation_world_size)
+    ):
+        raise PacketExecutorError(
+            "setup argv world-size binding drifted",
+            code="packet_executor.launch_world_size",
+        )
+    consumed_value = accumulation.get("expected_consumed_packs_by_step")
+    consumed_mapping = _mapping(
+        consumed_value,
+        "execution_contract.accumulation.expected_consumed_packs_by_step",
+    )
+    if set(consumed_mapping) != {"1", "2"}:
+        raise PacketExecutorError(
+            "expected consumed-progress step inventory drifted",
+            code="packet_executor.contract",
+        )
+    expected_consumed_packs_by_step = {
+        step: _integer(
+            consumed_mapping[str(step)],
+            f"execution_contract.accumulation.expected_consumed_packs_by_step.{step}",
+            minimum=1,
+        )
+        for step in (1, 2)
+    }
+    if expected_consumed_packs_by_step != {1: 1, 2: 2}:
+        raise PacketExecutorError(
+            "expected consumed progress is not the fixed one-pack-per-step shape",
+            code="packet_executor.contract",
+        )
+    roles = _mapping(accumulation.get("roles"), "execution_contract.accumulation.roles")
+    if set(roles) != set(ACCUMULATION_ROLES):
+        raise PacketExecutorError(
+            "accumulation role inventory drifted",
+            code="packet_executor.contract",
+        )
+    accumulation_roles: dict[str, dict[str, Any]] = {}
+    for role in ACCUMULATION_ROLES:
+        row = _mapping(roles[role], f"execution_contract.accumulation.roles.{role}")
+        if set(row) != {
+            "config_path",
+            "config_sha256",
+            "resolved_config_fingerprint",
+            "effective_batch_size",
+            "resolved_grad_accum_steps",
+            "launch_argv",
+        }:
+            raise PacketExecutorError(
+                f"accumulation role fields drifted: {role}",
+                code="packet_executor.contract",
+            )
+        config_path = _absolute_path(
+            row.get("config_path"),
+            f"execution_contract.accumulation.roles.{role}.config_path",
+        )
+        config_sha256 = _sha256_string(
+            row.get("config_sha256"),
+            f"execution_contract.accumulation.roles.{role}.config_sha256",
+        )
+        resolved_fingerprint = _sha256_string(
+            row.get("resolved_config_fingerprint"),
+            f"execution_contract.accumulation.roles.{role}.resolved_config_fingerprint",
+        )
+        effective_batch_size = _integer(
+            row.get("effective_batch_size"),
+            f"execution_contract.accumulation.roles.{role}.effective_batch_size",
+            minimum=1,
+        )
+        grad_accum_steps = _integer(
+            row.get("resolved_grad_accum_steps"),
+            f"execution_contract.accumulation.roles.{role}.resolved_grad_accum_steps",
+            minimum=1,
+        )
+        launch_argv = row.get("launch_argv")
+        expected_launch_argv = _expected_role_launch_argv(role, config_path)
+        if (
+            config_path != Path(configs[role]["path"])
+            or config_sha256 != configs[role]["expected_sha256"]
+            or effective_batch_size != 2
+            or grad_accum_steps != 1
+        ):
+            raise PacketExecutorError(
+                f"accumulation role binding drifted: {role}",
+                code="packet_executor.contract",
+            )
+        if launch_argv != expected_launch_argv:
+            raise PacketExecutorError(
+                f"role launch argv drifted: {role}",
+                code="packet_executor.launch_world_size",
+            )
+        accumulation_roles[role] = {
+            "config_path": config_path,
+            "config_sha256": config_sha256,
+            "resolved_config_fingerprint": resolved_fingerprint,
+            "effective_batch_size": effective_batch_size,
+            "resolved_grad_accum_steps": grad_accum_steps,
+            "launch_argv": expected_launch_argv,
+        }
 
     bindings = _mapping(contract.get("bindings"), "execution_contract.bindings")
     if (
@@ -744,13 +949,19 @@ def _validate_contract(
     }
 
     commands = {name: _command_argv(manifest, name) for name in COMMAND_ORDER}
-    configs = _flatten_config_files(manifest)
     return {
         **contract,
         "artifact_root": artifact_root,
         "absent_paths": absent_paths,
         "commands": commands,
         "configs": configs,
+        "base_config": {
+            "path": base_config_path,
+            "sha256": base_config_sha256,
+        },
+        "accumulation_world_size": accumulation_world_size,
+        "accumulation_roles": accumulation_roles,
+        "expected_consumed_packs_by_step": expected_consumed_packs_by_step,
         "filesystem_path": filesystem_path,
         "device_bindings": device_bindings,
         "device_uuids": device_uuids,
@@ -1937,6 +2148,20 @@ def _validate_setup(
                 f"prepare receipt {field} mismatched",
                 code="packet_executor.setup_prepare_mismatch",
             )
+    base_config = contract["base_config"]
+    base_path: Path = base_config["path"]
+    prepare_base = _mapping(prepare.get("base_config"), "prepare.base_config")
+    if (
+        prepare_base.get("path") != str(base_path)
+        or prepare_base.get("file_sha256") != base_config["sha256"]
+        or not base_path.is_file()
+        or base_path.is_symlink()
+        or _sha256_file(base_path) != base_config["sha256"]
+    ):
+        raise PacketExecutorError(
+            "base config identity drifted during setup",
+            code="packet_executor.setup_accumulation",
+        )
     prepare_configs = _mapping(prepare.get("configs"), "prepare.configs")
     config_observations: dict[str, Any] = {}
     for role, expected in contract["configs"].items():
@@ -1958,10 +2183,40 @@ def _validate_setup(
                 f"generated config binding mismatched: {role}",
                 code="packet_executor.setup_config_mismatch",
             )
+        accumulation = contract["accumulation_roles"][role]
+        try:
+            resolved = load_train_config(path)
+            runtime = resolve_effective_batch_runtime(
+                resolved.config,
+                world_size=contract["accumulation_world_size"],
+            )
+        except BaseException as exc:
+            raise PacketExecutorError(
+                f"generated config accumulation resolution failed: {role}",
+                code="packet_executor.setup_accumulation",
+            ) from exc
+        if (
+            prepare_row.get("resolved_config_fingerprint")
+            != accumulation["resolved_config_fingerprint"]
+            or resolved.fingerprint != accumulation["resolved_config_fingerprint"]
+            or resolved.config.training.effective_batch_size
+            != accumulation["effective_batch_size"]
+            or runtime.world_size != contract["accumulation_world_size"]
+            or runtime.effective_batch_size != accumulation["effective_batch_size"]
+            or runtime.resolved_grad_accum_steps
+            != accumulation["resolved_grad_accum_steps"]
+        ):
+            raise PacketExecutorError(
+                f"generated config accumulation binding mismatched: {role}",
+                code="packet_executor.setup_accumulation",
+            )
         config_observations[role] = {
             "path": str(path),
             "sha256": observed_sha,
-            "resolved_config_fingerprint": prepare_row["resolved_config_fingerprint"],
+            "resolved_config_fingerprint": resolved.fingerprint,
+            "effective_batch_size": runtime.effective_batch_size,
+            "world_size": runtime.world_size,
+            "resolved_grad_accum_steps": runtime.resolved_grad_accum_steps,
         }
     cache_root: Path = paths["pack_cache_root"]
     cache_receipt_path: Path = paths["pack_cache_receipt_path"]
@@ -2002,6 +2257,10 @@ def _validate_setup(
     return {
         "prepare_receipt_path": str(prepare_path),
         "prepare_receipt_sha256": _sha256_file(prepare_path),
+        "base_config": {
+            "path": str(base_path),
+            "sha256": base_config["sha256"],
+        },
         "configs": config_observations,
         "pack_cache_root": str(cache_root),
         "pack_cache_receipt_path": str(cache_receipt_path),
@@ -2170,7 +2429,6 @@ def _validate_gpu_run_state(
     run_dir: Path,
     expected_status: str,
     expected_completed_steps: int,
-    expected_consumed_packs: int,
     expected_checkpoint_steps: Sequence[int],
     contract: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -2187,7 +2445,10 @@ def _validate_gpu_run_state(
     for field, expected in (
         ("completed_steps", expected_completed_steps),
         ("resolved_max_steps", 2),
-        ("consumed_packs", expected_consumed_packs),
+        (
+            "consumed_packs",
+            contract["expected_consumed_packs_by_step"][expected_completed_steps],
+        ),
         ("checkpoint_event_count", len(expected_checkpoint_steps)),
     ):
         _gpu_artifact_integer(
@@ -2241,13 +2502,18 @@ def _validate_gpu_run_state(
             event.get("committed_progress"),
             f"{role}.checkpoint_event[{index}].committed_progress",
         )
-        for field in ("completed_steps", "consumed_packs"):
-            _gpu_artifact_integer(
-                progress.get(field),
-                field=f"{role}.checkpoint_event[{index}].{field}",
-                code="packet_executor.gpu_artifact_run_state",
-                expected=expected_step,
-            )
+        _gpu_artifact_integer(
+            progress.get("completed_steps"),
+            field=f"{role}.checkpoint_event[{index}].completed_steps",
+            code="packet_executor.gpu_artifact_run_state",
+            expected=expected_step,
+        )
+        _gpu_artifact_integer(
+            progress.get("consumed_packs"),
+            field=f"{role}.checkpoint_event[{index}].consumed_packs",
+            code="packet_executor.gpu_artifact_run_state",
+            expected=contract["expected_consumed_packs_by_step"][expected_step],
+        )
     return state, _validate_run_gpu_topology(state, role=role, contract=contract)
 
 
@@ -2297,6 +2563,13 @@ def _validate_success_receipt(
                 "control success receipt binding mismatched",
                 code="packet_executor.gpu_artifact_receipt_binding",
             )
+        if receipt.get("argv") != contract["accumulation_roles"][
+            "uninterrupted_control"
+        ]["launch_argv"]:
+            raise PacketExecutorError(
+                "control success receipt launch argv mismatched",
+                code="packet_executor.gpu_artifact_receipt_binding",
+            )
         for field, expected_integer in (
             ("returncode", 0),
             ("boundary_step", 1),
@@ -2314,7 +2587,6 @@ def _validate_success_receipt(
                 "run_dir": run_dir,
                 "status": "completed",
                 "completed_steps": 2,
-                "consumed_packs": 2,
                 "checkpoint_steps": [1, 2],
                 "train_steps": [1, 2],
             }
@@ -2370,10 +2642,20 @@ def _validate_success_receipt(
                 "resumed success receipt binding mismatched",
                 code="packet_executor.gpu_artifact_receipt_binding",
             )
+        if setup.get("argv") != contract["accumulation_roles"]["resumed_parent"][
+            "launch_argv"
+        ] or update.get("argv") != contract["accumulation_roles"]["resumed_child"][
+            "launch_argv"
+        ]:
+            raise PacketExecutorError(
+                "resumed success receipt launch argv mismatched",
+                code="packet_executor.gpu_artifact_receipt_binding",
+            )
+        expected_step_one_consumed = contract["expected_consumed_packs_by_step"][1]
         for field, expected_integer in (
             ("boundary_step", 1),
             ("completed_steps", 1),
-            ("consumed_packs", 1),
+            ("consumed_packs", expected_step_one_consumed),
             ("checkpoint_event_count", 1),
         ):
             _gpu_artifact_integer(
@@ -2394,6 +2676,12 @@ def _validate_success_receipt(
             code="packet_executor.gpu_artifact_receipt_binding",
             expected=1,
         )
+        _gpu_artifact_integer(
+            committed_progress.get("consumed_packs"),
+            field="resumed_receipt.setup.authenticated_step_one.consumed_packs",
+            code="packet_executor.gpu_artifact_receipt_binding",
+            expected=expected_step_one_consumed,
+        )
         for field, expected_integer in (("returncode", 0), ("update_step", 2)):
             _gpu_artifact_integer(
                 update.get(field),
@@ -2411,7 +2699,6 @@ def _validate_success_receipt(
                     # creation-time status.
                     "status": "initialized",
                     "completed_steps": 1,
-                    "consumed_packs": 1,
                     "checkpoint_steps": [1],
                     "train_steps": [1],
                 },
@@ -2420,7 +2707,6 @@ def _validate_success_receipt(
                     "run_dir": child_dir,
                     "status": "completed",
                     "completed_steps": 2,
-                    "consumed_packs": 2,
                     "checkpoint_steps": [2],
                     "train_steps": [2],
                 },
@@ -2486,7 +2772,6 @@ def _validate_success_gpu_artifacts(
             run_dir=run_dir,
             expected_status=str(spec["status"]),
             expected_completed_steps=int(spec["completed_steps"]),
-            expected_consumed_packs=int(spec["consumed_packs"]),
             expected_checkpoint_steps=list(spec["checkpoint_steps"]),
             contract=contract,
         )

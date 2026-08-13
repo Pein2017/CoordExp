@@ -14,6 +14,9 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+import yaml
+
+from src.config.loader import load_train_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +35,74 @@ ORDER = [
 OUTER_SCHEMA = "coordexp-swift-reconcile-resume-probe-outer-terminal-receipt-v1"
 INNER_SCHEMA = "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1"
 REVIEW_SCHEMA = "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1"
+BASE_CONFIG = (
+    REPO_ROOT
+    / "configs/coordexp_swift/smoke/"
+    "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml"
+)
+BASE_CONFIG_SHA256 = "44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f"
+
+
+def _role_config_bytes(
+    *,
+    role: str,
+    artifact_root: Path,
+    effective_batch_size: int = 2,
+) -> bytes:
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "extends": str(BASE_CONFIG),
+        "run": {
+            "name": role,
+            "artifact_root": str(artifact_root / "runs"),
+            "collision_policy": "fail",
+        },
+        "runtime": {"determinism": {"mode": "strict_cuda_replay_v1"}},
+        "eval": {"forward": {"steps": []}},
+        "training": {
+            "max_steps": 2,
+            "effective_batch_size": effective_batch_size,
+        },
+        "checkpoint": {"steps": [1, 2], "save_final": True},
+        "resume": {"mode": "exact_same_world_size", "checkpoint_dir": None},
+    }
+    if role == "resumed_child":
+        payload["resume"]["checkpoint_dir"] = str(
+            artifact_root / "runs" / "resumed_parent" / "checkpoints" / "step-1"
+        )
+    return yaml.safe_dump(
+        payload,
+        sort_keys=False,
+        allow_unicode=False,
+    ).encode("utf-8")
+
+
+def _resolved_fingerprint(repo: Path, *, role: str, content: bytes) -> str:
+    path = repo / "fixture-configs" / f"{role}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return load_train_config(path).fingerprint
+
+
+def _torchrun_argv(config_path: Path, *, held_parent: bool = False) -> list[str]:
+    argv = [
+        sys.executable,
+        "-m",
+        "torch.distributed.run",
+        "--standalone",
+        "--nproc_per_node",
+        "2",
+        "-m",
+        (
+            "scripts.probes.coordexp_swift.reconcile_exact_resume_probe"
+            if held_parent
+            else "src.train"
+        ),
+    ]
+    if held_parent:
+        argv.append("held-parent")
+    argv.extend(["--config", str(config_path)])
+    return argv
 
 
 class _FinishedProcess:
@@ -330,8 +401,16 @@ def _fixture(
         role: artifact_root / "configs" / f"{role}.yaml"
         for role in ("uninterrupted_control", "resumed_parent", "resumed_child")
     }
-    config_bytes = {role: f"role: {role}\n".encode() for role in config_paths}
+    config_bytes = {
+        role: _role_config_bytes(role=role, artifact_root=artifact_root)
+        for role in config_paths
+    }
+    resolved_fingerprints = {
+        role: _resolved_fingerprint(repo, role=role, content=config_bytes[role])
+        for role in config_paths
+    }
     commands = {name: ["packet-fake", name] for name in ORDER}
+    commands["setup"].extend(["--world-size", "2"])
     resource_bounds = {}
     for name in ORDER:
         per_rank = name.startswith("success.")
@@ -394,6 +473,28 @@ def _fixture(
             "schema": REVIEW_SCHEMA,
             "required_status": "READY",
             "packet_author_identity": "packet-author",
+        },
+        "accumulation": {
+            "base_config": {
+                "path": str(BASE_CONFIG),
+                "sha256": BASE_CONFIG_SHA256,
+            },
+            "world_size": 2,
+            "expected_consumed_packs_by_step": {"1": 1, "2": 2},
+            "roles": {
+                role: {
+                    "config_path": str(config_paths[role]),
+                    "config_sha256": _sha256(config_bytes[role]),
+                    "resolved_config_fingerprint": resolved_fingerprints[role],
+                    "effective_batch_size": 2,
+                    "resolved_grad_accum_steps": 1,
+                    "launch_argv": _torchrun_argv(
+                        config_paths[role],
+                        held_parent=role == "resumed_parent",
+                    ),
+                }
+                for role in config_paths
+            },
         },
         "targets": {
             "artifact_root": str(artifact_root),
@@ -511,12 +612,15 @@ def _fixture(
             "commit": commit,
             "world_size": 2,
             "artifact_root": str(artifact_root),
-            "base_config": {"path": str(repo / "base.yaml"), "file_sha256": "0" * 64},
+            "base_config": {
+                "path": str(BASE_CONFIG),
+                "file_sha256": BASE_CONFIG_SHA256,
+            },
             "configs": {
                 role: {
                     "path": str(config_paths[role]),
                     "file_sha256": _sha256(config_bytes[role]),
-                    "resolved_config_fingerprint": f"fingerprint-{role}",
+                    "resolved_config_fingerprint": resolved_fingerprints[role],
                 }
                 for role in config_paths
             },
@@ -585,7 +689,7 @@ def _fixture(
                 ],
             )
             body = {
-                "argv": commands[name],
+                "argv": _torchrun_argv(config_paths["uninterrupted_control"]),
                 "boundary_step": 1,
                 "commit": commit,
                 "config_sha256": _sha256(
@@ -649,7 +753,9 @@ def _fixture(
             "role": "resumed_child",
             "schema": "coordexp-swift-reconcile-resume-probe-run-receipt-v1",
             "setup": {
-                "argv": ["held-parent", str(config_paths["resumed_parent"])],
+                "argv": _torchrun_argv(
+                    config_paths["resumed_parent"], held_parent=True
+                ),
                 "authenticated_step_one": {
                     "checkpoint_dir": str(parent_dir / "checkpoints" / "step-1"),
                     "checkpoint_identity": {
@@ -699,7 +805,7 @@ def _fixture(
                 "wall_time_seconds": 1.0,
             },
             "update": {
-                "argv": commands[name],
+                "argv": _torchrun_argv(config_paths["resumed_child"]),
                 "config_sha256": _sha256(config_bytes["resumed_child"]),
                 "returncode": 0,
                 "run_dir": str(child_dir),
@@ -750,6 +856,9 @@ def _fixture(
         "write_setup": write_setup,
         "write_inner": write_inner,
         "write_success": write_success,
+        "config_paths": config_paths,
+        "config_bytes": config_bytes,
+        "resolved_fingerprints": resolved_fingerprints,
     }
 
 
@@ -2586,3 +2695,271 @@ def test_cli_execute_parses_exact_public_flags(
     assert captured["packet_path"] == tmp_path / "packet.md"
     assert captured["attempt_marker_path"] == tmp_path / "marker.json"
     assert captured["terminal_receipt_path"] == tmp_path / "receipt.json"
+
+
+def test_accumulation_contract_accepts_exact_role_bindings(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    receipt = _execute(executor, case)
+
+    assert receipt["status"] == "verified"
+    assert receipt["setup_validation"]["base_config"] == {
+        "path": str(BASE_CONFIG),
+        "sha256": BASE_CONFIG_SHA256,
+    }
+    for role in ("uninterrupted_control", "resumed_parent", "resumed_child"):
+        observed = receipt["setup_validation"]["configs"][role]
+        assert observed["effective_batch_size"] == 2
+        assert observed["resolved_grad_accum_steps"] == 1
+        assert observed["resolved_config_fingerprint"] == case[
+            "resolved_fingerprints"
+        ][role]
+
+
+@pytest.mark.parametrize(
+    "drift",
+    ["missing", "bool_world_size", "relative_base_path", "derived_accumulation"],
+)
+def test_accumulation_contract_shape_rejects_before_marker(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    drift: str,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    accumulation = case["manifest"]["execution_contract"]["accumulation"]
+    if drift == "missing":
+        case["manifest"]["execution_contract"].pop("accumulation")
+    elif drift == "bool_world_size":
+        accumulation["world_size"] = True
+    elif drift == "relative_base_path":
+        accumulation["base_config"]["path"] = "configs/base.yaml"
+    else:
+        accumulation["roles"]["resumed_child"]["resolved_grad_accum_steps"] = 2
+    _refresh_manifest_and_review(case)
+    launched: list[list[str]] = []
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        launched.append(argv)
+        return case["launch"](argv, **kwargs)
+
+    with pytest.raises(executor.PacketExecutorError):
+        _execute(executor, case, launch=launch)
+
+    assert launched == []
+    assert not case["marker"].exists()
+
+
+def test_base_config_hash_drift_rejects_before_marker(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    case["manifest"]["execution_contract"]["accumulation"]["base_config"][
+        "sha256"
+    ] = "f" * 64
+    _refresh_manifest_and_review(case)
+    launched: list[list[str]] = []
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        launched.append(argv)
+        return case["launch"](argv, **kwargs)
+
+    with pytest.raises(executor.PacketExecutorError):
+        _execute(executor, case, launch=launch)
+
+    assert launched == []
+    assert not case["marker"].exists()
+
+
+def test_launch_world_size_drift_rejects_before_marker(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    case["manifest"]["setup_command"][-1] = "3"
+    _refresh_manifest_and_review(case)
+    launched: list[list[str]] = []
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        launched.append(argv)
+        return case["launch"](argv, **kwargs)
+
+    with pytest.raises(executor.PacketExecutorError):
+        _execute(executor, case, launch=launch)
+
+    assert launched == []
+    assert not case["marker"].exists()
+
+
+def test_role_launch_argv_world_size_drift_rejects_before_marker(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    argv = case["manifest"]["execution_contract"]["accumulation"]["roles"][
+        "resumed_parent"
+    ]["launch_argv"]
+    argv[argv.index("--nproc_per_node") + 1] = "3"
+    _refresh_manifest_and_review(case)
+
+    with pytest.raises(executor.PacketExecutorError) as exc_info:
+        _execute(executor, case)
+
+    assert exc_info.value.code == "packet_executor.launch_world_size"
+    assert not case["marker"].exists()
+
+
+def test_signed_success_receipt_requires_exact_manifest_bound_role_argv(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] == "success.uninterrupted_control":
+            path = (
+                case["artifact_root"] / "receipts" / "success-control-receipt.json"
+            )
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            receipt.pop("receipt_payload_sha256")
+            receipt["argv"] = [*receipt["argv"], "--unexpected"]
+            _write_json(path, _signed(receipt))
+        return process
+
+    receipt = _execute(executor, case, launch=launch)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["stop_outcome"]["code"] == (
+        "packet_executor.gpu_artifact_receipt_binding"
+    )
+
+
+def test_setup_rejects_effective_batch_drift_before_first_gpu_command(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    role = "resumed_parent"
+    content = _role_config_bytes(
+        role=role,
+        artifact_root=case["artifact_root"],
+        effective_batch_size=4,
+    )
+    fingerprint = _resolved_fingerprint(case["repo"], role=role, content=content)
+    digest = _sha256(content)
+    case["config_bytes"][role] = content
+    case["resolved_fingerprints"][role] = fingerprint
+    config_row = case["manifest"]["config_files"]["success"]["resumed_child"][
+        "setup_parent"
+    ]
+    config_row["expected_sha256"] = digest
+    accumulation_row = case["manifest"]["execution_contract"]["accumulation"][
+        "roles"
+    ][role]
+    accumulation_row["config_sha256"] = digest
+    accumulation_row["resolved_config_fingerprint"] = fingerprint
+    _refresh_manifest_and_review(case)
+
+    receipt = _execute(executor, case)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["attempted_order"] == ["setup"]
+    assert receipt["stop_outcome"]["code"] == "packet_executor.setup_accumulation"
+
+
+def test_setup_rejects_resolved_fingerprint_drift_before_first_gpu_command(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    case["resolved_fingerprints"]["resumed_child"] = "f" * 64
+
+    receipt = _execute(executor, case)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["attempted_order"] == ["setup"]
+    assert receipt["stop_outcome"]["code"] == "packet_executor.setup_accumulation"
+
+
+def test_gpu_run_state_consumes_manifest_bound_progress_mapping(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+    contract = executor._validate_contract(
+        case["manifest"],
+        packet_path=case["packet"],
+        packet_sha256=case["packet_sha"],
+        attempt_marker_path=case["marker"],
+        terminal_receipt_path=case["outer"],
+    )
+    contract["expected_consumed_packs_by_step"] = {1: 11, 2: 12}
+    run_dir = case["repo"] / "run-state"
+    state = _run_state(run_dir, status="completed", completed_steps=2)
+    state["consumed_packs"] = 12
+    state["measurement"]["checkpoint_publication_events"][0][
+        "committed_progress"
+    ]["consumed_packs"] = 11
+    state["measurement"]["checkpoint_publication_events"][1][
+        "committed_progress"
+    ]["consumed_packs"] = 12
+    path = run_dir / "run.json"
+    _write_json(path, state)
+
+    observed, _ = executor._validate_gpu_run_state(
+        path,
+        role="uninterrupted_control",
+        run_dir=run_dir,
+        expected_status="completed",
+        expected_completed_steps=2,
+        expected_checkpoint_steps=[1, 2],
+        contract=contract,
+    )
+
+    assert observed["consumed_packs"] == 12
+
+
+def test_manifest_bound_consumed_event_mismatch_fails_closed(
+    executor: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    case = _fixture(tmp_path, monkeypatch)
+
+    def launch(argv: list[str], **kwargs: Any) -> Any:
+        process = case["launch"](argv, **kwargs)
+        if argv[1] == "success.uninterrupted_control":
+            path = (
+                case["artifact_root"]
+                / "runs"
+                / "uninterrupted_control"
+                / "run.json"
+            )
+            state = json.loads(path.read_text(encoding="utf-8"))
+            state["measurement"]["checkpoint_publication_events"][0][
+                "committed_progress"
+            ]["consumed_packs"] = 2
+            _write_json(path, state)
+        return process
+
+    receipt = _execute(executor, case, launch=launch)
+
+    assert receipt["status"] == "stopped"
+    assert receipt["attempted_order"] == [
+        "setup",
+        "success.uninterrupted_control",
+    ]
+    assert receipt["stop_outcome"]["code"] == "packet_executor.gpu_artifact_run_state"
