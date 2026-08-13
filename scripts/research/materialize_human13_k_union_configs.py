@@ -520,6 +520,35 @@ def _a6_artifact_sha256(binding: Human13A6DonorBinding) -> str:
     return _canonical_sha256(payload)
 
 
+def _census_frozen_targets_sha256(
+    manifest: Mapping[str, Any], manifest_sha256: str
+) -> str:
+    """Rebuild the exact immutable payload sealed by the no-update census."""
+
+    frozen_targets = {
+        "manifest_sha256": manifest_sha256,
+        "images": [
+            {
+                "image_id": image["image_id"],
+                "G": list(image["g_owner_ids"]),
+                "H": list(image["h_owner_ids"]),
+                "M": list(image["m_owner_ids"]),
+                "selected_rows": [
+                    {
+                        "owner_id": row["owner_id"],
+                        "row_id": row["row_id"],
+                        "trajectory_id": row["trajectory_id"],
+                        "token_ids": list(row["token_ids"]),
+                    }
+                    for row in image["selected_rows"]
+                ],
+            }
+            for image in manifest["images"]
+        ],
+    }
+    return _canonical_sha256(frozen_targets)
+
+
 def _derive_a6_binding(
     manifest: Mapping[str, Any],
     identity: Human13ManifestIdentity,
@@ -666,6 +695,7 @@ def _load_a8_binding(
     manifest: Mapping[str, Any],
     identity: Human13ManifestIdentity,
     frozen_targets_sha256: str,
+    census_frozen_targets_sha256: str,
 ) -> Human13A8CensusBinding:
     payload = path.read_bytes()
     census = _mapping(json.loads(payload), "canonical census")
@@ -693,8 +723,8 @@ def _load_a8_binding(
     )
     if (
         frozen.get("byte_identical") is not True
-        or frozen.get("sha256_before") != frozen_targets_sha256
-        or frozen.get("sha256_after") != frozen_targets_sha256
+        or frozen.get("sha256_before") != census_frozen_targets_sha256
+        or frozen.get("sha256_after") != census_frozen_targets_sha256
     ):
         raise MaterializationError("A8 census did not preserve frozen target bytes")
     trie = _mapping(census["trie"], "census trie")
@@ -1001,6 +1031,9 @@ def materialize_plans(
             manifest=manifest,
             identity=identity,
             frozen_targets_sha256=frozen_targets_sha256,
+            census_frozen_targets_sha256=_census_frozen_targets_sha256(
+                manifest, identity.manifest_sha256
+            ),
         )
         if census_path is not None
         and identity is not None

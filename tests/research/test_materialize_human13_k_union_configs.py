@@ -384,7 +384,12 @@ def test_materializer_binds_applicable_a6_and_a8_and_isolates_every_arm(
     tmp_path: Path,
 ) -> None:
     manifest, manifest_sha, frozen_sha = _write_manifest(tmp_path / "manifest.json")
-    census = _write_census(tmp_path / "census.json", frozen_sha=frozen_sha)
+    census = _write_census(
+        tmp_path / "census.json",
+        frozen_sha=materializer._census_frozen_targets_sha256(
+            json.loads(manifest.read_text(encoding="utf-8")), manifest_sha
+        ),
+    )
 
     receipt = materializer.materialize_plans(
         output_root=tmp_path / "runs",
@@ -446,6 +451,33 @@ def test_materializer_binds_applicable_a6_and_a8_and_isolates_every_arm(
     assert a8["a8_census_binding"]["required_margin"] == pytest.approx(0.125)
 
 
+def test_materializer_distinguishes_census_freeze_from_runner_target_binding(
+    tmp_path: Path,
+) -> None:
+    manifest, manifest_sha, runner_frozen_sha = _write_manifest(
+        tmp_path / "manifest.json"
+    )
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    census_frozen_sha = materializer._census_frozen_targets_sha256(
+        manifest_payload, manifest_sha
+    )
+    assert census_frozen_sha != runner_frozen_sha
+    census = _write_census(
+        tmp_path / "census.json", frozen_sha=census_frozen_sha
+    )
+
+    receipt = materializer.materialize_plans(
+        output_root=tmp_path / "runs",
+        run_id="screen-real-census-freeze",
+        config_root=CONFIG_ROOT,
+        census_path=census,
+        manifest_path=manifest,
+    )
+
+    a8 = next(plan for plan in receipt["plans"] if plan["arm_id"] == "A8-prime")
+    assert a8["a8_census_binding"]["frozen_targets_sha256"] == runner_frozen_sha
+
+
 def test_materializer_keeps_h_mid_a6_for_a_selected_row0_prompt_only_donor(
     tmp_path: Path,
 ) -> None:
@@ -467,9 +499,13 @@ def test_materializer_keeps_h_mid_a6_for_a_selected_row0_prompt_only_donor(
 
 
 def test_a8_binding_is_fail_closed_on_blocked_or_unbound_census(tmp_path: Path) -> None:
-    manifest, _, frozen_sha = _write_manifest(tmp_path / "manifest.json")
+    manifest, manifest_sha, _ = _write_manifest(tmp_path / "manifest.json")
     blocked = _write_census(
-        tmp_path / "blocked.json", frozen_sha=frozen_sha, applicable=False
+        tmp_path / "blocked.json",
+        frozen_sha=materializer._census_frozen_targets_sha256(
+            json.loads(manifest.read_text(encoding="utf-8")), manifest_sha
+        ),
+        applicable=False,
     )
     receipt = materializer.materialize_plans(
         output_root=tmp_path / "runs",
@@ -521,8 +557,13 @@ def test_a8_binding_is_fail_closed_on_blocked_or_unbound_census(tmp_path: Path) 
 def test_a8_rejects_truncated_or_self_asserted_census_content(
     tmp_path: Path, mutation: str, error: str
 ) -> None:
-    manifest, _, frozen_sha = _write_manifest(tmp_path / "manifest.json")
-    census = _write_census(tmp_path / "census.json", frozen_sha=frozen_sha)
+    manifest, manifest_sha, _ = _write_manifest(tmp_path / "manifest.json")
+    census = _write_census(
+        tmp_path / "census.json",
+        frozen_sha=materializer._census_frozen_targets_sha256(
+            json.loads(manifest.read_text(encoding="utf-8")), manifest_sha
+        ),
+    )
     raw = json.loads(census.read_text(encoding="utf-8"))
     if mutation == "site_drift":
         raw["coherent_chain"]["sites"][0]["absolute_margin_drift"] = 0.0
