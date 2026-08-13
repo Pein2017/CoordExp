@@ -19,7 +19,7 @@
 
 ## 4. Retire the Real-Entry and Rollback Risk
 
-- [ ] 4.1 Dry-run the exact full-panel `O-First-Safe` vertical command and verify Source identity, 173-owner reproduction contract, two-candidate shortlist, trainable surface, absent output roots, and zero actions.
+- [x] 4.1 Dry-run the exact full-panel `O-First-Safe` vertical command and verify Source identity, 173-owner reproduction contract, two-candidate shortlist, trainable surface, absent output roots, and zero actions.
 - [ ] 4.2 Execute one real vertical proposal through HF scoring, two forced continuations, packed forward/backward, AdamW, post-update clean greedy, checkpoint/analyzer handling, and a deliberate reject/rollback drill.
 - [ ] 4.3 Verify restored model and optimizer state hashes plus clean-greedy owner-set reproduction; publish a mechanics-only vertical receipt or stop without launching the pilot.
 
