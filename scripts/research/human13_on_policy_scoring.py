@@ -10,8 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import hashlib
+import json
 from types import MappingProxyType
 from typing import Any
+
+import torch
 
 from scripts.research.build_human13_on_policy_frontier import (
     FrontierImage,
@@ -21,10 +25,9 @@ from scripts.research.human13_frontier_selection import (
     CandidatePath,
     CandidateScore,
     PackedCandidateScore,
-    SurfaceEvidence,
     packed_prefilter,
-    score_candidate,
-    score_packed_candidate,
+    score_candidate_tensor,
+    score_packed_candidate_tensor,
     shortlist_candidates,
 )
 from scripts.research.human13_live_census import (
@@ -75,12 +78,20 @@ class PreparedCandidateScoring:
 
 
 @dataclass(frozen=True)
+class TensorArtifactReceipt:
+    shape: tuple[int, int]
+    dtype: str
+    positions: tuple[int, ...]
+    sha256: str
+
+
+@dataclass(frozen=True)
 class PackedCandidateReceipt:
     path: CandidatePath
     segment_id: str
     local_causal_positions: tuple[int, ...]
     packed_causal_positions: tuple[int, ...]
-    packed_evidence: SurfaceEvidence
+    packed_tensor_artifact: TensorArtifactReceipt
     score: PackedCandidateScore
 
 
@@ -90,8 +101,8 @@ class CrossSurfaceCandidateReceipt:
     segment_id: str
     packed_causal_positions: tuple[int, ...]
     hf_causal_positions: tuple[int, ...]
-    packed_evidence: SurfaceEvidence
-    hf_evidence: SurfaceEvidence
+    packed_tensor_artifact: TensorArtifactReceipt
+    hf_tensor_artifact: TensorArtifactReceipt
     score: CandidateScore
 
 
@@ -262,14 +273,24 @@ def prepare_on_policy_candidate_scoring(
     )
 
 
-def _surface(
-    rows: tuple[Any, ...], *, path: CandidatePath, name: str
-) -> SurfaceEvidence:
-    return SurfaceEvidence(
-        surface=name,
-        logits=tuple(tuple(float(value) for value in row.tolist()) for row in rows),
-        target_token_ids=path.token_ids,
-    )
+def _tensor_artifact(
+    logits: torch.Tensor, *, positions: tuple[int, ...]
+) -> TensorArtifactReceipt:
+    if logits.ndim != 2 or int(logits.shape[0]) != len(positions) or not positions:
+        raise ValueError("candidate tensor artifact shape or positions differ")
+    materialized = logits.detach().cpu().contiguous()
+    shape = (int(materialized.shape[0]), int(materialized.shape[1]))
+    dtype = str(materialized.dtype)
+    header = json.dumps(
+        {"dtype": dtype, "positions": positions, "shape": shape},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    digest = hashlib.sha256()
+    digest.update(header)
+    digest.update(b"\0")
+    digest.update(materialized.view(torch.uint8).numpy().tobytes())
+    return TensorArtifactReceipt(shape, dtype, positions, digest.hexdigest())
 
 
 def _capture_packed_candidates(
@@ -320,19 +341,22 @@ def _capture_packed_candidates(
             label="packed candidate",
         )
         for binding, positions in resolved:
-            evidence = _surface(
-                tuple(rows[position] for position in positions),
-                path=binding.path,
-                name="packed_bf16_fa2",
+            candidate_logits = torch.stack(
+                tuple(rows[position] for position in positions)
             )
-            score = score_packed_candidate(binding.path, evidence)
+            artifact = _tensor_artifact(candidate_logits, positions=positions)
+            score = score_packed_candidate_tensor(
+                binding.path,
+                candidate_logits,
+                expected_vocab_size=_vocab_size(tokenizer),
+            )
             receipts.append(
                 PackedCandidateReceipt(
                     path=binding.path,
                     segment_id=binding.segment_id,
                     local_causal_positions=binding.local_causal_positions,
                     packed_causal_positions=positions,
-                    packed_evidence=evidence,
+                    packed_tensor_artifact=artifact,
                     score=score,
                 )
             )
@@ -413,15 +437,17 @@ def score_on_policy_frontier_candidates(
             label="HF candidate",
             require_fp32=True,
         )
-        hf_evidence = _surface(
-            tuple(hf_rows[position] for position in binding.local_causal_positions),
-            path=binding.path,
-            name="hf_fp32_sdpa",
+        hf_logits = torch.stack(
+            tuple(hf_rows[position] for position in binding.local_causal_positions)
         )
-        score = score_candidate(
+        hf_artifact = _tensor_artifact(
+            hf_logits, positions=binding.local_causal_positions
+        )
+        score = score_candidate_tensor(
             binding.path,
-            packed=packed_receipt.packed_evidence,
-            hf=hf_evidence,
+            packed=packed_receipt.score,
+            hf_logits=hf_logits,
+            expected_vocab_size=_vocab_size(tokenizer),
         )
         cross_surface.append(
             CrossSurfaceCandidateReceipt(
@@ -429,8 +455,8 @@ def score_on_policy_frontier_candidates(
                 segment_id=binding.segment_id,
                 packed_causal_positions=packed_receipt.packed_causal_positions,
                 hf_causal_positions=binding.local_causal_positions,
-                packed_evidence=packed_receipt.packed_evidence,
-                hf_evidence=hf_evidence,
+                packed_tensor_artifact=packed_receipt.packed_tensor_artifact,
+                hf_tensor_artifact=hf_artifact,
                 score=score,
             )
         )
@@ -479,6 +505,7 @@ __all__ = [
     "OnPolicyCandidateScoringResult",
     "PackedCandidateReceipt",
     "PreparedCandidateScoring",
+    "TensorArtifactReceipt",
     "prepare_on_policy_candidate_scoring",
     "score_on_policy_frontier_candidates",
 ]

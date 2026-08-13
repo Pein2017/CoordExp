@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import math
 from typing import Sequence
 
+import torch
+
 from scripts.research.compare_clean_rollout_owner_coverage import (
     _global_matches,
     iou_xyxy,
@@ -46,6 +48,7 @@ class PackedCandidateScore:
     sites: tuple[TokenDecision, ...]
     barrier: float
     first_bottleneck_index: int | None
+    vocab_size: int
 
 
 @dataclass(frozen=True)
@@ -108,30 +111,59 @@ def score_candidate(
     if hf is None or hf.surface != "hf_fp32_sdpa":
         raise ValueError("decision-owning HF fp32/SDPA evidence is required")
     hf_sites = _decisions(path, hf)
-    packed_sites: tuple[TokenDecision, ...] | None = None
+    packed_score: PackedCandidateScore | None = None
     if packed is not None:
         if packed.surface != "packed_bf16_fa2":
             raise ValueError("packed evidence surface identity differs")
-        packed_sites = _decisions(path, packed)
-        if len(packed.logits[0]) != len(hf.logits[0]):
-            raise ValueError("packed/HF vocabulary sizes differ")
+        packed_score = score_packed_candidate(path, packed)
+    return _candidate_score(
+        path,
+        hf_sites=hf_sites,
+        hf_vocab_size=len(hf.logits[0]),
+        packed=packed_score,
+    )
+
+
+def score_candidate_tensor(
+    path: CandidatePath,
+    *,
+    packed: PackedCandidateScore | None,
+    hf_logits: torch.Tensor,
+    expected_vocab_size: int,
+) -> CandidateScore:
+    """Score transient HF full-vocabulary logits without retaining their vectors."""
+
+    if hf_logits.dtype != torch.float32:
+        raise ValueError("decision-owning HF tensor logits must be fp32")
+    hf_sites = _tensor_decisions(
+        path, hf_logits, expected_vocab_size=expected_vocab_size
+    )
+    return _candidate_score(
+        path,
+        hf_sites=hf_sites,
+        hf_vocab_size=int(hf_logits.shape[1]),
+        packed=packed,
+    )
+
+
+def _candidate_score(
+    path: CandidatePath,
+    *,
+    hf_sites: tuple[TokenDecision, ...],
+    hf_vocab_size: int,
+    packed: PackedCandidateScore | None,
+) -> CandidateScore:
+    if packed is not None and packed.path != path:
+        raise ValueError("packed/HF candidate paths differ")
+    if packed is not None and packed.vocab_size != hf_vocab_size:
+        raise ValueError("packed/HF vocabulary sizes differ")
+    packed_sites = None if packed is None else packed.sites
     barrier = sum(max(0.0, -site.strict_margin) for site in hf_sites)
     first = next(
         (site.position for site in hf_sites if site.strict_margin <= 0.0), None
     )
-    packed_barrier = (
-        None
-        if packed_sites is None
-        else sum(max(0.0, -site.strict_margin) for site in packed_sites)
-    )
-    packed_first = (
-        None
-        if packed_sites is None
-        else next(
-            (site.position for site in packed_sites if site.strict_margin <= 0.0),
-            None,
-        )
-    )
+    packed_barrier = None if packed is None else packed.barrier
+    packed_first = None if packed is None else packed.first_bottleneck_index
     aligned = (
         ()
         if packed_sites is None
@@ -197,6 +229,29 @@ def score_packed_candidate(
         first_bottleneck_index=next(
             (site.position for site in sites if site.strict_margin <= 0.0), None
         ),
+        vocab_size=len(packed.logits[0]),
+    )
+
+
+def score_packed_candidate_tensor(
+    path: CandidatePath,
+    packed_logits: torch.Tensor,
+    *,
+    expected_vocab_size: int,
+) -> PackedCandidateScore:
+    """Score transient packed full-vocabulary logits without Python vector copies."""
+
+    sites = _tensor_decisions(
+        path, packed_logits, expected_vocab_size=expected_vocab_size
+    )
+    return PackedCandidateScore(
+        path=path,
+        sites=sites,
+        barrier=float(sum(max(0.0, -site.strict_margin) for site in sites)),
+        first_bottleneck_index=next(
+            (site.position for site in sites if site.strict_margin <= 0.0), None
+        ),
+        vocab_size=int(packed_logits.shape[1]),
     )
 
 
@@ -445,6 +500,52 @@ def _decisions(
     return tuple(decisions)
 
 
+def _tensor_decisions(
+    path: CandidatePath,
+    logits: torch.Tensor,
+    *,
+    expected_vocab_size: int,
+) -> tuple[TokenDecision, ...]:
+    if (
+        not isinstance(logits, torch.Tensor)
+        or logits.ndim != 2
+        or int(logits.shape[0]) != len(path.token_ids)
+        or not path.token_ids
+    ):
+        raise ValueError("candidate tensor logits have invalid length or shape")
+    vocab_size = int(logits.shape[1])
+    if vocab_size != expected_vocab_size or vocab_size < 2:
+        raise ValueError("candidate tensor logits lack the full vocabulary")
+    if not logits.is_floating_point() or not bool(torch.isfinite(logits).all().item()):
+        raise ValueError("candidate tensor logits must be finite floating point")
+    if any(target < 0 or target >= vocab_size for target in path.token_ids):
+        raise ValueError("target token ID is outside vocabulary")
+
+    decisions: list[TokenDecision] = []
+    for position, target in enumerate(path.token_ids):
+        row = logits[position]
+        actual = int(torch.argmax(row).item())
+        competing = row.clone()
+        competing[target] = float("-inf")
+        competitor = int(torch.argmax(competing).item())
+        maximum = row.max()
+        target_logit = float(row[target].item())
+        competitor_logit = float(row[competitor].item())
+        decisions.append(
+            TokenDecision(
+                position=position,
+                target_token_id=target,
+                actual_argmax_token_id=actual,
+                competitor_token_id=competitor,
+                target_logit=target_logit,
+                competitor_logit=competitor_logit,
+                strict_margin=float(target_logit - competitor_logit),
+                tie_count=int((row == maximum).sum().item()),
+            )
+        )
+    return tuple(decisions)
+
+
 __all__ = [
     "CandidatePath",
     "CandidateScore",
@@ -456,7 +557,9 @@ __all__ = [
     "packed_prefilter",
     "protected_owner_coverable",
     "score_candidate",
+    "score_candidate_tensor",
     "score_packed_candidate",
+    "score_packed_candidate_tensor",
     "select_continuation",
     "shortlist_candidates",
 ]

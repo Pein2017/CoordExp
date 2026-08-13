@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import torch
 
 from scripts.research.human13_frontier_selection import (
     CandidatePath,
@@ -43,6 +44,34 @@ def test_hf_owns_barrier_first_strict_bottleneck_and_tie() -> None:
     assert score.packed_first_bottleneck_index is None
     assert score.first_bottleneck_disagreement
     assert len(score.aligned_sites) == 3
+
+
+def test_tensor_scoring_is_scientifically_identical_to_pure_surface_scoring() -> None:
+    from scripts.research import human13_frontier_selection as selection
+
+    path = CandidatePath(1, "h1", "alias", (1, 2, 3))
+    packed_rows = [[0.0, 4.0, 1.0, 0.0], [0.0, 0.0, 5.0, 1.0], [0.0, 0.0, 1.0, 6.0]]
+    hf_rows = [[0.0, 4.0, 1.0, 0.0], [0.0, 6.0, 5.0, 1.0], [0.0, 0.0, 6.0, 6.0]]
+    pure = score_candidate(
+        path,
+        packed=_surface("packed_bf16_fa2", packed_rows, path.token_ids),
+        hf=_surface("hf_fp32_sdpa", hf_rows, path.token_ids),
+    )
+
+    packed = selection.score_packed_candidate_tensor(
+        path,
+        torch.tensor(packed_rows, dtype=torch.bfloat16),
+        expected_vocab_size=4,
+    )
+    tensor_score = selection.score_candidate_tensor(
+        path,
+        packed=packed,
+        hf_logits=torch.tensor(hf_rows, dtype=torch.float32),
+        expected_vocab_size=4,
+    )
+
+    assert tensor_score == pure
+    assert packed.sites == pure.packed_sites
 
 
 def test_missing_hf_evidence_fails_even_with_good_packed_path() -> None:

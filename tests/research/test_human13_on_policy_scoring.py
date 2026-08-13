@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -263,8 +264,19 @@ def test_packed_prefilter_hf_rescore_and_owner_shortlist_are_surface_aligned() -
     assert set(cross) == {"b", "c", "d"}
     assert cross["c"].packed_causal_positions != cross["c"].hf_causal_positions
     assert cross["c"].hf_causal_positions == (11, 12)
-    assert len(cross["c"].packed_evidence.logits[0]) == VOCAB_SIZE
-    assert len(cross["c"].hf_evidence.logits[0]) == VOCAB_SIZE
+    assert cross["c"].packed_tensor_artifact.shape == (2, VOCAB_SIZE)
+    assert cross["c"].packed_tensor_artifact.dtype == "torch.bfloat16"
+    assert (
+        cross["c"].packed_tensor_artifact.positions
+        == cross["c"].packed_causal_positions
+    )
+    assert cross["c"].hf_tensor_artifact.shape == (2, VOCAB_SIZE)
+    assert cross["c"].hf_tensor_artifact.dtype == "torch.float32"
+    assert cross["c"].hf_tensor_artifact.positions == (11, 12)
+    assert len(cross["c"].packed_tensor_artifact.sha256) == 64
+    assert len(cross["c"].hf_tensor_artifact.sha256) == 64
+    assert not hasattr(cross["c"], "packed_evidence")
+    assert not hasattr(cross["c"], "hf_evidence")
     assert cross["c"].score.hf_barrier == pytest.approx(1.0)
     assert cross["c"].score.packed_barrier == pytest.approx(2.0)
     assert result.receipt["packed_candidate_count"] == 4
@@ -274,6 +286,30 @@ def test_packed_prefilter_hf_rescore_and_owner_shortlist_are_surface_aligned() -
         result.receipt["hf_candidate_count"] = 99  # type: ignore[index]
     with pytest.raises(TypeError):
         result.shortlist_by_image[7] = ()  # type: ignore[index]
+
+    def maximum_sequence_width(value: Any) -> int:
+        if isinstance(value, dict):
+            return max(
+                (maximum_sequence_width(item) for item in value.values()), default=0
+            )
+        if isinstance(value, (list, tuple)):
+            return max(
+                len(value),
+                max((maximum_sequence_width(item) for item in value), default=0),
+            )
+        return 0
+
+    def contains_tensor(value: Any) -> bool:
+        if isinstance(value, dict):
+            return any(contains_tensor(item) for item in value.values())
+        if isinstance(value, (list, tuple)):
+            return any(contains_tensor(item) for item in value)
+        return isinstance(value, torch.Tensor)
+
+    compact = asdict(cross["c"])
+    assert "logits" not in json.dumps(compact, sort_keys=True)
+    assert maximum_sequence_width(compact) < 16
+    assert not contains_tensor(compact)
 
 
 def test_shortlist_limit_is_global_not_multiplied_per_image() -> None:
