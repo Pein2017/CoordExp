@@ -30,9 +30,12 @@ from scripts.research.build_human13_on_policy_frontier import (  # noqa: E402
     CheckpointIdentity,
     CurrentDecode,
     Human13FrontierIteration,
+    validate_current_decode_surface,
 )
 from scripts.research.human13_frontier_selection import (  # noqa: E402
     CandidateScore,
+    ContinuationOutcome,
+    select_continuation,
 )
 from scripts.research.human13_on_policy_live import (  # noqa: E402
     BehaviorGateObservation,
@@ -130,6 +133,8 @@ class CandidateSelectionReceipt:
     shortlisted: tuple[CandidateScore, ...]
     forced_continuation_count: int
     selected: CandidateScore
+    continuation_projection_sha256s: tuple[str, ...]
+    continuation_outcomes: tuple[ContinuationOutcome, ...]
 
 
 @dataclass(frozen=True)
@@ -760,19 +765,46 @@ def _validate_selection(
     frontier: FrontierHandle,
     selection: CandidateSelectionReceipt,
 ) -> None:
+    projection_sha256s = selection.continuation_projection_sha256s
+    outcomes = selection.continuation_outcomes
     if (
         selection.decision_surface != DECISION_SURFACE
         or not config.shortlist_min
         <= len(selection.shortlisted)
         <= config.shortlist_max
         or selection.forced_continuation_count != len(selection.shortlisted)
+        or len(projection_sha256s) != len(selection.shortlisted)
+        or len(outcomes) != len(selection.shortlisted)
         or selection.selected not in selection.shortlisted
         or selection.eligible_owner_count < len(selection.shortlisted)
         or len({item.path.owner_id for item in selection.shortlisted})
         != len(selection.shortlisted)
+        or len(set(projection_sha256s)) != len(projection_sha256s)
+        or any(not _is_digest(item) for item in projection_sha256s)
+        or any(
+            score.path.owner_id != outcome.owner_id
+            or not math.isclose(
+                score.hf_barrier,
+                outcome.hf_barrier,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+            for score, outcome in zip(selection.shortlisted, outcomes, strict=True)
+        )
     ):
         raise OnPolicySuccessorError(
             "candidate selection receipt is not decision-grade"
+        )
+    try:
+        selected_outcome = select_continuation(outcomes)
+    except ValueError as exc:
+        raise OnPolicySuccessorError(
+            "candidate selection lacks an eligible continuation outcome"
+        ) from exc
+    selected_index = selection.shortlisted.index(selection.selected)
+    if outcomes[selected_index] != selected_outcome:
+        raise OnPolicySuccessorError(
+            "candidate selection is not aligned to its selected continuation"
         )
     if (
         any(
@@ -809,21 +841,21 @@ def _validate_clean_decode(
     ):
         raise OnPolicySuccessorError("clean decode artifact/hash differs")
     decodes = receipt.current_decodes
-    if (
-        len(decodes) != 13
-        or len({decode.image_id for decode in decodes}) != 13
-        or any(
-            decode.checkpoint != checkpoint
-            or not decode.trajectory_id
-            or not decode.generated_token_ids
-            or decode.parser != "compact_object_box_closed_only"
-            or decode.parser_status != "complete"
-            for decode in decodes
-        )
-    ):
+    if len(decodes) != 13 or len({decode.image_id for decode in decodes}) != 13:
         raise OnPolicySuccessorError(
             "clean decode lacks complete same-decode Human-13 lineage"
         )
+    for decode in decodes:
+        if decode.checkpoint != checkpoint or not decode.trajectory_id:
+            raise OnPolicySuccessorError(
+                "clean decode lacks complete same-decode Human-13 lineage"
+            )
+        try:
+            validate_current_decode_surface(decode)
+        except ValueError as exc:
+            raise OnPolicySuccessorError(
+                "clean decode parser/token surface is not canonical"
+            ) from exc
 
 
 def _validate_next_frontier(

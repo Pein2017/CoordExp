@@ -18,7 +18,11 @@ from scripts.research.build_human13_on_policy_frontier import (
     FrontierRow,
     Human13FrontierIteration,
 )
-from scripts.research.human13_frontier_selection import CandidatePath, CandidateScore
+from scripts.research.human13_frontier_selection import (
+    CandidatePath,
+    CandidateScore,
+    ContinuationOutcome,
+)
 from scripts.research.human13_on_policy_live import BehaviorGateObservation
 from scripts.research.human13_training_transaction import (
     TrainingStateTransaction,
@@ -58,6 +62,21 @@ def _candidate(owner_id: str) -> CandidateScore:
     return CandidateScore(path, (), (), (), 1.0, 1, 1, False, 1.0, 0.0, False)
 
 
+def _outcome(owner_id: str) -> ContinuationOutcome:
+    return ContinuationOutcome(
+        owner_id=owner_id,
+        hf_barrier=1.0,
+        protected_coverable=True,
+        unique_owner_delta=1,
+        termination_status="natural_im_end",
+        cap_hit=False,
+        duplicate_increase=0,
+        malformed_increase=0,
+        row_count=2,
+        generated_tokens=8,
+    )
+
+
 def _frontier(
     iteration: int,
     checkpoint: CheckpointIdentity,
@@ -80,7 +99,9 @@ def _frontier(
     )
 
 
-def _decodes(checkpoint: CheckpointIdentity) -> tuple[CurrentDecode, ...]:
+def _decodes(
+    checkpoint: CheckpointIdentity, *, parser_status: str = "accepted"
+) -> tuple[CurrentDecode, ...]:
     return tuple(
         CurrentDecode(
             image_id=image_id,
@@ -96,7 +117,7 @@ def _decodes(checkpoint: CheckpointIdentity) -> tuple[CurrentDecode, ...]:
                 ),
             ),
             parser="compact_object_box_closed_only",
-            parser_status="complete",
+            parser_status=parser_status,
             stop_reason="im_end",
             checkpoint=checkpoint,
             terminal_token_index=2,
@@ -182,11 +203,13 @@ class _Runtime:
         accept: bool,
         endless: bool = False,
         fail_at: str | None = None,
+        parser_status: str = "accepted",
     ):
         self.output_root = output_root
         self.accept = accept
         self.endless = endless
         self.fail_at = fail_at
+        self.parser_status = parser_status
         self.events: list[str] = []
         self.published: list[str] = []
         self.written_receipts = []
@@ -248,6 +271,8 @@ class _Runtime:
             shortlisted=shortlisted,
             forced_continuation_count=2,
             selected=shortlisted[0],
+            continuation_projection_sha256s=("1" * 64, "2" * 64),
+            continuation_outcomes=(_outcome("h0"), _outcome("h1")),
         )
 
     def apply_one_update(self, config, frontier, selection):
@@ -297,7 +322,7 @@ class _Runtime:
             row_count=2,
             duplicate_count=0,
         )
-        decodes = _decodes(checkpoint)
+        decodes = _decodes(checkpoint, parser_status=self.parser_status)
         artifact = _write_artifact(
             Path(config.output_root)
             / "decodes"
@@ -444,6 +469,50 @@ def test_execute_fails_closed_without_authority_or_injected_runtime(
         run_on_policy_loop(config, runtime=None, execute_authorized=True)
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda receipt: replace(
+            receipt, continuation_projection_sha256s=("1" * 64, "1" * 64)
+        ),
+        lambda receipt: replace(
+            receipt,
+            continuation_outcomes=(
+                replace(receipt.continuation_outcomes[0], owner_id="wrong"),
+                receipt.continuation_outcomes[1],
+            ),
+        ),
+        lambda receipt: replace(
+            receipt,
+            continuation_outcomes=(
+                replace(receipt.continuation_outcomes[0], cap_hit=True),
+                receipt.continuation_outcomes[1],
+            ),
+        ),
+    ),
+)
+def test_selection_requires_unique_path_aligned_eligible_continuation_evidence(
+    tmp_path: Path,
+    mutation,
+) -> None:
+    config = replace(_config(), output_root=str(tmp_path / "bad-selection"))
+    runtime = _Runtime(Path(config.output_root), accept=True)
+    frontier = runtime.initial_frontier(config)
+    selection = runtime.select_candidate(config, frontier)
+    assert selection is not None
+
+    with pytest.raises(OnPolicySuccessorError, match="candidate selection"):
+        from scripts.research.train_human13_on_policy_successor import run_one_iteration
+
+        run_one_iteration(
+            config,
+            runtime=runtime,
+            frontier=frontier,
+            selection=mutation(selection),
+            attempt_index=0,
+        )
+
+
 def test_accept_only_after_durable_artifacts_and_advances_from_one_decode(
     tmp_path: Path,
 ) -> None:
@@ -475,6 +544,25 @@ def test_accept_only_after_durable_artifacts_and_advances_from_one_decode(
     assert attempt.accepted_checkpoint_sha256 == attempt.proposal_checkpoint_sha256
     assert attempt.proposed_decode_sha256
     assert attempt.next_ledger_sha256
+
+
+@pytest.mark.parametrize(
+    "parser_status",
+    ("accepted", "accepted_with_drops", "empty", "all_spans_dropped"),
+)
+def test_clean_decode_preserves_every_canonical_frontier_parser_status(
+    tmp_path: Path,
+    parser_status: str,
+) -> None:
+    config = replace(_config(), output_root=str(tmp_path / parser_status))
+    runtime = _Runtime(
+        Path(config.output_root), accept=True, parser_status=parser_status
+    )
+
+    receipt = run_on_policy_loop(config, runtime=runtime, execute_authorized=True)
+
+    assert receipt.accepted_update_count == 1
+    assert runtime.written_receipts[0].decision == "accepted"
 
 
 @pytest.mark.parametrize("fail_at", ("publish", "frontier", "receipt"))

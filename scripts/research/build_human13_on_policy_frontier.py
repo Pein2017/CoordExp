@@ -208,12 +208,7 @@ def build_frontier_iteration(
 def _project_image(
     image: ImageRecord, decode: CurrentDecode, *, protected: set[str]
 ) -> FrontierImage:
-    if (
-        decode.parser != _AUTHORIZED_PARSER
-        or decode.parser_status not in _AUTHORIZED_PARSE_STATUSES
-    ):
-        raise ValueError("current decode parser identity or status is not authorized")
-    natural_pre_stop_prefix(decode)
+    validate_current_decode_surface(decode)
     rows = _rows(decode)
     retained: list[FrontierRow] = []
     duplicates: list[FrontierDuplicateEvent] = []
@@ -357,9 +352,7 @@ def natural_pre_stop_prefix(
 
     token_ids = tuple(value.generated_token_ids)
     if not token_ids or any(
-        isinstance(token_id, bool)
-        or not isinstance(token_id, int)
-        or token_id < 0
+        isinstance(token_id, bool) or not isinstance(token_id, int) or token_id < 0
         for token_id in token_ids
     ):
         raise ValueError("generated token ids must be nonempty nonnegative integers")
@@ -376,6 +369,17 @@ def natural_pre_stop_prefix(
     ):
         raise ValueError("terminal_token_index must identify the final generated token")
     return token_ids[:terminal]
+
+
+def validate_current_decode_surface(decode: CurrentDecode) -> None:
+    """Validate the canonical parser identity/status and natural token boundary."""
+
+    if (
+        decode.parser != _AUTHORIZED_PARSER
+        or decode.parser_status not in _AUTHORIZED_PARSE_STATUSES
+    ):
+        raise ValueError("current decode parser identity or status is not authorized")
+    natural_pre_stop_prefix(decode)
 
 
 def _with_constrained_protected(
@@ -728,5 +732,6 @@ __all__ = [
     "canonical_write",
     "load_frontier_iteration",
     "natural_pre_stop_prefix",
+    "validate_current_decode_surface",
     "validate_frontier_iteration",
 ]
