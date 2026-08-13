@@ -46,18 +46,9 @@ def _select_segments(
         raise PayloadContractError(str(exc)) from exc
     if not hasattr(materialized_segments, "segments"):
         raise PayloadContractError("materialized segments must expose segments")
-    if arm_id == "A4":
-        preflight = getattr(materialized_segments, "preflight", None)
-        if not callable(preflight):
-            raise PayloadContractError("A4 requires materialized aggregate preflight")
-        try:
-            preflight(global_max_length, enforce_a4_aggregate=True)
-        except Exception as exc:
-            raise PayloadContractError(f"A4 aggregate preflight failed: {exc}") from exc
-    else:
-        preflight = getattr(materialized_segments, "preflight", None)
-        if callable(preflight):
-            preflight(global_max_length)
+    preflight = getattr(materialized_segments, "preflight", None)
+    if callable(preflight):
+        preflight(global_max_length, enforce_a4_aggregate=False)
     source_segments = tuple(materialized_segments.segments)
     if arm_id == "A4":
         known_ids = {segment.segment_id for segment in source_segments}
@@ -159,28 +150,6 @@ def _sites_for_pack(
     return tuple(sites)
 
 
-def _enforce_a4_atomicity(
-    packed_plan: runner.PackedPanelPlan,
-    *,
-    global_max_length: int,
-) -> None:
-    del global_max_length
-    by_id = {
-        segment.example_id: (pack.pack.pack_index, segment.image_id)
-        for pack in packed_plan.packs
-        for segment in pack.logical_segments
-        if segment.role == "a4_union"
-    }
-    by_image: dict[int, set[int]] = {}
-    for segment_id, (pack_index, image_id) in by_id.items():
-        del segment_id
-        by_image.setdefault(image_id, set()).add(pack_index)
-    if any(len(pack_indices) != 1 for pack_indices in by_image.values()):
-        raise PayloadContractError(
-            "A4 candidate segments must remain one atomic physical pack per image"
-        )
-
-
 def build_live_payload(
     *,
     sealed_manifest: Any,
@@ -202,8 +171,6 @@ def build_live_payload(
     packed_plan = runner.plan_panel_packs(
         selected, global_max_length=global_max_length
     )
-    if arm_id == "A4":
-        _enforce_a4_atomicity(packed_plan, global_max_length=global_max_length)
     sites_by_pack = {
         packed.pack.pack_index: _sites_for_pack(
             packed,

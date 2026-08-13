@@ -265,7 +265,10 @@ def train_prepared_arm(
             schedule=schedule,
             pack_stream=pack_stream,
             loss_context_factory=_loss_context_factory(),
-            loss_runner=_loss_runner(prepared.payload.execution_plan),
+            loss_runner=_loss_runner(
+                prepared.payload.execution_plan,
+                model=getattr(runtime, "model", prepared.assembly.model),
+            ),
             runtime=runtime,
             on_completed_step=on_completed_step,
             on_checkpoint=on_checkpoint,
@@ -385,10 +388,10 @@ def prepare_live_arm(
     if resolved.updates is not True:
         raise LiveTrainingError("Frozen Source is not a live training arm")
     if vertical_image_id is not None and (
-        resolved.arm_id != "A1" or vertical_image_id != 14038
+        resolved.arm_id not in {"A1", "A4"} or vertical_image_id != 14038
     ):
         raise LiveTrainingError(
-            "the authorized vertical slice is exactly A1 on image 14038"
+            "the authorized vertical slice is A1 or A4 on image 14038"
         )
     config_path = _resolve_arm_config(resolved, arm_config_path, root)
     model_plan = _build_model_plan(config_path)
@@ -743,12 +746,13 @@ def _build_live_payload(
     a6 = _typed_a6_binding(resolved_plan_raw.get("a6_donor_binding"))
     a8 = _typed_a8_binding(resolved_plan_raw.get("a8_census_binding"))
     if vertical:
-        if arm_id != "A1" or a6 is not None or a8 is not None:
-            raise LiveTrainingError("vertical runtime projection only admits A1")
-        return _build_vertical_a1_payload(
+        if arm_id not in {"A1", "A4"} or a6 is not None or a8 is not None:
+            raise LiveTrainingError("vertical runtime projection only admits A1 or A4")
+        return _build_vertical_payload(
             sealed_parent=sealed_parent,
             execution_manifest=execution_manifest,
             materialized_segments=materialized_segments,
+            arm_id=arm_id,
             expected_vocab_size=expected_vocab_size,
             vocab_groups=vocab_groups,
         )
@@ -763,15 +767,16 @@ def _build_live_payload(
     )
 
 
-def _build_vertical_a1_payload(
+def _build_vertical_payload(
     *,
     sealed_parent: Any,
     execution_manifest: Any,
     materialized_segments: Any,
+    arm_id: str,
     expected_vocab_size: int,
     vocab_groups: Any,
 ) -> Any:
-    """Runner-local admission for the authorized one-image A1 projection."""
+    """Runner-local admission for an authorized one-image A1/A4 projection."""
 
     from scripts.research import human13_live_payload as live_payload
     from scripts.research import run_human13_k_union_overfit as runner
@@ -783,14 +788,14 @@ def _build_vertical_a1_payload(
         )
     selected = live_payload._select_segments(
         materialized_segments,
-        arm_id="A1",
+        arm_id=arm_id,
         global_max_length=runner.GLOBAL_MAX_LENGTH,
     )
     packed_plan = runner.plan_panel_packs(selected)
     sites_by_pack = {
         packed.pack.pack_index: live_payload._sites_for_pack(
             packed,
-            arm_id="A1",
+            arm_id=arm_id,
             a8_census_binding=None,
         )
         for packed in packed_plan.packs
@@ -801,10 +806,10 @@ def _build_vertical_a1_payload(
         )
         for packed in packed_plan.packs
     }
-    contract = runner._arm_contract("A1")
+    contract = runner._arm_contract(arm_id)
     denominators = runner._manifest_denominators(
         execution_manifest,
-        "A1",
+        arm_id,
         contract.coefficients,
     )
     micro_steps = runner.build_supervised_micro_steps(
@@ -821,7 +826,7 @@ def _build_vertical_a1_payload(
     )
     execution_plan = runner.Human13ExecutionPlan(
         manifest_identity=runner._manifest_identity(projected_sealed),
-        arm_id="A1",
+        arm_id=arm_id,
         denominators=denominators,
         coefficients=contract.coefficients,
         pack_segments=tuple(
@@ -840,7 +845,7 @@ def _build_vertical_a1_payload(
         contract=contract,
     )
     return live_payload.Human13LivePayload(
-        arm_id="A1",
+        arm_id=arm_id,
         selected_segments=selected,
         packed_plan=packed_plan,
         sites_by_pack=sites_by_pack,
@@ -1036,9 +1041,23 @@ def _loss_context_factory() -> Any:
     return human13_loss_context_factory
 
 
-def _loss_runner(execution_plan: Any) -> Any:
-    from scripts.research.run_human13_k_union_overfit import Human13PanelLossRunner
+def _loss_runner(execution_plan: Any, *, model: Any | None = None) -> Any:
+    from scripts.research.run_human13_k_union_overfit import (
+        Human13A4TwoPassLossRunner,
+        Human13PanelLossRunner,
+    )
 
+    if execution_plan.arm_id == "A4":
+        if model is None:
+            raise LiveTrainingError("A4 two-pass runner requires the live model")
+        from src.training.supervised_trainer import _default_qwen_forward
+
+        return Human13A4TwoPassLossRunner(
+            denominators=execution_plan.denominators,
+            coefficients=execution_plan.coefficients,
+            model=model,
+            score_forward=_default_qwen_forward,
+        )
     return Human13PanelLossRunner(
         denominators=execution_plan.denominators,
         coefficients=execution_plan.coefficients,

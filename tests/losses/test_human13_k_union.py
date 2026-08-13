@@ -10,7 +10,9 @@ from src.losses.human13_k_union import (
     coherent_full_chain_bottleneck_hinge,
     image_balanced_duplicate_token_unlikelihood,
     owner_mean_masked_row_cross_entropy,
+    prefix_free_union_detached_weight_surrogate,
     prefix_free_union_negative_log_mass,
+    prefix_free_union_streaming_weights,
 )
 
 
@@ -109,6 +111,45 @@ def test_prefix_free_union_rejects_a_candidate_that_prefixes_another() -> None:
         )
 
     assert exc_info.value.code == "loss.human13_candidates_not_prefix_free"
+
+
+def test_streamed_union_surrogate_has_exact_reference_gradient() -> None:
+    reference_scores = torch.tensor((-0.2, -1.1, -2.3), requires_grad=True)
+    streamed_scores = reference_scores.detach().clone().requires_grad_(True)
+
+    reference = -torch.logsumexp(reference_scores.float(), dim=0)
+    weights = prefix_free_union_streaming_weights(streamed_scores)
+    streamed = prefix_free_union_detached_weight_surrogate(
+        streamed_scores, weights
+    )
+    reference_gradient = torch.autograd.grad(reference, reference_scores)[0]
+    streamed_gradient = torch.autograd.grad(streamed.raw_loss, streamed_scores)[0]
+
+    assert not weights.requires_grad
+    assert weights.dtype == torch.float32
+    assert weights.sum().item() == pytest.approx(1.0)
+    assert torch.allclose(streamed_gradient, reference_gradient)
+    assert streamed.candidate_weights == pytest.approx(tuple(weights.tolist()))
+
+
+def test_chunk_local_union_gradients_are_not_the_global_union_gradient() -> None:
+    scores = torch.tensor((-0.2, -1.1, -2.3), requires_grad=True)
+    global_gradient = torch.autograd.grad(-torch.logsumexp(scores, dim=0), scores)[0]
+    chunked = -torch.logsumexp(scores[:2], dim=0) - scores[2]
+    chunked_gradient = torch.autograd.grad(chunked, scores)[0]
+
+    assert not torch.allclose(global_gradient, chunked_gradient)
+
+
+def test_streamed_union_rejects_non_normalized_or_misaligned_weights() -> None:
+    scores = torch.tensor((-0.2, -1.1))
+
+    with pytest.raises(LossContractError, match="aligned"):
+        prefix_free_union_detached_weight_surrogate(scores, torch.tensor((1.0,)))
+    with pytest.raises(LossContractError, match="sum to one"):
+        prefix_free_union_detached_weight_surrogate(
+            scores, torch.tensor((0.2, 0.2))
+        )
 
 
 def test_bottleneck_hinge_averages_tokens_within_owner_then_owners() -> None:

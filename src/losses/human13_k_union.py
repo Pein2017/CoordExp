@@ -41,6 +41,17 @@ class PrefixFreeUnionResult:
 
 
 @dataclass(frozen=True)
+class StreamedPrefixFreeUnionResult:
+    raw_loss: torch.Tensor
+    numerator: torch.Tensor
+    candidate_weights: tuple[float, ...]
+    effective_owner_count: float
+    candidate_count: int
+    all_finite: bool
+    math_dtype: str = "float32"
+
+
+@dataclass(frozen=True)
 class CoherentBottleneckResult:
     raw_loss: torch.Tensor
     numerator: torch.Tensor
@@ -159,6 +170,73 @@ def prefix_free_union_negative_log_mass(
         effective_owner_count=float(effective.detach().item()),
         candidate_count=candidate_count,
         selected_token_count=int(mask.sum().item()),
+        all_finite=True,
+    )
+
+
+def prefix_free_union_streaming_weights(row_scores: torch.Tensor) -> torch.Tensor:
+    """Compute detached fp32 global candidate weights at one fixed parameter state."""
+
+    if row_scores.ndim != 1 or row_scores.numel() == 0:
+        raise LossContractError(
+            "row_scores must be one nonempty vector",
+            code="loss.human13_streaming_scores_shape",
+        )
+    checked = row_scores.float()
+    if not bool(torch.isfinite(checked).all().item()):
+        raise LossContractError(
+            "row_scores must be finite",
+            code="loss.human13_streaming_scores_nonfinite",
+        )
+    return torch.softmax(checked.detach(), dim=0)
+
+
+def prefix_free_union_detached_weight_surrogate(
+    row_scores: torch.Tensor,
+    candidate_weights: torch.Tensor,
+) -> StreamedPrefixFreeUnionResult:
+    """Return the exact-gradient replay surrogate for a globally scored union."""
+
+    if row_scores.ndim != 1 or candidate_weights.ndim != 1 or (
+        row_scores.shape != candidate_weights.shape
+    ):
+        raise LossContractError(
+            "row scores and candidate weights must be aligned vectors",
+            code="loss.human13_streaming_weights_shape",
+        )
+    if row_scores.numel() == 0:
+        raise LossContractError(
+            "streamed union requires at least one candidate",
+            code="loss.human13_streaming_empty",
+        )
+    scores = row_scores.float()
+    weights = candidate_weights.to(device=scores.device, dtype=torch.float32).detach()
+    if not bool(torch.isfinite(scores).all().item()) or not bool(
+        torch.isfinite(weights).all().item()
+    ):
+        raise LossContractError(
+            "streamed union scores and weights must be finite",
+            code="loss.human13_streaming_nonfinite",
+        )
+    if bool((weights < 0).any().item()) or not torch.allclose(
+        weights.sum(),
+        weights.new_tensor(1.0),
+        rtol=1e-5,
+        atol=1e-6,
+    ):
+        raise LossContractError(
+            "streamed union candidate weights must be nonnegative and sum to one",
+            code="loss.human13_streaming_weights_normalization",
+        )
+    numerator = -(weights * scores).sum()
+    effective = weights.square().sum().reciprocal()
+    _require_finite_outputs(numerator=numerator, effective_owner_count=effective)
+    return StreamedPrefixFreeUnionResult(
+        raw_loss=numerator,
+        numerator=numerator,
+        candidate_weights=tuple(float(value) for value in weights.cpu()),
+        effective_owner_count=float(effective.detach().item()),
+        candidate_count=int(scores.numel()),
         all_finite=True,
     )
 
@@ -403,8 +481,11 @@ __all__ = [
     "DuplicateUnlikelihoodResult",
     "OwnerMeanCrossEntropyResult",
     "PrefixFreeUnionResult",
+    "StreamedPrefixFreeUnionResult",
     "coherent_full_chain_bottleneck_hinge",
     "image_balanced_duplicate_token_unlikelihood",
     "owner_mean_masked_row_cross_entropy",
     "prefix_free_union_negative_log_mass",
+    "prefix_free_union_detached_weight_surrogate",
+    "prefix_free_union_streaming_weights",
 ]

@@ -273,7 +273,9 @@ def test_training_session_uses_existing_trainer_and_writes_all_checkpoint_readba
         lambda _path, payload: receipts.append(dict(payload)) or _path,
     )
     monkeypatch.setattr(live_train, "_validate_prepared_payload", lambda prepared: None)
-    monkeypatch.setattr(live_train, "_loss_runner", lambda plan: "loss-runner")
+    monkeypatch.setattr(
+        live_train, "_loss_runner", lambda plan, **kwargs: "loss-runner"
+    )
     monkeypatch.setattr(live_train, "_loss_context_factory", lambda: "context-factory")
     monkeypatch.setattr(
         live_train,
@@ -332,7 +334,9 @@ def test_vertical_training_session_writes_only_step_one_checkpoint(
         live_train, "write_immutable_receipt", lambda path, payload: path
     )
     monkeypatch.setattr(live_train, "_validate_prepared_payload", lambda prepared: None)
-    monkeypatch.setattr(live_train, "_loss_runner", lambda plan: "loss-runner")
+    monkeypatch.setattr(
+        live_train, "_loss_runner", lambda plan, **kwargs: "loss-runner"
+    )
     monkeypatch.setattr(live_train, "_loss_context_factory", lambda: "context-factory")
     monkeypatch.setattr(
         live_train,

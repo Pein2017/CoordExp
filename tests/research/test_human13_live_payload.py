@@ -161,27 +161,30 @@ def test_payload_keeps_sites_separate_across_multiple_packs(
     assert tuple(sequence.pack_index for sequence in result.token_sequences.values()) == (0, 1)
 
 
-def test_a4_requires_aggregate_atomic_preflight_before_plan(
+def test_a4_logical_group_may_span_multiple_physical_packs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    candidate = _segment("candidate", "a4_union", row_id="candidate-1")
-    materialized = _materialized((candidate,), a4=(candidate,), total=9)
-    monkeypatch.setattr(
-        runner,
-        "build_execution_plan",
-        lambda *args, **kwargs: pytest.fail("must preflight"),
+    candidates = (
+        _segment("candidate-1", "a4_union", row_id="candidate-1", length=8),
+        _segment("candidate-2", "a4_union", row_id="candidate-2", length=8),
+    )
+    materialized = _materialized(candidates, a4=candidates, total=16)
+    monkeypatch.setattr(runner, "build_execution_plan", lambda *args, **kwargs: "execution")
+
+    result = payload.build_live_payload(
+        sealed_manifest=_sealed(),
+        materialized_segments=materialized,
+        arm_id="A4",
+        expected_vocab_size=128,
+        vocab_groups=SimpleNamespace(vocab_size=128),
+        global_max_length=8,
     )
 
-    with pytest.raises(payload.PayloadContractError, match="A4 aggregate"):
-        payload.build_live_payload(
-            sealed_manifest=_sealed(),
-            materialized_segments=materialized,
-            arm_id="A4",
-            expected_vocab_size=128,
-            vocab_groups=SimpleNamespace(vocab_size=128),
-            global_max_length=8,
-        )
-    assert materialized.calls == [(8, True)]
+    assert len(result.packed_plan.packs) == 2
+    assert {
+        site.segment_id for sites in result.sites_by_pack.values() for site in sites
+    } == {"candidate-1", "candidate-2"}
+    assert materialized.calls == [(8, False)]
 
 
 def test_a6_binding_is_passed_through_and_a8_margin_is_bound(

@@ -75,7 +75,7 @@ def test_logical_roles_keep_coherent_units_and_independent_a4_candidates() -> No
     )
 
 
-def test_a4_candidate_segments_are_atomic_in_one_pack_and_attention_isolated() -> None:
+def test_a4_candidate_segments_may_split_across_isolated_physical_packs() -> None:
     plan = runner.plan_panel_packs(
         (
             _segment("replay:other", 2, "source_replay", 7),
@@ -85,30 +85,31 @@ def test_a4_candidate_segments_are_atomic_in_one_pack_and_attention_isolated() -
         global_max_length=12,
     )
 
-    a4_pack = next(
-        pack
+    a4_locations = {
+        segment.segment_id: pack.pack.pack_index
         for pack in plan.packs
-        if any(segment.role == "a4_union" for segment in pack.logical_segments)
-    )
-    assert tuple(
-        segment.segment_id
-        for segment in a4_pack.logical_segments
+        for segment in pack.logical_segments
         if segment.role == "a4_union"
-    ) == ("a4:1:first", "a4:1:second")
-    assert a4_pack.pack.length == 11
-    assert a4_pack.fa2_varlen_plan.segment_boundaries == (0, 6, 11)
-    assert a4_pack.position_inputs.reset_points == (0, 6)
+    }
+    assert set(a4_locations) == {"a4:1:first", "a4:1:second"}
+    assert len(set(a4_locations.values())) == 2
+    assert all(
+        pack.fa2_varlen_plan.segment_boundaries[0] == 0
+        and pack.position_inputs.reset_points[0] == 0
+        for pack in plan.packs
+    )
 
 
-def test_a4_atomic_candidate_bundle_fails_when_combined_length_exceeds_limit() -> None:
-    with pytest.raises(ValueError, match="A4 atomic candidate bundle"):
-        runner.plan_panel_packs(
-            (
-                _segment("a4:1:first", 1, "a4_union", 7),
-                _segment("a4:1:second", 1, "a4_union", 6),
-            ),
-            global_max_length=12,
-        )
+def test_a4_logical_bundle_exceeding_one_pack_streams_individual_candidates() -> None:
+    plan = runner.plan_panel_packs(
+        (
+            _segment("a4:1:first", 1, "a4_union", 7),
+            _segment("a4:1:second", 1, "a4_union", 6),
+        ),
+        global_max_length=12,
+    )
+
+    assert len(plan.packs) == 2
 
 
 def test_stable_descending_length_first_fit_reuses_no_padding_planner() -> None:
@@ -288,6 +289,136 @@ def test_a4_union_dispatch_is_once_per_image_across_candidate_rows() -> None:
         torch.log(torch.tensor(2.0)).item()
     )
     assert bundle.term_by_name("h").diagnostics["atomic_image_count"] == 1
+
+
+def test_a4_two_pass_scores_globally_then_replays_exact_gradient() -> None:
+    denominators = runner.Human13PanelDenominators(family_counts=(("h", 1),))
+    model = torch.nn.Linear(1, 1, bias=False)
+    with torch.no_grad():
+        model.weight.fill_(0.7)
+    calls: list[str] = []
+
+    def micro_step(pack_index: int, segment_id: str, scale: float) -> SimpleNamespace:
+        site = runner.Human13LossSite(
+            family="h",
+            objective="union_mass",
+            unit_id=segment_id,
+            image_id=1,
+            logits_positions=(pack_index,),
+            target_token_ids=(0,),
+            segment_id=segment_id,
+            manifest_row_ids=(segment_id,),
+        )
+        return SimpleNamespace(
+            pack=SimpleNamespace(pack_index=pack_index),
+            metadata={
+                "human13_panel_denominators": denominators,
+                "human13_loss_sites": (site,),
+                "scale": scale,
+            },
+        )
+
+    micro_steps = (
+        micro_step(0, "candidate-a", 1.0),
+        micro_step(1, "candidate-b", 2.0),
+    )
+
+    def forward(_model: object, step: SimpleNamespace) -> SimpleNamespace:
+        calls.append(f"forward:{step.pack.pack_index}")
+        value = model.weight.reshape(1) * float(step.metadata["scale"])
+        logits = torch.stack((value, torch.zeros_like(value)), dim=-1).reshape(1, 1, 2)
+        return SimpleNamespace(
+            logits=logits,
+            logits_position_ids=(step.pack.pack_index,),
+        )
+
+    loss_runner = runner.Human13A4TwoPassLossRunner(
+        denominators=denominators,
+        coefficients=(("h", 1.0),),
+        model=model,
+        score_forward=forward,
+    )
+    plan = loss_runner.prepare_planned_step(micro_steps)
+    assert calls == ["forward:0", "forward:1"]
+    assert sum(item.weight for item in plan.candidates) == pytest.approx(1.0)
+
+    bundles = []
+    for index, step in enumerate(micro_steps):
+        forward_result = forward(model, step)
+        context = runner.human13_loss_context_factory(step, forward_result)
+        bundles.append(
+            loss_runner.compute_micro_step(
+                context, plan, local_micro_step_index=index
+            )
+        )
+    streamed = sum(bundle.total_loss for bundle in bundles)
+    streamed_gradient = torch.autograd.grad(streamed, model.weight)[0]
+
+    reference_scores = torch.stack(
+        tuple(
+            torch.log_softmax(
+                torch.stack(
+                    (
+                        model.weight.reshape(1) * scale,
+                        torch.zeros_like(model.weight.reshape(1)),
+                    ),
+                    dim=-1,
+                ),
+                dim=-1,
+            )[0, 0]
+            for scale in (1.0, 2.0)
+        )
+    )
+    reference = -torch.logsumexp(reference_scores, dim=0)
+    reference_gradient = torch.autograd.grad(reference, model.weight)[0]
+
+    assert calls == ["forward:0", "forward:1", "forward:0", "forward:1"]
+    assert torch.allclose(streamed_gradient, reference_gradient)
+
+
+def test_a4_two_pass_rejects_parameter_change_before_replay() -> None:
+    denominators = runner.Human13PanelDenominators(family_counts=(("h", 1),))
+    model = torch.nn.Linear(1, 1, bias=False)
+    site = runner.Human13LossSite(
+        family="h",
+        objective="union_mass",
+        unit_id="candidate",
+        image_id=1,
+        logits_positions=(0,),
+        target_token_ids=(0,),
+        segment_id="candidate",
+        manifest_row_ids=("candidate",),
+    )
+    step = SimpleNamespace(
+        pack=SimpleNamespace(pack_index=0),
+        metadata={
+            "human13_panel_denominators": denominators,
+            "human13_loss_sites": (site,),
+        },
+    )
+
+    def forward(_model: object, _step: object) -> SimpleNamespace:
+        value = model.weight.reshape(1)
+        return SimpleNamespace(
+            logits=torch.stack((value, torch.zeros_like(value)), dim=-1).reshape(
+                1, 1, 2
+            ),
+            logits_position_ids=(0,),
+        )
+
+    loss_runner = runner.Human13A4TwoPassLossRunner(
+        denominators=denominators,
+        coefficients=(("h", 1.0),),
+        model=model,
+        score_forward=forward,
+    )
+    plan = loss_runner.prepare_planned_step((step,))
+    with torch.no_grad():
+        model.weight.add_(0.1)
+    context = runner.human13_loss_context_factory(step, forward(model, step))
+
+    with pytest.raises(ValueError, match="parameters changed"):
+        loss_runner.compute_micro_step(context, plan, local_micro_step_index=0)
 
 
 def test_duplicate_events_split_across_packs_keep_full_image_and_panel_denominators() -> (
@@ -541,7 +672,7 @@ def test_execution_plan_derives_every_loss_site_from_manifest_and_encoded_rows(
         "different_prefix",
     ),
 )
-def test_a4_requires_independent_candidate_segments_in_one_atomic_pack(
+def test_a4_requires_complete_independent_candidate_segments_across_packs(
     mutation: str | None,
 ) -> None:
     sealed, packed_plan, sites_by_pack = _a4_payload(
@@ -584,7 +715,7 @@ def test_a4_requires_independent_candidate_segments_in_one_atomic_pack(
         ]
         changed[pack_index] = tuple(sites)
 
-    if mutation is None:
+    if mutation in {None, "reordered_candidates"}:
         execution = runner.build_execution_plan(
             sealed,
             arm_id="A4",
@@ -597,7 +728,6 @@ def test_a4_requires_independent_candidate_segments_in_one_atomic_pack(
             for segment in segments
             if segment.role == "a4_union"
         ]
-        assert len({pack_index for pack_index, _segment in a4_packs}) == 1
         assert len(a4_packs) == 2
         assert all(len(segment.row_bindings) == 1 for _, segment in a4_packs)
     else:

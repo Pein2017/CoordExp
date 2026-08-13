@@ -25,6 +25,7 @@ from src.losses.human13_k_union import (
     image_balanced_duplicate_token_unlikelihood,
     owner_mean_masked_row_cross_entropy,
     prefix_free_union_negative_log_mass,
+    prefix_free_union_streaming_weights,
 )
 from src.losses.normalizers import SegmentBalancedDenominator
 from src.losses.runner import LossBundle, LossTermResult
@@ -36,6 +37,7 @@ from src.training.supervised_trainer import (
     SupervisedMicroStep,
     SupervisedTrainer,
     SupervisedTrainingResult,
+    _default_qwen_forward,
 )
 
 
@@ -244,6 +246,22 @@ class Human13PlannedLossPlan:
     denominators: Human13PanelDenominators
     coefficients: tuple[tuple[LossFamily, float], ...]
     micro_step_count: int
+
+
+@dataclass(frozen=True)
+class Human13A4CandidateWeight:
+    image_id: int
+    segment_id: str
+    row_score: float
+    weight: float
+
+
+@dataclass(frozen=True)
+class Human13A4PlannedLossPlan(Human13PlannedLossPlan):
+    candidates: tuple[Human13A4CandidateWeight, ...]
+    reference_nll_by_image: tuple[tuple[int, float], ...]
+    parameter_versions: tuple[tuple[int, int], ...]
+    score_forward_count: int
 
 
 @dataclass(frozen=True)
@@ -481,35 +499,17 @@ def plan_panel_packs(
 
     checked = build_logical_segments(segments)
     limit = _validate_pack_limit(global_max_length)
-    a4_by_image: dict[int, list[LogicalPanelSegment]] = {}
-    packing_units: list[tuple[LogicalPanelSegment, ...]] = []
-    for item in checked:
-        if item.role == "a4_union":
-            a4_by_image.setdefault(item.image_id, []).append(item)
-        else:
-            packing_units.append((item,))
-    packing_units.extend(tuple(items) for items in a4_by_image.values())
+    packing_units = [(item,) for item in checked]
 
     for unit in packing_units:
         unit_length = sum(item.encoded_length for item in unit)
-        a4_image_id = unit[0].image_id if unit[0].role == "a4_union" else None
         if unit_length > GLOBAL_MAX_LENGTH:
-            if a4_image_id is not None:
-                raise ValueError(
-                    f"A4 atomic candidate bundle for image {a4_image_id} exceeds "
-                    "the 12,000-token hard preflight"
-                )
             item = unit[0]
             raise ValueError(
                 f"logical segment {item.segment_id!r} exceeds the 12,000-token "
                 "hard preflight"
             )
         if unit_length > limit:
-            if a4_image_id is not None:
-                raise ValueError(
-                    f"A4 atomic candidate bundle for image {a4_image_id} exceeds "
-                    "the configured pack limit"
-                )
             item = unit[0]
             raise ValueError(
                 f"logical segment {item.segment_id!r} exceeds the configured pack limit"
@@ -879,6 +879,251 @@ class Human13PanelLossRunner:
         }
 
 
+@dataclass(frozen=True)
+class Human13A4TwoPassLossRunner(Human13PanelLossRunner):
+    """Exact fixed-theta score/replay runner for physically streamed A4."""
+
+    model: Any
+    score_forward: Callable[[Any, SupervisedMicroStep], Any]
+
+    def prepare_planned_step(
+        self,
+        micro_steps: Sequence[Any],
+        *,
+        denominator_gatherer: Any | None = None,
+        world_size: int = 1,
+        rank: int = 0,
+    ) -> Human13A4PlannedLossPlan:
+        checked = tuple(micro_steps)
+        base = super().prepare_planned_step(
+            checked,
+            denominator_gatherer=denominator_gatherer,
+            world_size=world_size,
+            rank=rank,
+        )
+        before = _parameter_versions(self.model)
+        scores: dict[tuple[int, str], float] = {}
+        score_forward_count = 0
+        with torch.no_grad():
+            for micro_step in checked:
+                metadata = getattr(micro_step, "metadata", None)
+                sites = (
+                    metadata.get("human13_loss_sites")
+                    if isinstance(metadata, Mapping)
+                    else ()
+                )
+                union_sites = tuple(
+                    site for site in sites if site.objective == "union_mass"
+                )
+                if not union_sites:
+                    continue
+                forward_result = self.score_forward(self.model, micro_step)
+                context = human13_loss_context_factory(micro_step, forward_result)
+                for site in union_sites:
+                    key = (site.image_id, site.segment_id)
+                    if not site.segment_id or key in scores:
+                        raise ValueError(
+                            "A4 score pass requires unique content-bound candidates"
+                        )
+                    scores[key] = float(_union_row_score(context, site).item())
+                score_forward_count += 1
+                del context, forward_result
+        after = _parameter_versions(self.model)
+        if before != after:
+            raise ValueError("A4 parameters changed during the no-grad score pass")
+        if not scores:
+            raise ValueError("A4 score pass found no union candidates")
+
+        candidates: list[Human13A4CandidateWeight] = []
+        reference_nll: list[tuple[int, float]] = []
+        image_ids = sorted({image_id for image_id, _segment_id in scores})
+        for image_id in image_ids:
+            group = tuple(
+                sorted(
+                    (
+                        (segment_id, score)
+                        for (candidate_image, segment_id), score in scores.items()
+                        if candidate_image == image_id
+                    ),
+                    key=lambda item: item[0],
+                )
+            )
+            score_tensor = torch.tensor(
+                [score for _segment_id, score in group], dtype=torch.float32
+            )
+            weights = prefix_free_union_streaming_weights(score_tensor)
+            reference_nll.append(
+                (image_id, float((-torch.logsumexp(score_tensor, dim=0)).item()))
+            )
+            candidates.extend(
+                Human13A4CandidateWeight(
+                    image_id=image_id,
+                    segment_id=segment_id,
+                    row_score=score,
+                    weight=float(weight),
+                )
+                for (segment_id, score), weight in zip(
+                    group, weights.tolist(), strict=True
+                )
+            )
+        return Human13A4PlannedLossPlan(
+            denominators=base.denominators,
+            coefficients=base.coefficients,
+            micro_step_count=base.micro_step_count,
+            candidates=tuple(candidates),
+            reference_nll_by_image=tuple(reference_nll),
+            parameter_versions=before,
+            score_forward_count=score_forward_count,
+        )
+
+    def compute_micro_step(
+        self,
+        context: Human13PackLossContext,
+        plan: Human13PlannedLossPlan,
+        *,
+        local_micro_step_index: int,
+    ) -> LossBundle:
+        if not isinstance(plan, Human13A4PlannedLossPlan):
+            raise TypeError("A4 two-pass runner requires an A4 score plan")
+        if _parameter_versions(self.model) != plan.parameter_versions:
+            raise ValueError("A4 parameters changed between score and gradient replay")
+        weights = {
+            (item.image_id, item.segment_id): item.weight for item in plan.candidates
+        }
+        terms: list[LossTermResult] = []
+        for family, weight in plan.coefficients:
+            if weight == 0:
+                continue
+            sites = tuple(site for site in context.sites if site.family == family)
+            if family == "h":
+                numerator = context.logits.sum() * 0.0
+                local_weights: list[float] = []
+                for site in sites:
+                    key = (site.image_id, site.segment_id)
+                    if site.objective != "union_mass" or key not in weights:
+                        raise ValueError(
+                            "A4 gradient replay candidate differs from score pass"
+                        )
+                    candidate_weight = weights[key]
+                    numerator = numerator - (
+                        _union_row_score(context, site) * candidate_weight
+                    )
+                    local_weights.append(candidate_weight)
+                selected_count = sum(len(site.logits_positions) for site in sites)
+                diagnostics = {
+                    "objective_kinds": ["union_mass"],
+                    "two_pass_exact": True,
+                    "candidate_weights": local_weights,
+                    "score_forward_count": plan.score_forward_count,
+                }
+            else:
+                numerator, selected_count, diagnostics = _dispatch_family(
+                    context,
+                    sites,
+                    denominators=plan.denominators,
+                )
+            denominator_count = plan.denominators.family_count(family)
+            raw_loss = numerator / denominator_count
+            weighted_loss = raw_loss * weight
+            terms.append(
+                LossTermResult(
+                    name=family,
+                    raw_loss=raw_loss,
+                    weighted_loss=weighted_loss,
+                    weight=weight,
+                    segment_mean_numerator=numerator,
+                    denominator=SegmentBalancedDenominator(
+                        term_name=family,
+                        denominator_scope="planned_step",
+                        eligible_segment_count=denominator_count,
+                        selected_atom_count=selected_count,
+                        skipped_segment_count=0,
+                        context_count=plan.micro_step_count,
+                    ),
+                    reducer_name="human13_complete_panel",
+                    selected_count=selected_count,
+                    skipped_count=0,
+                    math_dtype="float32",
+                    token_weighted_diagnostic=raw_loss.detach(),
+                    diagnostics={
+                        "local_micro_step_index": local_micro_step_index,
+                        "denominator_scope": "complete_panel",
+                        **diagnostics,
+                    },
+                )
+            )
+        total = sum((term.weighted_loss for term in terms), context.logits.sum() * 0.0)
+        finite = bool(torch.isfinite(total).item()) and all(
+            bool(torch.isfinite(term.weighted_loss).item()) for term in terms
+        )
+        return LossBundle(
+            total_loss=total,
+            terms=tuple(terms),
+            metrics={"loss/total": float(total.detach())},
+            counts={
+                "count/packs": 1,
+                "count/sites": sum(len(site.logits_positions) for site in context.sites),
+            },
+            diagnostics={"denominator_scope": "complete_panel", "two_pass_exact": True},
+            finite_status={
+                "total_loss": "finite" if finite else "nonfinite",
+                "terms": {
+                    term.name: (
+                        "finite"
+                        if bool(torch.isfinite(term.weighted_loss).item())
+                        else "nonfinite"
+                    )
+                    for term in terms
+                },
+            },
+        )
+
+    def finalize_planned_step(
+        self,
+        micro_loss_artifacts: Sequence[Mapping[str, Any]],
+        plan: Human13PlannedLossPlan,
+    ) -> dict[str, Any]:
+        if not isinstance(plan, Human13A4PlannedLossPlan):
+            raise TypeError("A4 two-pass runner requires an A4 score plan")
+        artifact = super().finalize_planned_step(micro_loss_artifacts, plan)
+        groups: list[dict[str, Any]] = []
+        for image_id in sorted({item.image_id for item in plan.candidates}):
+            candidates = tuple(
+                item for item in plan.candidates if item.image_id == image_id
+            )
+            weights = torch.tensor(
+                [item.weight for item in candidates], dtype=torch.float32
+            )
+            groups.append(
+                {
+                    "image_id": image_id,
+                    "candidate_ids": [item.segment_id for item in candidates],
+                    "candidate_weights": [item.weight for item in candidates],
+                    "effective_owner_count": float(
+                        weights.square().sum().reciprocal().item()
+                    ),
+                    "candidate_count": len(candidates),
+                }
+            )
+        for term in artifact["terms"]:
+            if term["name"] == "h":
+                term["diagnostics"] = {
+                    "objective_kinds": ["union_mass"],
+                    "two_pass_exact": True,
+                    "score_forward_count": plan.score_forward_count,
+                    "replay_forward_count": plan.micro_step_count,
+                    "reference_nll_by_image": dict(plan.reference_nll_by_image),
+                    "candidate_groups": groups,
+                }
+        artifact["two_pass_a4"] = {
+            "score_forward_count": plan.score_forward_count,
+            "replay_forward_count": plan.micro_step_count,
+            "candidate_count": len(plan.candidates),
+            "parameter_state_preserved": True,
+        }
+        return artifact
+
+
 def load_sealed_training_manifest(path: str | Path) -> SealedHuman13Manifest:
     """Load the canonical digest-bound manifest and require the full panel."""
 
@@ -977,16 +1222,26 @@ def run_panel_exposure(
         _validate_execution_payload(sealed, execution_plan, packs)
         if not packs:
             raise ValueError("one panel exposure requires at least one physical pack")
+        loss_runner: Human13PanelLossRunner
+        if execution_plan.arm_id == "A4":
+            loss_runner = Human13A4TwoPassLossRunner(
+                denominators=execution_plan.denominators,
+                coefficients=execution_plan.coefficients,
+                model=getattr(runtime, "model", model),
+                score_forward=qwen_forward or _default_qwen_forward,
+            )
+        else:
+            loss_runner = Human13PanelLossRunner(
+                denominators=execution_plan.denominators,
+                coefficients=execution_plan.coefficients,
+            )
         trainer = SupervisedTrainer(
             model=model,
             schedule=_one_exposure_schedule(pack_count=len(packs)),
             pack_stream=packs,
             qwen_forward=qwen_forward,
             loss_context_factory=human13_loss_context_factory,
-            loss_runner=Human13PanelLossRunner(
-                denominators=execution_plan.denominators,
-                coefficients=execution_plan.coefficients,
-            ),
+            loss_runner=loss_runner,
             runtime=runtime,
             on_final=write_final,
         )
@@ -1520,16 +1775,11 @@ def _validate_sites_against_manifest(
     if contract.h_role == "a4_union":
         for image_id, entries in a4_segments_by_image.items():
             image = images[image_id]
-            pack_indices = {pack_index for pack_index, _segment in entries}
-            if len(pack_indices) != 1:
-                raise ValueError(
-                    "A4 candidate segments must stay in one atomic physical pack"
-                )
             segments = tuple(segment for _pack_index, segment in entries)
             candidate_row_ids = tuple(
                 segment.row_bindings[0].manifest_row_id for segment in segments
             )
-            if candidate_row_ids != tuple(image.candidate_row_ids):
+            if sorted(candidate_row_ids) != sorted(image.candidate_row_ids):
                 raise ValueError(
                     "A4 candidate rows must appear exactly once in canonical "
                     "manifest order"
@@ -1905,6 +2155,29 @@ def _merge_family_diagnostics(terms: Sequence[Mapping[str, Any]]) -> dict[str, A
     return merged
 
 
+def _parameter_versions(model: Any) -> tuple[tuple[int, int], ...]:
+    parameters = getattr(model, "parameters", None)
+    if not callable(parameters):
+        raise ValueError("A4 two-pass scoring requires a parameterized model")
+    return tuple((id(parameter), int(parameter._version)) for parameter in parameters())
+
+
+def _union_row_score(
+    context: Human13PackLossContext, site: Human13LossSite
+) -> torch.Tensor:
+    if site.objective != "union_mass":
+        raise ValueError("A4 row scoring requires a union-mass site")
+    selected = _selected_site_logits(context, site).float()
+    targets = torch.tensor(
+        site.target_token_ids,
+        dtype=torch.long,
+        device=selected.device,
+    )
+    return torch.log_softmax(selected, dim=-1).gather(
+        1, targets.unsqueeze(1)
+    ).sum()
+
+
 def _dispatch_family(
     context: Human13PackLossContext,
     sites: tuple[Human13LossSite, ...],
@@ -2161,6 +2434,9 @@ __all__ = [
     "GLOBAL_MAX_LENGTH",
     "Human13A6DonorBinding",
     "Human13A6DonorRecord",
+    "Human13A4CandidateWeight",
+    "Human13A4PlannedLossPlan",
+    "Human13A4TwoPassLossRunner",
     "Human13CompactLogitsMetadata",
     "Human13EncodedRowBinding",
     "Human13ExecutionPlan",
