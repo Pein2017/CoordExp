@@ -22,8 +22,12 @@ class _Model:
 
 class _Tokenizer:
     def decode(self, token_ids, **_):
-        assert token_ids == [40, 41, 99]
-        return "person<|object_ref_end|><|box_start|>(1,2),(3,4)<|box_end|><|im_end|>"
+        assert token_ids in ([30], [30, 31], [40, 41, 99])
+        return (
+            "<|object_ref_start|>person<|object_ref_end|>"
+            "<|box_start|><|coord_1|><|coord_2|><|coord_3|><|coord_4|>"
+            "<|box_end|><|im_end|>"
+        )
 
 
 class _Session:
@@ -61,6 +65,9 @@ def test_forced_complete_row_releases_one_unconstrained_natural_suffix() -> None
     assert result.released_token_ids == (40, 41, 99)
     assert result.termination_status == "natural_im_end"
     assert result.cap_hit is False
+    assert result.forced_row_parse_evidence["parse_status"] == "accepted"
+    assert len(result.forced_row_parse_evidence["predictions"]) == 1
+    assert result.parse_evidence["parse_status"] == "accepted"
 
 
 def test_continuation_cap_hit_is_explicit_harm() -> None:

@@ -24,6 +24,7 @@ class ForcedContinuationResult:
     termination_status: str
     cap_hit: bool
     generated_text: str
+    forced_row_parse_evidence: Mapping[str, Any]
     parse_evidence: Mapping[str, Any]
     forced_context_sha256: str
     released_token_ids_sha256: str
@@ -108,6 +109,18 @@ def forced_complete_row_then_natural_continuation(
         termination_status = "nonterminal_return"
 
     generated_text = tokenizer.decode(list(released), skip_special_tokens=False)
+    forced_row_text = tokenizer.decode(list(forced_row), skip_special_tokens=False)
+    forced_parsed = parse_compact_object_box_closed(
+        forced_row_text,
+        row_id="human13:forced-row:intervention",
+        row_index=0,
+        image_width=int(image_width),
+        image_height=int(image_height),
+    )
+    if len(forced_parsed.predictions) != 1 or forced_parsed.dropped_predictions:
+        raise ValueError(
+            "forced native row did not parse as exactly one clean prediction"
+        )
     parsed = parse_compact_object_box_closed(
         generated_text,
         row_id="human13:forced-row:natural-continuation",
@@ -121,6 +134,7 @@ def forced_complete_row_then_natural_continuation(
         termination_status=termination_status,
         cap_hit=cap_hit,
         generated_text=generated_text,
+        forced_row_parse_evidence=forced_parsed.to_artifact_dict(),
         parse_evidence=parsed.to_artifact_dict(),
         forced_context_sha256=hash_prefix_token_ids(forced_context),
         released_token_ids_sha256=hash_prefix_token_ids(released),
