@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -79,6 +80,26 @@ def _qualification_spec(node: Mapping[str, Any]) -> CellSpec:
         fresh_optimizer_identity_sha256=planned["fresh_optimizer_identity_sha256"],
         evaluation_rps=(1.0, 1.10),
         output_root=planned["output_root"],
+    )
+
+
+def _learning_rate_decision(
+    selected: float = production.DEFAULT_QUALIFICATION_LEARNING_RATE,
+) -> production.GlobalLearningRateDecision:
+    return production.GlobalLearningRateDecision(
+        qualification_decision_sha256=_digest("qualification-lr-decision"),
+        selected_learning_rate=selected,
+        allowed_learning_rates=production.QUALIFICATION_LEARNING_RATE_RAY,
+        training_rp_learning_rates=((1.0, selected), (1.10, selected)),
+        arm_learning_rates=(("A", selected), ("B", selected), ("C", selected)),
+        seed_group_learning_rates=(
+            ("matrix_a", selected),
+            ("matrix_b", selected),
+            ("matrix_c", selected),
+        ),
+        selection_policy="sealed_qualification_global_before_matrix",
+        online_adaptation=False,
+        grad_delta_norm_role="covariate_only",
     )
 
 
@@ -209,6 +230,7 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
                     ),
                     "C": spec.objective_component_hashes,
                 },
+                learning_rate_decision=_learning_rate_decision(),
                 streaming_mode="per_image_or_pack",
             )
 
@@ -220,9 +242,17 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
                 panel_wide_logits_retained=False,
             )
 
-        def services_for_cell(self, selected_spec: CellSpec) -> CellRuntimeServices:
+        def services_for_cell(
+            self,
+            selected_spec: CellSpec,
+            learning_rate_decision: production.GlobalLearningRateDecision,
+        ) -> CellRuntimeServices:
             events.append("services")
             assert selected_spec == spec
+            assert learning_rate_decision.selected_learning_rate == 3.0e-6
+            assert learning_rate_decision.content_sha256 == (
+                _learning_rate_decision().content_sha256
+            )
             return cast(CellRuntimeServices, object())
 
     def fake_run_cell(selected_spec, *, services, receipt_writer):
@@ -250,6 +280,70 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
     assert terminal["status"] == "succeeded"
     assert [item["cell_key"]["arm_id"] for item in terminal["cell_specs"]] == ["C"]
     assert Path(node["receipt_path"]).is_file()
+
+
+@pytest.mark.parametrize("selected", [2.0e-6, 0.0, float("nan")])
+def test_global_learning_rate_decision_rejects_arbitrary_off_grid_doses(
+    selected: float,
+) -> None:
+    with pytest.raises(ValueError, match="exact sealed qualification dose ray"):
+        _learning_rate_decision(selected)
+
+
+def test_global_learning_rate_decision_defaults_to_three_e_minus_six() -> None:
+    decision = production.GlobalLearningRateDecision.sealed(
+        _digest("qualification-lr-decision")
+    )
+
+    assert production.DEFAULT_QUALIFICATION_LEARNING_RATE == 3.0e-6
+    assert decision.selected_learning_rate == 3.0e-6
+
+
+@pytest.mark.parametrize("selected", production.QUALIFICATION_LEARNING_RATE_RAY)
+def test_every_sealed_qualification_dose_can_be_content_bound(
+    selected: float,
+) -> None:
+    decision = production.GlobalLearningRateDecision.sealed(
+        _digest("qualification-lr-decision"),
+        selected_learning_rate=selected,
+    )
+
+    assert decision.selected_learning_rate == selected
+    assert len(decision.content_sha256) == 64
+
+
+@pytest.mark.parametrize(
+    ("field", "assignments", "message"),
+    [
+        (
+            "training_rp_learning_rates",
+            ((1.0, 3.0e-6), (1.10, 1.0e-6)),
+            "both training RP contracts",
+        ),
+        (
+            "arm_learning_rates",
+            (("A", 3.0e-6), ("B", 1.0e-6), ("C", 3.0e-6)),
+            "every A/B/C arm",
+        ),
+        (
+            "seed_group_learning_rates",
+            (("matrix_a", 3.0e-6), ("matrix_b", 3.0e-6), ("matrix_c", 1.0e-6)),
+            "every matrix seed group",
+        ),
+    ],
+)
+def test_global_learning_rate_decision_rejects_per_contract_drift(
+    field: str,
+    assignments: tuple[tuple[str | float, float], ...],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        replace(_learning_rate_decision(), **{field: assignments})
+
+
+def test_global_learning_rate_decision_forbids_online_norm_adaptation() -> None:
+    with pytest.raises(ValueError, match="grad/delta norms are covariates only"):
+        replace(_learning_rate_decision(), online_adaptation=True)
 
 
 def test_missing_live_pack_owner_fails_closed_with_a_durable_node_terminal(

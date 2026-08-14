@@ -56,46 +56,56 @@ def test_on_policy_arms_reuse_surface_with_eight_attempt_milestones() -> None:
         live.validate_human13_live_model_plan(plan)
 
 
-def test_rp_crossover_arms_use_the_exact_single_update_low_dose_surface() -> None:
+def test_rp_crossover_arms_accept_only_the_sealed_qualification_dose_ray() -> None:
     from scripts.research.materialize_human13_k_union_configs import load_arm_config
 
     base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
     assert base.optimizer is not None
-    for arm_id in ("A", "B", "C"):
-        crossover = replace(
-            base,
-            unit_id=live.RP_CROSSOVER_UNIT_ID,
-            arm_id=arm_id,
-            optimizer=replace(base.optimizer, learning_rate=3.0e-6),
-            milestones=live.RP_CROSSOVER_MILESTONES,
-        )
-        plan = live.build_human13_live_model_plan(crossover)
-        assert plan.unit_id == live.RP_CROSSOVER_UNIT_ID
-        assert plan.arm_id == arm_id
-        assert plan.learning_rate == 3.0e-6
-        assert plan.milestones == (0, 1)
-        assert plan.source.checkpoint_path == live.SOURCE_CHECKPOINT_PATH
-        assert plan.adapter_target_towers == ("language",)
-        assert plan.world_size == 1
-        live.validate_human13_live_model_plan(plan)
+    assert live.RP_CROSSOVER_LEARNING_RATE_RAY == (
+        3.0e-7,
+        1.0e-6,
+        3.0e-6,
+        1.0e-5,
+        3.0e-5,
+    )
+    for learning_rate in live.RP_CROSSOVER_LEARNING_RATE_RAY:
+        for arm_id in ("A", "B", "C"):
+            crossover = replace(
+                base,
+                unit_id=live.RP_CROSSOVER_UNIT_ID,
+                arm_id=arm_id,
+                optimizer=replace(base.optimizer, learning_rate=learning_rate),
+                milestones=live.RP_CROSSOVER_MILESTONES,
+            )
+            plan = live.build_human13_live_model_plan(crossover)
+            assert plan.unit_id == live.RP_CROSSOVER_UNIT_ID
+            assert plan.arm_id == arm_id
+            assert plan.learning_rate == learning_rate
+            assert plan.milestones == (0, 1)
+            assert plan.source.checkpoint_path == live.SOURCE_CHECKPOINT_PATH
+            assert plan.adapter_target_towers == ("language",)
+            assert plan.world_size == 1
+            live.validate_human13_live_model_plan(plan)
 
 
-def test_rp_crossover_rejects_the_predecessor_learning_rate() -> None:
+def test_rp_crossover_rejects_an_off_grid_learning_rate() -> None:
     from scripts.research.materialize_human13_k_union_configs import load_arm_config
 
     base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
-    old_dose = replace(
+    assert base.optimizer is not None
+    off_grid_dose = replace(
         base,
         unit_id=live.RP_CROSSOVER_UNIT_ID,
         arm_id="C",
+        optimizer=replace(base.optimizer, learning_rate=2.0e-6),
         milestones=live.RP_CROSSOVER_MILESTONES,
     )
 
     with pytest.raises(
         live.Human13LiveModelError,
-        match="frozen live-model contract.*learning_rate",
+        match="sealed qualification learning-rate ray",
     ):
-        live.build_human13_live_model_plan(old_dose)
+        live.build_human13_live_model_plan(off_grid_dose)
 
 
 def _validation(plan: live.Human13LiveModelPlan) -> live.Human13PlanValidationReceipt:

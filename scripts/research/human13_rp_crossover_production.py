@@ -24,6 +24,14 @@ NODE_RUNTIME_FACTORY_CONTRACT = "human13_rp_crossover_node_runtime_factory.v1"
 UNIT_ID = "2026-08-14-human13-k-trajectory-rp-crossover-screen"
 QUALIFICATION_SEEDS = tuple(range(30001, 30017))
 EVALUATION_RPS = (1.0, 1.10)
+QUALIFICATION_LEARNING_RATE_RAY = (
+    3.0e-7,
+    1.0e-6,
+    3.0e-6,
+    1.0e-5,
+    3.0e-5,
+)
+DEFAULT_QUALIFICATION_LEARNING_RATE = 3.0e-6
 CANONICAL_IMAGE_IDS = (
     1584,
     2299,
@@ -128,6 +136,128 @@ class FrozenProductionInputs:
     alias_bank_sha256: str
     c_leaf_path: str
     c_leaf_sha256: str
+    qualification_learning_rate_ray: tuple[float, ...]
+    default_qualification_learning_rate: float
+
+
+@dataclass(frozen=True)
+class GlobalLearningRateDecision:
+    """Content-addressed qualification choice applied globally to the matrix."""
+
+    qualification_decision_sha256: str
+    selected_learning_rate: float
+    allowed_learning_rates: tuple[float, ...]
+    training_rp_learning_rates: tuple[tuple[float, float], ...]
+    arm_learning_rates: tuple[tuple[str, float], ...]
+    seed_group_learning_rates: tuple[tuple[str, float], ...]
+    selection_policy: str
+    online_adaptation: bool
+    grad_delta_norm_role: str
+
+    def __post_init__(self) -> None:
+        digest = self.qualification_decision_sha256
+        if not (
+            isinstance(digest, str)
+            and len(digest) == 64
+            and all(character in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError(
+                "qualification learning-rate decision must bind a SHA-256 receipt"
+            )
+        selected = self.selected_learning_rate
+        if (
+            isinstance(selected, bool)
+            or not isinstance(selected, (int, float))
+            or selected not in QUALIFICATION_LEARNING_RATE_RAY
+        ):
+            raise ValueError(
+                "selected learning rate must lie on the exact sealed qualification "
+                "dose ray"
+            )
+        if self.allowed_learning_rates != QUALIFICATION_LEARNING_RATE_RAY:
+            raise ValueError("qualification dose ray identity drifted")
+        expected_rps = tuple((rp, selected) for rp in EVALUATION_RPS)
+        if self.training_rp_learning_rates != expected_rps:
+            raise ValueError(
+                "one selected learning rate must govern both training RP contracts"
+            )
+        expected_arms = tuple((arm, selected) for arm in ("A", "B", "C"))
+        if self.arm_learning_rates != expected_arms:
+            raise ValueError("one selected learning rate must govern every A/B/C arm")
+        expected_seed_groups = tuple(
+            (group, selected) for group in ("matrix_a", "matrix_b", "matrix_c")
+        )
+        if self.seed_group_learning_rates != expected_seed_groups:
+            raise ValueError(
+                "one selected learning rate must govern every matrix seed group"
+            )
+        if (
+            self.selection_policy != "sealed_qualification_global_before_matrix"
+            or self.online_adaptation is not False
+            or self.grad_delta_norm_role != "covariate_only"
+        ):
+            raise ValueError(
+                "learning rate must be sealed before the matrix; grad/delta norms "
+                "are covariates only"
+            )
+
+    @classmethod
+    def sealed(
+        cls,
+        qualification_decision_sha256: str,
+        *,
+        selected_learning_rate: float = DEFAULT_QUALIFICATION_LEARNING_RATE,
+    ) -> GlobalLearningRateDecision:
+        return cls(
+            qualification_decision_sha256=qualification_decision_sha256,
+            selected_learning_rate=selected_learning_rate,
+            allowed_learning_rates=QUALIFICATION_LEARNING_RATE_RAY,
+            training_rp_learning_rates=tuple(
+                (rp, selected_learning_rate) for rp in EVALUATION_RPS
+            ),
+            arm_learning_rates=tuple(
+                (arm, selected_learning_rate) for arm in ("A", "B", "C")
+            ),
+            seed_group_learning_rates=tuple(
+                (group, selected_learning_rate)
+                for group in ("matrix_a", "matrix_b", "matrix_c")
+            ),
+            selection_policy="sealed_qualification_global_before_matrix",
+            online_adaptation=False,
+            grad_delta_norm_role="covariate_only",
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "human13_rp_crossover_global_lr_decision.v1",
+            "qualification_decision_sha256": self.qualification_decision_sha256,
+            "selected_learning_rate": self.selected_learning_rate,
+            "allowed_learning_rates": list(self.allowed_learning_rates),
+            "training_rp_learning_rates": [
+                [rp, learning_rate]
+                for rp, learning_rate in self.training_rp_learning_rates
+            ],
+            "arm_learning_rates": [
+                [arm, learning_rate] for arm, learning_rate in self.arm_learning_rates
+            ],
+            "seed_group_learning_rates": [
+                [group, learning_rate]
+                for group, learning_rate in self.seed_group_learning_rates
+            ],
+            "selection_policy": self.selection_policy,
+            "online_adaptation": self.online_adaptation,
+            "grad_delta_norm_role": self.grad_delta_norm_role,
+        }
+
+    @property
+    def content_sha256(self) -> str:
+        payload = json.dumps(
+            self.to_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -146,6 +276,7 @@ class QualificationAcquisition:
     prompt_policy_fingerprint: str
     alias_bank_sha256: str
     nested_objective_hashes: Mapping[str, tuple[tuple[str, str], ...]]
+    learning_rate_decision: GlobalLearningRateDecision
     streaming_mode: str
 
 
@@ -172,7 +303,9 @@ class LiveNodeComposition(Protocol):
 
     def close_acquisition(self) -> AcquisitionReleaseReceipt: ...
 
-    def services_for_cell(self, spec: Any) -> Any: ...
+    def services_for_cell(
+        self, spec: Any, learning_rate_decision: GlobalLearningRateDecision
+    ) -> Any: ...
 
 
 class _UnavailableLiveComposition:
@@ -193,7 +326,9 @@ class _UnavailableLiveComposition:
             panel_wide_logits_retained=False,
         )
 
-    def services_for_cell(self, spec: Any) -> Any:
+    def services_for_cell(
+        self, spec: Any, learning_rate_decision: GlobalLearningRateDecision
+    ) -> Any:
         raise ProductionCompositionUnavailable(
             "training services are unavailable before admitted acquisition"
         )
@@ -340,6 +475,8 @@ def _validate_frozen_inputs(training_rp: float) -> FrozenProductionInputs:
         alias_bank_sha256=ALIAS_BANK_SHA256,
         c_leaf_path=str(leaf_path),
         c_leaf_sha256=leaf_sha256,
+        qualification_learning_rate_ray=QUALIFICATION_LEARNING_RATE_RAY,
+        default_qualification_learning_rate=DEFAULT_QUALIFICATION_LEARNING_RATE,
     )
 
 
@@ -359,7 +496,7 @@ def _validate_acquisition(
     *,
     node: Mapping[str, Any],
     training_rp: float,
-) -> tuple[Any, ...]:
+) -> tuple[tuple[Any, ...], GlobalLearningRateDecision]:
     if not isinstance(acquired, QualificationAcquisition):
         raise TypeError("live composition must return QualificationAcquisition")
     if (
@@ -376,6 +513,11 @@ def _validate_acquisition(
     ):
         raise ValueError(
             "qualification acquisition or frozen semantic identity drifted"
+        )
+    decision = acquired.learning_rate_decision
+    if not isinstance(decision, GlobalLearningRateDecision):
+        raise ValueError(
+            "qualification must publish a content-bound global learning-rate decision"
         )
     nested = acquired.nested_objective_hashes
     if not isinstance(nested, Mapping) or set(nested) != {"A", "B", "C"}:
@@ -429,7 +571,7 @@ def _validate_acquisition(
         or spec.output_root != planned["output_root"]
     ):
         raise ValueError("qualification C CellSpec differs from frozen live evidence")
-    return specs
+    return specs, decision
 
 
 def _canonical_json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -471,6 +613,7 @@ class ProductionNodeRuntime:
         self._composition = composition
         self._acquisition_released = False
         self._spec_output_roots: dict[str, str] = {}
+        self._learning_rate_decision: GlobalLearningRateDecision | None = None
 
     def acquire_cell_specs(self, node: Mapping[str, Any]) -> tuple[Any, ...]:
         if node is not self._node and dict(node) != dict(self._node):
@@ -484,7 +627,10 @@ class ProductionNodeRuntime:
             release = self._composition.close_acquisition()
             _validate_release(release)
             self._acquisition_released = True
-        specs = _validate_acquisition(acquired, node=node, training_rp=training_rp)
+        specs, decision = _validate_acquisition(
+            acquired, node=node, training_rp=training_rp
+        )
+        self._learning_rate_decision = decision
         self._spec_output_roots = {
             spec.cell_key.content_sha256: spec.output_root for spec in specs
         }
@@ -495,7 +641,9 @@ class ProductionNodeRuntime:
             raise RuntimeError("training model cannot load before acquisition release")
         if spec.cell_key.content_sha256 not in self._spec_output_roots:
             raise ValueError("cell service requested for an unacquired CellSpec")
-        return self._composition.services_for_cell(spec)
+        if self._learning_rate_decision is None:
+            raise RuntimeError("qualification learning-rate decision is unavailable")
+        return self._composition.services_for_cell(spec, self._learning_rate_decision)
 
     def write_cell_receipt(self, receipt: Any) -> None:
         key = receipt.cell_key.content_sha256
@@ -536,11 +684,14 @@ __all__ = [
     "ADAMW_CONFIG_SHA256",
     "AcquisitionReleaseReceipt",
     "C_LEAF_SHA256_BY_RP",
+    "DEFAULT_QUALIFICATION_LEARNING_RATE",
     "FrozenProductionInputs",
+    "GlobalLearningRateDecision",
     "MANIFEST_SHA256",
     "ProductionCompositionUnavailable",
     "ProductionNodeRuntime",
     "PROMPT_POLICY_FINGERPRINT",
+    "QUALIFICATION_LEARNING_RATE_RAY",
     "QualificationAcquisition",
     "SOURCE_CHECKPOINT_PAYLOAD_SHA256",
     "TOKENIZER_SHA256",

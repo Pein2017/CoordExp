@@ -80,6 +80,13 @@ MILESTONES = (0, 1, 2, 4, 8, 16)
 SUCCESSOR_MILESTONES = (0, 1, 2)
 ON_POLICY_MILESTONES = tuple(range(9))
 RP_CROSSOVER_MILESTONES = (0, 1)
+RP_CROSSOVER_LEARNING_RATE_RAY = (
+    3.0e-7,
+    1.0e-6,
+    3.0e-6,
+    1.0e-5,
+    3.0e-5,
+)
 CHECKPOINT_STEPS = (1, 2, 4, 8, 16)
 ZERO_MODEL_ACTIONS = {
     "model_imports": 0,
@@ -1139,6 +1146,14 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         raise Human13LiveModelError("on-policy unit and O-arm identity differ")
     if (plan.unit_id == RP_CROSSOVER_UNIT_ID) != (plan.arm_id in {"A", "B", "C"}):
         raise Human13LiveModelError("RP-crossover unit and A/B/C arm identity differ")
+    if (
+        plan.unit_id == RP_CROSSOVER_UNIT_ID
+        and plan.learning_rate not in RP_CROSSOVER_LEARNING_RATE_RAY
+    ):
+        raise Human13LiveModelError(
+            "RP-crossover learning_rate is outside the sealed qualification "
+            "learning-rate ray"
+        )
     expected = {
         "schema_version": LIVE_PLAN_SCHEMA_VERSION,
         "unit_id": plan.unit_id,
@@ -1162,7 +1177,9 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         "adapter_bias": "none",
         "freeze_special_token_delta": True,
         "optimizer_name": "adamw_torch",
-        "learning_rate": 3.0e-6 if plan.unit_id == RP_CROSSOVER_UNIT_ID else 1.0e-5,
+        "learning_rate": (
+            plan.learning_rate if plan.unit_id == RP_CROSSOVER_UNIT_ID else 1.0e-5
+        ),
         "betas": (0.9, 0.999),
         "epsilon": 1.0e-8,
         "weight_decay": 0.0,
@@ -1367,6 +1384,7 @@ __all__ = [
     "ON_POLICY_MILESTONES",
     "ON_POLICY_UNIT_ID",
     "RP_CROSSOVER_MILESTONES",
+    "RP_CROSSOVER_LEARNING_RATE_RAY",
     "RP_CROSSOVER_UNIT_ID",
     "SOURCE_ADAPTER_SHA256",
     "SOURCE_BASE_CONFIG_SHA256",
