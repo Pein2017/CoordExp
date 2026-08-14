@@ -5,10 +5,14 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
+from PIL import Image
 import pytest
 import torch
+from src.qwen.fa2 import Fa2VarlenPlan
+from src.qwen.forward import QwenForwardInputs, QwenForwardReceipt
 from src.qwen.images import QwenImageEncoding, QwenNoResizeImagePlan
 
 from scripts.research.build_human13_k_union_manifest import (
@@ -36,6 +40,7 @@ from scripts.research.human13_greedy_compiler import (
     _build_compiler_ledger_for_test,
     _build_nested_arm_artifacts_for_test,
     _build_source_forward_runtime_for_test,
+    _construct_source_forward_runtime,
     _admit_source_greedy_decode_for_test,
     _bind_packed_compiler_logits_for_test,
     _greedy_compiler_loss_for_test,
@@ -494,21 +499,17 @@ def test_source_decode_rejects_truncated_vocab_before_argmax() -> None:
             runtime=runtime,
             manifest_sha256=_manifest_sha256(manifest),
         )
-    with pytest.raises(ValueError, match="image encoding"):
+    with pytest.raises(ValueError, match="loaded Source runtime"):
         admit_source_greedy_decode(
             boundary,
-            cast(Any, complete),
             runtime=runtime,
             manifest_sha256=_manifest_sha256(manifest),
-            image_encoding=_image_encoding(boundary.image_sha256),
-        )
-    with pytest.raises(ValueError, match="image identity"):
-        admit_source_greedy_decode(
-            boundary,
-            cast(Any, complete),
-            runtime=runtime,
-            manifest_sha256=_manifest_sha256(manifest),
-            image_encoding=_image_encoding("f" * 64),
+            prompt_skeleton=_Skeleton(
+                example_id="source-prompt:7000",
+                input_ids=boundary.prompt_token_ids,
+                prompt_token_count=len(boundary.prompt_token_ids),
+                image_encoding=cast(Any, _image_encoding(boundary.image_sha256)),
+            ),
         )
 
 
@@ -898,3 +899,211 @@ def test_compiler_evidence_is_compact_not_full_vocabulary() -> None:
     payload = asdict(site)
     assert "raw_logits" not in payload
     assert "full_vocab" not in payload
+
+
+def _source_forward_fixture(tmp_path: Path) -> tuple[Any, ...]:
+    """Real PNG, hash-pinned lazy encoding, and a position-keyed stub model."""
+
+    image_path = tmp_path / "source.png"
+    Image.new("RGB", (2, 2), color=(3, 5, 7)).save(image_path)
+    image_bytes = image_path.read_bytes()
+    image_sha256 = hashlib.sha256(image_bytes).hexdigest()
+    processor = _StubImageProcessor()
+    plan = QwenNoResizeImagePlan(
+        example_id="source-image",
+        image_path=image_path,
+        width=2,
+        height=2,
+        patch_size=1,
+        merge_size=2,
+        temporal_patch_size=1,
+        required_spatial_factor=2,
+        raw_pixels=4,
+        raw_patch_rows=4,
+        expected_pixel_values_width=3,
+        image_grid_thw=(1, 2, 2),
+        merged_visual_tokens=1,
+        max_raw_pixels=4,
+        max_merged_visual_tokens=4,
+        image_content_sha256=image_sha256,
+        decoded_width=2,
+        decoded_height=2,
+    )
+    encoding = QwenImageEncoding(plan, None, None, processor)
+    model = _StubSourceModel(IMAGE_TOKEN_ID + 2, {0: 41, 1: STOP, 2: 41, 3: STOP})
+    runtime = _construct_source_forward_runtime(
+        source_sha256=SOURCE,
+        runtime_artifact_sha256="9" * 64,
+        model_identity_sha256="d" * 64,
+        tokenizer_identity_sha256="e" * 64,
+        model_vocab_size=IMAGE_TOKEN_ID + 2,
+        tokenizer_vocab_size=IMAGE_TOKEN_ID + 2,
+        model=model,
+        image_processor=processor,
+    )
+    skeleton = _Skeleton(
+        example_id="source-prompt:7000",
+        input_ids=(7, IMAGE_TOKEN_ID, 1),
+        prompt_token_count=3,
+        image_encoding=cast(Any, encoding),
+    )
+    return image_sha256, processor, encoding, model, runtime, skeleton
+
+
+@dataclass
+class _StubImageProcessor:
+    def __call__(self, *, images: Any, return_tensors: str, do_resize: bool) -> Any:
+        assert return_tensors == "pt" and do_resize is False and len(images) == 1
+        return {
+            "pixel_values": torch.zeros((4, 3), dtype=torch.float32),
+            "image_grid_thw": torch.tensor([[1, 2, 2]], dtype=torch.long),
+        }
+
+
+class _StubSourceModel(torch.nn.Module):
+    """Row content depends only on the causal position the model was asked for."""
+
+    def __init__(self, vocab_size: int, argmax_by_position: dict[int, int]) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.argmax_by_position = argmax_by_position
+        self.calls: list[tuple[int, ...]] = []
+        self.weight = torch.nn.Parameter(torch.zeros(1))
+
+    def forward(self, **kwargs: Any) -> Any:
+        positions = tuple(
+            int(value) for value in kwargs["logits_to_keep"].reshape(-1).tolist()
+        )
+        self.calls.append(positions)
+        logits = torch.full(
+            (1, len(positions), self.vocab_size), -20.0, dtype=torch.float32
+        )
+        for row, position in enumerate(positions):
+            logits[0, row, self.argmax_by_position[position]] = 10.0 + 0.01 * position
+        return SimpleNamespace(logits=logits)
+
+
+def _forged_forward_inputs(
+    history: tuple[int, ...],
+    *,
+    labeled_position: int,
+    selected_row: int,
+    pixel_values: torch.Tensor,
+    image_grid_thw: torch.Tensor,
+) -> QwenForwardInputs:
+    """Correct causal label, different selected causal row."""
+
+    length = len(history)
+    plan = Fa2VarlenPlan(
+        segment_boundaries=(0, length),
+        segment_lengths=(length,),
+        cu_seq_lens_q=torch.tensor([0, length], dtype=torch.int32),
+        cu_seq_lens_k=torch.tensor([0, length], dtype=torch.int32),
+        max_length_q=length,
+        max_length_k=length,
+        attention_mask=None,
+        branch_evidence_required=False,
+    )
+    receipt = QwenForwardReceipt(
+        pack_index=0,
+        pack_length=length,
+        segment_count=1,
+        input_ids_shape=(1, length),
+        position_ids_shape=(4, 1, length),
+        position_row_meaning=("text", "temporal", "height", "width"),
+        pixel_values_shape=tuple(int(item) for item in pixel_values.shape),
+        image_grid_thw=((1, 2, 2),),
+        placeholder_token_count=1,
+        expected_visual_token_count=1,
+        labels_passed=False,
+        use_cache=False,
+        logits_to_keep=(labeled_position,),
+        inputs_embeds_used=False,
+        fa2_varlen_plan=plan,
+    )
+    return QwenForwardInputs(
+        pack_index=0,
+        input_ids=torch.tensor([list(history)], dtype=torch.long),
+        position_ids=torch.zeros((4, 1, length), dtype=torch.long),
+        pixel_values=pixel_values,
+        image_grid_thw=image_grid_thw,
+        fa2_varlen_plan=plan,
+        receipt=receipt,
+        logits_to_keep=torch.tensor([selected_row], dtype=torch.long),
+        logits_position_ids=(labeled_position,),
+    )
+
+
+def test_source_greedy_rejects_caller_selected_causal_row(tmp_path: Path) -> None:
+    # Catches certifying Source greedy from a caller-selected wrong causal row.
+    manifest, boundaries = _panel_fixture()
+    image_sha256, processor, _, model, runtime, skeleton = _source_forward_fixture(
+        tmp_path
+    )
+    boundary = replace(
+        boundaries[0],
+        prompt_token_ids=(7, IMAGE_TOKEN_ID, 1),
+        image_sha256=image_sha256,
+    )
+    pixels = torch.zeros((4, 3), dtype=torch.float32)
+    grid = torch.tensor([[1, 2, 2]], dtype=torch.long)
+    forged = (
+        _forged_forward_inputs(
+            (7, IMAGE_TOKEN_ID, 1),
+            labeled_position=2,
+            selected_row=0,
+            pixel_values=pixels,
+            image_grid_thw=grid,
+        ),
+        _forged_forward_inputs(
+            (7, IMAGE_TOKEN_ID, 1, 41),
+            labeled_position=3,
+            selected_row=1,
+            pixel_values=pixels,
+            image_grid_thw=grid,
+        ),
+    )
+    with pytest.raises(ValueError, match="caller-supplied forward inputs"):
+        admit_source_greedy_decode(
+            boundary,
+            runtime=runtime,
+            manifest_sha256=_manifest_sha256(manifest),
+            prompt_skeleton=skeleton,
+            forward_inputs=forged,
+        )
+    assert model.calls == []
+    receipt = admit_source_greedy_decode(
+        boundary,
+        runtime=runtime,
+        manifest_sha256=_manifest_sha256(manifest),
+        prompt_skeleton=skeleton,
+    )
+    assert receipt.generated_token_ids == (41, STOP)
+    assert tuple(row.causal_position for row in receipt.forward_rows) == (2, 3)
+    # The model itself read exactly the internally derived teacher-forced rows.
+    assert model.calls == [(2, 3)]
+    wrong_image = _Skeleton(
+        example_id=skeleton.example_id,
+        input_ids=skeleton.input_ids,
+        prompt_token_count=skeleton.prompt_token_count,
+        image_encoding=cast(
+            Any,
+            QwenImageEncoding(
+                replace(
+                    cast(Any, skeleton.image_encoding).plan,
+                    image_content_sha256="f" * 64,
+                ),
+                None,
+                None,
+                processor,
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="image identity"):
+        admit_source_greedy_decode(
+            boundary,
+            runtime=runtime,
+            manifest_sha256=_manifest_sha256(manifest),
+            prompt_skeleton=wrong_image,
+        )
+    assert model.calls == [(2, 3)]

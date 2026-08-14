@@ -497,81 +497,201 @@ def _admit_source_greedy_decode_for_test(
     )
 
 
-def admit_source_greedy_decode(
+def _derive_source_forward_inputs(
     boundary: SourceBoundaryInput,
-    forward_inputs: Sequence[Any],
     *,
     runtime: AdmittedSourceForwardRuntime,
-    manifest_sha256: str,
-    image_encoding: Any,
-) -> AdmittedSourceGreedyDecode:
-    """Run the admitted Source model itself at every sealed greedy boundary."""
+    prompt_skeleton: Any,
+) -> tuple[Any, Any, tuple[int, ...]]:
+    """Rederive the one complete Source causal forward surface from evidence.
 
-    from src.qwen.forward import QwenForwardInputs, run_qwen_forward
+    This is the only construction seam for the scientific Source path: the
+    prompt, generated tokens, MRoPE positions, attention plan, image tensors,
+    and kept causal rows all come from the admitted boundary, the runtime's own
+    image processor, and the production pack/forward builders.
+    """
+
+    from scripts.research.human13_live_census import _clone_skeleton
+    from scripts.research.run_human13_k_union_overfit import (
+        GLOBAL_MAX_LENGTH,
+        LogicalPanelSegment,
+        plan_panel_packs,
+    )
+    from src.qwen.fa2 import build_fa2_varlen_plan
+    from src.qwen.forward import build_qwen_forward_inputs
     from src.qwen.images import QwenImageEncoding, materialize_qwen_image_encoding
 
-    runtime = _require_source_runtime(runtime)
-    if type(image_encoding) is not QwenImageEncoding:
+    if runtime._model is None or runtime._image_processor is None:
+        raise ValueError("scientific Source admission requires a loaded Source runtime")
+    encoding = getattr(prompt_skeleton, "image_encoding", None)
+    if type(encoding) is not QwenImageEncoding:
         raise ValueError("scientific Source admission requires Qwen image encoding")
-    if image_encoding.plan.image_content_sha256 != boundary.image_sha256:
+    if encoding.plan.image_content_sha256 != boundary.image_sha256:
         raise ValueError("Source forward image identity differs from boundary")
     if (
-        image_encoding.pixel_values is not None
-        or image_encoding.image_grid_thw_tensor is not None
-        or image_encoding.image_processor is not runtime._image_processor
-        or runtime._image_processor is None
+        encoding.pixel_values is not None
+        or encoding.image_grid_thw_tensor is not None
+        or encoding.image_processor is not runtime._image_processor
     ):
         raise ValueError(
             "Source image encoding must be lazy and owned by admitted runtime"
         )
-    materialized_image = materialize_qwen_image_encoding(image_encoding)
+    prompt_token_count = getattr(prompt_skeleton, "prompt_token_count", None)
+    skeleton_token_ids = getattr(prompt_skeleton, "input_ids", None)
+    if (
+        isinstance(prompt_token_count, bool)
+        or not isinstance(prompt_token_count, int)
+        or not isinstance(skeleton_token_ids, tuple)
+        or prompt_token_count != len(boundary.prompt_token_ids)
+        or skeleton_token_ids[:prompt_token_count] != boundary.prompt_token_ids
+    ):
+        raise ValueError("Source prompt skeleton differs from the admitted boundary")
+    generated = tuple(boundary.image.generated_token_ids)
+    if not generated:
+        raise ValueError("Source boundary carries no generated tokens")
+    input_ids = (*boundary.prompt_token_ids, *generated)
+    positions = tuple(
+        len(boundary.prompt_token_ids) + index - 1 for index in range(len(generated))
+    )
+    if any(
+        position < 0
+        or position + 1 >= len(input_ids)
+        or input_ids[position + 1] != token_id
+        for position, token_id in zip(positions, generated, strict=True)
+    ):
+        raise ValueError("Source causal positions differ from teacher-forced targets")
+    segment_id = f"source-greedy:{boundary.image.image_id}"
+    encoded = _clone_skeleton(
+        prompt_skeleton,
+        segment_id=segment_id,
+        image_id=boundary.image.image_id,
+        input_ids=input_ids,
+    )
+    plan = plan_panel_packs(
+        [
+            LogicalPanelSegment(
+                segment_id=segment_id,
+                image_id=boundary.image.image_id,
+                role="h1_independent",
+                encoded_example=encoded,
+            )
+        ],
+        global_max_length=GLOBAL_MAX_LENGTH,
+    )
+    if len(plan.packs) != 1 or len(plan.packs[0].pack.segments) != 1:
+        raise ValueError("Source forward pack plan is not one sealed causal segment")
+    packed = plan.packs[0]
+    segment = packed.pack.segments[0]
+    if segment.start != 0 or tuple(packed.pack.input_ids) != input_ids:
+        raise ValueError("Source forward pack differs from the sealed boundary tokens")
+    device = next(runtime._model.parameters()).device
+    inputs = build_qwen_forward_inputs(
+        packed.pack,
+        packed.encoded_examples,
+        packed.position_inputs,
+        fa2_varlen_plan=build_fa2_varlen_plan(packed.pack, device=device),
+        logits_to_keep_positions=positions,
+        device=device,
+        fa2_branch_proof_policy="human13_source_greedy_admission",
+    )
+    materialized_image = materialize_qwen_image_encoding(encoding)
     expected_pixels = materialized_image.pixel_values
     expected_grid = materialized_image.image_grid_thw_tensor
     if not isinstance(expected_pixels, torch.Tensor) or not isinstance(
         expected_grid, torch.Tensor
     ):
         raise ValueError("Source image encoding did not materialize tensors")
-    inputs = tuple(forward_inputs) if isinstance(forward_inputs, Sequence) else ()
-    generated = tuple(boundary.image.generated_token_ids)
+    fa2_plan = inputs.fa2_varlen_plan
+    kept = inputs.logits_to_keep
     if (
-        runtime._model is None
-        or len(inputs) != len(generated)
-        or any(type(value) is not QwenForwardInputs for value in inputs)
+        not torch.equal(
+            inputs.input_ids.detach().cpu(),
+            torch.tensor([list(input_ids)], dtype=torch.long),
+        )
+        or tuple(int(value) for value in inputs.position_ids.shape)
+        != (4, 1, len(input_ids))
+        or not torch.equal(
+            inputs.position_ids.detach().cpu(),
+            packed.position_inputs.position_ids.detach().cpu(),
+        )
+        or not torch.equal(
+            inputs.pixel_values.detach().cpu(), expected_pixels.detach().cpu()
+        )
+        or not torch.equal(
+            inputs.image_grid_thw.detach().cpu(), expected_grid.detach().cpu()
+        )
+        or inputs.logits_position_ids != positions
+        or not isinstance(kept, torch.Tensor)
+        or tuple(int(value) for value in kept.detach().cpu().reshape(-1)) != positions
+        or fa2_plan.attention_mask is not None
+        or fa2_plan.segment_boundaries != (0, len(input_ids))
+        or (fa2_plan.max_length_q, fa2_plan.max_length_k)
+        != (len(input_ids), len(input_ids))
+        or tuple(int(value) for value in fa2_plan.cu_seq_lens_q.detach().cpu())
+        != (0, len(input_ids))
+        or tuple(int(value) for value in fa2_plan.cu_seq_lens_k.detach().cpu())
+        != (0, len(input_ids))
     ):
         raise ValueError(
-            "scientific Source admission requires exact Qwen forward inputs"
+            "derived Source forward surface differs from admitted evidence"
         )
-    typed_inputs = cast(tuple[QwenForwardInputs, ...], inputs)
-    rows: list[torch.Tensor] = []
-    for index, value in enumerate(typed_inputs):
-        if _model_state_identity(runtime._model) != runtime._model_state_identity:
-            raise ValueError("admitted Source model parameters changed before forward")
-        history = (*boundary.prompt_token_ids, *generated[:index])
-        observed_history = tuple(
-            int(token_id) for token_id in value.input_ids.detach().cpu().reshape(-1)
+    model_kwargs = inputs.to_model_kwargs()
+    receipt = inputs.receipt
+    if (
+        model_kwargs["use_cache"] is not False
+        or model_kwargs["labels"] is not None
+        or model_kwargs["attention_mask"] is not None
+        or "past_key_values" in model_kwargs
+        or "cache_position" in model_kwargs
+        or receipt.use_cache
+        or receipt.labels_passed
+        or receipt.inputs_embeds_used
+        or receipt.logits_to_keep != positions
+        or receipt.placeholder_token_count != receipt.expected_visual_token_count
+    ):
+        raise ValueError(
+            "derived Source forward must disable cache, labels, and padding"
         )
-        if not torch.equal(
-            value.pixel_values.detach().cpu(), expected_pixels.detach().cpu()
-        ) or not torch.equal(
-            value.image_grid_thw.detach().cpu(), expected_grid.detach().cpu()
-        ):
-            raise ValueError("Source forward pixels or image grid differ from boundary")
-        expected_position = len(history) - 1
-        if observed_history != history or value.logits_position_ids != (
-            expected_position,
-        ):
-            raise ValueError("Source forward input history or causal position differs")
+    return packed, inputs, positions
+
+
+def admit_source_greedy_decode(
+    boundary: SourceBoundaryInput,
+    *,
+    runtime: AdmittedSourceForwardRuntime,
+    manifest_sha256: str,
+    prompt_skeleton: Any,
+    forward_inputs: Any = None,
+) -> AdmittedSourceGreedyDecode:
+    """Run the admitted Source model over one internally derived causal surface."""
+
+    from src.qwen.forward import run_qwen_forward
+
+    runtime = _require_source_runtime(runtime)
+    if forward_inputs is not None:
+        raise ValueError(
+            "scientific Source admission derives its own Qwen forward inputs; "
+            "caller-supplied forward inputs are rejected"
+        )
+    _, inputs, positions = _derive_source_forward_inputs(
+        boundary,
+        runtime=runtime,
+        prompt_skeleton=prompt_skeleton,
+    )
+    if _model_state_identity(runtime._model) != runtime._model_state_identity:
+        raise ValueError("admitted Source model parameters changed before forward")
+    with torch.no_grad():
         result = run_qwen_forward(
             runtime._model,
-            value,
+            inputs,
             expected_vocab_size=runtime.vocab_size,
         )
-        if result.logits_position_ids != (expected_position,):
-            raise ValueError("Source forward output causal position differs")
-        rows.append(result.logits.reshape(-1, runtime.vocab_size)[0])
+    if result.logits_position_ids != positions:
+        raise ValueError("Source forward output causal positions differ")
+    rows = result.logits.reshape(len(positions), runtime.vocab_size)
     return _admit_source_greedy_decode_from_rows(
         boundary,
-        torch.stack(rows),
+        rows,
         runtime=runtime,
         manifest_sha256=manifest_sha256,
     )
