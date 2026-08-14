@@ -11,13 +11,14 @@ loss helpers.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field as dataclass_field, replace
 import hashlib
 import json
 import math
 from pathlib import Path
 import re
 from typing import Any
+import weakref
 
 from scripts.research.analyze_human13_k_union import (
     _manifest_sha256,
@@ -45,13 +46,15 @@ from src.inference.parsing import (
 from src.templates.renderer import OBJECT_REF_END_TOKEN, OBJECT_REF_START_TOKEN
 
 
-SCHEMA_VERSION = "human13_trajectory_credit_ledger.v3"
+SCHEMA_VERSION = "human13_trajectory_credit_ledger.v4"
 ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_acquisition.v1"
 PANEL_ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_panel_acquisition.v1"
 PARSER_PROJECTION_SCHEMA_VERSION = "human13_canonical_parser_projection.v3"
 FIXED_SCIENTIFIC_K = 16
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _VERIFIED_TOKENIZER_FACTORY_MARKER = object()
+_SCIENTIFIC_LEDGER_FACTORY_MARKER = object()
+_SCIENTIFIC_LEDGER_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
 
 
 def _canonical_payload(value: Mapping[str, Any]) -> bytes:
@@ -621,6 +624,106 @@ class TrajectoryCreditPanelAcquisition:
     @property
     def content_sha256(self) -> str:
         return _sha256(self._preimage())
+
+
+def _construct_trajectory_credit_ledger(
+    *,
+    source_sha256: str,
+    manifest_sha256: str,
+    acquisition_sha256: str,
+    logical_image_count: int,
+    logical_k: int,
+    images: tuple[ImageCreditLedger, ...],
+    training_repetition_penalty: float | None = None,
+    seed_group_id: str | None = None,
+    admit_scientific: bool = False,
+) -> TrajectoryCreditLedger:
+    ledger = object.__new__(TrajectoryCreditLedger)
+    for field, value in (
+        ("source_sha256", source_sha256),
+        ("manifest_sha256", manifest_sha256),
+        ("acquisition_sha256", acquisition_sha256),
+        ("logical_image_count", logical_image_count),
+        ("logical_k", logical_k),
+        ("images", images),
+        ("training_repetition_penalty", None),
+        ("seed_group_id", None),
+        ("admission_sha256", None),
+        ("_factory_marker", None),
+    ):
+        object.__setattr__(ledger, field, value)
+    ledger._validate()
+    if not admit_scientific:
+        return ledger
+    if training_repetition_penalty is None or seed_group_id is None:
+        raise ValueError("scientific ledger admission lineage is incomplete")
+    if logical_k != FIXED_SCIENTIFIC_K:
+        raise ValueError("scientific ledger admission requires exact K16")
+    if any(
+        any(
+            value is None
+            for value in (
+                image.plan_sha256,
+                image.native_receipts_sha256,
+                image.parity_receipt_sha256,
+                image.parser_projection_sha256,
+            )
+        )
+        for image in ledger.images
+    ):
+        raise ValueError("scientific ledger admission requires complete image lineage")
+    object.__setattr__(
+        ledger, "training_repetition_penalty", training_repetition_penalty
+    )
+    object.__setattr__(ledger, "seed_group_id", seed_group_id)
+    object.__setattr__(ledger, "_factory_marker", _SCIENTIFIC_LEDGER_FACTORY_MARKER)
+    admission_sha256 = _sha256(ledger._admission_preimage())
+    object.__setattr__(ledger, "admission_sha256", admission_sha256)
+    ledger._validate()
+    ledger_id = id(ledger)
+
+    def _discard(reference: weakref.ReferenceType[Any]) -> None:
+        current = _SCIENTIFIC_LEDGER_ADMISSIONS.get(ledger_id)
+        if current is not None and current[0] is reference:
+            _SCIENTIFIC_LEDGER_ADMISSIONS.pop(ledger_id, None)
+
+    reference = weakref.ref(ledger, _discard)
+    _SCIENTIFIC_LEDGER_ADMISSIONS[ledger_id] = (reference, admission_sha256)
+    return ledger
+
+
+def _require_scientific_ledger_admission(ledger: object) -> TrajectoryCreditLedger:
+    if type(ledger) is not TrajectoryCreditLedger:
+        raise ValueError("scientific ledger admission requires the exact ledger type")
+    admitted = _SCIENTIFIC_LEDGER_ADMISSIONS.get(id(ledger))
+    if (
+        ledger._factory_marker is not _SCIENTIFIC_LEDGER_FACTORY_MARKER
+        or admitted is None
+        or admitted[0]() is not ledger
+        or admitted[1] != ledger.admission_sha256
+    ):
+        raise ValueError("scientific ledger admission is absent or forged")
+    ledger._validate()
+    if (
+        ledger.logical_k != FIXED_SCIENTIFIC_K
+        or ledger.training_repetition_penalty is None
+        or ledger.seed_group_id is None
+        or ledger.admission_sha256 != _sha256(ledger._admission_preimage())
+        or any(
+            any(
+                value is None
+                for value in (
+                    image.plan_sha256,
+                    image.native_receipts_sha256,
+                    image.parity_receipt_sha256,
+                    image.parser_projection_sha256,
+                )
+            )
+            for image in ledger.images
+        )
+    ):
+        raise ValueError("scientific ledger admission lineage or seal differs")
+    return ledger
 
 
 @dataclass(frozen=True)
@@ -1621,7 +1724,7 @@ class ImageCreditLedger:
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class TrajectoryCreditLedger:
     source_sha256: str
     manifest_sha256: str
@@ -1629,8 +1732,12 @@ class TrajectoryCreditLedger:
     logical_image_count: int
     logical_k: int
     images: tuple[ImageCreditLedger, ...]
+    training_repetition_penalty: float | None
+    seed_group_id: str | None
+    admission_sha256: str | None
+    _factory_marker: object | None = dataclass_field(repr=False, compare=False)
 
-    def __post_init__(self) -> None:
+    def _validate(self) -> None:
         for field in ("source_sha256", "manifest_sha256", "acquisition_sha256"):
             object.__setattr__(self, field, _digest(getattr(self, field), field=field))
         _integer(self.logical_image_count, field="logical_image_count", minimum=1)
@@ -1650,6 +1757,27 @@ class TrajectoryCreditLedger:
         if len(set(request_ids)) != len(request_ids):
             raise ValueError("ledger request ids must be globally unique")
         object.__setattr__(self, "images", images)
+        scientific_lineage = (
+            self.training_repetition_penalty,
+            self.seed_group_id,
+            self.admission_sha256,
+        )
+        if any(value is not None for value in scientific_lineage):
+            if any(value is None for value in scientific_lineage):
+                raise ValueError("scientific ledger lineage must be complete")
+            repetition_penalty = _finite(
+                self.training_repetition_penalty,
+                field="training_repetition_penalty",
+            )
+            if repetition_penalty <= 0.0:
+                raise ValueError("training_repetition_penalty must be positive")
+            if not isinstance(self.seed_group_id, str) or not self.seed_group_id:
+                raise ValueError("seed_group_id must be a non-empty string")
+            object.__setattr__(
+                self,
+                "admission_sha256",
+                _digest(self.admission_sha256, field="admission_sha256"),
+            )
 
     @property
     def logical_denominator(self) -> int:
@@ -1674,6 +1802,24 @@ class TrajectoryCreditLedger:
             "acquisition_sha256": self.acquisition_sha256,
             "logical_image_count": self.logical_image_count,
             "logical_k": self.logical_k,
+            "training_repetition_penalty": self.training_repetition_penalty,
+            "seed_group_id": self.seed_group_id,
+            "admission_sha256": self.admission_sha256,
+            "images": [image.to_dict() for image in self.images],
+        }
+
+    def _admission_preimage(self) -> dict[str, Any]:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "source_sha256": self.source_sha256,
+            "manifest_sha256": self.manifest_sha256,
+            "acquisition_sha256": self.acquisition_sha256,
+            "logical_image_count": self.logical_image_count,
+            "logical_k": self.logical_k,
+            "training_repetition_penalty": self.training_repetition_penalty,
+            "seed_group_id": self.seed_group_id,
+            "parser_id": PARSER_ID,
+            "parser_policy": PARSER_POLICY,
             "images": [image.to_dict() for image in self.images],
         }
 
@@ -2022,25 +2168,6 @@ def _owner_repeat(
     )
 
 
-def _legacy_m_match(
-    row: _ParsedCreditRow,
-    legacy_owner_ids: set[str],
-    owner_by_id: Mapping[str, Any],
-    owner_iou_threshold: float,
-) -> str | None:
-    bbox = _valid_box(row.bbox)
-    category = normalize_coco_category_name(row.category)
-    candidates = [
-        (iou_xyxy(owner_by_id[owner_id].bbox, bbox), owner_id)
-        for owner_id in legacy_owner_ids
-        if bbox is not None
-        and category
-        and normalize_coco_category_name(owner_by_id[owner_id].category) == category
-        and iou_xyxy(owner_by_id[owner_id].bbox, bbox) >= owner_iou_threshold
-    ]
-    return max(candidates, default=(0.0, None))[1]
-
-
 def _project_one_trajectory(
     image: ImageRecord,
     evidence: Any,
@@ -2173,23 +2300,13 @@ def _project_one_trajectory(
                 True,
             )
         else:
-            legacy_id = _legacy_m_match(row, legacy, owner_by_id, owner_iou_threshold)
-            if legacy_id is not None:
-                outcome, immediate, owner_id, stratum, scored = (
-                    "legacy_m",
-                    0.0,
-                    legacy_id,
-                    "M",
-                    False,
-                )
-            else:
-                outcome, immediate, owner_id, stratum, scored = (
-                    "unmatched",
-                    -owner_weight,
-                    None,
-                    None,
-                    True,
-                )
+            outcome, immediate, owner_id, stratum, scored = (
+                "unmatched",
+                -owner_weight,
+                None,
+                None,
+                True,
+            )
         raw_rows.append(
             RowCredit(
                 request_id=parsed.request_id,
@@ -2323,7 +2440,7 @@ def _attach_rloo(
     return tuple(updated), tuple(position_returns)
 
 
-def _build_trajectory_credit_ledger_from_parsed(
+def _project_trajectory_credit_ledger(
     manifest: Human13KUnionManifest,
     acquisition: _TrajectoryCreditAcquisition,
 ) -> TrajectoryCreditLedger:
@@ -2397,7 +2514,7 @@ def _build_trajectory_credit_ledger_from_parsed(
                 position_returns=position_returns,
             )
         )
-    return TrajectoryCreditLedger(
+    return _construct_trajectory_credit_ledger(
         source_sha256=acquisition.groups[0].acquisition_group.identity.source_sha256,
         manifest_sha256=manifest_sha,
         acquisition_sha256=acquisition.content_sha256,
@@ -2405,6 +2522,15 @@ def _build_trajectory_credit_ledger_from_parsed(
         logical_k=acquisition.logical_k,
         images=tuple(image_ledgers),
     )
+
+
+def _build_trajectory_credit_ledger_for_test(
+    manifest: Human13KUnionManifest,
+    acquisition: _TrajectoryCreditAcquisition,
+) -> TrajectoryCreditLedger:
+    """Build an unadmitted formula fixture that public loss must reject."""
+
+    return _project_trajectory_credit_ledger(manifest, acquisition)
 
 
 def build_trajectory_credit_ledger(
@@ -2492,7 +2618,7 @@ def build_trajectory_credit_ledger(
         groups=tuple(internal_groups),
         logical_k=FIXED_SCIENTIFIC_K,
     )
-    ledger = _build_trajectory_credit_ledger_from_parsed(manifest, internal)
+    ledger = _project_trajectory_credit_ledger(manifest, internal)
     images = tuple(
         replace(
             image,
@@ -2508,10 +2634,16 @@ def build_trajectory_credit_ledger(
             strict=True,
         )
     )
-    return replace(
-        ledger,
+    return _construct_trajectory_credit_ledger(
+        source_sha256=ledger.source_sha256,
+        manifest_sha256=ledger.manifest_sha256,
         acquisition_sha256=admitted.content_sha256,
+        logical_image_count=ledger.logical_image_count,
+        logical_k=ledger.logical_k,
         images=images,
+        training_repetition_penalty=admitted.training_repetition_penalty,
+        seed_group_id=admitted.seed_group_id,
+        admit_scientific=True,
     )
 
 
@@ -2535,7 +2667,7 @@ def _selected_tokens(
     return tuple(scored[index] for index in indices)
 
 
-def trajectory_score_function_numerator(
+def _trajectory_score_function_numerator_impl(
     policy_logprobs: Any,
     ledger: TrajectoryCreditLedger,
     *,
@@ -2550,8 +2682,6 @@ def trajectory_score_function_numerator(
 
     import torch
 
-    if not isinstance(ledger, TrajectoryCreditLedger):
-        raise ValueError("ledger must be a TrajectoryCreditLedger")
     selected = _selected_tokens(ledger, token_indices)
     tensors: Mapping[str, Any]
     if isinstance(policy_logprobs, Mapping):
@@ -2605,15 +2735,61 @@ def trajectory_score_function_numerator(
     return first.sum() * 0.0
 
 
+def _trajectory_score_function_numerator_for_test(
+    policy_logprobs: Any,
+    ledger: TrajectoryCreditLedger,
+    *,
+    token_indices: Sequence[int] | None = None,
+) -> Any:
+    """Private formula-only seam; it is not scientific ledger admission."""
+
+    if type(ledger) is not TrajectoryCreditLedger:
+        raise ValueError("ledger must be a TrajectoryCreditLedger")
+    return _trajectory_score_function_numerator_impl(
+        policy_logprobs,
+        ledger,
+        token_indices=token_indices,
+    )
+
+
+def trajectory_score_function_numerator(
+    policy_logprobs: Any,
+    ledger: TrajectoryCreditLedger,
+    *,
+    token_indices: Sequence[int] | None = None,
+) -> Any:
+    """Return an unnormalized numerator from an admitted scientific ledger."""
+
+    admitted = _require_scientific_ledger_admission(ledger)
+    return _trajectory_score_function_numerator_impl(
+        policy_logprobs,
+        admitted,
+        token_indices=token_indices,
+    )
+
+
+def _trajectory_score_function_loss_for_test(
+    policy_logprobs: Any,
+    ledger: TrajectoryCreditLedger,
+) -> Any:
+    """Private exact-formula loss for explicitly small-K CPU fixtures."""
+
+    return (
+        _trajectory_score_function_numerator_for_test(policy_logprobs, ledger)
+        / ledger.logical_denominator
+    )
+
+
 def trajectory_score_function_loss(
     policy_logprobs: Any,
     ledger: TrajectoryCreditLedger,
 ) -> Any:
     """Apply the one exact logical ``N*K`` denominator to the global numerator."""
 
+    admitted = _require_scientific_ledger_admission(ledger)
     return (
-        trajectory_score_function_numerator(policy_logprobs, ledger)
-        / ledger.logical_denominator
+        _trajectory_score_function_numerator_impl(policy_logprobs, admitted)
+        / admitted.logical_denominator
     )
 
 
@@ -2626,12 +2802,8 @@ __all__ = [
     "PANEL_ACQUISITION_SCHEMA_VERSION",
     "PARSER_PROJECTION_SCHEMA_VERSION",
     "SCHEMA_VERSION",
-    "ImageCreditLedger",
-    "RowCredit",
-    "TokenCredit",
     "TrajectoryCreditPanelAcquisition",
     "TrajectoryCreditLedger",
-    "TrajectoryLedger",
     "build_canonical_parser_projection_receipt",
     "build_trajectory_credit_ledger",
     "trajectory_score_function_loss",

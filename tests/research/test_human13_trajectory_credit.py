@@ -39,8 +39,6 @@ from scripts.research.human13_trajectory_credit import (
     _TrajectoryCreditAcquisition,
     TrajectoryCreditLedger,
     build_trajectory_credit_ledger as _build_public_trajectory_credit_ledger,
-    trajectory_score_function_loss,
-    trajectory_score_function_numerator,
 )
 from scripts.research.human13_rp_policy import validate_acquisition_group_replay
 from src.qwen.runtime_loading import QwenComponents
@@ -452,12 +450,36 @@ def build_trajectory_credit_ledger(
 
     if isinstance(acquisition, _TrajectoryCreditAcquisition):
         assert tokenizer_adapter is None
-        return credit._build_trajectory_credit_ledger_from_parsed(manifest, acquisition)
+        return credit._build_trajectory_credit_ledger_for_test(manifest, acquisition)
     assert tokenizer_adapter is not None
     return _build_public_trajectory_credit_ledger(
         manifest,
         acquisition,  # type: ignore[arg-type]
         tokenizer_adapter=tokenizer_adapter,  # type: ignore[arg-type]
+    )
+
+
+def trajectory_score_function_loss(
+    policy_logprobs: Any,
+    ledger: TrajectoryCreditLedger,
+) -> Any:
+    """Exercise the formula only; public admission has separate boundary tests."""
+
+    return credit._trajectory_score_function_loss_for_test(policy_logprobs, ledger)
+
+
+def trajectory_score_function_numerator(
+    policy_logprobs: Any,
+    ledger: TrajectoryCreditLedger,
+    *,
+    token_indices: tuple[int, ...] | None = None,
+) -> Any:
+    """Exercise private small-K microsteps without scientific admission."""
+
+    return credit._trajectory_score_function_numerator_for_test(
+        policy_logprobs,
+        ledger,
+        token_indices=token_indices,
     )
 
 
@@ -570,6 +592,36 @@ def test_legacy_m_row_is_neutral_and_masks_direct_tokens_despite_positive_rtg() 
     m_gradient = logits[m_row.request_id].grad
     assert m_gradient is not None
     assert m_gradient[0].item() == 0.0
+
+
+def test_only_canonical_owner_assignment_can_make_a_row_legacy_m_neutral() -> None:
+    # Two nonduplicate rows compete for one M owner.  The canonical one-to-one
+    # assignment is the only authority for M masking; the losing row is burden.
+    manifest = _manifest(
+        _owner("owner-0", "G", (30, 0, 40, 10)),
+        _owner("owner-1", "M", (0, 0, 10, 10)),
+    )
+    competing = (
+        _row(0, (0, 0, 10, 10)),
+        _row(1, (1, 0, 11, 10)),
+    )
+    ledger = build_trajectory_credit_ledger(
+        manifest,
+        _acquisition(
+            manifest,
+            ((competing, (), "natural_stop"), (competing, (), "natural_stop")),
+        ),
+    )
+
+    assigned, unmatched = ledger.images[0].trajectories[0].rows[:2]
+    assert assigned.outcome == "legacy_m"
+    assert assigned.matched_owner_id == "owner-1"
+    assert assigned.immediate_credit == 0.0
+    assert not assigned.scored
+    assert unmatched.outcome == "unmatched"
+    assert unmatched.matched_owner_id is None
+    assert unmatched.immediate_credit == -1.0
+    assert unmatched.scored
 
 
 def test_natural_stop_has_direct_shortfall_but_cap_only_changes_earlier_rtg() -> None:
@@ -804,6 +856,29 @@ def test_ledger_round_trip_is_content_addressed_and_rejects_forgery(
     )
     assert loaded == ledger
     assert loaded.content_sha256 == ledger.content_sha256
+    assert loaded.training_repetition_penalty == (
+        acquisition.training_repetition_penalty
+    )
+    assert loaded.seed_group_id == acquisition.seed_group_id
+    assert loaded.admission_sha256 is not None
+    public_logits = {
+        trajectory.request_id: torch.zeros(trajectory.token_count, requires_grad=True)
+        for image in loaded.images
+        for trajectory in image.trajectories
+    }
+    assert torch.isfinite(credit.trajectory_score_function_loss(public_logits, loaded))
+
+    self_consistent_copy = copy.copy(loaded)
+    with pytest.raises(ValueError, match="scientific ledger admission"):
+        credit.trajectory_score_function_loss(public_logits, self_consistent_copy)
+
+    original_seal = loaded.admission_sha256
+    object.__setattr__(loaded, "admission_sha256", "0" * 64)
+    try:
+        with pytest.raises(ValueError, match="scientific ledger admission"):
+            credit.trajectory_score_function_loss(public_logits, loaded)
+    finally:
+        object.__setattr__(loaded, "admission_sha256", original_seal)
 
     forged_hash = {**payload, "content_sha256": "0" * 64}
     with pytest.raises(ValueError, match="rerun canonical projection"):
@@ -841,6 +916,37 @@ def test_ledger_round_trip_is_content_addressed_and_rejects_forgery(
             manifest=manifest,
             acquisition=acquisition,
             tokenizer_adapter=tokenizer_adapter,
+        )
+
+
+def test_public_loss_rejects_nonfactory_and_provenance_incomplete_ledgers() -> None:
+    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)))
+    hit = (_row(0, (0, 0, 10, 10)),)
+    incomplete = build_trajectory_credit_ledger(
+        manifest,
+        _acquisition(
+            manifest,
+            ((hit, (), "natural_stop"), (hit, (), "natural_stop")),
+        ),
+    )
+    logits = {
+        trajectory.request_id: torch.zeros(6, requires_grad=True)
+        for trajectory in incomplete.images[0].trajectories
+    }
+
+    with pytest.raises(ValueError, match="scientific ledger admission"):
+        credit.trajectory_score_function_loss(logits, incomplete)
+    with pytest.raises(ValueError, match="scientific ledger admission"):
+        credit.trajectory_score_function_numerator(logits, incomplete)
+    unsafe_constructor: Any = TrajectoryCreditLedger
+    with pytest.raises(TypeError):
+        unsafe_constructor(
+            source_sha256=incomplete.source_sha256,
+            manifest_sha256=incomplete.manifest_sha256,
+            acquisition_sha256=incomplete.acquisition_sha256,
+            logical_image_count=incomplete.logical_image_count,
+            logical_k=incomplete.logical_k,
+            images=incomplete.images,
         )
 
 
