@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 import dataclasses
+import errno
 import json
 import math
+import os
 
 import pytest
 import torch
 
+from scripts.research import human13_adamw_proposal_preservation as preservation
 from scripts.research.human13_adamw_proposal_preservation import (
     FROZEN_BETAS,
     FROZEN_EPSILON,
@@ -82,6 +85,57 @@ _MIXED_GRADIENTS = {
     _WEIGHT: torch.tensor(((-3.0, 0.0, 0.75), (12.5, -0.0, 1e-6))),
     _BIAS: torch.tensor((0.0, 9.75)),
 }
+
+
+class _FailingPublicationFileSystem:
+    """Inject one real partial staging write, then fail before publication."""
+
+    def __init__(self, *, write_number: int, error: BaseException) -> None:
+        self._delegate = preservation._LocalArtifactPublicationFileSystem()
+        self._write_number = write_number
+        self._error = error
+        self._writes = 0
+
+    def write_payload(self, descriptor: int, payload: bytes) -> None:
+        self._writes += 1
+        if self._writes != self._write_number:
+            self._delegate.write_payload(descriptor, payload)
+            return
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload[: max(1, len(payload) // 2)])
+            handle.flush()
+        raise self._error
+
+    def publish_file_exclusive(self, temporary_path, final_path) -> None:
+        self._delegate.publish_file_exclusive(temporary_path, final_path)
+
+    def publish_directory_exclusive(self, temporary_path, final_path) -> None:
+        self._delegate.publish_directory_exclusive(temporary_path, final_path)
+
+    def fsync_directory(self, directory) -> None:
+        self._delegate.fsync_directory(directory)
+
+
+class _FailingDirectoryFsyncPublicationFileSystem:
+    def __init__(self, *, fsync_number: int) -> None:
+        self._delegate = preservation._LocalArtifactPublicationFileSystem()
+        self._fsync_number = fsync_number
+        self._fsyncs = 0
+
+    def write_payload(self, descriptor: int, payload: bytes) -> None:
+        self._delegate.write_payload(descriptor, payload)
+
+    def publish_file_exclusive(self, temporary_path, final_path) -> None:
+        self._delegate.publish_file_exclusive(temporary_path, final_path)
+
+    def publish_directory_exclusive(self, temporary_path, final_path) -> None:
+        self._delegate.publish_directory_exclusive(temporary_path, final_path)
+
+    def fsync_directory(self, directory) -> None:
+        self._fsyncs += 1
+        if self._fsyncs == self._fsync_number:
+            raise OSError(errno.EIO, "injected directory fsync failure")
+        self._delegate.fsync_directory(directory)
 
 
 def test_frozen_adamw_capture_accepts_a_selected_nondefault_ray_dose() -> None:
@@ -811,6 +865,99 @@ def test_single_aggregate_admission_governs_reload_projection_and_apply(
         project_adamw_proposal(
             proposal=proposal, witness_bank=load_frozen_witness_bank(bank_directory)
         )
+
+
+@pytest.mark.parametrize(
+    ("injected", "expected_error"),
+    (
+        (OSError(errno.ENOSPC, "injected staging ENOSPC"), ProposalAdmissionError),
+        (KeyboardInterrupt("injected staging interruption"), KeyboardInterrupt),
+    ),
+)
+def test_atomic_file_publication_never_exposes_a_failed_staging_write(
+    tmp_path, injected: BaseException, expected_error: type[BaseException]
+) -> None:
+    _, named, optimizer, _counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    target = tmp_path / f"{proposal.proposal_sha256}.json"
+    filesystem = _FailingPublicationFileSystem(write_number=1, error=injected)
+
+    with pytest.raises(expected_error):
+        write_exact_adamw_proposal(proposal, target, filesystem=filesystem)
+
+    assert not target.exists()
+    assert tuple(tmp_path.iterdir()) == ()
+
+
+def test_atomic_witness_bank_publication_never_exposes_a_partial_directory(
+    tmp_path,
+) -> None:
+    _, named, optimizer, _counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    bank = _bank(proposal.layout, {"owner_a": _active_row(proposal)})
+    target = tmp_path / bank.bank_sha256
+    filesystem = _FailingPublicationFileSystem(
+        write_number=2,
+        error=OSError(errno.EIO, "injected bank write failure"),
+    )
+
+    with pytest.raises(ProposalAdmissionError, match="publication did not complete"):
+        write_frozen_witness_bank(bank, target, filesystem=filesystem)
+
+    assert not target.exists()
+    assert tuple(tmp_path.iterdir()) == ()
+
+
+@pytest.mark.parametrize("fsync_number", (1, 2, 3))
+def test_atomic_witness_bank_fsyncs_nested_root_and_parent_directories(
+    tmp_path, fsync_number: int
+) -> None:
+    _, named, optimizer, _counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    bank = _bank(proposal.layout, {"owner_a": _active_row(proposal)})
+    target = tmp_path / bank.bank_sha256
+    filesystem = _FailingDirectoryFsyncPublicationFileSystem(fsync_number=fsync_number)
+
+    with pytest.raises(ProposalAdmissionError, match="publication did not complete"):
+        write_frozen_witness_bank(bank, target, filesystem=filesystem)
+
+    assert not target.exists()
+    assert tuple(tmp_path.iterdir()) == ()
+
+
+def test_identical_existing_witness_bank_requires_full_stream_reload(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, named, optimizer, _counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    bank = _bank(proposal.layout, {"owner_a": _active_row(proposal)})
+    target = write_frozen_witness_bank(bank, tmp_path / bank.bank_sha256)
+    assert write_frozen_witness_bank(bank, target) == target
+
+    class ReloadedMetadataOnly:
+        def to_dict(self):
+            return bank.to_dict()
+
+        def stream_constraints(self):
+            raise ProposalAdmissionError(
+                "injected incomplete Jacobian reload",
+                disposition="invalid_artifact",
+            )
+
+    monkeypatch.setattr(
+        preservation,
+        "load_frozen_witness_bank",
+        lambda _path: ReloadedMetadataOnly(),
+    )
+
+    with pytest.raises(ProposalAdmissionError, match="incomplete Jacobian reload"):
+        write_frozen_witness_bank(bank, target)
+
+    assert target.is_dir()
 
 
 def test_projection_and_apply_artifacts_reload_and_reject_tampering(tmp_path) -> None:

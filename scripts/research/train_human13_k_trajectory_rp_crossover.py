@@ -29,6 +29,7 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     validate_node_cell_specs,
 )
 from scripts.research.human13_rp_crossover_runtime import (
+    CellRuntimeError,
     CellRuntimeServices,
     run_cell,
 )
@@ -430,6 +431,7 @@ def _execute_node(
     """
 
     runtime = runtime_factory(node)
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
     specs: tuple[CellSpec, ...] = ()
     receipts: list[CellReceipt] = []
     failure: BaseException | None = None
@@ -441,19 +443,61 @@ def _execute_node(
             if any(services is previous for previous in services_seen):
                 raise ValueError("every cell requires independent runtime services")
             services_seen.append(services)
-            receipt = run_cell(
-                spec,
-                services=services,
-                receipt_writer=runtime.write_cell_receipt,
-            )
-            receipts.append(receipt)
+            captured_receipt: CellReceipt | None = None
+
+            def admit(candidate: CellReceipt) -> CellReceipt:
+                trial = NodeTerminalReceipt(
+                    node_id=node["node_id"],
+                    phase=node["phase"],
+                    acquisition_key=acquisition_key,
+                    status="failed",
+                    cell_specs=specs,
+                    cell_receipts=(*receipts, candidate),
+                    failure_reason="candidate cell receipt admission",
+                )
+                return trial.cell_receipts[-1]
+
+            def write_and_capture(candidate: CellReceipt) -> None:
+                nonlocal captured_receipt
+                admitted = admit(candidate)
+                if captured_receipt is not None:
+                    raise ValueError(
+                        "one cell emitted more than one standalone receipt"
+                    )
+                captured_receipt = admitted
+                runtime.write_cell_receipt(admitted)
+
+            try:
+                receipt = run_cell(
+                    spec,
+                    services=services,
+                    receipt_writer=write_and_capture,
+                )
+            except BaseException as error:
+                candidate = captured_receipt
+                if isinstance(error, CellRuntimeError) and error.receipt is not None:
+                    admitted = admit(error.receipt)
+                    if captured_receipt is not None and captured_receipt != admitted:
+                        raise ValueError(
+                            "CellRuntimeError receipt differs from the standalone receipt"
+                        ) from error
+                    candidate = admitted
+                if candidate is not None:
+                    receipts.append(candidate)
+                raise
+            admitted = admit(receipt)
+            if captured_receipt is not None and captured_receipt != admitted:
+                raise ValueError(
+                    "returned cell receipt differs from the standalone receipt"
+                )
+            receipts.append(admitted)
     except BaseException as error:
         failure = error
 
     terminal = NodeTerminalReceipt(
         node_id=node["node_id"],
         phase=node["phase"],
-        acquisition_key=AcquisitionKey.from_dict(node["acquisition_key"]),
+        acquisition_key=acquisition_key,
         status="failed" if failure is not None else "succeeded",
         cell_specs=specs,
         cell_receipts=tuple(receipts),

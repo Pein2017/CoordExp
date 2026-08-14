@@ -28,7 +28,10 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
 )
 from scripts.research import launch_human13_k_trajectory_rp_crossover as launcher
 from scripts.research import train_human13_k_trajectory_rp_crossover as cli
-from scripts.research.human13_rp_crossover_runtime import CellRuntimeServices
+from scripts.research.human13_rp_crossover_runtime import (
+    CellRuntimeError,
+    CellRuntimeServices,
+)
 from scripts.research.human13_rp_crossover_production import (
     GlobalLearningRateDecision,
     select_global_learning_rate,
@@ -124,6 +127,7 @@ def _component_hashes(
 def _spec(
     arm_id: str = "A",
     *,
+    cell_key: CellKey | None = None,
     acquisition_key: AcquisitionKey | None = None,
     output_root: str | None = None,
     adamw_config_sha256: str | None = None,
@@ -139,9 +143,15 @@ def _spec(
         "C": ("trajectory", "compiler", "preservation"),
     }[arm_id]
     acquisition = acquisition_key or AcquisitionKey(1.0, "matrix_a", "matrix")
+    selected_cell_key = cell_key or CellKey(acquisition, arm_id)
+    if (
+        selected_cell_key.acquisition_key != acquisition
+        or selected_cell_key.arm_id != arm_id
+    ):
+        raise ValueError("test CellKey differs from the requested acquisition/arm")
     tag = f"{acquisition.training_rp}:{acquisition.seed_group_id}"
     return CellSpec(
-        cell_key=CellKey(acquisition, arm_id),
+        cell_key=selected_cell_key,
         shared_evidence=_shared(acquisition.training_rp, acquisition.seed_group_id),
         leaf_config_sha256=(source_leaf_config_sha256 or _digest(f"leaf-{arm_id}")),
         source_checkpoint_sha256=_digest("source-checkpoint"),
@@ -155,7 +165,10 @@ def _spec(
         output_root=output_root or f"cells/{arm_id}",
         learning_rate=learning_rate,
         global_learning_rate_decision_sha256=(
-            global_learning_rate_decision_sha256 or _digest("test-global-lr-decision")
+            None
+            if acquisition.phase == PHASE_QUALIFICATION
+            else global_learning_rate_decision_sha256
+            or _digest("test-global-lr-decision")
         ),
         resolved_leaf_config_sha256=(
             resolved_leaf_config_sha256 or _digest(f"resolved-leaf:{tag}:{arm_id}")
@@ -237,6 +250,16 @@ def _success_receipt(spec: CellSpec) -> CellReceipt:
             spec.global_learning_rate_decision_sha256
         ),
         resolved_leaf_config_sha256=spec.resolved_leaf_config_sha256,
+    )
+
+
+def _failed_receipt(
+    spec: CellSpec, reason: str = "injected dose failure"
+) -> CellReceipt:
+    return replace(
+        _success_receipt(spec),
+        status="failed",
+        failure_reason=reason,
     )
 
 
@@ -467,6 +490,27 @@ def test_node_execute_fails_closed_without_production_runtime_factory(tmp_path) 
             ],
             stdout=io.StringIO(),
         )
+
+
+def _specs_for_node(node: Mapping[str, Any]) -> tuple[CellSpec, ...]:
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+    return tuple(
+        _spec(
+            cell["cell_key"]["arm_id"],
+            cell_key=CellKey.from_dict(cell["cell_key"]),
+            acquisition_key=acquisition_key,
+            output_root=cell["output_root"],
+            adamw_config_sha256=cell["adamw_config_sha256"],
+            fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+            learning_rate=cell["learning_rate"],
+            global_learning_rate_decision_sha256=cell[
+                "global_learning_rate_decision_sha256"
+            ],
+            resolved_leaf_config_sha256=cell["resolved_leaf_config_sha256"],
+            source_leaf_config_sha256=cell["source_leaf_config_sha256"],
+        )
+        for cell in node["cells"]
+    )
 
 
 def _node_runtime(plan_node: Mapping[str, Any], specs: tuple[CellSpec, ...]):
@@ -723,3 +767,115 @@ def test_failed_node_terminal_still_persists_its_acquired_specs(
     assert [spec.cell_key.arm_id for spec in terminal.cell_specs] == ["A", "B", "C"]
     assert [item.cell_key.arm_id for item in terminal.cell_receipts] == ["A"]
     assert "injected cell failure" in (terminal.failure_reason or "")
+
+
+def test_failed_first_qualification_dose_receipt_survives_node_handoff(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = next(
+        item
+        for item in plan["acquisitions"]
+        if item["node_id"] == "rp100:qualification"
+    )
+    specs = _specs_for_node(node)
+    runtime = _node_runtime(node, specs)
+
+    def fail_first(spec, **_kwargs):
+        receipt = _failed_receipt(spec)
+        raise CellRuntimeError("injected first-dose failure", receipt=receipt)
+
+    monkeypatch.setattr(cli, "run_cell", fail_first)
+
+    with pytest.raises(CellRuntimeError, match="first-dose failure"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(lambda _: runtime),
+            stdout=io.StringIO(),
+        )
+
+    terminal = NodeTerminalReceipt.from_dict(runtime.terminals[0][1])
+    assert terminal.status == "failed"
+    assert [receipt.status for receipt in terminal.cell_receipts] == ["failed"]
+    assert [receipt.learning_rate for receipt in terminal.cell_receipts] == [
+        specs[0].learning_rate
+    ]
+
+
+def test_failed_after_success_receipt_survives_a_cell_writer_failure(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = next(
+        item
+        for item in plan["acquisitions"]
+        if item["node_id"] == "rp100:qualification"
+    )
+    specs = _specs_for_node(node)
+    runtime = _node_runtime(node, specs)
+    calls = 0
+
+    def writer(receipt: CellReceipt) -> None:
+        if receipt.status == "failed":
+            raise OSError("injected standalone receipt write failure")
+
+    runtime.write_cell_receipt = writer
+
+    def fail_second(spec, *, receipt_writer, **_kwargs):
+        nonlocal calls
+        calls += 1
+        receipt = _success_receipt(spec) if calls == 1 else _failed_receipt(spec)
+        receipt_writer(receipt)
+        return receipt
+
+    monkeypatch.setattr(cli, "run_cell", fail_second)
+
+    with pytest.raises(OSError, match="standalone receipt write failure"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(lambda _: runtime),
+            stdout=io.StringIO(),
+        )
+
+    terminal = NodeTerminalReceipt.from_dict(runtime.terminals[0][1])
+    assert terminal.status == "failed"
+    assert [receipt.status for receipt in terminal.cell_receipts] == [
+        "succeeded",
+        "failed",
+    ]
+    assert [receipt.learning_rate for receipt in terminal.cell_receipts] == [
+        spec.learning_rate for spec in specs[:2]
+    ]
+
+
+def test_node_terminal_rejects_a_failed_receipt_from_another_dose(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = next(
+        item
+        for item in plan["acquisitions"]
+        if item["node_id"] == "rp100:qualification"
+    )
+    specs = _specs_for_node(node)
+    runtime = _node_runtime(node, specs)
+
+    def forged_failure(_spec, **_kwargs):
+        raise CellRuntimeError(
+            "forged dose receipt",
+            receipt=_failed_receipt(specs[1]),
+        )
+
+    monkeypatch.setattr(cli, "run_cell", forged_failure)
+
+    with pytest.raises(ValueError, match="acquired cell order"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(lambda _: runtime),
+            stdout=io.StringIO(),
+        )
+
+    terminal = NodeTerminalReceipt.from_dict(runtime.terminals[0][1])
+    assert terminal.status == "failed"
+    assert terminal.cell_receipts == ()
+    assert "acquired cell order" in (terminal.failure_reason or "")

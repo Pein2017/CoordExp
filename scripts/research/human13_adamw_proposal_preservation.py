@@ -32,13 +32,18 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Iterator, Mapping, Sequence
+import ctypes
 from dataclasses import dataclass, field as dataclass_field
+import errno
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
-from typing import Any
+import shutil
+import tempfile
+from typing import Any, Protocol
 
 import numpy as np
 import torch
@@ -2491,37 +2496,406 @@ def _realized_changes(
 # --- durable artifacts --------------------------------------------------------
 
 
-def _write_create_or_identical(path: Path, payload: bytes) -> Path:
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with target.open("xb") as handle:
-            handle.write(payload)
-    except FileExistsError:
+class _ArtifactPublicationFileSystem(Protocol):
+    """Injectable durability boundary for one atomic artifact publication."""
+
+    def write_payload(self, descriptor: int, payload: bytes) -> None: ...
+
+    def publish_file_exclusive(
+        self, temporary_path: Path, final_path: Path
+    ) -> None: ...
+
+    def publish_directory_exclusive(
+        self, temporary_path: Path, final_path: Path
+    ) -> None: ...
+
+    def fsync_directory(self, directory: Path) -> None: ...
+
+
+def _rename_directory_noreplace(temporary_path: Path, final_path: Path) -> None:
+    """Atomically rename one complete directory without replacing any target."""
+
+    library = ctypes.CDLL(None, use_errno=True)
+    renameat2 = getattr(library, "renameat2", None)
+    if renameat2 is None:
+        raise OSError(errno.ENOSYS, "renameat2 is required for directory publication")
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        -100,
+        os.fsencode(temporary_path),
+        -100,
+        os.fsencode(final_path),
+        1,
+    )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise FileExistsError(
+            error_number,
+            os.strerror(error_number),
+            str(final_path),
+        )
+    raise OSError(error_number, os.strerror(error_number), str(final_path))
+
+
+class _LocalArtifactPublicationFileSystem:
+    """POSIX implementation of crash-consistent no-clobber publication."""
+
+    def write_payload(self, descriptor: int, payload: bytes) -> None:
+        with os.fdopen(descriptor, "wb") as handle:
+            written = handle.write(payload)
+            if written != len(payload):
+                raise OSError(errno.EIO, "artifact staging write was short")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    def publish_file_exclusive(self, temporary_path: Path, final_path: Path) -> None:
+        os.link(temporary_path, final_path)
+
+    def publish_directory_exclusive(
+        self, temporary_path: Path, final_path: Path
+    ) -> None:
+        _rename_directory_noreplace(temporary_path, final_path)
+
+    def fsync_directory(self, directory: Path) -> None:
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
         try:
-            existing = target.read_bytes()
-        except OSError as error:
-            raise ProposalAdmissionError(
-                f"artifact {target} is unreadable",
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+_LOCAL_ARTIFACT_PUBLICATION_FILESYSTEM = _LocalArtifactPublicationFileSystem()
+_PayloadFactory = Callable[[], Iterator[tuple[str, bytes]]]
+_ArtifactValidator = Callable[[Path], None]
+
+
+def _artifact_publication_error(message: str, *, disposition: str) -> None:
+    raise ProposalAdmissionError(message, disposition=disposition)
+
+
+def _unique_payloads(
+    payload_factory: _PayloadFactory, *, directory: bool
+) -> Iterator[tuple[str, bytes]]:
+    seen: dict[str, tuple[int, str]] = {}
+    for relative, payload in payload_factory():
+        if not isinstance(relative, str) or not isinstance(payload, bytes):
+            _artifact_publication_error(
+                "artifact payload factory emitted an invalid entry",
                 disposition="invalid_artifact",
-            ) from error
-        if existing != payload:
-            raise ProposalAdmissionError(
-                f"artifact {target} already exists with different bytes",
-                disposition="artifact_collision",
             )
-    return target
+        if directory:
+            relative_path = Path(relative)
+            if (
+                not relative
+                or relative_path.is_absolute()
+                or any(part in {"", ".", ".."} for part in relative_path.parts)
+            ):
+                _artifact_publication_error(
+                    "artifact payload escaped its staging directory",
+                    disposition="invalid_artifact",
+                )
+        elif relative != "":
+            _artifact_publication_error(
+                "file artifact payload must use the empty relative path",
+                disposition="invalid_artifact",
+            )
+        signature = (len(payload), hashlib.sha256(payload).hexdigest())
+        previous = seen.get(relative)
+        if previous is not None:
+            if previous != signature:
+                _artifact_publication_error(
+                    "artifact payload path was emitted with different bytes",
+                    disposition="artifact_collision",
+                )
+            continue
+        seen[relative] = signature
+        yield relative, payload
+    if (not directory and set(seen) != {""}) or (directory and not seen):
+        _artifact_publication_error(
+            "artifact payload factory emitted an incomplete artifact",
+            disposition="invalid_artifact",
+        )
 
 
-def write_exact_adamw_proposal(proposal: ExactAdamWProposal, path: Path) -> Path:
+def _validate_existing_publication(
+    target: Path,
+    *,
+    directory: bool,
+    directories: tuple[str, ...],
+    payload_factory: _PayloadFactory,
+    validator: _ArtifactValidator,
+) -> None:
+    if (
+        target.is_symlink()
+        or (directory and not target.is_dir())
+        or (not directory and not target.is_file())
+    ):
+        _artifact_publication_error(
+            f"artifact {target} exists with the wrong filesystem type",
+            disposition="artifact_collision",
+        )
+    try:
+        if not directory:
+            ((_, expected),) = tuple(_unique_payloads(payload_factory, directory=False))
+            if target.read_bytes() != expected:
+                _artifact_publication_error(
+                    f"artifact {target} already exists with different bytes",
+                    disposition="artifact_collision",
+                )
+        else:
+            actual_files: set[str] = set()
+            actual_directories: set[str] = set()
+            for path in target.rglob("*"):
+                relative = path.relative_to(target).as_posix()
+                if path.is_symlink():
+                    _artifact_publication_error(
+                        f"artifact {target} contains a symbolic link",
+                        disposition="artifact_collision",
+                    )
+                if path.is_file():
+                    actual_files.add(relative)
+                elif path.is_dir():
+                    actual_directories.add(relative)
+                else:
+                    _artifact_publication_error(
+                        f"artifact {target} contains a foreign filesystem entry",
+                        disposition="artifact_collision",
+                    )
+            expected_files: set[str] = set()
+            for relative, expected in _unique_payloads(payload_factory, directory=True):
+                expected_files.add(relative)
+                if (target / relative).read_bytes() != expected:
+                    _artifact_publication_error(
+                        f"artifact {target} already exists with different bytes",
+                        disposition="artifact_collision",
+                    )
+            if actual_files != expected_files or actual_directories != set(directories):
+                _artifact_publication_error(
+                    f"artifact {target} has a partial or foreign inventory",
+                    disposition="artifact_collision",
+                )
+    except OSError as error:
+        raise ProposalAdmissionError(
+            f"artifact {target} is unreadable",
+            disposition="invalid_artifact",
+        ) from error
+    validator(target)
+
+
+def _remove_published_artifact(
+    target: Path,
+    *,
+    directory: bool,
+    identity: tuple[int, int],
+    filesystem: _ArtifactPublicationFileSystem,
+) -> None:
+    try:
+        current = target.lstat()
+    except FileNotFoundError:
+        return
+    if (current.st_dev, current.st_ino) != identity:
+        return
+    if directory:
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    try:
+        filesystem.fsync_directory(target.parent)
+    except OSError:
+        pass
+
+
+def _publish_content_addressed_artifact(
+    target: Path,
+    *,
+    directory: bool,
+    directories: tuple[str, ...],
+    payload_factory: _PayloadFactory,
+    validator: _ArtifactValidator,
+    filesystem: _ArtifactPublicationFileSystem | None,
+) -> Path:
+    """Stage, fsync, no-clobber publish, and validate one immutable artifact."""
+
+    target = Path(target)
+    filesystem = filesystem or _LOCAL_ARTIFACT_PUBLICATION_FILESYSTEM
+    if target.exists() or target.is_symlink():
+        _validate_existing_publication(
+            target,
+            directory=directory,
+            directories=directories,
+            payload_factory=payload_factory,
+            validator=validator,
+        )
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging: Path | None = None
+    published_identity: tuple[int, int] | None = None
+    published = False
+    try:
+        if directory:
+            staging = Path(
+                tempfile.mkdtemp(prefix=f".{target.name}.staging-", dir=target.parent)
+            )
+            for relative in sorted(
+                directories, key=lambda value: (len(Path(value).parts), value)
+            ):
+                path = Path(relative)
+                if (
+                    path.is_absolute()
+                    or not relative
+                    or any(part in {"", ".", ".."} for part in path.parts)
+                ):
+                    _artifact_publication_error(
+                        "artifact directory inventory is invalid",
+                        disposition="invalid_artifact",
+                    )
+                (staging / path).mkdir()
+            for relative, payload in _unique_payloads(payload_factory, directory=True):
+                payload_path = staging / relative
+                descriptor = os.open(
+                    payload_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                )
+                try:
+                    filesystem.write_payload(descriptor, payload)
+                except BaseException:
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+                    raise
+            for relative in sorted(
+                directories,
+                key=lambda value: (-len(Path(value).parts), value),
+            ):
+                filesystem.fsync_directory(staging / relative)
+            filesystem.fsync_directory(staging)
+            stat = staging.stat()
+            published_identity = (stat.st_dev, stat.st_ino)
+            try:
+                filesystem.publish_directory_exclusive(staging, target)
+            except FileExistsError:
+                shutil.rmtree(staging)
+                staging = None
+                _validate_existing_publication(
+                    target,
+                    directory=True,
+                    directories=directories,
+                    payload_factory=payload_factory,
+                    validator=validator,
+                )
+                return target
+            published = True
+            staging = None
+        else:
+            ((_, payload),) = tuple(_unique_payloads(payload_factory, directory=False))
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{target.name}.staging-", dir=target.parent
+            )
+            staging = Path(temporary_name)
+            try:
+                filesystem.write_payload(descriptor, payload)
+            except BaseException:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+                raise
+            stat = staging.stat()
+            published_identity = (stat.st_dev, stat.st_ino)
+            try:
+                filesystem.publish_file_exclusive(staging, target)
+            except FileExistsError:
+                staging.unlink()
+                staging = None
+                _validate_existing_publication(
+                    target,
+                    directory=False,
+                    directories=(),
+                    payload_factory=payload_factory,
+                    validator=validator,
+                )
+                return target
+            published = True
+            staging.unlink()
+            staging = None
+        filesystem.fsync_directory(target.parent)
+        return target
+    except BaseException as error:
+        if published and published_identity is not None:
+            _remove_published_artifact(
+                target,
+                directory=directory,
+                identity=published_identity,
+                filesystem=filesystem,
+            )
+        if isinstance(error, OSError):
+            raise ProposalAdmissionError(
+                f"atomic artifact publication did not complete for {target}",
+                disposition="artifact_publish_failed",
+            ) from error
+        raise
+    finally:
+        if staging is not None and staging.exists():
+            if staging.is_dir():
+                shutil.rmtree(staging)
+            else:
+                staging.unlink()
+
+
+def _write_create_or_identical(
+    path: Path,
+    payload: bytes,
+    *,
+    validator: _ArtifactValidator,
+    filesystem: _ArtifactPublicationFileSystem | None,
+) -> Path:
+    return _publish_content_addressed_artifact(
+        Path(path),
+        directory=False,
+        directories=(),
+        payload_factory=lambda: iter((("", payload),)),
+        validator=validator,
+        filesystem=filesystem,
+    )
+
+
+def write_exact_adamw_proposal(
+    proposal: ExactAdamWProposal,
+    path: Path,
+    *,
+    filesystem: _ArtifactPublicationFileSystem | None = None,
+) -> Path:
     """Write one private proposal artifact through the admitted payload."""
 
     if not isinstance(proposal, ExactAdamWProposal):
         raise ProposalAdmissionError(
             "an admitted exact AdamW proposal is required", disposition="invalid_field"
         )
+
+    def validate(target: Path) -> None:
+        reloaded = load_exact_adamw_proposal(target)
+        if reloaded.to_dict() != proposal.to_dict():
+            raise ProposalAdmissionError(
+                "existing exact AdamW proposal differs after reload",
+                disposition="artifact_collision",
+            )
+
     return _write_create_or_identical(
-        Path(path), _canonical_payload(proposal.to_dict())
+        Path(path),
+        _canonical_payload(proposal.to_dict()),
+        validator=validate,
+        filesystem=filesystem,
     )
 
 
@@ -2538,22 +2912,44 @@ def load_exact_adamw_proposal(path: Path) -> ExactAdamWProposal:
     return ExactAdamWProposal.from_dict(payload)
 
 
-def write_frozen_witness_bank(bank: FrozenWitnessBank, directory: Path) -> Path:
+def write_frozen_witness_bank(
+    bank: FrozenWitnessBank,
+    directory: Path,
+    *,
+    filesystem: _ArtifactPublicationFileSystem | None = None,
+) -> Path:
     """Write the frozen witness bank and its streamed Jacobian store."""
 
     if not isinstance(bank, FrozenWitnessBank):
         raise ProposalAdmissionError(
             "an admitted frozen witness bank is required", disposition="invalid_field"
         )
-    root = Path(directory)
-    (root / "jacobians").mkdir(parents=True, exist_ok=True)
-    for _, witness, jacobian in bank.stream_constraints():
-        _write_create_or_identical(
-            root / "jacobians" / f"{witness.jacobian_sha256}.f64",
-            _float64_bytes(jacobian),
-        )
-    _write_create_or_identical(root / "bank.json", _canonical_payload(bank.to_dict()))
-    return root
+
+    def payloads() -> Iterator[tuple[str, bytes]]:
+        for _, witness, jacobian in bank.stream_constraints():
+            yield (
+                f"jacobians/{witness.jacobian_sha256}.f64",
+                _float64_bytes(jacobian),
+            )
+        yield "bank.json", _canonical_payload(bank.to_dict())
+
+    def validate(target: Path) -> None:
+        reloaded = load_frozen_witness_bank(target)
+        if reloaded.to_dict() != bank.to_dict():
+            raise ProposalAdmissionError(
+                "existing witness bank differs after reload",
+                disposition="artifact_collision",
+            )
+        tuple(reloaded.stream_constraints())
+
+    return _publish_content_addressed_artifact(
+        Path(directory),
+        directory=True,
+        directories=("jacobians",),
+        payload_factory=payloads,
+        validator=validate,
+        filesystem=filesystem,
+    )
 
 
 def load_frozen_witness_bank(directory: Path) -> FrozenWitnessBank:
@@ -2609,7 +3005,12 @@ def load_frozen_witness_bank(directory: Path) -> FrozenWitnessBank:
     )
 
 
-def write_projection_receipt(receipt: ProjectionReceipt, path: Path) -> Path:
+def write_projection_receipt(
+    receipt: ProjectionReceipt,
+    path: Path,
+    *,
+    filesystem: _ArtifactPublicationFileSystem | None = None,
+) -> Path:
     """Write one certified projection through its existing receipt schema."""
 
     if not isinstance(receipt, ProjectionReceipt):
@@ -2617,7 +3018,23 @@ def write_projection_receipt(receipt: ProjectionReceipt, path: Path) -> Path:
             "a certified projection receipt is required",
             disposition="invalid_field",
         )
-    return _write_create_or_identical(Path(path), _canonical_payload(receipt.to_dict()))
+
+    def validate(target: Path) -> None:
+        reloaded = load_projection_receipt(
+            target, expected_sha256=receipt.receipt_sha256
+        )
+        if reloaded.to_dict() != receipt.to_dict():
+            raise ProposalAdmissionError(
+                "existing projection receipt differs after reload",
+                disposition="artifact_collision",
+            )
+
+    return _write_create_or_identical(
+        Path(path),
+        _canonical_payload(receipt.to_dict()),
+        validator=validate,
+        filesystem=filesystem,
+    )
 
 
 def load_projection_receipt(
@@ -2644,7 +3061,12 @@ def load_projection_receipt(
     return receipt
 
 
-def write_projected_apply_receipt(receipt: ProjectedApplyReceipt, path: Path) -> Path:
+def write_projected_apply_receipt(
+    receipt: ProjectedApplyReceipt,
+    path: Path,
+    *,
+    filesystem: _ArtifactPublicationFileSystem | None = None,
+) -> Path:
     """Write one exact projected-apply receipt through its existing schema."""
 
     if not isinstance(receipt, ProjectedApplyReceipt):
@@ -2652,7 +3074,23 @@ def write_projected_apply_receipt(receipt: ProjectedApplyReceipt, path: Path) ->
             "a certified projected apply receipt is required",
             disposition="invalid_field",
         )
-    return _write_create_or_identical(Path(path), _canonical_payload(receipt.to_dict()))
+
+    def validate(target: Path) -> None:
+        reloaded = load_projected_apply_receipt(
+            target, expected_sha256=receipt.receipt_sha256
+        )
+        if reloaded.to_dict() != receipt.to_dict():
+            raise ProposalAdmissionError(
+                "existing projected-apply receipt differs after reload",
+                disposition="artifact_collision",
+            )
+
+    return _write_create_or_identical(
+        Path(path),
+        _canonical_payload(receipt.to_dict()),
+        validator=validate,
+        filesystem=filesystem,
+    )
 
 
 def load_projected_apply_receipt(
