@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
+from pathlib import Path
 import re
 from typing import Any
 
@@ -23,16 +24,31 @@ from scripts.research.analyze_human13_k_union import (
     _match_prefix,
 )
 from scripts.research.build_human13_k_union_manifest import (
+    PANEL_PATH,
     Human13KUnionManifest,
     ImageRecord,
 )
+from scripts.research.collect_human13_rp_crossover import (
+    AdmittedPublication,
+    AcquisitionExecution,
+    PublicationBinding,
+)
 from scripts.research.compare_clean_rollout_owner_coverage import iou_xyxy
 from scripts.research.human13_k_trajectory_contracts import AcquisitionGroup
+from src.data.geometry import coord_bins_to_pixel_xyxy, parse_coord_token
 from src.eval.detection_categories import normalize_coco_category_name
+from src.inference.parsing import (
+    PARSER_ID,
+    PARSER_POLICY,
+    parse_compact_object_box_closed,
+)
+from src.templates.renderer import OBJECT_REF_END_TOKEN, OBJECT_REF_START_TOKEN
 
 
 SCHEMA_VERSION = "human13_trajectory_credit_ledger.v1"
 ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_acquisition.v1"
+PANEL_ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_panel_acquisition.v1"
+PARSER_PROJECTION_SCHEMA_VERSION = "human13_canonical_parser_projection.v1"
 FIXED_SCIENTIFIC_K = 16
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -97,7 +113,403 @@ def _valid_box(value: object) -> tuple[float, float, float, float] | None:
 
 
 @dataclass(frozen=True)
-class ParsedCreditRow:
+class CanonicalTokenizerDecodeAdapter:
+    """Narrow CPU tokenizer boundary used to reproduce parser semantics.
+
+    The adapter binds the concrete tokenizer identity while keeping tokenizer
+    loading outside this pure projection module.  Decoding follows the existing
+    inference/scoring seam: every token is decoded with special tokens retained,
+    and concatenated token text must equal sequence decoding exactly.
+    """
+
+    tokenizer: Any
+    tokenizer_id: str
+    tokenizer_sha256: str
+    implementation_id: str
+    decode_policy: str = "hf-per-token-concat-equals-sequence.v1"
+
+    def __post_init__(self) -> None:
+        if not callable(getattr(self.tokenizer, "decode", None)):
+            raise ValueError("tokenizer adapter requires a decode method")
+        for field in ("tokenizer_id", "implementation_id"):
+            if not isinstance(getattr(self, field), str) or not getattr(self, field):
+                raise ValueError(f"tokenizer adapter {field} must be nonempty")
+        object.__setattr__(
+            self,
+            "tokenizer_sha256",
+            _digest(self.tokenizer_sha256, field="tokenizer_sha256"),
+        )
+        if self.decode_policy != "hf-per-token-concat-equals-sequence.v1":
+            raise ValueError("tokenizer decode policy differs from the canonical seam")
+
+    def decode(self, token_ids: Sequence[int]) -> tuple[str, tuple[str, ...]]:
+        ids = tuple(_integer(token, field="generated token id") for token in token_ids)
+        token_texts = tuple(
+            str(self.tokenizer.decode([token], skip_special_tokens=False))
+            for token in ids
+        )
+        sequence_text = str(self.tokenizer.decode(list(ids), skip_special_tokens=False))
+        if "".join(token_texts) != sequence_text:
+            raise ValueError(
+                "per-token decoded text differs from canonical sequence decoding"
+            )
+        return sequence_text, token_texts
+
+    def identity_dict(self) -> dict[str, str]:
+        return {
+            "tokenizer_id": self.tokenizer_id,
+            "tokenizer_sha256": self.tokenizer_sha256,
+            "implementation_id": self.implementation_id,
+            "decode_policy": self.decode_policy,
+        }
+
+
+def _revalidate_admitted_publication(value: object) -> AdmittedPublication:
+    # Load Task 2's replay artifact type only at the admission boundary; the
+    # detached ledger itself depends only on the immutable receipt fields.
+    from scripts.research.human13_rp_policy import AcquisitionGroupParityReceipt
+
+    if type(value) is not AdmittedPublication:
+        raise ValueError("trajectory credit requires exact Task2 AdmittedPublication")
+    publication = value
+    execution = AcquisitionExecution(
+        plan=publication.execution.plan,
+        plan_sha256=publication.execution.plan_sha256,
+        plan_request_ids=publication.execution.plan_request_ids,
+        native_batch_receipts=publication.execution.native_batch_receipts,
+        group=AcquisitionGroup.from_dict(publication.execution.group.to_dict()),
+    )
+    # ``to_dict`` is an immutable in-process view and intentionally preserves
+    # tuples.  The artifact loader is stricter and accepts only JSON arrays, so
+    # cross the real JSON boundary while revalidating the admitted publication.
+    binding = PublicationBinding.from_dict(
+        json.loads(_canonical_json(publication.binding.to_dict()))
+    )
+    replayed = AcquisitionGroup.from_dict(publication.replayed_group.to_dict())
+    parity = AcquisitionGroupParityReceipt.from_dict(
+        publication.parity_receipt.to_dict()
+    )
+    return AdmittedPublication(binding, execution, replayed, parity)
+
+
+@dataclass(frozen=True)
+class TrajectoryCreditPanelAcquisition:
+    """One exact RP/seed cell of admitted Task-2 K16 publications."""
+
+    publications: tuple[AdmittedPublication, ...]
+
+    def __post_init__(self) -> None:
+        publications = tuple(
+            _revalidate_admitted_publication(publication)
+            for publication in self.publications
+        )
+        if not publications:
+            raise ValueError("trajectory-credit panel requires admitted publications")
+        image_ids = tuple(
+            publication.execution.plan.image_id for publication in publications
+        )
+        if len(set(image_ids)) != len(image_ids):
+            raise ValueError("trajectory-credit panel image plans must be unique")
+        repetition_penalties = {
+            publication.execution.plan.repetition_penalty
+            for publication in publications
+        }
+        if len(repetition_penalties) != 1:
+            raise ValueError("trajectory-credit panel must use one common training RP")
+        seed_groups = {
+            publication.execution.plan.seed_group_id for publication in publications
+        }
+        if len(seed_groups) != 1:
+            raise ValueError("trajectory-credit panel must use one common seed group")
+        static_surfaces = {
+            (
+                publication.replayed_group.identity.source_sha256,
+                publication.replayed_group.identity.manifest_sha256,
+                publication.replayed_group.identity.model_id,
+                publication.replayed_group.identity.tokenizer_id,
+                publication.replayed_group.identity.processor_id,
+                publication.replayed_group.policy_contract.temperature,
+                publication.replayed_group.policy_contract.processor_order,
+                publication.replayed_group.policy_contract.sampler_backend_id,
+                publication.replayed_group.policy_contract.top_p,
+                publication.replayed_group.policy_contract.top_k,
+            )
+            for publication in publications
+        }
+        if len(static_surfaces) != 1:
+            raise ValueError(
+                "trajectory-credit panel Source/manifest/policy surface differs"
+            )
+        if any(
+            len(publication.replayed_group.trajectories) != FIXED_SCIENTIFIC_K
+            for publication in publications
+        ):
+            raise ValueError("trajectory-credit scientific groups require exact K16")
+        object.__setattr__(self, "publications", publications)
+
+    @property
+    def training_repetition_penalty(self) -> float:
+        return self.publications[0].execution.plan.repetition_penalty
+
+    @property
+    def seed_group_id(self) -> str:
+        return self.publications[0].execution.plan.seed_group_id
+
+    def _preimage(self) -> dict[str, Any]:
+        return {
+            "schema_version": PANEL_ACQUISITION_SCHEMA_VERSION,
+            "training_repetition_penalty": self.training_repetition_penalty,
+            "seed_group_id": self.seed_group_id,
+            "publications": [
+                {
+                    "image_id": publication.execution.plan.image_id,
+                    "plan_sha256": publication.execution.plan_sha256,
+                    "native_receipts_sha256": publication.binding.native_receipts_sha256,
+                    "sampled_group_sha256": publication.binding.sampled_group_sha256,
+                    "replayed_group_sha256": publication.binding.replayed_group_sha256,
+                    "parity_receipt_sha256": publication.binding.parity_receipt_sha256,
+                    "tolerance_sha256": publication.binding.tolerance_sha256,
+                }
+                for publication in self.publications
+            ],
+        }
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self._preimage())
+
+
+@dataclass(frozen=True)
+class CanonicalProjectionEvent:
+    event_order: int
+    canonical_generated_order: int | None
+    kind: str
+    category: str
+    bbox: tuple[float, float, float, float] | None
+    token_start: int
+    token_end: int
+    drop_reason: str | None
+
+    def __post_init__(self) -> None:
+        _integer(self.event_order, field="event_order")
+        if self.canonical_generated_order is not None:
+            _integer(
+                self.canonical_generated_order,
+                field="canonical_generated_order",
+            )
+        if self.kind not in {"prediction", "invalid", "malformed"}:
+            raise ValueError("canonical projection event kind differs")
+        if not isinstance(self.category, str):
+            raise ValueError("canonical projection category must be a string")
+        if self.bbox is not None:
+            bbox = tuple(_finite(value, field="projection bbox") for value in self.bbox)
+            if len(bbox) != 4:
+                raise ValueError("canonical projection bbox must contain four values")
+            object.__setattr__(self, "bbox", bbox)
+        start = _integer(self.token_start, field="projection token_start")
+        end = _integer(self.token_end, field="projection token_end", minimum=1)
+        if end <= start:
+            raise ValueError("canonical projection token span must be nonempty")
+        if self.drop_reason is not None and not isinstance(self.drop_reason, str):
+            raise ValueError("canonical projection drop reason differs")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_order": self.event_order,
+            "canonical_generated_order": self.canonical_generated_order,
+            "kind": self.kind,
+            "category": self.category,
+            "bbox": None if self.bbox is None else list(self.bbox),
+            "token_start": self.token_start,
+            "token_end": self.token_end,
+            "drop_reason": self.drop_reason,
+        }
+
+
+@dataclass(frozen=True)
+class CanonicalTrajectoryProjection:
+    request_id: str
+    acquisition_trajectory_sha256: str
+    generated_token_ids_sha256: str
+    decoded_text_sha256: str
+    parse_status: str
+    valid_prediction_count: int
+    dropped_prediction_count: int
+    canonical_predictions_json: str
+    canonical_drops_json: str
+    events: tuple[CanonicalProjectionEvent, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request_id, str) or not self.request_id:
+            raise ValueError("canonical trajectory projection requires request_id")
+        for field in (
+            "acquisition_trajectory_sha256",
+            "generated_token_ids_sha256",
+            "decoded_text_sha256",
+        ):
+            object.__setattr__(self, field, _digest(getattr(self, field), field=field))
+        if not isinstance(self.parse_status, str) or not self.parse_status:
+            raise ValueError("canonical trajectory projection parse status differs")
+        _integer(self.valid_prediction_count, field="valid_prediction_count")
+        _integer(self.dropped_prediction_count, field="dropped_prediction_count")
+        predictions = json.loads(self.canonical_predictions_json)
+        drops = json.loads(self.canonical_drops_json)
+        if (
+            not isinstance(predictions, list)
+            or not isinstance(drops, list)
+            or len(predictions) != self.valid_prediction_count
+            or len(drops) != self.dropped_prediction_count
+        ):
+            raise ValueError("canonical parser prediction/drop counts differ")
+        events = tuple(self.events)
+        if [event.event_order for event in events] != list(range(len(events))):
+            raise ValueError("canonical parser events must be chronologically ordered")
+        object.__setattr__(self, "events", events)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "request_id": self.request_id,
+            "acquisition_trajectory_sha256": self.acquisition_trajectory_sha256,
+            "generated_token_ids_sha256": self.generated_token_ids_sha256,
+            "decoded_text_sha256": self.decoded_text_sha256,
+            "parse_status": self.parse_status,
+            "valid_prediction_count": self.valid_prediction_count,
+            "dropped_prediction_count": self.dropped_prediction_count,
+            "canonical_predictions": json.loads(self.canonical_predictions_json),
+            "canonical_drops": json.loads(self.canonical_drops_json),
+            "events": [event.to_dict() for event in self.events],
+        }
+
+
+@dataclass(frozen=True)
+class CanonicalParserProjectionReceipt:
+    image_id: int
+    source_sha256: str
+    manifest_sha256: str
+    model_id: str
+    processor_id: str
+    training_repetition_penalty: float
+    seed_group_id: str
+    request_ids: tuple[str, ...]
+    plan_sha256: str
+    native_receipts_sha256: str
+    sampled_group_sha256: str
+    replayed_group_sha256: str
+    parity_receipt_sha256: str
+    tolerance_sha256: str
+    tokenizer_id: str
+    tokenizer_sha256: str
+    tokenizer_implementation_id: str
+    tokenizer_decode_policy: str
+    parser_id: str
+    parser_policy: str
+    trajectories: tuple[CanonicalTrajectoryProjection, ...]
+
+    def __post_init__(self) -> None:
+        _integer(self.image_id, field="projection image_id")
+        for field in (
+            "plan_sha256",
+            "source_sha256",
+            "manifest_sha256",
+            "native_receipts_sha256",
+            "sampled_group_sha256",
+            "replayed_group_sha256",
+            "parity_receipt_sha256",
+            "tolerance_sha256",
+            "tokenizer_sha256",
+        ):
+            object.__setattr__(self, field, _digest(getattr(self, field), field=field))
+        for field in (
+            "model_id",
+            "processor_id",
+            "seed_group_id",
+            "tokenizer_id",
+            "tokenizer_implementation_id",
+            "tokenizer_decode_policy",
+            "parser_id",
+            "parser_policy",
+        ):
+            if not isinstance(getattr(self, field), str) or not getattr(self, field):
+                raise ValueError(f"projection {field} must be nonempty")
+        repetition_penalty = _finite(
+            self.training_repetition_penalty,
+            field="training_repetition_penalty",
+        )
+        if repetition_penalty not in {1.0, 1.10}:
+            raise ValueError("projection training RP differs")
+        request_ids = tuple(self.request_ids)
+        if (
+            len(request_ids) != FIXED_SCIENTIFIC_K
+            or len(set(request_ids)) != FIXED_SCIENTIFIC_K
+        ):
+            raise ValueError("projection request ordering must be exact K16")
+        object.__setattr__(self, "request_ids", request_ids)
+        if self.parser_id != PARSER_ID or self.parser_policy != PARSER_POLICY:
+            raise ValueError("projection parser identity or policy differs")
+        trajectories = tuple(self.trajectories)
+        if len(trajectories) != FIXED_SCIENTIFIC_K:
+            raise ValueError("canonical parser projection requires exact K16")
+        if len({item.request_id for item in trajectories}) != FIXED_SCIENTIFIC_K:
+            raise ValueError("canonical parser projection requests must be unique")
+        if tuple(item.request_id for item in trajectories) != request_ids:
+            raise ValueError("canonical parser projection request order differs")
+        object.__setattr__(self, "trajectories", trajectories)
+
+    def _preimage(self) -> dict[str, Any]:
+        return {
+            "schema_version": PARSER_PROJECTION_SCHEMA_VERSION,
+            "image_id": self.image_id,
+            "source_sha256": self.source_sha256,
+            "manifest_sha256": self.manifest_sha256,
+            "model_id": self.model_id,
+            "processor_id": self.processor_id,
+            "training_repetition_penalty": self.training_repetition_penalty,
+            "seed_group_id": self.seed_group_id,
+            "request_ids": list(self.request_ids),
+            "plan_sha256": self.plan_sha256,
+            "native_receipts_sha256": self.native_receipts_sha256,
+            "sampled_group_sha256": self.sampled_group_sha256,
+            "replayed_group_sha256": self.replayed_group_sha256,
+            "parity_receipt_sha256": self.parity_receipt_sha256,
+            "tolerance_sha256": self.tolerance_sha256,
+            "tokenizer_id": self.tokenizer_id,
+            "tokenizer_sha256": self.tokenizer_sha256,
+            "tokenizer_implementation_id": self.tokenizer_implementation_id,
+            "tokenizer_decode_policy": self.tokenizer_decode_policy,
+            "parser_id": self.parser_id,
+            "parser_policy": self.parser_policy,
+            "trajectories": [trajectory.to_dict() for trajectory in self.trajectories],
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        preimage = self._preimage()
+        return {**preimage, "content_sha256": _sha256(preimage)}
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self._preimage())
+
+    @classmethod
+    def from_dict(
+        cls,
+        value: object,
+        *,
+        manifest: Human13KUnionManifest,
+        publication: AdmittedPublication,
+        tokenizer_adapter: CanonicalTokenizerDecodeAdapter,
+    ) -> CanonicalParserProjectionReceipt:
+        expected = build_canonical_parser_projection_receipt(
+            manifest,
+            publication,
+            tokenizer_adapter=tokenizer_adapter,
+        )
+        if not isinstance(value, Mapping) or dict(value) != expected.to_dict():
+            raise ValueError("stored canonical parser projection differs from rerun")
+        return expected
+
+
+@dataclass(frozen=True)
+class _ParsedCreditRow:
     """One parser-emitted row and its generated-token half-open span."""
 
     generated_order: int
@@ -139,7 +551,7 @@ class ParsedCreditRow:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> ParsedCreditRow:
+    def from_dict(cls, value: object) -> _ParsedCreditRow:
         item = _strict_mapping(
             value,
             field="parsed credit row",
@@ -164,7 +576,7 @@ class ParsedCreditRow:
 
 
 @dataclass(frozen=True)
-class MalformedRowSpan:
+class _MalformedRowSpan:
     """One chronological row-equivalent span rejected by the canonical parser."""
 
     generated_order: int
@@ -186,7 +598,7 @@ class MalformedRowSpan:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> MalformedRowSpan:
+    def from_dict(cls, value: object) -> _MalformedRowSpan:
         item = _strict_mapping(
             value,
             field="malformed row span",
@@ -196,19 +608,19 @@ class MalformedRowSpan:
 
 
 @dataclass(frozen=True)
-class ParsedTrajectoryCreditInput:
+class _ParsedTrajectoryCreditInput:
     request_id: str
-    rows: tuple[ParsedCreditRow, ...]
-    malformed_spans: tuple[MalformedRowSpan, ...] = ()
+    rows: tuple[_ParsedCreditRow, ...]
+    malformed_spans: tuple[_MalformedRowSpan, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.request_id, str) or not self.request_id:
             raise ValueError("parsed trajectory requires request_id")
         rows = tuple(self.rows)
         malformed = tuple(self.malformed_spans)
-        if any(not isinstance(row, ParsedCreditRow) for row in rows):
+        if any(not isinstance(row, _ParsedCreditRow) for row in rows):
             raise ValueError("rows must contain ParsedCreditRow")
-        if any(not isinstance(span, MalformedRowSpan) for span in malformed):
+        if any(not isinstance(span, _MalformedRowSpan) for span in malformed):
             raise ValueError("malformed_spans must contain MalformedRowSpan")
         orders = [row.generated_order for row in rows] + [
             span.generated_order for span in malformed
@@ -235,7 +647,7 @@ class ParsedTrajectoryCreditInput:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> ParsedTrajectoryCreditInput:
+    def from_dict(cls, value: object) -> _ParsedTrajectoryCreditInput:
         item = _strict_mapping(
             value,
             field="parsed trajectory credit input",
@@ -243,25 +655,25 @@ class ParsedTrajectoryCreditInput:
         )
         return cls(
             request_id=item["request_id"],
-            rows=tuple(ParsedCreditRow.from_dict(row) for row in item["rows"]),
+            rows=tuple(_ParsedCreditRow.from_dict(row) for row in item["rows"]),
             malformed_spans=tuple(
-                MalformedRowSpan.from_dict(span) for span in item["malformed_spans"]
+                _MalformedRowSpan.from_dict(span) for span in item["malformed_spans"]
             ),
         )
 
 
 @dataclass(frozen=True)
-class AcquisitionGroupCreditInput:
+class _AcquisitionGroupCreditInput:
     image_id: int
     acquisition_group: AcquisitionGroup
-    parsed_trajectories: tuple[ParsedTrajectoryCreditInput, ...]
+    parsed_trajectories: tuple[_ParsedTrajectoryCreditInput, ...]
 
     def __post_init__(self) -> None:
         _integer(self.image_id, field="image_id")
         if not isinstance(self.acquisition_group, AcquisitionGroup):
             raise ValueError("acquisition_group must be sealed Task-2 evidence")
         parsed = tuple(self.parsed_trajectories)
-        if any(not isinstance(item, ParsedTrajectoryCreditInput) for item in parsed):
+        if any(not isinstance(item, _ParsedTrajectoryCreditInput) for item in parsed):
             raise ValueError("parsed_trajectories contain an invalid record")
         expected_ids = tuple(
             item.identity.request_id for item in self.acquisition_group.trajectories
@@ -299,7 +711,7 @@ class AcquisitionGroupCreditInput:
         }
 
     @classmethod
-    def from_dict(cls, value: object) -> AcquisitionGroupCreditInput:
+    def from_dict(cls, value: object) -> _AcquisitionGroupCreditInput:
         item = _strict_mapping(
             value,
             field="acquisition group credit input",
@@ -317,21 +729,21 @@ class AcquisitionGroupCreditInput:
             image_id=item["image_id"],
             acquisition_group=group,
             parsed_trajectories=tuple(
-                ParsedTrajectoryCreditInput.from_dict(parsed)
+                _ParsedTrajectoryCreditInput.from_dict(parsed)
                 for parsed in item["parsed_trajectories"]
             ),
         )
 
 
 @dataclass(frozen=True)
-class TrajectoryCreditAcquisition:
-    groups: tuple[AcquisitionGroupCreditInput, ...]
+class _TrajectoryCreditAcquisition:
+    groups: tuple[_AcquisitionGroupCreditInput, ...]
     logical_k: int = FIXED_SCIENTIFIC_K
 
     def __post_init__(self) -> None:
         groups = tuple(self.groups)
         if not groups or any(
-            not isinstance(group, AcquisitionGroupCreditInput) for group in groups
+            not isinstance(group, _AcquisitionGroupCreditInput) for group in groups
         ):
             raise ValueError("trajectory-credit acquisition requires sealed groups")
         logical_k = _integer(self.logical_k, field="logical_k", minimum=2)
@@ -365,7 +777,7 @@ class TrajectoryCreditAcquisition:
         return {**preimage, "content_sha256": _sha256(preimage)}
 
     @classmethod
-    def from_dict(cls, value: object) -> TrajectoryCreditAcquisition:
+    def from_dict(cls, value: object) -> _TrajectoryCreditAcquisition:
         item = _strict_mapping(
             value,
             field="trajectory credit acquisition",
@@ -378,7 +790,8 @@ class TrajectoryCreditAcquisition:
             raise ValueError("trajectory credit acquisition content SHA-256 differs")
         return cls(
             groups=tuple(
-                AcquisitionGroupCreditInput.from_dict(group) for group in item["groups"]
+                _AcquisitionGroupCreditInput.from_dict(group)
+                for group in item["groups"]
             ),
             logical_k=item["logical_k"],
         )
@@ -685,6 +1098,10 @@ class ImageCreditLedger:
     owner_weight: float
     trajectories: tuple[TrajectoryLedger, ...]
     position_returns: tuple[tuple[float, ...], ...]
+    plan_sha256: str | None = None
+    native_receipts_sha256: str | None = None
+    parity_receipt_sha256: str | None = None
+    parser_projection_sha256: str | None = None
 
     def __post_init__(self) -> None:
         _integer(self.image_id, field="image_id")
@@ -761,6 +1178,26 @@ class ImageCreditLedger:
                 ):
                     raise ValueError("row RLOO advantage differs from detached returns")
         object.__setattr__(self, "position_returns", position_returns)
+        lineage = (
+            self.plan_sha256,
+            self.native_receipts_sha256,
+            self.parity_receipt_sha256,
+            self.parser_projection_sha256,
+        )
+        if any(value is not None for value in lineage):
+            if any(value is None for value in lineage):
+                raise ValueError("image ledger Task2/parser lineage must be complete")
+            for field in (
+                "plan_sha256",
+                "native_receipts_sha256",
+                "parity_receipt_sha256",
+                "parser_projection_sha256",
+            ):
+                object.__setattr__(
+                    self,
+                    field,
+                    _digest(getattr(self, field), field=field),
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -771,6 +1208,10 @@ class ImageCreditLedger:
             "owner_weight": self.owner_weight,
             "trajectories": [trajectory.to_dict() for trajectory in self.trajectories],
             "position_returns": [list(row) for row in self.position_returns],
+            "plan_sha256": self.plan_sha256,
+            "native_receipts_sha256": self.native_receipts_sha256,
+            "parity_receipt_sha256": self.parity_receipt_sha256,
+            "parser_projection_sha256": self.parser_projection_sha256,
         }
 
     @classmethod
@@ -786,6 +1227,10 @@ class ImageCreditLedger:
                 "owner_weight",
                 "trajectories",
                 "position_returns",
+                "plan_sha256",
+                "native_receipts_sha256",
+                "parity_receipt_sha256",
+                "parser_projection_sha256",
             },
         )
         return cls(
@@ -799,6 +1244,10 @@ class ImageCreditLedger:
                 for trajectory in item["trajectories"]
             ),
             position_returns=tuple(tuple(row) for row in item["position_returns"]),
+            plan_sha256=item["plan_sha256"],
+            native_receipts_sha256=item["native_receipts_sha256"],
+            parity_receipt_sha256=item["parity_receipt_sha256"],
+            parser_projection_sha256=item["parser_projection_sha256"],
         )
 
 
@@ -863,40 +1312,312 @@ class TrajectoryCreditLedger:
         return {**preimage, "content_sha256": _sha256(preimage)}
 
     @classmethod
-    def from_dict(cls, value: object) -> TrajectoryCreditLedger:
-        item = _strict_mapping(
-            value,
-            field="trajectory credit ledger",
-            keys={
-                "schema_version",
-                "source_sha256",
-                "manifest_sha256",
-                "acquisition_sha256",
-                "logical_image_count",
-                "logical_k",
-                "images",
-                "content_sha256",
-            },
+    def from_dict(
+        cls,
+        value: object,
+        *,
+        manifest: Human13KUnionManifest,
+        acquisition: TrajectoryCreditPanelAcquisition,
+        tokenizer_adapter: CanonicalTokenizerDecodeAdapter,
+    ) -> TrajectoryCreditLedger:
+        expected = build_trajectory_credit_ledger(
+            manifest,
+            acquisition,
+            tokenizer_adapter=tokenizer_adapter,
         )
-        preimage = {key: item[key] for key in item if key != "content_sha256"}
-        if item["schema_version"] != SCHEMA_VERSION or item[
-            "content_sha256"
-        ] != _sha256(preimage):
-            raise ValueError("trajectory credit ledger content SHA-256 differs")
-        return cls(
-            source_sha256=item["source_sha256"],
-            manifest_sha256=item["manifest_sha256"],
-            acquisition_sha256=item["acquisition_sha256"],
-            logical_image_count=item["logical_image_count"],
-            logical_k=item["logical_k"],
-            images=tuple(
-                ImageCreditLedger.from_dict(image) for image in item["images"]
-            ),
-        )
+        if not isinstance(value, Mapping) or dict(value) != expected.to_dict():
+            raise ValueError(
+                "stored trajectory credit ledger differs from rerun canonical projection"
+            )
+        return expected
 
     @property
     def content_sha256(self) -> str:
         return _sha256(self._preimage())
+
+
+def _canonical_panel_dimensions(
+    manifest: Human13KUnionManifest,
+) -> dict[int, tuple[int, int]]:
+    panel_path = Path(PANEL_PATH).resolve(strict=True)
+    payload = panel_path.read_bytes()
+    panel_sha256 = hashlib.sha256(payload).hexdigest()
+    if panel_sha256 != manifest.binding.panel.panel_sha256:
+        raise ValueError("manifest panel differs from the canonical dimension source")
+    rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
+    dimensions = {
+        _integer(row.get("image_id"), field="panel image_id"): (
+            _integer(row.get("width"), field="panel width", minimum=1),
+            _integer(row.get("height"), field="panel height", minimum=1),
+        )
+        for row in rows
+    }
+    expected = tuple(image.image_id for image in manifest.binding.panel.images)
+    if tuple(row["image_id"] for row in rows) != expected:
+        raise ValueError("canonical panel image order differs from manifest binding")
+    return dimensions
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+
+
+def _token_span_for_chars(
+    token_texts: tuple[str, ...],
+    *,
+    char_start: int,
+    char_end: int,
+) -> tuple[int, int]:
+    if not (0 <= char_start < char_end):
+        raise ValueError("canonical parser emitted an empty or invalid character span")
+    boundaries = [0]
+    for text in token_texts:
+        boundaries.append(boundaries[-1] + len(text))
+    try:
+        token_start = boundaries.index(char_start)
+        token_end = boundaries.index(char_end)
+    except ValueError as error:
+        raise ValueError(
+            "canonical parser character span does not align to generated tokens"
+        ) from error
+    if token_end <= token_start:
+        raise ValueError("canonical parser token span must be nonempty")
+    return token_start, token_end
+
+
+def _drop_category(raw_text: str) -> str:
+    start = raw_text.find(OBJECT_REF_START_TOKEN)
+    end = raw_text.find(OBJECT_REF_END_TOKEN, start + len(OBJECT_REF_START_TOKEN))
+    if start < 0 or end < 0:
+        return ""
+    return raw_text[start + len(OBJECT_REF_START_TOKEN) : end].strip()
+
+
+def _drop_bbox(
+    drop: Mapping[str, Any],
+    *,
+    image_width: int,
+    image_height: int,
+) -> tuple[float, float, float, float] | None:
+    spans = drop.get("coord_token_spans")
+    if not isinstance(spans, list) or len(spans) != 4:
+        return None
+    try:
+        bins = [
+            parse_coord_token(
+                str(span["text"]),
+                field=f"canonical_drop.bbox[{index}]",
+            )
+            for index, span in enumerate(spans)
+        ]
+        x1, y1, x2, y2 = coord_bins_to_pixel_xyxy(
+            bins,
+            image_width=image_width,
+            image_height=image_height,
+            field="canonical_drop.bbox",
+        )
+        return float(x1), float(y1), float(x2), float(y2)
+    except Exception:
+        return None
+
+
+def _trajectory_projection(
+    evidence: Any,
+    *,
+    image_width: int,
+    image_height: int,
+    tokenizer_adapter: CanonicalTokenizerDecodeAdapter,
+) -> CanonicalTrajectoryProjection:
+    generated_token_ids = tuple(evidence.identity.generated_token_ids)
+    body_token_ids = (
+        generated_token_ids[:-1]
+        if evidence.terminal_kind == "natural_stop"
+        else generated_token_ids
+    )
+    decoded_text, token_texts = tokenizer_adapter.decode(body_token_ids)
+    parsed = parse_compact_object_box_closed(
+        decoded_text,
+        row_id=f"{evidence.identity.request_id}:canonical-parser",
+        row_index=0,
+        image_width=image_width,
+        image_height=image_height,
+    )
+    if parsed.parser_id != PARSER_ID or parsed.parser_policy != PARSER_POLICY:
+        raise ValueError("canonical parser returned a different identity or policy")
+    chronological: list[tuple[int, int, dict[str, Any]]] = []
+    for prediction in parsed.predictions:
+        char_start = _integer(
+            prediction.get("char_start"), field="prediction.char_start"
+        )
+        char_end = _integer(
+            prediction.get("char_end"), field="prediction.char_end", minimum=1
+        )
+        token_start, token_end = _token_span_for_chars(
+            token_texts,
+            char_start=char_start,
+            char_end=char_end,
+        )
+        chronological.append(
+            (
+                char_start,
+                0,
+                {
+                    "canonical_generated_order": prediction.get("generated_order"),
+                    "kind": "prediction",
+                    "category": str(prediction.get("description", "")),
+                    "bbox": tuple(float(value) for value in prediction["bbox"]),
+                    "token_start": token_start,
+                    "token_end": token_end,
+                    "drop_reason": None,
+                },
+            )
+        )
+    for drop_index, drop in enumerate(parsed.dropped_predictions):
+        char_start = _integer(drop.get("char_start"), field="drop.char_start")
+        char_end = _integer(drop.get("char_end"), field="drop.char_end", minimum=1)
+        if char_end <= char_start:
+            continue
+        token_start, token_end = _token_span_for_chars(
+            token_texts,
+            char_start=char_start,
+            char_end=char_end,
+        )
+        reason = str(drop.get("reason", ""))
+        invalid = reason in {"empty_description", "geometry_invalid"}
+        raw_text = str(drop.get("raw_text", ""))
+        chronological.append(
+            (
+                char_start,
+                1 + drop_index,
+                {
+                    "canonical_generated_order": drop.get("generated_order"),
+                    "kind": "invalid" if invalid else "malformed",
+                    "category": _drop_category(raw_text) if invalid else "",
+                    "bbox": _drop_bbox(
+                        drop,
+                        image_width=image_width,
+                        image_height=image_height,
+                    )
+                    if invalid
+                    else None,
+                    "token_start": token_start,
+                    "token_end": token_end,
+                    "drop_reason": reason,
+                },
+            )
+        )
+    chronological.sort(key=lambda item: (item[0], item[1]))
+    events = tuple(
+        CanonicalProjectionEvent(event_order=event_order, **payload)
+        for event_order, (_, _, payload) in enumerate(chronological)
+    )
+    return CanonicalTrajectoryProjection(
+        request_id=evidence.identity.request_id,
+        acquisition_trajectory_sha256=evidence.content_sha256,
+        generated_token_ids_sha256=_sha256(
+            {"generated_token_ids": list(generated_token_ids)}
+        ),
+        decoded_text_sha256=hashlib.sha256(decoded_text.encode("utf-8")).hexdigest(),
+        parse_status=parsed.parse_status,
+        valid_prediction_count=parsed.valid_prediction_count,
+        dropped_prediction_count=parsed.dropped_prediction_count,
+        canonical_predictions_json=_canonical_json(parsed.predictions),
+        canonical_drops_json=_canonical_json(parsed.dropped_predictions),
+        events=events,
+    )
+
+
+def build_canonical_parser_projection_receipt(
+    manifest: Human13KUnionManifest,
+    publication: AdmittedPublication,
+    *,
+    tokenizer_adapter: CanonicalTokenizerDecodeAdapter,
+) -> CanonicalParserProjectionReceipt:
+    """Rerun canonical decode, parse, and token alignment over admitted Task 2."""
+
+    if not isinstance(manifest, Human13KUnionManifest):
+        raise ValueError("manifest must be a Human13KUnionManifest")
+    if manifest.binding.surface.parser != PARSER_POLICY:
+        raise ValueError("manifest parser policy differs from canonical parser policy")
+    if not isinstance(tokenizer_adapter, CanonicalTokenizerDecodeAdapter):
+        raise ValueError("canonical tokenizer adapter is required")
+    admitted = _revalidate_admitted_publication(publication)
+    plan = admitted.execution.plan
+    image_by_id = {image.image_id: image for image in manifest.images}
+    if plan.image_id not in image_by_id:
+        raise ValueError("Task2 plan image is absent from supplied manifest")
+    manifest_sha256 = _manifest_sha256(manifest)
+    for group in (admitted.execution.group, admitted.replayed_group):
+        if group.identity.manifest_sha256 != manifest_sha256:
+            raise ValueError("Task2 publication manifest lineage differs")
+        if (
+            group.identity.source_sha256
+            != admitted.replayed_group.identity.source_sha256
+        ):
+            raise ValueError("Task2 publication Source lineage differs")
+        if group.identity.model_id != admitted.replayed_group.identity.model_id:
+            raise ValueError("Task2 publication model lineage differs")
+        if group.identity.tokenizer_id != admitted.replayed_group.identity.tokenizer_id:
+            raise ValueError("Task2 publication tokenizer lineage differs")
+        if group.identity.processor_id != admitted.replayed_group.identity.processor_id:
+            raise ValueError("Task2 publication processor lineage differs")
+    if (
+        plan.repetition_penalty
+        != admitted.replayed_group.policy_contract.repetition_penalty
+    ):
+        raise ValueError("Task2 plan training RP differs from replayed policy")
+    if plan.seed_group_id != admitted.replayed_group.seed_group_id:
+        raise ValueError("Task2 plan seed group differs from replayed acquisition")
+    request_ids = tuple(item.request_id for item in plan.requests)
+    if request_ids != admitted.execution.plan_request_ids or request_ids != tuple(
+        trajectory.identity.request_id
+        for trajectory in admitted.replayed_group.trajectories
+    ):
+        raise ValueError("Task2 request ordering differs across admitted evidence")
+    if tokenizer_adapter.tokenizer_id != admitted.replayed_group.identity.tokenizer_id:
+        raise ValueError("canonical tokenizer identity differs from Task2 evidence")
+    if tokenizer_adapter.tokenizer_sha256 != manifest.binding.surface.tokenizer_sha256:
+        raise ValueError("canonical tokenizer SHA-256 differs from manifest")
+    dimensions = _canonical_panel_dimensions(manifest)
+    image_width, image_height = dimensions[plan.image_id]
+    trajectories = tuple(
+        _trajectory_projection(
+            evidence,
+            image_width=image_width,
+            image_height=image_height,
+            tokenizer_adapter=tokenizer_adapter,
+        )
+        for evidence in admitted.replayed_group.trajectories
+    )
+    return CanonicalParserProjectionReceipt(
+        image_id=plan.image_id,
+        source_sha256=admitted.replayed_group.identity.source_sha256,
+        manifest_sha256=manifest_sha256,
+        model_id=admitted.replayed_group.identity.model_id,
+        processor_id=admitted.replayed_group.identity.processor_id,
+        training_repetition_penalty=plan.repetition_penalty,
+        seed_group_id=plan.seed_group_id,
+        request_ids=request_ids,
+        plan_sha256=admitted.execution.plan_sha256,
+        native_receipts_sha256=admitted.binding.native_receipts_sha256,
+        sampled_group_sha256=admitted.binding.sampled_group_sha256,
+        replayed_group_sha256=admitted.binding.replayed_group_sha256,
+        parity_receipt_sha256=admitted.binding.parity_receipt_sha256,
+        tolerance_sha256=admitted.binding.tolerance_sha256,
+        tokenizer_id=tokenizer_adapter.tokenizer_id,
+        tokenizer_sha256=tokenizer_adapter.tokenizer_sha256,
+        tokenizer_implementation_id=tokenizer_adapter.implementation_id,
+        tokenizer_decode_policy=tokenizer_adapter.decode_policy,
+        parser_id=PARSER_ID,
+        parser_policy=PARSER_POLICY,
+        trajectories=trajectories,
+    )
 
 
 def _utility(coverage: float) -> float:
@@ -904,7 +1625,7 @@ def _utility(coverage: float) -> float:
 
 
 def _owner_repeat(
-    row: ParsedCreditRow,
+    row: _ParsedCreditRow,
     hit_owner_ids: set[str],
     owner_by_id: Mapping[str, Any],
     owner_iou_threshold: float,
@@ -921,7 +1642,7 @@ def _owner_repeat(
 
 
 def _legacy_m_match(
-    row: ParsedCreditRow,
+    row: _ParsedCreditRow,
     legacy_owner_ids: set[str],
     owner_by_id: Mapping[str, Any],
     owner_iou_threshold: float,
@@ -942,7 +1663,7 @@ def _legacy_m_match(
 def _project_one_trajectory(
     image: ImageRecord,
     evidence: Any,
-    parsed: ParsedTrajectoryCreditInput,
+    parsed: _ParsedTrajectoryCreditInput,
     *,
     trusted_owner_ids: tuple[str, ...],
     legacy_owner_ids: tuple[str, ...],
@@ -953,10 +1674,10 @@ def _project_one_trajectory(
     owner_by_id = {owner.owner_id: owner for owner in image.owners}
     rows_by_order = {row.generated_order: row for row in parsed.rows}
     malformed_by_order = {span.generated_order: span for span in parsed.malformed_spans}
-    retained: list[ParsedCreditRow] = []
+    retained: list[_ParsedCreditRow] = []
     duplicate_orders: set[int] = set()
     invalid_orders: set[int] = set()
-    valid_rows: list[ParsedCreditRow] = []
+    valid_rows: list[_ParsedCreditRow] = []
     for row in sorted(
         parsed.rows, key=lambda item: (item.generated_order, item.token_start)
     ):
@@ -1221,15 +1942,15 @@ def _attach_rloo(
     return tuple(updated), tuple(position_returns)
 
 
-def build_trajectory_credit_ledger(
+def _build_trajectory_credit_ledger_from_parsed(
     manifest: Human13KUnionManifest,
-    acquisition: TrajectoryCreditAcquisition,
+    acquisition: _TrajectoryCreditAcquisition,
 ) -> TrajectoryCreditLedger:
-    """Project sealed Task-2 evidence into detached row/token credit."""
+    """Internal math projection over canonical parser output."""
 
     if not isinstance(manifest, Human13KUnionManifest):
         raise ValueError("manifest must be a Human13KUnionManifest")
-    if not isinstance(acquisition, TrajectoryCreditAcquisition):
+    if not isinstance(acquisition, _TrajectoryCreditAcquisition):
         raise ValueError("acquisition must be sealed trajectory-credit evidence")
     manifest_sha = _manifest_sha256(manifest)
     if any(
@@ -1302,6 +2023,114 @@ def build_trajectory_credit_ledger(
         logical_image_count=len(image_ledgers),
         logical_k=acquisition.logical_k,
         images=tuple(image_ledgers),
+    )
+
+
+def build_trajectory_credit_ledger(
+    manifest: Human13KUnionManifest,
+    acquisition: TrajectoryCreditPanelAcquisition,
+    *,
+    tokenizer_adapter: CanonicalTokenizerDecodeAdapter,
+) -> TrajectoryCreditLedger:
+    """Build detached credit only from exact Task-2 admitted publications.
+
+    Canonical decode, parse, and token alignment are rerun inside this public
+    boundary.  No caller-supplied category, box, row order, or token span is an
+    admissible input.
+    """
+
+    if not isinstance(manifest, Human13KUnionManifest):
+        raise ValueError("manifest must be a Human13KUnionManifest")
+    if type(acquisition) is not TrajectoryCreditPanelAcquisition:
+        raise ValueError(
+            "trajectory credit requires a panel of exact Task2 AdmittedPublication"
+        )
+    if manifest.binding.surface.parser != PARSER_POLICY:
+        raise ValueError("manifest parser policy differs from canonical parser policy")
+    admitted = TrajectoryCreditPanelAcquisition(acquisition.publications)
+    manifest_image_ids = tuple(image.image_id for image in manifest.images)
+    plan_image_ids = tuple(
+        publication.execution.plan.image_id for publication in admitted.publications
+    )
+    if plan_image_ids != manifest_image_ids:
+        raise ValueError(
+            "Task2 plan image coverage/order differs from supplied manifest"
+        )
+    manifest_sha256 = _manifest_sha256(manifest)
+    if any(
+        publication.replayed_group.identity.manifest_sha256 != manifest_sha256
+        for publication in admitted.publications
+    ):
+        raise ValueError("Task2 publication manifest lineage differs")
+
+    receipts = tuple(
+        build_canonical_parser_projection_receipt(
+            manifest,
+            publication,
+            tokenizer_adapter=tokenizer_adapter,
+        )
+        for publication in admitted.publications
+    )
+    internal_groups: list[_AcquisitionGroupCreditInput] = []
+    for publication, receipt in zip(admitted.publications, receipts, strict=True):
+        parsed_trajectories = tuple(
+            _ParsedTrajectoryCreditInput(
+                request_id=trajectory.request_id,
+                rows=tuple(
+                    _ParsedCreditRow(
+                        generated_order=event.event_order,
+                        category=event.category,
+                        bbox=event.bbox,
+                        token_start=event.token_start,
+                        token_end=event.token_end,
+                        geometry_valid=event.kind == "prediction",
+                    )
+                    for event in trajectory.events
+                    if event.kind in {"prediction", "invalid"}
+                ),
+                malformed_spans=tuple(
+                    _MalformedRowSpan(
+                        generated_order=event.event_order,
+                        token_start=event.token_start,
+                        token_end=event.token_end,
+                    )
+                    for event in trajectory.events
+                    if event.kind == "malformed"
+                ),
+            )
+            for trajectory in receipt.trajectories
+        )
+        internal_groups.append(
+            _AcquisitionGroupCreditInput(
+                image_id=publication.execution.plan.image_id,
+                acquisition_group=publication.replayed_group,
+                parsed_trajectories=parsed_trajectories,
+            )
+        )
+    internal = _TrajectoryCreditAcquisition(
+        groups=tuple(internal_groups),
+        logical_k=FIXED_SCIENTIFIC_K,
+    )
+    ledger = _build_trajectory_credit_ledger_from_parsed(manifest, internal)
+    images = tuple(
+        replace(
+            image,
+            plan_sha256=publication.execution.plan_sha256,
+            native_receipts_sha256=publication.binding.native_receipts_sha256,
+            parity_receipt_sha256=publication.binding.parity_receipt_sha256,
+            parser_projection_sha256=receipt.content_sha256,
+        )
+        for image, publication, receipt in zip(
+            ledger.images,
+            admitted.publications,
+            receipts,
+            strict=True,
+        )
+    )
+    return replace(
+        ledger,
+        acquisition_sha256=admitted.content_sha256,
+        images=images,
     )
 
 
@@ -1408,19 +2237,21 @@ def trajectory_score_function_loss(
 
 
 __all__ = [
-    "ACQUISITION_SCHEMA_VERSION",
+    "CanonicalParserProjectionReceipt",
+    "CanonicalProjectionEvent",
+    "CanonicalTokenizerDecodeAdapter",
+    "CanonicalTrajectoryProjection",
     "FIXED_SCIENTIFIC_K",
+    "PANEL_ACQUISITION_SCHEMA_VERSION",
+    "PARSER_PROJECTION_SCHEMA_VERSION",
     "SCHEMA_VERSION",
-    "AcquisitionGroupCreditInput",
     "ImageCreditLedger",
-    "MalformedRowSpan",
-    "ParsedCreditRow",
-    "ParsedTrajectoryCreditInput",
     "RowCredit",
     "TokenCredit",
-    "TrajectoryCreditAcquisition",
+    "TrajectoryCreditPanelAcquisition",
     "TrajectoryCreditLedger",
     "TrajectoryLedger",
+    "build_canonical_parser_projection_receipt",
     "build_trajectory_credit_ledger",
     "trajectory_score_function_loss",
     "trajectory_score_function_numerator",

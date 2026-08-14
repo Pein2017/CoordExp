@@ -9,6 +9,8 @@ import math
 import pytest
 import torch
 
+import scripts.research.collect_human13_rp_crossover as task2
+import scripts.research.human13_trajectory_credit as credit
 from scripts.research.analyze_human13_k_union import _manifest_sha256
 from scripts.research.build_human13_k_union_manifest import (
     ArmIdentity,
@@ -26,20 +28,133 @@ from scripts.research.human13_k_trajectory_contracts import (
     PolicyContract,
 )
 from scripts.research.human13_trajectory_credit import (
-    AcquisitionGroupCreditInput,
-    MalformedRowSpan,
-    ParsedCreditRow,
-    ParsedTrajectoryCreditInput,
-    TrajectoryCreditAcquisition,
+    _AcquisitionGroupCreditInput,
+    _MalformedRowSpan,
+    _ParsedCreditRow,
+    _ParsedTrajectoryCreditInput,
+    _TrajectoryCreditAcquisition,
     TrajectoryCreditLedger,
-    build_trajectory_credit_ledger,
+    build_trajectory_credit_ledger as _build_public_trajectory_credit_ledger,
     trajectory_score_function_loss,
     trajectory_score_function_numerator,
 )
+from scripts.research.human13_rp_policy import validate_acquisition_group_replay
 
 
 STOP = 99
 SOURCE = "a" * 64
+TASK2_STOP = 151645
+_TOKEN_TEXT = {
+    100: "<|object_ref_start|>",
+    101: "cat",
+    102: "<|object_ref_end|>",
+    103: "<|box_start|>",
+    104: "<|coord_0|>",
+    105: "<|coord_10|>",
+    106: "<|box_end|>",
+    TASK2_STOP: "<|im_end|>",
+}
+_ONE_CANONICAL_ROW = (100, 101, 102, 103, 104, 104, 105, 105, 106, TASK2_STOP)
+
+
+class _FakeTokenizer:
+    def decode(self, token_ids: list[int], *, skip_special_tokens: bool = False) -> str:
+        assert not skip_special_tokens
+        return "".join(_TOKEN_TEXT[token_id] for token_id in token_ids)
+
+
+def _task2_request_receipt(
+    request: task2.AcquisitionRequest,
+) -> task2.NativeRequestReceipt:
+    return task2.NativeRequestReceipt(
+        request_id=request.request_id,
+        seed=request.seed,
+        physical_batch_index=request.physical_batch_index,
+        request_order_in_batch=request.request_order_in_batch,
+        sampling_params=task2.expected_native_sampling_evidence(request),
+        prompt_token_ids_sha256=task2.token_ids_sha256((1, 2)),
+        model_id="test-model",
+        model_identity_sha256="c" * 64,
+        session_identity_sha256="d" * 64,
+    )
+
+
+def _task2_output_receipt(
+    request: task2.AcquisitionRequest,
+    *,
+    manifest_sha256: str,
+    generated_token_ids: tuple[int, ...],
+) -> task2.NativeOutputReceipt:
+    native = _task2_request_receipt(request)
+    return task2.NativeOutputReceipt(
+        native_request_receipt_sha256=native.content_sha256,
+        request_id=request.request_id,
+        seed=request.seed,
+        physical_batch_index=request.physical_batch_index,
+        request_order_in_batch=request.request_order_in_batch,
+        prompt_token_ids=(1, 2),
+        source_sha256=SOURCE,
+        manifest_sha256=manifest_sha256,
+        model_id="test-model",
+        tokenizer_id="fake-tokenizer:v1",
+        processor_id="test-processor",
+        processor_order=("repetition_penalty", "temperature", "log_softmax"),
+        sampler_backend_id="vllm:test",
+        generated_token_ids=generated_token_ids,
+        processed_logprobs=(-0.25,) * len(generated_token_ids),
+        terminal_kind="natural_stop",
+    )
+
+
+def _admitted_publication(
+    manifest: Human13KUnionManifest,
+    *,
+    image_id: int = 1584,
+    repetition_penalty: float = 1.0,
+    seed_group_id: str = "qualification",
+    generated_token_ids: tuple[int, ...] = _ONE_CANONICAL_ROW,
+) -> task2.AdmittedPublication:
+    plan = task2.plan_acquisition_group(
+        image_id=image_id,
+        repetition_penalty=repetition_penalty,
+        seed_group_id=seed_group_id,
+    )
+    manifest_sha = _manifest_sha256(manifest)
+
+    def execute(
+        batch: task2.AcquisitionBatch, params: tuple[object, ...]
+    ) -> task2.NativeBatchReceipt:
+        del params
+        requests = tuple(_task2_request_receipt(request) for request in batch.requests)
+        outputs = tuple(
+            _task2_output_receipt(
+                request,
+                manifest_sha256=manifest_sha,
+                generated_token_ids=generated_token_ids,
+            )
+            for request in batch.requests
+        )
+        return task2.NativeBatchReceipt(requests=requests, outputs=outputs)
+
+    execution = task2.execute_acquisition_group(plan=plan, execute_batch=execute)
+    parity = validate_acquisition_group_replay(
+        execution.group, execution.group, task2.ReplayTolerance()
+    )
+    binding = task2._publication_binding(
+        execution=execution,
+        replayed=execution.group,
+        replay_receipt=parity,
+    )
+    return task2.AdmittedPublication(binding, execution, execution.group, parity)
+
+
+def _canonical_tokenizer_adapter() -> credit.CanonicalTokenizerDecodeAdapter:
+    return credit.CanonicalTokenizerDecodeAdapter(
+        tokenizer=_FakeTokenizer(),
+        tokenizer_id="fake-tokenizer:v1",
+        tokenizer_sha256=default_binding().surface.tokenizer_sha256,
+        implementation_id="fake-hf-tokenizer-for-cpu-tests.v1",
+    )
 
 
 def _owner(
@@ -93,10 +208,10 @@ def _row(
     token_start: int | None = None,
     token_end: int | None = None,
     geometry_valid: bool = True,
-) -> ParsedCreditRow:
+) -> _ParsedCreditRow:
     start = order if token_start is None else token_start
     end = start + 1 if token_end is None else token_end
-    return ParsedCreditRow(
+    return _ParsedCreditRow(
         generated_order=order,
         category=category,
         bbox=bbox,
@@ -158,11 +273,11 @@ def _complete_trajectory(
 def _acquisition(
     manifest: Human13KUnionManifest,
     trajectories: tuple[
-        tuple[tuple[ParsedCreditRow, ...], tuple[MalformedRowSpan, ...], str], ...
+        tuple[tuple[_ParsedCreditRow, ...], tuple[_MalformedRowSpan, ...], str], ...
     ],
     *,
     logical_k: int | None = None,
-) -> TrajectoryCreditAcquisition:
+) -> _TrajectoryCreditAcquisition:
     manifest_sha = _manifest_sha256(manifest)
     complete = tuple(
         _complete_trajectory(
@@ -185,18 +300,42 @@ def _acquisition(
         seed_group_id="test-explicit-small-k",
     )
     parsed = tuple(
-        ParsedTrajectoryCreditInput(
+        _ParsedTrajectoryCreditInput(
             request_id=trajectory.identity.request_id,
             rows=rows,
             malformed_spans=malformed,
         )
         for trajectory, (rows, malformed, _) in zip(complete, trajectories, strict=True)
     )
-    return TrajectoryCreditAcquisition(
+    return _TrajectoryCreditAcquisition(
         groups=(
-            AcquisitionGroupCreditInput(manifest.images[0].image_id, group, parsed),
+            _AcquisitionGroupCreditInput(manifest.images[0].image_id, group, parsed),
         ),
         logical_k=len(parsed) if logical_k is None else logical_k,
+    )
+
+
+def build_trajectory_credit_ledger(
+    manifest: Human13KUnionManifest,
+    acquisition: object,
+    *,
+    tokenizer_adapter: object | None = None,
+) -> TrajectoryCreditLedger:
+    """Route formula-unit fixtures through the private authored-row seam.
+
+    Public-boundary tests below still call the admitted-publication API.  This
+    keeps the original table-driven credit math tests small without making an
+    authored semantic envelope an admissible production input.
+    """
+
+    if isinstance(acquisition, _TrajectoryCreditAcquisition):
+        assert tokenizer_adapter is None
+        return credit._build_trajectory_credit_ledger_from_parsed(manifest, acquisition)
+    assert tokenizer_adapter is not None
+    return _build_public_trajectory_credit_ledger(
+        manifest,
+        acquisition,  # type: ignore[arg-type]
+        tokenizer_adapter=tokenizer_adapter,  # type: ignore[arg-type]
     )
 
 
@@ -264,7 +403,7 @@ def test_duplicate_invalid_repeat_and_unmatched_precedence_never_stacks_costs() 
 def test_malformed_row_equivalent_span_costs_once_and_is_scored() -> None:
     # Catches dropping malformed spans or charging by token count.
     manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)))
-    malformed = (MalformedRowSpan(generated_order=0, token_start=0, token_end=3),)
+    malformed = (_MalformedRowSpan(generated_order=0, token_start=0, token_end=3),)
     ledger = build_trajectory_credit_ledger(
         manifest,
         _acquisition(
@@ -521,37 +660,44 @@ def test_microstep_numerator_accepts_only_the_pack_local_request_tensors() -> No
 
 def test_ledger_round_trip_is_content_addressed_and_rejects_forgery() -> None:
     # Catches mutable/unbound detached labels being admitted after persistence.
-    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)))
-    row = (_row(0, (0, 0, 10, 10)),)
+    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    publication = _admitted_publication(manifest)
+    acquisition = credit.TrajectoryCreditPanelAcquisition((publication,))
+    tokenizer_adapter = _canonical_tokenizer_adapter()
     ledger = build_trajectory_credit_ledger(
         manifest,
-        _acquisition(
-            manifest,
-            ((row, (), "natural_stop"), (row, (), "natural_stop")),
-        ),
+        acquisition,
+        tokenizer_adapter=tokenizer_adapter,
     )
     payload = ledger.to_dict()
     assert ledger.images[0].trajectories[0].policy_contract_sha256 == (
-        _acquisition(
-            manifest,
-            ((row, (), "natural_stop"), (row, (), "natural_stop")),
-        )
-        .groups[0]
-        .acquisition_group.trajectories[0]
-        .policy_contract.content_sha256
+        publication.replayed_group.trajectories[0].policy_contract.content_sha256
     )
-    assert TrajectoryCreditLedger.from_dict(payload) == ledger
-    assert (
-        TrajectoryCreditLedger.from_dict(payload).content_sha256
-        == ledger.content_sha256
+    loaded = TrajectoryCreditLedger.from_dict(
+        payload,
+        manifest=manifest,
+        acquisition=acquisition,
+        tokenizer_adapter=tokenizer_adapter,
     )
+    assert loaded == ledger
+    assert loaded.content_sha256 == ledger.content_sha256
 
     forged_hash = {**payload, "content_sha256": "0" * 64}
-    with pytest.raises(ValueError, match="content SHA-256"):
-        TrajectoryCreditLedger.from_dict(forged_hash)
+    with pytest.raises(ValueError, match="rerun canonical projection"):
+        TrajectoryCreditLedger.from_dict(
+            forged_hash,
+            manifest=manifest,
+            acquisition=acquisition,
+            tokenizer_adapter=tokenizer_adapter,
+        )
     forged_lineage = {**payload, "source_sha256": "b" * 64}
-    with pytest.raises(ValueError, match="content SHA-256"):
-        TrajectoryCreditLedger.from_dict(forged_lineage)
+    with pytest.raises(ValueError, match="rerun canonical projection"):
+        TrajectoryCreditLedger.from_dict(
+            forged_lineage,
+            manifest=manifest,
+            acquisition=acquisition,
+            tokenizer_adapter=tokenizer_adapter,
+        )
 
     semantic_forgery = copy.deepcopy(payload)
     forged_row = semantic_forgery["images"][0]["trajectories"][0]["rows"][0]
@@ -566,8 +712,13 @@ def test_ledger_round_trip_is_content_addressed_and_rejects_forgery() -> None:
         + "\n"
     ).encode()
     semantic_forgery["content_sha256"] = hashlib.sha256(encoded).hexdigest()
-    with pytest.raises(ValueError, match="RLOO advantage"):
-        TrajectoryCreditLedger.from_dict(semantic_forgery)
+    with pytest.raises(ValueError, match="rerun canonical projection"):
+        TrajectoryCreditLedger.from_dict(
+            semantic_forgery,
+            manifest=manifest,
+            acquisition=acquisition,
+            tokenizer_adapter=tokenizer_adapter,
+        )
 
 
 def test_manifest_lineage_and_explicit_helper_k_fail_closed() -> None:
@@ -583,3 +734,162 @@ def test_manifest_lineage_and_explicit_helper_k_fail_closed() -> None:
     changed_manifest = replace(manifest, full_panel=True)
     with pytest.raises(ValueError, match="manifest"):
         build_trajectory_credit_ledger(changed_manifest, acquisition)
+
+
+def _two_image_manifest() -> Human13KUnionManifest:
+    first = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    second = _manifest(_owner("owner-1", "G", (0, 0, 10, 10)), image_id=2299)
+    return replace(
+        first,
+        images=(first.images[0], second.images[0]),
+        denominators=replace(first.denominators, panel_image_count=2),
+    )
+
+
+def test_public_build_requires_exact_admitted_publication_and_reruns_canonical_parse() -> (
+    None
+):
+    # Catches admitting caller-authored row semantics or a bare Task-1/2 group.
+    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    publication = _admitted_publication(manifest)
+    panel = credit.TrajectoryCreditPanelAcquisition((publication,))
+    ledger = build_trajectory_credit_ledger(
+        manifest,
+        panel,
+        tokenizer_adapter=_canonical_tokenizer_adapter(),
+    )
+    assert ledger.images[0].trajectories[0].rows[0].outcome == "trusted_first_hit"
+    assert ledger.images[0].plan_sha256 == publication.execution.plan_sha256
+    assert (
+        ledger.images[0].parity_receipt_sha256
+        == publication.binding.parity_receipt_sha256
+    )
+
+    with pytest.raises(ValueError, match="AdmittedPublication"):
+        build_trajectory_credit_ledger(
+            manifest,
+            publication.execution.group,
+            tokenizer_adapter=_canonical_tokenizer_adapter(),
+        )
+
+
+def test_parser_projection_rejects_rehashed_bbox_category_and_token_span_forgery() -> (
+    None
+):
+    # Catches a content-addressed but caller-authored semantic envelope over unchanged tokens.
+    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    publication = _admitted_publication(manifest)
+    tokenizer_adapter = _canonical_tokenizer_adapter()
+    receipt = credit.build_canonical_parser_projection_receipt(
+        manifest, publication, tokenizer_adapter=tokenizer_adapter
+    )
+    for field, replacement in (
+        ("category", "dog"),
+        ("bbox", [100.0, 100.0, 200.0, 200.0]),
+        ("token_end", 8),
+    ):
+        forged = copy.deepcopy(receipt.to_dict())
+        forged["trajectories"][0]["events"][0][field] = replacement
+        preimage = {
+            key: value for key, value in forged.items() if key != "content_sha256"
+        }
+        forged["content_sha256"] = hashlib.sha256(
+            (
+                json.dumps(preimage, sort_keys=True, separators=(",", ":")) + "\n"
+            ).encode()
+        ).hexdigest()
+        with pytest.raises(ValueError, match="canonical parser projection"):
+            credit.CanonicalParserProjectionReceipt.from_dict(
+                forged,
+                manifest=manifest,
+                publication=publication,
+                tokenizer_adapter=tokenizer_adapter,
+            )
+
+
+def test_plan_image_owns_owner_selection_and_panel_cell_must_be_coherent() -> None:
+    # Catches image-A evidence being scored against image-B owners, cross-RP, or mixed seeds.
+    single_b = _manifest(_owner("owner-1", "G", (0, 0, 10, 10)), image_id=2299)
+    publication_a = _admitted_publication(
+        _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    )
+    with pytest.raises(ValueError, match="plan image"):
+        build_trajectory_credit_ledger(
+            single_b,
+            credit.TrajectoryCreditPanelAcquisition((publication_a,)),
+            tokenizer_adapter=_canonical_tokenizer_adapter(),
+        )
+
+    panel_manifest = _two_image_manifest()
+    publication_1584 = _admitted_publication(panel_manifest, image_id=1584)
+    cross_rp = _admitted_publication(
+        panel_manifest, image_id=2299, repetition_penalty=1.10
+    )
+    with pytest.raises(ValueError, match="training RP"):
+        credit.TrajectoryCreditPanelAcquisition((publication_1584, cross_rp))
+    mixed_seed = _admitted_publication(
+        panel_manifest, image_id=2299, seed_group_id="matrix_a"
+    )
+    with pytest.raises(ValueError, match="seed group"):
+        credit.TrajectoryCreditPanelAcquisition((publication_1584, mixed_seed))
+
+
+def test_parser_tokenizer_request_order_and_parity_lineage_fail_closed() -> None:
+    # Catches wrong parser/tokenizer IDs and bypassing Task-2 aggregate admission.
+    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    publication = _admitted_publication(manifest)
+    wrong_tokenizer = credit.CanonicalTokenizerDecodeAdapter(
+        tokenizer=_FakeTokenizer(),
+        tokenizer_id="other-tokenizer",
+        tokenizer_sha256=manifest.binding.surface.tokenizer_sha256,
+        implementation_id="fake-hf-tokenizer-for-cpu-tests.v1",
+    )
+    with pytest.raises(ValueError, match="tokenizer identity"):
+        build_trajectory_credit_ledger(
+            manifest,
+            credit.TrajectoryCreditPanelAcquisition((publication,)),
+            tokenizer_adapter=wrong_tokenizer,
+        )
+    wrong_parser_manifest = replace(
+        manifest,
+        binding=replace(
+            manifest.binding,
+            surface=replace(manifest.binding.surface, parser="other-parser-policy"),
+        ),
+    )
+    with pytest.raises(ValueError, match="parser policy"):
+        build_trajectory_credit_ledger(
+            wrong_parser_manifest,
+            credit.TrajectoryCreditPanelAcquisition((publication,)),
+            tokenizer_adapter=_canonical_tokenizer_adapter(),
+        )
+
+    other = _admitted_publication(manifest, seed_group_id="matrix_a")
+    forged = object.__new__(task2.AdmittedPublication)
+    object.__setattr__(forged, "binding", publication.binding)
+    object.__setattr__(forged, "execution", publication.execution)
+    object.__setattr__(forged, "replayed_group", publication.replayed_group)
+    object.__setattr__(forged, "parity_receipt", other.parity_receipt)
+    with pytest.raises(ValueError, match="parity"):
+        credit.TrajectoryCreditPanelAcquisition((forged,))
+
+    forged_execution = object.__new__(task2.AcquisitionExecution)
+    for name in (
+        "plan",
+        "plan_sha256",
+        "native_batch_receipts",
+        "group",
+    ):
+        object.__setattr__(forged_execution, name, getattr(publication.execution, name))
+    object.__setattr__(
+        forged_execution,
+        "plan_request_ids",
+        tuple(reversed(publication.execution.plan_request_ids)),
+    )
+    forged_order = object.__new__(task2.AdmittedPublication)
+    object.__setattr__(forged_order, "binding", publication.binding)
+    object.__setattr__(forged_order, "execution", forged_execution)
+    object.__setattr__(forged_order, "replayed_group", publication.replayed_group)
+    object.__setattr__(forged_order, "parity_receipt", publication.parity_receipt)
+    with pytest.raises(ValueError, match="request order"):
+        credit.TrajectoryCreditPanelAcquisition((forged_order,))
