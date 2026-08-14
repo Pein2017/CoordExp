@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
+import hashlib
+import json
 import math
 
 import pytest
@@ -14,6 +17,7 @@ from scripts.research.human13_k_trajectory_contracts import (
     ReplayTolerance,
 )
 from scripts.research.human13_rp_policy import (
+    AcquisitionGroupParityReceipt,
     PolicyReplayError,
     validate_acquisition_group_replay,
     processed_policy_logprobs,
@@ -389,3 +393,61 @@ def test_group_replay_fails_closed_on_group_lineage_mismatch() -> None:
     )
     with pytest.raises(PolicyReplayError, match="group lineage"):
         validate_acquisition_group_replay(sampled, replayed, ReplayTolerance())
+
+
+def _parity_receipt() -> AcquisitionGroupParityReceipt:
+    return AcquisitionGroupParityReceipt(
+        admitted=True,
+        tolerance_sha256="a" * 64,
+        sampled_group_sha256="b" * 64,
+        replayed_group_sha256="c" * 64,
+        request_ids=("request:seed-11:image-7", "request:seed-12:image-7"),
+        token_count=2,
+        per_token_absolute_error_nats=(0.001, 0.003),
+        group_mean_absolute_error_nats=0.002,
+    )
+
+
+def test_group_parity_receipt_is_a_canonical_round_trippable_record() -> None:
+    # Catches a receipt whose persisted payload can change or cannot be verified.
+    receipt = _parity_receipt()
+    encoded = json.dumps(receipt.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    restored = AcquisitionGroupParityReceipt.from_dict(json.loads(encoded))
+    assert restored == receipt
+    assert restored.content_sha256 == hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    assert restored.token_count == len(restored.per_token_absolute_error_nats)
+
+
+@pytest.mark.parametrize(
+    ("replacement", "match"),
+    [
+        ({"tolerance_sha256": "not-a-digest"}, "SHA-256"),
+        ({"token_count": 0}, "token_count"),
+        ({"token_count": 1}, "token_count"),
+        ({"per_token_absolute_error_nats": (math.nan, 0.003)}, "finite"),
+        ({"per_token_absolute_error_nats": (-0.001, 0.003)}, "nonnegative"),
+        ({"group_mean_absolute_error_nats": math.inf}, "finite"),
+    ],
+)
+def test_group_parity_receipt_rejects_invalid_sealed_values(
+    replacement: dict[str, object], match: str
+) -> None:
+    # Catches persisted numerical or identity corruption before a receipt is used.
+    with pytest.raises(ValueError, match=match):
+        replace(_parity_receipt(), **replacement)
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "forged"))
+def test_group_parity_receipt_rejects_noncanonical_persisted_fields(
+    mutation: str,
+) -> None:
+    # Catches accepting ambiguous or forged serialized receipt shapes.
+    payload = _parity_receipt().to_dict()
+    if mutation == "missing":
+        del payload["token_count"]
+    elif mutation == "extra":
+        payload["unexpected"] = True
+    else:
+        payload["group_mean_absolute_error_nats"] = 0.001
+    with pytest.raises(ValueError, match="fields|mean"):
+        AcquisitionGroupParityReceipt.from_dict(payload)

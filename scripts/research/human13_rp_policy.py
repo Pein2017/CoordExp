@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 import math
+import re
+from typing import Any, Mapping
 
 import torch
 
@@ -30,7 +34,7 @@ class PolicyReplayReceipt:
 
 
 @dataclass(frozen=True)
-class AcquisitionGroupReplayReceipt:
+class AcquisitionGroupParityReceipt:
     """Content-addressed parity receipt across the complete K-trajectory group."""
 
     admitted: bool
@@ -38,10 +42,48 @@ class AcquisitionGroupReplayReceipt:
     sampled_group_sha256: str
     replayed_group_sha256: str
     request_ids: tuple[str, ...]
+    token_count: int
     per_token_absolute_error_nats: tuple[float, ...]
     group_mean_absolute_error_nats: float
 
-    def to_dict(self) -> dict[str, object]:
+    def __post_init__(self) -> None:
+        if not isinstance(self.admitted, bool):
+            raise ValueError("admitted must be a boolean")
+        for field in (
+            "tolerance_sha256",
+            "sampled_group_sha256",
+            "replayed_group_sha256",
+        ):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError(f"{field} must be a lowercase SHA-256 digest")
+        request_ids = tuple(self.request_ids)
+        if not request_ids or any(not isinstance(value, str) or not value for value in request_ids):
+            raise ValueError("request_ids must contain nonempty identities")
+        if len(set(request_ids)) != len(request_ids):
+            raise ValueError("request_ids must be unique")
+        if isinstance(self.token_count, bool) or not isinstance(self.token_count, int) or self.token_count <= 0:
+            raise ValueError("token_count must be a positive integer")
+        errors = tuple(float(value) for value in self.per_token_absolute_error_nats)
+        if len(errors) != self.token_count:
+            raise ValueError("token_count must equal the number of token errors")
+        if any(not math.isfinite(value) for value in errors):
+            raise ValueError("per-token errors must be finite")
+        if any(value < 0 for value in errors):
+            raise ValueError("per-token errors must be nonnegative")
+        mean = float(self.group_mean_absolute_error_nats)
+        if not math.isfinite(mean):
+            raise ValueError("group mean error must be finite")
+        if mean < 0:
+            raise ValueError("group mean error must be nonnegative")
+        expected_mean = sum(errors) / self.token_count
+        if not math.isclose(mean, expected_mean, rel_tol=0.0, abs_tol=1e-15):
+            raise ValueError("group mean error differs from the token-error mean")
+        object.__setattr__(self, "request_ids", request_ids)
+        object.__setattr__(self, "per_token_absolute_error_nats", errors)
+        object.__setattr__(self, "group_mean_absolute_error_nats", mean)
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": "human13_acquisition_group_replay_receipt.v1",
             "admitted": self.admitted,
@@ -49,17 +91,48 @@ class AcquisitionGroupReplayReceipt:
             "sampled_group_sha256": self.sampled_group_sha256,
             "replayed_group_sha256": self.replayed_group_sha256,
             "request_ids": list(self.request_ids),
+            "token_count": self.token_count,
             "per_token_absolute_error_nats": list(self.per_token_absolute_error_nats),
             "group_mean_absolute_error_nats": self.group_mean_absolute_error_nats,
         }
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "AcquisitionGroupParityReceipt":
+        if not isinstance(value, Mapping):
+            raise ValueError("group parity receipt must be a mapping")
+        required = {
+            "schema_version",
+            "admitted",
+            "tolerance_sha256",
+            "sampled_group_sha256",
+            "replayed_group_sha256",
+            "request_ids",
+            "token_count",
+            "per_token_absolute_error_nats",
+            "group_mean_absolute_error_nats",
+        }
+        if set(value) != required:
+            raise ValueError("group parity receipt fields differ from the canonical schema")
+        if value["schema_version"] != "human13_acquisition_group_replay_receipt.v1":
+            raise ValueError("group parity receipt schema_version differs")
+        return cls(
+            admitted=value["admitted"],
+            tolerance_sha256=value["tolerance_sha256"],
+            sampled_group_sha256=value["sampled_group_sha256"],
+            replayed_group_sha256=value["replayed_group_sha256"],
+            request_ids=tuple(value["request_ids"]),
+            token_count=value["token_count"],
+            per_token_absolute_error_nats=tuple(value["per_token_absolute_error_nats"]),
+            group_mean_absolute_error_nats=value["group_mean_absolute_error_nats"],
+        )
+
     @property
     def content_sha256(self) -> str:
-        import hashlib
-        import json
-
         encoded = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+AcquisitionGroupReplayReceipt = AcquisitionGroupParityReceipt
 
 
 def processed_policy_logprobs(
@@ -179,7 +252,7 @@ def validate_acquisition_group_replay(
     sampled: AcquisitionGroup,
     replayed: AcquisitionGroup,
     tolerance: ReplayTolerance,
-) -> AcquisitionGroupReplayReceipt:
+) -> AcquisitionGroupParityReceipt:
     """Fail closed on any K-member mismatch or one sealed group-wide mean breach."""
 
     if not isinstance(sampled, AcquisitionGroup) or not isinstance(replayed, AcquisitionGroup):
@@ -207,12 +280,13 @@ def validate_acquisition_group_replay(
     mean_error = sum(errors) / len(errors)
     if mean_error > tolerance.group_mean_nats:
         raise PolicyReplayError("group mean replay error exceeds the sealed tolerance")
-    return AcquisitionGroupReplayReceipt(
+    return AcquisitionGroupParityReceipt(
         admitted=True,
         tolerance_sha256=tolerance.content_sha256,
         sampled_group_sha256=sampled.content_sha256,
         replayed_group_sha256=replayed.content_sha256,
         request_ids=request_ids,
+        token_count=len(errors),
         per_token_absolute_error_nats=tuple(errors),
         group_mean_absolute_error_nats=mean_error,
     )
@@ -221,6 +295,7 @@ def validate_acquisition_group_replay(
 __all__ = [
     "PolicyReplayError",
     "PolicyReplayReceipt",
+    "AcquisitionGroupParityReceipt",
     "AcquisitionGroupReplayReceipt",
     "processed_policy_logprobs",
     "validate_acquisition_group_replay",
