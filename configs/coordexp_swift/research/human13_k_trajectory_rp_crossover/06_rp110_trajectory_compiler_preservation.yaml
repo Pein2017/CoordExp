@@ -1,0 +1,11 @@
+schema_version: human13_rp_crossover_leaf_config.v1
+unit_id: 2026-08-14-human13-k-trajectory-rp-crossover-screen
+training_rp: 1.10
+arm_id: C
+arm_name: RP 1.10 Trajectory Credit plus Greedy Compiler plus Preservation (C)
+objective_components: [trajectory, compiler, preservation]
+compiler_coefficient: 1.0
+evaluation_rps: [1.0, 1.10]
+optimizer: {name: adamw_torch, learning_rate: 3.0e-6, betas: [0.9, 0.999], epsilon: 1.0e-8, weight_decay: 0.0}
+max_updates: 1
+retry_policy: none
