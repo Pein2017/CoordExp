@@ -164,6 +164,56 @@ def test_build_analyzer_output_binds_clean_greedy_and_checkpoint_identity() -> N
     assert provenance["do_sample"] is False
 
 
+def test_build_analyzer_output_binds_explicit_rp110_policy() -> None:
+    result = build_analyzer_output(
+        manifest=_manifest(),
+        manifest_sha256="c" * 64,
+        image=_image(),
+        arm_id="C",
+        milestone=1,
+        checkpoint_path="/run/checkpoints/step-1",
+        checkpoint_payload_sha256="d" * 64,
+        run_id="run-C",
+        run_root="/run",
+        resolved_arm_plan_sha256="e" * 64,
+        resolved_config_sha256="f" * 64,
+        trajectory_id="eval:C:1:7:rp1.10",
+        generated_token_ids=(1, 2, 3),
+        terminal_token_index=2,
+        predictions=(),
+        parser="compact_object_box_closed_only",
+        parser_status="accepted",
+        stop_reason="im_end",
+        malformed_row_count=0,
+        runtime={"decode_seconds": 1.0},
+        repetition_penalty=1.10,
+    )
+
+    provenance = cast(dict[str, object], result["provenance"])
+    assert result["repetition_penalty"] == 1.10
+    assert provenance["repetition_penalty"] == 1.10
+
+
+@pytest.mark.parametrize("repetition_penalty", (True, 1.05, float("nan")))
+def test_evaluate_hf_checkpoint_rejects_unsealed_rp_before_live_boundary(
+    repetition_penalty: object,
+) -> None:
+    with pytest.raises(ValueError, match="repetition_penalty"):
+        live_eval.evaluate_hf_checkpoint(
+            manifest=_panel_manifest(),
+            manifest_sha256="c" * 64,
+            checkpoint_path="/does/not/exist",
+            arm_id="C",
+            milestone=1,
+            run_id="run-C",
+            run_root="/run",
+            resolved_arm_plan_sha256="e" * 64,
+            resolved_config_sha256="f" * 64,
+            source_config_path="/does/not/exist",
+            repetition_penalty=cast(float, repetition_penalty),
+        )
+
+
 def test_build_analyzer_output_rejects_non_digest_or_wrong_image() -> None:
     with pytest.raises(ValueError, match="checkpoint_payload_sha256"):
         build_analyzer_output(

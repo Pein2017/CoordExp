@@ -40,6 +40,15 @@ def _nonempty(value: object, field: str) -> str:
     return value
 
 
+def _clean_greedy_repetition_penalty(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("repetition_penalty must be exactly 1.0 or 1.10")
+    repetition_penalty = float(value)
+    if not math.isfinite(repetition_penalty) or repetition_penalty not in (1.0, 1.10):
+        raise ValueError("repetition_penalty must be exactly 1.0 or 1.10")
+    return repetition_penalty
+
+
 def trajectory_analyzer_predictions(
     trajectory: Any,
 ) -> tuple[dict[str, object], ...]:
@@ -79,6 +88,7 @@ def build_analyzer_output(
     stop_reason: str,
     malformed_row_count: int,
     runtime: Mapping[str, int | float],
+    repetition_penalty: float = 1.0,
 ) -> dict[str, object]:
     """Build one strict input row for ``analyze_human13_k_union.py``."""
 
@@ -94,8 +104,7 @@ def build_analyzer_output(
         raise ValueError("malformed_row_count must be a non-negative integer")
     ids = tuple(generated_token_ids)
     if not ids or any(
-        isinstance(item, bool) or not isinstance(item, int) or item < 0
-        for item in ids
+        isinstance(item, bool) or not isinstance(item, int) or item < 0 for item in ids
     ):
         raise ValueError("generated_token_ids must contain nonnegative integers")
     if terminal_token_index is not None and (
@@ -103,9 +112,8 @@ def build_analyzer_output(
         or not isinstance(terminal_token_index, int)
         or terminal_token_index != len(ids) - 1
     ):
-        raise ValueError(
-            "terminal_token_index must identify the final generated token"
-        )
+        raise ValueError("terminal_token_index must identify the final generated token")
+    evaluation_rp = _clean_greedy_repetition_penalty(repetition_penalty)
     source = tuple(getattr(image, "trajectories"))[0]
     binding = manifest.binding
     source_identity = binding.source
@@ -127,6 +135,7 @@ def build_analyzer_output(
         "backend_version": source.request.backend_version,
         "physical_batch_size": 1,
         "do_sample": False,
+        "repetition_penalty": evaluation_rp,
         "max_new_tokens": source.request.max_new_tokens,
         "source_checkpoint_identity": {
             "checkpoint_path": source_identity.checkpoint_path,
@@ -159,7 +168,7 @@ def build_analyzer_output(
         "arm_id": arm_id,
         "milestone": milestone,
         "decode_mode": "original_prompt_clean_greedy",
-        "repetition_penalty": 1.0,
+        "repetition_penalty": evaluation_rp,
         "predictions": [dict(item) for item in predictions],
         "generated_token_ids": list(ids),
         "terminal_token_index": terminal_token_index,
@@ -266,11 +275,12 @@ def current_decodes_from_outputs(
         terminal_token_index = (
             None
             if terminal_value is None
-            else _strict_integer(
-                terminal_value, "output.terminal_token_index"
-            )
+            else _strict_integer(terminal_value, "output.terminal_token_index")
         )
-        if terminal_token_index is not None and terminal_token_index != len(token_ids) - 1:
+        if (
+            terminal_token_index is not None
+            and terminal_token_index != len(token_ids) - 1
+        ):
             raise ValueError(
                 "output.terminal_token_index must identify the final generated token"
             )
@@ -469,6 +479,7 @@ def evaluate_hf_checkpoint(
     resolved_arm_plan_sha256: str,
     resolved_config_sha256: str,
     source_config_path: str | Path,
+    repetition_penalty: float = 1.0,
 ) -> tuple[dict[str, object], ...]:
     """Run exact original-prompt HF batch-one greedy for one checkpoint.
 
@@ -477,6 +488,8 @@ def evaluate_hf_checkpoint(
     no sampling, rp=1.0) while substituting only the evaluated adapter and
     special-token delta paths.
     """
+
+    evaluation_rp = _clean_greedy_repetition_penalty(repetition_penalty)
 
     from dataclasses import replace
 
@@ -505,7 +518,7 @@ def evaluate_hf_checkpoint(
             "temperature": 0.0,
             "top_p": 1.0,
             "n": 1,
-            "repetition_penalty": 1.0,
+            "repetition_penalty": evaluation_rp,
         }
     )
     payload["debug"].update({"smoke": True, "dry_run": False})
@@ -523,7 +536,7 @@ def evaluate_hf_checkpoint(
         raise ValueError("HF evaluation input order differs from the frozen panel")
     policy = GenerationPolicy(
         max_new_tokens=3084,
-        repetition_penalty=1.0,
+        repetition_penalty=evaluation_rp,
         temperature=0.0,
         top_p=1.0,
         include_raw_model_logprob=False,
@@ -579,6 +592,7 @@ def evaluate_hf_checkpoint(
                     stop_reason=trajectory.stop_reason,
                     malformed_row_count=len(dropped_predictions),
                     runtime={"decode_seconds": elapsed},
+                    repetition_penalty=evaluation_rp,
                 )
             )
     return tuple(outputs)
