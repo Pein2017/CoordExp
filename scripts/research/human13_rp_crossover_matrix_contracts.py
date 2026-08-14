@@ -11,17 +11,33 @@ parallel record shapes.
 
 Every cross-artifact relationship is content-addressed: records reference
 each other by SHA-256 digest of a canonical payload, never by mutable object
-identity.  ``MatrixPlan`` is the one aggregate admission choke point; every
-supported constructor path (direct construction, ``from_dict``) funnels
-through its ``__post_init__``, which freezes tuples before hashing and fails
-closed on missing, mixed, duplicated, adaptively retried, or noncanonical
-records.  Qualification identities are representable through the same leaf
-types but are never admitted into the eighteen-cell matrix.
+identity.  ``MatrixPlan`` is the one aggregate admission choke point for the
+planned matrix and ``validate_matrix_receipts`` is the one aggregate choke
+point for its outcome; every supported constructor path (direct construction,
+``from_dict``, the node terminal, and the analysis publisher) funnels through
+them, freezes tuples before hashing, and fails closed on missing, mixed,
+duplicated, adaptively retried, or noncanonical records.  Qualification
+identities are representable through the same leaf types but are never
+admitted into the eighteen-cell matrix.
+
+Three identity families are deliberately distinguished and must not be
+conflated:
+
+* **acquisition identity** -- the sealed numeric seed tuple, collector
+  acquisition/native-receipt bytes, credit ledgers, and policy contract of one
+  ``(training RP, seed group)`` acquisition.  Matrix groups and qualification
+  carry pairwise distinct acquisition and credit bytes; labels alone never
+  separate them.
+* **declared AdamW configuration identity** -- one frozen optimizer
+  configuration shared by all eighteen cells.
+* **per-cell optimizer/proposal/transaction identity** -- unique to each cell,
+  because every cell assembles its own fresh Source, optimizer, and
+  transaction.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
@@ -30,9 +46,14 @@ from types import MappingProxyType
 from typing import Any
 
 from scripts.research.build_human13_k_union_manifest import EXPECTED_IMAGE_IDENTITIES
+from scripts.research.collect_human13_rp_crossover import (
+    MATRIX_SEED_GROUPS as _COLLECTOR_MATRIX_SEED_GROUPS,
+    QUALIFICATION_SEEDS as _COLLECTOR_QUALIFICATION_SEEDS,
+)
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_TRANSACTION_ID = re.compile(r"^[0-9a-f]{32}$")
 
 TRAINING_RPS: tuple[float, ...] = (1.0, 1.10)
 EVALUATION_RPS: tuple[float, ...] = (1.0, 1.10)
@@ -41,6 +62,7 @@ QUALIFICATION_SEED_GROUP = "qualification"
 ARM_IDS: tuple[str, ...] = ("A", "B", "C")
 PHASE_MATRIX = "matrix"
 PHASE_QUALIFICATION = "qualification"
+SEEDS_PER_GROUP = 16
 CANONICAL_IMAGE_IDS: tuple[int, ...] = tuple(
     sorted(image_id for image_id, _ in EXPECTED_IMAGE_IDENTITIES)
 )
@@ -59,6 +81,15 @@ _ARM_OBJECTIVE_COMPONENTS: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "C": ("trajectory", "compiler", "preservation"),
     }
 )
+# ``preservation`` is a projection stage over the arm-B proposal, not a loss
+# term, so only these components carry their own objective bytes.
+PROPOSAL_COMPONENTS_BY_ARM: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {
+        "A": ("trajectory",),
+        "B": ("trajectory", "compiler"),
+        "C": ("trajectory", "compiler"),
+    }
+)
 _STATUSES = ("succeeded", "failed")
 
 ACQUISITION_KEY_SCHEMA = "human13_rp_crossover_acquisition_key.v1"
@@ -69,6 +100,52 @@ CELL_SPEC_SCHEMA = "human13_rp_crossover_cell_spec.v1"
 AUDIT_REF_SCHEMA = "human13_rp_crossover_audit_ref.v1"
 CELL_RECEIPT_SCHEMA = "human13_rp_crossover_cell_receipt.v1"
 MATRIX_PLAN_SCHEMA = "human13_rp_crossover_matrix_plan.v1"
+NODE_TERMINAL_RECEIPT_SCHEMA = "human13_rp_crossover_node_terminal_receipt.v1"
+
+# The exact sealed seed ranges of the owning research unit.  They are bound to
+# the collector that actually draws them, and re-checked here so that a drift
+# on either side fails closed instead of silently re-labelling one acquisition.
+_EXPECTED_SEED_STARTS: Mapping[str, int] = MappingProxyType(
+    {
+        QUALIFICATION_SEED_GROUP: 30001,
+        "matrix_a": 31001,
+        "matrix_b": 32001,
+        "matrix_c": 33001,
+    }
+)
+
+
+def _frozen_seed_groups() -> Mapping[str, tuple[int, ...]]:
+    collected = {
+        QUALIFICATION_SEED_GROUP: tuple(_COLLECTOR_QUALIFICATION_SEEDS),
+        **{
+            group: tuple(seeds)
+            for group, seeds in _COLLECTOR_MATRIX_SEED_GROUPS.items()
+        },
+    }
+    if set(collected) != set(_EXPECTED_SEED_STARTS) or set(
+        _COLLECTOR_MATRIX_SEED_GROUPS
+    ) != set(MATRIX_SEED_GROUPS):
+        raise ValueError("collector seed groups differ from the sealed matrix surface")
+    for group, start in _EXPECTED_SEED_STARTS.items():
+        if collected[group] != tuple(range(start, start + SEEDS_PER_GROUP)):
+            raise ValueError(f"seed group {group} drifted from its sealed seed range")
+    drawn = [seed for seeds in collected.values() for seed in seeds]
+    if len(set(drawn)) != len(drawn):
+        raise ValueError("matrix and qualification seed groups must be disjoint")
+    return MappingProxyType({group: seeds for group, seeds in collected.items()})
+
+
+CANONICAL_SEED_GROUPS: Mapping[str, tuple[int, ...]] = _frozen_seed_groups()
+
+
+def canonical_seeds(seed_group_id: str) -> tuple[int, ...]:
+    """Return the sealed numeric seed tuple of one seed group."""
+
+    try:
+        return CANONICAL_SEED_GROUPS[seed_group_id]
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"unknown seed group: {seed_group_id!r}") from error
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -114,6 +191,20 @@ def _evaluation_rp(value: Any) -> float:
     return rp
 
 
+def _seeds(value: Any, *, seed_group_id: str, field: str) -> tuple[int, ...]:
+    expected = canonical_seeds(seed_group_id)
+    if value is None:
+        return expected
+    seeds = tuple(
+        int(item) if not isinstance(item, bool) else -1 for item in tuple(value)
+    )
+    if seeds != expected:
+        raise ValueError(
+            f"{field} must be exactly the sealed seed tuple of {seed_group_id}"
+        )
+    return seeds
+
+
 def _image_ids(value: Any, *, field: str) -> tuple[int, ...]:
     ids = tuple(int(item) for item in value)
     if len(ids) != len(CANONICAL_IMAGE_IDS) or set(ids) != _CANONICAL_IMAGE_ID_SET:
@@ -121,13 +212,31 @@ def _image_ids(value: Any, *, field: str) -> tuple[int, ...]:
     return ids
 
 
+def _objective_component_hashes(
+    value: Any, *, arm_id: str, field: str
+) -> tuple[tuple[str, str], ...]:
+    items = tuple((str(name), digest) for name, digest in tuple(value))
+    if tuple(name for name, _ in items) != PROPOSAL_COMPONENTS_BY_ARM[arm_id]:
+        raise ValueError(
+            f"{field} must bind exactly the canonical proposal components of this arm"
+        )
+    return tuple(
+        (name, _digest(digest, field=f"{field}[{name}]")) for name, digest in items
+    )
+
+
 @dataclass(frozen=True)
 class AcquisitionKey:
-    """One ``(training RP, seed group, phase)`` acquisition identity."""
+    """One ``(training RP, seed group, phase)`` acquisition identity.
+
+    The sealed numeric seed tuple is part of the identity, so a relabelled or
+    reused acquisition cannot pass as another seed group.
+    """
 
     training_rp: float
     seed_group_id: str
     phase: str
+    seeds: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         rp = _training_rp(self.training_rp)
@@ -146,8 +255,12 @@ class AcquisitionKey:
         else:
             raise ValueError("phase must be exactly 'matrix' or 'qualification'")
         object.__setattr__(self, "phase", phase)
+        seed_group_id = _nonempty(self.seed_group_id, field="seed_group_id")
+        object.__setattr__(self, "seed_group_id", seed_group_id)
         object.__setattr__(
-            self, "seed_group_id", _nonempty(self.seed_group_id, field="seed_group_id")
+            self,
+            "seeds",
+            _seeds(self.seeds, seed_group_id=seed_group_id, field="acquisition seeds"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -156,16 +269,20 @@ class AcquisitionKey:
             "training_rp": self.training_rp,
             "seed_group_id": self.seed_group_id,
             "phase": self.phase,
+            "seeds": list(self.seeds or ()),
         }
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "AcquisitionKey":
         if value.get("schema_version") != ACQUISITION_KEY_SCHEMA:
             raise ValueError("acquisition key schema_version differs")
+        if "seeds" not in value:
+            raise ValueError("acquisition key payload must bind its sealed seed tuple")
         return cls(
             training_rp=value["training_rp"],
             seed_group_id=value["seed_group_id"],
             phase=value["phase"],
+            seeds=tuple(value["seeds"]),
         )
 
     @property
@@ -211,7 +328,12 @@ class CellKey:
 
 @dataclass(frozen=True)
 class SharedEvidenceRef:
-    """Byte-identical acquisition/matching/credit/policy identity for one acquisition key."""
+    """Byte-identical acquisition/matching/credit/policy identity for one acquisition key.
+
+    The record self-describes the acquisition it came from -- its training RP,
+    seed group, sealed seed tuple, and collector receipts -- so admission can
+    reject evidence that was actually drawn for another acquisition.
+    """
 
     source_sha256: str
     manifest_sha256: str
@@ -221,48 +343,43 @@ class SharedEvidenceRef:
     credit_ledger_sha256: str
     compiler_ledger_sha256: str
     policy_contract_sha256: str
+    native_receipts_sha256: str
+    training_rp: float
+    seed_group_id: str
+    seeds: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "source_sha256", _digest(self.source_sha256, field="source_sha256")
-        )
-        object.__setattr__(
-            self,
+        for field in (
+            "source_sha256",
             "manifest_sha256",
-            _digest(self.manifest_sha256, field="manifest_sha256"),
-        )
+            "acquisition_sha256",
+            "trajectory_credit_acquisition_sha256",
+            "credit_ledger_sha256",
+            "compiler_ledger_sha256",
+            "policy_contract_sha256",
+            "native_receipts_sha256",
+        ):
+            object.__setattr__(self, field, _digest(getattr(self, field), field=field))
         object.__setattr__(
             self,
             "acquisition_path",
             _nonempty(self.acquisition_path, field="acquisition_path"),
         )
+        object.__setattr__(self, "training_rp", _training_rp(self.training_rp))
+        seed_group_id = _nonempty(self.seed_group_id, field="seed_group_id")
+        if seed_group_id not in CANONICAL_SEED_GROUPS:
+            raise ValueError(
+                "shared evidence seed_group_id is outside the sealed groups"
+            )
+        object.__setattr__(self, "seed_group_id", seed_group_id)
         object.__setattr__(
             self,
-            "acquisition_sha256",
-            _digest(self.acquisition_sha256, field="acquisition_sha256"),
-        )
-        object.__setattr__(
-            self,
-            "trajectory_credit_acquisition_sha256",
-            _digest(
-                self.trajectory_credit_acquisition_sha256,
-                field="trajectory_credit_acquisition_sha256",
+            "seeds",
+            _seeds(
+                self.seeds,
+                seed_group_id=seed_group_id,
+                field="shared evidence seeds",
             ),
-        )
-        object.__setattr__(
-            self,
-            "credit_ledger_sha256",
-            _digest(self.credit_ledger_sha256, field="credit_ledger_sha256"),
-        )
-        object.__setattr__(
-            self,
-            "compiler_ledger_sha256",
-            _digest(self.compiler_ledger_sha256, field="compiler_ledger_sha256"),
-        )
-        object.__setattr__(
-            self,
-            "policy_contract_sha256",
-            _digest(self.policy_contract_sha256, field="policy_contract_sha256"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -276,12 +393,18 @@ class SharedEvidenceRef:
             "credit_ledger_sha256": self.credit_ledger_sha256,
             "compiler_ledger_sha256": self.compiler_ledger_sha256,
             "policy_contract_sha256": self.policy_contract_sha256,
+            "native_receipts_sha256": self.native_receipts_sha256,
+            "training_rp": self.training_rp,
+            "seed_group_id": self.seed_group_id,
+            "seeds": list(self.seeds or ()),
         }
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SharedEvidenceRef":
         if value.get("schema_version") != SHARED_EVIDENCE_SCHEMA:
             raise ValueError("shared evidence schema_version differs")
+        if "seeds" not in value:
+            raise ValueError("shared evidence payload must bind its sealed seed tuple")
         return cls(
             source_sha256=value["source_sha256"],
             manifest_sha256=value["manifest_sha256"],
@@ -293,6 +416,10 @@ class SharedEvidenceRef:
             credit_ledger_sha256=value["credit_ledger_sha256"],
             compiler_ledger_sha256=value["compiler_ledger_sha256"],
             policy_contract_sha256=value["policy_contract_sha256"],
+            native_receipts_sha256=value["native_receipts_sha256"],
+            training_rp=value["training_rp"],
+            seed_group_id=value["seed_group_id"],
+            seeds=tuple(value["seeds"]),
         )
 
     @property
@@ -364,14 +491,21 @@ class SourceBaselineRef:
 
 @dataclass(frozen=True)
 class CellSpec:
-    """One planned cell: its evidence, leaf config, and exact single-update contract."""
+    """One planned cell: its evidence, leaf config, and exact single-update contract.
+
+    ``adamw_config_sha256`` is the one declared optimizer configuration shared
+    by every cell; ``fresh_optimizer_identity_sha256`` is this cell's own fresh
+    optimizer/proposal identity and is never shared.
+    """
 
     cell_key: CellKey
     shared_evidence: SharedEvidenceRef
     leaf_config_sha256: str
     source_checkpoint_sha256: str
     expected_objective_components: tuple[str, ...]
-    fresh_adamw_fingerprint_sha256: str
+    objective_component_hashes: tuple[tuple[str, str], ...]
+    adamw_config_sha256: str
+    fresh_optimizer_identity_sha256: str
     evaluation_rps: tuple[float, ...]
     output_root: str
     max_updates: int = 1
@@ -382,16 +516,37 @@ class CellSpec:
             raise ValueError("cell spec cell_key must be a CellKey")
         if not isinstance(self.shared_evidence, SharedEvidenceRef):
             raise ValueError("cell spec shared_evidence must be a SharedEvidenceRef")
+        acquisition = self.cell_key.acquisition_key
+        if self.shared_evidence.training_rp != acquisition.training_rp:
+            raise ValueError(
+                "cell shared evidence training RP differs from its acquisition key"
+            )
+        if (
+            self.shared_evidence.seed_group_id != acquisition.seed_group_id
+            or self.shared_evidence.seeds != acquisition.seeds
+        ):
+            raise ValueError(
+                "cell shared evidence seed group differs from its acquisition key"
+            )
+        for field in ("leaf_config_sha256", "adamw_config_sha256"):
+            object.__setattr__(self, field, _digest(getattr(self, field), field=field))
         object.__setattr__(
             self,
-            "leaf_config_sha256",
-            _digest(self.leaf_config_sha256, field="leaf_config_sha256"),
+            "fresh_optimizer_identity_sha256",
+            _digest(
+                self.fresh_optimizer_identity_sha256,
+                field="fresh_optimizer_identity_sha256",
+            ),
         )
         object.__setattr__(
             self,
             "source_checkpoint_sha256",
             _digest(self.source_checkpoint_sha256, field="source_checkpoint_sha256"),
         )
+        if self.source_checkpoint_sha256 != self.shared_evidence.source_sha256:
+            raise ValueError(
+                "cell Source checkpoint differs from its shared acquisition evidence"
+            )
         components = tuple(self.expected_objective_components)
         if components != _ARM_OBJECTIVE_COMPONENTS[self.cell_key.arm_id]:
             raise ValueError(
@@ -400,10 +555,11 @@ class CellSpec:
         object.__setattr__(self, "expected_objective_components", components)
         object.__setattr__(
             self,
-            "fresh_adamw_fingerprint_sha256",
-            _digest(
-                self.fresh_adamw_fingerprint_sha256,
-                field="fresh_adamw_fingerprint_sha256",
+            "objective_component_hashes",
+            _objective_component_hashes(
+                self.objective_component_hashes,
+                arm_id=self.cell_key.arm_id,
+                field="objective_component_hashes",
             ),
         )
         evaluation_rps = tuple(_evaluation_rp(rp) for rp in self.evaluation_rps)
@@ -428,7 +584,11 @@ class CellSpec:
             "leaf_config_sha256": self.leaf_config_sha256,
             "source_checkpoint_sha256": self.source_checkpoint_sha256,
             "expected_objective_components": list(self.expected_objective_components),
-            "fresh_adamw_fingerprint_sha256": self.fresh_adamw_fingerprint_sha256,
+            "objective_component_hashes": [
+                list(item) for item in self.objective_component_hashes
+            ],
+            "adamw_config_sha256": self.adamw_config_sha256,
+            "fresh_optimizer_identity_sha256": self.fresh_optimizer_identity_sha256,
             "evaluation_rps": list(self.evaluation_rps),
             "output_root": self.output_root,
             "max_updates": self.max_updates,
@@ -445,7 +605,11 @@ class CellSpec:
             leaf_config_sha256=value["leaf_config_sha256"],
             source_checkpoint_sha256=value["source_checkpoint_sha256"],
             expected_objective_components=tuple(value["expected_objective_components"]),
-            fresh_adamw_fingerprint_sha256=value["fresh_adamw_fingerprint_sha256"],
+            objective_component_hashes=tuple(
+                tuple(item) for item in value["objective_component_hashes"]
+            ),
+            adamw_config_sha256=value["adamw_config_sha256"],
+            fresh_optimizer_identity_sha256=value["fresh_optimizer_identity_sha256"],
             evaluation_rps=tuple(value["evaluation_rps"]),
             output_root=value["output_root"],
             max_updates=value["max_updates"],
@@ -533,16 +697,28 @@ class AuditRef:
 
 @dataclass(frozen=True)
 class CellReceipt:
-    """The immutable outcome of one cell: proposal, audits, transaction, and status."""
+    """The immutable outcome of one cell: proposal, audits, transaction, and status.
+
+    ``transaction_id`` is this cell's own transaction identity.  The
+    before/after state digests are *content* digests of the fresh Source state,
+    so they legitimately coincide across cells and never carry identity.
+    ``proposal_delta_sha256`` is the arm-independent identity of the measured
+    AdamW proposal, which is what arm C projects.
+    """
 
     cell_key: CellKey
     shared_evidence: SharedEvidenceRef
     objective_components: tuple[str, ...]
+    adamw_config_sha256: str
+    fresh_optimizer_identity_sha256: str
+    transaction_id: str
     before_transaction_digest: str
     after_transaction_digest: str
     status: str
+    objective_component_hashes: tuple[tuple[str, str], ...] = ()
     audits: tuple[AuditRef, ...] = ()
     adamw_proposal_sha256: str | None = None
+    proposal_delta_sha256: str | None = None
     projection_receipt_sha256: str | None = None
     apply_receipt_sha256: str | None = None
     update_count: int = 1
@@ -561,6 +737,12 @@ class CellReceipt:
                 "objective_components differs from the canonical arm-nested surface"
             )
         object.__setattr__(self, "objective_components", components)
+        for field in ("adamw_config_sha256", "fresh_optimizer_identity_sha256"):
+            object.__setattr__(self, field, _digest(getattr(self, field), field=field))
+        transaction_id = _nonempty(self.transaction_id, field="transaction_id")
+        if not _TRANSACTION_ID.fullmatch(transaction_id):
+            raise ValueError("transaction_id must be a 32-character hex identity")
+        object.__setattr__(self, "transaction_id", transaction_id)
         object.__setattr__(
             self,
             "before_transaction_digest",
@@ -589,16 +771,14 @@ class CellReceipt:
             raise ValueError("retry_policy must be exactly 'none'")
 
         requires_projection = "preservation" in components
-        object.__setattr__(
-            self,
+        for field in (
             "adamw_proposal_sha256",
-            _optional_digest(self.adamw_proposal_sha256, field="adamw_proposal_sha256"),
-        )
-        object.__setattr__(
-            self,
+            "proposal_delta_sha256",
             "apply_receipt_sha256",
-            _optional_digest(self.apply_receipt_sha256, field="apply_receipt_sha256"),
-        )
+        ):
+            object.__setattr__(
+                self, field, _optional_digest(getattr(self, field), field=field)
+            )
         projection = _optional_digest(
             self.projection_receipt_sha256, field="projection_receipt_sha256"
         )
@@ -621,6 +801,15 @@ class CellReceipt:
         object.__setattr__(self, "audits", audits)
 
         if status == "succeeded":
+            object.__setattr__(
+                self,
+                "objective_component_hashes",
+                _objective_component_hashes(
+                    self.objective_component_hashes,
+                    arm_id=self.cell_key.arm_id,
+                    field="objective_component_hashes",
+                ),
+            )
             if self.failure_reason is not None:
                 raise ValueError(
                     "a succeeded cell receipt must not carry a failure_reason"
@@ -628,6 +817,10 @@ class CellReceipt:
             if self.adamw_proposal_sha256 is None:
                 raise ValueError(
                     "a succeeded cell receipt must bind its exact AdamW proposal identity"
+                )
+            if self.proposal_delta_sha256 is None:
+                raise ValueError(
+                    "a succeeded cell receipt must bind its measured proposal delta identity"
                 )
             if self.apply_receipt_sha256 is None:
                 raise ValueError(
@@ -642,6 +835,14 @@ class CellReceipt:
                     "a succeeded cell receipt must bind exactly one audit per evaluation RP"
                 )
         else:
+            hashes = tuple(tuple(item) for item in self.objective_component_hashes)
+            if hashes:
+                hashes = _objective_component_hashes(
+                    hashes,
+                    arm_id=self.cell_key.arm_id,
+                    field="objective_component_hashes",
+                )
+            object.__setattr__(self, "objective_component_hashes", hashes)
             if not _nonempty(self.failure_reason or "", field="failure_reason"):
                 raise ValueError(
                     "a failed cell receipt must carry a nonempty failure_reason"
@@ -654,11 +855,18 @@ class CellReceipt:
             "cell_key": self.cell_key.to_dict(),
             "shared_evidence": self.shared_evidence.to_dict(),
             "objective_components": list(self.objective_components),
+            "objective_component_hashes": [
+                list(item) for item in self.objective_component_hashes
+            ],
+            "adamw_config_sha256": self.adamw_config_sha256,
+            "fresh_optimizer_identity_sha256": self.fresh_optimizer_identity_sha256,
+            "transaction_id": self.transaction_id,
             "before_transaction_digest": self.before_transaction_digest,
             "after_transaction_digest": self.after_transaction_digest,
             "status": self.status,
             "audits": [audit.to_dict() for audit in self.audits],
             "adamw_proposal_sha256": self.adamw_proposal_sha256,
+            "proposal_delta_sha256": self.proposal_delta_sha256,
             "projection_receipt_sha256": self.projection_receipt_sha256,
             "apply_receipt_sha256": self.apply_receipt_sha256,
             "update_count": self.update_count,
@@ -675,11 +883,18 @@ class CellReceipt:
             cell_key=CellKey.from_dict(value["cell_key"]),
             shared_evidence=SharedEvidenceRef.from_dict(value["shared_evidence"]),
             objective_components=tuple(value["objective_components"]),
+            objective_component_hashes=tuple(
+                tuple(item) for item in value["objective_component_hashes"]
+            ),
+            adamw_config_sha256=value["adamw_config_sha256"],
+            fresh_optimizer_identity_sha256=value["fresh_optimizer_identity_sha256"],
+            transaction_id=value["transaction_id"],
             before_transaction_digest=value["before_transaction_digest"],
             after_transaction_digest=value["after_transaction_digest"],
             status=value["status"],
             audits=tuple(AuditRef.from_dict(item) for item in value["audits"]),
             adamw_proposal_sha256=value["adamw_proposal_sha256"],
+            proposal_delta_sha256=value["proposal_delta_sha256"],
             projection_receipt_sha256=value["projection_receipt_sha256"],
             apply_receipt_sha256=value["apply_receipt_sha256"],
             update_count=value["update_count"],
@@ -691,6 +906,62 @@ class CellReceipt:
     @property
     def content_sha256(self) -> str:
         return _sha256(self.to_dict())
+
+
+def matrix_identity(cell: CellSpec | CellReceipt) -> tuple[float, str, str]:
+    """The ``(training RP, seed group, arm)`` identity of one matrix cell."""
+
+    acquisition = cell.cell_key.acquisition_key
+    return acquisition.training_rp, acquisition.seed_group_id, cell.cell_key.arm_id
+
+
+def _validate_group_objective_identity(arm_map: Mapping[str, CellSpec]) -> None:
+    hashes = {arm: dict(arm_map[arm].objective_component_hashes) for arm in arm_map}
+    trajectories = {value["trajectory"] for value in hashes.values()}
+    if len(trajectories) != 1:
+        raise ValueError(
+            "arms under one acquisition must share one trajectory objective identity"
+        )
+    compilers = {value["compiler"] for value in hashes.values() if "compiler" in value}
+    if len(compilers) > 1:
+        raise ValueError(
+            "arms B and C under one acquisition must share one compiler objective identity"
+        )
+
+
+def validate_node_cell_specs(
+    acquisition_key: AcquisitionKey, phase: str, specs: Sequence[CellSpec]
+) -> tuple[CellSpec, ...]:
+    """Admit the exact cell specs one acquisition node may own.
+
+    The node runner and the durable node terminal share this choke point, so a
+    node cannot execute a cell set that its own terminal would reject.
+    """
+
+    bound = tuple(specs)
+    if any(not isinstance(item, CellSpec) for item in bound):
+        raise ValueError("node cell specs must be CellSpec records")
+    expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",)
+    if tuple(spec.cell_key.arm_id for spec in bound) != expected_arms:
+        raise ValueError("node cell specs must bind every planned arm of its phase")
+    for spec in bound:
+        if spec.cell_key.acquisition_key != acquisition_key:
+            raise ValueError("every node CellSpec must bind this acquisition key")
+    if len({spec.shared_evidence for spec in bound}) != 1:
+        raise ValueError(
+            "one node acquires one byte-identical shared evidence identity"
+        )
+    if len({spec.source_checkpoint_sha256 for spec in bound}) != 1:
+        raise ValueError("one node begins from one Source checkpoint identity")
+    if len({spec.adamw_config_sha256 for spec in bound}) != 1:
+        raise ValueError(
+            "every cell must bind one declared AdamW configuration identity"
+        )
+    identities = [spec.fresh_optimizer_identity_sha256 for spec in bound]
+    if len(set(identities)) != len(identities):
+        raise ValueError("every cell must have an independent fresh optimizer identity")
+    _validate_group_objective_identity({spec.cell_key.arm_id: spec for spec in bound})
+    return bound
 
 
 def _validate_matrix_plan(
@@ -735,7 +1006,8 @@ def _validate_matrix_plan(
     acquisitions_by_content = {item.content_sha256: item for item in acquisitions}
     cells_by_acquisition: dict[str, dict[str, CellSpec]] = {}
     output_roots: set[str] = set()
-    proposal_identities: set[str] = set()
+    optimizer_identities: set[str] = set()
+    config_by_surface: dict[tuple[float, str], set[str]] = {}
     for cell in cells:
         acquisition = cell.cell_key.acquisition_key
         bound = acquisitions_by_content.get(acquisition.content_sha256)
@@ -750,14 +1022,18 @@ def _validate_matrix_plan(
         if cell.output_root in output_roots:
             raise ValueError("every cell output_root must be unique")
         output_roots.add(cell.output_root)
-        if cell.fresh_adamw_fingerprint_sha256 in proposal_identities:
+        if cell.fresh_optimizer_identity_sha256 in optimizer_identities:
             raise ValueError(
-                "every cell must have an independent fresh AdamW proposal identity"
+                "every cell must have an independent fresh optimizer identity"
             )
-        proposal_identities.add(cell.fresh_adamw_fingerprint_sha256)
+        optimizer_identities.add(cell.fresh_optimizer_identity_sha256)
+        config_by_surface.setdefault(
+            (acquisition.training_rp, cell.cell_key.arm_id), set()
+        ).add(cell.leaf_config_sha256)
 
     if len(cells_by_acquisition) != len(acquisitions):
         raise ValueError("every bound acquisition must own exactly one cell group")
+    group_evidence: list[SharedEvidenceRef] = []
     for arm_map in cells_by_acquisition.values():
         if set(arm_map) != set(ARM_IDS):
             raise ValueError("every acquisition must bind exactly arms A, B, and C")
@@ -766,6 +1042,45 @@ def _validate_matrix_plan(
             raise ValueError(
                 "arms A, B, and C under one acquisition key must share byte-identical evidence"
             )
+        group_evidence.append(arm_map["A"].shared_evidence)
+        _validate_group_objective_identity(arm_map)
+
+    for field in (
+        "acquisition_path",
+        "acquisition_sha256",
+        "trajectory_credit_acquisition_sha256",
+        "credit_ledger_sha256",
+        "native_receipts_sha256",
+    ):
+        values = [getattr(ref, field) for ref in group_evidence]
+        if len(set(values)) != len(values):
+            raise ValueError(
+                "matrix seed groups must have distinct acquisition and credit identities"
+            )
+    if (
+        len({ref.source_sha256 for ref in group_evidence}) != 1
+        or len({ref.manifest_sha256 for ref in group_evidence}) != 1
+    ):
+        raise ValueError("matrix Source or manifest lineage is mixed")
+    policy_by_rp: dict[float, set[str]] = {}
+    for ref in group_evidence:
+        policy_by_rp.setdefault(ref.training_rp, set()).add(ref.policy_contract_sha256)
+    if any(len(values) != 1 for values in policy_by_rp.values()) or len(
+        {next(iter(values)) for values in policy_by_rp.values()}
+    ) != len(TRAINING_RPS):
+        raise ValueError("training-RP policy contract lineage is mixed")
+
+    if (
+        len(config_by_surface) != len(TRAINING_RPS) * len(ARM_IDS)
+        or any(len(values) != 1 for values in config_by_surface.values())
+        or len({next(iter(values)) for values in config_by_surface.values()})
+        != len(config_by_surface)
+    ):
+        raise ValueError("leaf config lineage is mixed")
+    if len({cell.adamw_config_sha256 for cell in cells}) != 1:
+        raise ValueError(
+            "every cell must bind one declared AdamW configuration identity"
+        )
 
     if len(source_baselines) != len(EVALUATION_RPS):
         raise ValueError("matrix plan must bind exactly two RP source baselines")
@@ -875,6 +1190,242 @@ class MatrixPlan:
         return _sha256(self.to_dict())
 
 
+def validate_matrix_receipts(
+    plan: MatrixPlan, receipts: Sequence[CellReceipt]
+) -> dict[tuple[float, str, str], CellReceipt]:
+    """The one aggregate admission choke point for a complete matrix outcome.
+
+    Every supported path -- the node terminal aggregate publisher, direct
+    analysis-input construction, and reload through ``from_dict`` -- reaches
+    this validator, so no path can pool a mixed, reused, or nested-objective
+    divergent outcome.
+    """
+
+    if not isinstance(plan, MatrixPlan):
+        raise ValueError("matrix receipt admission requires a MatrixPlan")
+    bound = tuple(receipts)
+    if any(not isinstance(item, CellReceipt) for item in bound):
+        raise ValueError("matrix receipts must be CellReceipt records")
+    if any(item.cell_key.acquisition_key.phase != PHASE_MATRIX for item in bound):
+        raise ValueError("qualification cells must never enter matrix analysis")
+    if len(bound) != len(plan.cells):
+        raise ValueError("analysis requires exactly eighteen cell receipts")
+    keys = [matrix_identity(item) for item in bound]
+    if len(set(keys)) != len(keys):
+        raise ValueError(
+            "analysis requires a unique cell receipt for every matrix cell"
+        )
+    planned = {matrix_identity(cell): cell for cell in plan.cells}
+    if set(keys) != set(planned):
+        raise ValueError("cell receipts differ from the exact eighteen-cell plan")
+
+    admitted: dict[tuple[float, str, str], CellReceipt] = {}
+    proposal_ids: set[str] = set()
+    apply_ids: set[str] = set()
+    transaction_ids: set[str] = set()
+    checkpoint_ids: set[str] = set()
+    audit_paths: set[str] = set()
+    generation_ids: set[str] = set()
+    for receipt in bound:
+        key = matrix_identity(receipt)
+        cell = planned[key]
+        if receipt.status != "succeeded":
+            raise ValueError("failed scientific cell cannot enter pooled success")
+        if receipt.shared_evidence != cell.shared_evidence:
+            raise ValueError("cell receipt shared evidence differs from its plan")
+        if receipt.objective_components != cell.expected_objective_components:
+            raise ValueError("cell receipt objective differs from its plan")
+        if receipt.objective_component_hashes != cell.objective_component_hashes:
+            raise ValueError(
+                "cell receipt objective component bytes differ from its plan"
+            )
+        if receipt.adamw_config_sha256 != cell.adamw_config_sha256:
+            raise ValueError(
+                "cell receipt AdamW configuration identity differs from its plan"
+            )
+        if (
+            receipt.fresh_optimizer_identity_sha256
+            != cell.fresh_optimizer_identity_sha256
+        ):
+            raise ValueError("cell receipt optimizer identity differs from its plan")
+        if receipt.update_count != 1 or receipt.retry_policy != "none":
+            raise ValueError("cell receipt must bind one update and zero retries")
+        if not receipt.rollback_confirmed or (
+            receipt.before_transaction_digest != receipt.after_transaction_digest
+        ):
+            raise ValueError("cell receipt lacks complete rollback")
+        assert receipt.adamw_proposal_sha256 is not None
+        assert receipt.apply_receipt_sha256 is not None
+        if receipt.transaction_id in transaction_ids:
+            raise ValueError("cells require an independent transaction identity")
+        if receipt.adamw_proposal_sha256 in proposal_ids:
+            raise ValueError("cells require independent proposal identities")
+        if receipt.apply_receipt_sha256 in apply_ids:
+            raise ValueError("cells require independent apply identities")
+        transaction_ids.add(receipt.transaction_id)
+        proposal_ids.add(receipt.adamw_proposal_sha256)
+        apply_ids.add(receipt.apply_receipt_sha256)
+        audits = {audit.evaluation_rp: audit for audit in receipt.audits}
+        if set(audits) != set(EVALUATION_RPS) or len(receipt.audits) != 2:
+            raise ValueError("successful cells require exactly two clean-greedy audits")
+        evaluated = {audit.evaluated_checkpoint_sha256 for audit in receipt.audits}
+        if len(evaluated) != 1:
+            raise ValueError("both audits must evaluate the same private proposal")
+        checkpoint = evaluated.pop()
+        if checkpoint in checkpoint_ids:
+            raise ValueError("cells require independent evaluated proposal identities")
+        checkpoint_ids.add(checkpoint)
+        for audit in receipt.audits:
+            if audit.output_path in audit_paths:
+                raise ValueError("audit output paths must be unique")
+            if audit.generation_policy_receipt_sha256 in generation_ids:
+                raise ValueError("audit generation-policy receipts must be unique")
+            audit_paths.add(audit.output_path)
+            generation_ids.add(audit.generation_policy_receipt_sha256)
+        admitted[key] = receipt
+
+    # Arm C projects the arm-B proposal, so their measured deltas must be the
+    # same bytes.  Deltas are deliberately not compared across arms A/B or
+    # across acquisitions: a single fresh-AdamW step is sign-dominated, so
+    # distinctness there is a statistical accident, not a contract.  Arm
+    # separation is carried by the objective component bytes above.
+    for training_rp in TRAINING_RPS:
+        for seed_group in MATRIX_SEED_GROUPS:
+            base = admitted[(training_rp, seed_group, "B")].proposal_delta_sha256
+            if admitted[(training_rp, seed_group, "C")].proposal_delta_sha256 != base:
+                raise ValueError(
+                    "arm C must project the exact admitted arm-B proposal of its acquisition"
+                )
+    return admitted
+
+
+@dataclass(frozen=True)
+class NodeTerminalReceipt:
+    """One acquisition node's terminal: its exact acquired specs and outcomes.
+
+    The terminal is the only durable hand-off between the node runner and the
+    aggregate publisher, so it persists the typed ``CellSpec`` records that the
+    node actually acquired next to the ``CellReceipt`` records they produced.
+    """
+
+    node_id: str
+    phase: str
+    acquisition_key: AcquisitionKey
+    status: str
+    cell_specs: tuple[CellSpec, ...] = ()
+    cell_receipts: tuple[CellReceipt, ...] = ()
+    retry_policy: str = "none"
+    failure_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.acquisition_key, AcquisitionKey):
+            raise ValueError("node terminal acquisition_key must be an AcquisitionKey")
+        object.__setattr__(self, "node_id", _nonempty(self.node_id, field="node_id"))
+        phase = _nonempty(self.phase, field="phase")
+        if phase != self.acquisition_key.phase:
+            raise ValueError("node terminal phase differs from its acquisition key")
+        object.__setattr__(self, "phase", phase)
+        status = _nonempty(self.status, field="status")
+        if status not in _STATUSES:
+            raise ValueError("status must be exactly 'succeeded' or 'failed'")
+        object.__setattr__(self, "status", status)
+        if self.retry_policy != "none":
+            raise ValueError("retry_policy must be exactly 'none'")
+
+        specs = tuple(self.cell_specs)
+        receipts = tuple(self.cell_receipts)
+        if any(not isinstance(item, CellSpec) for item in specs):
+            raise ValueError("node terminal cell_specs must be CellSpec records")
+        if any(not isinstance(item, CellReceipt) for item in receipts):
+            raise ValueError("node terminal cell_receipts must be CellReceipt records")
+        expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",)
+        if specs:
+            validate_node_cell_specs(self.acquisition_key, phase, specs)
+        if len(receipts) > len(specs):
+            raise ValueError("node terminal bound more receipts than acquired cells")
+        for receipt, spec in zip(receipts, specs, strict=False):
+            if receipt.cell_key != spec.cell_key:
+                raise ValueError(
+                    "node terminal receipts must follow their acquired cell order"
+                )
+            if receipt.shared_evidence != spec.shared_evidence:
+                raise ValueError("node terminal receipt evidence differs from its spec")
+            if (
+                receipt.status == "succeeded"
+                and receipt.objective_component_hashes
+                != spec.objective_component_hashes
+            ):
+                raise ValueError(
+                    "node terminal receipt objective component bytes differ from its spec"
+                )
+            if (
+                receipt.adamw_config_sha256 != spec.adamw_config_sha256
+                or receipt.fresh_optimizer_identity_sha256
+                != spec.fresh_optimizer_identity_sha256
+            ):
+                raise ValueError(
+                    "node terminal receipt optimizer identity differs from its spec"
+                )
+        object.__setattr__(self, "cell_specs", specs)
+        object.__setattr__(self, "cell_receipts", receipts)
+
+        if status == "succeeded":
+            if self.failure_reason is not None:
+                raise ValueError(
+                    "a succeeded node terminal must not carry a failure_reason"
+                )
+            if len(receipts) != len(expected_arms) or len(specs) != len(expected_arms):
+                raise ValueError(
+                    "a succeeded node terminal must bind every planned arm exactly once"
+                )
+            if any(receipt.status != "succeeded" for receipt in receipts):
+                raise ValueError(
+                    "a succeeded node terminal must bind only succeeded cells"
+                )
+        elif not _nonempty(self.failure_reason or "", field="failure_reason"):
+            raise ValueError(
+                "a failed node terminal must carry a nonempty failure_reason"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": NODE_TERMINAL_RECEIPT_SCHEMA,
+            "node_id": self.node_id,
+            "phase": self.phase,
+            "acquisition_key": self.acquisition_key.to_dict(),
+            "acquisition_key_sha256": self.acquisition_key.content_sha256,
+            "status": self.status,
+            "cell_specs": [item.to_dict() for item in self.cell_specs],
+            "cell_receipts": [item.to_dict() for item in self.cell_receipts],
+            "retry_policy": self.retry_policy,
+            "failure_reason": self.failure_reason,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "NodeTerminalReceipt":
+        if value.get("schema_version") != NODE_TERMINAL_RECEIPT_SCHEMA:
+            raise ValueError("node terminal receipt schema_version differs")
+        acquisition_key = AcquisitionKey.from_dict(value["acquisition_key"])
+        if value.get("acquisition_key_sha256") != acquisition_key.content_sha256:
+            raise ValueError("node terminal acquisition identity differs")
+        return cls(
+            node_id=value["node_id"],
+            phase=value["phase"],
+            acquisition_key=acquisition_key,
+            status=value["status"],
+            cell_specs=tuple(CellSpec.from_dict(item) for item in value["cell_specs"]),
+            cell_receipts=tuple(
+                CellReceipt.from_dict(item) for item in value["cell_receipts"]
+            ),
+            retry_policy=value["retry_policy"],
+            failure_reason=value["failure_reason"],
+        )
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self.to_dict())
+
+
 __all__ = [
     "ACQUISITION_KEY_SCHEMA",
     "ARM_IDS",
@@ -882,6 +1433,7 @@ __all__ = [
     "AcquisitionKey",
     "AuditRef",
     "CANONICAL_IMAGE_IDS",
+    "CANONICAL_SEED_GROUPS",
     "CELL_KEY_SCHEMA",
     "CELL_RECEIPT_SCHEMA",
     "CELL_SPEC_SCHEMA",
@@ -893,12 +1445,20 @@ __all__ = [
     "MATRIX_PLAN_SCHEMA",
     "MATRIX_SEED_GROUPS",
     "MatrixPlan",
+    "NODE_TERMINAL_RECEIPT_SCHEMA",
+    "NodeTerminalReceipt",
     "PHASE_MATRIX",
     "PHASE_QUALIFICATION",
+    "PROPOSAL_COMPONENTS_BY_ARM",
     "QUALIFICATION_SEED_GROUP",
+    "SEEDS_PER_GROUP",
     "SHARED_EVIDENCE_SCHEMA",
     "SOURCE_BASELINE_SCHEMA",
     "SharedEvidenceRef",
     "SourceBaselineRef",
     "TRAINING_RPS",
+    "canonical_seeds",
+    "matrix_identity",
+    "validate_node_cell_specs",
+    "validate_matrix_receipts",
 ]

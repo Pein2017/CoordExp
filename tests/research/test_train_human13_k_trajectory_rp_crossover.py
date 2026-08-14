@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -12,11 +13,14 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     AcquisitionKey,
     AuditRef,
     CANONICAL_IMAGE_IDS,
+    PROPOSAL_COMPONENTS_BY_ARM,
     CellKey,
     CellReceipt,
     CellSpec,
     DRY_RUN_COUNTER_KEYS,
+    NodeTerminalReceipt,
     SharedEvidenceRef,
+    canonical_seeds,
 )
 from scripts.research import launch_human13_k_trajectory_rp_crossover as launcher
 from scripts.research import train_human13_k_trajectory_rp_crossover as cli
@@ -27,16 +31,32 @@ def _digest(label: str) -> str:
     return hashlib.sha256(label.encode()).hexdigest()
 
 
-def _shared() -> SharedEvidenceRef:
+def _shared(
+    training_rp: float = 1.0, seed_group_id: str = "matrix_a"
+) -> SharedEvidenceRef:
+    tag = f"{training_rp}:{seed_group_id}"
     return SharedEvidenceRef(
-        source_sha256=_digest("source"),
+        source_sha256=_digest("source-checkpoint"),
         manifest_sha256=_digest("manifest"),
-        acquisition_path="shared/acquisition.json",
-        acquisition_sha256=_digest("acquisition"),
-        trajectory_credit_acquisition_sha256=_digest("acquisition"),
-        credit_ledger_sha256=_digest("credit"),
-        compiler_ledger_sha256=_digest("compiler"),
-        policy_contract_sha256=_digest("policy"),
+        acquisition_path=f"shared/{tag}/acquisition.json",
+        acquisition_sha256=_digest(f"acquisition:{tag}"),
+        trajectory_credit_acquisition_sha256=_digest(f"credit-acq:{tag}"),
+        credit_ledger_sha256=_digest(f"credit:{tag}"),
+        compiler_ledger_sha256=_digest(f"compiler:{tag}"),
+        policy_contract_sha256=_digest(f"policy:{training_rp}"),
+        native_receipts_sha256=_digest(f"native-receipts:{tag}"),
+        training_rp=training_rp,
+        seed_group_id=seed_group_id,
+        seeds=canonical_seeds(seed_group_id),
+    )
+
+
+def _component_hashes(
+    arm_id: str, tag: str = "1.0:matrix_a"
+) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (component, _digest(f"objective:{component}:{tag}"))
+        for component in PROPOSAL_COMPONENTS_BY_ARM[arm_id]
     )
 
 
@@ -45,21 +65,27 @@ def _spec(
     *,
     acquisition_key: AcquisitionKey | None = None,
     output_root: str | None = None,
+    adamw_config_sha256: str | None = None,
+    fresh_optimizer_identity_sha256: str | None = None,
 ) -> CellSpec:
     components = {
         "A": ("trajectory",),
         "B": ("trajectory", "compiler"),
         "C": ("trajectory", "compiler", "preservation"),
     }[arm_id]
+    acquisition = acquisition_key or AcquisitionKey(1.0, "matrix_a", "matrix")
+    tag = f"{acquisition.training_rp}:{acquisition.seed_group_id}"
     return CellSpec(
-        cell_key=CellKey(
-            acquisition_key or AcquisitionKey(1.0, "matrix_a", "matrix"), arm_id
-        ),
-        shared_evidence=_shared(),
+        cell_key=CellKey(acquisition, arm_id),
+        shared_evidence=_shared(acquisition.training_rp, acquisition.seed_group_id),
         leaf_config_sha256=_digest(f"leaf-{arm_id}"),
-        source_checkpoint_sha256=_digest("checkpoint"),
+        source_checkpoint_sha256=_digest("source-checkpoint"),
         expected_objective_components=components,
-        fresh_adamw_fingerprint_sha256=_digest("adamw"),
+        objective_component_hashes=_component_hashes(arm_id, tag),
+        adamw_config_sha256=adamw_config_sha256 or _digest("frozen-adamw-config"),
+        fresh_optimizer_identity_sha256=(
+            fresh_optimizer_identity_sha256 or _digest(f"optimizer:{tag}:{arm_id}")
+        ),
         evaluation_rps=(1.0, 1.10),
         output_root=output_root or f"cells/{arm_id}",
     )
@@ -100,16 +126,29 @@ def _success_receipt(spec: CellSpec) -> CellReceipt:
         cell_key=spec.cell_key,
         shared_evidence=spec.shared_evidence,
         objective_components=spec.expected_objective_components,
+        objective_component_hashes=spec.objective_component_hashes,
+        adamw_config_sha256=spec.adamw_config_sha256,
+        fresh_optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
+        transaction_id=_digest(f"transaction-{spec.cell_key.arm_id}")[:32],
         before_transaction_digest=_digest("state"),
         after_transaction_digest=_digest("state"),
         status="succeeded",
         audits=audits,
         adamw_proposal_sha256=_digest(f"proposal-{spec.cell_key.arm_id}"),
+        proposal_delta_sha256=_digest(
+            "proposal-delta-a" if spec.cell_key.arm_id == "A" else "proposal-delta-bc"
+        ),
         projection_receipt_sha256=(
             _digest("projection-C") if spec.cell_key.arm_id == "C" else None
         ),
         apply_receipt_sha256=_digest(f"apply-{spec.cell_key.arm_id}"),
     )
+
+
+def _declared_factory(factory) -> cli.NodeRuntimeFactory:
+    """Wrap a test double in the frozen, runtime-free node factory contract."""
+
+    return cast(cli.NodeRuntimeFactory, cli.declare_node_runtime_factory(factory))
 
 
 def test_dry_run_emits_a_zero_action_plan_without_opening_runtime(tmp_path) -> None:
@@ -163,6 +202,9 @@ def test_execute_passes_the_validated_spec_to_the_injected_runtime(
         cell_key=_spec().cell_key,
         shared_evidence=_spec().shared_evidence,
         objective_components=("trajectory",),
+        adamw_config_sha256=_spec().adamw_config_sha256,
+        fresh_optimizer_identity_sha256=_spec().fresh_optimizer_identity_sha256,
+        transaction_id=_digest("transaction-failed")[:32],
         before_transaction_digest=_digest("state"),
         after_transaction_digest=_digest("state"),
         status="failed",
@@ -225,6 +267,10 @@ def test_node_execute_acquires_once_runs_independent_cells_and_writes_one_termin
                     cell["cell_key"]["arm_id"],
                     acquisition_key=acquisition_key,
                     output_root=cell["output_root"],
+                    adamw_config_sha256=cell["adamw_config_sha256"],
+                    fresh_optimizer_identity_sha256=cell[
+                        "fresh_optimizer_identity_sha256"
+                    ],
                 )
                 for cell in selected_node["cells"]
             )
@@ -266,9 +312,7 @@ def test_node_execute_acquires_once_runs_independent_cells_and_writes_one_termin
             "--execute",
             "--user-model-gpu-authority",
         ],
-        node_runtime_factory=cast(
-            cli.NodeRuntimeFactory, lambda selected_node: runtime
-        ),
+        node_runtime_factory=_declared_factory(lambda selected_node: runtime),
         stdout=output,
     )
 
@@ -287,6 +331,13 @@ def test_node_execute_acquires_once_runs_independent_cells_and_writes_one_termin
     assert payload == runtime.terminals[0][1]
     assert payload["status"] == "succeeded"
     assert payload["retry_policy"] == "none"
+    terminal = NodeTerminalReceipt.from_dict(json.loads(json.dumps(payload)))
+    assert [spec.cell_key.arm_id for spec in terminal.cell_specs] == ["A", "B", "C"]
+    assert [item.cell_key.arm_id for item in terminal.cell_receipts] == ["A", "B", "C"]
+    assert len({spec.adamw_config_sha256 for spec in terminal.cell_specs}) == 1
+    assert (
+        len({spec.fresh_optimizer_identity_sha256 for spec in terminal.cell_specs}) == 3
+    )
 
 
 def test_node_execute_fails_closed_without_production_runtime_factory(tmp_path) -> None:
@@ -315,3 +366,240 @@ def test_node_execute_fails_closed_without_production_runtime_factory(tmp_path) 
             ],
             stdout=io.StringIO(),
         )
+
+
+def _node_runtime(plan_node: Mapping[str, Any], specs: tuple[CellSpec, ...]):
+    class NodeRuntime:
+        def __init__(self) -> None:
+            self.terminals: list[tuple[str, Mapping[str, Any]]] = []
+
+        def acquire_cell_specs(self, selected_node: Mapping[str, Any]):
+            return specs
+
+        def services_for_cell(self, spec: CellSpec) -> CellRuntimeServices:
+            return cast(CellRuntimeServices, object())
+
+        def write_cell_receipt(self, receipt: CellReceipt) -> None:
+            return None
+
+        def write_node_terminal_receipt(
+            self, path: str, payload: Mapping[str, Any]
+        ) -> None:
+            self.terminals.append((path, payload))
+
+    return NodeRuntime()
+
+
+def _node_argv(dag_path: str, node: Mapping[str, Any]) -> list[str]:
+    return [
+        "--dag-plan",
+        dag_path,
+        "--node-id",
+        node["node_id"],
+        "--receipt-path",
+        node["receipt_path"],
+        "--repo-root",
+        str(launcher.REPO_ROOT),
+        "--max-updates",
+        "1",
+        "--execute",
+        "--user-model-gpu-authority",
+    ]
+
+
+def _matrix_node(plan: dict[str, Any]) -> Mapping[str, Any]:
+    return next(
+        item for item in plan["acquisitions"] if item["node_id"] == "rp100:matrix_a"
+    )
+
+
+def _write_forged_dag_plan(tmp_path, mutate) -> tuple[str, dict[str, Any]]:
+    plan = launcher.build_dag_plan(
+        launcher.load_leaf_configs(),
+        run_id="forged",
+        output_root=tmp_path / "forged-artifacts",
+    )
+    mutate(plan)
+    path = tmp_path / "forged-dag-plan.json"
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    return str(path), plan
+
+
+def test_node_rejects_a_second_declared_adamw_config_in_its_dag(tmp_path) -> None:
+    def mutate(plan: dict[str, Any]) -> None:
+        _matrix_node(plan)["cells"][1]["adamw_config_sha256"] = _digest("second-config")
+
+    dag_path, plan = _write_forged_dag_plan(tmp_path, mutate)
+    node = _matrix_node(plan)
+
+    with pytest.raises(ValueError, match="one declared AdamW configuration"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(
+                lambda _: pytest.fail("opened a runtime for a forged node")
+            ),
+            stdout=io.StringIO(),
+        )
+
+
+def test_node_rejects_two_dag_cells_sharing_one_optimizer_identity(tmp_path) -> None:
+    def mutate(plan: dict[str, Any]) -> None:
+        cells = _matrix_node(plan)["cells"]
+        cells[1]["fresh_optimizer_identity_sha256"] = cells[0][
+            "fresh_optimizer_identity_sha256"
+        ]
+
+    dag_path, plan = _write_forged_dag_plan(tmp_path, mutate)
+    node = _matrix_node(plan)
+
+    with pytest.raises(ValueError, match="independent fresh optimizer identity"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(
+                lambda _: pytest.fail("opened a runtime for a forged node")
+            ),
+            stdout=io.StringIO(),
+        )
+
+
+def test_node_accepts_one_shared_config_with_independent_optimizer_identities(
+    tmp_path, monkeypatch
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = _matrix_node(plan)
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+    specs = tuple(
+        _spec(
+            cell["cell_key"]["arm_id"],
+            acquisition_key=acquisition_key,
+            output_root=cell["output_root"],
+            adamw_config_sha256=cell["adamw_config_sha256"],
+            fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+        )
+        for cell in node["cells"]
+    )
+    runtime = _node_runtime(node, specs)
+    monkeypatch.setattr(cli, "run_cell", lambda spec, **_: _success_receipt(spec))
+    output = io.StringIO()
+
+    assert (
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(lambda _: runtime),
+            stdout=output,
+        )
+        == 0
+    )
+    terminal = NodeTerminalReceipt.from_dict(json.loads(output.getvalue()))
+    assert len({spec.adamw_config_sha256 for spec in terminal.cell_specs}) == 1
+    assert (
+        len({spec.fresh_optimizer_identity_sha256 for spec in terminal.cell_specs}) == 3
+    )
+
+
+def test_node_rejects_a_trajectory_objective_that_differs_across_its_arms(
+    tmp_path, monkeypatch
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = _matrix_node(plan)
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+    specs = []
+    for cell in node["cells"]:
+        arm_id = cell["cell_key"]["arm_id"]
+        spec = _spec(
+            arm_id,
+            acquisition_key=acquisition_key,
+            output_root=cell["output_root"],
+            adamw_config_sha256=cell["adamw_config_sha256"],
+            fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+        )
+        if arm_id == "C":
+            spec = replace(
+                spec,
+                objective_component_hashes=_component_hashes("C", "drifted"),
+            )
+        specs.append(spec)
+    runtime = _node_runtime(node, tuple(specs))
+    monkeypatch.setattr(cli, "run_cell", lambda spec, **_: _success_receipt(spec))
+
+    with pytest.raises(ValueError, match="trajectory objective"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(lambda _: runtime),
+            stdout=io.StringIO(),
+        )
+
+
+def test_node_execute_rejects_a_factory_without_the_frozen_contract(tmp_path) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = _matrix_node(plan)
+
+    with pytest.raises(ValueError, match="frozen node runtime contract"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=cast(cli.NodeRuntimeFactory, lambda _: object()),
+            stdout=io.StringIO(),
+        )
+
+
+def test_node_execute_rejects_a_declared_but_absent_factory_reference(
+    tmp_path,
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = _matrix_node(plan)
+
+    with pytest.raises(ModuleNotFoundError):
+        cli.run_cli(
+            [
+                *_node_argv(dag_path, node),
+                "--runtime-factory",
+                "project.runtime:create_node_runtime",
+            ],
+            stdout=io.StringIO(),
+        )
+
+
+def test_factory_contract_inspection_is_declared_only_for_a_placeholder() -> None:
+    assert cli.inspect_runtime_factory(None)["status"] == "absent"
+    declared = cli.inspect_runtime_factory("project.runtime:create_node_runtime")
+    assert declared["status"] == "factory_declared"
+    assert "ModuleNotFoundError" in declared["detail"]
+
+
+def test_failed_node_terminal_still_persists_its_acquired_specs(
+    tmp_path, monkeypatch
+) -> None:
+    dag_path, plan = _write_dag_plan(tmp_path)
+    node = _matrix_node(plan)
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+    specs = tuple(
+        _spec(
+            cell["cell_key"]["arm_id"],
+            acquisition_key=acquisition_key,
+            output_root=cell["output_root"],
+            adamw_config_sha256=cell["adamw_config_sha256"],
+            fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+        )
+        for cell in node["cells"]
+    )
+    runtime = _node_runtime(node, specs)
+
+    def failing_run_cell(spec, **_kwargs):
+        if spec.cell_key.arm_id == "B":
+            raise RuntimeError("injected cell failure")
+        return _success_receipt(spec)
+
+    monkeypatch.setattr(cli, "run_cell", failing_run_cell)
+
+    with pytest.raises(RuntimeError, match="injected cell failure"):
+        cli.run_cli(
+            _node_argv(dag_path, node),
+            node_runtime_factory=_declared_factory(lambda _: runtime),
+            stdout=io.StringIO(),
+        )
+
+    terminal = NodeTerminalReceipt.from_dict(runtime.terminals[0][1])
+    assert terminal.status == "failed"
+    assert [spec.cell_key.arm_id for spec in terminal.cell_specs] == ["A", "B", "C"]
+    assert [item.cell_key.arm_id for item in terminal.cell_receipts] == ["A"]
+    assert "injected cell failure" in (terminal.failure_reason or "")

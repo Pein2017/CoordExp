@@ -24,6 +24,8 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     CellKey,
     CellReceipt,
     CellSpec,
+    NodeTerminalReceipt,
+    validate_node_cell_specs,
 )
 from scripts.research.human13_rp_crossover_runtime import (
     CellRuntimeServices,
@@ -33,7 +35,10 @@ from scripts.research import launch_human13_k_trajectory_rp_crossover as launche
 
 
 NODE_DRY_RUN_SCHEMA = "human13_rp_crossover_node_dry_run.v1"
-NODE_TERMINAL_RECEIPT_SCHEMA = "human13_rp_crossover_node_terminal_receipt.v1"
+NODE_RUNTIME_FACTORY_CONTRACT = "human13_rp_crossover_node_runtime_factory.v1"
+FACTORY_STATUS_ABSENT = "absent"
+FACTORY_STATUS_DECLARED = "factory_declared"
+FACTORY_STATUS_READY = "execution_ready"
 _COMPONENTS_BY_ARM = {
     "A": ("trajectory",),
     "B": ("trajectory", "compiler"),
@@ -58,6 +63,79 @@ class NodeRuntimeServices(Protocol):
 
 
 NodeRuntimeFactory = Callable[[Mapping[str, Any]], NodeRuntimeServices]
+
+
+def node_runtime_factory_plan_contract() -> dict[str, Any]:
+    """The frozen, runtime-free contract every node runtime factory declares.
+
+    Reading it must not load a model, allocate a GPU, or touch an artifact: it
+    is the cheapest honest evidence that a ``module:callable`` reference is a
+    real node runtime factory rather than a syntactically valid placeholder.
+    """
+
+    return {
+        "schema_version": NODE_RUNTIME_FACTORY_CONTRACT,
+        "arms": list(ARM_IDS),
+        "evaluation_rps": list(EVALUATION_RPS),
+        "max_updates": 1,
+        "retry_policy": "none",
+        "world_size": 1,
+        "requires_user_model_gpu_authority": True,
+        "actions": {key: 0 for key in DRY_RUN_COUNTER_KEYS},
+    }
+
+
+def declare_node_runtime_factory(factory: Any) -> Any:
+    """Attach the frozen node runtime factory contract to a real factory."""
+
+    if not callable(factory):
+        raise TypeError("a node runtime factory must be callable")
+    factory.node_runtime_factory_contract = NODE_RUNTIME_FACTORY_CONTRACT
+    factory.plan_contract = node_runtime_factory_plan_contract
+    return factory
+
+
+def validate_node_runtime_factory(factory: Any) -> NodeRuntimeFactory:
+    """Fail closed unless the factory declares the frozen runtime-free contract."""
+
+    if not callable(factory):
+        raise TypeError("runtime_factory reference is not callable")
+    if (
+        getattr(factory, "node_runtime_factory_contract", None)
+        != NODE_RUNTIME_FACTORY_CONTRACT
+    ):
+        raise ValueError(
+            "runtime factory does not declare the frozen node runtime contract"
+        )
+    plan_contract = getattr(factory, "plan_contract", None)
+    if not callable(plan_contract):
+        raise ValueError(
+            "runtime factory must expose a runtime-free plan_contract() callable"
+        )
+    declared = plan_contract()
+    if not isinstance(declared, Mapping) or dict(declared) != (
+        node_runtime_factory_plan_contract()
+    ):
+        raise ValueError(
+            "runtime factory plan contract differs from the frozen node contract"
+        )
+    return cast(NodeRuntimeFactory, factory)
+
+
+def inspect_runtime_factory(reference: str | None) -> dict[str, Any]:
+    """Report whether a factory reference is only declared or truly importable."""
+
+    if reference is None:
+        return {"reference": None, "status": FACTORY_STATUS_ABSENT, "detail": None}
+    try:
+        _resolve_runtime_factory(reference)
+    except Exception as error:  # a placeholder reference is never ready
+        return {
+            "reference": reference,
+            "status": FACTORY_STATUS_DECLARED,
+            "detail": f"{type(error).__name__}: {error}",
+        }
+    return {"reference": reference, "status": FACTORY_STATUS_READY, "detail": None}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -143,6 +221,11 @@ def _validate_node_plan(
     acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
     if node.get("acquisition_key_sha256") != acquisition_key.content_sha256:
         raise ValueError("selected node acquisition identity differs")
+    if (
+        tuple(node.get("seeds", ())) != acquisition_key.seeds
+        or node.get("training_rp") != acquisition_key.training_rp
+    ):
+        raise ValueError("selected node sealed seed identity differs")
     phase = node.get("phase")
     expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",)
     if phase not in {PHASE_MATRIX, PHASE_QUALIFICATION}:
@@ -160,6 +243,10 @@ def _validate_node_plan(
             raise ValueError("selected node cell digest differs")
         if tuple(cell.get("objective_components", ())) != _COMPONENTS_BY_ARM[arm_id]:
             raise ValueError("selected node objective components differ")
+        if not cell.get("adamw_config_sha256") or not cell.get(
+            "fresh_optimizer_identity_sha256"
+        ):
+            raise ValueError("selected node cell optimizer identities are missing")
         if (
             cell.get("shared_evidence_group_sha256") != acquisition_key.content_sha256
             or cell.get("source") != "fresh"
@@ -170,6 +257,15 @@ def _validate_node_plan(
             or tuple(cell.get("evaluation_rps", ())) != EVALUATION_RPS
         ):
             raise ValueError("selected node cell execution contract differs")
+    if len({cell["adamw_config_sha256"] for cell in cells}) != 1:
+        raise ValueError(
+            "selected node cells must bind one declared AdamW configuration identity"
+        )
+    optimizer_identities = [cell["fresh_optimizer_identity_sha256"] for cell in cells]
+    if len(set(optimizer_identities)) != len(optimizer_identities):
+        raise ValueError(
+            "selected node cells must have an independent fresh optimizer identity"
+        )
     return node
 
 
@@ -199,10 +295,19 @@ def build_node_dry_run_plan(node: Mapping[str, Any]) -> dict[str, object]:
 def _validate_acquired_specs(
     node: Mapping[str, Any], specs: Sequence[CellSpec]
 ) -> tuple[CellSpec, ...]:
+    """Admit exactly the cells this sealed node planned, with their identities.
+
+    Node-level relations (one shared acquisition evidence, one declared AdamW
+    configuration, per-cell optimizer identities, and the nested objective byte
+    identities) are delegated to the shared contract validator, so the runner
+    and the durable node terminal cannot disagree.
+    """
+
     bound = tuple(specs)
     planned_cells = tuple(node["cells"])
     if len(bound) != len(planned_cells):
         raise ValueError("acquired CellSpecs do not cover the selected node exactly")
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
     for spec, planned in zip(bound, planned_cells, strict=True):
         if not isinstance(spec, CellSpec) or CellSpec.from_dict(spec.to_dict()) != spec:
             raise ValueError("node runtime must return canonical CellSpec records")
@@ -214,15 +319,19 @@ def _validate_acquired_specs(
             != tuple(planned["objective_components"])
         ):
             raise ValueError("acquired CellSpec differs from the selected sealed cell")
-    if len({spec.shared_evidence.content_sha256 for spec in bound}) != 1:
-        raise ValueError("all node CellSpecs must share one acquired evidence identity")
-    if len({spec.source_checkpoint_sha256 for spec in bound}) != 1:
-        raise ValueError(
-            "all node CellSpecs must begin from one Source checkpoint identity"
-        )
-    if len({spec.fresh_adamw_fingerprint_sha256 for spec in bound}) != 1:
-        raise ValueError("all node CellSpecs must bind one fresh AdamW contract")
-    return bound
+        if spec.shared_evidence.seeds != acquisition_key.seeds:
+            raise ValueError(
+                "acquired evidence seeds differ from the sealed acquisition"
+            )
+        if (
+            spec.adamw_config_sha256 != planned["adamw_config_sha256"]
+            or spec.fresh_optimizer_identity_sha256
+            != planned["fresh_optimizer_identity_sha256"]
+        ):
+            raise ValueError(
+                "acquired CellSpec optimizer identities differ from the sealed cell"
+            )
+    return validate_node_cell_specs(acquisition_key, node["phase"], bound)
 
 
 def _resolve_runtime_factory(reference: str) -> NodeRuntimeFactory:
@@ -230,9 +339,7 @@ def _resolve_runtime_factory(reference: str) -> NodeRuntimeFactory:
     if not separator or not module_name or not attribute:
         raise ValueError("runtime_factory must use module:callable syntax")
     factory = getattr(importlib.import_module(module_name), attribute)
-    if not callable(factory):
-        raise TypeError("runtime_factory reference is not callable")
-    return cast(NodeRuntimeFactory, factory)
+    return validate_node_runtime_factory(factory)
 
 
 def _execute_node(
@@ -241,7 +348,15 @@ def _execute_node(
     receipt_path: str,
     runtime_factory: NodeRuntimeFactory,
 ) -> dict[str, Any]:
+    """Run one acquisition node and persist exactly one typed terminal receipt.
+
+    The terminal carries the exact typed ``CellSpec`` records this node
+    acquired next to their ``CellReceipt`` outcomes, so the aggregate publisher
+    never has to re-derive what was actually run.
+    """
+
     runtime = runtime_factory(node)
+    specs: tuple[CellSpec, ...] = ()
     receipts: list[CellReceipt] = []
     failure: BaseException | None = None
     try:
@@ -261,18 +376,17 @@ def _execute_node(
     except BaseException as error:
         failure = error
 
-    terminal = {
-        "schema_version": NODE_TERMINAL_RECEIPT_SCHEMA,
-        "node_id": node["node_id"],
-        "phase": node["phase"],
-        "acquisition_key_sha256": node["acquisition_key_sha256"],
-        "status": "failed" if failure is not None else "succeeded",
-        "cell_receipts": [receipt.to_dict() for receipt in receipts],
-        "retry_policy": "none",
-        "failure_reason": (
+    terminal = NodeTerminalReceipt(
+        node_id=node["node_id"],
+        phase=node["phase"],
+        acquisition_key=AcquisitionKey.from_dict(node["acquisition_key"]),
+        status="failed" if failure is not None else "succeeded",
+        cell_specs=specs,
+        cell_receipts=tuple(receipts),
+        failure_reason=(
             None if failure is None else f"{type(failure).__name__}: {failure}"
         ),
-    }
+    ).to_dict()
     runtime.write_node_terminal_receipt(receipt_path, terminal)
     if failure is not None:
         raise failure
@@ -333,7 +447,11 @@ def run_cli(
                 raise PermissionError("execute requires explicit model/GPU authority")
             if node_runtime_factory is not None and args.runtime_factory is not None:
                 raise ValueError("runtime factory was provided twice")
-            factory = node_runtime_factory
+            factory = (
+                None
+                if node_runtime_factory is None
+                else validate_node_runtime_factory(node_runtime_factory)
+            )
             if factory is None and args.runtime_factory is not None:
                 factory = _resolve_runtime_factory(args.runtime_factory)
             if factory is None:

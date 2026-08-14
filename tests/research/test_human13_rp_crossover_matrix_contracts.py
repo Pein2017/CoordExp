@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 import hashlib
 import json
 
@@ -9,11 +9,13 @@ import pytest
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     ARM_IDS,
     CANONICAL_IMAGE_IDS,
+    CANONICAL_SEED_GROUPS,
     DRY_RUN_COUNTER_KEYS,
     EVALUATION_RPS,
     MATRIX_SEED_GROUPS,
     PHASE_MATRIX,
     PHASE_QUALIFICATION,
+    PROPOSAL_COMPONENTS_BY_ARM,
     QUALIFICATION_SEED_GROUP,
     TRAINING_RPS,
     AcquisitionKey,
@@ -22,8 +24,11 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     CellReceipt,
     CellSpec,
     MatrixPlan,
+    NodeTerminalReceipt,
     SharedEvidenceRef,
     SourceBaselineRef,
+    canonical_seeds,
+    validate_matrix_receipts,
 )
 
 
@@ -38,25 +43,65 @@ def _digest(label: str) -> str:
     return hashlib.sha256(label.encode("utf-8")).hexdigest()
 
 
-def _shared_evidence(*, training_rp: float, seed_group_id: str) -> SharedEvidenceRef:
-    tag = f"{training_rp}:{seed_group_id}"
+SOURCE_SHA256 = _digest("source-checkpoint")
+MANIFEST_SHA256 = _digest("manifest")
+ADAMW_CONFIG_SHA256 = _digest("frozen-adamw-config")
+
+
+def _shared_evidence(
+    *,
+    training_rp: float,
+    seed_group_id: str,
+    acquisition_tag: str | None = None,
+) -> SharedEvidenceRef:
+    tag = acquisition_tag or f"{training_rp}:{seed_group_id}"
     return SharedEvidenceRef(
-        source_sha256=_digest(f"source:{tag}"),
-        manifest_sha256=_digest(f"manifest:{tag}"),
+        source_sha256=SOURCE_SHA256,
+        manifest_sha256=MANIFEST_SHA256,
         acquisition_path=f"/artifacts/{tag}/acquisition.json",
         acquisition_sha256=_digest(f"acquisition:{tag}"),
         trajectory_credit_acquisition_sha256=_digest(f"credit-acq:{tag}"),
         credit_ledger_sha256=_digest(f"credit-ledger:{tag}"),
         compiler_ledger_sha256=_digest(f"compiler-ledger:{tag}"),
-        policy_contract_sha256=_digest(f"policy:{tag}"),
+        policy_contract_sha256=_digest(f"policy:{training_rp}"),
+        native_receipts_sha256=_digest(f"native-receipts:{tag}"),
+        training_rp=training_rp,
+        seed_group_id=seed_group_id,
+        seeds=canonical_seeds(seed_group_id),
     )
 
 
 def _acquisition_key(
-    *, training_rp: float, seed_group_id: str, phase: str = PHASE_MATRIX
+    *,
+    training_rp: float,
+    seed_group_id: str,
+    phase: str = PHASE_MATRIX,
+    seeds: tuple[int, ...] | None = None,
 ) -> AcquisitionKey:
     return AcquisitionKey(
-        training_rp=training_rp, seed_group_id=seed_group_id, phase=phase
+        training_rp=training_rp,
+        seed_group_id=seed_group_id,
+        phase=phase,
+        seeds=seeds,
+    )
+
+
+def _component_hashes(
+    *,
+    arm_id: str,
+    training_rp: float,
+    seed_group_id: str,
+    trajectory_tag: str | None = None,
+    compiler_tag: str | None = None,
+) -> tuple[tuple[str, str], ...]:
+    group = f"{training_rp}:{seed_group_id}"
+    values = {
+        "trajectory": _digest(f"trajectory:{trajectory_tag or group}"),
+        "compiler": _digest(f"compiler:{compiler_tag or group}"),
+    }
+    return tuple(
+        (component, values[component])
+        for component in PROPOSAL_COMPONENTS_BY_ARM[arm_id]
     )
 
 
@@ -65,8 +110,11 @@ def _cell_spec(
     acquisition: AcquisitionKey,
     arm_id: str,
     shared_evidence: SharedEvidenceRef,
-    proposal_tag: str | None = None,
+    optimizer_tag: str | None = None,
     root_tag: str | None = None,
+    config_tag: str | None = None,
+    adamw_config_sha256: str = ADAMW_CONFIG_SHA256,
+    objective_component_hashes: tuple[tuple[str, str], ...] | None = None,
 ) -> CellSpec:
     tag = f"{acquisition.training_rp}:{acquisition.seed_group_id}:{arm_id}"
     components = {
@@ -77,10 +125,22 @@ def _cell_spec(
     return CellSpec(
         cell_key=CellKey(acquisition_key=acquisition, arm_id=arm_id),
         shared_evidence=shared_evidence,
-        leaf_config_sha256=_digest(f"leaf-config:{tag}"),
-        source_checkpoint_sha256=_digest(f"checkpoint:{tag}"),
+        leaf_config_sha256=_digest(
+            f"leaf-config:{config_tag or f'{acquisition.training_rp}:{arm_id}'}"
+        ),
+        source_checkpoint_sha256=SOURCE_SHA256,
         expected_objective_components=components,
-        fresh_adamw_fingerprint_sha256=_digest(f"proposal:{proposal_tag or tag}"),
+        objective_component_hashes=(
+            objective_component_hashes
+            if objective_component_hashes is not None
+            else _component_hashes(
+                arm_id=arm_id,
+                training_rp=acquisition.training_rp,
+                seed_group_id=acquisition.seed_group_id,
+            )
+        ),
+        adamw_config_sha256=adamw_config_sha256,
+        fresh_optimizer_identity_sha256=_digest(f"optimizer:{optimizer_tag or tag}"),
         evaluation_rps=EVALUATION_RPS,
         output_root=f"/roots/{root_tag or tag}",
     )
@@ -92,7 +152,7 @@ def _source_baseline(evaluation_rp: float) -> SourceBaselineRef:
         evaluation_rp=evaluation_rp,
         output_a_sha256=output,
         output_b_sha256=output,
-        checkpoint_sha256=_digest(f"source-checkpoint:{evaluation_rp}"),
+        checkpoint_sha256=SOURCE_SHA256,
         image_ids=CANONICAL_IMAGE_IDS,
     )
 
@@ -175,22 +235,98 @@ def _canonical_matrix_plan(
     )
 
 
-def _canonical_cell_receipt(cell: CellSpec, *, tag: str) -> CellReceipt:
+def _transaction_id(tag: str) -> str:
+    return _digest(f"transaction-id:{tag}")[:32]
+
+
+def _proposal_delta(cell: CellSpec) -> str:
+    """B and C measure the same base AdamW proposal; A measures its own."""
+
+    acquisition = cell.cell_key.acquisition_key
+    stage = "a" if cell.cell_key.arm_id == "A" else "bc"
+    return _digest(
+        f"proposal-delta:{acquisition.training_rp}:{acquisition.seed_group_id}:{stage}"
+    )
+
+
+def _canonical_cell_receipt(
+    cell: CellSpec,
+    *,
+    tag: str,
+    proposal_delta_sha256: str | None = None,
+    transaction_id: str | None = None,
+) -> CellReceipt:
     arm_id = cell.cell_key.arm_id
     requires_projection = arm_id == "C"
     return CellReceipt(
         cell_key=cell.cell_key,
         shared_evidence=cell.shared_evidence,
         objective_components=cell.expected_objective_components,
+        objective_component_hashes=cell.objective_component_hashes,
+        adamw_config_sha256=cell.adamw_config_sha256,
+        fresh_optimizer_identity_sha256=cell.fresh_optimizer_identity_sha256,
+        transaction_id=transaction_id or _transaction_id(tag),
         before_transaction_digest=_digest(f"transaction:{tag}"),
         after_transaction_digest=_digest(f"transaction:{tag}"),
         status="succeeded",
         audits=(_audit_ref(1.0, tag=tag), _audit_ref(1.10, tag=tag)),
         adamw_proposal_sha256=_digest(f"adamw-proposal:{tag}"),
+        proposal_delta_sha256=proposal_delta_sha256 or _proposal_delta(cell),
         projection_receipt_sha256=_digest(f"projection:{tag}")
         if requires_projection
         else None,
         apply_receipt_sha256=_digest(f"apply:{tag}"),
+    )
+
+
+def _canonical_receipts(plan: MatrixPlan) -> tuple[CellReceipt, ...]:
+    return tuple(
+        _canonical_cell_receipt(
+            cell,
+            tag=(
+                f"{cell.cell_key.acquisition_key.training_rp}:"
+                f"{cell.cell_key.acquisition_key.seed_group_id}:{cell.cell_key.arm_id}"
+            ),
+        )
+        for cell in plan.cells
+    )
+
+
+def _node_terminal(
+    acquisition: AcquisitionKey,
+    *,
+    arm_ids: tuple[str, ...] = ARM_IDS,
+    status: str = "succeeded",
+    failure_reason: str | None = None,
+    receipt_count: int | None = None,
+) -> NodeTerminalReceipt:
+    shared = _shared_evidence(
+        training_rp=acquisition.training_rp, seed_group_id=acquisition.seed_group_id
+    )
+    specs = tuple(
+        _cell_spec(acquisition=acquisition, arm_id=arm_id, shared_evidence=shared)
+        for arm_id in arm_ids
+    )
+    receipts = tuple(
+        _canonical_cell_receipt(
+            cell,
+            tag=(
+                f"{acquisition.training_rp}:{acquisition.seed_group_id}:"
+                f"{cell.cell_key.arm_id}"
+            ),
+        )
+        for cell in specs
+    )
+    if receipt_count is not None:
+        receipts = receipts[:receipt_count]
+    return NodeTerminalReceipt(
+        node_id=f"{acquisition.training_rp}:{acquisition.seed_group_id}",
+        phase=acquisition.phase,
+        acquisition_key=acquisition,
+        status=status,
+        cell_specs=specs,
+        cell_receipts=receipts,
+        failure_reason=failure_reason,
     )
 
 
@@ -268,15 +404,9 @@ def test_cell_key_round_trips_through_dict() -> None:
 
 def test_shared_evidence_rejects_non_digest_field() -> None:
     with pytest.raises(ValueError, match="source_sha256"):
-        SharedEvidenceRef(
+        replace(
+            _shared_evidence(training_rp=1.0, seed_group_id="matrix_a"),
             source_sha256="not-a-digest",
-            manifest_sha256=_digest("m"),
-            acquisition_path="/a",
-            acquisition_sha256=_digest("a"),
-            trajectory_credit_acquisition_sha256=_digest("t"),
-            credit_ledger_sha256=_digest("c"),
-            compiler_ledger_sha256=_digest("g"),
-            policy_contract_sha256=_digest("p"),
         )
 
 
@@ -331,85 +461,109 @@ def test_source_baseline_rejects_off_canonical_evaluation_rp() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cell_spec_rejects_compiler_component_on_arm_a() -> None:
+def _cell_spec_kwargs(arm_id: str = "A") -> dict[str, object]:
     acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
     shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
+    components = {
+        "A": ("trajectory",),
+        "B": ("trajectory", "compiler"),
+        "C": ("trajectory", "compiler", "preservation"),
+    }[arm_id]
+    return {
+        "cell_key": CellKey(acquisition_key=acquisition, arm_id=arm_id),
+        "shared_evidence": shared,
+        "leaf_config_sha256": _digest("leaf"),
+        "source_checkpoint_sha256": SOURCE_SHA256,
+        "expected_objective_components": components,
+        "objective_component_hashes": _component_hashes(
+            arm_id=arm_id, training_rp=1.0, seed_group_id="matrix_a"
+        ),
+        "adamw_config_sha256": ADAMW_CONFIG_SHA256,
+        "fresh_optimizer_identity_sha256": _digest("optimizer"),
+        "evaluation_rps": EVALUATION_RPS,
+        "output_root": f"/roots/{arm_id.lower()}",
+    }
+
+
+def test_cell_spec_rejects_compiler_component_on_arm_a() -> None:
     with pytest.raises(ValueError, match="expected_objective_components"):
         CellSpec(
-            cell_key=CellKey(acquisition_key=acquisition, arm_id="A"),
-            shared_evidence=shared,
-            leaf_config_sha256=_digest("leaf"),
-            source_checkpoint_sha256=_digest("checkpoint"),
-            expected_objective_components=("trajectory", "compiler"),
-            fresh_adamw_fingerprint_sha256=_digest("proposal"),
-            evaluation_rps=EVALUATION_RPS,
-            output_root="/roots/a",
+            **{
+                **_cell_spec_kwargs("A"),
+                "expected_objective_components": ("trajectory", "compiler"),
+            }
         )
 
 
 def test_cell_spec_rejects_missing_preservation_component_on_arm_c() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
     with pytest.raises(ValueError, match="expected_objective_components"):
         CellSpec(
-            cell_key=CellKey(acquisition_key=acquisition, arm_id="C"),
-            shared_evidence=shared,
-            leaf_config_sha256=_digest("leaf"),
-            source_checkpoint_sha256=_digest("checkpoint"),
-            expected_objective_components=("trajectory", "compiler"),
-            fresh_adamw_fingerprint_sha256=_digest("proposal"),
-            evaluation_rps=EVALUATION_RPS,
-            output_root="/roots/c",
+            **{
+                **_cell_spec_kwargs("C"),
+                "expected_objective_components": ("trajectory", "compiler"),
+            }
         )
 
 
 def test_cell_spec_rejects_second_update() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
     with pytest.raises(ValueError, match="max_updates"):
-        CellSpec(
-            cell_key=CellKey(acquisition_key=acquisition, arm_id="A"),
-            shared_evidence=shared,
-            leaf_config_sha256=_digest("leaf"),
-            source_checkpoint_sha256=_digest("checkpoint"),
-            expected_objective_components=("trajectory",),
-            fresh_adamw_fingerprint_sha256=_digest("proposal"),
-            evaluation_rps=EVALUATION_RPS,
-            output_root="/roots/a",
-            max_updates=2,
-        )
+        CellSpec(**{**_cell_spec_kwargs("A"), "max_updates": 2})
 
 
 def test_cell_spec_rejects_adaptive_retry_policy() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
     with pytest.raises(ValueError, match="retry_policy"):
-        CellSpec(
-            cell_key=CellKey(acquisition_key=acquisition, arm_id="A"),
-            shared_evidence=shared,
-            leaf_config_sha256=_digest("leaf"),
-            source_checkpoint_sha256=_digest("checkpoint"),
-            expected_objective_components=("trajectory",),
-            fresh_adamw_fingerprint_sha256=_digest("proposal"),
-            evaluation_rps=EVALUATION_RPS,
-            output_root="/roots/a",
-            retry_policy="on_failure",
-        )
+        CellSpec(**{**_cell_spec_kwargs("A"), "retry_policy": "on_failure"})
 
 
 def test_cell_spec_rejects_single_evaluation_rp() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
     with pytest.raises(ValueError, match="evaluation RPs"):
+        CellSpec(**{**_cell_spec_kwargs("A"), "evaluation_rps": (1.0,)})
+
+
+def test_cell_spec_rejects_objective_hashes_outside_the_arm_proposal_surface() -> None:
+    with pytest.raises(ValueError, match="objective_component_hashes"):
         CellSpec(
-            cell_key=CellKey(acquisition_key=acquisition, arm_id="A"),
-            shared_evidence=shared,
-            leaf_config_sha256=_digest("leaf"),
-            source_checkpoint_sha256=_digest("checkpoint"),
-            expected_objective_components=("trajectory",),
-            fresh_adamw_fingerprint_sha256=_digest("proposal"),
-            evaluation_rps=(1.0,),
-            output_root="/roots/a",
+            **{
+                **_cell_spec_kwargs("A"),
+                "objective_component_hashes": (
+                    ("trajectory", _digest("trajectory")),
+                    ("compiler", _digest("compiler")),
+                ),
+            }
+        )
+
+
+def test_cell_spec_rejects_evidence_from_a_different_seed_group() -> None:
+    with pytest.raises(ValueError, match="seed group"):
+        CellSpec(
+            **{
+                **_cell_spec_kwargs("A"),
+                "shared_evidence": _shared_evidence(
+                    training_rp=1.0, seed_group_id="matrix_b"
+                ),
+            }
+        )
+
+
+def test_cell_spec_rejects_evidence_from_a_different_training_rp() -> None:
+    with pytest.raises(ValueError, match="training RP"):
+        CellSpec(
+            **{
+                **_cell_spec_kwargs("A"),
+                "shared_evidence": _shared_evidence(
+                    training_rp=1.10, seed_group_id="matrix_a"
+                ),
+            }
+        )
+
+
+def test_cell_spec_rejects_a_source_checkpoint_outside_its_evidence() -> None:
+    with pytest.raises(ValueError, match="Source checkpoint"):
+        CellSpec(
+            **{
+                **_cell_spec_kwargs("A"),
+                "source_checkpoint_sha256": _digest("other-source"),
+            }
         )
 
 
@@ -443,183 +597,137 @@ def test_audit_ref_rejects_wrong_row_count() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _cell_receipt_kwargs(arm_id: str = "A") -> dict[str, object]:
+    spec = CellSpec(**_cell_spec_kwargs(arm_id))  # type: ignore[arg-type]
+    return {
+        "cell_key": spec.cell_key,
+        "shared_evidence": spec.shared_evidence,
+        "objective_components": spec.expected_objective_components,
+        "objective_component_hashes": spec.objective_component_hashes,
+        "adamw_config_sha256": spec.adamw_config_sha256,
+        "fresh_optimizer_identity_sha256": spec.fresh_optimizer_identity_sha256,
+        "transaction_id": _transaction_id("x"),
+        "before_transaction_digest": _digest("t"),
+        "after_transaction_digest": _digest("t"),
+        "status": "succeeded",
+        "audits": (_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
+        "adamw_proposal_sha256": _digest("proposal"),
+        "proposal_delta_sha256": _digest("proposal-delta"),
+        "apply_receipt_sha256": _digest("apply"),
+        "projection_receipt_sha256": (_digest("projection") if arm_id == "C" else None),
+    }
+
+
 def test_cell_receipt_rejects_transaction_asymmetry() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="restore the pre-proposal transaction state"):
         CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("before"),
-            after_transaction_digest=_digest("after"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
+            **{
+                **_cell_receipt_kwargs("A"),
+                "before_transaction_digest": _digest("before"),
+                "after_transaction_digest": _digest("after"),
+            }
         )
 
 
 def test_cell_receipt_rejects_single_rp_audit() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="exactly one audit per evaluation RP"):
         CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"),),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
+            **{**_cell_receipt_kwargs("A"), "audits": (_audit_ref(1.0, tag="x"),)}
         )
 
 
 def test_cell_receipt_rejects_duplicate_rp_audit() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="duplicate"):
         CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.0, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
+            **{
+                **_cell_receipt_kwargs("A"),
+                "audits": (_audit_ref(1.0, tag="x"), _audit_ref(1.0, tag="x")),
+            }
         )
 
 
 def test_cell_receipt_rejects_projection_evidence_on_non_preservation_arm() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="only the preservation arm"):
         CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
-            projection_receipt_sha256=_digest("projection"),
+            **{
+                **_cell_receipt_kwargs("A"),
+                "projection_receipt_sha256": _digest("projection"),
+            }
         )
 
 
 def test_cell_receipt_requires_projection_evidence_on_preservation_arm() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="C")
     with pytest.raises(ValueError, match="projection evidence"):
-        CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory", "compiler", "preservation"),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
-        )
+        CellReceipt(**{**_cell_receipt_kwargs("C"), "projection_receipt_sha256": None})
 
 
 def test_cell_receipt_rejects_second_update() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="update_count"):
-        CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
-            update_count=2,
-        )
+        CellReceipt(**{**_cell_receipt_kwargs("A"), "update_count": 2})
 
 
 def test_cell_receipt_rejects_retry_policy_change() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="retry_policy"):
-        CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
-            retry_policy="retry_once",
-        )
+        CellReceipt(**{**_cell_receipt_kwargs("A"), "retry_policy": "retry_once"})
 
 
 def test_cell_receipt_rejects_rollback_not_confirmed() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="rollback_confirmed"):
+        CellReceipt(**{**_cell_receipt_kwargs("A"), "rollback_confirmed": False})
+
+
+def test_cell_receipt_rejects_objective_hashes_outside_the_arm_surface() -> None:
+    with pytest.raises(ValueError, match="objective_component_hashes"):
         CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="succeeded",
-            audits=(_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-            adamw_proposal_sha256=_digest("proposal"),
-            apply_receipt_sha256=_digest("apply"),
-            rollback_confirmed=False,
+            **{
+                **_cell_receipt_kwargs("A"),
+                "objective_component_hashes": (
+                    ("trajectory", _digest("trajectory")),
+                    ("compiler", _digest("compiler")),
+                ),
+            }
         )
 
 
+def test_cell_receipt_requires_its_measured_proposal_delta_on_success() -> None:
+    with pytest.raises(ValueError, match="proposal delta"):
+        CellReceipt(**{**_cell_receipt_kwargs("A"), "proposal_delta_sha256": None})
+
+
+def test_cell_receipt_rejects_an_untyped_transaction_identity() -> None:
+    with pytest.raises(ValueError, match="transaction_id"):
+        CellReceipt(**{**_cell_receipt_kwargs("A"), "transaction_id": "not-a-uuid"})
+
+
 def test_cell_receipt_failed_status_requires_failure_reason() -> None:
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     with pytest.raises(ValueError, match="failure_reason"):
         CellReceipt(
-            cell_key=cell_key,
-            shared_evidence=shared,
-            objective_components=("trajectory",),
-            before_transaction_digest=_digest("t"),
-            after_transaction_digest=_digest("t"),
-            status="failed",
+            **{
+                **_cell_receipt_kwargs("A"),
+                "status": "failed",
+                "audits": (),
+                "adamw_proposal_sha256": None,
+                "proposal_delta_sha256": None,
+                "apply_receipt_sha256": None,
+                "objective_component_hashes": (),
+            }
         )
 
 
 def test_cell_receipt_failed_status_still_requires_transaction_symmetry_and_rollback() -> (
     None
 ):
-    acquisition = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
-    shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
-    cell_key = CellKey(acquisition_key=acquisition, arm_id="A")
     receipt = CellReceipt(
-        cell_key=cell_key,
-        shared_evidence=shared,
-        objective_components=("trajectory",),
-        before_transaction_digest=_digest("t"),
-        after_transaction_digest=_digest("t"),
-        status="failed",
-        failure_reason="projection infeasible",
+        **{
+            **_cell_receipt_kwargs("A"),
+            "status": "failed",
+            "audits": (),
+            "adamw_proposal_sha256": None,
+            "proposal_delta_sha256": None,
+            "apply_receipt_sha256": None,
+            "objective_component_hashes": (),
+            "failure_reason": "projection infeasible",
+        }
     )
     assert receipt.rollback_confirmed is True
     assert receipt.before_transaction_digest == receipt.after_transaction_digest
@@ -674,7 +782,7 @@ def test_matrix_plan_rejects_duplicate_arm_within_one_acquisition() -> None:
         acquisition=last_acquisition,
         arm_id="A",
         shared_evidence=shared,
-        proposal_tag="duplicate-arm",
+        optimizer_tag="duplicate-arm",
         root_tag="duplicate-arm",
     )
     cells[-1] = duplicate
@@ -727,7 +835,11 @@ def test_matrix_plan_rejects_mismatched_shared_evidence_within_one_group() -> No
     acquisitions = _canonical_acquisitions()
     cells = list(_canonical_cells(acquisitions))
     target_acquisition = acquisitions[0]
-    divergent_shared = _shared_evidence(training_rp=1.10, seed_group_id="matrix_b")
+    divergent_shared = _shared_evidence(
+        training_rp=target_acquisition.training_rp,
+        seed_group_id=target_acquisition.seed_group_id,
+        acquisition_tag="divergent-acquisition",
+    )
     for index, cell in enumerate(cells):
         if (
             cell.cell_key.acquisition_key == target_acquisition
@@ -737,7 +849,7 @@ def test_matrix_plan_rejects_mismatched_shared_evidence_within_one_group() -> No
                 acquisition=target_acquisition,
                 arm_id="B",
                 shared_evidence=divergent_shared,
-                proposal_tag="divergent-b",
+                optimizer_tag="divergent-b",
                 root_tag="divergent-b",
             )
     edges = tuple(
@@ -761,7 +873,7 @@ def test_matrix_plan_rejects_duplicate_output_root() -> None:
         acquisition=acquisitions[0],
         arm_id="A",
         shared_evidence=first_shared,
-        proposal_tag="unique-proposal",
+        optimizer_tag="unique-proposal",
         root_tag="collision",
     )
     cells[0] = collided
@@ -779,7 +891,7 @@ def test_matrix_plan_rejects_duplicate_output_root() -> None:
                 acquisition=acquisitions[1],
                 arm_id="A",
                 shared_evidence=other_shared,
-                proposal_tag="other-unique-proposal",
+                optimizer_tag="other-unique-proposal",
                 root_tag="collision",
             )
     edges = tuple(
@@ -792,7 +904,7 @@ def test_matrix_plan_rejects_duplicate_output_root() -> None:
         )
 
 
-def test_matrix_plan_rejects_reused_proposal_identity_across_cells() -> None:
+def test_matrix_plan_rejects_reused_optimizer_identity_across_cells() -> None:
     acquisitions = _canonical_acquisitions()
     cells = list(_canonical_cells(acquisitions))
     first_shared = _shared_evidence(
@@ -803,7 +915,7 @@ def test_matrix_plan_rejects_reused_proposal_identity_across_cells() -> None:
         training_rp=acquisitions[1].training_rp,
         seed_group_id=acquisitions[1].seed_group_id,
     )
-    shared_proposal_tag = "reused-proposal"
+    shared_optimizer_tag = "reused-optimizer"
     for index, cell in enumerate(cells):
         if (
             cell.cell_key.acquisition_key == acquisitions[0]
@@ -813,7 +925,7 @@ def test_matrix_plan_rejects_reused_proposal_identity_across_cells() -> None:
                 acquisition=acquisitions[0],
                 arm_id="A",
                 shared_evidence=first_shared,
-                proposal_tag=shared_proposal_tag,
+                optimizer_tag=shared_optimizer_tag,
                 root_tag="root-a0",
             )
         if (
@@ -824,14 +936,14 @@ def test_matrix_plan_rejects_reused_proposal_identity_across_cells() -> None:
                 acquisition=acquisitions[1],
                 arm_id="A",
                 shared_evidence=second_shared,
-                proposal_tag=shared_proposal_tag,
+                optimizer_tag=shared_optimizer_tag,
                 root_tag="root-a1",
             )
     edges = tuple(
         (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
         for cell in cells
     )
-    with pytest.raises(ValueError, match="independent fresh AdamW proposal identity"):
+    with pytest.raises(ValueError, match="independent fresh optimizer identity"):
         _canonical_matrix_plan(
             acquisitions=acquisitions, cells=tuple(cells), dependency_edges=edges
         )
@@ -946,3 +1058,356 @@ def test_matrix_plan_from_dict_rejects_a_locally_valid_but_cross_artifact_mixed_
     payload["dependency_edges"][0][1] = "0" * 64
     with pytest.raises(ValueError, match="dependency edges"):
         MatrixPlan.from_dict(payload)
+
+
+# ---------------------------------------------------------------------------
+# Numeric acquisition identity: sealed seed tuples and distinct group evidence
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_seed_groups_bind_the_exact_sealed_numeric_tuples() -> None:
+    assert CANONICAL_SEED_GROUPS[QUALIFICATION_SEED_GROUP] == tuple(range(30001, 30017))
+    assert CANONICAL_SEED_GROUPS["matrix_a"] == tuple(range(31001, 31017))
+    assert CANONICAL_SEED_GROUPS["matrix_b"] == tuple(range(32001, 32017))
+    assert CANONICAL_SEED_GROUPS["matrix_c"] == tuple(range(33001, 33017))
+    seen = [seed for seeds in CANONICAL_SEED_GROUPS.values() for seed in seeds]
+    assert len(set(seen)) == len(seen) == 64
+
+
+def test_acquisition_key_binds_and_round_trips_its_sealed_seed_tuple() -> None:
+    key = _acquisition_key(training_rp=1.10, seed_group_id="matrix_b")
+    assert key.seeds == tuple(range(32001, 32017))
+    assert AcquisitionKey.from_dict(key.to_dict()) == key
+    other = _acquisition_key(training_rp=1.10, seed_group_id="matrix_c")
+    assert key.content_sha256 != other.content_sha256
+
+
+def test_acquisition_key_rejects_another_groups_seed_tuple() -> None:
+    with pytest.raises(ValueError, match="seed"):
+        _acquisition_key(
+            training_rp=1.0,
+            seed_group_id="matrix_a",
+            seeds=canonical_seeds("matrix_b"),
+        )
+
+
+def test_acquisition_key_rejects_qualification_seeds_in_a_matrix_group() -> None:
+    with pytest.raises(ValueError, match="seed"):
+        _acquisition_key(
+            training_rp=1.0,
+            seed_group_id="matrix_a",
+            seeds=canonical_seeds(QUALIFICATION_SEED_GROUP),
+        )
+
+
+def test_acquisition_key_payload_must_carry_its_seed_tuple() -> None:
+    payload = _acquisition_key(training_rp=1.0, seed_group_id="matrix_a").to_dict()
+    payload.pop("seeds")
+    with pytest.raises(ValueError, match="seed"):
+        AcquisitionKey.from_dict(payload)
+
+
+def test_shared_evidence_rejects_a_seed_tuple_outside_its_group() -> None:
+    with pytest.raises(ValueError, match="seed"):
+        SharedEvidenceRef(
+            source_sha256=SOURCE_SHA256,
+            manifest_sha256=MANIFEST_SHA256,
+            acquisition_path="/a",
+            acquisition_sha256=_digest("a"),
+            trajectory_credit_acquisition_sha256=_digest("t"),
+            credit_ledger_sha256=_digest("c"),
+            compiler_ledger_sha256=_digest("g"),
+            policy_contract_sha256=_digest("p"),
+            native_receipts_sha256=_digest("n"),
+            training_rp=1.0,
+            seed_group_id="matrix_a",
+            seeds=canonical_seeds("matrix_c"),
+        )
+
+
+def test_matrix_plan_rejects_one_acquisition_artifact_reused_by_two_seed_groups() -> (
+    None
+):
+    acquisitions = _canonical_acquisitions()
+    cells = list(_canonical_cells(acquisitions))
+    reused = _shared_evidence(
+        training_rp=acquisitions[0].training_rp,
+        seed_group_id=acquisitions[0].seed_group_id,
+    )
+    for index, cell in enumerate(cells):
+        if cell.cell_key.acquisition_key == acquisitions[1]:
+            cells[index] = _cell_spec(
+                acquisition=acquisitions[1],
+                arm_id=cell.cell_key.arm_id,
+                shared_evidence=replace(
+                    reused,
+                    seed_group_id=acquisitions[1].seed_group_id,
+                    seeds=canonical_seeds(acquisitions[1].seed_group_id),
+                ),
+            )
+    edges = tuple(
+        (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
+        for cell in cells
+    )
+    with pytest.raises(ValueError, match="distinct acquisition"):
+        _canonical_matrix_plan(
+            acquisitions=acquisitions, cells=tuple(cells), dependency_edges=edges
+        )
+
+
+def test_matrix_plan_rejects_one_policy_contract_across_both_training_rps() -> None:
+    acquisitions = _canonical_acquisitions()
+    cells = []
+    for acquisition in acquisitions:
+        shared = replace(
+            _shared_evidence(
+                training_rp=acquisition.training_rp,
+                seed_group_id=acquisition.seed_group_id,
+            ),
+            policy_contract_sha256=_digest("one-policy-for-both-rps"),
+        )
+        for arm_id in ARM_IDS:
+            cells.append(
+                _cell_spec(
+                    acquisition=acquisition, arm_id=arm_id, shared_evidence=shared
+                )
+            )
+    edges = tuple(
+        (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
+        for cell in cells
+    )
+    with pytest.raises(ValueError, match="policy"):
+        _canonical_matrix_plan(
+            acquisitions=acquisitions, cells=tuple(cells), dependency_edges=edges
+        )
+
+
+# ---------------------------------------------------------------------------
+# AdamW configuration identity vs per-cell optimizer identity
+# ---------------------------------------------------------------------------
+
+
+def test_matrix_plan_binds_one_adamw_config_and_eighteen_optimizer_identities() -> None:
+    plan = _canonical_matrix_plan()
+
+    assert len({cell.adamw_config_sha256 for cell in plan.cells}) == 1
+    assert len({cell.fresh_optimizer_identity_sha256 for cell in plan.cells}) == 18
+
+
+def test_matrix_plan_rejects_a_second_declared_adamw_config() -> None:
+    acquisitions = _canonical_acquisitions()
+    cells = list(_canonical_cells(acquisitions))
+    shared = _shared_evidence(
+        training_rp=acquisitions[0].training_rp,
+        seed_group_id=acquisitions[0].seed_group_id,
+    )
+    cells[0] = _cell_spec(
+        acquisition=acquisitions[0],
+        arm_id="A",
+        shared_evidence=shared,
+        adamw_config_sha256=_digest("second-adamw-config"),
+    )
+    edges = tuple(
+        (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
+        for cell in cells
+    )
+    with pytest.raises(ValueError, match="one declared AdamW configuration"):
+        _canonical_matrix_plan(
+            acquisitions=acquisitions, cells=tuple(cells), dependency_edges=edges
+        )
+
+
+# ---------------------------------------------------------------------------
+# Nested objective byte identity
+# ---------------------------------------------------------------------------
+
+
+def test_matrix_plan_rejects_a_trajectory_objective_that_differs_within_one_group() -> (
+    None
+):
+    acquisitions = _canonical_acquisitions()
+    cells = list(_canonical_cells(acquisitions))
+    shared = _shared_evidence(
+        training_rp=acquisitions[0].training_rp,
+        seed_group_id=acquisitions[0].seed_group_id,
+    )
+    cells[1] = _cell_spec(
+        acquisition=acquisitions[0],
+        arm_id="B",
+        shared_evidence=shared,
+        objective_component_hashes=_component_hashes(
+            arm_id="B",
+            training_rp=acquisitions[0].training_rp,
+            seed_group_id=acquisitions[0].seed_group_id,
+            trajectory_tag="drifted-trajectory",
+        ),
+    )
+    edges = tuple(
+        (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
+        for cell in cells
+    )
+    with pytest.raises(ValueError, match="trajectory objective"):
+        _canonical_matrix_plan(
+            acquisitions=acquisitions, cells=tuple(cells), dependency_edges=edges
+        )
+
+
+def test_matrix_plan_rejects_a_compiler_objective_that_differs_between_b_and_c() -> (
+    None
+):
+    acquisitions = _canonical_acquisitions()
+    cells = list(_canonical_cells(acquisitions))
+    shared = _shared_evidence(
+        training_rp=acquisitions[0].training_rp,
+        seed_group_id=acquisitions[0].seed_group_id,
+    )
+    cells[2] = _cell_spec(
+        acquisition=acquisitions[0],
+        arm_id="C",
+        shared_evidence=shared,
+        objective_component_hashes=_component_hashes(
+            arm_id="C",
+            training_rp=acquisitions[0].training_rp,
+            seed_group_id=acquisitions[0].seed_group_id,
+            compiler_tag="drifted-compiler",
+        ),
+    )
+    edges = tuple(
+        (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
+        for cell in cells
+    )
+    with pytest.raises(ValueError, match="compiler objective"):
+        _canonical_matrix_plan(
+            acquisitions=acquisitions, cells=tuple(cells), dependency_edges=edges
+        )
+
+
+# ---------------------------------------------------------------------------
+# The shared receipt aggregate validator
+# ---------------------------------------------------------------------------
+
+
+def test_validate_matrix_receipts_admits_the_canonical_eighteen_cell_outcome() -> None:
+    plan = _canonical_matrix_plan()
+    receipts = _canonical_receipts(plan)
+
+    admitted = validate_matrix_receipts(plan, receipts)
+
+    assert len(admitted) == 18
+    assert len({receipt.transaction_id for receipt in receipts}) == 18
+
+
+def test_validate_matrix_receipts_admits_identical_fresh_source_state_digests() -> None:
+    """All eighteen cells load the same Source: state digests may coincide."""
+
+    plan = _canonical_matrix_plan()
+    shared_state = _digest("identical-fresh-source-state")
+    receipts = tuple(
+        replace(
+            _canonical_cell_receipt(cell, tag=str(index)),
+            before_transaction_digest=shared_state,
+            after_transaction_digest=shared_state,
+        )
+        for index, cell in enumerate(plan.cells)
+    )
+
+    assert len(validate_matrix_receipts(plan, receipts)) == 18
+
+
+def test_validate_matrix_receipts_rejects_a_reused_transaction_identity() -> None:
+    plan = _canonical_matrix_plan()
+    receipts = list(_canonical_receipts(plan))
+    receipts[1] = replace(receipts[1], transaction_id=receipts[0].transaction_id)
+
+    with pytest.raises(ValueError, match="independent transaction identity"):
+        validate_matrix_receipts(plan, tuple(receipts))
+
+
+def test_validate_matrix_receipts_rejects_a_c_arm_projecting_another_base_proposal() -> (
+    None
+):
+    plan = _canonical_matrix_plan()
+    receipts = list(_canonical_receipts(plan))
+    receipts[2] = replace(
+        receipts[2], proposal_delta_sha256=_digest("some-other-base-proposal")
+    )
+
+    with pytest.raises(ValueError, match="exact admitted arm-B proposal"):
+        validate_matrix_receipts(plan, tuple(receipts))
+
+
+def test_validate_matrix_receipts_rejects_a_receipt_objective_outside_its_plan() -> (
+    None
+):
+    plan = _canonical_matrix_plan()
+    receipts = list(_canonical_receipts(plan))
+    receipts[0] = replace(
+        receipts[0], objective_component_hashes=(("trajectory", _digest("forged")),)
+    )
+
+    with pytest.raises(ValueError, match="objective component"):
+        validate_matrix_receipts(plan, tuple(receipts))
+
+
+# ---------------------------------------------------------------------------
+# NodeTerminalReceipt: the typed acquisition-node terminal
+# ---------------------------------------------------------------------------
+
+
+def test_node_terminal_persists_typed_specs_and_receipts_and_round_trips() -> None:
+    terminal = _node_terminal(
+        _acquisition_key(training_rp=1.0, seed_group_id="matrix_a")
+    )
+
+    reloaded = NodeTerminalReceipt.from_dict(json.loads(json.dumps(terminal.to_dict())))
+
+    assert reloaded == terminal
+    assert reloaded.content_sha256 == terminal.content_sha256
+    assert [spec.cell_key.arm_id for spec in reloaded.cell_specs] == ["A", "B", "C"]
+    assert [receipt.cell_key.arm_id for receipt in reloaded.cell_receipts] == [
+        "A",
+        "B",
+        "C",
+    ]
+
+
+def test_node_terminal_qualification_phase_binds_only_the_c_arm() -> None:
+    terminal = _node_terminal(
+        _acquisition_key(
+            training_rp=1.10,
+            seed_group_id=QUALIFICATION_SEED_GROUP,
+            phase=PHASE_QUALIFICATION,
+        ),
+        arm_ids=("C",),
+    )
+
+    assert terminal.phase == PHASE_QUALIFICATION
+    assert len(terminal.cell_specs) == 1
+
+
+def test_node_terminal_succeeded_status_requires_every_planned_arm() -> None:
+    with pytest.raises(ValueError, match="every planned arm"):
+        _node_terminal(
+            _acquisition_key(training_rp=1.0, seed_group_id="matrix_a"),
+            receipt_count=2,
+        )
+
+
+def test_node_terminal_failed_status_requires_a_failure_reason() -> None:
+    with pytest.raises(ValueError, match="failure_reason"):
+        _node_terminal(
+            _acquisition_key(training_rp=1.0, seed_group_id="matrix_a"),
+            status="failed",
+            receipt_count=1,
+        )
+
+
+def test_cell_spec_rejects_qualification_evidence_in_a_matrix_cell() -> None:
+    qualification_evidence = _shared_evidence(
+        training_rp=1.0, seed_group_id=QUALIFICATION_SEED_GROUP
+    )
+
+    with pytest.raises(ValueError, match="seed group"):
+        CellSpec(
+            **{**_cell_spec_kwargs("A"), "shared_evidence": qualification_evidence}
+        )

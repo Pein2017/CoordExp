@@ -186,7 +186,8 @@ def test_build_dag_plan_same_group_arms_share_evidence_and_have_unique_roots(
     plan = _dag_plan(tmp_path)
 
     output_roots = []
-    proposal_ids = []
+    optimizer_identities = []
+    adamw_configs = set()
     for acquisition in plan["acquisitions"]:
         evidence_tags = {
             cell["shared_evidence_group_sha256"] for cell in acquisition["cells"]
@@ -194,14 +195,33 @@ def test_build_dag_plan_same_group_arms_share_evidence_and_have_unique_roots(
         assert evidence_tags == {acquisition["shared_evidence_group_sha256"]}
         for cell in acquisition["cells"]:
             output_roots.append(cell["output_root"])
-            proposal_ids.append(cell["proposal_id"])
+            optimizer_identities.append(cell["fresh_optimizer_identity_sha256"])
+            adamw_configs.add(cell["adamw_config_sha256"])
 
     all_evidence_tags = {
         a["shared_evidence_group_sha256"] for a in plan["acquisitions"]
     }
     assert len(all_evidence_tags) == 8
     assert len(output_roots) == len(set(output_roots)) == 20
-    assert len(proposal_ids) == len(set(proposal_ids)) == 20
+    assert len(optimizer_identities) == len(set(optimizer_identities)) == 20
+    assert len(adamw_configs) == 1
+
+
+def test_build_dag_plan_binds_each_acquisition_to_its_sealed_seed_tuple(
+    tmp_path: Path,
+) -> None:
+    plan = _dag_plan(tmp_path)
+
+    seeds_by_group = {
+        acquisition["acquisition_key"]["seed_group_id"]: tuple(acquisition["seeds"])
+        for acquisition in plan["acquisitions"]
+    }
+    assert seeds_by_group["qualification"] == tuple(range(30001, 30017))
+    assert seeds_by_group["matrix_a"] == tuple(range(31001, 31017))
+    assert seeds_by_group["matrix_b"] == tuple(range(32001, 32017))
+    assert seeds_by_group["matrix_c"] == tuple(range(33001, 33017))
+    for acquisition in plan["acquisitions"]:
+        assert acquisition["acquisition_key"]["seeds"] == list(acquisition["seeds"])
 
 
 def test_build_dag_plan_cells_are_fresh_world_one_max_updates_one_no_retry(
@@ -314,7 +334,9 @@ def test_plan_launches_supports_node_subset_selection(tmp_path: Path) -> None:
     assert [job["gpu_id"] for job in launch_plan["jobs"]] == [3, 5]
 
 
-def test_plan_launches_can_forward_an_explicit_runtime_factory(tmp_path: Path) -> None:
+def test_plan_launches_keeps_an_absent_factory_declared_and_not_ready(
+    tmp_path: Path,
+) -> None:
     plan_path = _dag_plan_path(tmp_path)
 
     launch_plan = launcher.plan_launches(
@@ -328,7 +350,84 @@ def test_plan_launches_can_forward_an_explicit_runtime_factory(tmp_path: Path) -
     assert command[command.index("--runtime-factory") + 1] == (
         "project.runtime:create_node_runtime"
     )
+    assert launch_plan["runtime_factory_status"] == "factory_declared"
+    assert launch_plan["jobs"][0]["execution_ready"] is False
+
+
+def _declared_factory_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Write one importable, contract-declaring factory module for this test."""
+
+    module = tmp_path / "rp_crossover_declared_factory.py"
+    module.write_text(
+        "from scripts.research.train_human13_k_trajectory_rp_crossover import (\n"
+        "    declare_node_runtime_factory,\n"
+        ")\n"
+        "\n"
+        "\n"
+        "@declare_node_runtime_factory\n"
+        "def build_node_runtime(node):\n"
+        "    raise RuntimeError('no production node runtime exists yet')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    return "rp_crossover_declared_factory:build_node_runtime"
+
+
+def test_plan_launches_marks_an_importable_contract_factory_execution_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan_path = _dag_plan_path(tmp_path)
+    reference = _declared_factory_module(tmp_path, monkeypatch)
+
+    launch_plan = launcher.plan_launches(
+        plan_path,
+        gpu_ids=(3,),
+        node_ids=("rp100:matrix_a",),
+        runtime_factory=reference,
+    )
+
+    assert launch_plan["runtime_factory_status"] == "execution_ready"
     assert launch_plan["jobs"][0]["execution_ready"] is True
+
+
+def test_plan_launches_rejects_a_factory_that_imports_but_breaks_the_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = tmp_path / "rp_crossover_uncontracted_factory.py"
+    module.write_text(
+        "def build_node_runtime(node):\n    return None\n", encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    plan_path = _dag_plan_path(tmp_path)
+
+    launch_plan = launcher.plan_launches(
+        plan_path,
+        gpu_ids=(3,),
+        node_ids=("rp100:matrix_a",),
+        runtime_factory="rp_crossover_uncontracted_factory:build_node_runtime",
+    )
+
+    assert launch_plan["runtime_factory_status"] == "factory_declared"
+    assert launch_plan["jobs"][0]["execution_ready"] is False
+
+
+def test_execute_launches_fails_closed_on_a_declared_but_unready_factory(
+    tmp_path: Path,
+) -> None:
+    plan_path = _dag_plan_path(tmp_path)
+    launch_plan = launcher.plan_launches(
+        plan_path,
+        gpu_ids=(2,),
+        node_ids=("rp100:matrix_a",),
+        runtime_factory="project.runtime:create_node_runtime",
+    )
+
+    with pytest.raises(launcher.LaunchContractError, match="launch contract"):
+        launcher.execute_launches(
+            launch_plan,
+            execution_authorized=True,
+            process_factory=lambda *_a, **_k: pytest.fail("started an unready node"),
+        )
 
 
 def test_plan_launches_rejects_unknown_node_id(tmp_path: Path) -> None:
@@ -403,7 +502,9 @@ def test_execute_launches_requires_explicit_authority(tmp_path: Path) -> None:
         launcher.execute_launches(launch_plan, execution_authorized=False)
 
 
-def test_execute_launches_starts_each_job_once_without_retry(tmp_path: Path) -> None:
+def test_execute_launches_starts_each_job_once_without_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     plan_path = _dag_plan_path(tmp_path)
     runner = _fake_runner(tmp_path)
     launch_plan = launcher.plan_launches(
@@ -411,7 +512,7 @@ def test_execute_launches_starts_each_job_once_without_retry(tmp_path: Path) -> 
         gpu_ids=(2, 4),
         node_ids=("rp100:matrix_a", "rp110:matrix_a"),
         runner_entry=runner,
-        runtime_factory="project.runtime:create_node_runtime",
+        runtime_factory=_declared_factory_module(tmp_path, monkeypatch),
     )
     calls = []
 

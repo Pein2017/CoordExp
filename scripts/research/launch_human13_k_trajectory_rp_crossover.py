@@ -61,6 +61,8 @@ DAG_PLAN_SCHEMA = "human13_rp_crossover_dag_plan.v1"
 LAUNCH_PLAN_SCHEMA = "human13_rp_crossover_launch_plan.v1"
 EXECUTION_SCHEMA = "human13_rp_crossover_launch_execution.v1"
 RUNNER_ENTRY_CONTRACT = "human13_rp_crossover_runner_cli.v1"
+FACTORY_STATUS_ABSENT = "absent"
+FACTORY_STATUS_READY = "execution_ready"
 MAX_LIVE_NODES = 8
 
 CONFIG_ROOT = Path("configs/coordexp_swift/research/human13_k_trajectory_rp_crossover")
@@ -273,6 +275,21 @@ def load_leaf_configs(config_root: str | Path = CONFIG_ROOT) -> tuple[LeafConfig
     return configs
 
 
+def _adamw_config_sha256(optimizer: Mapping[str, Any]) -> str:
+    """The one declared AdamW configuration identity shared by every cell."""
+
+    payload = {
+        "schema_version": "human13_rp_crossover_adamw_config.v1",
+        "name": optimizer["name"],
+        "learning_rate": optimizer["learning_rate"],
+        "betas": list(optimizer["betas"]),
+        "epsilon": optimizer["epsilon"],
+        "weight_decay": optimizer["weight_decay"],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _rp_slug(training_rp: float) -> str:
     return "rp100" if training_rp == 1.0 else "rp110"
 
@@ -307,6 +324,16 @@ def build_dag_plan(
             "leaf configs must cover the 2x3 RP/arm surface exactly once"
         )
 
+    optimizers = {
+        json.dumps(dict(config.optimizer), sort_keys=True, default=list)
+        for config in configs
+    }
+    if len(optimizers) != 1:
+        raise LaunchContractError(
+            "every leaf config must declare one identical AdamW configuration"
+        )
+    adamw_config_sha256 = _adamw_config_sha256(configs[0].optimizer)
+
     root = Path(output_root)
     acquisitions: list[dict[str, Any]] = []
     matrix_cell_keys: list[str] = []
@@ -325,8 +352,10 @@ def build_dag_plan(
             leaf_config = by_key[(training_rp, arm_id)]
             cell_key = CellKey(acquisition_key=acquisition_key, arm_id=arm_id)
             cell_sha = cell_key.content_sha256
-            proposal_id = hashlib.sha256(
-                f"{run_id}\0{cell_sha}\0fresh-adamw-proposal".encode("utf-8")
+            # Per-cell optimizer identity: unique by construction, and distinct
+            # from the one declared AdamW configuration every cell shares.
+            optimizer_identity = hashlib.sha256(
+                f"{run_id}\0{cell_sha}\0fresh-adamw-optimizer".encode("utf-8")
             ).hexdigest()
             cells.append(
                 {
@@ -337,7 +366,8 @@ def build_dag_plan(
                     "compiler_coefficient": leaf_config.compiler_coefficient,
                     "shared_evidence_group_sha256": acquisition_sha,
                     "output_root": str(node_root / arm_id.lower()),
-                    "proposal_id": proposal_id,
+                    "adamw_config_sha256": adamw_config_sha256,
+                    "fresh_optimizer_identity_sha256": optimizer_identity,
                     "source": "fresh",
                     "optimizer": "fresh_adamw",
                     "world_size": 1,
@@ -354,6 +384,8 @@ def build_dag_plan(
             "acquisition_key_sha256": acquisition_sha,
             "node_id": _node_id(training_rp, seed_group_id),
             "phase": phase,
+            "training_rp": training_rp,
+            "seeds": list(acquisition_key.seeds or ()),
             "shared_evidence_group_sha256": acquisition_sha,
             "receipt_path": str(node_root / "receipt.json"),
             "cells": cells,
@@ -376,12 +408,16 @@ def build_dag_plan(
             "Human-13 RP-crossover DAG must bind exactly eight live acquisition nodes"
         )
     output_roots = [cell["output_root"] for a in acquisitions for cell in a["cells"]]
-    proposal_ids = [cell["proposal_id"] for a in acquisitions for cell in a["cells"]]
+    optimizer_ids = [
+        cell["fresh_optimizer_identity_sha256"]
+        for a in acquisitions
+        for cell in a["cells"]
+    ]
     if len(output_roots) != 20 or len(set(output_roots)) != 20:
         raise LaunchContractError("every cell output_root must be unique")
-    if len(proposal_ids) != 20 or len(set(proposal_ids)) != 20:
+    if len(optimizer_ids) != 20 or len(set(optimizer_ids)) != 20:
         raise LaunchContractError(
-            "every cell must have an independent fresh AdamW proposal identity"
+            "every cell must have an independent fresh optimizer identity"
         )
     if len(matrix_cell_keys) != 18 or len(set(matrix_cell_keys)) != 18:
         raise LaunchContractError("matrix disposition must bind exactly eighteen cells")
@@ -534,6 +570,23 @@ def plan_launches(
         or any(not part for part in runtime_factory.split(":"))
     ):
         raise LaunchContractError("runtime_factory must use module:callable syntax")
+    # A syntactically valid reference is only a declaration.  Readiness means
+    # the callable actually imports and exposes the frozen, runtime-free node
+    # factory contract; that import must not load a model or allocate a GPU.
+    factory_status: Mapping[str, Any] = {
+        "reference": None,
+        "status": FACTORY_STATUS_ABSENT,
+        "detail": None,
+    }
+    if runtime_factory is not None:
+        # Imported inside the branch: it keeps the runner/launcher import
+        # acyclic and keeps the default dry-run path free of runtime imports.
+        from scripts.research.train_human13_k_trajectory_rp_crossover import (
+            inspect_runtime_factory,
+        )
+
+        factory_status = inspect_runtime_factory(runtime_factory)
+    execution_ready = factory_status["status"] == FACTORY_STATUS_READY
 
     if any(Path(item["receipt_path"]).exists() for item in selected):
         raise LaunchContractError("refusing to overwrite an existing node receipt")
@@ -584,7 +637,8 @@ def plan_launches(
                 "environment": {"CUDA_VISIBLE_DEVICES": str(gpu_id)},
                 "retry_policy": "none",
                 "runner_entry_contract": RUNNER_ENTRY_CONTRACT,
-                "execution_ready": runtime_factory is not None,
+                "runtime_factory_status": factory_status["status"],
+                "execution_ready": execution_ready,
             }
         )
 
@@ -597,6 +651,8 @@ def plan_launches(
         "dag_plan_path": dag_path,
         "runner_entry": str(runner),
         "runtime_factory": runtime_factory,
+        "runtime_factory_status": factory_status["status"],
+        "runtime_factory_detail": factory_status["detail"],
         "max_concurrent_jobs": len(jobs),
         "unselected_node_ids": unselected,
         "jobs": jobs,

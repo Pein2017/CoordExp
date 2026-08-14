@@ -1,17 +1,44 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 import hashlib
+import io
 import json
 from pathlib import Path
 
 import pytest
+import torch
+
+import scripts.research.launch_human13_k_trajectory_rp_crossover as launcher
+import scripts.research.train_human13_k_trajectory_rp_crossover as runner
+from scripts.research.human13_adamw_proposal_preservation import (
+    FrozenWitnessBank,
+    OwnerWitness,
+    ParameterLayout,
+    SOURCE_MEMBERSHIPS,
+    TRUSTED_OWNER_CLASS,
+    WEAKEST_MARGIN_SELECTION,
+    WitnessBinding,
+    jacobian_sha256,
+)
+from scripts.research.human13_rp_crossover_runtime import (
+    UNIT_ID,
+    CellExecutionState,
+    ObjectiveBackwardReceipt,
+    PrivateCheckpointRef,
+)
+from scripts.research.human13_training_transaction import (
+    TrainingStateTransaction,
+    UpdateCounter,
+)
 
 from scripts.research.analyze_human13_k_trajectory_rp_crossover import (
     MatrixAnalysisInput,
     MatrixAnalysisReceipt,
     _analyze_matrix_for_test as analyze_matrix,
     analyze_matrix as public_analyze_matrix,
+    publish_matrix_analysis_input,
 )
 from scripts.research.analyze_human13_k_union import _manifest_sha256
 from scripts.research.build_human13_k_union_manifest import (
@@ -30,14 +57,19 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     CANONICAL_IMAGE_IDS,
     EVALUATION_RPS,
     MATRIX_SEED_GROUPS,
+    PROPOSAL_COMPONENTS_BY_ARM,
+    QUALIFICATION_SEED_GROUP,
+    TRAINING_RPS,
     AcquisitionKey,
     AuditRef,
     CellKey,
     CellReceipt,
     CellSpec,
     MatrixPlan,
+    NodeTerminalReceipt,
     SharedEvidenceRef,
     SourceBaselineRef,
+    canonical_seeds,
 )
 
 
@@ -148,6 +180,9 @@ def _manifest() -> Human13KUnionManifest:
     )
 
 
+ADAMW_CONFIG = _digest("frozen-adamw-config")
+
+
 def _shared(manifest_sha256: str, rp: float, seed_group: str) -> SharedEvidenceRef:
     tag = f"{rp}:{seed_group}"
     return SharedEvidenceRef(
@@ -159,7 +194,25 @@ def _shared(manifest_sha256: str, rp: float, seed_group: str) -> SharedEvidenceR
         credit_ledger_sha256=_digest(f"credit:{tag}"),
         compiler_ledger_sha256=_digest(f"compiler:{tag}"),
         policy_contract_sha256=_digest(f"policy:{rp}"),
+        native_receipts_sha256=_digest(f"native-receipts:{tag}"),
+        training_rp=rp,
+        seed_group_id=seed_group,
+        seeds=canonical_seeds(seed_group),
     )
+
+
+def _objective_hashes(arm_id: str, group_tag: str) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (component, _digest(f"objective:{component}:{group_tag}"))
+        for component in PROPOSAL_COMPONENTS_BY_ARM[arm_id]
+    )
+
+
+def _proposal_delta(arm_id: str, group_tag: str) -> str:
+    """Arm C projects the exact arm-B base proposal; arm A measures its own."""
+
+    stage = "a" if arm_id == "A" else "bc"
+    return _digest(f"proposal-delta:{group_tag}:{stage}")
 
 
 def _predictions(
@@ -329,13 +382,16 @@ def _fixture(
                     "C": ("trajectory", "compiler", "preservation"),
                 }[arm_id]
                 config_sha = _digest(f"config:{training_rp}:{arm_id}")
+                group_tag = f"{training_rp}:{seed_group}"
                 cell = CellSpec(
                     cell_key=cell_key,
                     shared_evidence=shared,
                     leaf_config_sha256=config_sha,
                     source_checkpoint_sha256=SOURCE,
                     expected_objective_components=components,
-                    fresh_adamw_fingerprint_sha256=_digest(f"optimizer:{cell_tag}"),
+                    objective_component_hashes=_objective_hashes(arm_id, group_tag),
+                    adamw_config_sha256=ADAMW_CONFIG,
+                    fresh_optimizer_identity_sha256=_digest(f"optimizer:{cell_tag}"),
                     evaluation_rps=EVALUATION_RPS,
                     output_root=f"/private/{cell_tag}",
                 )
@@ -371,17 +427,24 @@ def _fixture(
                             generation_sha,
                         )
                     )
-                transaction = _digest(f"transaction:{cell_tag}")
+                transaction = _digest("fresh-source-state")
                 receipts.append(
                     CellReceipt(
                         cell_key=cell_key,
                         shared_evidence=shared,
                         objective_components=components,
+                        objective_component_hashes=cell.objective_component_hashes,
+                        adamw_config_sha256=ADAMW_CONFIG,
+                        fresh_optimizer_identity_sha256=(
+                            cell.fresh_optimizer_identity_sha256
+                        ),
+                        transaction_id=_digest(f"transaction-id:{cell_tag}")[:32],
                         before_transaction_digest=transaction,
                         after_transaction_digest=transaction,
                         status="succeeded",
                         audits=tuple(audits),
                         adamw_proposal_sha256=_digest(f"proposal:{cell_tag}"),
+                        proposal_delta_sha256=_proposal_delta(arm_id, group_tag),
                         projection_receipt_sha256=(
                             _digest(f"projection:{cell_tag}") if arm_id == "C" else None
                         ),
@@ -546,15 +609,18 @@ def test_direct_dict_and_file_inputs_share_one_admission_path(tmp_path: Path) ->
         ("duplicate", "unique cell"),
         ("failed", "failed scientific cell"),
         ("shared", "shared evidence"),
-        ("transaction", "independent transaction"),
+        ("transaction", "independent transaction identity"),
         ("proposal", "independent proposal"),
+        ("base_proposal", "exact admitted arm-B proposal"),
+        ("objective", "objective component"),
+        ("optimizer", "optimizer identity"),
         ("qualification", "qualification"),
     ),
 )
 def test_aggregate_admission_rejects_noncanonical_receipts(
     tmp_path: Path, mutation: str, message: str
 ) -> None:
-    manifest, inputs = _fixture(tmp_path)
+    _manifest_unused, inputs = _fixture(tmp_path)
     receipts = list(inputs.cell_receipts)
     if mutation == "missing":
         receipts.pop()
@@ -567,7 +633,9 @@ def test_aggregate_admission_rejects_noncanonical_receipts(
             failure_reason="scientific failure",
             audits=(),
             adamw_proposal_sha256=None,
+            proposal_delta_sha256=None,
             apply_receipt_sha256=None,
+            objective_component_hashes=(),
         )
     elif mutation == "shared":
         receipts[0] = replace(
@@ -578,25 +646,34 @@ def test_aggregate_admission_rejects_noncanonical_receipts(
             ),
         )
     elif mutation == "transaction":
-        receipts[1] = replace(
-            receipts[1],
-            before_transaction_digest=receipts[0].before_transaction_digest,
-            after_transaction_digest=receipts[0].after_transaction_digest,
-        )
+        receipts[1] = replace(receipts[1], transaction_id=receipts[0].transaction_id)
     elif mutation == "proposal":
         receipts[1] = replace(
             receipts[1], adamw_proposal_sha256=receipts[0].adamw_proposal_sha256
         )
+    elif mutation == "base_proposal":
+        receipts[2] = replace(
+            receipts[2], proposal_delta_sha256=_digest("another-base-proposal")
+        )
+    elif mutation == "objective":
+        receipts[0] = replace(
+            receipts[0],
+            objective_component_hashes=(("trajectory", _digest("forged")),),
+        )
+    elif mutation == "optimizer":
+        receipts[1] = replace(
+            receipts[1],
+            fresh_optimizer_identity_sha256=(
+                receipts[0].fresh_optimizer_identity_sha256
+            ),
+        )
     else:
-        qualification = AcquisitionKey(1.0, "qualification", "qualification")
+        qualification = AcquisitionKey(1.0, QUALIFICATION_SEED_GROUP, "qualification")
         receipts[0] = replace(
             receipts[0], cell_key=CellKey(qualification, receipts[0].cell_key.arm_id)
         )
-    forged = MatrixAnalysisInput(
-        inputs.plan, tuple(receipts), inputs.source_output_paths
-    )
     with pytest.raises(ValueError, match=message):
-        analyze_matrix(manifest, forged)
+        MatrixAnalysisInput(inputs.plan, tuple(receipts), inputs.source_output_paths)
 
 
 @pytest.mark.parametrize(
@@ -687,3 +764,365 @@ def test_analyzer_rejects_a_noncanonical_matcher_identity(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="canonical matcher"):
         analyze_matrix(forged, inputs)
+
+
+# ---------------------------------------------------------------------------
+# One launcher-to-analyzer admission path
+# ---------------------------------------------------------------------------
+
+
+def _grad_for(training_rp: float, seed_group: str, arm_id: str) -> torch.Tensor:
+    """One deterministic gradient per acquisition; arms B and C share it."""
+
+    index = TRAINING_RPS.index(training_rp) * 3 + MATRIX_SEED_GROUPS.index(seed_group)
+    offset = 0.0 if arm_id == "A" else 0.125
+    return torch.tensor((0.25 + 0.01 * index + offset, -0.5 - 0.01 * index))
+
+
+class _E2ECellServices:
+    """CPU-only stand-in for the live model/loss/checkpoint/HF audit adapter."""
+
+    def __init__(
+        self, spec: CellSpec, manifest: Human13KUnionManifest, root: Path
+    ) -> None:
+        self.spec = spec
+        self.manifest = manifest
+        self.root = root
+        acquisition = spec.cell_key.acquisition_key
+        self.training_rp = acquisition.training_rp
+        self.seed_group = acquisition.seed_group_id
+        self.arm_id = spec.cell_key.arm_id
+        self.tag = f"{self.training_rp}:{self.seed_group}:{self.arm_id}"
+        self.checkpoint_sha256 = _digest(f"private-checkpoint:{self.tag}")
+
+    def open_cell(self, spec: CellSpec) -> CellExecutionState:
+        parameter = torch.nn.Parameter(torch.tensor((1.0, -1.0)))
+        named = (("adapter.weight", parameter),)
+        optimizer = torch.optim.AdamW(
+            (parameter,), lr=3e-6, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0
+        )
+        counter = UpdateCounter()
+        return CellExecutionState(
+            named_trainable_parameters=named,
+            optimizer=optimizer,
+            scheduler=None,
+            update_counter=counter,
+            transaction=TrainingStateTransaction(
+                named,
+                optimizer=optimizer,
+                scheduler=None,
+                update_counter=counter,
+                runtime=None,
+                capture_cuda=False,
+            ),
+            world_size=1,
+            source_checkpoint_sha256=spec.source_checkpoint_sha256,
+            shared_evidence_sha256=spec.shared_evidence.content_sha256,
+            adamw_config_sha256=spec.adamw_config_sha256,
+            optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
+            fresh_source=True,
+        )
+
+    def backward_objective(
+        self, state: CellExecutionState, spec: CellSpec
+    ) -> ObjectiveBackwardReceipt:
+        state.named_trainable_parameters[0][1].grad = _grad_for(
+            self.training_rp, self.seed_group, self.arm_id
+        )
+        return ObjectiveBackwardReceipt(
+            proposal_components=tuple(
+                component for component, _ in spec.objective_component_hashes
+            ),
+            component_hashes=spec.objective_component_hashes,
+            objective_ledger_sha256=_digest(f"objective-ledger:{self.tag}"),
+            shared_evidence_sha256=spec.shared_evidence.content_sha256,
+            trajectory_credit_acquisition_sha256=(
+                spec.shared_evidence.trajectory_credit_acquisition_sha256
+            ),
+            compiler_ledger_sha256=spec.shared_evidence.compiler_ledger_sha256,
+            backward_count=1,
+            optimizer_step_count=0,
+        )
+
+    def witness_bank(
+        self, state: CellExecutionState, spec: CellSpec
+    ) -> FrozenWitnessBank:
+        layout = ParameterLayout.from_named_parameters(state.named_trainable_parameters)
+        row = torch.ones(layout.total_numel, dtype=torch.float64)
+        witness = OwnerWitness(
+            image_id="image_00",
+            owner_id="owner_00",
+            source_membership=SOURCE_MEMBERSHIPS[0],
+            owner_class=TRUSTED_OWNER_CLASS,
+            token_id=123,
+            margin_selection=WEAKEST_MARGIN_SELECTION,
+            margin_value=0.5,
+            detached=True,
+            jacobian_sha256=jacobian_sha256(row),
+        )
+        return FrozenWitnessBank.from_witnesses(
+            (witness,),
+            jacobians={witness.canonical_key: row},
+            binding=WitnessBinding(
+                unit_id=UNIT_ID,
+                source_checkpoint_sha256=spec.source_checkpoint_sha256,
+                manifest_sha256=spec.shared_evidence.manifest_sha256,
+                frozen_before_acquisition=True,
+            ),
+            layout=layout,
+        )
+
+    def realized_margin_probe(self, state, spec, bank):
+        return lambda: {
+            witness.canonical_key: witness.margin_value + 0.1
+            for witness in bank.constraints
+        }
+
+    def write_private_checkpoint(
+        self, state: CellExecutionState, spec: CellSpec
+    ) -> PrivateCheckpointRef:
+        return PrivateCheckpointRef(
+            path=str(self.root / self.tag / "proposal"),
+            checkpoint_sha256=self.checkpoint_sha256,
+            private=True,
+        )
+
+    def audit_checkpoint(
+        self,
+        state: CellExecutionState,
+        checkpoint: PrivateCheckpointRef,
+        repetition_penalty: float,
+    ) -> AuditRef:
+        generation_sha = _digest(f"generation:{self.tag}:{repetition_penalty}")
+        output_path = self.root / f"audit-{self.tag}-{repetition_penalty}.jsonl"
+        output_sha = _write_jsonl(
+            output_path,
+            _audit_rows(
+                self.manifest,
+                rp=repetition_penalty,
+                checkpoint_sha256=checkpoint.checkpoint_sha256,
+                generation_sha256=generation_sha,
+                policy_sha256=self.spec.shared_evidence.policy_contract_sha256,
+                config_sha256=self.spec.leaf_config_sha256,
+                arm_id=self.arm_id,
+                seed_group=self.seed_group,
+                training_rp=self.training_rp,
+                mixed_robust_seeds=False,
+            ),
+        )
+        return AuditRef(
+            evaluation_rp=repetition_penalty,
+            evaluated_checkpoint_sha256=checkpoint.checkpoint_sha256,
+            output_path=str(output_path),
+            output_sha256=output_sha,
+            row_count=13,
+            image_ids=CANONICAL_IMAGE_IDS,
+            generation_policy_receipt_sha256=generation_sha,
+        )
+
+    def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None:
+        return None
+
+
+class _E2ENodeRuntime:
+    """Injected node owner: one acquisition, three independent cells."""
+
+    def __init__(
+        self, node: Mapping[str, object], manifest: Human13KUnionManifest, root: Path
+    ) -> None:
+        self.node = node
+        self.manifest = manifest
+        self.root = root
+        self.terminals: list[tuple[str, Mapping[str, object]]] = []
+
+    def acquire_cell_specs(self, node: Mapping[str, object]) -> tuple[CellSpec, ...]:
+        acquisition = AcquisitionKey.from_dict(node["acquisition_key"])
+        shared = _shared(
+            _manifest_sha256(self.manifest),
+            acquisition.training_rp,
+            acquisition.seed_group_id,
+        )
+        group_tag = f"{acquisition.training_rp}:{acquisition.seed_group_id}"
+        specs = []
+        for cell in node["cells"]:
+            arm_id = cell["cell_key"]["arm_id"]
+            specs.append(
+                CellSpec(
+                    cell_key=CellKey(acquisition, arm_id),
+                    shared_evidence=shared,
+                    leaf_config_sha256=_digest(
+                        f"config:{acquisition.training_rp}:{arm_id}"
+                    ),
+                    source_checkpoint_sha256=SOURCE,
+                    expected_objective_components=tuple(cell["objective_components"]),
+                    objective_component_hashes=_objective_hashes(arm_id, group_tag),
+                    adamw_config_sha256=cell["adamw_config_sha256"],
+                    fresh_optimizer_identity_sha256=cell[
+                        "fresh_optimizer_identity_sha256"
+                    ],
+                    evaluation_rps=EVALUATION_RPS,
+                    output_root=cell["output_root"],
+                )
+            )
+        return tuple(specs)
+
+    def services_for_cell(self, spec: CellSpec) -> _E2ECellServices:
+        return _E2ECellServices(spec, self.manifest, self.root)
+
+    def write_cell_receipt(self, receipt: CellReceipt) -> None:
+        return None
+
+    def write_node_terminal_receipt(
+        self, path: str, payload: Mapping[str, object]
+    ) -> None:
+        self.terminals.append((path, payload))
+
+
+def _source_baseline_fixtures(
+    manifest: Human13KUnionManifest, tmp_path: Path
+) -> tuple[tuple[SourceBaselineRef, ...], tuple[tuple[float, str], ...]]:
+    baselines: list[SourceBaselineRef] = []
+    paths: list[tuple[float, str]] = []
+    for rp in EVALUATION_RPS:
+        path = tmp_path / f"source-rp{rp}.jsonl"
+        output_sha = _write_jsonl(
+            path,
+            _audit_rows(
+                manifest,
+                rp=rp,
+                checkpoint_sha256=SOURCE,
+                generation_sha256=_digest(f"source-generation:{rp}"),
+                policy_sha256=_digest(f"source-policy:{rp}"),
+                config_sha256=_digest(f"source-config:{rp}"),
+                arm_id="source",
+                seed_group="source",
+                training_rp=rp,
+                mixed_robust_seeds=False,
+                source=True,
+            ),
+        )
+        baselines.append(
+            SourceBaselineRef(rp, output_sha, output_sha, SOURCE, CANONICAL_IMAGE_IDS)
+        )
+        paths.append((rp, str(path)))
+    return tuple(baselines), tuple(paths)
+
+
+def _run_matrix_nodes(tmp_path: Path, manifest: Human13KUnionManifest) -> list[dict]:
+    dag_plan = launcher.build_dag_plan(
+        launcher.load_leaf_configs(),
+        run_id="e2e",
+        output_root=tmp_path / "artifacts",
+    )
+    dag_path = tmp_path / "dag-plan.json"
+    dag_path.write_text(json.dumps(dag_plan), encoding="utf-8")
+    matrix_node_ids = tuple(
+        item["node_id"]
+        for item in dag_plan["acquisitions"]
+        if item["phase"] == "matrix"
+    )
+    launch_plan = launcher.plan_launches(
+        dag_path, gpu_ids=tuple(range(6)), node_ids=matrix_node_ids
+    )
+    terminals: list[dict] = []
+    for job in launch_plan["jobs"]:
+        command = job["command"]
+        runner_index = command.index(str(launcher.DEFAULT_RUNNER_ENTRY.resolve()))
+        argv = command[runner_index + 1 :]
+        node = next(
+            item
+            for item in dag_plan["acquisitions"]
+            if item["node_id"] == job["node_id"]
+        )
+        runtime = _E2ENodeRuntime(node, manifest, tmp_path / job["node_id"])
+        stream = io.StringIO()
+        assert (
+            runner.run_cli(
+                argv,
+                node_runtime_factory=runner.declare_node_runtime_factory(
+                    lambda _node, runtime=runtime: runtime
+                ),
+                stdout=stream,
+            )
+            == 0
+        )
+        terminals.append(json.loads(stream.getvalue()))
+    return terminals
+
+
+def test_launcher_dag_through_node_runner_and_publisher_is_admitted(
+    tmp_path: Path,
+) -> None:
+    manifest = _manifest()
+    terminals = _run_matrix_nodes(tmp_path, manifest)
+    baselines, source_paths = _source_baseline_fixtures(manifest, tmp_path)
+    published_path = tmp_path / "analysis-input.json"
+
+    published = publish_matrix_analysis_input(
+        terminals,
+        source_baselines=baselines,
+        source_output_paths=source_paths,
+        output_path=published_path,
+    )
+    reloaded = MatrixAnalysisInput.from_dict(
+        json.loads(published_path.read_text(encoding="utf-8"))
+    )
+    result = analyze_matrix(manifest, reloaded)
+
+    assert len(terminals) == 6
+    assert published.content_sha256 == reloaded.content_sha256
+    assert len(published.plan.cells) == 18
+    assert len(result.surfaces) == 36
+    assert result.qualification_outcomes_included is False
+    deltas = {
+        (
+            receipt.cell_key.acquisition_key.training_rp,
+            receipt.cell_key.acquisition_key.seed_group_id,
+            receipt.cell_key.arm_id,
+        ): receipt.proposal_delta_sha256
+        for receipt in published.cell_receipts
+    }
+    # Arm C projects exactly the arm-B base proposal of its own acquisition.
+    for training_rp in TRAINING_RPS:
+        for seed_group in MATRIX_SEED_GROUPS:
+            assert (
+                deltas[(training_rp, seed_group, "C")]
+                == deltas[(training_rp, seed_group, "B")]
+            )
+
+
+def test_publisher_rejects_a_qualification_node_terminal(tmp_path: Path) -> None:
+    manifest = _manifest()
+    terminals = _run_matrix_nodes(tmp_path, manifest)
+    baselines, source_paths = _source_baseline_fixtures(manifest, tmp_path)
+    qualification = NodeTerminalReceipt.from_dict(terminals[0])
+    forged = replace(
+        qualification,
+        node_id="rp100:qualification",
+        phase="qualification",
+        acquisition_key=AcquisitionKey(1.0, QUALIFICATION_SEED_GROUP, "qualification"),
+        cell_specs=(),
+        cell_receipts=(),
+        status="failed",
+        failure_reason="not a matrix node",
+    )
+
+    with pytest.raises(ValueError, match="qualification"):
+        publish_matrix_analysis_input(
+            [*terminals, forged],
+            source_baselines=baselines,
+            source_output_paths=source_paths,
+        )
+
+
+def test_publisher_rejects_a_missing_node_terminal(tmp_path: Path) -> None:
+    manifest = _manifest()
+    terminals = _run_matrix_nodes(tmp_path, manifest)
+    baselines, source_paths = _source_baseline_fixtures(manifest, tmp_path)
+
+    with pytest.raises(ValueError, match="exactly six"):
+        publish_matrix_analysis_input(
+            terminals[:-1],
+            source_baselines=baselines,
+            source_output_paths=source_paths,
+        )

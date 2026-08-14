@@ -30,12 +30,18 @@ from scripts.research.build_human13_k_union_manifest import (
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     ARM_IDS,
     CANONICAL_IMAGE_IDS,
+    DRY_RUN_COUNTER_KEYS,
     EVALUATION_RPS,
     MATRIX_SEED_GROUPS,
+    PHASE_MATRIX,
     TRAINING_RPS,
     CellReceipt,
     CellSpec,
     MatrixPlan,
+    NodeTerminalReceipt,
+    SourceBaselineRef,
+    matrix_identity,
+    validate_matrix_receipts,
 )
 
 
@@ -91,7 +97,12 @@ def _integer(value: object, *, field: str) -> int:
 
 @dataclass(frozen=True)
 class MatrixAnalysisInput:
-    """Analyzer-only aggregate joining a shared plan, receipts, and baselines."""
+    """Analyzer-only aggregate joining a shared plan, receipts, and baselines.
+
+    Construction is the single public admission gate: direct construction, the
+    node-terminal publisher, and ``from_dict`` reload all re-enter the shared
+    ``validate_matrix_receipts`` choke point before any audit file is opened.
+    """
 
     plan: MatrixPlan
     cell_receipts: tuple[CellReceipt, ...]
@@ -118,6 +129,7 @@ class MatrixAnalysisInput:
             )
         if len({path for _, path in paths}) != len(paths):
             raise ValueError("source output paths must be unique")
+        validate_matrix_receipts(self.plan, receipts)
         object.__setattr__(self, "cell_receipts", receipts)
         object.__setattr__(self, "source_output_paths", paths)
 
@@ -562,6 +574,95 @@ class MatrixAnalysisReceipt:
         return result
 
 
+def _load_node_terminal(
+    value: NodeTerminalReceipt | Mapping[str, Any] | str | Path,
+) -> NodeTerminalReceipt:
+    if isinstance(value, NodeTerminalReceipt):
+        return value
+    if isinstance(value, Mapping):
+        return NodeTerminalReceipt.from_dict(value)
+    path = Path(value)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("node terminal receipt is unavailable or invalid") from error
+    if not isinstance(payload, Mapping):
+        raise ValueError("node terminal receipt must contain an object")
+    return NodeTerminalReceipt.from_dict(payload)
+
+
+def publish_matrix_analysis_input(
+    node_terminals: Sequence[NodeTerminalReceipt | Mapping[str, Any] | str | Path],
+    *,
+    source_baselines: Sequence[SourceBaselineRef],
+    source_output_paths: Sequence[tuple[float, str]],
+    concurrency_cap: int = 8,
+    output_path: str | Path | None = None,
+) -> MatrixAnalysisInput:
+    """Finalize the six matrix node terminals into one analyzable matrix.
+
+    This is the only aggregate publisher: it consumes the exact typed specs and
+    receipts the nodes persisted plus the two immutable Source baselines,
+    excludes qualification, and re-enters the shared ``MatrixPlan`` and
+    ``MatrixAnalysisInput`` constructors, so the published artifact and any
+    later reload are admitted by the same choke point.
+    """
+
+    terminals = tuple(_load_node_terminal(item) for item in node_terminals)
+    if any(item.phase != PHASE_MATRIX for item in terminals):
+        raise ValueError(
+            "qualification node terminals are excluded from the matrix aggregate"
+        )
+    expected_keys = {
+        (training_rp, seed_group)
+        for training_rp in TRAINING_RPS
+        for seed_group in MATRIX_SEED_GROUPS
+    }
+    by_key = {
+        (
+            item.acquisition_key.training_rp,
+            item.acquisition_key.seed_group_id,
+        ): item
+        for item in terminals
+    }
+    if len(terminals) != len(expected_keys) or set(by_key) != expected_keys:
+        raise ValueError(
+            "the matrix aggregate requires exactly six matrix node terminals"
+        )
+    if any(item.status != "succeeded" for item in terminals):
+        raise ValueError("every matrix node terminal must have succeeded")
+
+    ordered = [
+        by_key[(training_rp, seed_group)]
+        for training_rp in TRAINING_RPS
+        for seed_group in MATRIX_SEED_GROUPS
+    ]
+    cells = tuple(spec for item in ordered for spec in item.cell_specs)
+    receipts = tuple(receipt for item in ordered for receipt in item.cell_receipts)
+    plan = MatrixPlan(
+        acquisitions=tuple(item.acquisition_key for item in ordered),
+        cells=cells,
+        source_baselines=tuple(source_baselines),
+        dependency_edges=tuple(
+            (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
+            for cell in cells
+        ),
+        concurrency_cap=concurrency_cap,
+        dry_run_counters={key: 0 for key in DRY_RUN_COUNTER_KEYS},
+    )
+    published = MatrixAnalysisInput(plan, receipts, tuple(source_output_paths))
+    if output_path is not None:
+        path = Path(output_path)
+        if path.exists():
+            raise FileExistsError(f"refusing to overwrite analysis input: {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(published.to_dict(), sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return published
+
+
 def _load_input(
     value: MatrixAnalysisInput | Mapping[str, Any] | str | Path,
 ) -> MatrixAnalysisInput:
@@ -580,22 +681,19 @@ def _load_input(
     return MatrixAnalysisInput.from_dict(payload)
 
 
-def _receipt_key(receipt: CellReceipt) -> tuple[float, str, str]:
-    acquisition = receipt.cell_key.acquisition_key
-    return acquisition.training_rp, acquisition.seed_group_id, receipt.cell_key.arm_id
-
-
-def _cell_key(cell: CellSpec) -> tuple[float, str, str]:
-    acquisition = cell.cell_key.acquisition_key
-    return acquisition.training_rp, acquisition.seed_group_id, cell.cell_key.arm_id
-
-
 def _admit_complete_matrix(
     manifest: Human13KUnionManifest,
     inputs: MatrixAnalysisInput,
     *,
     expected_manifest_sha256: str | None,
 ) -> tuple[dict[tuple[float, str, str], CellSpec], str, str]:
+    """Bind one admitted matrix to this exact manifest and Source lineage.
+
+    Cell/receipt shape, identity, and nested-objective admission belong to the
+    shared contract validator; only the manifest-bound lineage is analyzer
+    business.
+    """
+
     if not isinstance(manifest, Human13KUnionManifest):
         raise ValueError("matrix analyzer requires a Human13KUnionManifest")
     if (
@@ -616,102 +714,18 @@ def _admit_complete_matrix(
         and manifest_sha != expected_manifest_sha256
     ):
         raise ValueError("manifest differs from the exact frozen manifest SHA-256")
-    receipts = inputs.cell_receipts
-    if len(receipts) != 18:
-        raise ValueError("analysis requires exactly eighteen cell receipts")
-    if any(item.cell_key.acquisition_key.phase == "qualification" for item in receipts):
-        raise ValueError("qualification cells must never enter matrix analysis")
-    receipt_keys = [_receipt_key(item) for item in receipts]
-    if len(set(receipt_keys)) != len(receipt_keys):
-        raise ValueError(
-            "analysis requires a unique cell receipt for every matrix cell"
-        )
-    planned = {_cell_key(cell): cell for cell in inputs.plan.cells}
-    if set(receipt_keys) != set(planned):
-        raise ValueError("cell receipts differ from the exact eighteen-cell plan")
 
+    validate_matrix_receipts(inputs.plan, inputs.cell_receipts)
+    planned = {matrix_identity(cell): cell for cell in inputs.plan.cells}
     source_ids = {cell.shared_evidence.source_sha256 for cell in inputs.plan.cells}
     manifest_ids = {cell.shared_evidence.manifest_sha256 for cell in inputs.plan.cells}
     if len(source_ids) != 1 or manifest_ids != {manifest_sha}:
         raise ValueError("matrix Source or manifest lineage is mixed")
     source_sha = source_ids.pop()
-    if {cell.source_checkpoint_sha256 for cell in inputs.plan.cells} != {
-        source_sha
-    } or {item.checkpoint_sha256 for item in inputs.plan.source_baselines} != {
+    if {item.checkpoint_sha256 for item in inputs.plan.source_baselines} != {
         source_sha
     }:
         raise ValueError("matrix Source checkpoint lineage is mixed")
-
-    policy_by_rp: dict[float, set[str]] = {rp: set() for rp in TRAINING_RPS}
-    config_by_surface: dict[tuple[float, str], set[str]] = {}
-    for cell in inputs.plan.cells:
-        rp, _seed, arm = _cell_key(cell)
-        policy_by_rp[rp].add(cell.shared_evidence.policy_contract_sha256)
-        config_by_surface.setdefault((rp, arm), set()).add(cell.leaf_config_sha256)
-    if (
-        any(len(values) != 1 for values in policy_by_rp.values())
-        or len({next(iter(values)) for values in policy_by_rp.values()}) != 2
-    ):
-        raise ValueError("training-RP policy lineage is mixed")
-    config_ids = {
-        next(iter(values)) for values in config_by_surface.values() if len(values) == 1
-    }
-    if (
-        len(config_by_surface) != 6
-        or any(len(values) != 1 for values in config_by_surface.values())
-        or len(config_ids) != 6
-    ):
-        raise ValueError("leaf config lineage is mixed")
-
-    proposal_ids: set[str] = set()
-    apply_ids: set[str] = set()
-    transaction_ids: set[str] = set()
-    checkpoint_ids: set[str] = set()
-    audit_paths: set[str] = set()
-    generation_ids: set[str] = set()
-    for receipt in receipts:
-        key = _receipt_key(receipt)
-        cell = planned[key]
-        if receipt.status != "succeeded":
-            raise ValueError("failed scientific cell cannot enter pooled success")
-        if receipt.shared_evidence != cell.shared_evidence:
-            raise ValueError("cell receipt shared evidence differs from its plan")
-        if receipt.objective_components != cell.expected_objective_components:
-            raise ValueError("cell receipt objective differs from its plan")
-        if receipt.update_count != 1 or receipt.retry_policy != "none":
-            raise ValueError("cell receipt must bind one update and zero retries")
-        if not receipt.rollback_confirmed or (
-            receipt.before_transaction_digest != receipt.after_transaction_digest
-        ):
-            raise ValueError("cell receipt lacks complete rollback")
-        assert receipt.adamw_proposal_sha256 is not None
-        assert receipt.apply_receipt_sha256 is not None
-        if receipt.adamw_proposal_sha256 in proposal_ids:
-            raise ValueError("cells require independent proposal identities")
-        if receipt.apply_receipt_sha256 in apply_ids:
-            raise ValueError("cells require independent apply identities")
-        if receipt.before_transaction_digest in transaction_ids:
-            raise ValueError("cells require an independent transaction identity")
-        proposal_ids.add(receipt.adamw_proposal_sha256)
-        apply_ids.add(receipt.apply_receipt_sha256)
-        transaction_ids.add(receipt.before_transaction_digest)
-        audits = {audit.evaluation_rp: audit for audit in receipt.audits}
-        if set(audits) != set(EVALUATION_RPS) or len(receipt.audits) != 2:
-            raise ValueError("successful cells require exactly two clean-greedy audits")
-        evaluated = {audit.evaluated_checkpoint_sha256 for audit in receipt.audits}
-        if len(evaluated) != 1:
-            raise ValueError("both audits must evaluate the same private proposal")
-        checkpoint = evaluated.pop()
-        if checkpoint in checkpoint_ids:
-            raise ValueError("cells require independent evaluated proposal identities")
-        checkpoint_ids.add(checkpoint)
-        for audit in receipt.audits:
-            if audit.output_path in audit_paths:
-                raise ValueError("audit output paths must be unique")
-            if audit.generation_policy_receipt_sha256 in generation_ids:
-                raise ValueError("audit generation-policy receipts must be unique")
-            audit_paths.add(audit.output_path)
-            generation_ids.add(audit.generation_policy_receipt_sha256)
     return planned, source_sha, manifest_sha
 
 
@@ -1027,7 +1041,7 @@ def _analyze_matrix_impl(
         )
         source_owners[evaluation_rp] = set(projected["owner_ids"])
 
-    receipts = {_receipt_key(item): item for item in inputs.cell_receipts}
+    receipts = {matrix_identity(item): item for item in inputs.cell_receipts}
     surfaces: list[CellSurfaceAnalysis] = []
     for training_rp in TRAINING_RPS:
         for seed_group in MATRIX_SEED_GROUPS:
@@ -1127,4 +1141,5 @@ __all__ = [
     "PairedArmChange",
     "TrainingRPSuccess",
     "analyze_matrix",
+    "publish_matrix_analysis_input",
 ]

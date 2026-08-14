@@ -19,9 +19,11 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     AcquisitionKey,
     AuditRef,
     CANONICAL_IMAGE_IDS,
+    PROPOSAL_COMPONENTS_BY_ARM,
     CellKey,
     CellSpec,
     SharedEvidenceRef,
+    canonical_seeds,
 )
 from scripts.research.human13_rp_crossover_runtime import (
     CellExecutionState,
@@ -45,7 +47,7 @@ def _digest(label: str) -> str:
 
 def _shared() -> SharedEvidenceRef:
     return SharedEvidenceRef(
-        source_sha256=_digest("source"),
+        source_sha256=_digest("source-checkpoint"),
         manifest_sha256=_digest("manifest"),
         acquisition_path="shared/acquisition.json",
         acquisition_sha256=_digest("acquisition"),
@@ -53,6 +55,17 @@ def _shared() -> SharedEvidenceRef:
         credit_ledger_sha256=_digest("credit"),
         compiler_ledger_sha256=_digest("compiler"),
         policy_contract_sha256=_digest("policy"),
+        native_receipts_sha256=_digest("native-receipts"),
+        training_rp=1.0,
+        seed_group_id="matrix_a",
+        seeds=canonical_seeds("matrix_a"),
+    )
+
+
+def _component_hashes(arm_id: str) -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (component, _digest(f"objective-component:{component}"))
+        for component in PROPOSAL_COMPONENTS_BY_ARM[arm_id]
     )
 
 
@@ -71,7 +84,9 @@ def _spec(arm_id: str = "A") -> CellSpec:
         leaf_config_sha256=_digest(f"leaf-{arm_id}"),
         source_checkpoint_sha256=_digest("source-checkpoint"),
         expected_objective_components=components,
-        fresh_adamw_fingerprint_sha256=_digest("fresh-adamw"),
+        objective_component_hashes=_component_hashes(arm_id),
+        adamw_config_sha256=_digest("frozen-adamw-config"),
+        fresh_optimizer_identity_sha256=_digest(f"fresh-optimizer-{arm_id}"),
         evaluation_rps=(1.0, 1.10),
         output_root=f"cells/{arm_id}",
     )
@@ -113,6 +128,7 @@ class FakeServices:
         self.backward_calls = 0
         self.fresh_source = True
         self.shared_evidence_sha256: str | None = None
+        self.component_hashes: tuple[tuple[str, str], ...] | None = None
 
     def open_cell(self, spec: CellSpec) -> CellExecutionState:
         parameter = torch.nn.Parameter(torch.tensor((1.0, -1.0)))
@@ -143,7 +159,8 @@ class FakeServices:
             shared_evidence_sha256=(
                 self.shared_evidence_sha256 or spec.shared_evidence.content_sha256
             ),
-            adamw_fingerprint_sha256=spec.fresh_adamw_fingerprint_sha256,
+            adamw_config_sha256=spec.adamw_config_sha256,
+            optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
             fresh_source=self.fresh_source,
         )
         self.states.append(state)
@@ -159,6 +176,11 @@ class FakeServices:
                 ("trajectory",)
                 if spec.cell_key.arm_id == "A"
                 else ("trajectory", "compiler")
+            ),
+            component_hashes=(
+                self.component_hashes
+                if self.component_hashes is not None
+                else spec.objective_component_hashes
             ),
             objective_ledger_sha256=_digest(
                 ":".join(
@@ -354,3 +376,55 @@ def test_runtime_rejects_a_mislabeled_dual_rp_audit_and_rolls_back() -> None:
     assert services.states[0].transaction.state_digest() == (
         written[0].before_transaction_digest
     )
+
+
+def test_receipt_binds_per_component_objective_bytes_and_transaction_identity() -> None:
+    services = FakeServices()
+
+    receipt = run_cell(_spec("B"), services=services, receipt_writer=lambda _: None)
+
+    assert receipt.objective_component_hashes == _component_hashes("B")
+    assert receipt.adamw_config_sha256 == _spec("B").adamw_config_sha256
+    assert receipt.fresh_optimizer_identity_sha256 == (
+        _spec("B").fresh_optimizer_identity_sha256
+    )
+    assert len(receipt.transaction_id) == 32
+    assert receipt.proposal_delta_sha256 is not None
+
+
+def test_preservation_arm_records_the_same_base_proposal_delta_as_arm_b() -> None:
+    b_receipt = run_cell(
+        _spec("B"), services=FakeServices(), receipt_writer=lambda _: None
+    )
+    c_receipt = run_cell(
+        _spec("C"), services=FakeServices(), receipt_writer=lambda _: None
+    )
+
+    assert c_receipt.proposal_delta_sha256 == b_receipt.proposal_delta_sha256
+    assert c_receipt.transaction_id != b_receipt.transaction_id
+
+
+def test_runtime_rejects_objective_component_bytes_outside_the_cell_spec() -> None:
+    services = FakeServices()
+    services.component_hashes = (
+        ("trajectory", _digest("forged-trajectory-objective")),
+        ("compiler", _digest("objective-component:compiler")),
+    )
+
+    with pytest.raises(CellRuntimeError, match="objective component"):
+        run_cell(_spec("B"), services=services, receipt_writer=lambda _: None)
+
+
+def test_runtime_rejects_an_optimizer_identity_outside_the_cell_spec() -> None:
+    class WrongOptimizerIdentityServices(FakeServices):
+        def open_cell(self, spec):
+            state = super().open_cell(spec)
+            state.optimizer_identity_sha256 = _digest("another-cell-optimizer")
+            return state
+
+    with pytest.raises(CellRuntimeError, match="optimizer identity"):
+        run_cell(
+            _spec("A"),
+            services=WrongOptimizerIdentityServices(),
+            receipt_writer=lambda _: None,
+        )

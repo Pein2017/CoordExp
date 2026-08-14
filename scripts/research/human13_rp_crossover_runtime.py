@@ -28,6 +28,7 @@ from scripts.research.human13_adamw_proposal_preservation import (
     project_adamw_proposal,
 )
 from scripts.research.human13_rp_crossover_matrix_contracts import (
+    PROPOSAL_COMPONENTS_BY_ARM,
     AuditRef,
     CellReceipt,
     CellSpec,
@@ -52,9 +53,15 @@ def _sha256(value: object) -> str:
 
 @dataclass(frozen=True)
 class ObjectiveBackwardReceipt:
-    """Proof that one injected loss pass populated, but did not step, gradients."""
+    """Proof that one injected loss pass populated, but did not step, gradients.
+
+    ``component_hashes`` binds the exact bytes of each proposal loss component,
+    so a nested arm cannot silently consume a different trajectory or compiler
+    objective than the one its acquisition planned.
+    """
 
     proposal_components: tuple[str, ...]
+    component_hashes: tuple[tuple[str, str], ...]
     objective_ledger_sha256: str
     shared_evidence_sha256: str
     trajectory_credit_acquisition_sha256: str
@@ -92,7 +99,8 @@ class CellExecutionState:
     world_size: int
     source_checkpoint_sha256: str
     shared_evidence_sha256: str
-    adamw_fingerprint_sha256: str
+    adamw_config_sha256: str
+    optimizer_identity_sha256: str
     fresh_source: bool
 
 
@@ -149,8 +157,10 @@ def _validate_state(spec: CellSpec, state: CellExecutionState) -> None:
         raise ValueError("fresh Source checkpoint identity differs from CellSpec")
     if state.shared_evidence_sha256 != spec.shared_evidence.content_sha256:
         raise ValueError("cell shared evidence differs from the planned acquisition")
-    if state.adamw_fingerprint_sha256 != spec.fresh_adamw_fingerprint_sha256:
-        raise ValueError("fresh AdamW fingerprint differs from CellSpec")
+    if state.adamw_config_sha256 != spec.adamw_config_sha256:
+        raise ValueError("declared AdamW configuration differs from CellSpec")
+    if state.optimizer_identity_sha256 != spec.fresh_optimizer_identity_sha256:
+        raise ValueError("this cell's fresh optimizer identity differs from CellSpec")
     if not isinstance(state.optimizer, torch.optim.AdamW):
         raise ValueError("cell optimizer must be torch.optim.AdamW")
     if state.optimizer.state or state.update_counter.value != 0:
@@ -164,14 +174,19 @@ def _validate_state(spec: CellSpec, state: CellExecutionState) -> None:
 
 
 def _validate_backward(spec: CellSpec, receipt: ObjectiveBackwardReceipt) -> None:
-    expected = (
-        ("trajectory",) if spec.cell_key.arm_id == "A" else ("trajectory", "compiler")
-    )
+    expected = PROPOSAL_COMPONENTS_BY_ARM[spec.cell_key.arm_id]
     if not isinstance(receipt, ObjectiveBackwardReceipt):
         raise ValueError("backward adapter must return ObjectiveBackwardReceipt")
     if tuple(receipt.proposal_components) != expected:
         raise ValueError(
             "proposal loss components violate the exact nested-arm contract"
+        )
+    if (
+        tuple(tuple(item) for item in receipt.component_hashes)
+        != spec.objective_component_hashes
+    ):
+        raise ValueError(
+            "consumed objective component bytes differ from the planned CellSpec"
         )
     if receipt.backward_count != 1 or receipt.optimizer_step_count != 0:
         raise ValueError("cell requires exactly one backward and no adapter-owned step")
@@ -243,8 +258,10 @@ def run_cell(
     snapshot: TrainingStateSnapshot | None = None
     checkpoint: PrivateCheckpointRef | None = None
     proposal_sha256: str | None = None
+    proposal_delta_sha256: str | None = None
     projection_sha256: str | None = None
     apply_sha256: str | None = None
+    component_hashes: tuple[tuple[str, str], ...] = ()
     audits: list[AuditRef] = []
     update_attempted = False
     failure: Exception | None = None
@@ -252,6 +269,7 @@ def run_cell(
     try:
         backward = services.backward_objective(state, spec)
         _validate_backward(spec, backward)
+        component_hashes = spec.objective_component_hashes
         proposal = capture_exact_adamw_proposal(
             state.named_trainable_parameters,
             optimizer=state.optimizer,
@@ -260,6 +278,9 @@ def run_cell(
             binding=_binding(spec, backward),
         )
         proposal_sha256 = proposal.proposal_sha256
+        # The arm-independent identity of the measured proposal: arm C projects
+        # exactly this base delta, so B and C of one acquisition must agree.
+        proposal_delta_sha256 = proposal.delta_sha256
         snapshot = state.transaction.begin()
         update_attempted = True
 
@@ -329,15 +350,21 @@ def run_cell(
     if failure is not None:
         if not update_attempted:
             raise CellRuntimeError(str(failure)) from failure
+        assert snapshot is not None
         receipt = CellReceipt(
             cell_key=spec.cell_key,
             shared_evidence=spec.shared_evidence,
             objective_components=spec.expected_objective_components,
+            objective_component_hashes=component_hashes,
+            adamw_config_sha256=spec.adamw_config_sha256,
+            fresh_optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
+            transaction_id=snapshot.transaction_id,
             before_transaction_digest=before_digest,
             after_transaction_digest=state.transaction.state_digest(),
             status="failed",
             audits=tuple(audits),
             adamw_proposal_sha256=proposal_sha256,
+            proposal_delta_sha256=proposal_delta_sha256,
             projection_receipt_sha256=projection_sha256,
             apply_receipt_sha256=apply_sha256,
             failure_reason=_failure_reason(failure),
@@ -345,15 +372,21 @@ def run_cell(
         receipt_writer(receipt)
         raise CellRuntimeError(str(failure), receipt=receipt) from failure
 
+    assert snapshot is not None
     receipt = CellReceipt(
         cell_key=spec.cell_key,
         shared_evidence=spec.shared_evidence,
         objective_components=spec.expected_objective_components,
+        objective_component_hashes=component_hashes,
+        adamw_config_sha256=spec.adamw_config_sha256,
+        fresh_optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
+        transaction_id=snapshot.transaction_id,
         before_transaction_digest=before_digest,
         after_transaction_digest=state.transaction.state_digest(),
         status="succeeded",
         audits=tuple(audits),
         adamw_proposal_sha256=proposal_sha256,
+        proposal_delta_sha256=proposal_delta_sha256,
         projection_receipt_sha256=projection_sha256,
         apply_receipt_sha256=apply_sha256,
     )
