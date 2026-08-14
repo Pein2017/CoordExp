@@ -112,6 +112,14 @@ class PolicyContract:
     natural_stop_token_id: int
     max_new_tokens: int
     processor_order: tuple[str, ...] = _PROCESSOR_ORDER
+    sampler_backend_id: str = ""
+    top_p: float = 1.0
+    top_k: int | None = None
+    n: int = 1
+    min_new_tokens: int = 0
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+    ignore_eos: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, ArtifactIdentity):
@@ -128,9 +136,30 @@ class PolicyContract:
             raise ValueError("natural_stop_token_id must be a nonnegative integer")
         if isinstance(self.max_new_tokens, bool) or not isinstance(self.max_new_tokens, int) or self.max_new_tokens <= 0:
             raise ValueError("max_new_tokens must be a positive integer")
+        if isinstance(self.min_new_tokens, bool) or not isinstance(self.min_new_tokens, int) or not 0 <= self.min_new_tokens <= self.max_new_tokens:
+            raise ValueError("min_new_tokens must be an integer from zero to max_new_tokens")
+        if isinstance(self.n, bool) or not isinstance(self.n, int) or self.n <= 0:
+            raise ValueError("n must be a positive integer")
+        top_p = float(self.top_p)
+        if not math.isfinite(top_p) or not 0 < top_p <= 1:
+            raise ValueError("top_p must be finite and in (0, 1]")
+        if self.top_k is not None and (
+            isinstance(self.top_k, bool) or not isinstance(self.top_k, int) or self.top_k <= 0
+        ):
+            raise ValueError("top_k must be None or a positive integer")
+        frequency_penalty = float(self.frequency_penalty)
+        presence_penalty = float(self.presence_penalty)
+        if not math.isfinite(frequency_penalty) or not math.isfinite(presence_penalty):
+            raise ValueError("frequency_penalty and presence_penalty must be finite")
+        if not isinstance(self.ignore_eos, bool):
+            raise ValueError("ignore_eos must be a boolean")
+        object.__setattr__(self, "sampler_backend_id", _nonempty(self.sampler_backend_id, field="sampler_backend_id"))
         object.__setattr__(self, "repetition_penalty", rp)
         object.__setattr__(self, "temperature", temperature)
         object.__setattr__(self, "processor_order", tuple(self.processor_order))
+        object.__setattr__(self, "top_p", top_p)
+        object.__setattr__(self, "frequency_penalty", frequency_penalty)
+        object.__setattr__(self, "presence_penalty", presence_penalty)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -141,6 +170,14 @@ class PolicyContract:
             "natural_stop_token_id": self.natural_stop_token_id,
             "max_new_tokens": self.max_new_tokens,
             "processor_order": list(self.processor_order),
+            "sampler_backend_id": self.sampler_backend_id,
+            "top_p": self.top_p,
+            "top_k": self.top_k,
+            "n": self.n,
+            "min_new_tokens": self.min_new_tokens,
+            "frequency_penalty": self.frequency_penalty,
+            "presence_penalty": self.presence_penalty,
+            "ignore_eos": self.ignore_eos,
         }
 
     @classmethod
@@ -154,6 +191,14 @@ class PolicyContract:
             natural_stop_token_id=value["natural_stop_token_id"],
             max_new_tokens=value["max_new_tokens"],
             processor_order=tuple(value["processor_order"]),
+            sampler_backend_id=value["sampler_backend_id"],
+            top_p=value["top_p"],
+            top_k=value["top_k"],
+            n=value["n"],
+            min_new_tokens=value["min_new_tokens"],
+            frequency_penalty=value["frequency_penalty"],
+            presence_penalty=value["presence_penalty"],
+            ignore_eos=value["ignore_eos"],
         )
 
     @property
@@ -207,6 +252,11 @@ class GeneratedTokenEvidence:
             chosen_token_id=value["chosen_token_id"],
             processed_logprob=value["processed_logprob"],
         )
+
+    @property
+    def content_sha256(self) -> str:
+        """Token evidence is independently addressable and trajectory-addressed."""
+        return _sha256(self.to_dict())
 
 
 def _same_static_identity(left: ArtifactIdentity, right: ArtifactIdentity) -> bool:
@@ -325,6 +375,14 @@ class AcquisitionGroup:
             self.policy_contract.natural_stop_token_id,
             self.policy_contract.max_new_tokens,
             self.policy_contract.processor_order,
+            self.policy_contract.sampler_backend_id,
+            self.policy_contract.top_p,
+            self.policy_contract.top_k,
+            self.policy_contract.n,
+            self.policy_contract.min_new_tokens,
+            self.policy_contract.frequency_penalty,
+            self.policy_contract.presence_penalty,
+            self.policy_contract.ignore_eos,
         )
         for item in trajectories:
             if not isinstance(item, CompleteTrajectoryEvidence):
@@ -340,12 +398,23 @@ class AcquisitionGroup:
                 item.policy_contract.natural_stop_token_id,
                 item.policy_contract.max_new_tokens,
                 item.policy_contract.processor_order,
+                item.policy_contract.sampler_backend_id,
+                item.policy_contract.top_p,
+                item.policy_contract.top_k,
+                item.policy_contract.n,
+                item.policy_contract.min_new_tokens,
+                item.policy_contract.frequency_penalty,
+                item.policy_contract.presence_penalty,
+                item.policy_contract.ignore_eos,
             )
             if item_surface != group_surface:
                 raise ValueError("acquisition group trajectory contract differs")
         hashes = tuple(item.content_sha256 for item in trajectories)
         if len(set(hashes)) != len(hashes):
             raise ValueError("acquisition group trajectories must be distinct")
+        request_ids = tuple(item.identity.request_id for item in trajectories)
+        if len(set(request_ids)) != len(request_ids):
+            raise ValueError("acquisition group trajectories must have distinct request identities")
         object.__setattr__(self, "trajectories", trajectories)
 
     def to_dict(self) -> dict[str, Any]:
@@ -381,6 +450,26 @@ class ReplayTolerance:
     def __post_init__(self) -> None:
         if self.per_token_nats != _FIXED_PER_TOKEN_NATS or self.group_mean_nats != _FIXED_GROUP_MEAN_NATS:
             raise ValueError("replay tolerance must use the fixed sealed thresholds")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "human13_rp_replay_tolerance.v1",
+            "per_token_nats": self.per_token_nats,
+            "group_mean_nats": self.group_mean_nats,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "ReplayTolerance":
+        if value.get("schema_version") != "human13_rp_replay_tolerance.v1":
+            raise ValueError("replay tolerance schema_version differs")
+        return cls(
+            per_token_nats=value["per_token_nats"],
+            group_mean_nats=value["group_mean_nats"],
+        )
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self.to_dict())
 
 
 __all__ = [

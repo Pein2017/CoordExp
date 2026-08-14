@@ -8,7 +8,9 @@ import math
 import torch
 
 from scripts.research.human13_k_trajectory_contracts import (
+    AcquisitionGroup,
     CompleteTrajectoryEvidence,
+    GeneratedTokenEvidence,
     PolicyContract,
     ReplayTolerance,
 )
@@ -22,34 +24,82 @@ class PolicyReplayError(ValueError):
 class PolicyReplayReceipt:
     admitted: bool
     per_token_absolute_error_nats: tuple[float, ...]
-    mean_absolute_error_nats: float
+    trajectory_mean_absolute_error_nats: float
     sampled_trajectory_sha256: str
     replayed_trajectory_sha256: str
 
 
+@dataclass(frozen=True)
+class AcquisitionGroupReplayReceipt:
+    """Content-addressed parity receipt across the complete K-trajectory group."""
+
+    admitted: bool
+    tolerance_sha256: str
+    sampled_group_sha256: str
+    replayed_group_sha256: str
+    request_ids: tuple[str, ...]
+    per_token_absolute_error_nats: tuple[float, ...]
+    group_mean_absolute_error_nats: float
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": "human13_acquisition_group_replay_receipt.v1",
+            "admitted": self.admitted,
+            "tolerance_sha256": self.tolerance_sha256,
+            "sampled_group_sha256": self.sampled_group_sha256,
+            "replayed_group_sha256": self.replayed_group_sha256,
+            "request_ids": list(self.request_ids),
+            "per_token_absolute_error_nats": list(self.per_token_absolute_error_nats),
+            "group_mean_absolute_error_nats": self.group_mean_absolute_error_nats,
+        }
+
+    @property
+    def content_sha256(self) -> str:
+        import hashlib
+        import json
+
+        encoded = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def processed_policy_logprobs(
     raw_logits: torch.Tensor,
-    history_token_ids: tuple[int, ...],
+    token_evidence: GeneratedTokenEvidence,
     contract: PolicyContract,
 ) -> torch.Tensor:
     """Return full-vocabulary FP32 policy log probabilities for one causal row.
 
-    ``history_token_ids`` is exactly the prompt plus already-generated tokens;
-    it excludes the token chosen from this returned distribution.  The literal
-    processor order is repetition penalty on raw logits, temperature division,
-    then full-vocabulary log-softmax.
+    The history is read from the sealed token evidence, not caller input.  It
+    must equal the contract prompt plus the evidence identity's generated
+    prefix, and excludes the token chosen from this returned distribution.
     """
 
     if not isinstance(contract, PolicyContract):
         raise ValueError("contract must be a sealed PolicyContract")
+    if not isinstance(token_evidence, GeneratedTokenEvidence):
+        raise ValueError("token_evidence must be sealed GeneratedTokenEvidence")
+    if token_evidence.policy_contract_sha256 != contract.content_sha256:
+        raise ValueError("token evidence policy contract differs")
+    if token_evidence.identity.prompt_token_ids != contract.identity.prompt_token_ids:
+        raise ValueError("token evidence prompt differs from the sealed contract prompt")
+    if token_evidence.token_index >= len(token_evidence.identity.generated_token_ids):
+        raise ValueError("token evidence index is outside its generated history")
+    if token_evidence.chosen_token_id != token_evidence.identity.generated_token_ids[token_evidence.token_index]:
+        raise ValueError("token evidence chosen token differs from generated history")
+    expected_history = (
+        *contract.identity.prompt_token_ids,
+        *token_evidence.identity.generated_token_ids[: token_evidence.token_index],
+    )
+    if token_evidence.history_token_ids != expected_history:
+        if token_evidence.history_token_ids[: len(contract.identity.prompt_token_ids)] != contract.identity.prompt_token_ids:
+            raise ValueError("token evidence prompt history differs from the sealed prompt")
+        raise ValueError("token evidence generated prefix differs from the sealed history")
     if not isinstance(raw_logits, torch.Tensor) or raw_logits.ndim != 1:
         raise ValueError("raw_logits must be a one-dimensional tensor")
     logits = raw_logits.detach().to(dtype=torch.float32)
     if not bool(torch.isfinite(logits).all().item()):
         raise ValueError("raw_logits must be finite")
-    history = tuple(history_token_ids)
-    if any(isinstance(token, bool) or not isinstance(token, int) or token < 0 for token in history):
-        raise ValueError("history_token_ids must contain nonnegative integer token ids")
+    history = token_evidence.history_token_ids
     vocab_size = int(logits.numel())
     if any(token >= vocab_size for token in history):
         raise ValueError("history token is outside the logits vocabulary")
@@ -72,12 +122,11 @@ def processed_policy_logprobs(
     return logprobs
 
 
-def validate_policy_replay(
+def _trajectory_replay_errors(
     sampled: CompleteTrajectoryEvidence,
     replayed: CompleteTrajectoryEvidence,
     tolerance: ReplayTolerance,
-) -> PolicyReplayReceipt:
-    """Fail closed unless every sealed token and both numeric gates agree."""
+) -> tuple[float, ...]:
 
     if not isinstance(sampled, CompleteTrajectoryEvidence) or not isinstance(replayed, CompleteTrajectoryEvidence):
         raise PolicyReplayError("sampled and replayed evidence must be complete trajectories")
@@ -105,21 +154,75 @@ def validate_policy_replay(
         if error > tolerance.per_token_nats:
             raise PolicyReplayError("per-token replay error exceeds the sealed tolerance")
         errors.append(error)
+    return tuple(errors)
+
+
+def validate_policy_replay(
+    sampled: CompleteTrajectoryEvidence,
+    replayed: CompleteTrajectoryEvidence,
+    tolerance: ReplayTolerance,
+) -> PolicyReplayReceipt:
+    """Validate one trajectory's identity and token gates, without a group claim."""
+
+    errors = _trajectory_replay_errors(sampled, replayed, tolerance)
+    mean_error = sum(errors) / len(errors)
+    return PolicyReplayReceipt(
+        admitted=True,
+        per_token_absolute_error_nats=errors,
+        trajectory_mean_absolute_error_nats=mean_error,
+        sampled_trajectory_sha256=sampled.content_sha256,
+        replayed_trajectory_sha256=replayed.content_sha256,
+    )
+
+
+def validate_acquisition_group_replay(
+    sampled: AcquisitionGroup,
+    replayed: AcquisitionGroup,
+    tolerance: ReplayTolerance,
+) -> AcquisitionGroupReplayReceipt:
+    """Fail closed on any K-member mismatch or one sealed group-wide mean breach."""
+
+    if not isinstance(sampled, AcquisitionGroup) or not isinstance(replayed, AcquisitionGroup):
+        raise PolicyReplayError("sampled and replayed evidence must be acquisition groups")
+    if not isinstance(tolerance, ReplayTolerance):
+        raise ValueError("tolerance must be the sealed ReplayTolerance")
+    if (
+        sampled.identity != replayed.identity
+        or sampled.policy_contract != replayed.policy_contract
+        or sampled.seed_group_id != replayed.seed_group_id
+    ):
+        raise PolicyReplayError("acquisition group lineage differs")
+    sampled_by_request = {item.identity.request_id: item for item in sampled.trajectories}
+    replayed_by_request = {item.identity.request_id: item for item in replayed.trajectories}
+    if set(sampled_by_request) != set(replayed_by_request):
+        raise PolicyReplayError("acquisition group request identities differ")
+    errors: list[float] = []
+    request_ids = tuple(sorted(sampled_by_request))
+    for request_id in request_ids:
+        errors.extend(
+            _trajectory_replay_errors(
+                sampled_by_request[request_id], replayed_by_request[request_id], tolerance
+            )
+        )
     mean_error = sum(errors) / len(errors)
     if mean_error > tolerance.group_mean_nats:
         raise PolicyReplayError("group mean replay error exceeds the sealed tolerance")
-    return PolicyReplayReceipt(
+    return AcquisitionGroupReplayReceipt(
         admitted=True,
+        tolerance_sha256=tolerance.content_sha256,
+        sampled_group_sha256=sampled.content_sha256,
+        replayed_group_sha256=replayed.content_sha256,
+        request_ids=request_ids,
         per_token_absolute_error_nats=tuple(errors),
-        mean_absolute_error_nats=mean_error,
-        sampled_trajectory_sha256=sampled.content_sha256,
-        replayed_trajectory_sha256=replayed.content_sha256,
+        group_mean_absolute_error_nats=mean_error,
     )
 
 
 __all__ = [
     "PolicyReplayError",
     "PolicyReplayReceipt",
+    "AcquisitionGroupReplayReceipt",
     "processed_policy_logprobs",
+    "validate_acquisition_group_replay",
     "validate_policy_replay",
 ]

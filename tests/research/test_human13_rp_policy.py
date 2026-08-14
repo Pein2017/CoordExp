@@ -15,13 +15,17 @@ from scripts.research.human13_k_trajectory_contracts import (
 )
 from scripts.research.human13_rp_policy import (
     PolicyReplayError,
+    validate_acquisition_group_replay,
     processed_policy_logprobs,
     validate_policy_replay,
 )
 
 
 def _identity(
-    *, generated: tuple[int, ...] = (), request_id: str = "request:seed-11:image-7"
+    *,
+    generated: tuple[int, ...] = (),
+    request_id: str = "request:seed-11:image-7",
+    prompt: tuple[int, ...] = (101, 102, 103),
 ) -> ArtifactIdentity:
     return ArtifactIdentity(
         source_sha256="a" * 64,
@@ -30,20 +34,33 @@ def _identity(
         model_id="Qwen/Qwen3-VL-8B-Instruct",
         tokenizer_id="qwen3-vl-tokenizer:sha256:c",
         processor_id="qwen3-vl-processor:sha256:d",
-        prompt_token_ids=(101, 102, 103),
+        prompt_token_ids=prompt,
         generated_token_ids=generated,
     )
 
 
 def _contract(
-    *, repetition_penalty: float = 1.10, temperature: float = 0.4
+    *,
+    repetition_penalty: float = 1.10,
+    temperature: float = 0.4,
+    identity: ArtifactIdentity | None = None,
+    top_p: float = 1.0,
+    top_k: int | None = None,
 ) -> PolicyContract:
     return PolicyContract(
-        identity=_identity(),
+        identity=identity or _identity(),
         repetition_penalty=repetition_penalty,
         temperature=temperature,
         natural_stop_token_id=2,
         max_new_tokens=4,
+        sampler_backend_id="vllm:0.8.5",
+        top_p=top_p,
+        top_k=top_k,
+        n=1,
+        min_new_tokens=0,
+        frequency_penalty=0.0,
+        presence_penalty=0.0,
+        ignore_eos=False,
     )
 
 
@@ -84,11 +101,42 @@ def _trajectory(
     )
 
 
+def _token_evidence(
+    contract: PolicyContract,
+    *,
+    generated: tuple[int, ...] = (1, 2),
+    token_index: int = 0,
+    history: tuple[int, ...] | None = None,
+    identity: ArtifactIdentity | None = None,
+) -> GeneratedTokenEvidence:
+    source = contract.identity
+    identity = identity or ArtifactIdentity(
+        source_sha256=source.source_sha256,
+        manifest_sha256=source.manifest_sha256,
+        request_id=source.request_id,
+        model_id=source.model_id,
+        tokenizer_id=source.tokenizer_id,
+        processor_id=source.processor_id,
+        prompt_token_ids=source.prompt_token_ids,
+        generated_token_ids=generated,
+    )
+    return GeneratedTokenEvidence(
+        identity=identity,
+        policy_contract_sha256=contract.content_sha256,
+        token_index=token_index,
+        history_token_ids=history
+        if history is not None
+        else (*identity.prompt_token_ids, *generated[:token_index]),
+        chosen_token_id=generated[token_index],
+        processed_logprob=-0.25,
+    )
+
+
 def test_rp110_is_sign_aware_on_unique_complete_history_tokens() -> None:
     # Catches changing the negative-logit branch from multiplication to division.
-    actual = processed_policy_logprobs(
-        torch.tensor([4.0, -2.0, 1.0, -3.0]), (0, 1, 1), _contract()
-    )
+    contract = _contract(identity=_identity(prompt=(0, 1)))
+    token = _token_evidence(contract, generated=(1, 2), token_index=1)
+    actual = processed_policy_logprobs(torch.tensor([4.0, -2.0, 1.0, -3.0]), token, contract)
     expected = torch.log_softmax(
         torch.tensor([4.0 / 1.10, -2.0 * 1.10, 1.0, -3.0]) / 0.4, dim=-1
     )
@@ -99,7 +147,8 @@ def test_rp110_is_sign_aware_on_unique_complete_history_tokens() -> None:
 def test_rp100_is_identity_before_temperature_and_full_support_normalization() -> None:
     # Catches adding an RP branch when the contract declares RP 1.0.
     raw = torch.tensor([1.0, 0.0, -1.0], dtype=torch.float64)
-    actual = processed_policy_logprobs(raw, (0, 2), _contract(repetition_penalty=1.0))
+    contract = _contract(repetition_penalty=1.0, identity=_identity(prompt=(0, 2)))
+    actual = processed_policy_logprobs(raw, _token_evidence(contract), contract)
     expected = torch.log_softmax(torch.tensor([2.5, 0.0, -2.5]), dim=-1)
     assert torch.allclose(actual, expected, atol=1e-7, rtol=0)
     assert torch.exp(actual).sum().item() == pytest.approx(1.0, abs=1e-7)
@@ -108,29 +157,55 @@ def test_rp100_is_identity_before_temperature_and_full_support_normalization() -
 
 def test_temperature_is_applied_after_rp_and_chosen_token_is_gathered() -> None:
     # Catches applying temperature before repetition penalty or returning raw scores.
-    contract = _contract(temperature=0.5)
+    compact = _contract(temperature=0.5, identity=_identity(prompt=(0,)))
     logprobs = processed_policy_logprobs(
-        torch.tensor([-2.0, 1.0, 0.0]), (0,), contract
+        torch.tensor([-2.0, 1.0, 0.0]), _token_evidence(compact), compact
     )
     expected = torch.log_softmax(torch.tensor([-4.4, 2.0, 0.0]), dim=-1)
     assert logprobs[1].item() == pytest.approx(expected[1].item(), abs=1e-7)
 
 
 @pytest.mark.parametrize(
-    ("raw_logits", "history", "match"),
+    ("raw_logits", "match"),
     [
-        (torch.tensor([0.0, math.nan]), (), "finite"),
-        (torch.tensor([0.0, math.inf]), (), "finite"),
-        (torch.tensor([0.0, 1.0]), (2,), "vocabulary"),
-        (torch.tensor([[0.0, 1.0]]), (), "one-dimensional"),
+        (torch.tensor([0.0, math.nan]), "finite"),
+        (torch.tensor([0.0, math.inf]), "finite"),
+        (torch.tensor([[0.0, 1.0]]), "one-dimensional"),
     ],
 )
 def test_policy_transform_rejects_nonfinite_or_malformed_inputs(
-    raw_logits: torch.Tensor, history: tuple[int, ...], match: str
+    raw_logits: torch.Tensor, match: str
 ) -> None:
     # Catches silently normalizing malformed model outputs or histories.
     with pytest.raises(ValueError, match=match):
-        processed_policy_logprobs(raw_logits, history, _contract())
+        contract = _contract(identity=_identity(prompt=(0,)))
+        processed_policy_logprobs(raw_logits, _token_evidence(contract), contract)
+
+
+def test_policy_transform_rejects_token_evidence_with_prompt_or_prefix_mismatch() -> None:
+    # Catches scoring a tuple which does not equal the sealed evidence history.
+    contract = _contract(identity=_identity(prompt=(0, 1)))
+    with pytest.raises(ValueError, match="prompt"):
+        processed_policy_logprobs(
+            torch.tensor([0.0, 1.0, 2.0]),
+            _token_evidence(contract, history=(9, 1)),
+            contract,
+        )
+    with pytest.raises(ValueError, match="generated prefix"):
+        processed_policy_logprobs(
+            torch.tensor([0.0, 1.0, 2.0]),
+            _token_evidence(contract, generated=(1, 2), token_index=1, history=(0, 1, 0)),
+            contract,
+        )
+
+
+def test_sampler_lineage_is_sealed_and_changes_the_contract_hash() -> None:
+    # Catches treating sampler settings as non-identifying metadata.
+    baseline = _contract()
+    assert baseline.content_sha256 != _contract(top_p=0.95).content_sha256
+    assert baseline.content_sha256 != _contract(top_k=20).content_sha256
+    assert baseline.to_dict()["sampler_backend_id"] == "vllm:0.8.5"
+    assert baseline.to_dict()["top_k"] is None
 
 
 def test_content_addressed_records_round_trip_and_are_immutable() -> None:
@@ -153,28 +228,16 @@ def test_content_addressed_records_round_trip_and_are_immutable() -> None:
 
 def test_acquisition_group_preserves_distinct_request_bound_trajectories() -> None:
     # Catches collapsing K requests into one request identity at group sealing.
-    first_contract = PolicyContract(
-        identity=_identity(request_id="request:seed-11:image-7"),
-        repetition_penalty=1.10,
-        temperature=0.4,
-        natural_stop_token_id=2,
-        max_new_tokens=4,
+    first_contract = _contract(
+        identity=_identity(request_id="request:seed-11:image-7")
     )
-    second_contract = PolicyContract(
-        identity=_identity(request_id="request:seed-12:image-7"),
-        repetition_penalty=1.10,
-        temperature=0.4,
-        natural_stop_token_id=2,
-        max_new_tokens=4,
+    second_contract = _contract(
+        identity=_identity(request_id="request:seed-12:image-7")
     )
     first = _trajectory(contract=first_contract)
     second = _trajectory(contract=second_contract)
-    group_contract = PolicyContract(
-        identity=_identity(request_id="group:qualification:image-7"),
-        repetition_penalty=1.10,
-        temperature=0.4,
-        natural_stop_token_id=2,
-        max_new_tokens=4,
+    group_contract = _contract(
+        identity=_identity(request_id="group:qualification:image-7")
     )
     group = AcquisitionGroup(
         identity=group_contract.identity,
@@ -237,14 +300,13 @@ def test_replay_admits_fixed_per_token_and_group_mean_parity() -> None:
     receipt = validate_policy_replay(sampled, replayed, ReplayTolerance())
     assert receipt.admitted
     assert receipt.per_token_absolute_error_nats == pytest.approx((0.0019, 0.0019))
-    assert receipt.mean_absolute_error_nats == pytest.approx(0.0019)
+    assert receipt.trajectory_mean_absolute_error_nats == pytest.approx(0.0019)
 
 
 @pytest.mark.parametrize(
     ("replayed", "tolerance", "match"),
     [
         (_trajectory(logprobs=(-0.421, -0.800)), ReplayTolerance(), "per-token"),
-        (_trajectory(logprobs=(-0.403, -0.803)), ReplayTolerance(), "group mean"),
         (_trajectory(contract=_contract(repetition_penalty=1.0)), ReplayTolerance(), "contract"),
     ],
 )
@@ -264,3 +326,66 @@ def test_replay_rejects_unsealed_tolerances() -> None:
             _trajectory(),
             ReplayTolerance(per_token_nats=0.03, group_mean_nats=0.003),
         )
+
+
+def _group(*trajectories: CompleteTrajectoryEvidence) -> AcquisitionGroup:
+    group_contract = _contract(identity=_identity(request_id="group:qualification:image-7"))
+    return AcquisitionGroup(
+        identity=group_contract.identity,
+        policy_contract=group_contract,
+        trajectories=trajectories,
+        seed_group_id="qualification",
+    )
+
+
+def test_group_replay_uses_one_global_mean_not_a_trajectory_local_mean() -> None:
+    # Catches accepting a K group because only one trajectory-local average passes.
+    first_contract = _contract(identity=_identity(request_id="request:seed-11:image-7"))
+    second_contract = _contract(identity=_identity(request_id="request:seed-12:image-7"))
+    sampled = _group(
+        _trajectory(contract=first_contract, logprobs=(-0.4, -0.8)),
+        _trajectory(contract=second_contract, logprobs=(-0.4, -0.8)),
+    )
+    replayed = _group(
+        _trajectory(contract=first_contract, logprobs=(-0.401, -0.801)),
+        _trajectory(contract=second_contract, logprobs=(-0.404, -0.804)),
+    )
+    with pytest.raises(PolicyReplayError, match="group mean"):
+        validate_acquisition_group_replay(sampled, replayed, ReplayTolerance())
+
+
+def test_group_replay_can_admit_when_one_local_mean_exceeds_group_mean() -> None:
+    # Catches adding an undeclared per-trajectory mean gate to a group receipt.
+    first_contract = _contract(identity=_identity(request_id="request:seed-11:image-7"))
+    second_contract = _contract(identity=_identity(request_id="request:seed-12:image-7"))
+    sampled = _group(
+        _trajectory(generated=(4, 5, 6, 2), logprobs=(-0.4, -0.4, -0.4, -0.4), contract=first_contract),
+        _trajectory(contract=second_contract),
+    )
+    replayed = _group(
+        _trajectory(generated=(4, 5, 6, 2), logprobs=(-0.4029, -0.4029, -0.4029, -0.4029), contract=first_contract),
+        _trajectory(contract=second_contract),
+    )
+    receipt = validate_acquisition_group_replay(sampled, replayed, ReplayTolerance())
+    assert receipt.group_mean_absolute_error_nats == pytest.approx(0.0019333333333333333)
+    assert receipt.content_sha256 == receipt.content_sha256
+
+
+def test_group_replay_fails_closed_on_group_lineage_mismatch() -> None:
+    # Catches pooling trajectories from a sampler contract with a different top-p.
+    contract = _contract()
+    sampled = _group(_trajectory(contract=contract))
+    changed_group_contract = _contract(
+        identity=_identity(request_id="group:qualification:image-7"), top_p=0.95
+    )
+    changed_trajectory_contract = _contract(
+        identity=_identity(request_id="request:seed-11:image-7"), top_p=0.95
+    )
+    replayed = AcquisitionGroup(
+        identity=changed_group_contract.identity,
+        policy_contract=changed_group_contract,
+        trajectories=(_trajectory(contract=changed_trajectory_contract),),
+        seed_group_id="qualification",
+    )
+    with pytest.raises(PolicyReplayError, match="group lineage"):
+        validate_acquisition_group_replay(sampled, replayed, ReplayTolerance())
