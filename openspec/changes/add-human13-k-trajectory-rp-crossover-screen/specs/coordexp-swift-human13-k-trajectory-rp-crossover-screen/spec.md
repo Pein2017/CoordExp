@@ -110,7 +110,11 @@ owning unit's sealed mechanics-only dose rule, after which one global learning
 rate MUST be shared by both RP contracts, every arm, and every matrix seed.
 The preservation arm SHALL project that delta against the frozen owner-wise
 witness constraints and trust radius declared by the research unit, and SHALL
-apply and audit the projected delta itself.
+apply and audit the projected delta itself.  The owner-wise witness bank,
+its certification, and the qualification dose mechanics MUST be measured
+exactly as the owning research unit declares them, on the sealed Source parser
+spans and the HF fp32/SDPA batch-one surface, and MUST NOT be replaced by an
+unsealed finite-difference policy or a new loss term.
 
 #### Scenario: Qualification dose selection
 - **WHEN** the default learning rate does not satisfy the declared mechanical
@@ -141,6 +145,27 @@ apply and audit the projected delta itself.
   or the exact applied delta
 - **THEN** the proposal fails before behavioral interpretation and MUST NOT
   fall back to the unprojected update
+
+#### Scenario: Frozen owner-wise witness bank
+- **WHEN** the witness bank is materialized before acquisition
+- **THEN** it holds one constraint per Source-emitted trusted owner and RP
+  membership, selects the weakest full-vocabulary RP-processed margin inside
+  that owner's sealed parser span, freezes the chosen and competitor tokens,
+  and keeps legacy-M owners audit-only without a Jacobian
+
+#### Scenario: Certified dose mechanics
+- **WHEN** a qualification dose receipt is produced
+- **THEN** its Jacobian-vector error is the maximum absolute difference between
+  the frozen Jacobians applied to the actually applied projected delta and the
+  re-maximized realized margin change, compared against the sealed first-order
+  tolerance, and its decision-margin statistics use the deduplicated
+  compiler/witness site union with each site scored on its own RP surface
+
+#### Scenario: Unmeasurable witness surface
+- **WHEN** the margin, Jacobian, or realized probe cannot be measured on the
+  declared surface, disagrees with the frozen parameter layout, or is
+  non-finite
+- **THEN** the cell fails closed instead of publishing a synthesized mechanic
 
 #### Scenario: Finite realized witness degradation
 - **WHEN** a first-order-feasible projected delta has a finite realized witness

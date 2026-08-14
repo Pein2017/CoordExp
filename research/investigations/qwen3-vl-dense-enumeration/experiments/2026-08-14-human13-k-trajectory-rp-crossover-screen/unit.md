@@ -262,6 +262,26 @@ passes the mechanical floor and ceiling only if, on both contracts:
 4. median absolute decision-margin displacement is no larger than the median
    absolute Source decision margin over the same sealed compiler/witness sites.
 
+These four mechanics are measured exactly.  For the actual applied projected
+delta `Delta` on the same private proposal checkpoint, `predicted = J . Delta`
+and `fd = m_tilde(theta + Delta) - m_tilde(theta)` at unit step `alpha = 1`,
+where `m_tilde` re-maximizes the competitor over the full vocabulary at the
+frozen site; `jvp_fd_max_abs_error` is `max |predicted - fd|` over every
+constraint witness and `jvp_fd_tolerance` is exactly the sealed
+`1e-4` first-order tolerance.  Missing, non-finite, or surface-mismatched
+measurement fails closed; an error above tolerance is a ceiling failure and is
+never rewritten into a pass.  No optional small-step or random-direction finite
+difference and no new loss term may be introduced.  Decision-margin dose sites
+are the deduplicated union of compiler sites and trusted constraint-witness
+sites across both surfaces, excluding legacy-M, with each site scored on its
+own RP surface, and the median of an even-cardinality sample is the mean of its
+two middle values.  `greedy_decision_change_count` is teacher-forced across
+every sealed Source decode token under both RP surfaces, comparing the exact
+processed argmax (ties broken by the smallest token id) with the sealed chosen
+token; free-running dual audits own the nonnegative malformed, cap-terminated,
+and unparseable output deltas.  Owner outcomes remain sealed and unread for
+learning-rate selection.
+
 If `3e-6` fails only the floor, select the smallest larger ray point passing
 all gates.  If it fails the ceiling, select the largest smaller ray point
 passing all gates.  Mixed/non-monotone evidence or absence of one common point
@@ -274,6 +294,25 @@ the trajectory-plus-compiler gradient.  For every Source-emitted owner in
 `U intersect S_1.0` or `U intersect S_1.10`, retain its weakest processed-logit
 token margin as an owner-wise witness.  The witness set and logits are detached
 before acquisition outcomes.
+
+The witness surface is exact.  One constraint exists per
+`(trusted owner, Source RP membership)` pair, so an owner emitted on both
+Source surfaces yields two witnesses; legacy-M owners stay audit-only and carry
+no Jacobian.  The owner row is the sealed Source clean-greedy parser/matcher
+row and its eligible tokens are exactly the half-open parser span
+`[token_start, token_end)`; terminal and inter-row tokens are excluded and no
+hand exclusion is permitted.  At each eligible index `t` the row score is
+`z = P_r(raw_logits)` under the exact sign-aware repetition-penalty transform,
+without temperature division, over the full vocabulary, and
+`m_t = z[y_t] - max_{v != y_t} z[v]`.  The witness is the minimum `m_t`, with
+ties broken by the smallest generated token index and competitor ties by the
+smallest token id; the margin must be finite and Source-greedy
+(`m >= 0` within numeric tolerance).  The chosen token `y` and competitor `v*`
+are then frozen and the Jacobian is `d(z[y] - z[v*])/d theta` over the frozen
+`ParameterLayout` DoRA trainables, flattened to float64.  Margins, Jacobians,
+and the realized probe are computed only on the HF fp32/SDPA batch-one surface
+with autograd enabled for the trainable DoRA parameters, and the bank is frozen
+before acquisition.
 
 Preservation solves the minimum-change projection of the exact AdamW delta in
 its fixed diagonal AdamW coordinate metric:

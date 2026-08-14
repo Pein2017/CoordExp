@@ -52,6 +52,14 @@ content-addressed typed artifacts rather than model/backend objects.  Existing
 Human-13 model, forward, transaction, matcher, and evaluator modules remain
 unchanged unless a real vertical proves one narrow adapter is missing.
 
+Two further experiment-local owners close the live boundary: a witness/dose
+measurement owner that turns the sealed Source surfaces into the frozen
+owner-wise witness bank and the qualification dose mechanics, and one live
+composition that binds native acquisition, packed replay, ledger
+materialization, and per-cell runtime services into the public node runtime
+factory default.  Both keep every live seam injectable so their contracts stay
+CPU-testable.
+
 This keeps the new behavior removable with deletion and avoids making a
 same-panel research estimator a stable training API.
 
@@ -142,9 +150,26 @@ behavioral audits.
 Because no proposal continues, projected AdamW moments are deliberately not
 defined in this change.
 
+The witness and dose-mechanics measurement semantics are frozen by the owning
+research unit and implemented by one experiment-local owner: one constraint per
+`(trusted owner, Source RP membership)`, the sealed parser row's half-open
+`[token_start, token_end)` span as the eligible tokens, the sign-aware
+RP-processed full-vocabulary margin without temperature, minimum-margin
+selection with index-then-token-id tie breaks, a frozen `(y, v*)` pair whose
+float64 Jacobian is taken over the frozen `ParameterLayout`, and an HF
+fp32/SDPA batch-one surface as the only margin/Jacobian/probe surface.
+Certification compares `J . Delta` for the actual applied projected delta with
+the re-maximized finite difference at unit step against the sealed `1e-4`
+tolerance, and the dose statistics use the deduplicated compiler/witness site
+union plus a teacher-forced greedy-decision comparison over both RP surfaces.
+
 **Alternative rejected:** project the raw gradient and then let AdamW transform
 it.  AdamW's coordinate-wise transformation can invalidate the intended
 parameter-space constraints.
+
+**Alternative rejected:** certify the projection with an extra small-step or
+random-direction finite difference.  It would add a second, unsealed numeric
+policy without measuring the delta that is actually applied and audited.
 
 ### 6. Use independent proposals and shared evidence only where causal
 

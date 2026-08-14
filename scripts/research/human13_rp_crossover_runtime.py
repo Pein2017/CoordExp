@@ -21,6 +21,7 @@ import torch
 from scripts.research.human13_adamw_proposal_preservation import (
     AdamWProposalConfig,
     FrozenWitnessBank,
+    ProjectionReceipt,
     ProposalBinding,
     apply_projected_delta,
     capture_exact_adamw_proposal,
@@ -160,6 +161,7 @@ class CellRuntimeServices(Protocol):
         proposal_sha256: str,
         audits: Sequence[AuditRef],
         resources: AggregateResourceReceipt,
+        projection: ProjectionReceipt,
     ) -> DoseMechanicalReceipt: ...
 
 
@@ -312,6 +314,7 @@ def run_cell(
     proposal_sha256: str | None = None
     proposal_delta_sha256: str | None = None
     projection_sha256: str | None = None
+    projection_receipt: ProjectionReceipt | None = None
     apply_sha256: str | None = None
     backward_receipt: ObjectiveBackwardReceipt | None = None
     aggregate_resources: AggregateResourceReceipt | None = None
@@ -351,6 +354,7 @@ def run_cell(
         else:
             bank = services.witness_bank(state, spec)
             projection = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+            projection_receipt = projection
             projection_sha256 = projection.receipt_sha256
             applied = apply_projected_delta(
                 state.named_trainable_parameters,
@@ -421,9 +425,14 @@ def run_cell(
                     "aggregate resource receipt backward count differs from execution"
                 )
             if spec.cell_key.acquisition_key.phase == "qualification":
-                if checkpoint is None or proposal_sha256 is None:
+                if (
+                    checkpoint is None
+                    or proposal_sha256 is None
+                    or projection_receipt is None
+                ):
                     raise ValueError(
-                        "qualification mechanics require proposal/checkpoint evidence"
+                        "qualification mechanics require proposal, checkpoint, and "
+                        "certified projection evidence"
                     )
                 dose_mechanics = services.dose_mechanical_receipt(
                     state,
@@ -432,6 +441,7 @@ def run_cell(
                     proposal_sha256,
                     tuple(audits),
                     aggregate_resources,
+                    projection_receipt,
                 )
                 if not isinstance(dose_mechanics, DoseMechanicalReceipt):
                     raise ValueError("qualification dose mechanical receipt is missing")
