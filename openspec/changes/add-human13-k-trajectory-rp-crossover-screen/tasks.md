@@ -82,7 +82,7 @@
 
 ## 6. Production-shaped vertical
 
-- [ ] 6.1 Obtain explicit model/GPU execution authorization and freeze a new
+- [x] 6.1 Obtain explicit model/GPU execution authorization and freeze a new
   immutable vertical root; do not infer this authority from completed docs.
 - [ ] 6.2 Run one real batch-four K16 acquisition per RP on the disjoint
   qualification seed group and require exact request coverage plus sampler/

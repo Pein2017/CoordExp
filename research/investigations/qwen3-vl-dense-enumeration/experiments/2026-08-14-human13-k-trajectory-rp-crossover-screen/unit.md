@@ -425,6 +425,17 @@ Planned immutable run roots live under:
   2026-08-14-human13-k-trajectory-rp-crossover-screen/<run-id>/
 ```
 
+The authorized production-shaped qualification root is frozen as
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+  2026-08-14-human13-k-trajectory-rp-crossover-screen/
+  vertical-dose-qualification-v1/
+```
+
+It was confirmed absent before activation.  Any repair after partial activation
+requires a new append-only run identity; this path is never overwritten.
+
 Implementation and bounded model/GPU execution were explicitly authorized by
 the user; this unit still grants no authority beyond its named tasks and roots.
 No K-miss supervision, full-sequence CE control, DPO, GFlowNet, bridge,
