@@ -335,6 +335,8 @@ class NativeReceiptsArtifact:
     batch_receipts: tuple[NativeBatchReceipt, ...]
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "plan_request_ids", tuple(self.plan_request_ids))
+        object.__setattr__(self, "batch_receipts", tuple(self.batch_receipts))
         object.__setattr__(self, "plan_sha256", _digest(self.plan_sha256, field="plan_sha256"))
         if len(self.plan_request_ids) != REQUESTS_PER_IMAGE or len(set(self.plan_request_ids)) != REQUESTS_PER_IMAGE:
             raise ValueError("native receipt artifact requires exact K16 request ordering")
@@ -374,6 +376,8 @@ class AcquisitionExecution:
     group: AcquisitionGroup
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "plan_request_ids", tuple(self.plan_request_ids))
+        object.__setattr__(self, "native_batch_receipts", tuple(self.native_batch_receipts))
         _validate_plan(self.plan)
         object.__setattr__(self, "plan_sha256", _digest(self.plan_sha256, field="plan_sha256"))
         if self.plan_sha256 != self.plan.content_sha256:
@@ -395,6 +399,24 @@ class AcquisitionExecution:
     def native_receipts_artifact(self) -> NativeReceiptsArtifact:
         return NativeReceiptsArtifact(plan_sha256=self.plan_sha256, plan_request_ids=self.plan_request_ids,
             batch_receipts=self.native_batch_receipts)
+
+
+@dataclass(frozen=True)
+class AdmittedPublication:
+    """All five canonical publication artifacts after cross-artifact admission."""
+
+    binding: PublicationBinding
+    execution: AcquisitionExecution
+    replayed_group: AcquisitionGroup
+    parity_receipt: Any
+
+    def __post_init__(self) -> None:
+        from scripts.research.human13_rp_policy import AcquisitionGroupParityReceipt
+
+        if type(self.binding) is not PublicationBinding or type(self.execution) is not AcquisitionExecution:
+            raise ValueError("admitted publication requires sealed binding and execution")
+        if type(self.replayed_group) is not AcquisitionGroup or type(self.parity_receipt) is not AcquisitionGroupParityReceipt:
+            raise ValueError("admitted publication requires exact replayed group and parity receipt")
 
 
 @dataclass(frozen=True)
@@ -783,14 +805,29 @@ def _load_json(path: Path, *, field: str) -> Mapping[str, object]:
     return value
 
 
-def load_published_acquisition(output_root: str | Path, *, plan: AcquisitionGroupPlan) -> AcquisitionExecution:
-    """Reload native preimages and re-admit the exact sampled group independently."""
+def _canonical_record(value: object, record: Mapping[str, object], *, field: str) -> None:
+    if json.loads(_canonical_bytes(value)) != dict(record):
+        raise ValueError(f"{field} is not canonical")
+
+
+def load_published_acquisition(output_root: str | Path, *, plan: AcquisitionGroupPlan) -> AdmittedPublication:
+    """Reload and cross-admit every canonical artifact in a published group."""
+    from scripts.research.human13_rp_policy import AcquisitionGroupParityReceipt
+
     root = Path(output_root).resolve()
-    binding = PublicationBinding.from_dict(_load_json(root / "publication-binding.json", field="publication binding"))
-    native = NativeReceiptsArtifact.from_dict(_load_json(root / binding.native_receipts_filename, field="native receipt artifact"))
+    binding_record = _load_json(root / "publication-binding.json", field="publication binding")
+    binding = PublicationBinding.from_dict(binding_record)
+    _canonical_record(binding.to_dict(), binding_record, field="publication binding")
+    native_record = _load_json(root / binding.native_receipts_filename, field="native receipt artifact")
+    native = NativeReceiptsArtifact.from_dict(native_record)
     if native.content_sha256 != binding.native_receipts_sha256:
         raise ValueError("native receipt artifact SHA differs from publication binding")
-    sampled = AcquisitionGroup.from_dict(_load_json(root / "acquisition-group.json", field="acquisition group"))
+    sampled_record = _load_json(root / "acquisition-group.json", field="sampled acquisition group")
+    try:
+        sampled = AcquisitionGroup.from_dict(sampled_record)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("sampled acquisition group is invalid") from exc
+    _canonical_record(sampled.to_dict(), sampled_record, field="sampled acquisition group")
     execution = AcquisitionExecution(plan=plan, plan_sha256=native.plan_sha256, plan_request_ids=native.plan_request_ids,
         native_batch_receipts=native.batch_receipts, group=sampled)
     if (binding.plan_sha256, binding.plan_request_ids, binding.native_batch_receipt_sha256s, binding.sampled_group_sha256) != (
@@ -798,11 +835,48 @@ def load_published_acquisition(output_root: str | Path, *, plan: AcquisitionGrou
         tuple(item.content_sha256 for item in execution.native_batch_receipts), execution.group.content_sha256,
     ):
         raise ValueError("publication binding differs from reloaded native receipt lineage")
-    return execution
+    replayed_record = _load_json(root / "replayed-group.json", field="replayed acquisition group")
+    try:
+        replayed = AcquisitionGroup.from_dict(replayed_record)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("replayed acquisition group is invalid") from exc
+    _canonical_record(replayed.to_dict(), replayed_record, field="replayed acquisition group")
+    parity_record = _load_json(root / "replay-receipt.json", field="parity receipt")
+    try:
+        parity_receipt = AcquisitionGroupParityReceipt.from_dict(parity_record)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("parity receipt is invalid") from exc
+    _canonical_record(parity_receipt.to_dict(), parity_record, field="parity receipt")
+    token_count = sum(len(item.generated_tokens) for item in execution.group.trajectories)
+    if (
+        binding.replayed_group_sha256,
+        binding.parity_receipt_sha256,
+        binding.tolerance_sha256,
+        binding.token_count,
+    ) != (
+        replayed.content_sha256,
+        parity_receipt.content_sha256,
+        ReplayTolerance().content_sha256,
+        token_count,
+    ):
+        raise ValueError("publication binding differs from replayed or parity artifacts")
+    if (
+        parity_receipt.sampled_group_sha256,
+        parity_receipt.replayed_group_sha256,
+        parity_receipt.tolerance_sha256,
+        parity_receipt.token_count,
+    ) != (
+        execution.group.content_sha256,
+        replayed.content_sha256,
+        ReplayTolerance().content_sha256,
+        token_count,
+    ) or set(parity_receipt.request_ids) != set(execution.plan_request_ids):
+        raise ValueError("parity receipt differs from the admitted publication")
+    return AdmittedPublication(binding=binding, execution=execution, replayed_group=replayed, parity_receipt=parity_receipt)
 
 
 __all__ = [
-    "AcquisitionBatch", "AcquisitionExecution", "AcquisitionGroupPlan", "AcquisitionRequest", "MATRIX_SEED_GROUPS",
+    "AcquisitionBatch", "AcquisitionExecution", "AcquisitionGroupPlan", "AcquisitionRequest", "AdmittedPublication", "MATRIX_SEED_GROUPS",
     "NativeBatchReceipt", "NativeOutputReceipt", "NativeReceiptsArtifact", "NativeRequestReceipt", "PackedRawLogits", "PublicationBinding",
     "QUALIFICATION_SEEDS", "dry_run_plan", "execute_acquisition_group", "expected_native_sampling_evidence",
     "native_sampling_evidence", "plan_acquisition_group", "plan_panel_acquisition", "publish_acquisition_group",

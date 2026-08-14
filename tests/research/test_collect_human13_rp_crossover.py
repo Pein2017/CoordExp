@@ -135,6 +135,41 @@ def test_direct_execution_construction_rebuilds_canonical_native_group() -> None
         replace(execution, group=cross_rp_group)
 
 
+def test_frozen_execution_and_native_artifact_snapshot_caller_lists(tmp_path: Path) -> None:
+    from scripts.research.human13_rp_policy import validate_acquisition_group_replay
+
+    execution = _execute(
+        adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.0, seed_group_id="qualification")
+    )
+    caller_receipts = list(execution.native_batch_receipts)
+    sealed = adapter.AcquisitionExecution(
+        plan=execution.plan,
+        plan_sha256=execution.plan_sha256,
+        plan_request_ids=execution.plan_request_ids,
+        native_batch_receipts=caller_receipts,  # type: ignore[arg-type]
+        group=execution.group,
+    )
+    caller_artifact_batches = list(execution.native_batch_receipts)
+    artifact = adapter.NativeReceiptsArtifact(
+        plan_sha256=execution.plan_sha256,
+        plan_request_ids=execution.plan_request_ids,
+        batch_receipts=caller_artifact_batches,  # type: ignore[arg-type]
+    )
+    execution_hash = sealed.native_receipts_artifact.content_sha256
+    artifact_hash = artifact.content_sha256
+    caller_receipts.clear()
+    caller_artifact_batches.clear()
+    assert isinstance(sealed.native_batch_receipts, tuple)
+    assert isinstance(artifact.batch_receipts, tuple)
+    assert len(sealed.native_batch_receipts) == len(artifact.batch_receipts) == 4
+    assert sealed.native_receipts_artifact.content_sha256 == execution_hash
+    assert artifact.content_sha256 == artifact_hash
+    receipt = validate_acquisition_group_replay(sealed.group, sealed.group, adapter.ReplayTolerance())
+    output = tmp_path / "sealed-after-list-mutation"
+    adapter.publish_acquisition_group(output_root=output, execution=sealed, replayed=sealed.group, replay_receipt=receipt)
+    assert adapter.load_published_acquisition(output, plan=sealed.plan).binding.native_receipts_sha256 == execution_hash
+
+
 @pytest.mark.parametrize("mutation, message", [
     (lambda receipt: replace(receipt, request_id="historical-claim"), "request identity"),
     (lambda receipt: replace(receipt, seed=99999), "seed"),
@@ -310,7 +345,7 @@ def test_publish_requires_typed_plan_bound_parity_and_is_atomic(tmp_path: Path) 
     assert (output / "publication-binding.json").is_file()
     assert (output / "native-receipts.json").is_file()
     restored = adapter.load_published_acquisition(output, plan=execution.plan)
-    assert restored.group.content_sha256 == execution.group.content_sha256
+    assert restored.execution.group.content_sha256 == execution.group.content_sha256
     (output / "native-receipts.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="native receipt"):
         adapter.load_published_acquisition(output, plan=execution.plan)
@@ -319,6 +354,41 @@ def test_publish_requires_typed_plan_bound_parity_and_is_atomic(tmp_path: Path) 
         adapter.load_published_acquisition(output, plan=execution.plan)
     with pytest.raises(FileExistsError, match="overwrite"):
         adapter.publish_acquisition_group(output_root=output, execution=execution, replayed=replayed, replay_receipt=receipt)
+
+
+def test_load_requires_and_validates_replayed_and_parity_artifacts(tmp_path: Path) -> None:
+    execution = _execute(adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.0, seed_group_id="qualification"))
+    packed = adapter.PackedRawLogits(
+        request_ids=tuple(item.identity.request_id for item in execution.group.trajectories),
+        token_indices=(0,) * 16,
+        logits=torch.zeros((16, 151646), dtype=torch.float32),
+    )
+    replayed, receipt = adapter.replay_acquisition_group(sampled=execution.group, packed=packed)
+    output = tmp_path / "full-publication"
+    adapter.publish_acquisition_group(output_root=output, execution=execution, replayed=replayed, replay_receipt=receipt)
+    admitted = adapter.load_published_acquisition(output, plan=execution.plan)
+    assert admitted.replayed_group.content_sha256 == replayed.content_sha256
+    assert admitted.parity_receipt.content_sha256 == receipt.content_sha256
+
+    replayed_path = output / "replayed-group.json"
+    replayed_bytes = replayed_path.read_bytes()
+    replayed_path.unlink()
+    with pytest.raises(FileNotFoundError, match="replayed-group"):
+        adapter.load_published_acquisition(output, plan=execution.plan)
+    replayed_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="replayed acquisition group"):
+        adapter.load_published_acquisition(output, plan=execution.plan)
+    replayed_path.write_bytes(replayed_bytes)
+
+    parity_path = output / "replay-receipt.json"
+    parity_bytes = parity_path.read_bytes()
+    parity_path.unlink()
+    with pytest.raises(FileNotFoundError, match="replay-receipt"):
+        adapter.load_published_acquisition(output, plan=execution.plan)
+    parity_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="parity receipt"):
+        adapter.load_published_acquisition(output, plan=execution.plan)
+    parity_path.write_bytes(parity_bytes)
 
 
 def test_publication_accepts_perfect_parity_with_identical_group_hashes(tmp_path: Path) -> None:
