@@ -18,8 +18,8 @@ Each live node bundles the sampling for one ``(training RP, seed group)``
 acquisition together with its nested A/B/C (or qualification-only C) cells,
 which share one evidence identity, fresh independent Source/optimizer state,
 and exactly one update.  A node's own terminal receipt records that whole
-job's outcome; deeper per-cell evidence is the concern of the not-yet-built
-runtime and analyzer.
+job's outcome; deeper per-cell evidence remains owned by the runtime and
+analyzer.
 """
 
 from __future__ import annotations
@@ -61,7 +61,9 @@ MAX_LIVE_NODES = 8
 
 CONFIG_ROOT = Path("configs/coordexp_swift/research/human13_k_trajectory_rp_crossover")
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RUNNER_ENTRY = REPO_ROOT / "scripts/research/train_human13_rp_crossover_cell.py"
+DEFAULT_RUNNER_ENTRY = (
+    REPO_ROOT / "scripts/research/train_human13_k_trajectory_rp_crossover.py"
+)
 ARTIFACT_ROOT = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
     "2026-08-14-human13-k-trajectory-rp-crossover-screen"
@@ -467,6 +469,7 @@ def plan_launches(
     dag_plan_path: str | Path | None = None,
     runner_entry: str | Path = DEFAULT_RUNNER_ENTRY,
     runner_entry_contract: str = RUNNER_ENTRY_CONTRACT,
+    runtime_factory: str | None = None,
     repo_root: str | Path = REPO_ROOT,
 ) -> dict[str, Any]:
     payload = _load_dag_plan_mapping(dag_plan)
@@ -521,6 +524,12 @@ def plan_launches(
     runner = Path(runner_entry).expanduser().resolve(strict=True)
     if runner_entry_contract != RUNNER_ENTRY_CONTRACT:
         raise LaunchContractError("runner entry contract differs")
+    if runtime_factory is not None and (
+        not runtime_factory
+        or runtime_factory.count(":") != 1
+        or any(not part for part in runtime_factory.split(":"))
+    ):
+        raise LaunchContractError("runtime_factory must use module:callable syntax")
 
     if any(Path(item["receipt_path"]).exists() for item in selected):
         raise LaunchContractError("refusing to overwrite an existing node receipt")
@@ -555,9 +564,10 @@ def plan_launches(
             str(root),
             "--max-updates",
             "1",
-            "--execute",
-            "--user-model-gpu-authority",
         ]
+        if runtime_factory is not None:
+            command.extend(("--runtime-factory", runtime_factory))
+        command.extend(("--execute", "--user-model-gpu-authority"))
         jobs.append(
             {
                 "node_id": acquisition["node_id"],
@@ -570,7 +580,7 @@ def plan_launches(
                 "environment": {"CUDA_VISIBLE_DEVICES": str(gpu_id)},
                 "retry_policy": "none",
                 "runner_entry_contract": RUNNER_ENTRY_CONTRACT,
-                "execution_ready": True,
+                "execution_ready": runtime_factory is not None,
             }
         )
 
@@ -582,6 +592,7 @@ def plan_launches(
         "repo_root": str(root),
         "dag_plan_path": dag_path,
         "runner_entry": str(runner),
+        "runtime_factory": runtime_factory,
         "max_concurrent_jobs": len(jobs),
         "unselected_node_ids": unselected,
         "jobs": jobs,
@@ -705,6 +716,7 @@ def build_parser() -> argparse.ArgumentParser:
     launch.add_argument("--nodes", type=_node_ids)
     launch.add_argument("--gpus", type=_gpu_ids, required=True)
     launch.add_argument("--runner-entry", type=Path, default=DEFAULT_RUNNER_ENTRY)
+    launch.add_argument("--runtime-factory")
     launch.add_argument(
         "--runner-entry-contract",
         choices=(RUNNER_ENTRY_CONTRACT,),
@@ -741,6 +753,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         node_ids=args.nodes,
         runner_entry=args.runner_entry,
         runner_entry_contract=args.runner_entry_contract,
+        runtime_factory=args.runtime_factory,
     )
     receipt = (
         execute_launches(

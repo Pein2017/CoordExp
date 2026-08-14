@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
 import pytest
 
 import scripts.research.launch_human13_k_trajectory_rp_crossover as launcher
+import scripts.research.train_human13_k_trajectory_rp_crossover as runner
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     DRY_RUN_COUNTER_KEYS,
     PHASE_MATRIX,
@@ -256,7 +258,7 @@ def test_plan_launches_default_dry_run_assigns_one_gpu_per_live_node(
     for job in launch_plan["jobs"]:
         assert job["world_size"] == 1
         assert job["retry_policy"] == "none"
-        assert job["execution_ready"] is True
+        assert job["execution_ready"] is False
         assert job["command"][:4] == ["conda", "run", "-n", "ms"]
         assert str(runner.resolve()) in job["command"]
         assert "--execute" in job["command"]
@@ -290,6 +292,23 @@ def test_plan_launches_supports_node_subset_selection(tmp_path: Path) -> None:
     assert [job["gpu_id"] for job in launch_plan["jobs"]] == [3, 5]
 
 
+def test_plan_launches_can_forward_an_explicit_runtime_factory(tmp_path: Path) -> None:
+    plan_path = _dag_plan_path(tmp_path)
+
+    launch_plan = launcher.plan_launches(
+        plan_path,
+        gpu_ids=(3,),
+        node_ids=("rp100:matrix_a",),
+        runtime_factory="project.runtime:create_node_runtime",
+    )
+
+    command = launch_plan["jobs"][0]["command"]
+    assert command[command.index("--runtime-factory") + 1] == (
+        "project.runtime:create_node_runtime"
+    )
+    assert launch_plan["jobs"][0]["execution_ready"] is True
+
+
 def test_plan_launches_rejects_unknown_node_id(tmp_path: Path) -> None:
     plan = _dag_plan(tmp_path)
     runner = _fake_runner(tmp_path)
@@ -308,11 +327,39 @@ def test_plan_launches_fails_closed_on_missing_runner_entry(tmp_path: Path) -> N
         launcher.plan_launches(plan, gpu_ids=tuple(range(8)), runner_entry=missing)
 
 
-def test_plan_launches_default_runner_entry_is_not_yet_present(tmp_path: Path) -> None:
-    plan = _dag_plan(tmp_path)
+@pytest.mark.parametrize(
+    ("node_id", "expected_arms"),
+    [
+        ("rp100:matrix_a", ["A", "B", "C"]),
+        ("rp110:qualification", ["C"]),
+    ],
+)
+def test_default_launcher_job_is_accepted_by_real_node_runner_dry_run(
+    tmp_path: Path, node_id: str, expected_arms: list[str]
+) -> None:
+    plan_path = _dag_plan_path(tmp_path)
+    launch_plan = launcher.plan_launches(plan_path, gpu_ids=(0,), node_ids=(node_id,))
+    command = launch_plan["jobs"][0]["command"]
+    runner_index = command.index(str(launcher.DEFAULT_RUNNER_ENTRY.resolve()))
+    dry_run_argv = [
+        item
+        for item in command[runner_index + 1 :]
+        if item not in {"--execute", "--user-model-gpu-authority"}
+    ]
+    output = io.StringIO()
 
-    with pytest.raises((launcher.LaunchContractError, FileNotFoundError, OSError)):
-        launcher.plan_launches(plan, gpu_ids=tuple(range(8)))
+    exit_code = runner.run_cli(
+        dry_run_argv,
+        node_runtime_factory=lambda _: pytest.fail("dry-run opened node runtime"),
+        stdout=output,
+    )
+
+    payload = json.loads(output.getvalue())
+    assert exit_code == 0
+    assert payload["node_id"] == node_id
+    assert [cell["arm_id"] for cell in payload["cells"]] == expected_arms
+    assert payload["actions"] == dict.fromkeys(DRY_RUN_COUNTER_KEYS, 0)
+    assert not Path(launch_plan["jobs"][0]["receipt_path"]).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +389,7 @@ def test_execute_launches_starts_each_job_once_without_retry(tmp_path: Path) -> 
         gpu_ids=(2, 4),
         node_ids=("rp100:matrix_a", "rp110:matrix_a"),
         runner_entry=runner,
+        runtime_factory="project.runtime:create_node_runtime",
     )
     calls = []
 
