@@ -309,3 +309,59 @@ advice mutate files or grant execution authority.
    scientific-interpretation reviews.
 5. Stop after the bounded result.  Wider image coverage or multi-update depth
    requires a new user-owned research decision and a new unit/change.
+
+## 2026-08-14 correction report: production-entry review round 1
+
+This CPU-only correction pass was based on target
+`a675cb38fd4aeec39ea36804346ba115bc31fce5`. It did not open a model, vLLM
+engine, GPU runtime, production subprocess, or the frozen qualification root.
+
+The focused RED commands were:
+
+```bash
+conda run -n ms python -m pytest -c /dev/null tests/research/test_human13_rp_crossover_live_packs.py::test_manifest_absent_compiler_site_contributes_differentiable_zero -q
+conda run -n ms python -m pytest -c /dev/null tests/research/test_human13_rp_crossover_live_composition.py::test_compiler_sites_are_bound_after_acquisition_before_dose_statistics -q
+conda run -n ms python -m pytest -c /dev/null tests/research/test_human13_hf_census.py::test_hf_runtime_identity_rejects_observed_receipt_drift -q
+conda run -n ms python -m pytest -c /dev/null tests/research/test_human13_rp_crossover_runtime.py::test_decision_evidence_is_reloadable_after_success_and_audit_failure -q
+```
+
+They exposed, respectively, the missing differentiable absent-compiler zero,
+premature witness-only dose margins, authored rather than observed HF runtime
+identity, and missing projection/apply reload ownership. Two follow-up REDs
+also proved that a homogeneous forged HF output identity and an RP-mixed
+compiler ledger were still admitted before their choke points were hardened.
+
+The correction keeps the existing scientific owners and changes only their
+mechanical composition:
+
+- an admitted absent compiler site contributes a live-device/dtype scalar zero
+  under the same global image denominator;
+- the pre-acquisition witness bank remains frozen, while admitted compiler
+  token indices are bound to the unchanged Source surface before the exact
+  deduplicated compiler/trusted-witness dose statistic is read;
+- Source and private HF outputs bind receipt-observed backend, batch, dtype,
+  attention, generation, model, tokenizer, and processor identities and reject
+  missing, mixed, or drifted values;
+- exact proposal, streamed witness-bank/Jacobian, projection, and projected-
+  apply evidence use their existing schemas at content-addressed paths. Every
+  artifact is reloaded before its path/hash enters a cell receipt. Decision
+  evidence is retained on success and typed post-update failure; private
+  checkpoints are still unconditionally removed, and incomplete artifacts are
+  never bound as complete evidence.
+
+GREEN evidence after the corrections:
+
+```text
+focused production/runtime/objective/eval/analyzer slice: 279 passed
+adjacent acquisition/compiler/trajectory/frontier/witness/model/transaction: 128 passed
+zero-action launcher/trainer/public-factory checks: 7 passed
+post-diagnostic HF/eval/production rerun: 73 passed
+Ruff format/check, compileall, Serena diagnostics, git diff --check: clean
+openspec validate add-human13-k-trajectory-rp-crossover-screen --strict: valid
+```
+
+The remaining smallest unproved seam is live-only: a real qualification node
+must still demonstrate that the observed vLLM receipts, streamed packed
+backward, real HF fp32/SDPA audit receipts, durable decision artifacts, and
+rollback all compose under actual model/GPU memory release. No scientific gate
+or matrix conclusion is claimed by this correction pass.

@@ -275,6 +275,10 @@ def _canonical_cell_receipt(
 ) -> CellReceipt:
     arm_id = cell.cell_key.arm_id
     requires_projection = arm_id == "C"
+    proposal_sha256 = _digest(f"adamw-proposal:{tag}")
+    projection_sha256 = _digest(f"projection:{tag}") if requires_projection else None
+    apply_sha256 = _digest(f"apply:{tag}")
+    witness_sha256 = _digest(f"witness:{tag}") if requires_projection else None
     return CellReceipt(
         cell_key=cell.cell_key,
         shared_evidence=cell.shared_evidence,
@@ -287,12 +291,25 @@ def _canonical_cell_receipt(
         after_transaction_digest=_digest(f"transaction:{tag}"),
         status="succeeded",
         audits=(_audit_ref(1.0, tag=tag), _audit_ref(1.10, tag=tag)),
-        adamw_proposal_sha256=_digest(f"adamw-proposal:{tag}"),
+        adamw_proposal_sha256=proposal_sha256,
         proposal_delta_sha256=proposal_delta_sha256 or _proposal_delta(cell),
-        projection_receipt_sha256=_digest(f"projection:{tag}")
-        if requires_projection
-        else None,
-        apply_receipt_sha256=_digest(f"apply:{tag}"),
+        projection_receipt_sha256=projection_sha256,
+        apply_receipt_sha256=apply_sha256,
+        adamw_proposal_artifact_path=(f"/immutable/proposal/{proposal_sha256}.json"),
+        witness_bank_artifact_path=(
+            f"/immutable/witness/{witness_sha256}"
+            if witness_sha256 is not None
+            else None
+        ),
+        witness_bank_sha256=witness_sha256,
+        projection_receipt_artifact_path=(
+            f"/immutable/projection/{projection_sha256}.json"
+            if projection_sha256 is not None
+            else None
+        ),
+        apply_receipt_artifact_path=(
+            f"/immutable/apply/{apply_sha256}.json" if requires_projection else None
+        ),
         learning_rate=cell.learning_rate,
         global_learning_rate_decision_sha256=(
             cell.global_learning_rate_decision_sha256
@@ -634,6 +651,9 @@ def test_audit_ref_rejects_wrong_row_count() -> None:
 
 def _cell_receipt_kwargs(arm_id: str = "A") -> dict[str, object]:
     spec = CellSpec(**_cell_spec_kwargs(arm_id))  # type: ignore[arg-type]
+    proposal_sha256 = _digest("proposal")
+    projection_sha256 = _digest("projection") if arm_id == "C" else None
+    apply_sha256 = _digest("apply")
     return {
         "cell_key": spec.cell_key,
         "shared_evidence": spec.shared_evidence,
@@ -646,10 +666,23 @@ def _cell_receipt_kwargs(arm_id: str = "A") -> dict[str, object]:
         "after_transaction_digest": _digest("t"),
         "status": "succeeded",
         "audits": (_audit_ref(1.0, tag="x"), _audit_ref(1.10, tag="x")),
-        "adamw_proposal_sha256": _digest("proposal"),
+        "adamw_proposal_sha256": proposal_sha256,
         "proposal_delta_sha256": _digest("proposal-delta"),
-        "apply_receipt_sha256": _digest("apply"),
-        "projection_receipt_sha256": (_digest("projection") if arm_id == "C" else None),
+        "apply_receipt_sha256": apply_sha256,
+        "projection_receipt_sha256": projection_sha256,
+        "adamw_proposal_artifact_path": f"/immutable/proposal/{proposal_sha256}.json",
+        "witness_bank_artifact_path": (
+            f"/immutable/witness/{_digest('witness')}" if arm_id == "C" else None
+        ),
+        "witness_bank_sha256": _digest("witness") if arm_id == "C" else None,
+        "projection_receipt_artifact_path": (
+            f"/immutable/projection/{projection_sha256}.json"
+            if projection_sha256 is not None
+            else None
+        ),
+        "apply_receipt_artifact_path": (
+            f"/immutable/apply/{apply_sha256}.json" if arm_id == "C" else None
+        ),
     }
 
 
@@ -693,7 +726,13 @@ def test_cell_receipt_rejects_projection_evidence_on_non_preservation_arm() -> N
 
 def test_cell_receipt_requires_projection_evidence_on_preservation_arm() -> None:
     with pytest.raises(ValueError, match="projection evidence"):
-        CellReceipt(**{**_cell_receipt_kwargs("C"), "projection_receipt_sha256": None})
+        CellReceipt(
+            **{
+                **_cell_receipt_kwargs("C"),
+                "projection_receipt_sha256": None,
+                "projection_receipt_artifact_path": None,
+            }
+        )
 
 
 def test_cell_receipt_rejects_second_update() -> None:
@@ -744,6 +783,7 @@ def test_cell_receipt_failed_status_requires_failure_reason() -> None:
                 "adamw_proposal_sha256": None,
                 "proposal_delta_sha256": None,
                 "apply_receipt_sha256": None,
+                "adamw_proposal_artifact_path": None,
                 "objective_component_hashes": (),
             }
         )
@@ -760,6 +800,7 @@ def test_cell_receipt_failed_status_still_requires_transaction_symmetry_and_roll
             "adamw_proposal_sha256": None,
             "proposal_delta_sha256": None,
             "apply_receipt_sha256": None,
+            "adamw_proposal_artifact_path": None,
             "objective_component_hashes": (),
             "failure_reason": "projection infeasible",
         }
@@ -773,7 +814,47 @@ def test_cell_receipt_succeeded_round_trips_through_dict() -> None:
     shared = _shared_evidence(training_rp=1.0, seed_group_id="matrix_a")
     cell = _cell_spec(acquisition=acquisition, arm_id="C", shared_evidence=shared)
     receipt = _canonical_cell_receipt(cell, tag="c-arm")
-    assert CellReceipt.from_dict(receipt.to_dict()) == receipt
+    reloaded = CellReceipt.from_dict(receipt.to_dict())
+    assert reloaded == receipt
+    assert reloaded.adamw_proposal_artifact_path == (
+        receipt.adamw_proposal_artifact_path
+    )
+    assert reloaded.witness_bank_sha256 == receipt.witness_bank_sha256
+    assert reloaded.projection_receipt_artifact_path == (
+        receipt.projection_receipt_artifact_path
+    )
+    assert reloaded.apply_receipt_artifact_path == (receipt.apply_receipt_artifact_path)
+
+
+def test_cell_receipt_fails_closed_on_missing_or_relative_decision_artifacts() -> None:
+    with pytest.raises(ValueError, match="proposal artifact path/hash"):
+        CellReceipt(
+            **{
+                **_cell_receipt_kwargs("A"),
+                "adamw_proposal_artifact_path": None,
+            }
+        )
+    with pytest.raises(ValueError, match="witness-bank artifact path/hash"):
+        CellReceipt(
+            **{
+                **_cell_receipt_kwargs("C"),
+                "witness_bank_artifact_path": None,
+            }
+        )
+    with pytest.raises(ValueError, match="absolute immutable artifact path"):
+        CellReceipt(
+            **{
+                **_cell_receipt_kwargs("C"),
+                "projection_receipt_artifact_path": "relative/projection.json",
+            }
+        )
+    with pytest.raises(ValueError, match="content-addressed hash"):
+        CellReceipt(
+            **{
+                **_cell_receipt_kwargs("A"),
+                "adamw_proposal_artifact_path": "/immutable/proposal/forged.json",
+            }
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -40,6 +40,54 @@ class HFCausalLogits:
     logits_position_ids: tuple[int, ...]
 
 
+def validate_hf_fp32_sdpa_batch_one(launch: Any, receipt: Any) -> dict[str, object]:
+    """Validate and return the runtime identity observed by the HF receipt."""
+
+    nested = getattr(launch, "backend_options", {}).get("hf", {})
+    if (
+        getattr(launch, "backend", None) != "hf"
+        or getattr(launch, "model_dtype", None) != "fp32"
+        or getattr(launch, "batch_size", None) != 1
+        or nested.get("attn_implementation") != "sdpa"
+    ):
+        raise ValueError("HF runtime requires the Source fp32/SDPA batch-one launch")
+    if getattr(receipt, "backend", None) != "hf":
+        raise ValueError("HF observed backend must be exactly hf")
+    settings = getattr(receipt, "effective_settings", None)
+    if not isinstance(settings, Mapping):
+        raise ValueError("HF observed runtime settings are missing")
+    if settings.get("batch_size") != 1:
+        raise ValueError("HF observed batch_size must be exactly one")
+    observed_dtype = settings.get("observed_model_dtype")
+    observed_names = (
+        observed_dtype.get("parameter_dtype_names")
+        if isinstance(observed_dtype, Mapping)
+        else None
+    )
+    if not isinstance(observed_names, list) or observed_names != ["torch.float32"]:
+        raise ValueError("HF observed runtime must be exclusively fp32")
+    observed_attention = settings.get("observed_attn_implementation")
+    if observed_attention != "sdpa":
+        raise ValueError("HF observed runtime must use SDPA")
+    validate = getattr(receipt, "validate_for_launch", None)
+    if not callable(validate):
+        raise ValueError("HF observed runtime receipt is untyped")
+    validate(launch)
+    identity = {
+        "backend": receipt.backend,
+        "backend_mode": receipt.backend_mode,
+        "backend_version": receipt.backend_version,
+        "batch_size": settings["batch_size"],
+        "observed_model_dtype_names": list(observed_names),
+        "observed_attn_implementation": observed_attention,
+        "generation_config_fingerprint": receipt.generation_config_fingerprint,
+        "model_identity": dict(receipt.model_identity),
+        "tokenizer_identity": dict(receipt.tokenizer_identity),
+        "processor_identity": dict(receipt.processor_identity),
+    }
+    return identity
+
+
 class Human13HFCensusScorer:
     """Session-bound exact fp32/SDPA scorer for processor-built segments."""
 
@@ -57,7 +105,7 @@ class Human13HFCensusScorer:
         self._launch = (
             launch if launch is not None else getattr(session, "_launch", None)
         )
-        self._validate_launch()
+        self.runtime_identity = self._validate_launch()
         self._model = getattr(session, "_model", None)
         self._tokenizer = getattr(session, "_tokenizer", None)
         if self._model is None or self._tokenizer is None:
@@ -85,27 +133,10 @@ class Human13HFCensusScorer:
             raise ValueError("HF census scorer requires canonical panel requests")
         self._requests_by_image = normalized
 
-    def _validate_launch(self) -> None:
-        launch = self._launch
-        nested = getattr(launch, "backend_options", {}).get("hf", {})
-        if (
-            getattr(launch, "backend", None) != "hf"
-            or getattr(launch, "model_dtype", None) != "fp32"
-            or nested.get("attn_implementation") != "sdpa"
-        ):
-            raise ValueError("HF census scorer requires the Source fp32/SDPA launch")
-        receipt = getattr(self._session, "receipt", None)
-        settings = getattr(receipt, "effective_settings", {})
-        observed_dtype = settings.get("observed_model_dtype")
-        observed_names = (
-            observed_dtype.get("parameter_dtype_names")
-            if isinstance(observed_dtype, Mapping)
-            else None
+    def _validate_launch(self) -> dict[str, object]:
+        return validate_hf_fp32_sdpa_batch_one(
+            self._launch, getattr(self._session, "receipt", None)
         )
-        if observed_names != ["torch.float32"]:
-            raise ValueError("HF census observed runtime must be exclusively fp32")
-        if settings.get("observed_attn_implementation") != "sdpa":
-            raise ValueError("HF census observed runtime must use SDPA")
 
     def _resolve_request(
         self, encoded_example: Any
@@ -429,4 +460,5 @@ __all__ = [
     "Human13HFCensusScorer",
     "open_checkpoint_hf_census_scorer",
     "open_source_hf_census_scorer",
+    "validate_hf_fp32_sdpa_batch_one",
 ]

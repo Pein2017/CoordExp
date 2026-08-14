@@ -283,6 +283,7 @@ class StreamingObjectiveStep:
     trajectory_numerator: Any
     compiler_numerator: Any | None
     release: Callable[[], None]
+    compiler_absent_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1137,17 +1138,36 @@ def backward_incremental_objectives(
             raise LivePackContractError("streaming objective requires a release owner")
         trajectory = step.trajectory_numerator
         compiler = step.compiler_numerator
+        compiler_absent_reason = step.compiler_absent_reason
         if not torch.is_tensor(trajectory) or trajectory.numel() != 1:
             raise LivePackContractError(
                 "trajectory numerator must be one scalar tensor"
             )
-        if include_compiler and (
-            not torch.is_tensor(compiler) or compiler.numel() != 1
-        ):
-            raise LivePackContractError("compiler numerator must be one scalar tensor")
-        if not include_compiler and compiler is not None:
+        if include_compiler:
+            if compiler is None:
+                if (
+                    not isinstance(compiler_absent_reason, str)
+                    or not compiler_absent_reason
+                ):
+                    raise LivePackContractError(
+                        "an absent compiler numerator requires its sealed reason"
+                    )
+                # The declared absent site contributes exactly zero under the
+                # same global image denominator.  Deriving zero from the live
+                # trajectory scalar preserves its device, dtype, and autograd
+                # ownership without inventing a compiler site.
+                compiler = trajectory.reshape(()) * 0.0
+            elif compiler_absent_reason is not None:
+                raise LivePackContractError(
+                    "a present compiler numerator cannot carry an absent reason"
+                )
+            if not torch.is_tensor(compiler) or compiler.numel() != 1:
+                raise LivePackContractError(
+                    "compiler numerator must be one scalar tensor"
+                )
+        elif compiler is not None or compiler_absent_reason is not None:
             raise LivePackContractError(
-                "trajectory-only step must not retain a compiler numerator"
+                "trajectory-only step must not retain compiler evidence"
             )
 
         loss = trajectory.reshape(()) / trajectory_denominator

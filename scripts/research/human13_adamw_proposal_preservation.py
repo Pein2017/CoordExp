@@ -1709,6 +1709,27 @@ class WitnessChange:
             "change": self.change,
         }
 
+    @classmethod
+    def from_dict(cls, value: object) -> WitnessChange:
+        if not isinstance(value, Mapping) or set(value) != {
+            "canonical_key",
+            "image_id",
+            "owner_id",
+            "source_membership",
+            "change",
+        }:
+            raise ProposalAdmissionError(
+                "witness change artifact fields differ",
+                disposition="invalid_artifact",
+            )
+        return cls(
+            canonical_key=value["canonical_key"],
+            image_id=value["image_id"],
+            owner_id=value["owner_id"],
+            source_membership=value["source_membership"],
+            change=value["change"],
+        )
+
 
 @dataclass(frozen=True)
 class ProjectionReceipt:
@@ -1787,6 +1808,95 @@ class ProjectionReceipt:
         ]
         payload["receipt_sha256"] = self.receipt_sha256
         return payload
+
+    @classmethod
+    def from_dict(cls, payload: object) -> ProjectionReceipt:
+        if not isinstance(payload, Mapping):
+            raise ProposalAdmissionError(
+                "projection artifact must be a mapping",
+                disposition="invalid_artifact",
+            )
+        required = {
+            "schema_version",
+            "disposition",
+            "evidence_sha256",
+            "layout",
+            "projected_delta_sha256",
+            "projected_delta_base64",
+            "active_witnesses",
+            "multipliers",
+            "iterations",
+            "iteration_bound",
+            "dual_residual",
+            "tolerance",
+            "trust_radius",
+            "projected_trust_radius_value",
+            "trust_radius_active",
+            "correction_metric_norm",
+            "objective_value",
+            "minimum_predicted_change",
+            "minimum_unprojected_change",
+            "predicted_changes",
+            "unprojected_changes",
+            "constraint_count",
+            "audit_only_owner_count",
+            "certified_first_order",
+            "all_finite",
+            "receipt_sha256",
+        }
+        if set(payload) != required or payload.get("schema_version") != (
+            PROJECTION_SCHEMA_VERSION
+        ):
+            raise ProposalAdmissionError(
+                "projection artifact schema fields differ",
+                disposition="schema_version_mismatch",
+            )
+        layout = ParameterLayout.from_dict(payload["layout"])
+        receipt = cls(
+            disposition=payload["disposition"],
+            evidence_sha256=payload["evidence_sha256"],
+            layout=layout,
+            projected_delta=_decode_group(
+                payload, "projected_delta_base64", layout, "projected_delta"
+            ),
+            projected_delta_sha256=payload["projected_delta_sha256"],
+            active_witnesses=tuple(payload["active_witnesses"]),
+            multipliers=tuple(payload["multipliers"]),
+            iterations=payload["iterations"],
+            iteration_bound=payload["iteration_bound"],
+            dual_residual=payload["dual_residual"],
+            tolerance=payload["tolerance"],
+            trust_radius=payload["trust_radius"],
+            projected_trust_radius_value=payload["projected_trust_radius_value"],
+            trust_radius_active=payload["trust_radius_active"],
+            correction_metric_norm=payload["correction_metric_norm"],
+            objective_value=payload["objective_value"],
+            minimum_predicted_change=payload["minimum_predicted_change"],
+            minimum_unprojected_change=payload["minimum_unprojected_change"],
+            predicted_changes=tuple(
+                WitnessChange.from_dict(item) for item in payload["predicted_changes"]
+            ),
+            unprojected_changes=tuple(
+                WitnessChange.from_dict(item) for item in payload["unprojected_changes"]
+            ),
+            constraint_count=payload["constraint_count"],
+            audit_only_owner_count=payload["audit_only_owner_count"],
+            certified_first_order=payload["certified_first_order"],
+            all_finite=payload["all_finite"],
+        )
+        if receipt.projected_delta_sha256 != _hash_flat_tensors(
+            receipt.projected_delta, layout=receipt.layout, context="delta"
+        ):
+            raise ProposalAdmissionError(
+                "projection delta content address differs",
+                disposition="projection_digest_mismatch",
+            )
+        if payload["receipt_sha256"] != receipt.receipt_sha256:
+            raise ProposalAdmissionError(
+                "projection artifact content address differs",
+                disposition="projection_digest_mismatch",
+            )
+        return receipt
 
 
 def _split_by_layout(
@@ -1935,6 +2045,10 @@ class ProjectedApplyReceipt:
     def schema_version(self) -> str:
         return APPLY_SCHEMA_VERSION
 
+    @property
+    def receipt_sha256(self) -> str:
+        return _sha256(self.to_dict())
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": APPLY_SCHEMA_VERSION,
@@ -1964,6 +2078,78 @@ class ProjectedApplyReceipt:
             "transaction_before_digest": self.transaction_before_digest,
             "transaction_after_digest": self.transaction_after_digest,
         }
+
+    @classmethod
+    def from_dict(cls, payload: object) -> ProjectedApplyReceipt:
+        if not isinstance(payload, Mapping):
+            raise ProposalAdmissionError(
+                "projected apply artifact must be a mapping",
+                disposition="invalid_artifact",
+            )
+        required = {
+            "schema_version",
+            "disposition",
+            "evidence_sha256",
+            "projection_sha256",
+            "pre_parameter_sha256",
+            "post_parameter_sha256",
+            "applied_delta_sha256",
+            "applied_delta_residual",
+            "applied_representation_error",
+            "applied_representation_allowance",
+            "applied_undeliverable_dose",
+            "applied_deliverable_allowance",
+            "applied_trust_radius_value",
+            "applied_minimum_first_order_change",
+            "realized_changes",
+            "realized_minimum_change",
+            "realized_witness_violation",
+            "degraded_witnesses",
+            "eligible_for_behavioral_audits",
+            "update_count_before",
+            "update_count_after",
+            "optimizer_state_entries",
+            "transaction_before_digest",
+            "transaction_after_digest",
+        }
+        if set(payload) != required or payload.get("schema_version") != (
+            APPLY_SCHEMA_VERSION
+        ):
+            raise ProposalAdmissionError(
+                "projected apply artifact schema fields differ",
+                disposition="schema_version_mismatch",
+            )
+        return cls(
+            disposition=payload["disposition"],
+            evidence_sha256=payload["evidence_sha256"],
+            projection_sha256=payload["projection_sha256"],
+            pre_parameter_sha256=payload["pre_parameter_sha256"],
+            post_parameter_sha256=payload["post_parameter_sha256"],
+            applied_delta_sha256=payload["applied_delta_sha256"],
+            applied_delta_residual=payload["applied_delta_residual"],
+            applied_representation_error=payload["applied_representation_error"],
+            applied_representation_allowance=payload[
+                "applied_representation_allowance"
+            ],
+            applied_undeliverable_dose=payload["applied_undeliverable_dose"],
+            applied_deliverable_allowance=payload["applied_deliverable_allowance"],
+            applied_trust_radius_value=payload["applied_trust_radius_value"],
+            applied_minimum_first_order_change=payload[
+                "applied_minimum_first_order_change"
+            ],
+            realized_changes=tuple(
+                WitnessChange.from_dict(item) for item in payload["realized_changes"]
+            ),
+            realized_minimum_change=payload["realized_minimum_change"],
+            realized_witness_violation=payload["realized_witness_violation"],
+            degraded_witnesses=tuple(payload["degraded_witnesses"]),
+            eligible_for_behavioral_audits=payload["eligible_for_behavioral_audits"],
+            update_count_before=payload["update_count_before"],
+            update_count_after=payload["update_count_after"],
+            optimizer_state_entries=payload["optimizer_state_entries"],
+            transaction_before_digest=payload["transaction_before_digest"],
+            transaction_after_digest=payload["transaction_after_digest"],
+        )
 
 
 def _representation_allowance(
@@ -2305,6 +2491,28 @@ def _realized_changes(
 # --- durable artifacts --------------------------------------------------------
 
 
+def _write_create_or_identical(path: Path, payload: bytes) -> Path:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open("xb") as handle:
+            handle.write(payload)
+    except FileExistsError:
+        try:
+            existing = target.read_bytes()
+        except OSError as error:
+            raise ProposalAdmissionError(
+                f"artifact {target} is unreadable",
+                disposition="invalid_artifact",
+            ) from error
+        if existing != payload:
+            raise ProposalAdmissionError(
+                f"artifact {target} already exists with different bytes",
+                disposition="artifact_collision",
+            )
+    return target
+
+
 def write_exact_adamw_proposal(proposal: ExactAdamWProposal, path: Path) -> Path:
     """Write one private proposal artifact through the admitted payload."""
 
@@ -2312,10 +2520,9 @@ def write_exact_adamw_proposal(proposal: ExactAdamWProposal, path: Path) -> Path
         raise ProposalAdmissionError(
             "an admitted exact AdamW proposal is required", disposition="invalid_field"
         )
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(_canonical_payload(proposal.to_dict()))
-    return target
+    return _write_create_or_identical(
+        Path(path), _canonical_payload(proposal.to_dict())
+    )
 
 
 def load_exact_adamw_proposal(path: Path) -> ExactAdamWProposal:
@@ -2341,10 +2548,11 @@ def write_frozen_witness_bank(bank: FrozenWitnessBank, directory: Path) -> Path:
     root = Path(directory)
     (root / "jacobians").mkdir(parents=True, exist_ok=True)
     for _, witness, jacobian in bank.stream_constraints():
-        (root / "jacobians" / f"{witness.jacobian_sha256}.f64").write_bytes(
-            _float64_bytes(jacobian)
+        _write_create_or_identical(
+            root / "jacobians" / f"{witness.jacobian_sha256}.f64",
+            _float64_bytes(jacobian),
         )
-    (root / "bank.json").write_bytes(_canonical_payload(bank.to_dict()))
+    _write_create_or_identical(root / "bank.json", _canonical_payload(bank.to_dict()))
     return root
 
 
@@ -2401,6 +2609,76 @@ def load_frozen_witness_bank(directory: Path) -> FrozenWitnessBank:
     )
 
 
+def write_projection_receipt(receipt: ProjectionReceipt, path: Path) -> Path:
+    """Write one certified projection through its existing receipt schema."""
+
+    if not isinstance(receipt, ProjectionReceipt):
+        raise ProposalAdmissionError(
+            "a certified projection receipt is required",
+            disposition="invalid_field",
+        )
+    return _write_create_or_identical(Path(path), _canonical_payload(receipt.to_dict()))
+
+
+def load_projection_receipt(
+    path: Path, *, expected_sha256: str | None = None
+) -> ProjectionReceipt:
+    """Reload and content-revalidate one projection receipt."""
+
+    target = Path(path)
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ProposalAdmissionError(
+            f"projection artifact {target} is unreadable",
+            disposition="invalid_artifact",
+        ) from error
+    receipt = ProjectionReceipt.from_dict(payload)
+    if expected_sha256 is not None and receipt.receipt_sha256 != _digest(
+        expected_sha256, field="expected_sha256"
+    ):
+        raise ProposalAdmissionError(
+            "projection artifact differs from its durable receipt binding",
+            disposition="projection_digest_mismatch",
+        )
+    return receipt
+
+
+def write_projected_apply_receipt(receipt: ProjectedApplyReceipt, path: Path) -> Path:
+    """Write one exact projected-apply receipt through its existing schema."""
+
+    if not isinstance(receipt, ProjectedApplyReceipt):
+        raise ProposalAdmissionError(
+            "a certified projected apply receipt is required",
+            disposition="invalid_field",
+        )
+    return _write_create_or_identical(Path(path), _canonical_payload(receipt.to_dict()))
+
+
+def load_projected_apply_receipt(
+    path: Path, *, expected_sha256: str | None = None
+) -> ProjectedApplyReceipt:
+    """Reload and content-revalidate one projected-apply receipt."""
+
+    target = Path(path)
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ProposalAdmissionError(
+            f"projected apply artifact {target} is unreadable",
+            disposition="invalid_artifact",
+        ) from error
+    receipt = ProjectedApplyReceipt.from_dict(payload)
+    if expected_sha256 is not None and receipt.receipt_sha256 != _digest(
+        expected_sha256, field="expected_sha256"
+    ):
+        raise ProposalAdmissionError(
+            "projected apply artifact differs from its durable receipt binding",
+            disposition="apply_digest_mismatch",
+        )
+    return receipt
+
+
 __all__ = [
     "APPLY_SCHEMA_VERSION",
     "EVIDENCE_SCHEMA_VERSION",
@@ -2442,8 +2720,12 @@ __all__ = [
     "jacobian_sha256",
     "load_exact_adamw_proposal",
     "load_frozen_witness_bank",
+    "load_projected_apply_receipt",
+    "load_projection_receipt",
     "parameter_state_sha256",
     "project_adamw_proposal",
     "write_exact_adamw_proposal",
     "write_frozen_witness_bank",
+    "write_projected_apply_receipt",
+    "write_projection_receipt",
 ]

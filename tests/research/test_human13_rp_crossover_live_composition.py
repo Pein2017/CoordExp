@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -207,6 +208,31 @@ def _composition() -> tuple[composition.Human13RPCrossoverLiveComposition, FakeB
     )
 
 
+def _compiler_ledger(
+    *,
+    compiler_image_id: int | None = None,
+    token_index: int = 1,
+    repetition_penalty: float = 1.0,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        repetition_penalty=repetition_penalty,
+        images=tuple(
+            SimpleNamespace(
+                image_id=image_id,
+                site=(
+                    SimpleNamespace(generated_token_index=token_index)
+                    if image_id == compiler_image_id
+                    else None
+                ),
+                absent_reason=(
+                    None if image_id == compiler_image_id else "no_trusted_remaining"
+                ),
+            )
+            for image_id in CANONICAL_IMAGE_IDS
+        ),
+    )
+
+
 def _frozen() -> Any:
     return production._validate_frozen_inputs(1.0)
 
@@ -257,6 +283,60 @@ def test_witness_bank_is_frozen_before_sampling() -> None:
     assert bank is not None
     assert bank.binding.frozen_before_acquisition is True
     assert len(bank.constraints) == 2 * len(CANONICAL_IMAGE_IDS)
+
+
+def test_compiler_sites_are_bound_after_acquisition_before_dose_statistics() -> None:
+    live, backend = _composition()
+    for repetition_penalty in (1.0, 1.10):
+        live._surfaces[repetition_penalty] = _surface(repetition_penalty)
+    live._freeze_witness_bank(_frozen())
+    frozen_bank = live._witness_bank
+    assert frozen_bank is not None
+    assert live._source_dose_margins is None
+
+    compiler_image_id = CANONICAL_IMAGE_IDS[0]
+    ledger = _compiler_ledger(compiler_image_id=compiler_image_id)
+    backend.events.append("acquisition:closed")
+    live._bind_compiler_dose_evidence(
+        _frozen(), compiler_ledger=ledger, training_rp=1.0
+    )
+
+    assert live._witness_bank is frozen_bank
+    assert backend.events == [
+        "margin:open",
+        "margin:close",
+        "acquisition:closed",
+        "margin:open",
+        "margin:close",
+    ]
+    measurement = live._measurement
+    assert measurement is not None
+    expected_witness_sites = {
+        (image_id, repetition_penalty, 0)
+        for image_id in CANONICAL_IMAGE_IDS
+        for repetition_penalty in (1.0, 1.10)
+    }
+    assert set(measurement.dose_sites) == expected_witness_sites | {
+        (compiler_image_id, 1.0, 1)
+    }
+    assert set(live._source_dose_margins or ()) == {
+        f"{image_id}|{'1.0' if repetition_penalty == 1.0 else '1.10'}|{token_index}"
+        for image_id, repetition_penalty, token_index in measurement.dose_sites
+    }
+
+
+def test_compiler_dose_binding_rejects_mixed_rp_ledger() -> None:
+    live, _backend = _composition()
+    for repetition_penalty in (1.0, 1.10):
+        live._surfaces[repetition_penalty] = _surface(repetition_penalty)
+    live._freeze_witness_bank(_frozen())
+
+    with pytest.raises(composition.LiveCompositionError, match="ledger RP"):
+        live._bind_compiler_dose_evidence(
+            _frozen(),
+            compiler_ledger=_compiler_ledger(repetition_penalty=1.10),
+            training_rp=1.0,
+        )
 
 
 def test_phase_order_releases_engine_and_model_before_cells(monkeypatch) -> None:
@@ -401,6 +481,9 @@ def test_realized_probe_measures_then_restores_the_surface(tmp_path) -> None:
     for repetition_penalty in (1.0, 1.10):
         live._surfaces[repetition_penalty] = _surface(repetition_penalty)
     live._freeze_witness_bank(_frozen())
+    live._bind_compiler_dose_evidence(
+        _frozen(), compiler_ledger=_compiler_ledger(), training_rp=1.0
+    )
 
     node = _node(tmp_path)
     spec = _spec(node, live)
@@ -475,6 +558,9 @@ def test_dose_mechanics_bind_projection_and_audit_deltas(tmp_path) -> None:
     for repetition_penalty in (1.0, 1.10):
         live._surfaces[repetition_penalty] = _surface(repetition_penalty)
     live._freeze_witness_bank(_frozen())
+    live._bind_compiler_dose_evidence(
+        _frozen(), compiler_ledger=_compiler_ledger(), training_rp=1.0
+    )
     node = _node(tmp_path)
     spec = _spec(node, live)
     live._evidence = composition.AcquisitionEvidence(
@@ -538,7 +624,7 @@ def test_dose_mechanics_bind_projection_and_audit_deltas(tmp_path) -> None:
     assert receipt.cap_terminated_output_delta_count == 0
     assert receipt.jvp_fd_tolerance == witness_owner.JVP_FD_TOLERANCE
     assert receipt.rollback_reproduced is True
-    assert backend.events.count("margin:close") == 2
+    assert backend.events.count("margin:close") == 3
     assert backend.events[-2:] == ["audit:1.0", "audit:1.1"]
 
 

@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
+from pathlib import Path
 import re
 from typing import Protocol
 
@@ -20,13 +21,23 @@ import torch
 
 from scripts.research.human13_adamw_proposal_preservation import (
     AdamWProposalConfig,
+    ExactAdamWProposal,
     FrozenWitnessBank,
+    ProjectedApplyReceipt,
     ProjectionReceipt,
     ProposalBinding,
     apply_projected_delta,
     capture_exact_adamw_proposal,
+    load_exact_adamw_proposal,
+    load_frozen_witness_bank,
+    load_projected_apply_receipt,
+    load_projection_receipt,
     parameter_state_sha256,
     project_adamw_proposal,
+    write_exact_adamw_proposal,
+    write_frozen_witness_bank,
+    write_projected_apply_receipt,
+    write_projection_receipt,
 )
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     PROPOSAL_COMPONENTS_BY_ARM,
@@ -288,6 +299,62 @@ def _unprojected_apply_sha256(proposal_sha256: str, post_sha256: str) -> str:
     )
 
 
+def _decision_evidence_root(spec: CellSpec) -> Path:
+    return Path(spec.output_root).expanduser().resolve() / "decision-evidence"
+
+
+def _persist_exact_proposal(spec: CellSpec, proposal: ExactAdamWProposal) -> str:
+    path = (
+        _decision_evidence_root(spec)
+        / "exact-adamw-proposal"
+        / f"{proposal.proposal_sha256}.json"
+    )
+    written = write_exact_adamw_proposal(proposal, path)
+    reloaded = load_exact_adamw_proposal(written)
+    if reloaded.to_dict() != proposal.to_dict():
+        raise ValueError("durable exact AdamW proposal failed revalidation")
+    return str(written)
+
+
+def _persist_witness_bank(spec: CellSpec, bank: FrozenWitnessBank) -> str:
+    path = _decision_evidence_root(spec) / "frozen-witness-bank" / bank.bank_sha256
+    written = write_frozen_witness_bank(bank, path)
+    reloaded = load_frozen_witness_bank(written)
+    if reloaded.to_dict() != bank.to_dict():
+        raise ValueError("durable witness bank failed metadata revalidation")
+    # Force the lazy Jacobian store through its content-addressed admission.
+    tuple(reloaded.stream_constraints())
+    return str(written)
+
+
+def _persist_projection(spec: CellSpec, receipt: ProjectionReceipt) -> str:
+    path = (
+        _decision_evidence_root(spec)
+        / "projection-receipt"
+        / f"{receipt.receipt_sha256}.json"
+    )
+    written = write_projection_receipt(receipt, path)
+    reloaded = load_projection_receipt(written, expected_sha256=receipt.receipt_sha256)
+    if reloaded.to_dict() != receipt.to_dict():
+        raise ValueError("durable projection receipt failed revalidation")
+    return str(written)
+
+
+def _persist_projected_apply(spec: CellSpec, receipt: ProjectedApplyReceipt) -> str:
+    path = (
+        _decision_evidence_root(spec)
+        / "projected-apply-receipt"
+        / f"{receipt.receipt_sha256}.json"
+    )
+    written = write_projected_apply_receipt(receipt, path)
+    reloaded = load_projected_apply_receipt(
+        written, expected_sha256=receipt.receipt_sha256
+    )
+    if reloaded.to_dict() != receipt.to_dict():
+        raise ValueError("durable projected-apply receipt failed revalidation")
+    return str(written)
+
+
 def _failure_reason(error: BaseException) -> str:
     return f"{type(error).__name__}: {error}"
 
@@ -326,6 +393,11 @@ def run_cell(
     projection_sha256: str | None = None
     projection_receipt: ProjectionReceipt | None = None
     apply_sha256: str | None = None
+    adamw_proposal_artifact_path: str | None = None
+    witness_bank_artifact_path: str | None = None
+    witness_bank_sha256: str | None = None
+    projection_receipt_artifact_path: str | None = None
+    apply_receipt_artifact_path: str | None = None
     backward_receipt: ObjectiveBackwardReceipt | None = None
     aggregate_resources: AggregateResourceReceipt | None = None
     dose_mechanics: DoseMechanicalReceipt | None = None
@@ -345,13 +417,14 @@ def run_cell(
             config=AdamWProposalConfig.frozen(learning_rate=spec.learning_rate),
             binding=_binding(spec, backward_receipt),
         )
+        snapshot = state.transaction.begin()
+        transaction_id = snapshot.transaction_id
+        update_attempted = True
+        adamw_proposal_artifact_path = _persist_exact_proposal(spec, proposal)
         proposal_sha256 = proposal.proposal_sha256
         # The arm-independent identity of the measured proposal: arm C projects
         # exactly this base delta, so B and C of one acquisition must agree.
         proposal_delta_sha256 = proposal.delta_sha256
-        snapshot = state.transaction.begin()
-        transaction_id = snapshot.transaction_id
-        update_attempted = True
 
         if spec.cell_key.arm_id in {"A", "B"}:
             state.optimizer.step()
@@ -364,8 +437,11 @@ def run_cell(
             apply_sha256 = _unprojected_apply_sha256(proposal_sha256, post_sha256)
         else:
             bank = services.witness_bank(state, spec)
+            witness_bank_artifact_path = _persist_witness_bank(spec, bank)
+            witness_bank_sha256 = bank.bank_sha256
             projection = project_adamw_proposal(proposal=proposal, witness_bank=bank)
             projection_receipt = projection
+            projection_receipt_artifact_path = _persist_projection(spec, projection)
             projection_sha256 = projection.receipt_sha256
             applied = apply_projected_delta(
                 state.named_trainable_parameters,
@@ -377,7 +453,8 @@ def run_cell(
                 update_counter=state.update_counter,
                 realized_margin_probe=services.realized_margin_probe(state, spec, bank),
             )
-            apply_sha256 = _sha256(applied.to_dict())
+            apply_receipt_artifact_path = _persist_projected_apply(spec, applied)
+            apply_sha256 = applied.receipt_sha256
 
         if state.update_counter.value != 1:
             raise ValueError("cell must contain exactly one update")
@@ -506,6 +583,11 @@ def run_cell(
             proposal_delta_sha256=proposal_delta_sha256,
             projection_receipt_sha256=projection_sha256,
             apply_receipt_sha256=apply_sha256,
+            adamw_proposal_artifact_path=adamw_proposal_artifact_path,
+            witness_bank_artifact_path=witness_bank_artifact_path,
+            witness_bank_sha256=witness_bank_sha256,
+            projection_receipt_artifact_path=projection_receipt_artifact_path,
+            apply_receipt_artifact_path=apply_receipt_artifact_path,
             failure_reason=_failure_reason(failure),
             learning_rate=spec.learning_rate,
             global_learning_rate_decision_sha256=(
@@ -535,6 +617,11 @@ def run_cell(
         proposal_delta_sha256=proposal_delta_sha256,
         projection_receipt_sha256=projection_sha256,
         apply_receipt_sha256=apply_sha256,
+        adamw_proposal_artifact_path=adamw_proposal_artifact_path,
+        witness_bank_artifact_path=witness_bank_artifact_path,
+        witness_bank_sha256=witness_bank_sha256,
+        projection_receipt_artifact_path=projection_receipt_artifact_path,
+        apply_receipt_artifact_path=apply_receipt_artifact_path,
         learning_rate=spec.learning_rate,
         global_learning_rate_decision_sha256=(
             spec.global_learning_rate_decision_sha256

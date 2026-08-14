@@ -488,6 +488,12 @@ def _fixture(
                         )
                     )
                 transaction = _digest("fresh-source-state")
+                proposal_sha = _digest(f"proposal:{cell_tag}")
+                projection_sha = (
+                    _digest(f"projection:{cell_tag}") if arm_id == "C" else None
+                )
+                apply_sha = _digest(f"apply:{cell_tag}")
+                witness_sha = _digest(f"witness:{cell_tag}") if arm_id == "C" else None
                 receipts.append(
                     CellReceipt(
                         cell_key=cell_key,
@@ -503,12 +509,29 @@ def _fixture(
                         after_transaction_digest=transaction,
                         status="succeeded",
                         audits=tuple(audits),
-                        adamw_proposal_sha256=_digest(f"proposal:{cell_tag}"),
+                        adamw_proposal_sha256=proposal_sha,
                         proposal_delta_sha256=_proposal_delta(arm_id, group_tag),
-                        projection_receipt_sha256=(
-                            _digest(f"projection:{cell_tag}") if arm_id == "C" else None
+                        projection_receipt_sha256=projection_sha,
+                        apply_receipt_sha256=apply_sha,
+                        adamw_proposal_artifact_path=(
+                            f"/immutable/proposal/{proposal_sha}.json"
                         ),
-                        apply_receipt_sha256=_digest(f"apply:{cell_tag}"),
+                        witness_bank_artifact_path=(
+                            f"/immutable/witness/{witness_sha}"
+                            if witness_sha is not None
+                            else None
+                        ),
+                        witness_bank_sha256=witness_sha,
+                        projection_receipt_artifact_path=(
+                            f"/immutable/projection/{projection_sha}.json"
+                            if projection_sha is not None
+                            else None
+                        ),
+                        apply_receipt_artifact_path=(
+                            f"/immutable/apply/{apply_sha}.json"
+                            if arm_id == "C"
+                            else None
+                        ),
                     )
                 )
     acquisitions_tuple = tuple(acquisitions)
@@ -693,6 +716,7 @@ def test_aggregate_admission_rejects_noncanonical_receipts(
             failure_reason="scientific failure",
             audits=(),
             adamw_proposal_sha256=None,
+            adamw_proposal_artifact_path=None,
             proposal_delta_sha256=None,
             apply_receipt_sha256=None,
             objective_component_hashes=(),
@@ -709,7 +733,9 @@ def test_aggregate_admission_rejects_noncanonical_receipts(
         receipts[1] = replace(receipts[1], transaction_id=receipts[0].transaction_id)
     elif mutation == "proposal":
         receipts[1] = replace(
-            receipts[1], adamw_proposal_sha256=receipts[0].adamw_proposal_sha256
+            receipts[1],
+            adamw_proposal_sha256=receipts[0].adamw_proposal_sha256,
+            adamw_proposal_artifact_path=receipts[0].adamw_proposal_artifact_path,
         )
     elif mutation == "base_proposal":
         receipts[2] = replace(

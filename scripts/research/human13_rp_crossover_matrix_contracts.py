@@ -42,6 +42,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import math
+from pathlib import Path
 import re
 from types import MappingProxyType
 from typing import Any
@@ -106,9 +107,9 @@ SHARED_EVIDENCE_SCHEMA = "human13_rp_crossover_shared_evidence.v1"
 SOURCE_BASELINE_SCHEMA = "human13_rp_crossover_source_baseline.v1"
 CELL_SPEC_SCHEMA = "human13_rp_crossover_cell_spec.v1"
 AUDIT_REF_SCHEMA = "human13_rp_crossover_audit_ref.v1"
-CELL_RECEIPT_SCHEMA = "human13_rp_crossover_cell_receipt.v1"
+CELL_RECEIPT_SCHEMA = "human13_rp_crossover_cell_receipt.v2"
 MATRIX_PLAN_SCHEMA = "human13_rp_crossover_matrix_plan.v1"
-NODE_TERMINAL_RECEIPT_SCHEMA = "human13_rp_crossover_node_terminal_receipt.v1"
+NODE_TERMINAL_RECEIPT_SCHEMA = "human13_rp_crossover_node_terminal_receipt.v2"
 AGGREGATE_RESOURCE_RECEIPT_SCHEMA = "human13_rp_crossover_resources.v1"
 DOSE_MECHANICAL_RECEIPT_SCHEMA = "human13_rp_crossover_dose_mechanics.v1"
 
@@ -185,6 +186,15 @@ def _optional_digest(value: object, *, field: str) -> str | None:
     if value is None:
         return None
     return _digest(value, field=field)
+
+
+def _optional_artifact_path(value: object, *, field: str) -> str | None:
+    if value is None:
+        return None
+    text = _nonempty(value, field=field)
+    if not Path(text).is_absolute():
+        raise ValueError(f"{field} must be an absolute immutable artifact path")
+    return text
 
 
 def _training_rp(value: Any) -> float:
@@ -1024,6 +1034,11 @@ class CellReceipt:
     proposal_delta_sha256: str | None = None
     projection_receipt_sha256: str | None = None
     apply_receipt_sha256: str | None = None
+    adamw_proposal_artifact_path: str | None = None
+    witness_bank_artifact_path: str | None = None
+    witness_bank_sha256: str | None = None
+    projection_receipt_artifact_path: str | None = None
+    apply_receipt_artifact_path: str | None = None
     update_count: int = 1
     retry_policy: str = "none"
     rollback_confirmed: bool = True
@@ -1126,6 +1141,80 @@ class CellReceipt:
                 "only the preservation arm (C) may bind a projection receipt"
             )
         object.__setattr__(self, "projection_receipt_sha256", projection)
+        proposal_path = _optional_artifact_path(
+            self.adamw_proposal_artifact_path,
+            field="adamw_proposal_artifact_path",
+        )
+        witness_path = _optional_artifact_path(
+            self.witness_bank_artifact_path,
+            field="witness_bank_artifact_path",
+        )
+        witness_sha256 = _optional_digest(
+            self.witness_bank_sha256, field="witness_bank_sha256"
+        )
+        projection_path = _optional_artifact_path(
+            self.projection_receipt_artifact_path,
+            field="projection_receipt_artifact_path",
+        )
+        apply_path = _optional_artifact_path(
+            self.apply_receipt_artifact_path,
+            field="apply_receipt_artifact_path",
+        )
+        if (proposal_path is None) != (self.adamw_proposal_sha256 is None):
+            raise ValueError(
+                "exact AdamW proposal artifact path/hash evidence must be paired"
+            )
+        if (witness_path is None) != (witness_sha256 is None):
+            raise ValueError("witness-bank artifact path/hash evidence must be paired")
+        if (projection_path is None) != (projection is None):
+            raise ValueError(
+                "projection receipt artifact path/hash evidence must be paired"
+            )
+        if requires_projection:
+            if (apply_path is None) != (self.apply_receipt_sha256 is None):
+                raise ValueError(
+                    "projected-apply artifact path/hash evidence must be paired"
+                )
+        elif any(
+            value is not None
+            for value in (witness_path, witness_sha256, projection_path, apply_path)
+        ):
+            raise ValueError(
+                "only preservation-arm receipts may bind witness/projection artifacts"
+            )
+        for path, digest, field_name, directory in (
+            (
+                proposal_path,
+                self.adamw_proposal_sha256,
+                "adamw_proposal_artifact_path",
+                False,
+            ),
+            (witness_path, witness_sha256, "witness_bank_artifact_path", True),
+            (
+                projection_path,
+                projection,
+                "projection_receipt_artifact_path",
+                False,
+            ),
+            (
+                apply_path,
+                self.apply_receipt_sha256,
+                "apply_receipt_artifact_path",
+                False,
+            ),
+        ):
+            if path is None or digest is None:
+                continue
+            expected_name = digest if directory else f"{digest}.json"
+            if Path(path).name != expected_name:
+                raise ValueError(
+                    f"{field_name} does not carry its content-addressed hash"
+                )
+        object.__setattr__(self, "adamw_proposal_artifact_path", proposal_path)
+        object.__setattr__(self, "witness_bank_artifact_path", witness_path)
+        object.__setattr__(self, "witness_bank_sha256", witness_sha256)
+        object.__setattr__(self, "projection_receipt_artifact_path", projection_path)
+        object.__setattr__(self, "apply_receipt_artifact_path", apply_path)
 
         audits = tuple(self.audits)
         if any(not isinstance(audit, AuditRef) for audit in audits):
@@ -1157,6 +1246,10 @@ class CellReceipt:
                 raise ValueError(
                     "a succeeded cell receipt must bind its exact AdamW proposal identity"
                 )
+            if self.adamw_proposal_artifact_path is None:
+                raise ValueError(
+                    "a succeeded cell receipt must bind its exact proposal artifact"
+                )
             if self.proposal_delta_sha256 is None:
                 raise ValueError(
                     "a succeeded cell receipt must bind its measured proposal delta identity"
@@ -1168,6 +1261,18 @@ class CellReceipt:
             if requires_projection and self.projection_receipt_sha256 is None:
                 raise ValueError(
                     "a succeeded preservation-arm receipt must bind its projection evidence"
+                )
+            if requires_projection and any(
+                value is None
+                for value in (
+                    self.witness_bank_artifact_path,
+                    self.witness_bank_sha256,
+                    self.projection_receipt_artifact_path,
+                    self.apply_receipt_artifact_path,
+                )
+            ):
+                raise ValueError(
+                    "a succeeded preservation arm must bind all decision artifacts"
                 )
             if set(audit_rps) != set(EVALUATION_RPS):
                 raise ValueError(
@@ -1208,6 +1313,11 @@ class CellReceipt:
             "proposal_delta_sha256": self.proposal_delta_sha256,
             "projection_receipt_sha256": self.projection_receipt_sha256,
             "apply_receipt_sha256": self.apply_receipt_sha256,
+            "adamw_proposal_artifact_path": self.adamw_proposal_artifact_path,
+            "witness_bank_artifact_path": self.witness_bank_artifact_path,
+            "witness_bank_sha256": self.witness_bank_sha256,
+            "projection_receipt_artifact_path": (self.projection_receipt_artifact_path),
+            "apply_receipt_artifact_path": self.apply_receipt_artifact_path,
             "update_count": self.update_count,
             "retry_policy": self.retry_policy,
             "rollback_confirmed": self.rollback_confirmed,
@@ -1249,6 +1359,11 @@ class CellReceipt:
             proposal_delta_sha256=value["proposal_delta_sha256"],
             projection_receipt_sha256=value["projection_receipt_sha256"],
             apply_receipt_sha256=value["apply_receipt_sha256"],
+            adamw_proposal_artifact_path=value["adamw_proposal_artifact_path"],
+            witness_bank_artifact_path=value["witness_bank_artifact_path"],
+            witness_bank_sha256=value["witness_bank_sha256"],
+            projection_receipt_artifact_path=value["projection_receipt_artifact_path"],
+            apply_receipt_artifact_path=value["apply_receipt_artifact_path"],
             update_count=value["update_count"],
             retry_policy=value["retry_policy"],
             rollback_confirmed=value["rollback_confirmed"],

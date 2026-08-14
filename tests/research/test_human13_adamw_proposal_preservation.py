@@ -48,10 +48,14 @@ from scripts.research.human13_adamw_proposal_preservation import (
     jacobian_sha256,
     load_exact_adamw_proposal,
     load_frozen_witness_bank,
+    load_projected_apply_receipt,
+    load_projection_receipt,
     parameter_state_sha256,
     project_adamw_proposal,
     write_exact_adamw_proposal,
     write_frozen_witness_bank,
+    write_projected_apply_receipt,
+    write_projection_receipt,
 )
 from scripts.research.human13_training_transaction import (
     TrainingStateTransaction,
@@ -806,6 +810,56 @@ def test_single_aggregate_admission_governs_reload_projection_and_apply(
     with pytest.raises(ProposalAdmissionError):
         project_adamw_proposal(
             proposal=proposal, witness_bank=load_frozen_witness_bank(bank_directory)
+        )
+
+
+def test_projection_and_apply_artifacts_reload_and_reject_tampering(tmp_path) -> None:
+    _, named, optimizer, counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    row = _active_row(proposal)
+    bank = _bank(proposal.layout, {"owner_a": row})
+    projection = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    applied = apply_projected_delta(
+        named,
+        proposal=proposal,
+        witness_bank=bank,
+        projection=projection,
+        optimizer=optimizer,
+        transaction=transaction,
+        update_counter=counter,
+        realized_margin_probe=_probe(bank, {"owner_a": 0.25}),
+    )
+
+    projection_path = write_projection_receipt(projection, tmp_path / "projection.json")
+    apply_path = write_projected_apply_receipt(applied, tmp_path / "apply.json")
+    assert (
+        load_projection_receipt(
+            projection_path, expected_sha256=projection.receipt_sha256
+        ).to_dict()
+        == projection.to_dict()
+    )
+    assert (
+        load_projected_apply_receipt(
+            apply_path, expected_sha256=applied.receipt_sha256
+        ).to_dict()
+        == applied.to_dict()
+    )
+
+    projection_payload = json.loads(projection_path.read_text(encoding="utf-8"))
+    projection_payload["projected_delta_sha256"] = "0" * 64
+    tampered_projection = tmp_path / "tampered-projection.json"
+    tampered_projection.write_text(json.dumps(projection_payload), encoding="utf-8")
+    with pytest.raises(ProposalAdmissionError, match="content address"):
+        load_projection_receipt(tampered_projection)
+
+    apply_payload = json.loads(apply_path.read_text(encoding="utf-8"))
+    apply_payload["realized_minimum_change"] = 123.0
+    tampered_apply = tmp_path / "tampered-apply.json"
+    tampered_apply.write_text(json.dumps(apply_payload), encoding="utf-8")
+    with pytest.raises(ProposalAdmissionError, match="durable receipt binding"):
+        load_projected_apply_receipt(
+            tampered_apply, expected_sha256=applied.receipt_sha256
         )
 
 

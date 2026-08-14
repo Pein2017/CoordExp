@@ -183,6 +183,10 @@ def _write_dag_plan(tmp_path) -> tuple[str, dict[str, Any]]:
 
 def _success_receipt(spec: CellSpec) -> CellReceipt:
     checkpoint = _digest(f"proposal-checkpoint-{spec.cell_key.arm_id}")
+    proposal_sha = _digest(f"proposal-{spec.cell_key.arm_id}")
+    projection_sha = _digest("projection-C") if spec.cell_key.arm_id == "C" else None
+    apply_sha = _digest(f"apply-{spec.cell_key.arm_id}")
+    witness_sha = _digest("witness-C") if spec.cell_key.arm_id == "C" else None
     audits = tuple(
         AuditRef(
             evaluation_rp=rp,
@@ -207,14 +211,27 @@ def _success_receipt(spec: CellSpec) -> CellReceipt:
         after_transaction_digest=_digest("state"),
         status="succeeded",
         audits=audits,
-        adamw_proposal_sha256=_digest(f"proposal-{spec.cell_key.arm_id}"),
+        adamw_proposal_sha256=proposal_sha,
         proposal_delta_sha256=_digest(
             "proposal-delta-a" if spec.cell_key.arm_id == "A" else "proposal-delta-bc"
         ),
-        projection_receipt_sha256=(
-            _digest("projection-C") if spec.cell_key.arm_id == "C" else None
+        projection_receipt_sha256=projection_sha,
+        apply_receipt_sha256=apply_sha,
+        adamw_proposal_artifact_path=f"/immutable/proposal/{proposal_sha}.json",
+        witness_bank_artifact_path=(
+            f"/immutable/witness/{witness_sha}" if witness_sha is not None else None
         ),
-        apply_receipt_sha256=_digest(f"apply-{spec.cell_key.arm_id}"),
+        witness_bank_sha256=witness_sha,
+        projection_receipt_artifact_path=(
+            f"/immutable/projection/{projection_sha}.json"
+            if projection_sha is not None
+            else None
+        ),
+        apply_receipt_artifact_path=(
+            f"/immutable/apply/{apply_sha}.json"
+            if spec.cell_key.arm_id == "C"
+            else None
+        ),
         learning_rate=spec.learning_rate,
         global_learning_rate_decision_sha256=(
             spec.global_learning_rate_decision_sha256

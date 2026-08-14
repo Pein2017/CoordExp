@@ -142,9 +142,11 @@ def _receipt(
     *,
     observed_dtypes: list[str] | None = None,
     observed_attention: str = "sdpa",
+    observed_batch_size: int = 1,
+    observed_backend: str = "hf",
 ) -> BackendSessionReceipt:
     return BackendSessionReceipt(
-        backend="hf",
+        backend=observed_backend,  # type: ignore[arg-type]
         backend_mode="generate",
         response_family="hf",
         backend_version="test",
@@ -153,7 +155,7 @@ def _receipt(
         processor_identity={"class": "FakeProcessor"},
         generation_config_fingerprint="source-generation",
         effective_settings={
-            "batch_size": 1,
+            "batch_size": observed_batch_size,
             "observed_model_dtype": {
                 "parameter_dtype_names": observed_dtypes or ["torch.float32"]
             },
@@ -441,11 +443,59 @@ def test_scorer_rejects_non_exact_observed_runtime(
 ) -> None:
     from scripts.research.human13_hf_census import Human13HFCensusScorer
 
-    with pytest.raises(ValueError, match="observed.*fp32|observed.*SDPA"):
+    with pytest.raises(
+        ValueError,
+        match="observed.*fp32|observed.*SDPA|observed.*batch|observed.*backend",
+    ):
         Human13HFCensusScorer(
             session=_session(receipt=receipt),
             requests_by_image={1: _request(tmp_path)},
         )
+
+
+def test_hf_runtime_identity_binds_only_observed_receipt_values() -> None:
+    from scripts.research.human13_hf_census import (
+        validate_hf_fp32_sdpa_batch_one,
+    )
+
+    identity = validate_hf_fp32_sdpa_batch_one(_launch(), _receipt())
+
+    assert identity == {
+        "backend": "hf",
+        "backend_mode": "generate",
+        "backend_version": "test",
+        "batch_size": 1,
+        "observed_model_dtype_names": ["torch.float32"],
+        "observed_attn_implementation": "sdpa",
+        "generation_config_fingerprint": "source-generation",
+        "model_identity": {"family": "source"},
+        "tokenizer_identity": {"sha256": "tokenizer"},
+        "processor_identity": {"class": "FakeProcessor"},
+    }
+
+
+@pytest.mark.parametrize(
+    "receipt",
+    (
+        _receipt(observed_dtypes=["torch.bfloat16", "torch.float32"]),
+        _receipt(observed_attention="flash_attention_2"),
+        _receipt(observed_batch_size=4),
+        _receipt(observed_backend="vllm"),
+    ),
+)
+def test_hf_runtime_identity_rejects_observed_receipt_drift(
+    receipt: BackendSessionReceipt,
+) -> None:
+    from scripts.research.human13_hf_census import (
+        validate_hf_fp32_sdpa_batch_one,
+    )
+    from src.common.errors import RuntimeContractError
+
+    with pytest.raises(
+        (ValueError, RuntimeContractError),
+        match="fp32|SDPA|batch_size|backend",
+    ):
+        validate_hf_fp32_sdpa_batch_one(_launch(), receipt)
 
 
 def test_source_context_opener_owns_session_cleanup(

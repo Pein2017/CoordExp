@@ -174,6 +174,10 @@ def _validate_forged_decision(**changes: Any) -> None:
 
 def _success_receipt(spec: CellSpec) -> CellReceipt:
     checkpoint = _digest("private-checkpoint")
+    proposal_sha = _digest("proposal")
+    projection_sha = _digest("projection")
+    apply_sha = _digest("apply")
+    witness_sha = _digest("witness")
     return CellReceipt(
         cell_key=spec.cell_key,
         shared_evidence=spec.shared_evidence,
@@ -197,10 +201,17 @@ def _success_receipt(spec: CellSpec) -> CellReceipt:
             )
             for rp in (1.0, 1.10)
         ),
-        adamw_proposal_sha256=_digest("proposal"),
+        adamw_proposal_sha256=proposal_sha,
         proposal_delta_sha256=_digest("proposal-delta"),
-        projection_receipt_sha256=_digest("projection"),
-        apply_receipt_sha256=_digest("apply"),
+        projection_receipt_sha256=projection_sha,
+        apply_receipt_sha256=apply_sha,
+        adamw_proposal_artifact_path=f"/immutable/proposal/{proposal_sha}.json",
+        witness_bank_artifact_path=f"/immutable/witness/{witness_sha}",
+        witness_bank_sha256=witness_sha,
+        projection_receipt_artifact_path=(
+            f"/immutable/projection/{projection_sha}.json"
+        ),
+        apply_receipt_artifact_path=f"/immutable/apply/{apply_sha}.json",
         learning_rate=spec.learning_rate,
         global_learning_rate_decision_sha256=(
             spec.global_learning_rate_decision_sha256

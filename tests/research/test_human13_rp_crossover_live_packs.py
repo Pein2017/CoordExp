@@ -731,6 +731,71 @@ def test_incremental_backward_releases_each_graph_before_next_image() -> None:
     assert parameter.grad is not None
 
 
+def test_manifest_absent_compiler_site_contributes_differentiable_zero() -> None:
+    """Image 14439 has no H owner/site but still owns one global-N summand."""
+
+    parameter = torch.nn.Parameter(torch.tensor(2.0, dtype=torch.float64))
+    observed_losses: list[torch.Tensor] = []
+
+    receipt = packs.backward_incremental_objectives(
+        iter(
+            (
+                packs.StreamingObjectiveStep(
+                    image_id=14439,
+                    trajectory_numerator=parameter * 3.0,
+                    compiler_numerator=None,
+                    compiler_absent_reason="no_trusted_remaining",
+                    release=lambda: None,
+                ),
+            )
+        ),
+        trajectory_denominator=13 * 16,
+        compiler_image_denominator=13,
+        include_compiler=True,
+        backward=observed_losses.append,
+    )
+
+    assert receipt.image_ids == (14439,)
+    assert len(observed_losses) == 1
+    loss = observed_losses[0]
+    assert loss.dtype is parameter.dtype
+    assert loss.device == parameter.device
+    loss.backward()
+    assert parameter.grad == pytest.approx(torch.tensor(3.0 / (13 * 16)))
+
+
+@pytest.mark.parametrize(
+    ("compiler", "absent_reason", "message"),
+    (
+        (None, None, "absent compiler numerator requires"),
+        (torch.tensor(0.0, requires_grad=True), "no_trusted_remaining", "present"),
+    ),
+)
+def test_incremental_backward_rejects_missing_or_mixed_compiler_evidence(
+    compiler: torch.Tensor | None,
+    absent_reason: str | None,
+    message: str,
+) -> None:
+    parameter = torch.nn.Parameter(torch.tensor(1.0))
+    with pytest.raises(packs.LivePackContractError, match=message):
+        packs.backward_incremental_objectives(
+            iter(
+                (
+                    packs.StreamingObjectiveStep(
+                        image_id=14439,
+                        trajectory_numerator=parameter,
+                        compiler_numerator=compiler,
+                        compiler_absent_reason=absent_reason,
+                        release=lambda: None,
+                    ),
+                )
+            ),
+            trajectory_denominator=208,
+            compiler_image_denominator=13,
+            include_compiler=True,
+        )
+
+
 def test_credit_ledger_lineage_fails_closed() -> None:
     publication = _publication()
     with pytest.raises(packs.LivePackContractError, match="credit ledger"):

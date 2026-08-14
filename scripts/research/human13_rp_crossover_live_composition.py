@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 from pathlib import Path
@@ -282,6 +282,7 @@ class Human13RPCrossoverLiveComposition:
         self._training_rp: float | None = None
         self._surfaces: dict[float, SourceSurfaceEvidence] = {}
         self._measurement: witness_owner.WitnessMeasurement | None = None
+        self._dose_decodes: tuple[witness_owner.SealedSourceDecode, ...] | None = None
         self._witness_bank: FrozenWitnessBank | None = None
         self._source_flat: torch.Tensor | None = None
         self._source_dose_margins: Mapping[str, float] | None = None
@@ -306,6 +307,8 @@ class Human13RPCrossoverLiveComposition:
         self._frozen = frozen
         training_rp = float(node["training_rp"])
         self._training_rp = training_rp
+        self._dose_decodes = None
+        self._source_dose_margins = None
         acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
         if (
             acquisition_key.training_rp != training_rp
@@ -408,7 +411,11 @@ class Human13RPCrossoverLiveComposition:
             self._source_flat = _flat_float64(
                 surface.named_trainable_parameters(), bank.layout
             )
-            self._source_dose_margins = dict(measurement.dose_site_margins())
+            # Compiler sites do not exist until the post-acquisition compiler
+            # ledger is admitted.  Only the witness bank/Jacobians freeze here;
+            # Source dose margins are measured after those Source-bound site
+            # identities are bound, never from acquisition outcomes.
+            self._source_dose_margins = None
         finally:
             # The pre-acquisition witness model never overlaps the vLLM
             # sampler.  Cells reopen a fresh Source witness surface and must
@@ -417,11 +424,107 @@ class Human13RPCrossoverLiveComposition:
             self._margin_surface = None
 
     def _sealed_decodes(self) -> tuple[witness_owner.SealedSourceDecode, ...]:
+        if self._dose_decodes is not None:
+            return self._dose_decodes
         return tuple(
             decode
             for repetition_penalty in EVALUATION_RPS
             for decode in self._surfaces[repetition_penalty].decodes
         )
+
+    def _bind_compiler_dose_evidence(
+        self,
+        frozen: Any,
+        *,
+        compiler_ledger: Any,
+        training_rp: float,
+    ) -> None:
+        """Bind admitted Source compiler sites before any dose statistic is read."""
+
+        bank = self._witness_bank
+        if bank is None or self._source_flat is None:
+            raise LiveCompositionError(
+                "compiler dose evidence requires the pre-acquisition witness bank"
+            )
+        rp = float(training_rp)
+        if rp not in EVALUATION_RPS:
+            raise LiveCompositionError("compiler dose evidence has an unknown RP")
+        if float(getattr(compiler_ledger, "repetition_penalty", float("nan"))) != rp:
+            raise LiveCompositionError(
+                "compiler dose evidence ledger RP differs from the training RP"
+            )
+        images = tuple(getattr(compiler_ledger, "images", ()))
+        by_image = {getattr(image, "image_id", None): image for image in images}
+        if (
+            len(images) != len(CANONICAL_IMAGE_IDS)
+            or len(by_image) != len(images)
+            or set(by_image) != set(CANONICAL_IMAGE_IDS)
+        ):
+            raise LiveCompositionError(
+                "compiler dose evidence must cover the exact thirteen-image panel"
+            )
+
+        compiler_sites: set[tuple[int, float, int]] = set()
+        bound: list[witness_owner.SealedSourceDecode] = []
+        raw_decodes = tuple(
+            decode
+            for repetition_penalty in EVALUATION_RPS
+            for decode in self._surfaces[repetition_penalty].decodes
+        )
+        for decode in raw_decodes:
+            indices: tuple[int, ...] = ()
+            if decode.repetition_penalty == rp:
+                image = by_image[decode.image_id]
+                site = getattr(image, "site", None)
+                absent_reason = getattr(image, "absent_reason", None)
+                if site is None:
+                    if not isinstance(absent_reason, str) or not absent_reason:
+                        raise LiveCompositionError(
+                            "absent compiler dose site lacks its ledger reason"
+                        )
+                else:
+                    if absent_reason is not None:
+                        raise LiveCompositionError(
+                            "present compiler dose site carries an absent reason"
+                        )
+                    index = getattr(site, "generated_token_index", None)
+                    if isinstance(index, bool) or not isinstance(index, int):
+                        raise LiveCompositionError(
+                            "compiler dose site lacks its generated token index"
+                        )
+                    indices = (index,)
+                    compiler_sites.add((decode.image_id, rp, index))
+            bound.append(replace(decode, compiler_token_indices=indices))
+        self._dose_decodes = tuple(bound)
+
+        surface = self._backend.open_margin_surface(frozen)
+        try:
+            measurement = witness_owner.WitnessMeasurement(
+                decodes=self._dose_decodes,
+                surface=surface,
+            )
+            rebound = measurement.freeze_witness_bank(binding=bank.binding)
+            if rebound.to_dict() != bank.to_dict():
+                raise LiveCompositionError(
+                    "post-acquisition dose surface changed the frozen witness bank"
+                )
+            if measurement.teacher_forced_greedy_change_count() != 0:
+                raise LiveCompositionError(
+                    "the compiler-bound Source surface is not its own argmax"
+                )
+            bound_compiler_sites = {
+                (decode.image_id, decode.repetition_penalty, token_index)
+                for decode in self._dose_decodes
+                for token_index in decode.compiler_token_indices
+            }
+            if bound_compiler_sites != compiler_sites:
+                raise LiveCompositionError(
+                    "compiler dose-site binding changed the admitted ledger identities"
+                )
+            self._measurement = measurement
+            self._source_dose_margins = dict(measurement.dose_site_margins())
+        finally:
+            self._backend.close_margin_surface(surface)
 
     def _sample(
         self, frozen: Any, training_rp: float, seed_group_id: str
@@ -495,6 +598,11 @@ class Human13RPCrossoverLiveComposition:
         finally:
             self._backend.close_packed_surface(packed)
             self._model_released = True
+        self._bind_compiler_dose_evidence(
+            frozen,
+            compiler_ledger=compiler_ledger,
+            training_rp=training_rp,
+        )
         return self._acquisition_evidence(
             frozen=frozen,
             training_rp=training_rp,
@@ -917,13 +1025,25 @@ class _CellServices:
         backward: ObjectiveBackwardReceipt,
         audits: Sequence[AuditRef],
     ) -> AggregateResourceReceipt:
-        del state, spec
+        del state
         evidence = self.composition._evidence
         if evidence is None:
             raise LiveCompositionError("resource receipt has no acquisition evidence")
         snapshot = self.composition._backend.resource_snapshot()
         if not isinstance(snapshot, ResourceSnapshot):
             raise LiveCompositionError("resource backend must return ResourceSnapshot")
+        decision_root = (
+            Path(spec.output_root).expanduser().resolve() / "decision-evidence"
+        )
+        decision_artifact_bytes = (
+            sum(
+                path.stat().st_size
+                for path in decision_root.rglob("*")
+                if path.is_file()
+            )
+            if decision_root.is_dir()
+            else 0
+        )
         return AggregateResourceReceipt(
             measurement_scope=snapshot.measurement_scope,
             wall_time_seconds=time.perf_counter() - self._started,
@@ -941,7 +1061,7 @@ class _CellServices:
             forward_count=snapshot.forward_count,
             backward_count=backward.backward_count,
             row_bytes=snapshot.row_bytes,
-            artifact_bytes=snapshot.artifact_bytes,
+            artifact_bytes=snapshot.artifact_bytes + decision_artifact_bytes,
             update_count=1,
             audit_count=len(audits),
             rollback_count=1,

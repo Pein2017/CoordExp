@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
+import tempfile
 
 import pytest
 import torch
@@ -14,6 +16,10 @@ from scripts.research.human13_adamw_proposal_preservation import (
     WEAKEST_MARGIN_SELECTION,
     WitnessBinding,
     jacobian_sha256,
+    load_exact_adamw_proposal,
+    load_frozen_witness_bank,
+    load_projected_apply_receipt,
+    load_projection_receipt,
 )
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     AggregateResourceReceipt,
@@ -41,6 +47,7 @@ from scripts.research.human13_training_transaction import (
 
 
 UNIT_ID = "2026-08-14-human13-k-trajectory-rp-crossover-screen"
+_TEST_OUTPUT_ROOT = Path(tempfile.mkdtemp(prefix="human13-rp-runtime-tests-"))
 
 
 def _digest(label: str) -> str:
@@ -71,7 +78,7 @@ def _component_hashes(arm_id: str) -> tuple[tuple[str, str], ...]:
     )
 
 
-def _spec(arm_id: str = "A") -> CellSpec:
+def _spec(arm_id: str = "A", *, output_root: str | Path | None = None) -> CellSpec:
     components = {
         "A": ("trajectory",),
         "B": ("trajectory", "compiler"),
@@ -90,7 +97,7 @@ def _spec(arm_id: str = "A") -> CellSpec:
         adamw_config_sha256=_digest("frozen-adamw-config"),
         fresh_optimizer_identity_sha256=_digest(f"fresh-optimizer-{arm_id}"),
         evaluation_rps=(1.0, 1.10),
-        output_root=f"cells/{arm_id}",
+        output_root=str(output_root or (_TEST_OUTPUT_ROOT / arm_id)),
         learning_rate=3.0e-6,
         global_learning_rate_decision_sha256=_digest("global-lr-decision"),
         resolved_leaf_config_sha256=_digest(f"resolved-leaf-{arm_id}"),
@@ -327,6 +334,60 @@ def test_preservation_arm_projects_the_exact_b_proposal_without_optimizer_moment
         parameter.grad is None for _, parameter in state.named_trainable_parameters
     )
     assert tuple(audit.evaluation_rp for audit in receipt.audits) == (1.0, 1.10)
+
+
+def test_decision_evidence_is_reloadable_after_success_and_audit_failure(
+    tmp_path: Path,
+) -> None:
+    success_services = FakeServices()
+    success = run_cell(
+        _spec("C", output_root=tmp_path / "success"),
+        services=success_services,
+        receipt_writer=lambda _: None,
+    )
+
+    assert success.adamw_proposal_artifact_path is not None
+    assert success.witness_bank_artifact_path is not None
+    assert success.witness_bank_sha256 is not None
+    assert success.projection_receipt_artifact_path is not None
+    assert success.apply_receipt_artifact_path is not None
+    proposal = load_exact_adamw_proposal(Path(success.adamw_proposal_artifact_path))
+    bank = load_frozen_witness_bank(Path(success.witness_bank_artifact_path))
+    projection = load_projection_receipt(
+        Path(success.projection_receipt_artifact_path),
+        expected_sha256=success.projection_receipt_sha256,
+    )
+    applied = load_projected_apply_receipt(
+        Path(success.apply_receipt_artifact_path),
+        expected_sha256=success.apply_receipt_sha256,
+    )
+    assert proposal.proposal_sha256 == success.adamw_proposal_sha256
+    assert bank.bank_sha256 == success.witness_bank_sha256
+    assert projection.receipt_sha256 == success.projection_receipt_sha256
+    assert applied.receipt_sha256 == success.apply_receipt_sha256
+    assert projection.predicted_changes
+    assert applied.realized_changes
+    assert success_services.cleaned == ["private/C"]
+
+    failure_services = FakeServices(audit_failure_rp=1.10)
+    with pytest.raises(CellRuntimeError) as error:
+        run_cell(
+            _spec("C", output_root=tmp_path / "failure"),
+            services=failure_services,
+            receipt_writer=lambda _: None,
+        )
+    failure = error.value.receipt
+    assert failure is not None
+    assert failure.status == "failed"
+    assert failure.adamw_proposal_artifact_path is not None
+    assert failure.witness_bank_artifact_path is not None
+    assert failure.projection_receipt_artifact_path is not None
+    assert failure.apply_receipt_artifact_path is not None
+    assert Path(failure.adamw_proposal_artifact_path).is_file()
+    assert Path(failure.witness_bank_artifact_path).is_dir()
+    assert Path(failure.projection_receipt_artifact_path).is_file()
+    assert Path(failure.apply_receipt_artifact_path).is_file()
+    assert failure_services.cleaned == ["private/C"]
 
 
 def test_audit_failure_rolls_back_and_writes_a_typed_failure_receipt() -> None:

@@ -469,6 +469,53 @@ def source_outputs_from_manifest(
     return tuple(records)
 
 
+def hf_runtime_identity_from_outputs(
+    outputs: Sequence[Mapping[str, Any]],
+) -> dict[str, object]:
+    """Return one unmixed observed HF identity bound into every output row."""
+
+    required = {
+        "backend",
+        "backend_mode",
+        "backend_version",
+        "batch_size",
+        "observed_model_dtype_names",
+        "observed_attn_implementation",
+        "generation_config_fingerprint",
+        "model_identity",
+        "tokenizer_identity",
+        "processor_identity",
+    }
+    canonical: bytes | None = None
+    identity: dict[str, object] | None = None
+    for output in outputs:
+        value = output.get("hf_runtime_identity")
+        if not isinstance(value, Mapping) or set(value) != required:
+            raise ValueError("HF output is missing its observed runtime identity")
+        encoded = json.dumps(
+            dict(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if canonical is not None and encoded != canonical:
+            raise ValueError("HF outputs carry mixed observed runtime identity")
+        canonical = encoded
+        identity = json.loads(encoded)
+    if identity is None:
+        raise ValueError("HF outputs are missing their observed runtime identity")
+    if (
+        identity["backend"] != "hf"
+        or identity["batch_size"] != 1
+        or identity["observed_model_dtype_names"] != ["torch.float32"]
+        or identity["observed_attn_implementation"] != "sdpa"
+    ):
+        raise ValueError(
+            "HF output observed runtime identity differs from fp32/SDPA batch one"
+        )
+    return identity
+
+
 def evaluate_hf_checkpoint(
     *,
     manifest: Any,
@@ -498,6 +545,9 @@ def evaluate_hf_checkpoint(
     from scripts.research.collect_human13_discovery import (
         _scientific_request,
         trajectory_input_from_decode_result,
+    )
+    from scripts.research.human13_hf_census import (
+        validate_hf_fp32_sdpa_batch_one,
     )
     from scripts.research.run_current_seeded_sampled_rollouts import (
         _build_requests,
@@ -546,6 +596,9 @@ def evaluate_hf_checkpoint(
     payload_digest = checkpoint_payload_sha256(checkpoint)
     outputs: list[dict[str, object]] = []
     with open_backend_session(frontend.launch) as session:
+        runtime_identity = validate_hf_fp32_sdpa_batch_one(
+            frontend.launch, session.receipt
+        )
         backend_version = str(session.receipt.backend_version)
         for example, base_request in zip(examples, requests, strict=True):
             image_id = int(physical_image_id(example))
@@ -602,8 +655,11 @@ def evaluate_hf_checkpoint(
             output["prompt_token_ids"] = list(
                 request.expected_executed_prompt_token_ids
             )
+            output["hf_runtime_identity"] = runtime_identity
             outputs.append(output)
-    return tuple(outputs)
+    result = tuple(outputs)
+    hf_runtime_identity_from_outputs(result)
+    return result
 
 
 def write_outputs_jsonl(path: str | Path, outputs: Sequence[Mapping[str, Any]]) -> None:
@@ -634,6 +690,7 @@ __all__ = [
     "checkpoint_payload_sha256",
     "current_decodes_from_outputs",
     "evaluate_hf_checkpoint",
+    "hf_runtime_identity_from_outputs",
     "source_outputs_from_manifest",
     "trajectory_analyzer_predictions",
     "write_outputs_jsonl",

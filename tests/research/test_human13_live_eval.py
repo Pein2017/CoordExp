@@ -214,6 +214,72 @@ def test_evaluate_hf_checkpoint_rejects_unsealed_rp_before_live_boundary(
         )
 
 
+def test_hf_runtime_identity_is_bound_and_mixed_receipts_fail_closed() -> None:
+    identity = {
+        "backend": "hf",
+        "backend_mode": "generate",
+        "backend_version": "test",
+        "batch_size": 1,
+        "observed_model_dtype_names": ["torch.float32"],
+        "observed_attn_implementation": "sdpa",
+        "generation_config_fingerprint": "sealed",
+        "model_identity": {"sha256": "model"},
+        "tokenizer_identity": {"sha256": "tokenizer"},
+        "processor_identity": {"sha256": "processor"},
+    }
+    outputs = tuple(
+        {"image_id": image_id, "hf_runtime_identity": identity}
+        for image_id in tuple(image.image_id for image in _panel_manifest().images)
+    )
+
+    assert live_eval.hf_runtime_identity_from_outputs(outputs) == identity
+    with pytest.raises(ValueError, match="missing.*runtime identity"):
+        live_eval.hf_runtime_identity_from_outputs(
+            tuple({"image_id": item["image_id"]} for item in outputs)
+        )
+    mixed = list(outputs)
+    mixed[-1] = {
+        **mixed[-1],
+        "hf_runtime_identity": {**identity, "observed_attn_implementation": "eager"},
+    }
+    with pytest.raises(ValueError, match="mixed.*runtime identity"):
+        live_eval.hf_runtime_identity_from_outputs(tuple(mixed))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("backend", "vllm"),
+        ("batch_size", 4),
+        ("observed_model_dtype_names", ["torch.bfloat16"]),
+        ("observed_attn_implementation", "flash_attention_2"),
+    ),
+)
+def test_hf_output_runtime_identity_rejects_homogeneous_observed_drift(
+    field: str, value: object
+) -> None:
+    identity = {
+        "backend": "hf",
+        "backend_mode": "generate",
+        "backend_version": "test",
+        "batch_size": 1,
+        "observed_model_dtype_names": ["torch.float32"],
+        "observed_attn_implementation": "sdpa",
+        "generation_config_fingerprint": "sealed",
+        "model_identity": {"sha256": "model"},
+        "tokenizer_identity": {"sha256": "tokenizer"},
+        "processor_identity": {"sha256": "processor"},
+    }
+    drifted = {**identity, field: value}
+    outputs = tuple(
+        {"image_id": image_id, "hf_runtime_identity": drifted}
+        for image_id in tuple(image.image_id for image in _panel_manifest().images)
+    )
+
+    with pytest.raises(ValueError, match="observed runtime identity"):
+        live_eval.hf_runtime_identity_from_outputs(outputs)
+
+
 def test_build_analyzer_output_rejects_non_digest_or_wrong_image() -> None:
     with pytest.raises(ValueError, match="checkpoint_payload_sha256"):
         build_analyzer_output(

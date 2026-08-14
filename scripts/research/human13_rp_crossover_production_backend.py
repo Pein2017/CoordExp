@@ -203,6 +203,7 @@ class Human13RPCrossoverProductionBackend:
         from scripts.research.human13_live_eval import (
             current_decodes_from_outputs,
             evaluate_hf_checkpoint,
+            hf_runtime_identity_from_outputs,
             write_outputs_jsonl,
         )
         from scripts.research.human13_rp_crossover_live_composition import (
@@ -234,6 +235,7 @@ class Human13RPCrossoverProductionBackend:
                 source_config_path=frozen.prompt_config_path,
                 repetition_penalty=rp,
             )
+            hf_runtime_identity_from_outputs(raw)
             normalized = tuple({**dict(item), "runtime": {}} for item in raw)
             path = _regular_output(root / f"baseline-{serial}.jsonl")
             write_outputs_jsonl(path, normalized)
@@ -927,6 +929,11 @@ class Human13RPCrossoverProductionBackend:
             trajectory_credit_sha256=evidence.credit_ledger.content_sha256,
             repetition_penalty=spec.cell_key.acquisition_key.training_rp,
         )
+        compiler_images = (
+            {image.image_id: image for image in evidence.compiler_ledger.images}
+            if include_compiler
+            else {}
+        )
 
         def steps() -> Any:
             for materialized in stream:
@@ -937,6 +944,7 @@ class Human13RPCrossoverProductionBackend:
                 )
                 rows = tuple(materialized.compiler_rows.values())
                 compiler = None
+                compiler_absent_reason = None
                 if include_compiler and rows:
                     compact = admit_compiler_compact_logits_from_packed_plan(
                         materialized.plan.packed_plan,
@@ -947,6 +955,13 @@ class Human13RPCrossoverProductionBackend:
                     compiler = greedy_compiler_numerator(
                         compact, evidence.compiler_ledger
                     )
+                elif include_compiler:
+                    compiler_image = compiler_images.get(materialized.receipt.image_id)
+                    if compiler_image is None:
+                        raise ProductionBackendError(
+                            "compiler ledger omitted a streamed image"
+                        )
+                    compiler_absent_reason = compiler_image.absent_reason
                 receipt = materialized.receipt
                 self._cell_metrics["packed_token_count"] = (
                     int(self._cell_metrics["packed_token_count"] or 0)
@@ -969,6 +984,7 @@ class Human13RPCrossoverProductionBackend:
                     trajectory_numerator=trajectory,
                     compiler_numerator=compiler,
                     release=materialized.release,
+                    compiler_absent_reason=compiler_absent_reason,
                 )
 
         incremental = backward_incremental_objectives(
@@ -1082,6 +1098,7 @@ class Human13RPCrossoverProductionBackend:
         from scripts.research.human13_live_eval import (
             checkpoint_payload_sha256,
             evaluate_hf_checkpoint,
+            hf_runtime_identity_from_outputs,
             write_outputs_jsonl,
         )
         from scripts.research.human13_rp_crossover_live_composition import AuditOutcome
@@ -1119,6 +1136,7 @@ class Human13RPCrossoverProductionBackend:
             repetition_penalty=rp,
         )
         typed_outputs = cast(tuple[Mapping[str, Any], ...], outputs)
+        runtime_identity = hf_runtime_identity_from_outputs(typed_outputs)
         tag = "rp100" if rp == 1.0 else "rp110"
         output_path = _regular_output(
             Path(spec.output_root).expanduser().resolve() / "audits" / f"{tag}.jsonl"
@@ -1136,10 +1154,7 @@ class Human13RPCrossoverProductionBackend:
                 "schema_version": "human13_rp_crossover_audit_policy.v1",
                 "repetition_penalty": rp,
                 "decode_mode": "original_prompt_clean_greedy",
-                "backend": "hf",
-                "dtype": "fp32",
-                "attention": "sdpa",
-                "batch_size": 1,
+                "observed_runtime_identity": runtime_identity,
                 "checkpoint_sha256": checkpoint.checkpoint_sha256,
             }
         )
