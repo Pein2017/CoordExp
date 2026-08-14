@@ -80,7 +80,7 @@ _MINIMUM_PIVOT = 1e-7
 _RADIUS_RELATIVE = 1e-9
 _APPLIED_RELATIVE = 1e-6
 _CANONICAL_RELATIVE = 1e-9
-_APPLIED_REALIZATION_ALLOWANCE = 0.1
+_ACCUMULATION_GUARD = 8.0
 
 
 class ProposalPreservationError(ValueError):
@@ -237,6 +237,22 @@ def _as_flat_float64(
 
 def _metric_quadratic(metric: torch.Tensor, vector: torch.Tensor) -> float:
     return float((metric * vector * vector).sum())
+
+
+def _representation_ulp(magnitude: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    """Exact unit in the last place of ``dtype`` at each given magnitude.
+
+    Derived from the dtype's own significand width rather than from a chosen
+    percentage, so one rule states what an fp32, bf16, or fp16 parameter can
+    and cannot represent.
+    """
+
+    finfo = torch.finfo(dtype)
+    values = magnitude.abs().to(torch.float64)
+    _, exponent = torch.frexp(values)
+    ulp = torch.ldexp(torch.ones_like(values), exponent - 1) * float(finfo.eps)
+    smallest = float(finfo.tiny) * float(finfo.eps)
+    return torch.where(values > 0.0, ulp, torch.full_like(ulp, smallest))
 
 
 # --- frozen scientific records ------------------------------------------------
@@ -1890,7 +1906,10 @@ class ProjectedApplyReceipt:
     post_parameter_sha256: str
     applied_delta_sha256: str
     applied_delta_residual: float
-    applied_realization_ratio: float
+    applied_representation_error: float
+    applied_representation_allowance: float
+    applied_undeliverable_dose: float
+    applied_deliverable_allowance: float
     applied_trust_radius_value: float
     applied_minimum_first_order_change: float
     realized_changes: tuple[WitnessChange, ...]
@@ -1918,7 +1937,10 @@ class ProjectedApplyReceipt:
             "post_parameter_sha256": self.post_parameter_sha256,
             "applied_delta_sha256": self.applied_delta_sha256,
             "applied_delta_residual": self.applied_delta_residual,
-            "applied_realization_ratio": self.applied_realization_ratio,
+            "applied_representation_error": self.applied_representation_error,
+            "applied_representation_allowance": (self.applied_representation_allowance),
+            "applied_undeliverable_dose": self.applied_undeliverable_dose,
+            "applied_deliverable_allowance": self.applied_deliverable_allowance,
             "applied_trust_radius_value": self.applied_trust_radius_value,
             "applied_minimum_first_order_change": (
                 self.applied_minimum_first_order_change
@@ -1934,6 +1956,46 @@ class ProjectedApplyReceipt:
             "transaction_before_digest": self.transaction_before_digest,
             "transaction_after_digest": self.transaction_after_digest,
         }
+
+
+def _representation_allowance(
+    *,
+    layout: ParameterLayout,
+    bound: Sequence[tuple[str, torch.nn.Parameter]],
+    pre_values: Sequence[torch.Tensor],
+    certified: Sequence[torch.Tensor],
+    cast_delta: Sequence[torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Derive the exact per-coordinate application allowance and deliverability.
+
+    ``allowance`` is the largest error the parameter dtype's own addition could
+    have rounded away: half an ulp of the realized value, plus the exact error
+    of casting the certified delta into that dtype, plus the declared float64
+    accumulation guard of the comparison itself.  ``deliverable`` marks the
+    coordinates whose certified update is large enough for that dtype's
+    addition to move the parameter at all.
+    """
+
+    allowances: list[torch.Tensor] = []
+    deliverable: list[torch.Tensor] = []
+    guard = _ACCUMULATION_GUARD * float(torch.finfo(torch.float64).eps)
+    for entry, (_, parameter), saved, exact, cast in zip(
+        layout.entries, bound, pre_values, certified, cast_delta
+    ):
+        dtype = parameter.dtype
+        pre_flat = saved.to(torch.float64).reshape(-1)
+        post_flat = parameter.detach().to(torch.float64).reshape(-1)
+        cast_flat = cast.detach().to(torch.float64).reshape(-1)
+        realized_ulp = _representation_ulp(
+            torch.maximum(pre_flat.abs(), post_flat.abs()), dtype
+        )
+        allowances.append(
+            0.5 * realized_ulp
+            + (exact - cast_flat).abs()
+            + guard * (pre_flat.abs() + post_flat.abs() + exact.abs())
+        )
+        deliverable.append(exact.abs() >= 0.5 * _representation_ulp(pre_flat, dtype))
+    return torch.cat(allowances), torch.cat(deliverable)
 
 
 @torch.no_grad()
@@ -1955,7 +2017,9 @@ def apply_projected_delta(
     is applied.  What is then hashed, radius-checked, and witness-checked is
     the physical post-minus-pre change in the parameter dtype, so an update the
     storage cannot represent fails and reverts instead of being receipted as
-    applied.
+    applied.  Both realization gates are derived from the parameter dtype's own
+    ulp at the actual pre and post values rather than from a chosen relative
+    percentage.
 
     The optimizer is never stepped here: this screen applies one manual update
     and never synthesizes or continues projected AdamW moments.
@@ -2079,19 +2143,60 @@ def apply_projected_delta(
                 "the physical parameter change is not finite",
                 disposition="applied_non_finite",
             )
-        applied_residual = float((physical_flat - applied_flat).abs().max())
-        intended_metric = _metric_quadratic(metric, applied_flat)
-        realization_error = _metric_quadratic(metric, physical_flat - applied_flat)
-        if intended_metric <= 0.0:
-            realization_ratio = 0.0
-            realization_uncertified = float(physical_flat.abs().max()) > 0.0
-        else:
-            realization_ratio = math.sqrt(max(realization_error, 0.0) / intended_metric)
-            realization_uncertified = realization_ratio > _APPLIED_REALIZATION_ALLOWANCE
-        if not math.isfinite(realization_ratio) or realization_uncertified:
+        certified_flat = canonical.flat_projected_delta()
+        applied_residual = float((physical_flat - certified_flat).abs().max())
+        allowance, deliverable = _representation_allowance(
+            layout=proposal.layout,
+            bound=bound,
+            pre_values=pre_values,
+            certified=canonical.projected_delta,
+            cast_delta=applied,
+        )
+        zero = torch.zeros_like(allowance)
+        representation_error = math.sqrt(
+            max(_metric_quadratic(metric, physical_flat - certified_flat), 0.0)
+        )
+        representation_allowance = math.sqrt(
+            max(_metric_quadratic(metric, allowance), 0.0)
+        )
+        undeliverable_dose = math.sqrt(
+            max(
+                _metric_quadratic(
+                    metric, torch.where(deliverable, zero, certified_flat)
+                ),
+                0.0,
+            )
+        )
+        deliverable_allowance = math.sqrt(
+            max(
+                _metric_quadratic(metric, torch.where(deliverable, allowance, zero)),
+                0.0,
+            )
+        )
+        if not all(
+            math.isfinite(value)
+            for value in (
+                representation_error,
+                representation_allowance,
+                undeliverable_dose,
+                deliverable_allowance,
+            )
+        ):
             raise ProjectedApplyError(
-                "the physical parameter change does not realize the certified "
-                "projected delta within the declared allowance",
+                "the physical realization measurement is not finite",
+                disposition="applied_non_finite",
+            )
+        if representation_error > representation_allowance:
+            raise ProjectedApplyError(
+                "the physical parameter change differs from the certified delta "
+                "by more than this parameter dtype's addition could round away",
+                disposition="applied_delta_mismatch",
+            )
+        if undeliverable_dose > deliverable_allowance:
+            raise ProjectedApplyError(
+                "the certified update carries more dose on coordinates this "
+                "parameter dtype cannot move than its representable rounding "
+                "could account for",
                 disposition="applied_delta_mismatch",
             )
         applied_radius = _metric_quadratic(metric, physical_flat)
@@ -2141,7 +2246,10 @@ def apply_projected_delta(
             physical, layout=proposal.layout, context="delta"
         ),
         applied_delta_residual=applied_residual,
-        applied_realization_ratio=realization_ratio,
+        applied_representation_error=representation_error,
+        applied_representation_allowance=representation_allowance,
+        applied_undeliverable_dose=undeliverable_dose,
+        applied_deliverable_allowance=deliverable_allowance,
         applied_trust_radius_value=applied_radius,
         applied_minimum_first_order_change=applied_minimum,
         realized_changes=realized,

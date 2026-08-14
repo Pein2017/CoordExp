@@ -39,6 +39,7 @@ from scripts.research.human13_adamw_proposal_preservation import (
     ProposalProjectionError,
     WitnessBinding,
     _hash_flat_tensors,
+    _representation_ulp,
     _solve_metric_projection,
     _solve_working_set,
     admit_preservation_evidence,
@@ -1135,7 +1136,12 @@ def test_apply_certifies_the_physical_parameter_change() -> None:
     assert applied.applied_delta_sha256 == _hash_flat_tensors(
         physical, layout=proposal.layout, context="delta"
     )
-    assert 0.0 < applied.applied_realization_ratio < 0.01
+    assert (
+        0.0
+        < applied.applied_representation_error
+        <= (applied.applied_representation_allowance)
+    )
+    assert applied.applied_undeliverable_dose == 0.0
     assert applied.applied_minimum_first_order_change >= (
         -WITNESS_FIRST_ORDER_TOLERANCE * 1.000001
     )
@@ -1157,7 +1163,120 @@ def test_apply_certifies_the_physical_parameter_change() -> None:
         update_counter=counter,
         realized_margin_probe=_probe(bank, {}),
     )
-    assert applied.applied_realization_ratio == 0.0
+    assert applied.applied_representation_error == 0.0
+    assert applied.applied_undeliverable_dose == 0.0
+    assert applied.post_parameter_sha256 == applied.pre_parameter_sha256
+
+
+def _underdosed_stack(scale: float, jacobian_scale: float):
+    """A stack whose largest parameters cannot represent their own update."""
+
+    _, named, optimizer, counter, transaction = _make_stack()
+    with torch.no_grad():
+        named[1][1].fill_(1e5)
+    _assign(
+        named,
+        {
+            _WEIGHT: torch.tensor(((0.5, -0.25, 2.0), (1.0, 4.0, -7.5))),
+            _BIAS: torch.tensor((1e-4, -1e-4)),
+        },
+    )
+    proposal = _capture(named, optimizer, transaction)
+    delta0 = proposal.flat_delta()
+    row = torch.zeros(proposal.layout.total_numel, dtype=torch.float64)
+    row[:6] = -scale * torch.sign(delta0[:6])
+    row[6:] = jacobian_scale
+    bank = _bank(proposal.layout, {"owner_a": row})
+    receipt = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    return named, optimizer, counter, transaction, proposal, bank, receipt
+
+
+def test_physical_apply_allowance_is_derived_from_the_representation() -> None:
+    # A ten percent under-dose: the old fixed 0.1 relative allowance admitted
+    # this apply even though a tenth of the certified update never reached the
+    # parameters.
+    named, optimizer, counter, transaction, proposal, bank, receipt = _underdosed_stack(
+        100.0, 10.0
+    )
+    intended = receipt.flat_projected_delta()
+    metric = proposal.flat_metric_denominator()
+    pre = torch.cat([parameter.detach().reshape(-1) for _, parameter in named])
+    physical = ((pre + intended.to(torch.float32)) - pre).to(torch.float64)
+    error = float(
+        (metric * (physical - intended) * (physical - intended)).sum()
+    ) / float((metric * intended * intended).sum())
+    assert 0.05 < error**0.5 < 0.1, "counterexample must pass a fixed 0.1 rule"
+    # The lost dose sits on coordinates whose certified correction is below
+    # half an ulp of their own parameter, so it is the deliverability gate and
+    # not the rounding gate that must own this rejection: the physical change
+    # is exactly what fp32 addition can do here.
+    pre_bias = named[1][1].detach().reshape(-1).to(torch.float64)
+    assert float(intended[6:].abs().max()) < float(
+        0.5 * _representation_ulp(pre_bias, torch.float32).min()
+    )
+    assert torch.equal(physical[6:], torch.zeros_like(physical[6:]))
+    pre_hash = parameter_state_sha256(named, proposal.layout)
+
+    with pytest.raises(ProjectedApplyError) as failure:
+        apply_projected_delta(
+            named,
+            proposal=proposal,
+            witness_bank=bank,
+            projection=receipt,
+            optimizer=optimizer,
+            transaction=transaction,
+            update_counter=counter,
+            realized_margin_probe=_probe(bank, {}),
+        )
+    assert failure.value.disposition == "applied_delta_mismatch"
+    assert parameter_state_sha256(named, proposal.layout) == pre_hash
+    assert counter.value == 0
+
+    # A bfloat16 surface cannot represent a 3e-6 step at all, so the exact
+    # proposal is a certified zero step and its apply changes nothing.
+    torch.manual_seed(11)
+    model = torch.nn.Linear(3, 2).to(torch.bfloat16)
+    parameters = dict(model.named_parameters())
+    wide = ((_WEIGHT, parameters["weight"]), (_BIAS, parameters["bias"]))
+    optimizer = torch.optim.AdamW(
+        [parameter for _, parameter in wide],
+        lr=FROZEN_LEARNING_RATE,
+        betas=FROZEN_BETAS,
+        eps=FROZEN_EPSILON,
+        weight_decay=FROZEN_WEIGHT_DECAY,
+    )
+    counter = UpdateCounter()
+    transaction = TrainingStateTransaction(
+        wide,
+        optimizer=optimizer,
+        scheduler=None,
+        update_counter=counter,
+        runtime=None,
+        capture_cuda=False,
+    )
+    _assign(
+        wide,
+        {
+            _WEIGHT: _DENSE_GRADIENTS[_WEIGHT].to(torch.bfloat16),
+            _BIAS: _DENSE_GRADIENTS[_BIAS].to(torch.bfloat16),
+        },
+    )
+    proposal = _capture(wide, optimizer, transaction)
+    assert float(proposal.flat_delta().abs().max()) == 0.0
+    bank = _bank(proposal.layout, {"owner_a": torch.ones(8, dtype=torch.float64)})
+    receipt = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    applied = apply_projected_delta(
+        wide,
+        proposal=proposal,
+        witness_bank=bank,
+        projection=receipt,
+        optimizer=optimizer,
+        transaction=transaction,
+        update_counter=counter,
+        realized_margin_probe=_probe(bank, {}),
+    )
+    assert applied.applied_representation_error == 0.0
+    assert applied.applied_undeliverable_dose == 0.0
     assert applied.post_parameter_sha256 == applied.pre_parameter_sha256
 
 
