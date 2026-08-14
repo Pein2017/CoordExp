@@ -1,0 +1,695 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field, replace
+import hashlib
+import json
+import math
+from typing import Any
+
+import pytest
+import torch
+
+from scripts.research.build_human13_k_union_manifest import (
+    ArmIdentity,
+    GlobalDenominatorIdentity,
+    Human13KUnionManifest,
+    ImageRecord,
+    OwnerRecord,
+    PredictionRowInput,
+    PrefixRecord,
+    RequestIdentity,
+    TrajectoryRecord,
+    default_binding,
+)
+from scripts.research.build_human13_on_policy_frontier import (
+    FrontierCandidateAlias,
+    FrontierImage,
+    candidate_aliases_for_owners,
+)
+from scripts.research.human13_greedy_compiler import (
+    EXACT_ALIAS_COUNT,
+    CompilerLedger,
+    SourceBoundaryInput,
+    _build_compiler_ledger_for_test,
+    _build_nested_arm_artifacts_for_test,
+    _greedy_compiler_loss_for_test,
+    _greedy_compiler_numerator_for_test,
+    _require_source_decode,
+    admit_source_greedy_decode,
+    bind_packed_compiler_logits,
+    build_compiler_ledger,
+    combined_loss,
+    gather_compiler_compact_logits,
+    greedy_compiler_loss as public_greedy_compiler_loss,
+    greedy_compiler_site_score,
+    load_compiler_ledger,
+)
+from scripts.research.human13_on_policy_scoring import (
+    prepare_on_policy_candidate_scoring,
+)
+
+
+SOURCE = "a" * 64
+ACQUISITION = "b" * 64
+CREDIT = "c" * 64
+STOP = 99
+IMAGE_TOKEN_ID = 151655
+
+
+@dataclass(frozen=True)
+class _ImagePlan:
+    merge_size: int = 2
+
+
+@dataclass(frozen=True)
+class _ImageEncoding:
+    image_grid_thw: tuple[int, int, int] = (1, 2, 2)
+    merged_visual_tokens: int = 1
+    plan: _ImagePlan = field(default_factory=_ImagePlan)
+    pixel_values: torch.Tensor = field(default_factory=lambda: torch.zeros((4, 2)))
+
+
+@dataclass(frozen=True)
+class _Skeleton:
+    example_id: str
+    input_ids: tuple[int, ...]
+    prompt_token_count: int
+    image_pad_physical_start: int = 1
+    image_pad_physical_end: int = 2
+    image_grid_thw: tuple[int, int, int] = (1, 2, 2)
+    merge_size: int = 2
+    image_token_id: int = IMAGE_TOKEN_ID
+    image_encoding: _ImageEncoding = field(default_factory=_ImageEncoding)
+
+
+def _request(mode: str, *, seed: int | None) -> RequestIdentity:
+    return RequestIdentity(
+        backend="fixture",
+        backend_version="1",
+        mode=mode,  # type: ignore[arg-type]
+        n=1,
+        seed=seed,
+        physical_batch_index=0,
+        temperature=0.7,
+        top_p=1.0,
+        repetition_penalty=1.0,
+        max_new_tokens=512,
+    )
+
+
+def _panel_fixture(
+    alias_counts: tuple[int, ...] = (EXACT_ALIAS_COUNT,),
+    *,
+    repetition_penalty: float = 1.0,
+) -> tuple[Human13KUnionManifest, tuple[SourceBoundaryInput, ...]]:
+    images: list[ImageRecord] = []
+    for image_offset, alias_count in enumerate(alias_counts):
+        image_id = 7000 + image_offset
+        owner_a = f"owner:{image_id}:a"
+        owner_b = f"owner:{image_id}:b"
+        owner_missing = f"owner:{image_id}:missing"
+        split = min(2, alias_count)
+        owner_by_row: list[str] = [owner_a] * split + [owner_b] * (alias_count - split)
+        rows: list[PredictionRowInput] = []
+        raw_tokens: list[int] = []
+        row_ids: list[str] = []
+        for index, owner_id in enumerate(owner_by_row):
+            row_id = f"row:{image_id}:{index:03d}"
+            row_ids.append(row_id)
+            if image_offset == 0 and owner_id == owner_a:
+                token_id = 7 if index == 0 else 8
+            elif image_offset == 0 and owner_id == owner_b:
+                token_id = 8 if index == split else 9
+            else:
+                token_id = 10 + image_offset
+            start = len(raw_tokens)
+            raw_tokens.extend((token_id, 200 + image_offset))
+            rows.append(
+                PredictionRowInput(
+                    row_id=row_id,
+                    row_index=index,
+                    category="cat",
+                    bbox=(0.0, 0.0, 10.0, 10.0),
+                    token_start=start,
+                    token_end=start + 2,
+                    final_coordinate_token_index=start + 1,
+                )
+            )
+        source = TrajectoryRecord(
+            trajectory_id=f"frozen-source:{image_id}",
+            request=_request("source_greedy", seed=None),
+            raw_token_ids=(41, STOP),
+            terminal_token_index=1,
+            stop_reason="im_end",
+            parser_status="complete",
+            rows=(),
+            prefix=PrefixRecord((41,), (41,), ()),
+            retained_row_ids=(),
+            duplicate_row_ids=(),
+            matched_row_ids=(),
+            replay_token_mask=(False, False),
+            duplicate_target_mask=(False, False),
+        )
+        sampled = TrajectoryRecord(
+            trajectory_id=f"frozen-k:{image_id}",
+            request=_request("k_sampled", seed=21001),
+            raw_token_ids=tuple(raw_tokens),
+            terminal_token_index=None,
+            stop_reason="length",
+            parser_status="complete",
+            rows=tuple(rows),
+            prefix=PrefixRecord(tuple(raw_tokens), tuple(raw_tokens), ()),
+            retained_row_ids=tuple(row_ids),
+            duplicate_row_ids=(),
+            matched_row_ids=tuple(row_ids),
+            replay_token_mask=(False,) * len(raw_tokens),
+            duplicate_target_mask=(False,) * len(raw_tokens),
+        )
+        owners = (
+            OwnerRecord(
+                owner_a,
+                "cat",
+                (0.0, 0.0, 10.0, 10.0),
+                0,
+                "H",
+                (),
+                tuple(row_ids[:split]),
+            ),
+            OwnerRecord(
+                owner_b,
+                "cat",
+                (0.0, 0.0, 10.0, 10.0),
+                1,
+                "H",
+                (),
+                tuple(row_ids[split:]),
+            ),
+            OwnerRecord(
+                owner_missing,
+                "cat",
+                (20.0, 0.0, 30.0, 10.0),
+                2,
+                "H",
+                (),
+                (),
+            ),
+        )
+        images.append(
+            ImageRecord(
+                image_id=image_id,
+                panel_row_sha256=None,
+                image_sha256=None,
+                owners=owners,
+                trajectories=(source, sampled),
+                duplicate_events=(),
+                selected_rows=(),
+                g_owner_ids=(),
+                h_owner_ids=(owner_a, owner_b, owner_missing),
+                m_owner_ids=(),
+                replay_row_ids=(),
+                target_row_ids=(),
+                candidate_row_ids=tuple(row_ids),
+            )
+        )
+    manifest = Human13KUnionManifest(
+        schema_version="human13_k_union_manifest.v1",
+        binding=default_binding(),
+        images=tuple(images),
+        arms=(ArmIdentity("fixture", "none", True),),
+        denominators=GlobalDenominatorIdentity(len(images), 0, 0, 0, 0, 0, 0),
+        full_panel=False,
+    )
+    boundaries: list[SourceBoundaryInput] = []
+    for image in images:
+        owner_ids = {image.h_owner_ids[0], image.h_owner_ids[1]}
+        aliases = candidate_aliases_for_owners(image, owner_ids=owner_ids)
+        boundaries.append(
+            SourceBoundaryInput(
+                image=FrontierImage(
+                    image_id=image.image_id,
+                    trajectory_id=f"source-rp:{repetition_penalty}:{image.image_id}",
+                    generated_token_ids=(41, STOP),
+                    parser="compact_object_box_closed_only",
+                    parser_status="accepted",
+                    stop_reason="im_end",
+                    rows=(),
+                    canonical_owner_ids=(),
+                    constrained_protected_owner_ids=(),
+                    covered_h_owner_ids=(image.h_owner_ids[-1],),
+                    uncovered_h_owner_ids=tuple(sorted(owner_ids)),
+                    candidate_aliases=aliases,
+                    duplicate_events=(),
+                    terminal_token_index=1,
+                ),
+                prompt_token_ids=(7, STOP, 1),
+                repetition_penalty=repetition_penalty,
+            )
+        )
+    return manifest, tuple(boundaries)
+
+
+def _ledger(
+    manifest: Human13KUnionManifest,
+    boundaries: tuple[SourceBoundaryInput, ...],
+) -> CompilerLedger:
+    return _build_compiler_ledger_for_test(
+        manifest,
+        boundaries,
+        source_sha256=SOURCE,
+        acquisition_sha256=ACQUISITION,
+        trajectory_credit_sha256=CREDIT,
+    )
+
+
+def _raw(
+    site: Any, values: dict[int, float], *, requires_grad: bool = False
+) -> torch.Tensor:
+    return torch.tensor(
+        [values.get(token_id, 0.0) for token_id in site.compact_token_ids],
+        dtype=torch.float32,
+        requires_grad=requires_grad,
+    )
+
+
+def greedy_compiler_loss(
+    raw_logits: dict[str, torch.Tensor], ledger: CompilerLedger
+) -> torch.Tensor:
+    return _greedy_compiler_loss_for_test(raw_logits, ledger)
+
+
+def greedy_compiler_numerator(
+    raw_logits: dict[str, torch.Tensor],
+    ledger: CompilerLedger,
+    *,
+    site_ids: tuple[str, ...],
+) -> torch.Tensor:
+    return _greedy_compiler_numerator_for_test(raw_logits, ledger, site_ids=site_ids)
+
+
+def test_binds_exact_309_alias_bank_and_normalizes_owner_then_alias() -> None:
+    # Catches accepting a sampled support set or normalizing all aliases globally.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    assert ledger.frozen_alias_count == 309
+    assert len(site.alias_children) == 309
+    weights = dict(zip(site.valid_token_ids, site.valid_token_weights, strict=True))
+    assert weights[7] == pytest.approx(0.25)
+    assert weights[8] == pytest.approx(0.25 + 0.5 / 307)
+    assert weights[9] == pytest.approx(306 * 0.5 / 307)
+    assert sum(site.valid_token_weights) == pytest.approx(1.0)
+    assert tuple(binding.token_id for binding in site.alias_children[:2]) == (7, 8)
+    assert all(
+        not hasattr(binding, "suffix_token_ids") for binding in site.alias_children
+    )
+
+
+def test_rejects_nonexact_alias_bank_and_fresh_support_leakage() -> None:
+    # Catches treating new K rows as valid children or weakening exact-309 admission.
+    short_manifest, short_boundaries = _panel_fixture((308,))
+    with pytest.raises(ValueError, match="309"):
+        _ledger(short_manifest, short_boundaries)
+
+    manifest, boundaries = _panel_fixture()
+    forged = FrontierCandidateAlias(
+        owner_id=boundaries[0].image.uncovered_h_owner_ids[0],
+        row_id="fresh-k-row",
+        trajectory_id="fresh-k",
+        seed=99999,
+        owner_iou=1.0,
+        token_ids=(12345,),
+    )
+    changed = replace(
+        boundaries[0],
+        image=replace(
+            boundaries[0].image,
+            candidate_aliases=(*boundaries[0].image.candidate_aliases, forged),
+        ),
+    )
+    with pytest.raises(ValueError, match="frozen manifest aliases"):
+        _ledger(manifest, (changed,))
+
+
+def test_rejects_incomplete_frozen_h_owner_partition() -> None:
+    # Catches silently dropping a trusted H owner from both coverage sets.
+    manifest, boundaries = _panel_fixture()
+    omitted = replace(
+        boundaries[0],
+        image=replace(boundaries[0].image, covered_h_owner_ids=()),
+    )
+    with pytest.raises(ValueError, match="exact partition"):
+        _ledger(manifest, (omitted,))
+
+
+def test_valid_logmeanexp_is_bounded_and_bad_is_realized_source_child() -> None:
+    # Catches unnormalized logsumexp and choosing the largest arbitrary invalid token.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None and site.bad_token_id == STOP
+    raw = _raw(site, {7: 1.0, 8: 2.0, 9: 3.0, STOP: -4.0})
+    score = greedy_compiler_site_score(raw, site, repetition_penalty=1.0)
+    hand = math.log(
+        0.25 * math.exp(1.0)
+        + (0.25 + 0.5 / 307) * math.exp(2.0)
+        + (306 * 0.5 / 307) * math.exp(3.0)
+    )
+    assert score.valid_score.item() == pytest.approx(hand, abs=1e-6)
+    assert score.valid_score.item() <= score.max_valid_score.item() + 1e-6
+    assert score.bad_score.item() == pytest.approx(-4.0)
+    assert 12345 not in site.compact_token_ids
+
+
+def test_greedy_policy_is_sign_aware_rp_without_temperature() -> None:
+    # Catches sampling-policy temperature/top-p/top-k leaking into the compiler.
+    manifest, boundaries = _panel_fixture(repetition_penalty=1.10)
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    raw = _raw(site, {7: 2.2, 8: 0.5, 9: -0.3, STOP: -2.0})
+    score = greedy_compiler_site_score(raw, site, repetition_penalty=1.10)
+    weights = dict(zip(site.valid_token_ids, site.valid_token_weights, strict=True))
+    hand = math.log(
+        weights[7] * math.exp(2.0)
+        + weights[8] * math.exp(0.5)
+        + weights[9] * math.exp(-0.3)
+    )
+    assert score.valid_score.item() == pytest.approx(hand, abs=1e-6)
+    assert score.bad_score.item() == pytest.approx(-2.2)
+    assert ledger.repetition_penalty == 1.10
+
+
+def test_source_decode_receipt_proves_each_token_under_exact_rp() -> None:
+    # Catches relabeling one durable Source frontier as the other RP surface.
+    manifest, boundaries = _panel_fixture(repetition_penalty=1.10)
+    boundary = boundaries[0]
+    vocab = STOP + 2
+    raw = torch.full((2, vocab), -20.0, dtype=torch.float32)
+    raw[0, 41] = 10.0
+    raw[1, STOP] = 10.0
+    receipt = admit_source_greedy_decode(
+        boundary,
+        raw,
+        source_sha256=SOURCE,
+        manifest_sha256=hashlib.sha256(
+            (
+                json.dumps(asdict(manifest), sort_keys=True, separators=(",", ":"))
+                + "\n"
+            ).encode()
+        ).hexdigest(),
+    )
+    assert receipt.repetition_penalty == 1.10
+    assert receipt.generated_token_ids == (41, STOP)
+    forged = object.__new__(type(receipt))
+    for name, value in receipt.__dict__.items():
+        object.__setattr__(forged, name, value)
+    object.__setattr__(forged, "repetition_penalty", 1.0)
+    with pytest.raises(ValueError, match="absent or forged"):
+        _require_source_decode(forged)
+    wrong = raw.clone()
+    wrong[1, 42] = 11.0
+    with pytest.raises(ValueError, match="greedy argmax"):
+        admit_source_greedy_decode(
+            boundary,
+            wrong,
+            source_sha256=SOURCE,
+            manifest_sha256=receipt.manifest_sha256,
+        )
+
+
+def test_margin_crossing_and_satisfied_site_gradient() -> None:
+    # Catches the hinge sign, margin, or a nonzero gradient after satisfaction.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    violating = _raw(site, {7: 2.0, 8: 2.0, 9: 2.0, STOP: 3.0}, requires_grad=True)
+    loss = greedy_compiler_loss({site.site_id: violating}, ledger)
+    assert loss.item() == pytest.approx(1.0001, abs=1e-6)
+    loss.backward()
+    assert violating.grad is not None
+    assert violating.grad[site.compact_token_ids.index(STOP)].item() == pytest.approx(
+        1.0
+    )
+    assert violating.grad[site.compact_token_ids.index(7)].item() < 0.0
+
+    satisfied = _raw(site, {7: 4.0, 8: 4.0, 9: 4.0, STOP: 1.0}, requires_grad=True)
+    zero = greedy_compiler_loss({site.site_id: satisfied}, ledger)
+    zero.backward()
+    assert zero.item() == 0.0
+    assert satisfied.grad is not None
+    assert torch.equal(satisfied.grad, torch.zeros_like(satisfied.grad))
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    (
+        ("no_boundary", "no_premature_source_boundary"),
+        ("no_remaining", "no_trusted_remaining"),
+        ("no_aliases", "no_valid_aliases"),
+    ),
+)
+def test_absent_site_reasons_contribute_zero(change: str, reason: str) -> None:
+    # Catches silent missing sites or an absent image disappearing from denominator N.
+    manifest, boundaries = _panel_fixture()
+    boundary = boundaries[0]
+    if change == "no_boundary":
+        boundary = replace(
+            boundary,
+            image=replace(
+                boundary.image, terminal_token_index=None, generated_token_ids=(41,)
+            ),
+        )
+    elif change == "no_remaining":
+        boundary = replace(
+            boundary,
+            image=replace(
+                boundary.image,
+                covered_h_owner_ids=manifest.images[0].h_owner_ids,
+                uncovered_h_owner_ids=(),
+                candidate_aliases=(),
+            ),
+        )
+    else:
+        missing = manifest.images[0].h_owner_ids[-1]
+        boundary = replace(
+            boundary,
+            image=replace(
+                boundary.image,
+                covered_h_owner_ids=manifest.images[0].h_owner_ids[:2],
+                uncovered_h_owner_ids=(missing,),
+                candidate_aliases=(),
+            ),
+        )
+    ledger = _ledger(manifest, (boundary,))
+    assert ledger.images[0].site is None
+    assert ledger.images[0].absent_reason == reason
+    loss = greedy_compiler_loss({}, ledger)
+    assert loss.item() == 0.0
+
+
+def test_selectors_are_detached_python_evidence() -> None:
+    # Catches selector/alias weights accidentally becoming differentiable tensors.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    assert all(type(value) is float for value in site.valid_token_weights)
+    assert all(type(value) is int for value in site.valid_token_ids)
+    raw = _raw(site, {7: 0.0, 8: 0.0, 9: 0.0, STOP: 1.0}, requires_grad=True)
+    greedy_compiler_loss({site.site_id: raw}, ledger).backward()
+    assert raw.grad is not None
+
+
+def test_lineage_round_trip_and_self_consistent_forgery_rejection() -> None:
+    # Catches accepting an RP/source/manifest substitution or a rehashed changed ledger.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    loaded = load_compiler_ledger(
+        ledger.to_dict(),
+        manifest,
+        boundaries,
+        source_sha256=SOURCE,
+        acquisition_sha256=ACQUISITION,
+        trajectory_credit_sha256=CREDIT,
+    )
+    assert loaded == ledger
+    assert loaded.content_sha256 == ledger.content_sha256
+
+    document = ledger.to_dict()
+    document["images"][0]["site"]["valid_token_weights"][0] += 0.01
+    preimage = {
+        key: value for key, value in document.items() if key != "content_sha256"
+    }
+    document["content_sha256"] = hashlib.sha256(
+        json.dumps(preimage, sort_keys=True, separators=(",", ":")).encode("ascii")
+    ).hexdigest()
+    with pytest.raises(ValueError):
+        load_compiler_ledger(
+            document,
+            manifest,
+            boundaries,
+            source_sha256=SOURCE,
+            acquisition_sha256=ACQUISITION,
+            trajectory_credit_sha256=CREDIT,
+        )
+
+    _, rp_boundaries = _panel_fixture(repetition_penalty=1.10)
+    with pytest.raises(ValueError, match="stored compiler ledger differs"):
+        load_compiler_ledger(
+            ledger.to_dict(),
+            manifest,
+            rp_boundaries,
+            source_sha256=SOURCE,
+            acquisition_sha256=ACQUISITION,
+            trajectory_credit_sha256=CREDIT,
+        )
+
+
+def test_unadmitted_compiler_ledgers_cannot_drive_public_loss() -> None:
+    # Catches a directly constructed or deserialized ledger entering training.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    logits = {site.site_id: _raw(site, {7: 0.0, 8: 0.0, 9: 0.0, STOP: 1.0})}
+    with pytest.raises(ValueError, match="scientific compiler admission"):
+        public_greedy_compiler_loss(logits, ledger)
+    copied = CompilerLedger.from_dict(ledger.to_dict())
+    with pytest.raises(ValueError, match="scientific compiler admission"):
+        public_greedy_compiler_loss(logits, copied)
+    with pytest.raises((TypeError, ValueError)):
+        build_compiler_ledger(manifest, boundaries, object())  # type: ignore[arg-type]
+
+
+def test_one_global_image_denominator_is_pack_and_gradient_invariant() -> None:
+    # Catches pack-local means or applying N more than once across microsteps.
+    manifest, boundaries = _panel_fixture((155, 154))
+    ledger = _ledger(manifest, boundaries)
+    sites = [image.site for image in ledger.images]
+    assert all(site is not None for site in sites)
+    site_a, site_b = sites
+    assert site_a is not None and site_b is not None
+    full_logits = {
+        site_a.site_id: _raw(
+            site_a, {7: 0.0, 8: 0.0, 9: 0.0, STOP: 1.0}, requires_grad=True
+        ),
+        site_b.site_id: _raw(site_b, {11: 0.0, STOP: 2.0}, requires_grad=True),
+    }
+    full = greedy_compiler_loss(full_logits, ledger)
+    full.backward()
+    full_grads: dict[str, torch.Tensor] = {}
+    for key, value in full_logits.items():
+        assert value.grad is not None
+        full_grads[key] = value.grad.detach().clone()
+
+    packed_logits = {
+        key: value.detach().clone().requires_grad_(True)
+        for key, value in full_logits.items()
+    }
+    numerator = sum(
+        (
+            greedy_compiler_numerator(
+                {site_id: packed_logits[site_id]}, ledger, site_ids=(site_id,)
+            )
+            for site_id in packed_logits
+        ),
+        torch.zeros((), dtype=torch.float32),
+    )
+    packed = numerator / ledger.logical_image_count
+    packed.backward()
+    assert torch.allclose(full, packed, atol=1e-7, rtol=0.0)
+    for key, value in packed_logits.items():
+        assert value.grad is not None
+        assert torch.allclose(value.grad, full_grads[key], atol=1e-7, rtol=0.0)
+
+
+def test_nested_arms_reuse_byte_identical_shared_artifacts_and_fixed_combination() -> (
+    None
+):
+    # Catches reacquisition/recrediting in B or a tunable compiler coefficient.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    nested = _build_nested_arm_artifacts_for_test(
+        acquisition_artifact=b"exact-acquisition-bytes",
+        trajectory_credit_artifact=b"exact-credit-ledger-bytes",
+        compiler_ledger=ledger,
+    )
+    assert nested.arm_a_shared_artifacts == nested.arm_b_shared_artifacts
+    assert nested.arm_a_shared_artifacts[0] is nested.arm_b_shared_artifacts[0]
+    assert nested.arm_a_shared_artifacts[1] is nested.arm_b_shared_artifacts[1]
+    assert nested.arm_a_compiler_artifact is None
+    assert nested.arm_b_compiler_artifact == ledger.canonical_bytes
+    trajectory = torch.tensor(2.0, requires_grad=True)
+    compiler = torch.tensor(3.0, requires_grad=True)
+    total = combined_loss(trajectory, compiler)
+    total.backward()
+    assert total.item() == 5.0
+    assert trajectory.grad is not None and trajectory.grad.item() == 1.0
+    assert compiler.grad is not None and compiler.grad.item() == 1.0
+
+
+def test_packed_position_gather_uses_exact_source_row_and_compact_tokens() -> None:
+    # Catches local-vs-packed remap errors or retaining a full-vocabulary row.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    prepared = prepare_on_policy_candidate_scoring(
+        frontier_images={7000: boundaries[0].image},
+        prompt_skeletons={
+            7000: _Skeleton(
+                example_id="source-prompt:7000",
+                input_ids=(7, IMAGE_TOKEN_ID, 1),
+                prompt_token_count=3,
+            )
+        },
+        global_max_length=4096,
+    )
+    packed_segment = next(
+        segment
+        for pack in prepared.packed_plan.packs
+        for segment in pack.pack.segments
+        if segment.example_id == site.packed_segment_id
+    )
+    expected_position = packed_segment.start + site.local_causal_position
+    vocab = max(site.compact_token_ids) + 2
+    full_row = torch.arange(vocab, dtype=torch.float32).unsqueeze(0)
+    packed = bind_packed_compiler_logits(
+        prepared,
+        site,
+        pack_index=packed_segment.pack_index,
+        logits_position_ids=(expected_position,),
+        raw_logits=full_row,
+    )
+    compact = gather_compiler_compact_logits((packed,), ledger)
+    assert tuple(compact) == (site.site_id,)
+    assert torch.equal(
+        compact[site.site_id],
+        torch.tensor(site.compact_token_ids, dtype=torch.float32),
+    )
+    assert compact[site.site_id].shape == (len(site.compact_token_ids),)
+    with pytest.raises(ValueError, match="causal position"):
+        bind_packed_compiler_logits(
+            prepared,
+            site,
+            pack_index=packed_segment.pack_index,
+            logits_position_ids=(expected_position + 1,),
+            raw_logits=full_row,
+        )
+    with pytest.raises(ValueError, match="exactly"):
+        gather_compiler_compact_logits((packed, packed), ledger)
+
+
+def test_compiler_evidence_is_compact_not_full_vocabulary() -> None:
+    # Catches persisting a full-vocabulary Python row in the compiler receipt.
+    manifest, boundaries = _panel_fixture()
+    ledger = _ledger(manifest, boundaries)
+    site = ledger.images[0].site
+    assert site is not None
+    assert set(site.compact_token_ids) == {*site.valid_token_ids, site.bad_token_id}
+    assert len(site.compact_token_ids) == 4
+    payload = asdict(site)
+    assert "raw_logits" not in payload
+    assert "full_vocab" not in payload
