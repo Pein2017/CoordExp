@@ -170,6 +170,57 @@ def test_frozen_execution_and_native_artifact_snapshot_caller_lists(tmp_path: Pa
     assert adapter.load_published_acquisition(output, plan=sealed.plan).binding.native_receipts_sha256 == execution_hash
 
 
+def test_admitted_publication_rejects_cross_artifact_direct_construction() -> None:
+    from scripts.research.human13_rp_policy import validate_acquisition_group_replay
+
+    execution = _execute(
+        adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.0, seed_group_id="qualification")
+    )
+    receipt = validate_acquisition_group_replay(
+        execution.group, execution.group, adapter.ReplayTolerance()
+    )
+    binding = adapter._publication_binding(
+        execution=execution, replayed=execution.group, replay_receipt=receipt
+    )
+    admitted = adapter.AdmittedPublication(
+        binding=binding,
+        execution=execution,
+        replayed_group=execution.group,
+        parity_receipt=receipt,
+    )
+    assert admitted.execution is execution
+
+    with pytest.raises(ValueError, match="binding"):
+        adapter.AdmittedPublication(
+            binding=replace(binding, sampled_group_sha256="e" * 64),
+            execution=execution,
+            replayed_group=execution.group,
+            parity_receipt=receipt,
+        )
+
+    other_execution = _execute(
+        adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.10, seed_group_id="qualification")
+    )
+    with pytest.raises(ValueError, match="replayed"):
+        adapter.AdmittedPublication(
+            binding=binding,
+            execution=execution,
+            replayed_group=other_execution.group,
+            parity_receipt=receipt,
+        )
+
+    other_receipt = validate_acquisition_group_replay(
+        other_execution.group, other_execution.group, adapter.ReplayTolerance()
+    )
+    with pytest.raises(ValueError, match="parity"):
+        adapter.AdmittedPublication(
+            binding=binding,
+            execution=execution,
+            replayed_group=execution.group,
+            parity_receipt=other_receipt,
+        )
+
+
 @pytest.mark.parametrize("mutation, message", [
     (lambda receipt: replace(receipt, request_id="historical-claim"), "request identity"),
     (lambda receipt: replace(receipt, seed=99999), "seed"),
