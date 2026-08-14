@@ -45,12 +45,13 @@ from src.inference.parsing import (
 from src.templates.renderer import OBJECT_REF_END_TOKEN, OBJECT_REF_START_TOKEN
 
 
-SCHEMA_VERSION = "human13_trajectory_credit_ledger.v1"
+SCHEMA_VERSION = "human13_trajectory_credit_ledger.v2"
 ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_acquisition.v1"
 PANEL_ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_panel_acquisition.v1"
-PARSER_PROJECTION_SCHEMA_VERSION = "human13_canonical_parser_projection.v1"
+PARSER_PROJECTION_SCHEMA_VERSION = "human13_canonical_parser_projection.v2"
 FIXED_SCIENTIFIC_K = 16
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_VERIFIED_TOKENIZER_FACTORY_MARKER = object()
 
 
 def _canonical_payload(value: Mapping[str, Any]) -> bytes:
@@ -112,43 +113,135 @@ def _valid_box(value: object) -> tuple[float, float, float, float] | None:
     return result  # type: ignore[return-value]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class CanonicalTokenizerDecodeAdapter:
-    """Narrow CPU tokenizer boundary used to reproduce parser semantics.
+    """Factory-only attestation over one real loaded Transformers tokenizer."""
 
-    The adapter binds the concrete tokenizer identity while keeping tokenizer
-    loading outside this pure projection module.  Decoding follows the existing
-    inference/scoring seam: every token is decoded with special tokens retained,
-    and concatenated token text must equal sequence decoding exactly.
-    """
-
-    tokenizer: Any
+    _tokenizer: Any
+    _factory_marker: object
+    _base_model_path: Path
+    _runtime_receipt_json: str
     tokenizer_id: str
     tokenizer_sha256: str
     implementation_id: str
-    decode_policy: str = "hf-per-token-concat-equals-sequence.v1"
+    tokenizer_class: str
+    tokenizer_module: str
+    tokenizer_config_sha256: str
+    runtime_receipt_sha256: str
+    backend_tokenizer_sha256: str
+    decode_implementation_sha256: str
+    decode_policy: str = "hf-per-token-no-cleanup-concat-equals-sequence.v2"
 
-    def __post_init__(self) -> None:
-        if not callable(getattr(self.tokenizer, "decode", None)):
-            raise ValueError("tokenizer adapter requires a decode method")
-        for field in ("tokenizer_id", "implementation_id"):
-            if not isinstance(getattr(self, field), str) or not getattr(self, field):
-                raise ValueError(f"tokenizer adapter {field} must be nonempty")
-        object.__setattr__(
-            self,
-            "tokenizer_sha256",
-            _digest(self.tokenizer_sha256, field="tokenizer_sha256"),
+    @classmethod
+    def from_runtime(
+        cls,
+        *,
+        tokenizer: object,
+        base_model_path: str | Path,
+        runtime_receipt: Mapping[str, Any],
+        manifest: Human13KUnionManifest,
+        publication: AdmittedPublication,
+    ) -> CanonicalTokenizerDecodeAdapter:
+        attestation = _inspect_tokenizer_runtime(
+            tokenizer=tokenizer,
+            base_model_path=base_model_path,
+            runtime_receipt=runtime_receipt,
+            manifest=manifest,
+            publication=publication,
         )
-        if self.decode_policy != "hf-per-token-concat-equals-sequence.v1":
-            raise ValueError("tokenizer decode policy differs from the canonical seam")
+        instance = object.__new__(cls)
+        for field, value in attestation.items():
+            object.__setattr__(instance, field, value)
+        object.__setattr__(instance, "_tokenizer", tokenizer)
+        object.__setattr__(
+            instance,
+            "_factory_marker",
+            _VERIFIED_TOKENIZER_FACTORY_MARKER,
+        )
+        return instance
+
+    @classmethod
+    def from_qwen_components(
+        cls,
+        components: object,
+        *,
+        manifest: Human13KUnionManifest,
+        publication: AdmittedPublication,
+    ) -> CanonicalTokenizerDecodeAdapter:
+        from src.qwen.runtime_loading import QwenComponents, _processor_identity
+        from src.qwen.tokens import validate_qwen_token_identity
+
+        if type(components) is not QwenComponents:
+            raise ValueError("verified tokenizer factory requires exact QwenComponents")
+        if getattr(components.processor, "tokenizer", None) is not components.tokenizer:
+            raise ValueError(
+                "Qwen components processor.tokenizer is not the captured tokenizer object"
+            )
+        if (
+            _processor_identity(components.processor, components.tokenizer)
+            != components.processor_identity
+        ):
+            raise ValueError("Qwen components processor runtime identity differs")
+        if (
+            validate_qwen_token_identity(components.tokenizer)
+            != components.token_identity
+        ):
+            raise ValueError("Qwen components token runtime identity differs")
+        return cls.from_runtime(
+            tokenizer=components.tokenizer,
+            base_model_path=components.base_model_path,
+            runtime_receipt=components.to_artifact_dict(),
+            manifest=manifest,
+            publication=publication,
+        )
+
+    @property
+    def base_model_path(self) -> Path:
+        return self._base_model_path
+
+    def verify_for(
+        self,
+        *,
+        manifest: Human13KUnionManifest,
+        publication: AdmittedPublication,
+    ) -> None:
+        if (
+            getattr(self, "_factory_marker", None)
+            is not _VERIFIED_TOKENIZER_FACTORY_MARKER
+        ):
+            raise ValueError("tokenizer adapter lacks a factory-verified attestation")
+        expected = _inspect_tokenizer_runtime(
+            tokenizer=self._tokenizer,
+            base_model_path=self._base_model_path,
+            runtime_receipt=json.loads(self._runtime_receipt_json),
+            manifest=manifest,
+            publication=publication,
+        )
+        actual = {
+            field: getattr(self, field) for field in expected if field != "_tokenizer"
+        }
+        if actual != expected:
+            raise ValueError("verified tokenizer attestation differs on revalidation")
 
     def decode(self, token_ids: Sequence[int]) -> tuple[str, tuple[str, ...]]:
         ids = tuple(_integer(token, field="generated token id") for token in token_ids)
         token_texts = tuple(
-            str(self.tokenizer.decode([token], skip_special_tokens=False))
+            str(
+                self._tokenizer.decode(
+                    [token],
+                    skip_special_tokens=False,
+                    clean_up_tokenization_spaces=False,
+                )
+            )
             for token in ids
         )
-        sequence_text = str(self.tokenizer.decode(list(ids), skip_special_tokens=False))
+        sequence_text = str(
+            self._tokenizer.decode(
+                list(ids),
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
+            )
+        )
         if "".join(token_texts) != sequence_text:
             raise ValueError(
                 "per-token decoded text differs from canonical sequence decoding"
@@ -160,6 +253,12 @@ class CanonicalTokenizerDecodeAdapter:
             "tokenizer_id": self.tokenizer_id,
             "tokenizer_sha256": self.tokenizer_sha256,
             "implementation_id": self.implementation_id,
+            "tokenizer_class": self.tokenizer_class,
+            "tokenizer_module": self.tokenizer_module,
+            "tokenizer_config_sha256": self.tokenizer_config_sha256,
+            "runtime_receipt_sha256": self.runtime_receipt_sha256,
+            "backend_tokenizer_sha256": self.backend_tokenizer_sha256,
+            "decode_implementation_sha256": self.decode_implementation_sha256,
             "decode_policy": self.decode_policy,
         }
 
@@ -190,6 +289,176 @@ def _revalidate_admitted_publication(value: object) -> AdmittedPublication:
         publication.parity_receipt.to_dict()
     )
     return AdmittedPublication(binding, execution, replayed, parity)
+
+
+def _inspect_tokenizer_runtime(
+    *,
+    tokenizer: object,
+    base_model_path: str | Path,
+    runtime_receipt: Mapping[str, Any],
+    manifest: Human13KUnionManifest,
+    publication: AdmittedPublication,
+) -> dict[str, Any]:
+    """Derive tokenizer identity from the installed class, object, and files."""
+
+    import inspect
+    from importlib import metadata
+
+    import transformers
+    from tokenizers import Tokenizer
+    from transformers import PreTrainedTokenizerFast
+
+    from src.config.fingerprint import sha256_file
+
+    if not isinstance(tokenizer, PreTrainedTokenizerFast):
+        raise ValueError(
+            "verified tokenizer factory requires a real Transformers tokenizer"
+        )
+    tokenizer_class = type(tokenizer)
+    transformers_root = Path(transformers.__file__).resolve().parent
+    try:
+        class_path = Path(inspect.getfile(tokenizer_class)).resolve()
+    except (OSError, TypeError) as exc:
+        raise ValueError(
+            "Transformers tokenizer class has no installed source"
+        ) from exc
+    if not class_path.is_relative_to(transformers_root):
+        raise ValueError(
+            "verified tokenizer must use an installed Transformers concrete class"
+        )
+    try:
+        decode_path = Path(inspect.getfile(tokenizer_class.decode)).resolve()
+    except (OSError, TypeError) as exc:
+        raise ValueError("tokenizer decode implementation cannot be inspected") from exc
+    if not decode_path.is_relative_to(transformers_root):
+        raise ValueError(
+            "tokenizer decode implementation is outside installed Transformers"
+        )
+    if "decode" in vars(tokenizer):
+        raise ValueError(
+            "verified tokenizer object carries an instance decode override"
+        )
+
+    try:
+        resolved_base = Path(base_model_path).expanduser().resolve(strict=True)
+    except (FileNotFoundError, OSError) as exc:
+        raise ValueError("sealed base-model directory is unavailable") from exc
+    try:
+        resolved_name_or_path = (
+            Path(str(tokenizer.name_or_path)).expanduser().resolve(strict=True)
+        )
+    except (AttributeError, FileNotFoundError, OSError) as exc:
+        raise ValueError(
+            "tokenizer name_or_path is not a resolved local directory"
+        ) from exc
+    if resolved_name_or_path != resolved_base:
+        raise ValueError(
+            "tokenizer name_or_path differs from the sealed base-model directory"
+        )
+
+    if not isinstance(manifest, Human13KUnionManifest):
+        raise ValueError("manifest must be a Human13KUnionManifest")
+    admitted = _revalidate_admitted_publication(publication)
+    manifest_sha256 = _manifest_sha256(manifest)
+    if admitted.replayed_group.identity.manifest_sha256 != manifest_sha256:
+        raise ValueError("Task2 publication manifest lineage differs")
+
+    tokenizer_path = resolved_base / "tokenizer.json"
+    tokenizer_config_path = resolved_base / "tokenizer_config.json"
+    try:
+        tokenizer_sha256 = sha256_file(tokenizer_path)
+        tokenizer_config_sha256 = sha256_file(tokenizer_config_path)
+        tokenizer_payload = json.loads(tokenizer_path.read_text(encoding="utf-8"))
+        tokenizer_config = json.loads(tokenizer_config_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        raise ValueError(
+            "sealed tokenizer runtime files are unavailable or invalid"
+        ) from exc
+    if tokenizer_sha256 != manifest.binding.surface.tokenizer_sha256:
+        raise ValueError("tokenizer.json SHA-256 differs from the manifest")
+
+    try:
+        receipt = json.loads(_canonical_json(dict(runtime_receipt)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("tokenizer runtime receipt is not canonical JSON") from exc
+    receipt = _strict_mapping(
+        receipt,
+        field="Qwen runtime-loading receipt",
+        keys={
+            "base_model_path",
+            "base_config_sha256",
+            "tokenizer_sha256",
+            "load_model",
+            "attn_implementation",
+            "processor",
+            "model",
+            "tokens",
+            "package_versions",
+            "runtime_patches",
+        },
+    )
+    if receipt.get("base_model_path") != str(resolved_base):
+        raise ValueError("tokenizer runtime receipt base-model path differs")
+    try:
+        base_config_sha256 = sha256_file(resolved_base / "config.json")
+    except (FileNotFoundError, OSError) as exc:
+        raise ValueError("sealed Qwen config identity file is unavailable") from exc
+    if receipt.get("base_config_sha256") != base_config_sha256:
+        raise ValueError("tokenizer runtime receipt base config SHA-256 differs")
+    if receipt.get("tokenizer_sha256") != tokenizer_sha256:
+        raise ValueError("tokenizer runtime receipt tokenizer SHA-256 differs")
+    processor_receipt = receipt.get("processor")
+    actual_class_name = tokenizer_class.__name__
+    actual_module = tokenizer_class.__module__
+    if (
+        not isinstance(processor_receipt, Mapping)
+        or processor_receipt.get("tokenizer_class") != actual_class_name
+    ):
+        raise ValueError("tokenizer runtime receipt tokenizer class differs")
+    if tokenizer_config.get("tokenizer_class") != actual_class_name:
+        raise ValueError("tokenizer class differs from tokenizer_config identity")
+    if manifest.binding.surface.tokenizer_class != actual_class_name:
+        raise ValueError("tokenizer class differs from manifest identity")
+    package_versions = receipt.get("package_versions")
+    if not isinstance(package_versions, Mapping) or package_versions.get(
+        "transformers"
+    ) != metadata.version("transformers"):
+        raise ValueError("tokenizer runtime receipt Transformers version differs")
+
+    backend = getattr(tokenizer, "backend_tokenizer", None)
+    if type(backend) is not Tokenizer:
+        raise ValueError(
+            "verified tokenizer does not capture the installed tokenizers backend"
+        )
+    try:
+        backend_payload = json.loads(backend.to_str())
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "loaded tokenizer backend cannot be canonically inspected"
+        ) from exc
+    if backend_payload != tokenizer_payload:
+        raise ValueError("loaded tokenizer backend differs from tokenizer.json")
+
+    tokenizer_id = str(resolved_base)
+    for group in (admitted.execution.group, admitted.replayed_group):
+        if group.identity.tokenizer_id != tokenizer_id:
+            raise ValueError(
+                "Task2 tokenizer identity differs from the verified runtime path"
+            )
+    return {
+        "_base_model_path": resolved_base,
+        "_runtime_receipt_json": _canonical_json(receipt),
+        "tokenizer_id": tokenizer_id,
+        "tokenizer_sha256": tokenizer_sha256,
+        "implementation_id": f"{actual_module}.{actual_class_name}",
+        "tokenizer_class": actual_class_name,
+        "tokenizer_module": actual_module,
+        "tokenizer_config_sha256": tokenizer_config_sha256,
+        "runtime_receipt_sha256": _sha256(receipt),
+        "backend_tokenizer_sha256": _sha256(backend_payload),
+        "decode_implementation_sha256": sha256_file(decode_path),
+        "decode_policy": "hf-per-token-no-cleanup-concat-equals-sequence.v2",
+    }
 
 
 @dataclass(frozen=True)
@@ -400,6 +669,13 @@ class CanonicalParserProjectionReceipt:
     tokenizer_id: str
     tokenizer_sha256: str
     tokenizer_implementation_id: str
+    tokenizer_class: str
+    tokenizer_module: str
+    tokenizer_base_model_path: str
+    tokenizer_config_sha256: str
+    tokenizer_runtime_receipt_sha256: str
+    tokenizer_backend_sha256: str
+    tokenizer_decode_implementation_sha256: str
     tokenizer_decode_policy: str
     parser_id: str
     parser_policy: str
@@ -417,6 +693,10 @@ class CanonicalParserProjectionReceipt:
             "parity_receipt_sha256",
             "tolerance_sha256",
             "tokenizer_sha256",
+            "tokenizer_config_sha256",
+            "tokenizer_runtime_receipt_sha256",
+            "tokenizer_backend_sha256",
+            "tokenizer_decode_implementation_sha256",
         ):
             object.__setattr__(self, field, _digest(getattr(self, field), field=field))
         for field in (
@@ -425,6 +705,9 @@ class CanonicalParserProjectionReceipt:
             "seed_group_id",
             "tokenizer_id",
             "tokenizer_implementation_id",
+            "tokenizer_class",
+            "tokenizer_module",
+            "tokenizer_base_model_path",
             "tokenizer_decode_policy",
             "parser_id",
             "parser_policy",
@@ -475,6 +758,15 @@ class CanonicalParserProjectionReceipt:
             "tokenizer_id": self.tokenizer_id,
             "tokenizer_sha256": self.tokenizer_sha256,
             "tokenizer_implementation_id": self.tokenizer_implementation_id,
+            "tokenizer_class": self.tokenizer_class,
+            "tokenizer_module": self.tokenizer_module,
+            "tokenizer_base_model_path": self.tokenizer_base_model_path,
+            "tokenizer_config_sha256": self.tokenizer_config_sha256,
+            "tokenizer_runtime_receipt_sha256": self.tokenizer_runtime_receipt_sha256,
+            "tokenizer_backend_sha256": self.tokenizer_backend_sha256,
+            "tokenizer_decode_implementation_sha256": (
+                self.tokenizer_decode_implementation_sha256
+            ),
             "tokenizer_decode_policy": self.tokenizer_decode_policy,
             "parser_id": self.parser_id,
             "parser_policy": self.parser_policy,
@@ -1545,9 +1837,10 @@ def build_canonical_parser_projection_receipt(
         raise ValueError("manifest must be a Human13KUnionManifest")
     if manifest.binding.surface.parser != PARSER_POLICY:
         raise ValueError("manifest parser policy differs from canonical parser policy")
-    if not isinstance(tokenizer_adapter, CanonicalTokenizerDecodeAdapter):
-        raise ValueError("canonical tokenizer adapter is required")
+    if type(tokenizer_adapter) is not CanonicalTokenizerDecodeAdapter:
+        raise ValueError("a factory-verified canonical tokenizer adapter is required")
     admitted = _revalidate_admitted_publication(publication)
+    tokenizer_adapter.verify_for(manifest=manifest, publication=admitted)
     plan = admitted.execution.plan
     image_by_id = {image.image_id: image for image in manifest.images}
     if plan.image_id not in image_by_id:
@@ -1613,6 +1906,15 @@ def build_canonical_parser_projection_receipt(
         tokenizer_id=tokenizer_adapter.tokenizer_id,
         tokenizer_sha256=tokenizer_adapter.tokenizer_sha256,
         tokenizer_implementation_id=tokenizer_adapter.implementation_id,
+        tokenizer_class=tokenizer_adapter.tokenizer_class,
+        tokenizer_module=tokenizer_adapter.tokenizer_module,
+        tokenizer_base_model_path=str(tokenizer_adapter.base_model_path),
+        tokenizer_config_sha256=tokenizer_adapter.tokenizer_config_sha256,
+        tokenizer_runtime_receipt_sha256=(tokenizer_adapter.runtime_receipt_sha256),
+        tokenizer_backend_sha256=tokenizer_adapter.backend_tokenizer_sha256,
+        tokenizer_decode_implementation_sha256=(
+            tokenizer_adapter.decode_implementation_sha256
+        ),
         tokenizer_decode_policy=tokenizer_adapter.decode_policy,
         parser_id=PARSER_ID,
         parser_policy=PARSER_POLICY,

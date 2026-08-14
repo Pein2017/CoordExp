@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import replace
 import copy
 import hashlib
+from importlib import metadata
 import json
 import math
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import torch
@@ -39,6 +43,7 @@ from scripts.research.human13_trajectory_credit import (
     trajectory_score_function_numerator,
 )
 from scripts.research.human13_rp_policy import validate_acquisition_group_replay
+from src.qwen.runtime_loading import QwenComponents
 
 
 STOP = 99
@@ -84,6 +89,7 @@ def _task2_output_receipt(
     *,
     manifest_sha256: str,
     generated_token_ids: tuple[int, ...],
+    tokenizer_id: str = "fake-tokenizer:v1",
 ) -> task2.NativeOutputReceipt:
     native = _task2_request_receipt(request)
     return task2.NativeOutputReceipt(
@@ -96,7 +102,7 @@ def _task2_output_receipt(
         source_sha256=SOURCE,
         manifest_sha256=manifest_sha256,
         model_id="test-model",
-        tokenizer_id="fake-tokenizer:v1",
+        tokenizer_id=tokenizer_id,
         processor_id="test-processor",
         processor_order=("repetition_penalty", "temperature", "log_softmax"),
         sampler_backend_id="vllm:test",
@@ -113,6 +119,7 @@ def _admitted_publication(
     repetition_penalty: float = 1.0,
     seed_group_id: str = "qualification",
     generated_token_ids: tuple[int, ...] = _ONE_CANONICAL_ROW,
+    tokenizer_id: str = "fake-tokenizer:v1",
 ) -> task2.AdmittedPublication:
     plan = task2.plan_acquisition_group(
         image_id=image_id,
@@ -131,6 +138,7 @@ def _admitted_publication(
                 request,
                 manifest_sha256=manifest_sha,
                 generated_token_ids=generated_token_ids,
+                tokenizer_id=tokenizer_id,
             )
             for request in batch.requests
         )
@@ -148,12 +156,126 @@ def _admitted_publication(
     return task2.AdmittedPublication(binding, execution, execution.group, parity)
 
 
-def _canonical_tokenizer_adapter() -> credit.CanonicalTokenizerDecodeAdapter:
-    return credit.CanonicalTokenizerDecodeAdapter(
-        tokenizer=_FakeTokenizer(),
-        tokenizer_id="fake-tokenizer:v1",
-        tokenizer_sha256=default_binding().surface.tokenizer_sha256,
-        implementation_id="fake-hf-tokenizer-for-cpu-tests.v1",
+def _real_qwen_components(
+    root: Path,
+) -> tuple[QwenComponents, Human13KUnionManifest, task2.AdmittedPublication]:
+    from tokenizers import Tokenizer, decoders, models
+    from transformers import PreTrainedTokenizerFast
+
+    from src.config.fingerprint import sha256_file
+    from src.qwen.runtime_loading import (
+        QwenModelIdentity,
+        QwenProcessorIdentity,
+    )
+    from src.qwen.tokens import QwenTokenIdentity
+
+    base_model_path = (root / "minimal-qwen-tokenizer").resolve()
+    base_model_path.mkdir(parents=True)
+    tokens = [f"<unused_{index}>" for index in range(107)]
+    for token_id, text in _TOKEN_TEXT.items():
+        if token_id < len(tokens):
+            tokens[token_id] = text
+    tokens[0] = "[UNK]"
+    backend = Tokenizer(
+        models.WordLevel(
+            vocab={text: index for index, text in enumerate(tokens)},
+            unk_token="[UNK]",
+        )
+    )
+    setattr(backend, "decoder", decoders.Fuse())
+    seed = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]")
+    seed.save_pretrained(base_model_path)
+    (base_model_path / "config.json").write_text("{}\n", encoding="utf-8")
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(
+        base_model_path,
+        local_files_only=True,
+    )
+    processor = SimpleNamespace(
+        tokenizer=tokenizer,
+        image_processor=SimpleNamespace(
+            patch_size=14,
+            merge_size=2,
+            temporal_patch_size=2,
+        ),
+    )
+    tokenizer_sha256 = sha256_file(base_model_path / "tokenizer.json")
+    components = QwenComponents(
+        base_model_path=base_model_path,
+        processor=processor,
+        tokenizer=tokenizer,
+        config=SimpleNamespace(),
+        model=None,
+        processor_identity=QwenProcessorIdentity(
+            processor_class=type(processor).__name__,
+            tokenizer_class=type(tokenizer).__name__,
+            image_processor_class=type(processor.image_processor).__name__,
+            patch_size=14,
+            merge_size=2,
+            temporal_patch_size=2,
+        ),
+        model_identity=QwenModelIdentity(
+            config_class="TestConfig",
+            model_type="qwen3_vl",
+            architectures=("TestModel",),
+            tie_word_embeddings=False,
+            text_vocab_size=107,
+            text_hidden_size=8,
+            config_dtype="float32",
+        ),
+        token_identity=QwenTokenIdentity(
+            required_tokens=("<|object_ref_start|>",),
+            wrapper_token_ids={"<|object_ref_start|>": 100},
+            coordinate_token_ids=(104, 105),
+            im_end_newline_text="<|im_end|>\n",
+            im_end_token_ids=(TASK2_STOP,),
+            newline_token_ids=(1,),
+            im_end_newline_token_ids=(TASK2_STOP, 1),
+            tokenizer_vocab_size=107,
+        ),
+        attn_implementation="sdpa",
+        load_model=False,
+        base_config_sha256=sha256_file(base_model_path / "config.json"),
+        tokenizer_sha256=tokenizer_sha256,
+        package_versions={
+            "transformers": metadata.version("transformers"),
+            "tokenizers": metadata.version("tokenizers"),
+            "torch": metadata.version("torch"),
+        },
+        runtime_patches={},
+    )
+    manifest = _manifest(
+        _owner("owner-0", "G", (0, 0, 10, 10)),
+        image_id=1584,
+    )
+    manifest = replace(
+        manifest,
+        binding=replace(
+            manifest.binding,
+            surface=replace(
+                manifest.binding.surface,
+                tokenizer_sha256=tokenizer_sha256,
+                tokenizer_class=type(tokenizer).__name__,
+            ),
+        ),
+    )
+    publication = _admitted_publication(
+        manifest,
+        tokenizer_id=str(base_model_path),
+    )
+    return components, manifest, publication
+
+
+def _verified_runtime_adapter(
+    components: QwenComponents,
+    manifest: Human13KUnionManifest,
+    publication: task2.AdmittedPublication,
+) -> credit.CanonicalTokenizerDecodeAdapter:
+    return credit.CanonicalTokenizerDecodeAdapter.from_runtime(
+        tokenizer=components.tokenizer,
+        base_model_path=components.base_model_path,
+        runtime_receipt=components.to_artifact_dict(),
+        manifest=manifest,
+        publication=publication,
     )
 
 
@@ -658,12 +780,13 @@ def test_microstep_numerator_accepts_only_the_pack_local_request_tensors() -> No
     assert local[request_id].grad is not None
 
 
-def test_ledger_round_trip_is_content_addressed_and_rejects_forgery() -> None:
+def test_ledger_round_trip_is_content_addressed_and_rejects_forgery(
+    tmp_path: Path,
+) -> None:
     # Catches mutable/unbound detached labels being admitted after persistence.
-    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
-    publication = _admitted_publication(manifest)
+    components, manifest, publication = _real_qwen_components(tmp_path)
     acquisition = credit.TrajectoryCreditPanelAcquisition((publication,))
-    tokenizer_adapter = _canonical_tokenizer_adapter()
+    tokenizer_adapter = _verified_runtime_adapter(components, manifest, publication)
     ledger = build_trajectory_credit_ledger(
         manifest,
         acquisition,
@@ -746,17 +869,17 @@ def _two_image_manifest() -> Human13KUnionManifest:
     )
 
 
-def test_public_build_requires_exact_admitted_publication_and_reruns_canonical_parse() -> (
-    None
-):
+def test_public_build_requires_exact_admitted_publication_and_reruns_canonical_parse(
+    tmp_path: Path,
+) -> None:
     # Catches admitting caller-authored row semantics or a bare Task-1/2 group.
-    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
-    publication = _admitted_publication(manifest)
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    tokenizer_adapter = _verified_runtime_adapter(components, manifest, publication)
     panel = credit.TrajectoryCreditPanelAcquisition((publication,))
     ledger = build_trajectory_credit_ledger(
         manifest,
         panel,
-        tokenizer_adapter=_canonical_tokenizer_adapter(),
+        tokenizer_adapter=tokenizer_adapter,
     )
     assert ledger.images[0].trajectories[0].rows[0].outcome == "trusted_first_hit"
     assert ledger.images[0].plan_sha256 == publication.execution.plan_sha256
@@ -769,17 +892,16 @@ def test_public_build_requires_exact_admitted_publication_and_reruns_canonical_p
         build_trajectory_credit_ledger(
             manifest,
             publication.execution.group,
-            tokenizer_adapter=_canonical_tokenizer_adapter(),
+            tokenizer_adapter=tokenizer_adapter,
         )
 
 
-def test_parser_projection_rejects_rehashed_bbox_category_and_token_span_forgery() -> (
-    None
-):
+def test_parser_projection_rejects_rehashed_bbox_category_and_token_span_forgery(
+    tmp_path: Path,
+) -> None:
     # Catches a content-addressed but caller-authored semantic envelope over unchanged tokens.
-    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
-    publication = _admitted_publication(manifest)
-    tokenizer_adapter = _canonical_tokenizer_adapter()
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    tokenizer_adapter = _verified_runtime_adapter(components, manifest, publication)
     receipt = credit.build_canonical_parser_projection_receipt(
         manifest, publication, tokenizer_adapter=tokenizer_adapter
     )
@@ -807,49 +929,64 @@ def test_parser_projection_rejects_rehashed_bbox_category_and_token_span_forgery
             )
 
 
-def test_plan_image_owns_owner_selection_and_panel_cell_must_be_coherent() -> None:
+def test_plan_image_owns_owner_selection_and_panel_cell_must_be_coherent(
+    tmp_path: Path,
+) -> None:
     # Catches image-A evidence being scored against image-B owners, cross-RP, or mixed seeds.
-    single_b = _manifest(_owner("owner-1", "G", (0, 0, 10, 10)), image_id=2299)
-    publication_a = _admitted_publication(
-        _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
+    components, manifest_a, publication_a = _real_qwen_components(tmp_path)
+    tokenizer_adapter = _verified_runtime_adapter(
+        components,
+        manifest_a,
+        publication_a,
+    )
+    single_b = replace(
+        _manifest(_owner("owner-1", "G", (0, 0, 10, 10)), image_id=2299),
+        binding=manifest_a.binding,
     )
     with pytest.raises(ValueError, match="plan image"):
         build_trajectory_credit_ledger(
             single_b,
             credit.TrajectoryCreditPanelAcquisition((publication_a,)),
-            tokenizer_adapter=_canonical_tokenizer_adapter(),
+            tokenizer_adapter=tokenizer_adapter,
         )
 
-    panel_manifest = _two_image_manifest()
-    publication_1584 = _admitted_publication(panel_manifest, image_id=1584)
+    panel_manifest = replace(_two_image_manifest(), binding=manifest_a.binding)
+    tokenizer_id = str(components.base_model_path)
+    publication_1584 = _admitted_publication(
+        panel_manifest,
+        image_id=1584,
+        tokenizer_id=tokenizer_id,
+    )
     cross_rp = _admitted_publication(
-        panel_manifest, image_id=2299, repetition_penalty=1.10
+        panel_manifest,
+        image_id=2299,
+        repetition_penalty=1.10,
+        tokenizer_id=tokenizer_id,
     )
     with pytest.raises(ValueError, match="training RP"):
         credit.TrajectoryCreditPanelAcquisition((publication_1584, cross_rp))
     mixed_seed = _admitted_publication(
-        panel_manifest, image_id=2299, seed_group_id="matrix_a"
+        panel_manifest,
+        image_id=2299,
+        seed_group_id="matrix_a",
+        tokenizer_id=tokenizer_id,
     )
     with pytest.raises(ValueError, match="seed group"):
         credit.TrajectoryCreditPanelAcquisition((publication_1584, mixed_seed))
 
 
-def test_parser_tokenizer_request_order_and_parity_lineage_fail_closed() -> None:
+def test_parser_tokenizer_request_order_and_parity_lineage_fail_closed(
+    tmp_path: Path,
+) -> None:
     # Catches wrong parser/tokenizer IDs and bypassing Task-2 aggregate admission.
-    manifest = _manifest(_owner("owner-0", "G", (0, 0, 10, 10)), image_id=1584)
-    publication = _admitted_publication(manifest)
-    wrong_tokenizer = credit.CanonicalTokenizerDecodeAdapter(
-        tokenizer=_FakeTokenizer(),
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    tokenizer_adapter = _verified_runtime_adapter(components, manifest, publication)
+    wrong_publication = _admitted_publication(
+        manifest,
         tokenizer_id="other-tokenizer",
-        tokenizer_sha256=manifest.binding.surface.tokenizer_sha256,
-        implementation_id="fake-hf-tokenizer-for-cpu-tests.v1",
     )
     with pytest.raises(ValueError, match="tokenizer identity"):
-        build_trajectory_credit_ledger(
-            manifest,
-            credit.TrajectoryCreditPanelAcquisition((publication,)),
-            tokenizer_adapter=wrong_tokenizer,
-        )
+        _verified_runtime_adapter(components, manifest, wrong_publication)
     wrong_parser_manifest = replace(
         manifest,
         binding=replace(
@@ -861,10 +998,14 @@ def test_parser_tokenizer_request_order_and_parity_lineage_fail_closed() -> None
         build_trajectory_credit_ledger(
             wrong_parser_manifest,
             credit.TrajectoryCreditPanelAcquisition((publication,)),
-            tokenizer_adapter=_canonical_tokenizer_adapter(),
+            tokenizer_adapter=tokenizer_adapter,
         )
 
-    other = _admitted_publication(manifest, seed_group_id="matrix_a")
+    other = _admitted_publication(
+        manifest,
+        seed_group_id="matrix_a",
+        tokenizer_id=str(components.base_model_path),
+    )
     forged = object.__new__(task2.AdmittedPublication)
     object.__setattr__(forged, "binding", publication.binding)
     object.__setattr__(forged, "execution", publication.execution)
@@ -893,3 +1034,198 @@ def test_parser_tokenizer_request_order_and_parity_lineage_fail_closed() -> None
     object.__setattr__(forged_order, "parity_receipt", publication.parity_receipt)
     with pytest.raises(ValueError, match="request order"):
         credit.TrajectoryCreditPanelAcquisition((forged_order,))
+
+
+def test_verified_tokenizer_factory_rejects_direct_duck_and_overridden_decoders(
+    tmp_path: Path,
+) -> None:
+    from transformers import PreTrainedTokenizerFast
+
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    adapter_type: Any = credit.CanonicalTokenizerDecodeAdapter
+    with pytest.raises(TypeError):
+        adapter_type(
+            tokenizer=components.tokenizer,
+            tokenizer_id=str(components.base_model_path),
+            tokenizer_sha256=components.tokenizer_sha256,
+            implementation_id="caller-claim",
+        )
+    hash_only = object.__new__(credit.CanonicalTokenizerDecodeAdapter)
+    object.__setattr__(hash_only, "tokenizer_id", str(components.base_model_path))
+    object.__setattr__(hash_only, "tokenizer_sha256", components.tokenizer_sha256)
+    with pytest.raises(ValueError, match="factory-verified"):
+        credit.build_canonical_parser_projection_receipt(
+            manifest,
+            publication,
+            tokenizer_adapter=hash_only,
+        )
+
+    receipt = components.to_artifact_dict()
+    for decoder in (_FakeTokenizer(), _FakeTokenizer()):
+        with pytest.raises(ValueError, match="Transformers tokenizer"):
+            credit.CanonicalTokenizerDecodeAdapter.from_runtime(
+                tokenizer=decoder,
+                base_model_path=components.base_model_path,
+                runtime_receipt=receipt,
+                manifest=manifest,
+                publication=publication,
+            )
+
+    overridden = PreTrainedTokenizerFast.from_pretrained(
+        components.base_model_path,
+        local_files_only=True,
+    )
+    overridden.decode = lambda *_args, **_kwargs: "forged"  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="decode override"):
+        credit.CanonicalTokenizerDecodeAdapter.from_runtime(
+            tokenizer=overridden,
+            base_model_path=components.base_model_path,
+            runtime_receipt=receipt,
+            manifest=manifest,
+            publication=publication,
+        )
+
+
+def test_verified_tokenizer_factory_rejects_class_level_decode_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    monkeypatch.setattr(
+        type(components.tokenizer),
+        "decode",
+        lambda *_args, **_kwargs: "forged",
+    )
+    with pytest.raises(ValueError, match="decode implementation"):
+        _verified_runtime_adapter(components, manifest, publication)
+
+
+def test_verified_tokenizer_factory_rejects_backend_proxy(
+    tmp_path: Path,
+) -> None:
+    from transformers import PreTrainedTokenizerFast
+
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(
+        components.base_model_path,
+        local_files_only=True,
+    )
+    canonical_backend_json = tokenizer.backend_tokenizer.to_str()
+
+    class _BackendProxy:
+        def to_str(self) -> str:
+            return canonical_backend_json
+
+        def decode(self, *_args: object, **_kwargs: object) -> str:
+            return "forged"
+
+    tokenizer._tokenizer = _BackendProxy()  # type: ignore[assignment]
+    with pytest.raises(ValueError, match="tokenizers backend"):
+        credit.CanonicalTokenizerDecodeAdapter.from_runtime(
+            tokenizer=tokenizer,
+            base_model_path=components.base_model_path,
+            runtime_receipt=components.to_artifact_dict(),
+            manifest=manifest,
+            publication=publication,
+        )
+
+
+def test_verified_tokenizer_factory_rejects_file_class_path_receipt_and_processor_mismatch(
+    tmp_path: Path,
+) -> None:
+    from transformers import PreTrainedTokenizerFast
+
+    components, manifest, publication = _real_qwen_components(tmp_path / "base")
+    tokenizer_path = components.base_model_path / "tokenizer.json"
+    tokenizer_path.write_bytes(tokenizer_path.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="tokenizer.json SHA-256"):
+        _verified_runtime_adapter(components, manifest, publication)
+
+    class_components, class_manifest, class_publication = _real_qwen_components(
+        tmp_path / "class"
+    )
+    tokenizer_config_path = class_components.base_model_path / "tokenizer_config.json"
+    tokenizer_config = json.loads(tokenizer_config_path.read_text(encoding="utf-8"))
+    tokenizer_config["tokenizer_class"] = "Qwen2TokenizerFast"
+    tokenizer_config_path.write_text(
+        json.dumps(tokenizer_config),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="tokenizer class"):
+        _verified_runtime_adapter(
+            class_components,
+            class_manifest,
+            class_publication,
+        )
+
+    path_components, path_manifest, path_publication = _real_qwen_components(
+        tmp_path / "path"
+    )
+    wrong_path = path_components.base_model_path.parent / "other-model"
+    wrong_path.mkdir()
+    for filename in ("tokenizer.json", "tokenizer_config.json", "config.json"):
+        (wrong_path / filename).write_bytes(
+            (path_components.base_model_path / filename).read_bytes()
+        )
+    with pytest.raises(ValueError, match="name_or_path"):
+        credit.CanonicalTokenizerDecodeAdapter.from_runtime(
+            tokenizer=path_components.tokenizer,
+            base_model_path=wrong_path,
+            runtime_receipt={
+                **path_components.to_artifact_dict(),
+                "base_model_path": str(wrong_path),
+            },
+            manifest=path_manifest,
+            publication=path_publication,
+        )
+
+    with pytest.raises(ValueError, match="runtime receipt"):
+        credit.CanonicalTokenizerDecodeAdapter.from_runtime(
+            tokenizer=path_components.tokenizer,
+            base_model_path=path_components.base_model_path,
+            runtime_receipt={
+                **path_components.to_artifact_dict(),
+                "tokenizer_sha256": "0" * 64,
+            },
+            manifest=path_manifest,
+            publication=path_publication,
+        )
+
+    other_tokenizer = PreTrainedTokenizerFast.from_pretrained(
+        path_components.base_model_path,
+        local_files_only=True,
+    )
+    mismatched_processor = replace(
+        path_components,
+        processor=SimpleNamespace(tokenizer=other_tokenizer),
+    )
+    with pytest.raises(ValueError, match="processor.tokenizer"):
+        credit.CanonicalTokenizerDecodeAdapter.from_qwen_components(
+            mismatched_processor,
+            manifest=path_manifest,
+            publication=path_publication,
+        )
+
+
+def test_verified_tokenizer_deterministically_reproduces_canonical_projection(
+    tmp_path: Path,
+) -> None:
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    adapter = _verified_runtime_adapter(components, manifest, publication)
+    first = credit.build_canonical_parser_projection_receipt(
+        manifest,
+        publication,
+        tokenizer_adapter=adapter,
+    )
+    second = credit.build_canonical_parser_projection_receipt(
+        manifest,
+        publication,
+        tokenizer_adapter=adapter,
+    )
+    assert first == second
+    assert first.content_sha256 == second.content_sha256
+    assert first.tokenizer_id == str(components.base_model_path)
+    assert first.tokenizer_sha256 == components.tokenizer_sha256
+    assert first.tokenizer_implementation_id == (
+        f"{type(components.tokenizer).__module__}.{type(components.tokenizer).__name__}"
+    )
