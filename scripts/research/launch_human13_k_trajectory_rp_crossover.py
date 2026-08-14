@@ -32,10 +32,14 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from types import MappingProxyType
 from typing import Any
 
 import yaml
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     ARM_IDS,

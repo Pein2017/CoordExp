@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -13,6 +15,26 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     PHASE_MATRIX,
     PHASE_QUALIFICATION,
 )
+
+
+@pytest.mark.parametrize(
+    "entry",
+    (
+        "scripts/research/launch_human13_k_trajectory_rp_crossover.py",
+        "scripts/research/train_human13_k_trajectory_rp_crossover.py",
+    ),
+)
+def test_public_cli_entries_bootstrap_repo_imports(entry: str) -> None:
+    completed = subprocess.run(
+        [sys.executable, entry, "--help"],
+        cwd=Path(__file__).resolve().parents[2],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "usage:" in completed.stdout
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,9 @@ from pathlib import Path
 import sys
 from typing import Any, Protocol, TextIO, cast
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     ARM_IDS,
     DRY_RUN_COUNTER_KEYS,
