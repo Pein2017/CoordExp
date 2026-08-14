@@ -784,6 +784,39 @@ def open_hf_backend_session(
     )
 
 
+_QWEN_ROPE_OWNER_MAX_MODEL_DEPTH = 8
+
+
+def _resolve_qwen_get_rope_index(model: Any) -> Callable[..., tuple[Any, Any]]:
+    """Bind the real Qwen ``get_rope_index`` beneath wrapper ``.model`` levels.
+
+    Adapter wrappers (for example PEFT) and the transformers Qwen3-VL layout
+    interpose a session-dependent number of ``.model`` levels above the module
+    that owns exact multimodal MRoPE derivation; the owner is located, never
+    reimplemented.
+    """
+
+    candidate = model
+    searched: list[str] = []
+    seen_ids: set[int] = set()
+    while (
+        candidate is not None
+        and id(candidate) not in seen_ids
+        and len(searched) < _QWEN_ROPE_OWNER_MAX_MODEL_DEPTH
+    ):
+        seen_ids.add(id(candidate))
+        searched.append(type(candidate).__name__)
+        get_rope_index_value = getattr(candidate, "get_rope_index", None)
+        if callable(get_rope_index_value):
+            return cast(Callable[..., tuple[Any, Any]], get_rope_index_value)
+        candidate = getattr(candidate, "model", None)
+    raise RuntimeContractError(
+        "HF model does not expose Qwen get_rope_index",
+        code="hf_backend.position_ids_unavailable",
+        context={"searched_model_chain": searched},
+    )
+
+
 def _derive_qwen_position_ids(
     *,
     model: Any,
@@ -792,17 +825,7 @@ def _derive_qwen_position_ids(
     image_grid_thw: torch.Tensor,
     video_grid_thw: torch.Tensor | None,
 ) -> torch.Tensor:
-    owner = getattr(model, "model", model)
-    get_rope_index_value = getattr(owner, "get_rope_index", None)
-    if not callable(get_rope_index_value):
-        raise RuntimeContractError(
-            "HF model does not expose Qwen get_rope_index",
-            code="hf_backend.position_ids_unavailable",
-        )
-    get_rope_index = cast(
-        Callable[..., tuple[Any, Any]],
-        get_rope_index_value,
-    )
+    get_rope_index = _resolve_qwen_get_rope_index(model)
     try:
         with torch.inference_mode():
             position_ids, _rope_deltas = get_rope_index(

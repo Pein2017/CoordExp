@@ -624,3 +624,86 @@ def test_raw_generation_logprob_matches_teacher_forced_fp32_reference() -> None:
 
     assert comparison.compared_steps == 2
     assert comparison.max_absolute_difference == pytest.approx(0.0)
+
+
+class _RopeOwner:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def get_rope_index(
+        self,
+        input_ids: torch.Tensor,
+        image_grid_thw: torch.Tensor,
+        video_grid_thw: torch.Tensor | None,
+        *,
+        attention_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, None]:
+        self.calls.append(
+            {
+                "input_ids": input_ids,
+                "image_grid_thw": image_grid_thw,
+                "video_grid_thw": video_grid_thw,
+                "attention_mask": attention_mask,
+            }
+        )
+        positions = torch.arange(input_ids.shape[1], device=input_ids.device)
+        return positions.view(1, 1, -1).expand(3, 1, -1), None
+
+
+@pytest.mark.parametrize("wrapper_depth", (0, 1, 2))
+def test_position_id_derivation_resolves_first_rope_owner_down_model_chain(
+    wrapper_depth: int,
+) -> None:
+    from src.inference.hf_backend import _derive_qwen_position_ids
+
+    owner = _RopeOwner()
+    model: Any = owner
+    for _ in range(wrapper_depth):
+        model = SimpleNamespace(model=model)
+    input_ids = torch.tensor([[11, 12, 13]], dtype=torch.long)
+
+    position_ids = _derive_qwen_position_ids(
+        model=model,
+        input_ids=input_ids,
+        attention_mask=torch.ones_like(input_ids),
+        image_grid_thw=torch.tensor([[1, 1, 2]], dtype=torch.long),
+        video_grid_thw=None,
+    )
+
+    assert position_ids.shape == (3, 1, 3)
+    assert len(owner.calls) == 1
+    assert owner.calls[0]["input_ids"] is input_ids
+
+
+def _cyclic_wrapper_without_rope_owner() -> SimpleNamespace:
+    wrapper = SimpleNamespace()
+    wrapper.model = wrapper
+    return wrapper
+
+
+@pytest.mark.parametrize(
+    "model",
+    (
+        SimpleNamespace(model=SimpleNamespace(model=None)),
+        SimpleNamespace(get_rope_index="not-callable", model=None),
+        _cyclic_wrapper_without_rope_owner(),
+    ),
+)
+def test_position_id_derivation_fails_closed_without_a_real_rope_owner(
+    model: SimpleNamespace,
+) -> None:
+    from src.inference.hf_backend import _derive_qwen_position_ids
+
+    input_ids = torch.tensor([[11, 12]], dtype=torch.long)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        _derive_qwen_position_ids(
+            model=model,
+            input_ids=input_ids,
+            attention_mask=torch.ones_like(input_ids),
+            image_grid_thw=torch.tensor([[1, 1, 2]], dtype=torch.long),
+            video_grid_thw=None,
+        )
+
+    assert exc_info.value.code == "hf_backend.position_ids_unavailable"
+    assert exc_info.value.context["searched_model_chain"]

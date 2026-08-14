@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image
 import pytest
@@ -196,7 +196,7 @@ def _request(
 
 def _session(
     *,
-    model: PositionModel | None = None,
+    model: Any | None = None,
     processor: FakeProcessor | None = None,
     tokenizer: FakeTokenizer | None = None,
     receipt: BackendSessionReceipt | None = None,
@@ -286,6 +286,90 @@ def test_gradient_scorer_retains_the_same_position_selective_autograd_graph(
     assert output.logits.requires_grad is True
     assert model._parameter.grad is not None
     assert model._parameter.grad.item() == pytest.approx(64.0)
+
+
+def test_gradient_scorer_resolves_rope_owner_through_real_peft_dora_wrapper(
+    tmp_path: Any,
+) -> None:
+    """Witness-surface shape: PeftModel -> ForConditionalGeneration -> rope owner."""
+
+    from peft import LoraConfig, get_peft_model
+
+    from scripts.research.human13_hf_census import Human13HFCensusScorer
+
+    class RopeOwner(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rope_calls: list[dict[str, Any]] = []
+
+        def get_rope_index(
+            self,
+            input_ids: torch.Tensor,
+            image_grid_thw: torch.Tensor,
+            video_grid_thw: torch.Tensor | None,
+            *,
+            attention_mask: torch.Tensor,
+        ) -> tuple[torch.Tensor, None]:
+            self.rope_calls.append(
+                {
+                    "input_ids": input_ids,
+                    "image_grid_thw": image_grid_thw,
+                    "video_grid_thw": video_grid_thw,
+                    "attention_mask": attention_mask,
+                }
+            )
+            positions = torch.arange(input_ids.shape[1], device=input_ids.device)
+            return positions.view(1, 1, -1).expand(3, 1, -1), None
+
+    class ConditionalGeneration(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = RopeOwner()
+            self.language_head = torch.nn.Linear(4, 4)
+            self.forward_calls: list[dict[str, Any]] = []
+
+        def forward(self, **kwargs: Any) -> SimpleNamespace:
+            self.forward_calls.append(kwargs)
+            requested = kwargs["logits_to_keep"]
+            logits = torch.zeros(
+                (1, int(requested.numel()), 32),
+                dtype=torch.float32,
+                device=kwargs["input_ids"].device,
+            )
+            for output_index, position in enumerate(requested.tolist()):
+                logits[0, output_index, 0] = position
+            return SimpleNamespace(logits=logits)
+
+    base = ConditionalGeneration()
+    wrapped = get_peft_model(
+        cast(Any, base),
+        LoraConfig(
+            r=2,
+            lora_alpha=4,
+            target_modules=["language_head"],
+            use_dora=True,
+        ),
+    )
+    assert not callable(getattr(wrapped, "get_rope_index", None))
+    assert not callable(getattr(wrapped.model, "get_rope_index", None))
+
+    scorer = Human13HFCensusScorer(
+        session=_session(model=wrapped),
+        requests_by_image={1: _request(tmp_path)},
+    )
+
+    output = scorer.score_causal_logits_with_grad(
+        Encoded("a1:1", (11, 12, 13, 14, 15), 2),
+        (1, 3),
+    )
+
+    assert output.logits_position_ids == (1, 3)
+    assert output.logits[0, :, 0].tolist() == [1.0, 3.0]
+    assert len(base.model.rope_calls) == 1
+    assert base.model.rope_calls[0]["input_ids"].tolist() == [[11, 12, 13, 14, 15]]
+    forwarded = base.forward_calls[0]["position_ids"]
+    expected = torch.arange(5).view(1, 1, -1).expand(3, 1, -1)
+    assert torch.equal(forwarded, expected)
 
 
 def test_scorer_rejects_model_that_materializes_full_sequence_logits(

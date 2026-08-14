@@ -499,6 +499,61 @@ That exact path was confirmed absent before the CPU-only correction.  A later
 activation must revalidate its absence and retain the same scientific contrast;
 this correction grants no model, vLLM, GPU, or output-root action.
 
+That `vertical-dose-qualification-v2` root is now also a consumed, immutable
+failed activation.  It published byte-identical sealed Source clean-greedy
+baselines and frontiers for both evaluation RPs under
+`rp100/qualification/c/acquisition/source/{rp100,rp110}` and a failed node
+terminal receipt, then stopped during witness-bank freezing at
+`freeze_witness_bank -> Human13HFCensusScorer.score_causal_logits_with_grad ->
+_derive_qwen_position_ids` with
+`RuntimeContractError[hf_backend.position_ids_unavailable]`.  No K16
+acquisition, no cell receipt, and no optimizer update occurred.  The root
+remains failure evidence and MUST NOT be retried, repaired in place, or
+overwritten.
+
+The diagnosed cause is wrapper-depth ownership, not a missing Qwen method.
+The witness margin surface holds the training-shaped `peft.PeftModel` built by
+`setup_dora_adapter` (`get_peft_model`, `use_dora=True`, warm-start expand),
+while `_derive_qwen_position_ids` resolved exactly one `.model` hop.  On the
+frozen runtime (`transformers 4.57.1`, `peft 0.17.1`) that hop lands on
+`Qwen3VLForConditionalGeneration`, which does not own `get_rope_index`; the
+real owner is the nested `Qwen3VLModel` one further `.model` level down.
+Inference-shaped census sessions install the adapter in place
+(`PeftAdapterMixin.load_adapter`) and keep the bare conditional-generation
+model, where one hop is the true owner, so every previously exercised HF seam
+passed and the fault stayed latent until the v1 correction let live execution
+reach witness scoring.
+
+The failure-mode matrix frozen before the CPU-only v2 correction:
+
+- Bare `Qwen3VLForConditionalGeneration` (inference in-place adapter): owner at
+  one `.model` hop; passed before and must keep passing unchanged.
+- `PeftModel` warm-start DoRA wrapper (witness surface): owner at two `.model`
+  hops; previously failed closed as the live v2 error and must now resolve the
+  real Qwen method.
+- Layouts where the session model itself owns `get_rope_index`: must resolve at
+  the first owning level.
+- No callable owner at any `.model` level: must keep failing closed as
+  `hf_backend.position_ids_unavailable`, naming the searched chain; no authored
+  positional fallback is permitted.
+- Cyclic or self-referential `.model` chains without an owner: must terminate
+  and fail closed.
+
+The correction resolves the `get_rope_index` owner by a bounded, cycle-guarded
+walk down the `.model` chain from the session model and still derives positions
+exclusively through that real Qwen method with unchanged arguments and
+validation.  The repair successor identity is frozen, but not activated, as
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+  2026-08-14-human13-k-trajectory-rp-crossover-screen/
+  vertical-dose-qualification-v3/
+```
+
+That exact path was confirmed absent before this second CPU-only correction.
+A later activation must revalidate its absence and retain the same scientific
+contrast; this correction grants no model, vLLM, GPU, or output-root action.
+
 Implementation and bounded model/GPU execution were explicitly authorized by
 the user; this unit still grants no authority beyond its named tasks and roots.
 No K-miss supervision, full-sequence CE control, DPO, GFlowNet, bridge,
