@@ -489,7 +489,8 @@ def _bind_compiler_requests(
 
 def plan_live_packs(
     *,
-    publication: Any,
+    publication: Any = None,
+    execution: Any = None,
     skeleton: Any,
     compiler_segments: Sequence[CompilerSegmentRequest] = (),
     credit_ledger: Any = None,
@@ -499,6 +500,7 @@ def plan_live_packs(
     """Bind one image's admitted trajectories to one physical packed mapping."""
 
     from scripts.research.collect_human13_rp_crossover import (
+        AcquisitionExecution,
         AdmittedPublication,
         token_ids_sha256,
     )
@@ -509,16 +511,31 @@ def plan_live_packs(
         plan_panel_packs,
     )
 
-    if type(publication) is not AdmittedPublication:
+    if (publication is None) == (execution is None):
+        raise LivePackContractError(
+            "live packs require exactly one publication or acquisition execution"
+        )
+    if publication is not None and type(publication) is not AdmittedPublication:
         raise LivePackContractError(
             "live packs require one exact Task2 AdmittedPublication"
         )
-    execution = publication.execution
-    group = execution.group
-    image_id = int(execution.plan.image_id)
+    if execution is not None and type(execution) is not AcquisitionExecution:
+        raise LivePackContractError(
+            "replay packs require one exact Task2 AcquisitionExecution"
+        )
+    selected_execution = publication.execution if publication is not None else execution
+    assert selected_execution is not None
+    if publication is None and (
+        credit_ledger is not None or compiler_ledger is not None
+    ):
+        raise LivePackContractError(
+            "pre-publication replay packs cannot carry objective ledgers"
+        )
+    group = selected_execution.group
+    image_id = int(selected_execution.plan.image_id)
     prompt = _skeleton_prompt(skeleton, image_id=image_id)
     request_order = tuple(item.identity.request_id for item in group.trajectories)
-    if request_order != execution.plan_request_ids:
+    if request_order != selected_execution.plan_request_ids:
         raise LivePackContractError(
             "acquisition group order differs from the sealed plan request order"
         )
@@ -567,7 +584,7 @@ def plan_live_packs(
         compiler_segments,
         image_id=image_id,
         prompt=prompt,
-        repetition_penalty=float(execution.plan.repetition_penalty),
+        repetition_penalty=float(selected_execution.plan.repetition_penalty),
         ledger=compiler_ledger,
     )
     known = {binding.segment_id for binding in bindings}
@@ -670,6 +687,7 @@ def plan_live_packs(
         else _scored_token_indices(credit_ledger, image_id, bindings)
     )
     if credit_ledger is not None:
+        assert publication is not None
         image = next(item for item in credit_ledger.images if item.image_id == image_id)
         if image.acquisition_group_sha256 != publication.replayed_group.content_sha256:
             raise LivePackContractError(
@@ -677,8 +695,8 @@ def plan_live_packs(
             )
         if credit_ledger.training_repetition_penalty is not None and (
             credit_ledger.training_repetition_penalty
-            != execution.plan.repetition_penalty
-            or credit_ledger.seed_group_id != execution.plan.seed_group_id
+            != selected_execution.plan.repetition_penalty
+            or credit_ledger.seed_group_id != selected_execution.plan.seed_group_id
         ):
             raise LivePackContractError(
                 "credit ledger RP/seed lineage differs from this acquisition plan"
@@ -686,10 +704,10 @@ def plan_live_packs(
 
     return LivePackPlan(
         image_id=image_id,
-        seed_group_id=execution.plan.seed_group_id,
-        repetition_penalty=float(execution.plan.repetition_penalty),
+        seed_group_id=selected_execution.plan.seed_group_id,
+        repetition_penalty=float(selected_execution.plan.repetition_penalty),
         acquisition_group_sha256=group.content_sha256,
-        plan_sha256=execution.plan_sha256,
+        plan_sha256=selected_execution.plan_sha256,
         prompt_token_count=len(prompt),
         prompt_token_sha256=token_ids_sha256(prompt),
         request_order=request_order,
@@ -699,7 +717,7 @@ def plan_live_packs(
         compiler_row_bindings=compiler_row_bindings,
         pack_requests=pack_requests,
         scored_token_indices=scored_token_indices,
-        publication=publication,
+        publication=(publication if publication is not None else selected_execution),
         packed_plan=packed_plan,
     )
 
@@ -885,9 +903,10 @@ def materialize_live_packs(
         compact[request.pack_index] = (rows, row_by_position)
         compact_row_bytes += int(rows.numel()) * int(rows.element_size())
 
+    source = plan.publication
+    source_execution = getattr(source, "execution", source)
     trajectories = {
-        item.identity.request_id: item
-        for item in plan.publication.execution.group.trajectories
+        item.identity.request_id: item for item in source_execution.group.trajectories
     }
     chunks: list[Any] = []
     policy_logprobs: dict[str, Any] = {}

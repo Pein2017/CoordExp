@@ -145,6 +145,8 @@ class CellRuntimeServices(Protocol):
 
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None: ...
 
+    def close_cell(self, state: CellExecutionState, spec: CellSpec) -> None: ...
+
     def aggregate_resource_receipt(
         self,
         state: CellExecutionState,
@@ -298,6 +300,7 @@ def run_cell(
 ) -> CellReceipt:
     """Execute one proposal cell, audit it twice, and unconditionally restore Source."""
 
+    state: CellExecutionState | None = None
     try:
         if not isinstance(spec, CellSpec) or CellSpec.from_dict(spec.to_dict()) != spec:
             raise ValueError("run_cell requires a validated canonical CellSpec")
@@ -306,10 +309,17 @@ def run_cell(
         state = services.open_cell(spec)
         _validate_state(spec, state)
     except Exception as error:
-        raise CellRuntimeError(str(error)) from error
+        terminal_error = error
+        if state is not None:
+            try:
+                services.close_cell(state, spec)
+            except Exception as close_error:
+                terminal_error = close_error
+        raise CellRuntimeError(str(terminal_error)) from terminal_error
 
     before_digest = state.transaction.state_digest()
     snapshot: TrainingStateSnapshot | None = None
+    transaction_id: str | None = None
     checkpoint: PrivateCheckpointRef | None = None
     proposal_sha256: str | None = None
     proposal_delta_sha256: str | None = None
@@ -340,6 +350,7 @@ def run_cell(
         # exactly this base delta, so B and C of one acquisition must agree.
         proposal_delta_sha256 = proposal.delta_sha256
         snapshot = state.transaction.begin()
+        transaction_id = snapshot.transaction_id
         update_attempted = True
 
         if spec.cell_key.arm_id in {"A", "B"}:
@@ -405,6 +416,7 @@ def run_cell(
                 services.cleanup_private_checkpoint(checkpoint)
         except Exception as cleanup_error:
             failure = cleanup_error
+    snapshot = None
 
     if failure is None:
         try:
@@ -460,10 +472,24 @@ def run_cell(
         except Exception as resource_error:
             failure = resource_error
 
+    try:
+        after_digest = state.transaction.state_digest()
+    except Exception as digest_error:
+        terminal_error = digest_error
+        try:
+            services.close_cell(state, spec)
+        except Exception as close_error:
+            terminal_error = close_error
+        raise CellRuntimeError(str(terminal_error)) from terminal_error
+    try:
+        services.close_cell(state, spec)
+    except Exception as close_error:
+        failure = close_error
+
     if failure is not None:
         if not update_attempted:
             raise CellRuntimeError(str(failure)) from failure
-        assert snapshot is not None
+        assert transaction_id is not None
         receipt = CellReceipt(
             cell_key=spec.cell_key,
             shared_evidence=spec.shared_evidence,
@@ -471,9 +497,9 @@ def run_cell(
             objective_component_hashes=component_hashes,
             adamw_config_sha256=spec.adamw_config_sha256,
             fresh_optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
-            transaction_id=snapshot.transaction_id,
+            transaction_id=transaction_id,
             before_transaction_digest=before_digest,
-            after_transaction_digest=state.transaction.state_digest(),
+            after_transaction_digest=after_digest,
             status="failed",
             audits=tuple(audits),
             adamw_proposal_sha256=proposal_sha256,
@@ -492,7 +518,7 @@ def run_cell(
         receipt_writer(receipt)
         raise CellRuntimeError(str(failure), receipt=receipt) from failure
 
-    assert snapshot is not None
+    assert transaction_id is not None
     receipt = CellReceipt(
         cell_key=spec.cell_key,
         shared_evidence=spec.shared_evidence,
@@ -500,9 +526,9 @@ def run_cell(
         objective_component_hashes=component_hashes,
         adamw_config_sha256=spec.adamw_config_sha256,
         fresh_optimizer_identity_sha256=spec.fresh_optimizer_identity_sha256,
-        transaction_id=snapshot.transaction_id,
+        transaction_id=transaction_id,
         before_transaction_digest=before_digest,
-        after_transaction_digest=state.transaction.state_digest(),
+        after_transaction_digest=after_digest,
         status="succeeded",
         audits=tuple(audits),
         adamw_proposal_sha256=proposal_sha256,

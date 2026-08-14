@@ -258,6 +258,32 @@ print(json.dumps({
     )
 
 
+def test_public_factory_owns_one_concrete_lazy_live_composition(tmp_path) -> None:
+    """The public factory must be execution-ready without importing a runtime."""
+
+    live_module = "scripts.research.human13_rp_crossover_live_composition"
+    previous_live_module = sys.modules.pop(live_module, None)
+    before = {name for name in ("torch", "vllm", "transformers") if name in sys.modules}
+    try:
+        runtime = production.create_node_runtime(_qualification_node(tmp_path))
+        after = {
+            name for name in ("torch", "vllm", "transformers") if name in sys.modules
+        }
+
+        assert type(runtime._composition).__name__ == (
+            "LazyHuman13RPCrossoverLiveComposition"
+        )
+        assert type(runtime._composition._backend).__name__ == (
+            "Human13RPCrossoverProductionBackend"
+        )
+        assert live_module not in sys.modules
+        assert after == before
+        assert not (tmp_path / "artifacts").exists()
+    finally:
+        if previous_live_module is not None:
+            sys.modules[live_module] = previous_live_module
+
+
 def test_qualification_closes_acquisition_before_real_node_requests_cell_service(
     tmp_path, monkeypatch
 ) -> None:
@@ -500,14 +526,27 @@ def test_global_learning_rate_decision_forbids_online_norm_adaptation() -> None:
         _validate_forged_decision(online_adaptation=True)
 
 
-def test_missing_exact_acquisition_owner_fails_closed_with_a_durable_node_terminal(
+def test_default_backend_preaction_failure_writes_a_durable_node_terminal(
     tmp_path,
+    monkeypatch,
 ) -> None:
+    from scripts.research import human13_rp_crossover_production_backend as backend
+
     node = _qualification_node(tmp_path, rp=1.10)
 
+    def fail_before_action(*_args, **_kwargs):
+        raise backend.ProductionBackendError("injected pre-action failure")
+
+    monkeypatch.setattr(
+        backend.Human13RPCrossoverProductionBackend,
+        "source_surface",
+        fail_before_action,
+    )
+    monkeypatch.setattr(production, "_validate_frozen_inputs", lambda _rp: object())
+
     with pytest.raises(
-        production.ProductionCompositionUnavailable,
-        match="exact native qualification acquisition owner must be injected",
+        RuntimeError,
+        match="acquisition must release vLLM",
     ):
         runner._execute_node(
             node,
@@ -518,7 +557,7 @@ def test_missing_exact_acquisition_owner_fails_closed_with_a_durable_node_termin
     payload = json.loads(Path(node["receipt_path"]).read_text(encoding="utf-8"))
     assert payload["status"] == "failed"
     assert payload["cell_specs"] == []
-    assert "ProductionCompositionUnavailable" in payload["failure_reason"]
+    assert "RuntimeError" in payload["failure_reason"]
     assert not Path(node["cells"][0]["output_root"]).exists()
 
 

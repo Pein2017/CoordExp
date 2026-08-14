@@ -150,6 +150,7 @@ class TrainingStateTransaction:
                     raise ValueError(f"bound runtime {name} must be mutable") from error
         self._capture_cuda = bool(capture_cuda)
         self._active_transaction_id: str | None = None
+        self._released = False
 
     def _cuda_rng_states(self) -> tuple[torch.Tensor, ...] | None:
         if not self._capture_cuda or not torch.cuda.is_available():
@@ -157,18 +158,24 @@ class TrainingStateTransaction:
         return tuple(state.clone() for state in torch.cuda.get_rng_state_all())
 
     def _current_payload(self) -> dict[str, Any]:
+        if self._released:
+            raise RuntimeError("released training transaction has no live state")
+        optimizer = self._optimizer
+        update_counter = self._update_counter
+        if optimizer is None or update_counter is None:
+            raise RuntimeError("training transaction lost its live state")
         return {
             "parameters": tuple(
                 (name, parameter.detach().clone())
                 for name, parameter in self._named_parameters
             ),
-            "optimizer": copy.deepcopy(self._optimizer.state_dict()),
+            "optimizer": copy.deepcopy(optimizer.state_dict()),
             "scheduler": (
                 copy.deepcopy(self._scheduler.state_dict())
                 if self._scheduler is not None
                 else None
             ),
-            "update_count": int(self._update_counter.value),
+            "update_count": int(update_counter.value),
             "runtime_optimizer_step_count": (
                 int(self._runtime.optimizer_step_count)
                 if self._runtime is not None
@@ -213,6 +220,10 @@ class TrainingStateTransaction:
     @torch.no_grad()
     def restore(self, snapshot: TrainingStateSnapshot) -> None:
         self._require_active(snapshot)
+        optimizer = self._optimizer
+        update_counter = self._update_counter
+        if optimizer is None or update_counter is None:
+            raise RuntimeError("training transaction lost its live state")
         live_by_name = dict(self._named_parameters)
         if tuple(live_by_name) != tuple(name for name, _ in snapshot.parameter_values):
             raise RuntimeError(
@@ -221,14 +232,14 @@ class TrainingStateTransaction:
         for name, saved in snapshot.parameter_values:
             live = live_by_name[name]
             live.copy_(saved.to(device=live.device, dtype=live.dtype))
-        self._optimizer.load_state_dict(copy.deepcopy(snapshot.optimizer_state))
+        optimizer.load_state_dict(copy.deepcopy(snapshot.optimizer_state))
         if self._scheduler is not None:
             if snapshot.scheduler_state is None:
                 raise RuntimeError("snapshot is missing bound scheduler state")
             self._scheduler.load_state_dict(copy.deepcopy(snapshot.scheduler_state))
         elif snapshot.scheduler_state is not None:
             raise RuntimeError("snapshot unexpectedly contains scheduler state")
-        self._update_counter.value = int(snapshot.update_count)
+        update_counter.value = int(snapshot.update_count)
         if self._runtime is not None:
             if (
                 snapshot.runtime_optimizer_step_count is None
@@ -284,6 +295,20 @@ class TrainingStateTransaction:
             before_state_digest=snapshot.state_digest,
             after_state_digest=after,
         )
+
+    def release(self) -> None:
+        """Forget model/optimizer owners after a closed proposal transaction."""
+
+        if self._active_transaction_id is not None:
+            raise RuntimeError("cannot release an active training transaction")
+        if self._released:
+            return
+        self._named_parameters = ()
+        self._optimizer = None
+        self._scheduler = None
+        self._update_counter = None
+        self._runtime = None
+        self._released = True
 
 
 __all__ = [

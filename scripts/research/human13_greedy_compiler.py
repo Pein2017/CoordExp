@@ -284,7 +284,9 @@ def _build_source_forward_runtime_for_test(
     )
 
 
-def admit_source_forward_runtime(components: Any) -> AdmittedSourceForwardRuntime:
+def admit_source_forward_runtime(
+    components: Any, *, source_checkpoint_path: str | Path | None = None
+) -> AdmittedSourceForwardRuntime:
     """Derive vocabulary and runtime identity from exact loaded Qwen components."""
 
     from src.qwen.runtime_loading import QwenComponents
@@ -301,8 +303,13 @@ def admit_source_forward_runtime(components: Any) -> AdmittedSourceForwardRuntim
     if output_weight is None or int(output_weight.shape[0]) != model_vocab_size:
         raise ValueError("loaded model output vocabulary differs from runtime identity")
     runtime_artifact = components.to_artifact_dict()
+    source_path = (
+        components.base_model_path
+        if source_checkpoint_path is None
+        else source_checkpoint_path
+    )
     return _construct_source_forward_runtime(
-        source_sha256=checkpoint_payload_sha256(components.base_model_path),
+        source_sha256=checkpoint_payload_sha256(source_path),
         runtime_artifact_sha256=_sha256(runtime_artifact),
         model_identity_sha256=_sha256(asdict(components.model_identity)),
         tokenizer_identity_sha256=_sha256(

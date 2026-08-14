@@ -49,6 +49,7 @@ from scripts.research.human13_adamw_proposal_preservation import (
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     CANONICAL_IMAGE_IDS,
     EVALUATION_RPS,
+    PROPOSAL_COMPONENTS_BY_ARM,
     AcquisitionKey,
     AggregateResourceReceipt,
     AuditRef,
@@ -213,7 +214,9 @@ class LiveCompositionBackend(Protocol):
         repetition_penalty: float,
     ) -> AuditOutcome: ...
 
-    def tokenizer_adapter(self) -> Any: ...
+    def close_cell(self, state: CellExecutionState) -> None: ...
+
+    def tokenizer_adapter(self, *, manifest: Any, publication: Any) -> Any: ...
 
     def resource_snapshot(self) -> ResourceSnapshot: ...
 
@@ -266,6 +269,7 @@ class Human13RPCrossoverLiveComposition:
             "backward_objective",
             "write_private_checkpoint",
             "audit_checkpoint",
+            "close_cell",
             "tokenizer_adapter",
             "resource_snapshot",
         ):
@@ -302,6 +306,14 @@ class Human13RPCrossoverLiveComposition:
         self._frozen = frozen
         training_rp = float(node["training_rp"])
         self._training_rp = training_rp
+        acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+        if (
+            acquisition_key.training_rp != training_rp
+            or tuple(node["seeds"]) != acquisition_key.seeds
+        ):
+            raise LiveCompositionError(
+                "node acquisition policy differs from its sealed acquisition key"
+            )
         roots = {Path(cell["output_root"]).parent for cell in node["cells"]}
         if len(roots) != 1:
             raise LiveCompositionError(
@@ -324,7 +336,7 @@ class Human13RPCrossoverLiveComposition:
         self._freeze_witness_bank(frozen)
 
         # 3. native batch-four K16 acquisition, then engine release
-        executions = self._sample(frozen, training_rp)
+        executions = self._sample(frozen, training_rp, acquisition_key.seed_group_id)
 
         # 4. packed replay, publication, ledgers, then model release
         evidence = self._materialize(frozen, training_rp, executions)
@@ -375,40 +387,52 @@ class Human13RPCrossoverLiveComposition:
     def _freeze_witness_bank(self, frozen: Any) -> None:
         surface = self._backend.open_margin_surface(frozen)
         self._margin_surface = surface
-        measurement = witness_owner.WitnessMeasurement(
-            decodes=tuple(
-                decode
-                for repetition_penalty in EVALUATION_RPS
-                for decode in self._surfaces[repetition_penalty].decodes
-            ),
-            surface=surface,
-        )
-        binding = WitnessBinding(
-            unit_id=UNIT_ID,
-            source_checkpoint_sha256=frozen.source_checkpoint_payload_sha256,
-            manifest_sha256=frozen.manifest_sha256,
-            frozen_before_acquisition=True,
-        )
-        bank = measurement.freeze_witness_bank(binding=binding)
-        if measurement.teacher_forced_greedy_change_count() != 0:
-            raise LiveCompositionError(
-                "the sealed Source surface is not its own teacher-forced argmax"
+        try:
+            measurement = witness_owner.WitnessMeasurement(
+                decodes=self._sealed_decodes(),
+                surface=surface,
             )
-        self._measurement = measurement
-        self._witness_bank = bank
-        self._source_flat = _flat_float64(
-            surface.named_trainable_parameters(), bank.layout
-        )
-        self._source_dose_margins = dict(measurement.dose_site_margins())
+            binding = WitnessBinding(
+                unit_id=UNIT_ID,
+                source_checkpoint_sha256=frozen.source_checkpoint_payload_sha256,
+                manifest_sha256=frozen.manifest_sha256,
+                frozen_before_acquisition=True,
+            )
+            bank = measurement.freeze_witness_bank(binding=binding)
+            if measurement.teacher_forced_greedy_change_count() != 0:
+                raise LiveCompositionError(
+                    "the sealed Source surface is not its own teacher-forced argmax"
+                )
+            self._measurement = measurement
+            self._witness_bank = bank
+            self._source_flat = _flat_float64(
+                surface.named_trainable_parameters(), bank.layout
+            )
+            self._source_dose_margins = dict(measurement.dose_site_margins())
+        finally:
+            # The pre-acquisition witness model never overlaps the vLLM
+            # sampler.  Cells reopen a fresh Source witness surface and must
+            # reproduce this bank byte-for-byte before its provider is used.
+            self._backend.close_margin_surface(surface)
+            self._margin_surface = None
 
-    def _sample(self, frozen: Any, training_rp: float) -> tuple[Any, ...]:
+    def _sealed_decodes(self) -> tuple[witness_owner.SealedSourceDecode, ...]:
+        return tuple(
+            decode
+            for repetition_penalty in EVALUATION_RPS
+            for decode in self._surfaces[repetition_penalty].decodes
+        )
+
+    def _sample(
+        self, frozen: Any, training_rp: float, seed_group_id: str
+    ) -> tuple[Any, ...]:
         from scripts.research.collect_human13_rp_crossover import (
             execute_acquisition_group,
             plan_panel_acquisition,
         )
 
         plans = plan_panel_acquisition(
-            repetition_penalty=training_rp, seed_group_id=QUALIFICATION_SEED_GROUP
+            repetition_penalty=training_rp, seed_group_id=seed_group_id
         )
         sampler = self._backend.open_sampler(frozen)
         executions: list[Any] = []
@@ -515,10 +539,14 @@ class Human13RPCrossoverLiveComposition:
             build_trajectory_credit_ledger,
         )
 
+        manifest = self._manifest(frozen)
         return build_trajectory_credit_ledger(
-            self._manifest(frozen),
+            manifest,
             acquisition,
-            tokenizer_adapter=self._backend.tokenizer_adapter(),
+            tokenizer_adapter=self._backend.tokenizer_adapter(
+                manifest=manifest,
+                publication=acquisition.publications[0],
+            ),
         )
 
     def _acquisition_evidence(
@@ -536,6 +564,16 @@ class Human13RPCrossoverLiveComposition:
         native_sha256s = tuple(
             item.binding.native_receipts_sha256 for item in publications
         )
+        seed_groups = {item.plan.seed_group_id for item in executions}
+        seed_rows = {
+            tuple(request.seed for request in item.plan.requests) for item in executions
+        }
+        if len(seed_groups) != 1 or len(seed_rows) != 1:
+            raise LiveCompositionError(
+                "acquisition executions do not share one sealed seed group"
+            )
+        seed_group_id = seed_groups.pop()
+        seeds = seed_rows.pop()
         shared = SharedEvidenceRef(
             source_sha256=frozen.source_checkpoint_payload_sha256,
             manifest_sha256=frozen.manifest_sha256,
@@ -554,8 +592,8 @@ class Human13RPCrossoverLiveComposition:
                 }
             ),
             training_rp=training_rp,
-            seed_group_id=QUALIFICATION_SEED_GROUP,
-            seeds=tuple(range(30001, 30017)),
+            seed_group_id=seed_group_id,
+            seeds=seeds,
         )
         return AcquisitionEvidence(
             acquisition=acquisition,
@@ -574,33 +612,53 @@ class Human13RPCrossoverLiveComposition:
         self, node: Mapping[str, Any], evidence: AcquisitionEvidence
     ) -> tuple[CellSpec, ...]:
         acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
-        component_hashes = tuple(evidence.nested.arm_component_hashes("C"))
-        specs = tuple(
-            CellSpec(
-                cell_key=CellKey(acquisition_key, "C", planned["learning_rate"]),
-                shared_evidence=evidence.shared_evidence,
-                leaf_config_sha256=planned["source_leaf_config_sha256"],
-                source_checkpoint_sha256=evidence.shared_evidence.source_sha256,
-                expected_objective_components=(
-                    "trajectory",
-                    "compiler",
-                    "preservation",
-                ),
-                objective_component_hashes=component_hashes,
-                adamw_config_sha256=planned["adamw_config_sha256"],
-                fresh_optimizer_identity_sha256=planned[
-                    "fresh_optimizer_identity_sha256"
-                ],
-                evaluation_rps=EVALUATION_RPS,
-                output_root=planned["output_root"],
-                learning_rate=planned["learning_rate"],
-                resolved_leaf_config_sha256=planned["resolved_leaf_config_sha256"],
+        specs = []
+        for planned in node["cells"]:
+            cell_key = CellKey.from_dict(planned["cell_key"])
+            if cell_key.acquisition_key != acquisition_key:
+                raise LiveCompositionError(
+                    "planned cell key differs from its acquisition node"
+                )
+            arm_id = cell_key.arm_id
+            specs.append(
+                CellSpec(
+                    cell_key=cell_key,
+                    shared_evidence=evidence.shared_evidence,
+                    leaf_config_sha256=planned["source_leaf_config_sha256"],
+                    source_checkpoint_sha256=evidence.shared_evidence.source_sha256,
+                    expected_objective_components=(
+                        (*PROPOSAL_COMPONENTS_BY_ARM[arm_id], "preservation")
+                        if arm_id == "C"
+                        else PROPOSAL_COMPONENTS_BY_ARM[arm_id]
+                    ),
+                    objective_component_hashes=tuple(
+                        evidence.nested.arm_component_hashes(arm_id)
+                    ),
+                    adamw_config_sha256=planned["adamw_config_sha256"],
+                    fresh_optimizer_identity_sha256=planned[
+                        "fresh_optimizer_identity_sha256"
+                    ],
+                    evaluation_rps=EVALUATION_RPS,
+                    output_root=planned["output_root"],
+                    learning_rate=planned["learning_rate"],
+                    global_learning_rate_decision_sha256=planned.get(
+                        "global_learning_rate_decision_sha256"
+                    ),
+                    resolved_leaf_config_sha256=planned["resolved_leaf_config_sha256"],
+                )
             )
-            for planned in node["cells"]
-        )
-        if len(specs) != 5:
-            raise LiveCompositionError("qualification requires exactly five C cells")
-        return specs
+        specs_tuple = tuple(specs)
+        arms = tuple(spec.cell_key.arm_id for spec in specs_tuple)
+        if acquisition_key.phase == "qualification":
+            if len(specs_tuple) != 5 or arms != ("C",) * 5:
+                raise LiveCompositionError(
+                    "qualification requires exactly five independent C cells"
+                )
+        elif len(specs_tuple) != 3 or arms != ("A", "B", "C"):
+            raise LiveCompositionError(
+                "matrix acquisition requires exactly the nested A/B/C cells"
+            )
+        return specs_tuple
 
     # -- cell runtime services owner ----------------------------------------
 
@@ -614,23 +672,46 @@ class Human13RPCrossoverLiveComposition:
     # -- witness/dose measurement -------------------------------------------
 
     def witness_bank(self, state: CellExecutionState) -> FrozenWitnessBank:
-        bank = self._witness_bank
+        frozen_bank = self._witness_bank
         source_flat = self._source_flat
-        if bank is None or source_flat is None:
+        if frozen_bank is None or source_flat is None:
             raise LiveCompositionError("the frozen witness bank is unavailable")
-        cell_flat = _flat_float64(state.named_trainable_parameters, bank.layout)
+        cell_flat = _flat_float64(state.named_trainable_parameters, frozen_bank.layout)
         if not torch.equal(cell_flat, source_flat):
             raise LiveCompositionError(
                 "this cell's fresh Source differs from the frozen witness surface"
             )
-        return bank
+        surface = getattr(state, "_human13_witness_surface", None)
+        if surface is None:
+            return frozen_bank
+        measurement = witness_owner.WitnessMeasurement(
+            decodes=self._sealed_decodes(), surface=surface
+        )
+        rebound = measurement.freeze_witness_bank(binding=frozen_bank.binding)
+        if rebound.to_dict() != frozen_bank.to_dict():
+            raise LiveCompositionError(
+                "cell witness surface differs from the pre-acquisition frozen bank"
+            )
+        if measurement.teacher_forced_greedy_change_count() != 0:
+            raise LiveCompositionError(
+                "cell witness Source is not its own teacher-forced argmax"
+            )
+        object.__setattr__(state, "_human13_witness_measurement", measurement)
+        object.__setattr__(state, "_human13_witness_bank", rebound)
+        return rebound
 
     def realized_margin_probe(
         self, state: CellExecutionState, spec: CellSpec
     ) -> Callable[[], Mapping[str, float]]:
-        measurement = self._measurement
-        surface = self._margin_surface
-        bank = self._witness_bank
+        measurement = getattr(state, "_human13_witness_measurement", None)
+        surface = getattr(state, "_human13_witness_surface", None)
+        bank = getattr(state, "_human13_witness_bank", None)
+        if measurement is None:
+            measurement = self._measurement
+        if surface is None:
+            surface = self._margin_surface
+        if bank is None:
+            bank = self._witness_bank
         source_flat = self._source_flat
         source_dose = self._source_dose_margins
         if (
@@ -672,16 +753,14 @@ class Human13RPCrossoverLiveComposition:
                     "median_abs_decision_margin_displacement": displacement_median,
                 }
             finally:
-                self._restore_margin_surface()
+                self._restore_margin_surface(surface=surface, bank=bank)
             return realized
 
         return probe
 
-    def _restore_margin_surface(self) -> None:
-        surface = self._margin_surface
-        bank = self._witness_bank
+    def _restore_margin_surface(self, *, surface: Any, bank: FrozenWitnessBank) -> None:
         source_flat = self._source_flat
-        if surface is None or bank is None or source_flat is None:
+        if surface is None or source_flat is None:
             raise LiveCompositionError("the frozen witness surface is unavailable")
         offset = 0
         with torch.no_grad():
@@ -782,7 +861,20 @@ class _CellServices:
         bank: FrozenWitnessBank,
     ) -> Callable[[], Mapping[str, float]]:
         del bank
-        return self.composition.realized_margin_probe(state, spec)
+        measured_probe = self.composition.realized_margin_probe(state, spec)
+
+        def probe_and_release() -> Mapping[str, float]:
+            try:
+                return measured_probe()
+            finally:
+                surface = getattr(state, "_human13_witness_surface", None)
+                if surface is not None:
+                    self.composition._backend.close_margin_surface(surface)
+                    object.__setattr__(state, "_human13_witness_surface", None)
+                    object.__setattr__(state, "_human13_witness_measurement", None)
+                    object.__setattr__(state, "_human13_witness_bank", None)
+
+        return probe_and_release
 
     def write_private_checkpoint(
         self, state: CellExecutionState, spec: CellSpec
@@ -809,6 +901,14 @@ class _CellServices:
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None:
         del checkpoint
         self._stack.close()
+
+    def close_cell(self, state: CellExecutionState, spec: CellSpec) -> None:
+        if spec is not self.spec and spec != self.spec:
+            raise LiveCompositionError("cell close received a different CellSpec")
+        try:
+            self._stack.close()
+        finally:
+            self.composition._backend.close_cell(state)
 
     def aggregate_resource_receipt(
         self,

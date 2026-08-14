@@ -3,9 +3,8 @@
 
 Import and factory inspection are standard-library-only. Model, Torch, vLLM,
 and experiment owners are imported only after the authorized node runner calls
-the returned runtime. The module deliberately exposes one typed composition
-boundary for the still-missing live sampled-trajectory pack/logit materializer;
-it never substitutes a second sampler, trainer, parser, or matcher.
+the returned runtime. The module exposes one typed composition boundary backed
+by the established sampler, packed replay, trainer, parser, and matcher seams.
 """
 
 from __future__ import annotations
@@ -501,6 +500,36 @@ class LiveNodeComposition(Protocol):
     def services_for_cell(self, spec: Any) -> Any: ...
 
 
+class LazyHuman13RPCrossoverLiveComposition:
+    """Concrete default whose Torch-backed coordinator is execute-time only."""
+
+    def __init__(self, *, backend: Any) -> None:
+        self._backend = backend
+        self._delegate: LiveNodeComposition | None = None
+
+    def _live(self) -> LiveNodeComposition:
+        delegate = self._delegate
+        if delegate is None:
+            from scripts.research.human13_rp_crossover_live_composition import (
+                Human13RPCrossoverLiveComposition,
+            )
+
+            delegate = Human13RPCrossoverLiveComposition(backend=self._backend)
+            self._delegate = delegate
+        return delegate
+
+    def acquire_qualification(
+        self, node: Mapping[str, Any], frozen: FrozenProductionInputs
+    ) -> QualificationAcquisition:
+        return self._live().acquire_qualification(node, frozen)
+
+    def close_acquisition(self) -> AcquisitionReleaseReceipt:
+        return self._live().close_acquisition()
+
+    def services_for_cell(self, spec: Any) -> Any:
+        return self._live().services_for_cell(spec)
+
+
 class QualificationAcquisitionOwner(Protocol):
     """Exact owner of native acquisition, packed replay, and release."""
 
@@ -929,21 +958,38 @@ def create_node_runtime(
     _composition: LiveNodeComposition | None = None,
     _acquisition_owner: QualificationAcquisitionOwner | None = None,
     _cell_services_owner: CellRuntimeServicesOwner | None = None,
+    _backend: Any | None = None,
 ) -> ProductionNodeRuntime:
     """Create one node runtime; all validation/live action remains execute-time."""
 
-    if _composition is not None and (
-        _acquisition_owner is not None or _cell_services_owner is not None
-    ):
-        raise ValueError("inject either one composition or its exact owners, not both")
-    composition = _composition or ComposedLiveNodeComposition(
-        acquisition_owner=(
-            _acquisition_owner or _RequiredQualificationAcquisitionOwner()
-        ),
-        cell_services_owner=(
-            _cell_services_owner or _RequiredCellRuntimeServicesOwner()
-        ),
+    injected = tuple(
+        value is not None
+        for value in (_composition, _acquisition_owner, _cell_services_owner, _backend)
     )
+    if _composition is not None and any(injected[1:]):
+        raise ValueError("inject either one composition or its exact owners, not both")
+    if _backend is not None and any(injected[:3]):
+        raise ValueError("inject either one backend or a composition, not both")
+    if (_acquisition_owner is None) != (_cell_services_owner is None):
+        raise ValueError(
+            "injected acquisition and cell owners must be supplied together"
+        )
+    if _composition is not None:
+        composition = _composition
+    elif _acquisition_owner is not None and _cell_services_owner is not None:
+        composition = ComposedLiveNodeComposition(
+            acquisition_owner=_acquisition_owner,
+            cell_services_owner=_cell_services_owner,
+        )
+    else:
+        from scripts.research.human13_rp_crossover_production_backend import (
+            Human13RPCrossoverProductionBackend,
+        )
+
+        backend = (
+            Human13RPCrossoverProductionBackend(node) if _backend is None else _backend
+        )
+        composition = LazyHuman13RPCrossoverLiveComposition(backend=backend)
     return ProductionNodeRuntime(node, composition=composition)
 
 
@@ -957,6 +1003,7 @@ __all__ = [
     "DEFAULT_QUALIFICATION_LEARNING_RATE",
     "FrozenProductionInputs",
     "GlobalLearningRateDecision",
+    "LazyHuman13RPCrossoverLiveComposition",
     "MANIFEST_SHA256",
     "ProductionCompositionUnavailable",
     "ProductionNodeRuntime",

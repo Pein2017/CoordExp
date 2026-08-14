@@ -188,6 +188,7 @@ def current_decodes_from_outputs(
     manifest_sha256: str,
     outputs: Sequence[Mapping[str, Any]],
     checkpoint: CheckpointIdentity,
+    repetition_penalty: float = 1.0,
 ) -> tuple[CurrentDecode, ...]:
     """Bind one analyzer-output panel to its same-decode frontier inputs.
 
@@ -196,6 +197,7 @@ def current_decodes_from_outputs(
     model session from which a second trajectory could be produced.
     """
 
+    evaluation_rp = _clean_greedy_repetition_penalty(repetition_penalty)
     expected_manifest_sha = _digest(manifest_sha256, "manifest_sha256")
     manifest_images = tuple(manifest.images)
     if not bool(getattr(manifest, "full_panel", False)) or len(manifest_images) != 13:
@@ -218,7 +220,7 @@ def current_decodes_from_outputs(
     for manifest_image, record in zip(manifest_images, records, strict=True):
         if (
             record.get("decode_mode") != "original_prompt_clean_greedy"
-            or record.get("repetition_penalty") != 1.0
+            or record.get("repetition_penalty") != evaluation_rp
         ):
             raise ValueError("output differs from the bound clean-greedy surface")
         provenance = record.get("provenance")
@@ -570,31 +572,37 @@ def evaluate_hf_checkpoint(
             if not isinstance(dropped_predictions, list):
                 raise ValueError("HF decode parse lacks dropped-prediction evidence")
             predictions = trajectory_analyzer_predictions(trajectory)
-            outputs.append(
-                build_analyzer_output(
-                    manifest=manifest,
-                    manifest_sha256=manifest_sha256,
-                    image=images[image_id],
-                    arm_id=arm_id,
-                    milestone=milestone,
-                    checkpoint_path=str(checkpoint),
-                    checkpoint_payload_sha256=payload_digest,
-                    run_id=run_id,
-                    run_root=run_root,
-                    resolved_arm_plan_sha256=resolved_arm_plan_sha256,
-                    resolved_config_sha256=resolved_config_sha256,
-                    trajectory_id=request.request_id,
-                    generated_token_ids=trajectory.token_ids,
-                    terminal_token_index=trajectory.terminal_token_index,
-                    predictions=predictions,
-                    parser=manifest.binding.surface.parser,
-                    parser_status=trajectory.parser_status,
-                    stop_reason=trajectory.stop_reason,
-                    malformed_row_count=len(dropped_predictions),
-                    runtime={"decode_seconds": elapsed},
-                    repetition_penalty=evaluation_rp,
-                )
+            output = build_analyzer_output(
+                manifest=manifest,
+                manifest_sha256=manifest_sha256,
+                image=images[image_id],
+                arm_id=arm_id,
+                milestone=milestone,
+                checkpoint_path=str(checkpoint),
+                checkpoint_payload_sha256=payload_digest,
+                run_id=run_id,
+                run_root=run_root,
+                resolved_arm_plan_sha256=resolved_arm_plan_sha256,
+                resolved_config_sha256=resolved_config_sha256,
+                trajectory_id=request.request_id,
+                generated_token_ids=trajectory.token_ids,
+                terminal_token_index=trajectory.terminal_token_index,
+                predictions=predictions,
+                parser=manifest.binding.surface.parser,
+                parser_status=trajectory.parser_status,
+                stop_reason=trajectory.stop_reason,
+                malformed_row_count=len(dropped_predictions),
+                runtime={"decode_seconds": elapsed},
+                repetition_penalty=evaluation_rp,
             )
+            # The exact processor-built prompt is part of the live Source
+            # boundary.  Analyzer consumers ignore this additive field; the
+            # RP-crossover compiler and witness adapters use it instead of
+            # tokenizing a second time.
+            output["prompt_token_ids"] = list(
+                request.expected_executed_prompt_token_ids
+            )
+            outputs.append(output)
     return tuple(outputs)
 
 

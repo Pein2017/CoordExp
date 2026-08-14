@@ -305,6 +305,25 @@ def test_plan_rejects_untyped_or_mismatched_inputs() -> None:
         packs.plan_live_packs(publication=publication, skeleton=object())
 
 
+def test_prepublication_replay_plan_accepts_only_the_exact_acquisition_execution() -> (
+    None
+):
+    publication = _publication()
+
+    plan = packs.plan_live_packs(
+        execution=publication.execution,
+        skeleton=_skeleton(),
+    )
+
+    assert plan.acquisition_group_sha256 == publication.execution.group.content_sha256
+    with pytest.raises(packs.LivePackContractError, match="exactly one"):
+        packs.plan_live_packs(
+            publication=publication,
+            execution=publication.execution,
+            skeleton=_skeleton(),
+        )
+
+
 def test_segments_are_exact_prompt_then_generated_history() -> None:
     plan = _plan()
     assert len(plan.trajectory_bindings) == 16

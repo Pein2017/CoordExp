@@ -992,6 +992,9 @@ class _E2ECellServices:
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None:
         return None
 
+    def close_cell(self, state: CellExecutionState, spec: CellSpec) -> None:
+        return None
+
     def aggregate_resource_receipt(
         self, state, spec, backward_receipt, audits
     ) -> AggregateResourceReceipt:

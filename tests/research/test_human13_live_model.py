@@ -196,6 +196,33 @@ def test_rp_crossover_live_plan_consumes_one_selector_resolved_nondefault_lr() -
         live.validate_human13_live_model_plan(replace(plan, learning_rate=3.0e-6))
 
 
+def test_matrix_binding_resolves_an_admitted_cell_plan_without_a_second_selector() -> (
+    None
+):
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
+    provisional = live.build_human13_live_model_plan(
+        replace(
+            base,
+            unit_id=live.RP_CROSSOVER_UNIT_ID,
+            arm_id="B",
+            milestones=live.RP_CROSSOVER_MILESTONES,
+        )
+    )
+    decision_sha256 = "d" * 64
+
+    resolved = live.bind_human13_selected_rp_crossover_plan(
+        provisional, decision_sha256=decision_sha256
+    )
+
+    assert resolved.arm_id == "B"
+    assert resolved.learning_rate == provisional.learning_rate
+    assert resolved.learning_rate_resolution == "global_selected"
+    assert resolved.global_learning_rate_decision_sha256 == decision_sha256
+    live.validate_human13_live_model_plan(resolved)
+
+
 def test_rp_crossover_live_assembly_rejects_a_provisional_leaf_before_backend() -> None:
     from scripts.research.materialize_human13_k_union_configs import load_arm_config
 

@@ -250,6 +250,41 @@ def test_scorer_selects_exact_causal_rows_from_literal_continuation(
     assert tokenizer.decode_calls == []
 
 
+def test_gradient_scorer_retains_the_same_position_selective_autograd_graph(
+    tmp_path: Any,
+) -> None:
+    from scripts.research.human13_hf_census import Human13HFCensusScorer
+
+    class GradModel(PositionModel):
+        def __init__(self) -> None:
+            super().__init__()
+            self._parameter = torch.nn.Parameter(torch.tensor(0.5))
+
+        def __call__(self, **kwargs: Any) -> SimpleNamespace:
+            self.forward_calls.append(kwargs)
+            positions = kwargs["logits_to_keep"]
+            logits = self._parameter.reshape(1, 1, 1).expand(
+                1, int(positions.numel()), self.vocab_size
+            )
+            return SimpleNamespace(logits=logits)
+
+    model = GradModel()
+    scorer = Human13HFCensusScorer(
+        session=_session(model=model),
+        requests_by_image={1: _request(tmp_path)},
+    )
+
+    output = scorer.score_causal_logits_with_grad(
+        Encoded("a1:1", (11, 12, 13, 14, 15), 2),
+        (1, 3),
+    )
+    output.logits.sum().backward()
+
+    assert output.logits.requires_grad is True
+    assert model._parameter.grad is not None
+    assert model._parameter.grad.item() == pytest.approx(64.0)
+
+
 def test_scorer_rejects_model_that_materializes_full_sequence_logits(
     tmp_path: Any,
 ) -> None:

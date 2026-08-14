@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import torch
@@ -178,7 +178,10 @@ class FakeBackend:
             unparseable_delta=0,
         )
 
-    def tokenizer_adapter(self):
+    def close_cell(self, state):
+        self.events.append("cell:close")
+
+    def tokenizer_adapter(self, *, manifest, publication):
         return object()
 
     def resource_snapshot(self):
@@ -232,7 +235,7 @@ def test_incomplete_backend_is_rejected_before_any_phase() -> None:
             raise AssertionError
 
     with pytest.raises(composition.LiveCompositionError, match="open_margin_surface"):
-        composition.Human13RPCrossoverLiveComposition(backend=Partial())
+        composition.Human13RPCrossoverLiveComposition(backend=cast(Any, Partial()))
 
 
 def test_release_receipt_is_false_until_the_phases_ran() -> None:
@@ -249,7 +252,7 @@ def test_witness_bank_is_frozen_before_sampling() -> None:
         live._surfaces[repetition_penalty] = _surface(repetition_penalty)
     live._freeze_witness_bank(_frozen())
 
-    assert backend.events == ["margin:open"]
+    assert backend.events == ["margin:open", "margin:close"]
     bank = live._witness_bank
     assert bank is not None
     assert bank.binding.frozen_before_acquisition is True
@@ -271,8 +274,112 @@ def test_phase_order_releases_engine_and_model_before_cells(monkeypatch) -> None
     )
 
     with pytest.raises(composition.LiveCompositionError):
-        live.services_for_cell(object())
-    assert backend.events == ["margin:open"]
+        live.services_for_cell(cast(Any, object()))
+    assert backend.events == ["margin:open", "margin:close"]
+
+
+def test_matrix_cell_specs_bind_the_node_seed_group_and_all_nested_arms(
+    tmp_path,
+) -> None:
+    from scripts.research.human13_rp_crossover_matrix_contracts import (
+        AcquisitionKey,
+        SharedEvidenceRef,
+    )
+
+    plan = launcher.build_dag_plan(
+        launcher.load_leaf_configs(),
+        run_id="matrix-live-composition",
+        output_root=tmp_path / "artifacts",
+    )
+    raw = next(
+        item for item in plan["acquisitions"] if item["node_id"] == "rp100:matrix_a"
+    )
+    decision = _digest("selected-lr")
+    node = {
+        **raw,
+        "cells": [
+            {
+                **cell,
+                "learning_rate": 3.0e-6,
+                "adamw_config_sha256": _digest(f"adamw:{cell['cell_key']['arm_id']}"),
+                "fresh_optimizer_identity_sha256": _digest(
+                    f"optimizer:{cell['cell_key']['arm_id']}"
+                ),
+                "global_learning_rate_decision_sha256": decision,
+                "resolved_leaf_config_sha256": _digest(
+                    f"resolved:{cell['cell_key']['arm_id']}"
+                ),
+            }
+            for cell in raw["cells"]
+        ],
+    }
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+    shared = SharedEvidenceRef(
+        source_sha256=production.SOURCE_CHECKPOINT_PAYLOAD_SHA256,
+        manifest_sha256=production.MANIFEST_SHA256,
+        acquisition_path=str(tmp_path / "acquisition"),
+        acquisition_sha256=_digest("acquisition"),
+        trajectory_credit_acquisition_sha256=_digest("credit-acquisition"),
+        credit_ledger_sha256=_digest("credit"),
+        compiler_ledger_sha256=_digest("compiler"),
+        policy_contract_sha256=_digest("policy"),
+        native_receipts_sha256=_digest("native"),
+        training_rp=acquisition_key.training_rp,
+        seed_group_id=acquisition_key.seed_group_id,
+        seeds=acquisition_key.seeds,
+    )
+
+    class Nested:
+        @staticmethod
+        def arm_component_hashes(arm_id):
+            return (
+                (("trajectory", _digest("credit")),)
+                if arm_id == "A"
+                else (
+                    ("trajectory", _digest("credit")),
+                    ("compiler", _digest("compiler")),
+                )
+            )
+
+    evidence = composition.AcquisitionEvidence(
+        acquisition=object(),
+        credit_ledger=object(),
+        compiler_ledger=object(),
+        nested=Nested(),
+        shared_evidence=shared,
+        acquisition_path=shared.acquisition_path,
+        native_receipts_sha256=shared.native_receipts_sha256,
+        request_count=208,
+        batch_count=52,
+        token_count=4096,
+    )
+    live, _backend = _composition()
+
+    specs = live._cell_specs(node, evidence)
+
+    assert tuple(spec.cell_key.arm_id for spec in specs) == ("A", "B", "C")
+    assert {spec.shared_evidence.seed_group_id for spec in specs} == {"matrix_a"}
+    assert {spec.global_learning_rate_decision_sha256 for spec in specs} == {decision}
+
+
+def test_native_plan_uses_the_selected_matrix_seed_group(monkeypatch) -> None:
+    from scripts.research import collect_human13_rp_crossover as acquisition_owner
+
+    live, backend = _composition()
+    monkeypatch.setattr(
+        acquisition_owner,
+        "execute_acquisition_group",
+        lambda *, plan, execute_batch: plan,
+    )
+
+    plans = live._sample(_frozen(), 1.10, "matrix_b")
+
+    assert len(plans) == 13
+    assert {plan.seed_group_id for plan in plans} == {"matrix_b"}
+    assert tuple(request.seed for request in plans[0].requests) == tuple(
+        range(32001, 32017)
+    )
+    assert backend.events == ["sampler:open", "sampler:close"]
 
 
 def test_witness_bank_rejects_a_cell_with_a_different_source() -> None:
@@ -282,11 +389,11 @@ def test_witness_bank_rejects_a_cell_with_a_different_source() -> None:
     live._freeze_witness_bank(_frozen())
 
     matching = _State((("dora.scale", torch.nn.Parameter(torch.ones(VOCAB))),))
-    assert live.witness_bank(matching) is live._witness_bank
+    assert live.witness_bank(cast(Any, matching)) is live._witness_bank
 
     drifted = _State((("dora.scale", torch.nn.Parameter(torch.full((VOCAB,), 1.5))),))
     with pytest.raises(composition.LiveCompositionError, match="fresh Source differs"):
-        live.witness_bank(drifted)
+        live.witness_bank(cast(Any, drifted))
 
 
 def test_realized_probe_measures_then_restores_the_surface(tmp_path) -> None:
@@ -297,17 +404,18 @@ def test_realized_probe_measures_then_restores_the_surface(tmp_path) -> None:
 
     node = _node(tmp_path)
     spec = _spec(node, live)
-    trained = torch.nn.Parameter(torch.full((VOCAB,), 1.25))
-    probe = live.realized_margin_probe(_State((("dora.scale", trained),)), spec)
+    trained = torch.nn.Parameter(torch.ones(VOCAB))
+    state = _State((("dora.scale", trained),))
+    cast(Any, state)._human13_witness_surface = backend.margin
+    bank = live.witness_bank(cast(Any, state))
+    with torch.no_grad():
+        trained.fill_(1.25)
+    probe = live.realized_margin_probe(cast(Any, state), spec)
     realized = probe()
 
-    assert set(realized) == {
-        item.canonical_key for item in live._witness_bank.constraints
-    }
+    assert set(realized) == {item.canonical_key for item in bank.constraints}
     # margins scale with the trained parameter but the surface is put back
-    assert realized[live._witness_bank.constraints[0].canonical_key] == pytest.approx(
-        1.25
-    )
+    assert realized[bank.constraints[0].canonical_key] == pytest.approx(1.25)
     assert torch.equal(backend.margin.scale.detach(), torch.ones(VOCAB))
     measured = live._dose_mechanics[spec.cell_key.content_sha256]
     assert measured["greedy_decision_change_count"] == 0
@@ -383,13 +491,16 @@ def test_dose_mechanics_bind_projection_and_audit_deltas(tmp_path) -> None:
     )
     live._witness_bank = live._witness_bank
     services = composition._CellServices(composition=live, spec=spec)
-    probe = live.realized_margin_probe(
-        _State((("dora.scale", torch.nn.Parameter(torch.ones(VOCAB))),)), spec
-    )
+    state = _State((("dora.scale", torch.nn.Parameter(torch.ones(VOCAB))),))
+    cast(Any, state)._human13_witness_surface = backend.margin
+    bank = live.witness_bank(cast(Any, state))
+    probe = services.realized_margin_probe(cast(Any, state), spec, bank)
     probe()
 
     checkpoint = _checkpoint()
-    audits = [services.audit_checkpoint(None, checkpoint, rp) for rp in (1.0, 1.10)]
+    audits = [
+        services.audit_checkpoint(cast(Any, None), checkpoint, rp) for rp in (1.0, 1.10)
+    ]
     resources = AggregateResourceReceipt(
         measurement_scope="injected_cpu",
         wall_time_seconds=0.5,
@@ -413,7 +524,7 @@ def test_dose_mechanics_bind_projection_and_audit_deltas(tmp_path) -> None:
         rollback_count=1,
     )
     receipt = services.dose_mechanical_receipt(
-        None,
+        cast(Any, None),
         spec,
         checkpoint,
         _digest("proposal"),
@@ -427,6 +538,7 @@ def test_dose_mechanics_bind_projection_and_audit_deltas(tmp_path) -> None:
     assert receipt.cap_terminated_output_delta_count == 0
     assert receipt.jvp_fd_tolerance == witness_owner.JVP_FD_TOLERANCE
     assert receipt.rollback_reproduced is True
+    assert backend.events.count("margin:close") == 2
     assert backend.events[-2:] == ["audit:1.0", "audit:1.1"]
 
 
@@ -468,7 +580,7 @@ def test_every_cell_receives_independent_services(tmp_path) -> None:
 def test_audit_outcome_and_resource_snapshot_reject_invalid_counts() -> None:
     with pytest.raises(composition.LiveCompositionError, match="AuditRef"):
         composition.AuditOutcome(
-            audit=object(),
+            audit=cast(Any, object()),
             malformed_delta=0,
             cap_terminated_delta=0,
             unparseable_delta=0,

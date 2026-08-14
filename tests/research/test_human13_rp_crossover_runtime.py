@@ -134,6 +134,7 @@ class FakeServices:
         self.fresh_source = True
         self.shared_evidence_sha256: str | None = None
         self.component_hashes: tuple[tuple[str, str], ...] | None = None
+        self.close_calls = 0
 
     def open_cell(self, spec: CellSpec) -> CellExecutionState:
         parameter = torch.nn.Parameter(torch.tensor((1.0, -1.0)))
@@ -249,6 +250,10 @@ class FakeServices:
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None:
         self.cleaned.append(checkpoint.path)
 
+    def close_cell(self, state: CellExecutionState, spec: CellSpec) -> None:
+        assert state is self.states[-1]
+        self.close_calls += 1
+
     def aggregate_resource_receipt(
         self, state, spec, backward, audits
     ) -> AggregateResourceReceipt:
@@ -303,6 +308,7 @@ def test_unprojected_arms_take_one_exact_adamw_step_then_dual_audit_and_rollback
     assert state.transaction.state_digest() == receipt.before_transaction_digest
     assert written == [receipt]
     assert services.cleaned == [f"private/{arm_id}"]
+    assert services.close_calls == 1
 
 
 def test_preservation_arm_projects_the_exact_b_proposal_without_optimizer_moments() -> (
@@ -339,6 +345,7 @@ def test_audit_failure_rolls_back_and_writes_a_typed_failure_receipt() -> None:
     assert len(state.optimizer.state) == 0
     assert state.transaction.state_digest() == written[0].before_transaction_digest
     assert services.cleaned == ["private/B"]
+    assert services.close_calls == 1
 
 
 def test_checkpoint_write_failure_rolls_back_and_writes_failure_receipt() -> None:

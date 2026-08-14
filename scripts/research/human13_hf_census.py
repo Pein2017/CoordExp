@@ -161,6 +161,28 @@ class Human13HFCensusScorer:
     ) -> HFCausalLogits:
         """Score exact logits[position] for a literal native-token segment."""
 
+        return self._score_causal_logits(
+            encoded_example, causal_positions, retain_gradient=False
+        )
+
+    def score_causal_logits_with_grad(
+        self,
+        encoded_example: Any,
+        causal_positions: tuple[int, ...],
+    ) -> HFCausalLogits:
+        """Use the same fp32/SDPA history seam while retaining autograd."""
+
+        return self._score_causal_logits(
+            encoded_example, causal_positions, retain_gradient=True
+        )
+
+    def _score_causal_logits(
+        self,
+        encoded_example: Any,
+        causal_positions: tuple[int, ...],
+        *,
+        retain_gradient: bool,
+    ) -> HFCausalLogits:
         _image_id, request, input_ids = self._resolve_request(encoded_example)
         if (
             not isinstance(causal_positions, tuple)
@@ -193,14 +215,18 @@ class Human13HFCensusScorer:
         if not isinstance(native_inputs, Mapping):
             raise ValueError("HF census exact history lost its multimodal inputs")
 
-        device = _model_device(self._model)
+        model = self._model
+        tokenizer = self._tokenizer
+        if model is None or tokenizer is None:
+            raise RuntimeError("HF census scorer was released before scoring")
+        device = _model_device(model)
         native_input_ids = torch.tensor([input_ids], dtype=torch.long, device=device)
         attention_mask = torch.ones_like(native_input_ids, dtype=torch.long)
         image_grid_thw = native_inputs.get("image_grid_thw")
         if not isinstance(image_grid_thw, torch.Tensor):
             raise ValueError("HF census exact history lacks image_grid_thw")
         position_ids = _derive_qwen_position_ids(
-            model=self._model,
+            model=model,
             input_ids=native_input_ids,
             attention_mask=attention_mask,
             image_grid_thw=image_grid_thw.to(device=device),
@@ -233,8 +259,9 @@ class Human13HFCensusScorer:
                 ),
             }
         )
-        with torch.inference_mode():
-            output = self._model(**forward_inputs)
+        context = torch.enable_grad() if retain_gradient else torch.inference_mode()
+        with context:
+            output = model(**forward_inputs)
         logits = getattr(output, "logits", None)
         if (
             not isinstance(logits, torch.Tensor)
@@ -245,7 +272,7 @@ class Human13HFCensusScorer:
                 "HF census model did not return position-selective causal logits"
             )
         try:
-            expected_vocab_size = len(self._tokenizer)
+            expected_vocab_size = len(tokenizer)
         except (AttributeError, TypeError) as exc:
             raise ValueError("HF census tokenizer lacks its full vocabulary") from exc
         if int(logits.shape[2]) != expected_vocab_size:
@@ -253,7 +280,7 @@ class Human13HFCensusScorer:
         if logits.dtype != torch.float32:
             raise ValueError("HF census model logits must be fp32")
         return HFCausalLogits(
-            logits=logits.detach().cpu().contiguous(),
+            logits=(logits if retain_gradient else logits.detach().cpu().contiguous()),
             logits_position_ids=causal_positions,
         )
 

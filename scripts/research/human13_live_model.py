@@ -174,6 +174,23 @@ class Human13LiveModelPlan:
         return payload
 
 
+def _resolved_plan_sha256(plan: Human13LiveModelPlan) -> str:
+    payload = plan.to_artifact_dict()
+    payload.pop("model_actions")
+    payload["resolved_plan_sha256"] = None
+    return hashlib.sha256(
+        (
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 @dataclass(frozen=True)
 class Human13PlanValidationReceipt:
     schema_version: str
@@ -636,21 +653,7 @@ def build_human13_live_model_plan(
         global_learning_rate_decision_sha256=decision_sha256,
     )
     if resolution == "global_selected":
-        payload = plan.to_artifact_dict()
-        payload.pop("model_actions")
-        payload["resolved_plan_sha256"] = None
-        resolved_sha256 = hashlib.sha256(
-            (
-                json.dumps(
-                    payload,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    allow_nan=False,
-                )
-                + "\n"
-            ).encode("utf-8")
-        ).hexdigest()
-        plan = replace(plan, resolved_plan_sha256=resolved_sha256)
+        plan = replace(plan, resolved_plan_sha256=_resolved_plan_sha256(plan))
     _require_frozen_plan(plan)
     return plan
 
@@ -711,6 +714,7 @@ def assemble_human13_live_model(
     pack_count: int,
     repo_root: str | Path,
     backend: Human13AssemblyBackend | None = None,
+    _qualification_admitted: bool = False,
 ) -> Human13LiveAssembly:
     """Cross the sole live boundary and assemble one fresh world-size-one arm."""
 
@@ -723,6 +727,7 @@ def assemble_human13_live_model(
     if (
         plan.unit_id == RP_CROSSOVER_UNIT_ID
         and plan.learning_rate_resolution != "global_selected"
+        and not _qualification_admitted
     ):
         raise Human13LiveModelError(
             "RP-crossover matrix assembly requires the global learning-rate decision"
@@ -796,6 +801,65 @@ def assemble_human13_live_model(
         runtime=runtime,
         memory_saver_receipt=memory_saver_receipt,
     )
+
+
+def assemble_human13_qualification_model(
+    plan: Human13LiveModelPlan,
+    *,
+    pack_count: int,
+    repo_root: str | Path,
+    backend: Human13AssemblyBackend | None = None,
+) -> Human13LiveAssembly:
+    """Admit one sealed C dose without masquerading as a selected matrix LR."""
+
+    if (
+        plan.unit_id != RP_CROSSOVER_UNIT_ID
+        or plan.arm_id != "C"
+        or plan.learning_rate_resolution != "provisional_qualification"
+        or plan.learning_rate not in RP_CROSSOVER_LEARNING_RATE_RAY
+    ):
+        raise Human13LiveModelError(
+            "qualification assembly requires one provisional sealed C dose"
+        )
+    return assemble_human13_live_model(
+        plan,
+        pack_count=pack_count,
+        repo_root=repo_root,
+        backend=backend,
+        _qualification_admitted=True,
+    )
+
+
+def bind_human13_selected_rp_crossover_plan(
+    plan: Human13LiveModelPlan, *, decision_sha256: str
+) -> Human13LiveModelPlan:
+    """Bind an already-admitted matrix cell to its selector receipt digest."""
+
+    if (
+        type(plan) is not Human13LiveModelPlan
+        or plan.unit_id != RP_CROSSOVER_UNIT_ID
+        or plan.arm_id not in {"A", "B", "C"}
+        or plan.learning_rate_resolution != "provisional_qualification"
+        or plan.global_learning_rate_decision_sha256 is not None
+        or plan.resolved_plan_sha256 is not None
+        or plan.learning_rate not in RP_CROSSOVER_LEARNING_RATE_RAY
+        or not _is_sha256(decision_sha256)
+    ):
+        raise Human13LiveModelError(
+            "matrix plan binding requires one provisional RP cell and decision digest"
+        )
+    _require_frozen_plan(plan)
+    resolved = replace(
+        plan,
+        learning_rate_resolution="global_selected",
+        global_learning_rate_decision_sha256=decision_sha256,
+    )
+    resolved = replace(
+        resolved,
+        resolved_plan_sha256=_resolved_plan_sha256(resolved),
+    )
+    _require_frozen_plan(resolved)
+    return resolved
 
 
 def build_human13_update_schedule(*, pack_count: int) -> Any:
@@ -1230,20 +1294,7 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
                 raise Human13LiveModelError(
                     "resolved RP-crossover plan must bind decision and plan hashes"
                 )
-            payload = plan.to_artifact_dict()
-            payload.pop("model_actions")
-            payload["resolved_plan_sha256"] = None
-            expected_resolved = hashlib.sha256(
-                (
-                    json.dumps(
-                        payload,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        allow_nan=False,
-                    )
-                    + "\n"
-                ).encode("utf-8")
-            ).hexdigest()
+            expected_resolved = _resolved_plan_sha256(plan)
             if plan.resolved_plan_sha256 != expected_resolved:
                 raise Human13LiveModelError(
                     "resolved RP-crossover plan hash differs from selected LR"
@@ -1506,6 +1557,8 @@ __all__ = [
     "SUCCESSOR_UNIT_ID",
     "ZERO_MODEL_ACTIONS",
     "assemble_human13_live_model",
+    "assemble_human13_qualification_model",
+    "bind_human13_selected_rp_crossover_plan",
     "build_human13_checkpoint_kwargs",
     "build_human13_checkpoint_writer",
     "build_human13_live_model_plan",

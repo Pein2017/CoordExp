@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
+from typing import cast
 
 import pytest
 import torch
@@ -28,7 +29,7 @@ def _make_stack(seed: int = 17, *, runtime: _ToyRuntime | None = None):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.7)
     counter = UpdateCounter()
     transaction = TrainingStateTransaction(
-        (("adapter.language.weight", model.weight),),
+        (("adapter.language.weight", cast(torch.nn.Parameter, model.weight)),),
         optimizer=optimizer,
         scheduler=scheduler,
         update_counter=counter,
@@ -177,7 +178,7 @@ def test_transaction_rejects_optimizer_parameter_outside_bound_surface() -> None
 
     with pytest.raises(ValueError, match="outside the bound trainable surface"):
         TrainingStateTransaction(
-            (("adapter.language.weight", model.weight),),
+            (("adapter.language.weight", cast(torch.nn.Parameter, model.weight)),),
             optimizer=optimizer,
             scheduler=None,
             update_counter=UpdateCounter(),
@@ -205,3 +206,17 @@ def test_snapshot_payload_is_not_mutated_by_restore() -> None:
                 assert torch.equal(value, restored)
             else:
                 assert value == restored
+
+
+def test_release_requires_a_closed_transaction_and_forgets_live_tensor_owners() -> None:
+    _model, _optimizer, _scheduler, _counter, transaction = _make_stack()
+    snapshot = transaction.begin()
+
+    with pytest.raises(RuntimeError, match="active training transaction"):
+        transaction.release()
+
+    transaction.reject(snapshot)
+    transaction.release()
+
+    with pytest.raises(RuntimeError, match="released"):
+        transaction.state_digest()

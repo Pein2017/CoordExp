@@ -283,6 +283,25 @@ def test_current_decodes_accepts_real_canonical_parser_status() -> None:
     assert {decode.parser_status for decode in decodes} == {"accepted"}
 
 
+def test_current_decodes_admits_the_sealed_rp110_source_surface() -> None:
+    manifest = _panel_manifest()
+    checkpoint = CheckpointIdentity("/checkpoint", "d" * 64)
+    outputs = tuple(
+        {**output, "repetition_penalty": 1.10}
+        for output in _panel_outputs(manifest, checkpoint)
+    )
+
+    decodes = live_eval.current_decodes_from_outputs(
+        manifest=manifest,
+        manifest_sha256="c" * 64,
+        outputs=outputs,
+        checkpoint=checkpoint,
+        repetition_penalty=1.10,
+    )
+
+    assert tuple(decode.image_id for decode in decodes) == tuple(range(1, 14))
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
