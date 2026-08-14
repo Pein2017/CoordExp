@@ -388,7 +388,15 @@ class Human13RPCrossoverLiveComposition:
     # -- phases --------------------------------------------------------------
 
     def _freeze_witness_bank(self, frozen: Any) -> None:
-        surface = self._backend.open_margin_surface(frozen)
+        # No sampler exists yet. The backend contract guarantees that a failed
+        # pre-transfer open has already released its partially built HF model.
+        self._engine_closed = True
+        self._model_released = False
+        try:
+            surface = self._backend.open_margin_surface(frozen)
+        except BaseException:
+            self._model_released = True
+            raise
         self._margin_surface = surface
         try:
             measurement = witness_owner.WitnessMeasurement(
@@ -420,8 +428,11 @@ class Human13RPCrossoverLiveComposition:
             # The pre-acquisition witness model never overlaps the vLLM
             # sampler.  Cells reopen a fresh Source witness surface and must
             # reproduce this bank byte-for-byte before its provider is used.
-            self._backend.close_margin_surface(surface)
-            self._margin_surface = None
+            try:
+                self._backend.close_margin_surface(surface)
+            finally:
+                self._margin_surface = None
+                self._model_released = True
 
     def _sealed_decodes(self) -> tuple[witness_owner.SealedSourceDecode, ...]:
         if self._dose_decodes is not None:

@@ -475,6 +475,30 @@ The authorized production-shaped qualification root is frozen as
 It was confirmed absent before activation.  Any repair after partial activation
 requires a new append-only run identity; this path is never overwritten.
 
+That `vertical-dose-qualification-v1` root is now a consumed, immutable failed
+activation.  It published the sealed Source baselines/frontiers and a failed
+node terminal, then stopped before witness-bank completion at
+`Human13RPCrossoverProductionBackend.open_margin_surface` when
+`Human13HFCensusScorer._validate_launch` rejected the authored Source
+`batch_size=2` launch instead of deriving the required batch-one census launch.
+The already published Source receipts observed batch one, exclusively fp32
+parameters, and SDPA; the authored batch size was the only identity mismatch.
+The scorer failure occurred before margin-surface ownership transfer; no K16
+acquisition and no optimizer update occurred.  The root remains failure evidence
+and MUST NOT be retried, repaired in place, or overwritten.
+
+The repair successor identity is frozen, but not activated, as
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+  2026-08-14-human13-k-trajectory-rp-crossover-screen/
+  vertical-dose-qualification-v2/
+```
+
+That exact path was confirmed absent before the CPU-only correction.  A later
+activation must revalidate its absence and retain the same scientific contrast;
+this correction grants no model, vLLM, GPU, or output-root action.
+
 Implementation and bounded model/GPU execution were explicitly authorized by
 the user; this unit still grants no authority beyond its named tasks and roots.
 No K-miss supervision, full-sequence CE control, DPO, GFlowNet, bridge,

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gc
 from types import SimpleNamespace
+import weakref
 
 import pytest
 
@@ -248,3 +250,104 @@ def test_cell_plan_projects_each_matrix_arm_without_changing_the_sealed_ray() ->
     assert plan.arm_id == "A"
     assert plan.learning_rate == 1.0e-6
     assert plan.learning_rate_resolution == "provisional_qualification"
+
+
+def test_margin_surface_scorer_failure_releases_before_ownership_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from scripts.research import build_human13_k_union_manifest as manifest_owner
+    from scripts.research import human13_hf_census as census
+    from scripts.research import human13_live_model as live_model
+    from src.inference import hf_backend
+
+    @dataclass(frozen=True)
+    class Plan:
+        mixed_precision: str = "bf16"
+        attn_implementation: str = "flash_attention_2"
+
+    @dataclass(frozen=True)
+    class Components:
+        model: object
+
+    class Model:
+        def eval(self) -> None:
+            return None
+
+    model_ref: weakref.ReferenceType[Model] | None = None
+
+    class Assembly:
+        def load_qwen(self, plan):
+            nonlocal model_ref
+            del plan
+            model = Model()
+            model_ref = weakref.ref(model)
+            return Components(model=model)
+
+        def warm_start_language_dora(self, model, components, plan, *, repo_root):
+            del model, plan, repo_root
+            return components
+
+        def load_and_freeze_special_token_delta(
+            self, model, components, plan, *, repo_root
+        ):
+            del model, plan, repo_root
+            return components
+
+    class Session:
+        def __init__(self) -> None:
+            self.loaded = None
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+            self.loaded = None
+            raise RuntimeError("secondary close failure")
+
+    session = Session()
+
+    def open_session(launch, *, components_loader):
+        session.loaded = components_loader(launch)
+        return session
+
+    def fail_scorer(**kwargs):
+        del kwargs
+        raise ValueError("census scorer construction failed")
+
+    owner = backend_owner.Human13RPCrossoverProductionBackend(
+        {"cells": ({"output_root": str(tmp_path / "node" / "cell")},)}
+    )
+    monkeypatch.setattr(
+        owner,
+        "_qualification_plan",
+        lambda frozen, *, learning_rate: Plan(),
+    )
+    monkeypatch.setattr(live_model, "DefaultHuman13AssemblyBackend", Assembly)
+    monkeypatch.setattr(
+        live_model,
+        "build_human13_processor_skeletons",
+        lambda manifest, components, *, repo_root: {},
+    )
+    monkeypatch.setattr(
+        manifest_owner, "load_manifest", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        census,
+        "_load_source_inputs",
+        lambda repo_root: (SimpleNamespace(batch_size=1), {}),
+    )
+    monkeypatch.setattr(census, "Human13HFCensusScorer", fail_scorer)
+    monkeypatch.setattr(hf_backend, "open_hf_backend_session", open_session)
+    monkeypatch.setattr("torch.cuda.is_available", lambda: False)
+
+    frozen = SimpleNamespace(
+        default_qualification_learning_rate=3.0e-6,
+        manifest_path=tmp_path / "manifest.json",
+    )
+    with pytest.raises(ValueError, match="census scorer construction failed"):
+        owner.open_margin_surface(frozen)
+
+    gc.collect()
+    assert session.close_calls == 1
+    assert session.loaded is None
+    assert model_ref is not None and model_ref() is None

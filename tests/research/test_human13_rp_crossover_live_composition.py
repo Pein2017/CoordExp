@@ -272,6 +272,29 @@ def test_release_receipt_is_false_until_the_phases_ran() -> None:
     assert receipt.panel_wide_logits_retained is False
 
 
+def test_margin_surface_open_failure_preserves_primary_through_release_validation(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    live, backend = _composition()
+
+    def fail_margin_surface(frozen: Any) -> Any:
+        del frozen
+        backend.events.append("margin:open")
+        raise ValueError("census scorer construction failed")
+
+    monkeypatch.setattr(backend, "open_margin_surface", fail_margin_surface)
+    node = _node(tmp_path)
+    runtime = production.ProductionNodeRuntime(node, composition=live)
+
+    with pytest.raises(ValueError, match="census scorer construction failed"):
+        runtime.acquire_cell_specs(node)
+
+    receipt = live.close_acquisition()
+    assert (receipt.engine_closed, receipt.model_released) == (True, True)
+    assert backend.events == ["surface:1.0", "surface:1.1", "margin:open"]
+
+
 def test_witness_bank_is_frozen_before_sampling() -> None:
     live, backend = _composition()
     for repetition_penalty in (1.0, 1.10):

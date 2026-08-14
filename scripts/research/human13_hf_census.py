@@ -40,16 +40,30 @@ class HFCausalLogits:
     logits_position_ids: tuple[int, ...]
 
 
-def validate_hf_fp32_sdpa_batch_one(launch: Any, receipt: Any) -> dict[str, object]:
-    """Validate and return the runtime identity observed by the HF receipt."""
+def derive_hf_fp32_sdpa_batch_one_launch(launch: Any) -> Any:
+    """Derive batch-one census execution without changing content identities."""
 
     nested = getattr(launch, "backend_options", {}).get("hf", {})
     if (
         getattr(launch, "backend", None) != "hf"
         or getattr(launch, "model_dtype", None) != "fp32"
-        or getattr(launch, "batch_size", None) != 1
         or nested.get("attn_implementation") != "sdpa"
     ):
+        raise ValueError("HF runtime requires the Source fp32/SDPA launch")
+    if is_dataclass(launch) and not isinstance(launch, type):
+        return replace(cast(Any, launch), batch_size=1)
+    try:
+        values = vars(launch)
+    except TypeError as exc:
+        raise ValueError("HF runtime requires a content-bound launch record") from exc
+    return SimpleNamespace(**{**values, "batch_size": 1})
+
+
+def validate_hf_fp32_sdpa_batch_one(launch: Any, receipt: Any) -> dict[str, object]:
+    """Validate and return the runtime identity observed by the HF receipt."""
+
+    derive_hf_fp32_sdpa_batch_one_launch(launch)
+    if getattr(launch, "batch_size", None) != 1:
         raise ValueError("HF runtime requires the Source fp32/SDPA batch-one launch")
     if getattr(receipt, "backend", None) != "hf":
         raise ValueError("HF observed backend must be exactly hf")
@@ -374,7 +388,7 @@ def _load_source_inputs(repo_root: str | Path) -> tuple[Any, dict[int, DecodeReq
     }
     if len(by_image) != len(HUMAN13_IMAGE_IDS):
         raise ValueError("Human-13 Source HF request image identities are not unique")
-    return frontend.launch, by_image
+    return derive_hf_fp32_sdpa_batch_one_launch(frontend.launch), by_image
 
 
 @contextmanager
@@ -458,6 +472,7 @@ def open_checkpoint_hf_census_scorer(
 __all__ = [
     "HFCausalLogits",
     "Human13HFCensusScorer",
+    "derive_hf_fp32_sdpa_batch_one_launch",
     "open_checkpoint_hf_census_scorer",
     "open_source_hf_census_scorer",
     "validate_hf_fp32_sdpa_batch_one",

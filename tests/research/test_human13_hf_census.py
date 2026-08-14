@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -472,6 +473,26 @@ def test_hf_runtime_identity_binds_only_observed_receipt_values() -> None:
         "tokenizer_identity": {"sha256": "tokenizer"},
         "processor_identity": {"class": "FakeProcessor"},
     }
+
+
+def test_census_launch_admits_authored_source_batch_two_as_batch_one() -> None:
+    from scripts.research.human13_hf_census import (
+        derive_hf_fp32_sdpa_batch_one_launch,
+        validate_hf_fp32_sdpa_batch_one,
+    )
+    from scripts.research.human13_live_model import HUMAN13_SOURCE_INFER_CONFIG
+    from src.config.inference import load_infer_config
+
+    repo_root = Path(__file__).resolve().parents[2]
+    source_config = load_infer_config(repo_root / HUMAN13_SOURCE_INFER_CONFIG).config
+    assert source_config.generation.batch_size == 2
+    authored = replace(_launch(), batch_size=source_config.generation.batch_size)
+
+    admitted = derive_hf_fp32_sdpa_batch_one_launch(authored)
+
+    assert authored.batch_size == 2
+    assert admitted == replace(authored, batch_size=1)
+    assert validate_hf_fp32_sdpa_batch_one(admitted, _receipt())["batch_size"] == 1
 
 
 @pytest.mark.parametrize(

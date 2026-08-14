@@ -547,6 +547,7 @@ def evaluate_hf_checkpoint(
         trajectory_input_from_decode_result,
     )
     from scripts.research.human13_hf_census import (
+        derive_hf_fp32_sdpa_batch_one_launch,
         validate_hf_fp32_sdpa_batch_one,
     )
     from scripts.research.run_current_seeded_sampled_rollouts import (
@@ -595,9 +596,10 @@ def evaluate_hf_checkpoint(
     )
     payload_digest = checkpoint_payload_sha256(checkpoint)
     outputs: list[dict[str, object]] = []
-    with open_backend_session(frontend.launch) as session:
+    census_launch = derive_hf_fp32_sdpa_batch_one_launch(frontend.launch)
+    with open_backend_session(census_launch) as session:
         runtime_identity = validate_hf_fp32_sdpa_batch_one(
-            frontend.launch, session.receipt
+            census_launch, session.receipt
         )
         backend_version = str(session.receipt.backend_version)
         for example, base_request in zip(examples, requests, strict=True):

@@ -55,6 +55,18 @@ def _identity_text(value: Any) -> str:
     return _sha256(value)
 
 
+def _release_model_caches() -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+    except (ImportError, RuntimeError):
+        pass
+
+
 def _regular_output(path: Path) -> Path:
     if path.exists() or path.is_symlink():
         raise FileExistsError(f"refusing to overwrite live evidence: {path}")
@@ -153,15 +165,7 @@ class _MarginSurface:
             self._skeletons.clear()
             self._components = None
             self._model = None
-            gc.collect()
-            try:
-                import torch
-
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()
-            except (ImportError, RuntimeError):
-                pass
+            _release_model_caches()
 
 
 class Human13RPCrossoverProductionBackend:
@@ -385,33 +389,49 @@ class Human13RPCrossoverProductionBackend:
         )
         witness_plan = replace(plan, mixed_precision="fp32", attn_implementation="sdpa")
         owner = DefaultHuman13AssemblyBackend()
-        components = owner.load_qwen(witness_plan)
-        adapted = owner.warm_start_language_dora(
-            components.model, components, witness_plan, repo_root=REPO_ROOT
-        )
-        special = owner.load_and_freeze_special_token_delta(
-            adapted.model, components, witness_plan, repo_root=REPO_ROOT
-        )
-        model = special.model
-        model.eval()
-        bound_components = replace(components, model=model)
-        manifest = load_manifest(frozen.manifest_path, require_full_panel=True)
-        skeletons = build_human13_processor_skeletons(
-            manifest, bound_components, repo_root=REPO_ROOT
-        )
-        launch, requests = _load_source_inputs(REPO_ROOT)
-
-        def load_components(_launch: Any) -> Any:
-            return SimpleNamespace(
-                qwen=bound_components,
-                adapter_receipt={"mode": "warm_start_expand_dora", "rank": 16},
-                embedding_delta_receipt={"mode": "frozen_source_delta"},
+        components = adapted = special = model = bound_components = None
+        skeletons = session = None
+        try:
+            components = owner.load_qwen(witness_plan)
+            adapted = owner.warm_start_language_dora(
+                components.model, components, witness_plan, repo_root=REPO_ROOT
             )
+            special = owner.load_and_freeze_special_token_delta(
+                adapted.model, components, witness_plan, repo_root=REPO_ROOT
+            )
+            model = special.model
+            model.eval()
+            bound_components = replace(components, model=model)
+            manifest = load_manifest(frozen.manifest_path, require_full_panel=True)
+            skeletons = build_human13_processor_skeletons(
+                manifest, bound_components, repo_root=REPO_ROOT
+            )
+            launch, requests = _load_source_inputs(REPO_ROOT)
 
-        session = open_hf_backend_session(launch, components_loader=load_components)
-        scorer = Human13HFCensusScorer(
-            session=session, requests_by_image=requests, launch=launch
-        )
+            def load_components(_launch: Any) -> Any:
+                return SimpleNamespace(
+                    qwen=bound_components,
+                    adapter_receipt={"mode": "warm_start_expand_dora", "rank": 16},
+                    embedding_delta_receipt={"mode": "frozen_source_delta"},
+                )
+
+            session = open_hf_backend_session(launch, components_loader=load_components)
+            scorer = Human13HFCensusScorer(
+                session=session, requests_by_image=requests, launch=launch
+            )
+        except BaseException as primary:
+            if session is not None:
+                try:
+                    session.close()
+                except BaseException as cleanup_error:
+                    primary.add_note(
+                        "margin-surface cleanup also failed: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+            session = skeletons = bound_components = model = None
+            special = adapted = components = None
+            _release_model_caches()
+            raise
         return _MarginSurface(
             model=model,
             components=bound_components,
