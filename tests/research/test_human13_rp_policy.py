@@ -496,3 +496,27 @@ def test_deserialized_group_parity_receipt_rechecks_the_admission_gate(field: st
         payload[field] = 0.003
     with pytest.raises(ValueError, match="tolerance|per-token|group mean"):
         AcquisitionGroupParityReceipt.from_dict(payload)
+
+
+def test_group_parity_receipt_uses_literal_gate_boundaries() -> None:
+    # Catches a persisted receipt accepting values that live replay rejects.
+    exact_token = replace(
+        _parity_receipt(),
+        token_count=10,
+        per_token_absolute_error_nats=(0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        group_mean_absolute_error_nats=0.002,
+    )
+    assert exact_token.admitted
+    with pytest.raises(ValueError, match="per-token"):
+        replace(
+            _parity_receipt(),
+            token_count=10,
+            per_token_absolute_error_nats=(0.0200000000000005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            group_mean_absolute_error_nats=0.00200000000000005,
+        )
+    payload = _parity_receipt().to_dict()
+    payload["token_count"] = 10
+    payload["per_token_absolute_error_nats"] = [0.0200000000000005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    payload["group_mean_absolute_error_nats"] = 0.00200000000000005
+    with pytest.raises(ValueError, match="per-token"):
+        AcquisitionGroupParityReceipt.from_dict(payload)

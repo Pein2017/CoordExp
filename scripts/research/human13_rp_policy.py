@@ -20,17 +20,6 @@ from scripts.research.human13_k_trajectory_contracts import (
 )
 
 
-_FLOAT_BOUNDARY_ABS_TOLERANCE = 1e-15
-
-
-def _at_or_below_fixed_gate(value: float, limit: float) -> bool:
-    """Use one explicit absolute boundary tolerance for serialized FP values."""
-
-    return value <= limit or math.isclose(
-        value, limit, rel_tol=0.0, abs_tol=_FLOAT_BOUNDARY_ABS_TOLERANCE
-    )
-
-
 class PolicyReplayError(ValueError):
     """Raised when sealed sampling evidence cannot be admitted for replay."""
 
@@ -96,16 +85,16 @@ class AcquisitionGroupParityReceipt:
             mean,
             expected_mean,
             rel_tol=0.0,
-            abs_tol=_FLOAT_BOUNDARY_ABS_TOLERANCE,
+            abs_tol=0.0,
         ):
             raise ValueError("group mean error differs from the token-error mean")
         fixed_tolerance = ReplayTolerance()
         if any(
-            not _at_or_below_fixed_gate(value, fixed_tolerance.per_token_nats)
+            value > fixed_tolerance.per_token_nats
             for value in errors
         ):
             raise ValueError("per-token replay error exceeds fixed ReplayTolerance")
-        if not _at_or_below_fixed_gate(mean, fixed_tolerance.group_mean_nats):
+        if mean > fixed_tolerance.group_mean_nats:
             raise ValueError("group mean replay error exceeds fixed ReplayTolerance")
         object.__setattr__(self, "request_ids", request_ids)
         object.__setattr__(self, "per_token_absolute_error_nats", errors)
