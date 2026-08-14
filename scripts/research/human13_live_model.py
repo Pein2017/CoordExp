@@ -22,6 +22,7 @@ VALIDATION_SCHEMA_VERSION = "human13_live_model_validation.v1"
 UNIT_ID = "2026-08-12-human13-k-union-to-greedy-overfit-screen"
 SUCCESSOR_UNIT_ID = "2026-08-13-human13-row-contrast-geometry-preservation-successor"
 ON_POLICY_UNIT_ID = "2026-08-13-human13-on-policy-first-bottleneck-successor"
+RP_CROSSOVER_UNIT_ID = "2026-08-14-human13-k-trajectory-rp-crossover-screen"
 SOURCE_CHECKPOINT_PATH = (
     "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/"
     "2026-08-05-closeout/artifacts/training/four-coordinate-xy/"
@@ -78,6 +79,7 @@ HUMAN13_IMAGE_IDS = (
 MILESTONES = (0, 1, 2, 4, 8, 16)
 SUCCESSOR_MILESTONES = (0, 1, 2)
 ON_POLICY_MILESTONES = tuple(range(9))
+RP_CROSSOVER_MILESTONES = (0, 1)
 CHECKPOINT_STEPS = (1, 2, 4, 8, 16)
 ZERO_MODEL_ACTIONS = {
     "model_imports": 0,
@@ -106,6 +108,9 @@ _UPDATED_ARM_IDS = frozenset(
         "R2",
         "O-Full-Safe",
         "O-First-Safe",
+        "A",
+        "B",
+        "C",
     }
 )
 
@@ -530,6 +535,7 @@ def build_human13_live_model_plan(
         UNIT_ID,
         SUCCESSOR_UNIT_ID,
         ON_POLICY_UNIT_ID,
+        RP_CROSSOVER_UNIT_ID,
     }:
         raise Human13LiveModelError("arm config is not bound to the Human-13 unit")
     if getattr(config, "updates", None) is not True:
@@ -1118,7 +1124,12 @@ def _is_sha256(value: Any) -> bool:
 
 
 def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
-    if plan.unit_id not in {UNIT_ID, SUCCESSOR_UNIT_ID, ON_POLICY_UNIT_ID}:
+    if plan.unit_id not in {
+        UNIT_ID,
+        SUCCESSOR_UNIT_ID,
+        ON_POLICY_UNIT_ID,
+        RP_CROSSOVER_UNIT_ID,
+    }:
         raise Human13LiveModelError("plan has an unknown Human-13 unit identity")
     if (plan.unit_id == SUCCESSOR_UNIT_ID) != (plan.arm_id in {"R1", "R2"}):
         raise Human13LiveModelError("successor unit and R1/R2 arm identity differ")
@@ -1126,6 +1137,8 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         plan.arm_id in {"O-Full-Safe", "O-First-Safe"}
     ):
         raise Human13LiveModelError("on-policy unit and O-arm identity differ")
+    if (plan.unit_id == RP_CROSSOVER_UNIT_ID) != (plan.arm_id in {"A", "B", "C"}):
+        raise Human13LiveModelError("RP-crossover unit and A/B/C arm identity differ")
     expected = {
         "schema_version": LIVE_PLAN_SCHEMA_VERSION,
         "unit_id": plan.unit_id,
@@ -1149,7 +1162,7 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         "adapter_bias": "none",
         "freeze_special_token_delta": True,
         "optimizer_name": "adamw_torch",
-        "learning_rate": 1.0e-5,
+        "learning_rate": 3.0e-6 if plan.unit_id == RP_CROSSOVER_UNIT_ID else 1.0e-5,
         "betas": (0.9, 0.999),
         "epsilon": 1.0e-8,
         "weight_decay": 0.0,
@@ -1163,6 +1176,8 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
             if plan.unit_id == SUCCESSOR_UNIT_ID
             else ON_POLICY_MILESTONES
             if plan.unit_id == ON_POLICY_UNIT_ID
+            else RP_CROSSOVER_MILESTONES
+            if plan.unit_id == RP_CROSSOVER_UNIT_ID
             else MILESTONES
         ),
     }
@@ -1351,6 +1366,8 @@ __all__ = [
     "MILESTONES",
     "ON_POLICY_MILESTONES",
     "ON_POLICY_UNIT_ID",
+    "RP_CROSSOVER_MILESTONES",
+    "RP_CROSSOVER_UNIT_ID",
     "SOURCE_ADAPTER_SHA256",
     "SOURCE_BASE_CONFIG_SHA256",
     "SOURCE_BASE_MODEL_PATH",
