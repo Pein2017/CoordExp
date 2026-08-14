@@ -9,6 +9,7 @@ optimizers only.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+import dataclasses
 import json
 import math
 
@@ -37,6 +38,7 @@ from scripts.research.human13_adamw_proposal_preservation import (
     ProposalCaptureError,
     ProposalProjectionError,
     WitnessBinding,
+    _hash_flat_tensors,
     _solve_metric_projection,
     _solve_working_set,
     admit_preservation_evidence,
@@ -924,6 +926,270 @@ def test_apply_requires_the_transaction_that_owns_the_live_parameters() -> None:
     assert error.value.disposition == "transaction_binding_uncertified"
     assert parameter_state_sha256(named, proposal.layout) == pre_hash
     assert counter.value == 0
+
+
+def _forge_receipt(
+    genuine, proposal: ExactAdamWProposal, rows: Mapping[str, torch.Tensor], delta
+):
+    """Build a fully self-consistent same-evidence receipt for ``delta``."""
+
+    layout = proposal.layout
+    pieces = []
+    offset = 0
+    for entry in layout.entries:
+        pieces.append(delta[offset : offset + entry.numel].clone())
+        offset += entry.numel
+    metric = proposal.flat_metric_denominator()
+    correction = delta - proposal.flat_delta()
+    objective = float((metric * correction * correction).sum())
+    predicted = tuple(
+        dataclasses.replace(item, change=float(rows[item.owner_id] @ delta))
+        for item in genuine.predicted_changes
+    )
+    return dataclasses.replace(
+        genuine,
+        projected_delta=tuple(pieces),
+        projected_delta_sha256=_hash_flat_tensors(
+            tuple(pieces), layout=layout, context="delta"
+        ),
+        active_witnesses=(),
+        multipliers=(),
+        objective_value=objective,
+        correction_metric_norm=math.sqrt(objective),
+        projected_trust_radius_value=float((metric * delta * delta).sum()),
+        trust_radius_active=False,
+        predicted_changes=predicted,
+        minimum_predicted_change=min(item.change for item in predicted),
+    )
+
+
+def test_apply_rejects_a_self_consistent_non_optimal_projection_receipt() -> None:
+    _, named, optimizer, counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    row = _active_row(proposal)
+    rows = {"owner_a": row}
+    bank = _bank(proposal.layout, rows)
+    genuine = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    pre_hash = parameter_state_sha256(named, proposal.layout)
+    certified = genuine.flat_projected_delta()
+
+    # Both alternates are feasible for every witness and inside the trust
+    # radius; neither is the minimum-change projection.
+    zero = torch.zeros_like(certified)
+    halved = 0.5 * certified
+    for alternate in (zero, halved):
+        assert float(row @ alternate) >= -WITNESS_FIRST_ORDER_TOLERANCE
+        assert (
+            float((proposal.flat_metric_denominator() * alternate * alternate).sum())
+            <= proposal.trust_radius
+        )
+        forged = _forge_receipt(genuine, proposal, rows, alternate)
+        assert forged.evidence_sha256 == genuine.evidence_sha256
+        assert forged.disposition == "projected_certified"
+        assert (
+            _hash_flat_tensors(
+                forged.projected_delta, layout=proposal.layout, context="delta"
+            )
+            == forged.projected_delta_sha256
+        )
+        with pytest.raises(ProjectedApplyError) as error:
+            apply_projected_delta(
+                named,
+                proposal=proposal,
+                witness_bank=bank,
+                projection=forged,
+                optimizer=optimizer,
+                transaction=transaction,
+                update_counter=counter,
+                realized_margin_probe=_probe(bank, {}),
+            )
+        assert error.value.disposition == "projection_not_canonical"
+        assert parameter_state_sha256(named, proposal.layout) == pre_hash
+        assert counter.value == 0
+        assert len(optimizer.state) == 0
+
+
+def test_capture_requires_the_transaction_that_owns_the_live_stack() -> None:
+    _, named, optimizer, counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    _, foreign_named, foreign_optimizer, foreign_counter, foreign_transaction = (
+        _make_stack()
+    )
+    _assign(foreign_named, _DENSE_GRADIENTS)
+    # The foreign stack is value-identical: only object ownership differs.
+    assert parameter_state_sha256(
+        named, ParameterLayout.from_named_parameters(named)
+    ) == parameter_state_sha256(
+        foreign_named, ParameterLayout.from_named_parameters(foreign_named)
+    )
+    digest = transaction.state_digest()
+    foreign_digest = foreign_transaction.state_digest()
+    rng = torch.get_rng_state().clone()
+
+    with pytest.raises(ProposalCaptureError) as error:
+        capture_exact_adamw_proposal(
+            named,
+            optimizer=optimizer,
+            transaction=foreign_transaction,
+            config=AdamWProposalConfig.frozen(),
+            binding=_binding(),
+        )
+    assert error.value.disposition == "transaction_binding_uncertified"
+
+    # An optimizer that is not the transaction's own optimizer is refused too,
+    # even though it holds exactly the bound parameters.
+    detached_optimizer = torch.optim.AdamW(
+        [parameter for _, parameter in named],
+        lr=FROZEN_LEARNING_RATE,
+        betas=FROZEN_BETAS,
+        eps=FROZEN_EPSILON,
+        weight_decay=FROZEN_WEIGHT_DECAY,
+    )
+    with pytest.raises(ProposalCaptureError) as error:
+        capture_exact_adamw_proposal(
+            named,
+            optimizer=detached_optimizer,
+            transaction=transaction,
+            config=AdamWProposalConfig.frozen(),
+            binding=_binding(),
+        )
+    assert error.value.disposition == "transaction_binding_uncertified"
+
+    assert transaction.state_digest() == digest
+    assert foreign_transaction.state_digest() == foreign_digest
+    assert torch.equal(torch.get_rng_state(), rng)
+    assert len(optimizer.state) == 0
+    assert len(foreign_optimizer.state) == 0
+    assert len(detached_optimizer.state) == 0
+    assert counter.value == 0 and foreign_counter.value == 0
+    # Neither transaction was ever opened.
+    for candidate in (transaction, foreign_transaction):
+        candidate.reject(candidate.begin())
+
+
+def test_apply_certifies_the_physical_parameter_change() -> None:
+    _, named, optimizer, counter, transaction = _make_stack()
+    with torch.no_grad():
+        named[1][1].fill_(1e5)
+    _assign(
+        named,
+        {
+            _WEIGHT: torch.tensor(((0.5, -0.25, 2.0), (1.0, 4.0, -7.5))),
+            _BIAS: torch.tensor((1e-4, -1e-4)),
+        },
+    )
+    proposal = _capture(named, optimizer, transaction)
+    delta0 = proposal.flat_delta()
+    # The 1e5-valued parameters cannot even represent their own AdamW step.
+    assert float(delta0[6:].abs().max()) == 0.0
+    row = torch.zeros(proposal.layout.total_numel, dtype=torch.float64)
+    row[:6] = -1000.0 * torch.sign(delta0[:6])
+    row[6:] = 10.0
+    bank = _bank(proposal.layout, {"owner_a": row})
+    receipt = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    pre_hash = parameter_state_sha256(named, proposal.layout)
+    # The certified projection puts a materially sized correction on the
+    # unrepresentable coordinates.
+    assert float(receipt.flat_projected_delta()[6:].abs().min()) > 1e-5
+
+    with pytest.raises(ProjectedApplyError) as error:
+        apply_projected_delta(
+            named,
+            proposal=proposal,
+            witness_bank=bank,
+            projection=receipt,
+            optimizer=optimizer,
+            transaction=transaction,
+            update_counter=counter,
+            realized_margin_probe=_probe(bank, {}),
+        )
+
+    assert error.value.disposition == "applied_delta_mismatch"
+    assert parameter_state_sha256(named, proposal.layout) == pre_hash
+    assert counter.value == 0
+
+    # An honest float32 apply stays far inside the declared realization
+    # allowance and hashes the physical change, not the intended one.
+    _, named, optimizer, counter, transaction = _make_stack()
+    _assign(named, _DENSE_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    row = _active_row(proposal)
+    bank = _bank(proposal.layout, {"owner_a": row})
+    receipt = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    pre_values = tuple(parameter.detach().clone() for _, parameter in named)
+    applied = apply_projected_delta(
+        named,
+        proposal=proposal,
+        witness_bank=bank,
+        projection=receipt,
+        optimizer=optimizer,
+        transaction=transaction,
+        update_counter=counter,
+        realized_margin_probe=_probe(bank, {}),
+    )
+    physical = tuple(
+        (parameter.detach() - saved).to(torch.float64).reshape(-1)
+        for (_, parameter), saved in zip(named, pre_values)
+    )
+    assert applied.applied_delta_sha256 == _hash_flat_tensors(
+        physical, layout=proposal.layout, context="delta"
+    )
+    assert 0.0 < applied.applied_realization_ratio < 0.01
+    assert applied.applied_minimum_first_order_change >= (
+        -WITNESS_FIRST_ORDER_TOLERANCE * 1.000001
+    )
+
+    # A proposal whose exact step is zero must physically change nothing.
+    _, named, optimizer, counter, transaction = _make_stack()
+    _assign(named, _ZERO_GRADIENTS)
+    proposal = _capture(named, optimizer, transaction)
+    assert proposal.trust_radius == 0.0
+    bank = _bank(proposal.layout, {"owner_a": torch.ones(8, dtype=torch.float64)})
+    receipt = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+    applied = apply_projected_delta(
+        named,
+        proposal=proposal,
+        witness_bank=bank,
+        projection=receipt,
+        optimizer=optimizer,
+        transaction=transaction,
+        update_counter=counter,
+        realized_margin_probe=_probe(bank, {}),
+    )
+    assert applied.applied_realization_ratio == 0.0
+    assert applied.post_parameter_sha256 == applied.pre_parameter_sha256
+
+
+def test_apply_labels_any_finite_negative_realized_change_as_a_violation() -> None:
+    for change, violated in ((-1e-5, True), (0.0, False), (0.25, False)):
+        _, named, optimizer, counter, transaction = _make_stack()
+        _assign(named, _DENSE_GRADIENTS)
+        proposal = _capture(named, optimizer, transaction)
+        row = _active_row(proposal)
+        bank = _bank(proposal.layout, {"owner_a": row})
+        receipt = project_adamw_proposal(proposal=proposal, witness_bank=bank)
+
+        applied = apply_projected_delta(
+            named,
+            proposal=proposal,
+            witness_bank=bank,
+            projection=receipt,
+            optimizer=optimizer,
+            transaction=transaction,
+            update_counter=counter,
+            realized_margin_probe=_probe(bank, {"owner_a": change}),
+        )
+
+        assert applied.realized_witness_violation is violated
+        assert applied.eligible_for_behavioral_audits is True
+        assert applied.realized_minimum_change == pytest.approx(change)
+        if violated:
+            assert applied.disposition == "applied_with_realized_witness_violation"
+            assert applied.degraded_witnesses == (bank.constraints[0].canonical_key,)
+        else:
+            assert applied.disposition == "applied_certified"
+            assert applied.degraded_witnesses == ()
 
 
 def test_apply_records_realized_witness_violation_and_stays_audit_eligible() -> None:

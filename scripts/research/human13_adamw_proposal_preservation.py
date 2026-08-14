@@ -79,6 +79,8 @@ _DUAL_RESIDUAL_RELATIVE = 1e-8
 _MINIMUM_PIVOT = 1e-7
 _RADIUS_RELATIVE = 1e-9
 _APPLIED_RELATIVE = 1e-6
+_CANONICAL_RELATIVE = 1e-9
+_APPLIED_REALIZATION_ALLOWANCE = 0.1
 
 
 class ProposalPreservationError(ValueError):
@@ -1121,6 +1123,58 @@ def _hash_flat_tensors(
 # --- exact optimizer proposal capture ----------------------------------------
 
 
+def _certify_transaction_ownership(
+    transaction: TrainingStateTransaction,
+    bound: Sequence[tuple[str, torch.nn.Parameter]],
+    *,
+    optimizer: torch.optim.Optimizer,
+    update_counter: UpdateCounter | None,
+    error: type[ProposalPreservationError],
+) -> None:
+    """Certify that the transaction owns the exact objects about to change.
+
+    Value equality is not enough: a foreign stack with the same seed holds
+    equal parameters, so a rollback bound to it would silently leave this
+    surface mutated.  The bound surface is read defensively and any change to
+    the transaction's attribute contract fails closed here, before the
+    transaction is opened or anything is stepped.
+    """
+
+    try:
+        owned = tuple(transaction._named_parameters)
+        owned_optimizer = transaction._optimizer
+        owned_counter = transaction._update_counter
+    except AttributeError as attribute_error:
+        raise error(
+            "the bound transaction does not expose its owned surface",
+            disposition="transaction_binding_uncertified",
+        ) from attribute_error
+    if {id(parameter) for _, parameter in owned} != {
+        id(parameter) for _, parameter in bound
+    } or len(owned) != len(bound):
+        raise error(
+            "the transaction does not own these exact trainable parameters",
+            disposition="transaction_binding_uncertified",
+        )
+    if owned_optimizer is not optimizer:
+        raise error(
+            "the transaction does not own this optimizer",
+            disposition="transaction_binding_uncertified",
+        )
+    if update_counter is not None and owned_counter is not update_counter:
+        raise error(
+            "the transaction does not own this update counter",
+            disposition="transaction_binding_uncertified",
+        )
+    if tuple((name, id(parameter)) for name, parameter in owned) != tuple(
+        (name, id(parameter)) for name, parameter in bound
+    ):
+        raise error(
+            "the bound trainable surface differs from the transaction surface",
+            disposition="parameter_layout_mismatch",
+        )
+
+
 def _require_frozen_optimizer(
     optimizer: torch.optim.Optimizer, config: AdamWProposalConfig
 ) -> None:
@@ -1241,18 +1295,16 @@ def capture_exact_adamw_proposal(
     pre_values = tuple(
         parameter.detach().clone().to(torch.float64) for _, parameter in bound
     )
+    _certify_transaction_ownership(
+        transaction,
+        bound,
+        optimizer=optimizer,
+        update_counter=None,
+        error=ProposalCaptureError,
+    )
 
     snapshot = transaction.begin()
     try:
-        snapshot_names = tuple(name for name, _ in snapshot.parameter_values)
-        if snapshot_names != names or any(
-            tuple(int(size) for size in tensor.shape) != entry.shape
-            for (_, tensor), entry in zip(snapshot.parameter_values, layout.entries)
-        ):
-            raise ProposalCaptureError(
-                "the bound trainable surface differs from the transaction surface",
-                disposition="parameter_layout_mismatch",
-            )
         optimizer.step()
         post_parameter_sha256 = parameter_state_sha256(bound, layout)
         deltas: list[torch.Tensor] = []
@@ -1729,7 +1781,19 @@ def project_adamw_proposal(
 ) -> ProjectionReceipt:
     """Project one exact AdamW proposal onto the frozen witness constraints."""
 
-    evidence = _admit_evidence(proposal, witness_bank)
+    return _project_admitted(_admit_evidence(proposal, witness_bank))
+
+
+def _project_admitted(evidence: PreservationEvidence) -> ProjectionReceipt:
+    """Derive the one canonical projection of an admitted proposal/witness pair.
+
+    Both the public projection entry and the apply path re-enter this owner, so
+    the applied delta is always the internally rederived optimum rather than a
+    caller-supplied vector that merely looks certified.
+    """
+
+    proposal = evidence.proposal
+    witness_bank = evidence.witness_bank
     delta0 = proposal.flat_delta()
     metric = proposal.flat_metric_denominator()
 
@@ -1826,8 +1890,9 @@ class ProjectedApplyReceipt:
     post_parameter_sha256: str
     applied_delta_sha256: str
     applied_delta_residual: float
+    applied_realization_ratio: float
     applied_trust_radius_value: float
-    applied_minimum_predicted_change: float
+    applied_minimum_first_order_change: float
     realized_changes: tuple[WitnessChange, ...]
     realized_minimum_change: float
     realized_witness_violation: bool
@@ -1853,8 +1918,11 @@ class ProjectedApplyReceipt:
             "post_parameter_sha256": self.post_parameter_sha256,
             "applied_delta_sha256": self.applied_delta_sha256,
             "applied_delta_residual": self.applied_delta_residual,
+            "applied_realization_ratio": self.applied_realization_ratio,
             "applied_trust_radius_value": self.applied_trust_radius_value,
-            "applied_minimum_predicted_change": self.applied_minimum_predicted_change,
+            "applied_minimum_first_order_change": (
+                self.applied_minimum_first_order_change
+            ),
             "realized_changes": [item.to_dict() for item in self.realized_changes],
             "realized_minimum_change": self.realized_minimum_change,
             "realized_witness_violation": self.realized_witness_violation,
@@ -1880,7 +1948,14 @@ def apply_projected_delta(
     update_counter: UpdateCounter,
     realized_margin_probe: Callable[[], Mapping[str, float]],
 ) -> ProjectedApplyReceipt:
-    """Apply only the certified projected delta and rehash the real change.
+    """Apply only the canonical projected delta and rehash the physical change.
+
+    The submitted receipt is compared against an internally rederived
+    projection of the same admitted evidence, and only that rederived optimum
+    is applied.  What is then hashed, radius-checked, and witness-checked is
+    the physical post-minus-pre change in the parameter dtype, so an update the
+    storage cannot represent fails and reverts instead of being receipted as
+    applied.
 
     The optimizer is never stepped here: this screen applies one manual update
     and never synthesizes or continues projected AdamW moments.
@@ -1926,6 +2001,28 @@ def apply_projected_delta(
         raise ProjectedApplyError(
             "a real torch optimizer is required", disposition="invalid_field"
         )
+    metric = proposal.flat_metric_denominator()
+    canonical = _project_admitted(evidence)
+    submitted_delta = projection.flat_projected_delta()
+    canonical_delta = canonical.flat_projected_delta()
+    disagreement = _metric_quadratic(metric, submitted_delta - canonical_delta)
+    if (
+        projection.active_witnesses != canonical.active_witnesses
+        or not math.isfinite(disagreement)
+        or disagreement > (_CANONICAL_RELATIVE**2) * max(proposal.trust_radius, 0.0)
+    ):
+        raise ProjectedApplyError(
+            "the submitted receipt is not the canonical minimum-change "
+            "projection of this admitted evidence",
+            disposition="projection_not_canonical",
+        )
+    _certify_transaction_ownership(
+        transaction,
+        bound,
+        optimizer=optimizer,
+        update_counter=update_counter,
+        error=ProjectedApplyError,
+    )
     if len(optimizer.state) != 0:
         raise ProjectedApplyError(
             "a projected apply never continues from existing optimizer moments",
@@ -1937,33 +2034,18 @@ def apply_projected_delta(
             disposition="source_parameter_mismatch",
         )
 
+    # Only the internally rederived optimum is ever applied.
     applied: list[torch.Tensor] = []
     for entry, parameter, piece in zip(
-        proposal.layout.entries, (p for _, p in bound), projection.projected_delta
+        proposal.layout.entries, (p for _, p in bound), canonical.projected_delta
     ):
         applied.append(piece.reshape(entry.shape).to(parameter.dtype))
     applied_flat = torch.cat(
         [tensor.detach().to(torch.float64).reshape(-1) for tensor in applied]
     )
-    metric = proposal.flat_metric_denominator()
     if not bool(torch.isfinite(applied_flat).all()):
         raise ProjectedApplyError(
             "the applied delta is not finite", disposition="applied_non_finite"
-        )
-    applied_radius = _metric_quadratic(metric, applied_flat)
-    if applied_radius > proposal.trust_radius * (1.0 + _APPLIED_RELATIVE):
-        raise ProjectedApplyError(
-            "the applied delta breaches the frozen D trust radius",
-            disposition="applied_trust_radius_breach",
-        )
-    applied_minimum = math.inf
-    for _, witness, jacobian in witness_bank.stream_constraints():
-        change = float(jacobian @ applied_flat)
-        applied_minimum = min(applied_minimum, change)
-    if applied_minimum < -WITNESS_FIRST_ORDER_TOLERANCE * (1.0 + _APPLIED_RELATIVE):
-        raise ProjectedApplyError(
-            "the applied delta is not first-order feasible",
-            disposition="applied_first_order_uncertified",
         )
 
     pre_values = tuple(parameter.detach().clone() for _, parameter in bound)
@@ -1979,32 +2061,52 @@ def apply_projected_delta(
     for (_, parameter), change in zip(bound, applied):
         parameter.add_(change)
     try:
-        if float(applied_flat.abs().max()) > 0.0 and (
-            transaction.state_digest() == transaction_before_digest
-        ):
-            raise ProjectedApplyError(
-                "the bound transaction does not observe the applied parameters",
-                disposition="transaction_binding_uncertified",
-            )
         post_sha = parameter_state_sha256(bound, proposal.layout)
         if post_sha != expected_sha:
             raise ProjectedApplyError(
                 "the realized parameter change is not the certified projected delta",
                 disposition="applied_delta_mismatch",
             )
-        realized_delta = torch.cat(
-            [
-                (
-                    parameter.detach().to(torch.float64) - saved.to(torch.float64)
-                ).reshape(-1)
-                for (_, parameter), saved in zip(bound, pre_values)
-            ]
+        # The physical delta is measured in the parameter dtype itself, so an
+        # update the storage cannot represent shows up as the no-op it is.
+        physical = tuple(
+            (parameter.detach() - saved).to(torch.float64).reshape(-1)
+            for (_, parameter), saved in zip(bound, pre_values)
         )
-        applied_residual = float((realized_delta - applied_flat).abs().max())
-        if not math.isfinite(applied_residual):
+        physical_flat = torch.cat(physical)
+        if not bool(torch.isfinite(physical_flat).all()):
             raise ProjectedApplyError(
-                "the realized parameter change is not finite",
+                "the physical parameter change is not finite",
                 disposition="applied_non_finite",
+            )
+        applied_residual = float((physical_flat - applied_flat).abs().max())
+        intended_metric = _metric_quadratic(metric, applied_flat)
+        realization_error = _metric_quadratic(metric, physical_flat - applied_flat)
+        if intended_metric <= 0.0:
+            realization_ratio = 0.0
+            realization_uncertified = float(physical_flat.abs().max()) > 0.0
+        else:
+            realization_ratio = math.sqrt(max(realization_error, 0.0) / intended_metric)
+            realization_uncertified = realization_ratio > _APPLIED_REALIZATION_ALLOWANCE
+        if not math.isfinite(realization_ratio) or realization_uncertified:
+            raise ProjectedApplyError(
+                "the physical parameter change does not realize the certified "
+                "projected delta within the declared allowance",
+                disposition="applied_delta_mismatch",
+            )
+        applied_radius = _metric_quadratic(metric, physical_flat)
+        if applied_radius > proposal.trust_radius * (1.0 + _APPLIED_RELATIVE):
+            raise ProjectedApplyError(
+                "the physical parameter change breaches the frozen D trust radius",
+                disposition="applied_trust_radius_breach",
+            )
+        applied_minimum = math.inf
+        for _, _witness, jacobian in witness_bank.stream_constraints():
+            applied_minimum = min(applied_minimum, float(jacobian @ physical_flat))
+        if applied_minimum < -WITNESS_FIRST_ORDER_TOLERANCE * (1.0 + _APPLIED_RELATIVE):
+            raise ProjectedApplyError(
+                "the physical parameter change is not first-order feasible",
+                disposition="applied_first_order_uncertified",
             )
         realized = _realized_changes(witness_bank, realized_margin_probe)
     except ProjectedApplyError:
@@ -2019,11 +2121,9 @@ def apply_projected_delta(
             ) from None
         raise
 
-    degraded = tuple(
-        item.canonical_key
-        for item in realized
-        if item.change < -WITNESS_FIRST_ORDER_TOLERANCE
-    )
+    # Any finite negative realized change is a violation; zero and positive
+    # changes are not.  Every finite case stays audit eligible.
+    degraded = tuple(item.canonical_key for item in realized if item.change < 0.0)
     minimum_realized = min(item.change for item in realized)
     update_count_before = int(update_counter.value)
     update_counter.value = update_count_before + 1
@@ -2034,17 +2134,16 @@ def apply_projected_delta(
             else "applied_certified"
         ),
         evidence_sha256=evidence.evidence_sha256,
-        projection_sha256=projection.receipt_sha256,
+        projection_sha256=canonical.receipt_sha256,
         pre_parameter_sha256=proposal.pre_parameter_sha256,
         post_parameter_sha256=post_sha,
         applied_delta_sha256=_hash_flat_tensors(
-            _split_by_layout(applied_flat, proposal.layout),
-            layout=proposal.layout,
-            context="delta",
+            physical, layout=proposal.layout, context="delta"
         ),
         applied_delta_residual=applied_residual,
+        applied_realization_ratio=realization_ratio,
         applied_trust_radius_value=applied_radius,
-        applied_minimum_predicted_change=applied_minimum,
+        applied_minimum_first_order_change=applied_minimum,
         realized_changes=realized,
         realized_minimum_change=minimum_realized,
         realized_witness_violation=bool(degraded),
