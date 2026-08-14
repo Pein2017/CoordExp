@@ -45,10 +45,10 @@ from src.inference.parsing import (
 from src.templates.renderer import OBJECT_REF_END_TOKEN, OBJECT_REF_START_TOKEN
 
 
-SCHEMA_VERSION = "human13_trajectory_credit_ledger.v2"
+SCHEMA_VERSION = "human13_trajectory_credit_ledger.v3"
 ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_acquisition.v1"
 PANEL_ACQUISITION_SCHEMA_VERSION = "human13_trajectory_credit_panel_acquisition.v1"
-PARSER_PROJECTION_SCHEMA_VERSION = "human13_canonical_parser_projection.v2"
+PARSER_PROJECTION_SCHEMA_VERSION = "human13_canonical_parser_projection.v3"
 FIXED_SCIENTIFIC_K = 16
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _VERIFIED_TOKENIZER_FACTORY_MARKER = object()
@@ -117,7 +117,8 @@ def _valid_box(value: object) -> tuple[float, float, float, float] | None:
 class CanonicalTokenizerDecodeAdapter:
     """Factory-only attestation over one real loaded Transformers tokenizer."""
 
-    _tokenizer: Any
+    _decode_backend: Any
+    _tokenizer_json_bytes: bytes
     _factory_marker: object
     _base_model_path: Path
     _runtime_receipt_json: str
@@ -129,8 +130,11 @@ class CanonicalTokenizerDecodeAdapter:
     tokenizer_config_sha256: str
     runtime_receipt_sha256: str
     backend_tokenizer_sha256: str
-    decode_implementation_sha256: str
-    decode_policy: str = "hf-per-token-no-cleanup-concat-equals-sequence.v2"
+    tokenizers_package_version: str
+    decode_backend_id: str
+    decode_policy: str = (
+        "tokenizers-snapshot-skip-special-false-serialized-spacing-concat.v3"
+    )
 
     @classmethod
     def from_runtime(
@@ -152,7 +156,6 @@ class CanonicalTokenizerDecodeAdapter:
         instance = object.__new__(cls)
         for field, value in attestation.items():
             object.__setattr__(instance, field, value)
-        object.__setattr__(instance, "_tokenizer", tokenizer)
         object.__setattr__(
             instance,
             "_factory_marker",
@@ -210,37 +213,20 @@ class CanonicalTokenizerDecodeAdapter:
             is not _VERIFIED_TOKENIZER_FACTORY_MARKER
         ):
             raise ValueError("tokenizer adapter lacks a factory-verified attestation")
-        expected = _inspect_tokenizer_runtime(
-            tokenizer=self._tokenizer,
-            base_model_path=self._base_model_path,
-            runtime_receipt=json.loads(self._runtime_receipt_json),
+        _verify_tokenizer_snapshot(
+            self,
             manifest=manifest,
             publication=publication,
         )
-        actual = {
-            field: getattr(self, field) for field in expected if field != "_tokenizer"
-        }
-        if actual != expected:
-            raise ValueError("verified tokenizer attestation differs on revalidation")
 
     def decode(self, token_ids: Sequence[int]) -> tuple[str, tuple[str, ...]]:
         ids = tuple(_integer(token, field="generated token id") for token in token_ids)
         token_texts = tuple(
-            str(
-                self._tokenizer.decode(
-                    [token],
-                    skip_special_tokens=False,
-                    clean_up_tokenization_spaces=False,
-                )
-            )
+            str(self._decode_backend.decode([token], skip_special_tokens=False))
             for token in ids
         )
         sequence_text = str(
-            self._tokenizer.decode(
-                list(ids),
-                skip_special_tokens=False,
-                clean_up_tokenization_spaces=False,
-            )
+            self._decode_backend.decode(list(ids), skip_special_tokens=False)
         )
         if "".join(token_texts) != sequence_text:
             raise ValueError(
@@ -258,7 +244,8 @@ class CanonicalTokenizerDecodeAdapter:
             "tokenizer_config_sha256": self.tokenizer_config_sha256,
             "runtime_receipt_sha256": self.runtime_receipt_sha256,
             "backend_tokenizer_sha256": self.backend_tokenizer_sha256,
-            "decode_implementation_sha256": self.decode_implementation_sha256,
+            "tokenizers_package_version": self.tokenizers_package_version,
+            "decode_backend_id": self.decode_backend_id,
             "decode_policy": self.decode_policy,
         }
 
@@ -366,9 +353,10 @@ def _inspect_tokenizer_runtime(
     tokenizer_path = resolved_base / "tokenizer.json"
     tokenizer_config_path = resolved_base / "tokenizer_config.json"
     try:
+        tokenizer_json_bytes = tokenizer_path.read_bytes()
         tokenizer_sha256 = sha256_file(tokenizer_path)
         tokenizer_config_sha256 = sha256_file(tokenizer_config_path)
-        tokenizer_payload = json.loads(tokenizer_path.read_text(encoding="utf-8"))
+        tokenizer_payload = json.loads(tokenizer_json_bytes.decode("utf-8"))
         tokenizer_config = json.loads(tokenizer_config_path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
         raise ValueError(
@@ -424,6 +412,9 @@ def _inspect_tokenizer_runtime(
         "transformers"
     ) != metadata.version("transformers"):
         raise ValueError("tokenizer runtime receipt Transformers version differs")
+    tokenizers_version = metadata.version("tokenizers")
+    if package_versions.get("tokenizers") != tokenizers_version:
+        raise ValueError("tokenizer runtime receipt tokenizers version differs")
 
     backend = getattr(tokenizer, "backend_tokenizer", None)
     if type(backend) is not Tokenizer:
@@ -438,6 +429,15 @@ def _inspect_tokenizer_runtime(
         ) from exc
     if backend_payload != tokenizer_payload:
         raise ValueError("loaded tokenizer backend differs from tokenizer.json")
+    try:
+        decode_backend = Tokenizer.from_str(tokenizer_json_bytes.decode("utf-8"))
+        decode_backend_payload = json.loads(decode_backend.to_str())
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "sealed tokenizer.json cannot reconstruct the private decode backend"
+        ) from exc
+    if decode_backend_payload != tokenizer_payload:
+        raise ValueError("private decode backend differs from sealed tokenizer.json")
 
     tokenizer_id = str(resolved_base)
     for group in (admitted.execution.group, admitted.replayed_group):
@@ -446,19 +446,94 @@ def _inspect_tokenizer_runtime(
                 "Task2 tokenizer identity differs from the verified runtime path"
             )
     return {
+        "_decode_backend": decode_backend,
+        "_tokenizer_json_bytes": tokenizer_json_bytes,
         "_base_model_path": resolved_base,
         "_runtime_receipt_json": _canonical_json(receipt),
         "tokenizer_id": tokenizer_id,
         "tokenizer_sha256": tokenizer_sha256,
-        "implementation_id": f"{actual_module}.{actual_class_name}",
+        "implementation_id": f"tokenizers.Tokenizer@{tokenizers_version}",
         "tokenizer_class": actual_class_name,
         "tokenizer_module": actual_module,
         "tokenizer_config_sha256": tokenizer_config_sha256,
         "runtime_receipt_sha256": _sha256(receipt),
-        "backend_tokenizer_sha256": _sha256(backend_payload),
-        "decode_implementation_sha256": sha256_file(decode_path),
-        "decode_policy": "hf-per-token-no-cleanup-concat-equals-sequence.v2",
+        "backend_tokenizer_sha256": _sha256(decode_backend_payload),
+        "tokenizers_package_version": tokenizers_version,
+        "decode_backend_id": "tokenizers.Tokenizer.from_str(tokenizer.json)",
+        "decode_policy": (
+            "tokenizers-snapshot-skip-special-false-serialized-spacing-concat.v3"
+        ),
     }
+
+
+def _verify_tokenizer_snapshot(
+    adapter: CanonicalTokenizerDecodeAdapter,
+    *,
+    manifest: Human13KUnionManifest,
+    publication: AdmittedPublication,
+) -> None:
+    """Revalidate the sealed private decoder without consulting the HF object."""
+
+    from importlib import metadata
+
+    from tokenizers import Tokenizer
+
+    admitted = _revalidate_admitted_publication(publication)
+    manifest_sha256 = _manifest_sha256(manifest)
+    if admitted.replayed_group.identity.manifest_sha256 != manifest_sha256:
+        raise ValueError("Task2 publication manifest lineage differs")
+    if manifest.binding.surface.tokenizer_sha256 != adapter.tokenizer_sha256:
+        raise ValueError("verified tokenizer snapshot differs from manifest SHA-256")
+    if manifest.binding.surface.tokenizer_class != adapter.tokenizer_class:
+        raise ValueError("verified tokenizer snapshot differs from manifest class")
+    if str(adapter._base_model_path) != adapter.tokenizer_id:
+        raise ValueError("verified tokenizer snapshot base-model identity differs")
+    for group in (admitted.execution.group, admitted.replayed_group):
+        if group.identity.tokenizer_id != adapter.tokenizer_id:
+            raise ValueError("Task2 tokenizer identity differs from verified snapshot")
+
+    if hashlib.sha256(adapter._tokenizer_json_bytes).hexdigest() != (
+        adapter.tokenizer_sha256
+    ):
+        raise ValueError("private tokenizer.json snapshot SHA-256 differs")
+    try:
+        file_payload = json.loads(adapter._tokenizer_json_bytes.decode("utf-8"))
+        if type(adapter._decode_backend) is not Tokenizer:
+            raise ValueError("private decoder is not the exact tokenizers backend")
+        backend_payload = json.loads(adapter._decode_backend.to_str())
+    except (AttributeError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("private tokenizer snapshot cannot be revalidated") from exc
+    if backend_payload != file_payload:
+        raise ValueError("private decoder differs from tokenizer.json snapshot")
+    if _sha256(backend_payload) != adapter.backend_tokenizer_sha256:
+        raise ValueError("private decoder serialization SHA-256 differs")
+
+    tokenizers_version = metadata.version("tokenizers")
+    if adapter.tokenizers_package_version != tokenizers_version:
+        raise ValueError("private decoder tokenizers package version differs")
+    if adapter.implementation_id != f"tokenizers.Tokenizer@{tokenizers_version}":
+        raise ValueError("private decoder implementation identity differs")
+    if adapter.decode_backend_id != "tokenizers.Tokenizer.from_str(tokenizer.json)":
+        raise ValueError("private decoder construction identity differs")
+    if adapter.decode_policy != (
+        "tokenizers-snapshot-skip-special-false-serialized-spacing-concat.v3"
+    ):
+        raise ValueError("private decoder option policy differs")
+
+    receipt = json.loads(adapter._runtime_receipt_json)
+    if _sha256(receipt) != adapter.runtime_receipt_sha256:
+        raise ValueError("private tokenizer runtime receipt SHA-256 differs")
+    if (
+        receipt.get("base_model_path") != adapter.tokenizer_id
+        or receipt.get("tokenizer_sha256") != adapter.tokenizer_sha256
+    ):
+        raise ValueError("private tokenizer runtime receipt identity differs")
+    package_versions = receipt.get("package_versions")
+    if (
+        not isinstance(package_versions, Mapping)
+        or package_versions.get("tokenizers") != tokenizers_version
+    ):
+        raise ValueError("private tokenizer runtime package receipt differs")
 
 
 @dataclass(frozen=True)
@@ -675,7 +750,8 @@ class CanonicalParserProjectionReceipt:
     tokenizer_config_sha256: str
     tokenizer_runtime_receipt_sha256: str
     tokenizer_backend_sha256: str
-    tokenizer_decode_implementation_sha256: str
+    tokenizer_backend_package_version: str
+    tokenizer_decode_backend_id: str
     tokenizer_decode_policy: str
     parser_id: str
     parser_policy: str
@@ -696,7 +772,6 @@ class CanonicalParserProjectionReceipt:
             "tokenizer_config_sha256",
             "tokenizer_runtime_receipt_sha256",
             "tokenizer_backend_sha256",
-            "tokenizer_decode_implementation_sha256",
         ):
             object.__setattr__(self, field, _digest(getattr(self, field), field=field))
         for field in (
@@ -708,6 +783,8 @@ class CanonicalParserProjectionReceipt:
             "tokenizer_class",
             "tokenizer_module",
             "tokenizer_base_model_path",
+            "tokenizer_backend_package_version",
+            "tokenizer_decode_backend_id",
             "tokenizer_decode_policy",
             "parser_id",
             "parser_policy",
@@ -764,9 +841,10 @@ class CanonicalParserProjectionReceipt:
             "tokenizer_config_sha256": self.tokenizer_config_sha256,
             "tokenizer_runtime_receipt_sha256": self.tokenizer_runtime_receipt_sha256,
             "tokenizer_backend_sha256": self.tokenizer_backend_sha256,
-            "tokenizer_decode_implementation_sha256": (
-                self.tokenizer_decode_implementation_sha256
+            "tokenizer_backend_package_version": (
+                self.tokenizer_backend_package_version
             ),
+            "tokenizer_decode_backend_id": self.tokenizer_decode_backend_id,
             "tokenizer_decode_policy": self.tokenizer_decode_policy,
             "parser_id": self.parser_id,
             "parser_policy": self.parser_policy,
@@ -1912,9 +1990,10 @@ def build_canonical_parser_projection_receipt(
         tokenizer_config_sha256=tokenizer_adapter.tokenizer_config_sha256,
         tokenizer_runtime_receipt_sha256=(tokenizer_adapter.runtime_receipt_sha256),
         tokenizer_backend_sha256=tokenizer_adapter.backend_tokenizer_sha256,
-        tokenizer_decode_implementation_sha256=(
-            tokenizer_adapter.decode_implementation_sha256
+        tokenizer_backend_package_version=(
+            tokenizer_adapter.tokenizers_package_version
         ),
+        tokenizer_decode_backend_id=tokenizer_adapter.decode_backend_id,
         tokenizer_decode_policy=tokenizer_adapter.decode_policy,
         parser_id=PARSER_ID,
         parser_policy=PARSER_POLICY,

@@ -1227,5 +1227,80 @@ def test_verified_tokenizer_deterministically_reproduces_canonical_projection(
     assert first.tokenizer_id == str(components.base_model_path)
     assert first.tokenizer_sha256 == components.tokenizer_sha256
     assert first.tokenizer_implementation_id == (
-        f"{type(components.tokenizer).__module__}.{type(components.tokenizer).__name__}"
+        f"tokenizers.Tokenizer@{metadata.version('tokenizers')}"
+    )
+    assert first.tokenizer_decode_backend_id == (
+        "tokenizers.Tokenizer.from_str(tokenizer.json)"
+    )
+
+
+def test_verified_adapter_ignores_post_factory_hf_private_decode_override(
+    tmp_path: Path,
+) -> None:
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    adapter = _verified_runtime_adapter(components, manifest, publication)
+    body_ids = _ONE_CANONICAL_ROW[:-1]
+    baseline_decode = adapter.decode(body_ids)
+    baseline_projection = credit.build_canonical_parser_projection_receipt(
+        manifest,
+        publication,
+        tokenizer_adapter=adapter,
+    )
+
+    components.tokenizer._decode = (  # type: ignore[method-assign]
+        lambda *_args, **_kwargs: "forged-instance-private-decode"
+    )
+    assert (
+        components.tokenizer.decode(
+            list(body_ids),
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+        == "forged-instance-private-decode"
+    )
+    assert adapter.decode(body_ids) == baseline_decode
+    assert (
+        credit.build_canonical_parser_projection_receipt(
+            manifest,
+            publication,
+            tokenizer_adapter=adapter,
+        )
+        == baseline_projection
+    )
+
+
+def test_verified_adapter_ignores_post_factory_hf_backend_proxy(
+    tmp_path: Path,
+) -> None:
+    components, manifest, publication = _real_qwen_components(tmp_path)
+    adapter = _verified_runtime_adapter(components, manifest, publication)
+    body_ids = _ONE_CANONICAL_ROW[:-1]
+    baseline_decode = adapter.decode(body_ids)
+    baseline_projection = credit.build_canonical_parser_projection_receipt(
+        manifest,
+        publication,
+        tokenizer_adapter=adapter,
+    )
+
+    class _PostFactoryBackendProxy:
+        def decode(self, *_args: object, **_kwargs: object) -> str:
+            return "forged-post-factory-backend"
+
+    components.tokenizer._tokenizer = _PostFactoryBackendProxy()  # type: ignore[assignment]
+    assert (
+        components.tokenizer.decode(
+            list(body_ids),
+            skip_special_tokens=False,
+            clean_up_tokenization_spaces=False,
+        )
+        == "forged-post-factory-backend"
+    )
+    assert adapter.decode(body_ids) == baseline_decode
+    assert (
+        credit.build_canonical_parser_projection_receipt(
+            manifest,
+            publication,
+            tokenizer_adapter=adapter,
+        )
+        == baseline_projection
     )
