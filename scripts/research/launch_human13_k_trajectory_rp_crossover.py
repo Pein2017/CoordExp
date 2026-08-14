@@ -48,6 +48,7 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     MATRIX_SEED_GROUPS,
     PHASE_MATRIX,
     PHASE_QUALIFICATION,
+    QUALIFICATION_LEARNING_RATE_RAY,
     QUALIFICATION_SEED_GROUP,
     TRAINING_RPS,
     AcquisitionKey,
@@ -144,6 +145,8 @@ class LeafConfig:
     optimizer: Mapping[str, Any]
     max_updates: int
     retry_policy: str
+    source_path: str
+    source_sha256: str
 
 
 def _leaf_mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -246,6 +249,8 @@ def load_leaf_config(path: str | Path) -> LeafConfig:
         optimizer=MappingProxyType(normalized_optimizer),
         max_updates=1,
         retry_policy="none",
+        source_path=str(config_path),
+        source_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
     )
 
 
@@ -290,6 +295,40 @@ def _adamw_config_sha256(optimizer: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _optimizer_at_learning_rate(
+    optimizer: Mapping[str, Any], learning_rate: float
+) -> Mapping[str, Any]:
+    if learning_rate not in QUALIFICATION_LEARNING_RATE_RAY:
+        raise LaunchContractError("learning rate is outside the exact dose ray")
+    return MappingProxyType({**dict(optimizer), "learning_rate": learning_rate})
+
+
+def _resolved_leaf_config_sha256(
+    leaf: LeafConfig,
+    *,
+    learning_rate: float,
+    global_learning_rate_decision_sha256: str | None,
+) -> str:
+    payload = {
+        "schema_version": "human13_rp_crossover_resolved_leaf.v1",
+        "source_leaf_sha256": leaf.source_sha256,
+        "training_rp": leaf.training_rp,
+        "arm_id": leaf.arm_id,
+        "objective_components": list(leaf.objective_components),
+        "compiler_coefficient": leaf.compiler_coefficient,
+        "evaluation_rps": list(leaf.evaluation_rps),
+        "optimizer": dict(_optimizer_at_learning_rate(leaf.optimizer, learning_rate)),
+        "max_updates": leaf.max_updates,
+        "retry_policy": leaf.retry_policy,
+        "global_learning_rate_decision_sha256": (global_learning_rate_decision_sha256),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=list).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
 def _rp_slug(training_rp: float) -> str:
     return "rp100" if training_rp == 1.0 else "rp110"
 
@@ -303,6 +342,7 @@ def build_dag_plan(
     *,
     run_id: str,
     output_root: str | Path = ARTIFACT_ROOT,
+    global_learning_rate_decision: Any | None = None,
 ) -> dict[str, Any]:
     """Build the exact static DAG: six matrix acquisitions, two qualification
 
@@ -332,7 +372,19 @@ def build_dag_plan(
         raise LaunchContractError(
             "every leaf config must declare one identical AdamW configuration"
         )
-    adamw_config_sha256 = _adamw_config_sha256(configs[0].optimizer)
+    selected_learning_rate: float | None = None
+    decision_sha256: str | None = None
+    if global_learning_rate_decision is not None:
+        from scripts.research.human13_rp_crossover_production import (
+            GlobalLearningRateDecision,
+        )
+
+        if type(global_learning_rate_decision) is not GlobalLearningRateDecision:
+            raise LaunchContractError(
+                "matrix resolution requires the typed global LR decision"
+            )
+        selected_learning_rate = global_learning_rate_decision.selected_learning_rate
+        decision_sha256 = global_learning_rate_decision.content_sha256
 
     root = Path(output_root)
     acquisitions: list[dict[str, Any]] = []
@@ -348,15 +400,47 @@ def build_dag_plan(
         acquisition_sha = acquisition_key.content_sha256
         node_root = root / run_id / _rp_slug(training_rp) / seed_group_id
         cells: list[dict[str, Any]] = []
-        for arm_id in arm_ids:
+        variants = (
+            tuple(("C", dose) for dose in QUALIFICATION_LEARNING_RATE_RAY)
+            if phase == PHASE_QUALIFICATION
+            else tuple((arm_id, selected_learning_rate) for arm_id in arm_ids)
+        )
+        for arm_id, learning_rate in variants:
             leaf_config = by_key[(training_rp, arm_id)]
-            cell_key = CellKey(acquisition_key=acquisition_key, arm_id=arm_id)
+            cell_key = CellKey(
+                acquisition_key=acquisition_key,
+                arm_id=arm_id,
+                qualification_learning_rate=(
+                    learning_rate if phase == PHASE_QUALIFICATION else None
+                ),
+            )
             cell_sha = cell_key.content_sha256
             # Per-cell optimizer identity: unique by construction, and distinct
             # from the one declared AdamW configuration every cell shares.
             optimizer_identity = hashlib.sha256(
                 f"{run_id}\0{cell_sha}\0fresh-adamw-optimizer".encode("utf-8")
             ).hexdigest()
+            optimizer = (
+                None
+                if learning_rate is None
+                else _optimizer_at_learning_rate(leaf_config.optimizer, learning_rate)
+            )
+            resolved_leaf_sha256 = (
+                None
+                if learning_rate is None
+                else _resolved_leaf_config_sha256(
+                    leaf_config,
+                    learning_rate=learning_rate,
+                    global_learning_rate_decision_sha256=(
+                        decision_sha256 if phase == PHASE_MATRIX else None
+                    ),
+                )
+            )
+            output_suffix = (
+                arm_id.lower()
+                if phase == PHASE_MATRIX
+                else f"c/dose-{learning_rate:.0e}".replace("+", "")
+            )
             cells.append(
                 {
                     "cell_key": cell_key.to_dict(),
@@ -365,8 +449,16 @@ def build_dag_plan(
                     "objective_components": list(leaf_config.objective_components),
                     "compiler_coefficient": leaf_config.compiler_coefficient,
                     "shared_evidence_group_sha256": acquisition_sha,
-                    "output_root": str(node_root / arm_id.lower()),
-                    "adamw_config_sha256": adamw_config_sha256,
+                    "output_root": str(node_root / output_suffix),
+                    "source_leaf_config_sha256": leaf_config.source_sha256,
+                    "resolved_leaf_config_sha256": resolved_leaf_sha256,
+                    "learning_rate": learning_rate,
+                    "global_learning_rate_decision_sha256": (
+                        decision_sha256 if phase == PHASE_MATRIX else None
+                    ),
+                    "adamw_config_sha256": (
+                        None if optimizer is None else _adamw_config_sha256(optimizer)
+                    ),
                     "fresh_optimizer_identity_sha256": optimizer_identity,
                     "source": "fresh",
                     "optimizer": "fresh_adamw",
@@ -374,6 +466,11 @@ def build_dag_plan(
                     "max_updates": leaf_config.max_updates,
                     "retry_policy": leaf_config.retry_policy,
                     "evaluation_rps": list(leaf_config.evaluation_rps),
+                    "execution_blocked": (
+                        "awaiting_global_learning_rate_decision"
+                        if phase == PHASE_MATRIX and decision_sha256 is None
+                        else None
+                    ),
                 }
             )
             (
@@ -413,17 +510,17 @@ def build_dag_plan(
         for a in acquisitions
         for cell in a["cells"]
     ]
-    if len(output_roots) != 20 or len(set(output_roots)) != 20:
+    if len(output_roots) != 28 or len(set(output_roots)) != 28:
         raise LaunchContractError("every cell output_root must be unique")
-    if len(optimizer_ids) != 20 or len(set(optimizer_ids)) != 20:
+    if len(optimizer_ids) != 28 or len(set(optimizer_ids)) != 28:
         raise LaunchContractError(
             "every cell must have an independent fresh optimizer identity"
         )
     if len(matrix_cell_keys) != 18 or len(set(matrix_cell_keys)) != 18:
         raise LaunchContractError("matrix disposition must bind exactly eighteen cells")
-    if len(qualification_cell_keys) != 2 or len(set(qualification_cell_keys)) != 2:
+    if len(qualification_cell_keys) != 10 or len(set(qualification_cell_keys)) != 10:
         raise LaunchContractError(
-            "qualification disposition must bind exactly two cells"
+            "qualification disposition must bind exactly ten C dose proposals"
         )
     receipt_paths = [a["receipt_path"] for a in acquisitions]
     if len(receipt_paths) != len(set(receipt_paths)):
@@ -462,6 +559,11 @@ def build_dag_plan(
         "acquisitions": acquisitions,
         "matrix_cell_keys": matrix_cell_keys,
         "qualification_cell_keys": qualification_cell_keys,
+        "qualification_proposal_count": len(qualification_cell_keys),
+        "matrix_cell_count": len(matrix_cell_keys),
+        "matrix_execution_ready": decision_sha256 is not None,
+        "global_learning_rate_decision_sha256": decision_sha256,
+        "selected_learning_rate": selected_learning_rate,
         "dependency_edges": dependency_edges,
     }
 
@@ -531,8 +633,12 @@ def plan_launches(
             "acquisition node identities must be nonempty and unique"
         )
 
+    matrix_execution_ready = payload.get("matrix_execution_ready") is True
+    default_phase = PHASE_MATRIX if matrix_execution_ready else PHASE_QUALIFICATION
     if node_ids is None:
-        selected_ids = tuple(item["node_id"] for item in acquisitions)
+        selected_ids = tuple(
+            item["node_id"] for item in acquisitions if item["phase"] == default_phase
+        )
     else:
         selected_ids = tuple(node_ids)
         if not selected_ids or len(set(selected_ids)) != len(selected_ids):
@@ -542,6 +648,13 @@ def plan_launches(
                 raise LaunchContractError(
                     f"selected node is absent from the dag plan: {node_id}"
                 )
+    if (
+        any(by_node[node_id]["phase"] == PHASE_MATRIX for node_id in selected_ids)
+        and not matrix_execution_ready
+    ):
+        raise LaunchContractError(
+            "matrix nodes cannot launch before the global learning-rate decision"
+        )
     selected = [by_node[node_id] for node_id in selected_ids]
     if len(selected) > MAX_LIVE_NODES:
         raise LaunchContractError(

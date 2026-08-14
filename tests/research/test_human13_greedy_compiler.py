@@ -47,18 +47,22 @@ from scripts.research.human13_greedy_compiler import (
     _greedy_compiler_numerator_for_test,
     _require_source_decode,
     admit_compiler_compact_logits,
+    admit_compiler_compact_logits_from_packed_plan,
     admit_source_greedy_decode,
     bind_packed_compiler_logits,
     build_compiler_ledger,
     combined_loss,
     gather_compiler_compact_logits,
     greedy_compiler_loss as public_greedy_compiler_loss,
+    greedy_compiler_numerator as public_greedy_compiler_numerator,
     greedy_compiler_site_score,
     load_compiler_ledger,
+    PackedCompilerLineage,
 )
 from scripts.research.human13_on_policy_scoring import (
     prepare_on_policy_candidate_scoring,
 )
+from scripts.research.human13_rp_crossover_live_packs import CompilerPackedRow
 
 
 SOURCE = "a" * 64
@@ -886,6 +890,70 @@ def test_public_loss_requires_bound_compact_logit_receipt() -> None:
     object.__setattr__(forged, "compiler_ledger_sha256", "f" * 64)
     with pytest.raises(ValueError, match="absent or forged"):
         public_greedy_compiler_loss(forged, admitted)
+
+
+def test_external_packed_plan_binder_rejects_a_physical_position_mismatch() -> None:
+    """Materializer rows must bind the exact co-packed plan, never a second plan."""
+
+    manifest, boundaries = _panel_fixture()
+    admitted = _admit_compiler_ledger_for_test(_ledger(manifest, boundaries))
+    site = admitted.images[0].site
+    assert site is not None
+    prepared = prepare_on_policy_candidate_scoring(
+        frontier_images={7000: boundaries[0].image},
+        prompt_skeletons={
+            7000: _Skeleton(
+                example_id="source-prompt:7000",
+                input_ids=(7, STOP, 1),
+                prompt_token_count=3,
+            )
+        },
+        global_max_length=4096,
+    )
+    segment = next(
+        value
+        for pack in prepared.packed_plan.packs
+        for value in pack.pack.segments
+        if value.example_id == site.packed_segment_id
+    )
+    position = segment.start + site.local_causal_position
+    raw = torch.zeros((1, max(site.compact_token_ids) + 2), requires_grad=True)
+    lineage = PackedCompilerLineage(
+        acquisition_sha256=admitted.acquisition_sha256,
+        trajectory_credit_sha256=admitted.trajectory_credit_sha256,
+        repetition_penalty=admitted.repetition_penalty,
+    )
+
+    receipt = admit_compiler_compact_logits_from_packed_plan(
+        prepared.packed_plan,
+        admitted,
+        rows=(
+            CompilerPackedRow(
+                site_id=site.site_id,
+                pack_index=segment.pack_index,
+                logits_position_ids=(position,),
+                raw_logits=raw,
+            ),
+        ),
+        lineage=lineage,
+    )
+    public_greedy_compiler_numerator(receipt, admitted).backward()
+    assert raw.grad is not None
+
+    with pytest.raises(ValueError, match="causal position"):
+        admit_compiler_compact_logits_from_packed_plan(
+            prepared.packed_plan,
+            admitted,
+            rows=(
+                CompilerPackedRow(
+                    site_id=site.site_id,
+                    pack_index=segment.pack_index,
+                    logits_position_ids=(position + 1,),
+                    raw_logits=raw.detach().clone().requires_grad_(True),
+                ),
+            ),
+            lineage=lineage,
+        )
 
 
 def test_compiler_evidence_is_compact_not_full_vocabulary() -> None:

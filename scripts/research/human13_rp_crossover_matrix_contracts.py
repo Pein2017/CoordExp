@@ -41,6 +41,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import re
 from types import MappingProxyType
 from typing import Any
@@ -59,6 +60,13 @@ TRAINING_RPS: tuple[float, ...] = (1.0, 1.10)
 EVALUATION_RPS: tuple[float, ...] = (1.0, 1.10)
 MATRIX_SEED_GROUPS: tuple[str, ...] = ("matrix_a", "matrix_b", "matrix_c")
 QUALIFICATION_SEED_GROUP = "qualification"
+QUALIFICATION_LEARNING_RATE_RAY: tuple[float, ...] = (
+    3.0e-7,
+    1.0e-6,
+    3.0e-6,
+    1.0e-5,
+    3.0e-5,
+)
 ARM_IDS: tuple[str, ...] = ("A", "B", "C")
 PHASE_MATRIX = "matrix"
 PHASE_QUALIFICATION = "qualification"
@@ -101,6 +109,8 @@ AUDIT_REF_SCHEMA = "human13_rp_crossover_audit_ref.v1"
 CELL_RECEIPT_SCHEMA = "human13_rp_crossover_cell_receipt.v1"
 MATRIX_PLAN_SCHEMA = "human13_rp_crossover_matrix_plan.v1"
 NODE_TERMINAL_RECEIPT_SCHEMA = "human13_rp_crossover_node_terminal_receipt.v1"
+AGGREGATE_RESOURCE_RECEIPT_SCHEMA = "human13_rp_crossover_resources.v1"
+DOSE_MECHANICAL_RECEIPT_SCHEMA = "human13_rp_crossover_dose_mechanics.v1"
 
 # The exact sealed seed ranges of the owning research unit.  They are bound to
 # the collector that actually draws them, and re-checked here so that a drift
@@ -292,10 +302,11 @@ class AcquisitionKey:
 
 @dataclass(frozen=True)
 class CellKey:
-    """One arm of one acquisition: ``(acquisition_key, arm_id)``."""
+    """One arm, plus the exact dose for qualification proposals only."""
 
     acquisition_key: AcquisitionKey
     arm_id: str
+    qualification_learning_rate: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.acquisition_key, AcquisitionKey):
@@ -304,12 +315,28 @@ class CellKey:
         if arm_id not in ARM_IDS:
             raise ValueError("arm_id must be exactly A, B, or C")
         object.__setattr__(self, "arm_id", arm_id)
+        dose = self.qualification_learning_rate
+        if self.acquisition_key.phase == PHASE_QUALIFICATION:
+            if arm_id != "C":
+                raise ValueError("qualification cell keys may bind only arm C")
+            if (
+                isinstance(dose, bool)
+                or not isinstance(dose, (int, float))
+                or float(dose) not in QUALIFICATION_LEARNING_RATE_RAY
+            ):
+                raise ValueError(
+                    "qualification cell key must bind one exact dose-ray point"
+                )
+            object.__setattr__(self, "qualification_learning_rate", float(dose))
+        elif dose is not None:
+            raise ValueError("matrix cell keys must not carry a qualification dose")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": CELL_KEY_SCHEMA,
             "acquisition_key": self.acquisition_key.to_dict(),
             "arm_id": self.arm_id,
+            "qualification_learning_rate": self.qualification_learning_rate,
         }
 
     @classmethod
@@ -319,6 +346,7 @@ class CellKey:
         return cls(
             acquisition_key=AcquisitionKey.from_dict(value["acquisition_key"]),
             arm_id=value["arm_id"],
+            qualification_learning_rate=value.get("qualification_learning_rate"),
         )
 
     @property
@@ -510,6 +538,9 @@ class CellSpec:
     output_root: str
     max_updates: int = 1
     retry_policy: str = "none"
+    learning_rate: float = 3.0e-6
+    global_learning_rate_decision_sha256: str | None = None
+    resolved_leaf_config_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.cell_key, CellKey):
@@ -575,6 +606,33 @@ class CellSpec:
             raise ValueError("max_updates must be exactly 1")
         if self.retry_policy != "none":
             raise ValueError("retry_policy must be exactly 'none'")
+        learning_rate = float(self.learning_rate)
+        if learning_rate not in QUALIFICATION_LEARNING_RATE_RAY:
+            raise ValueError("cell learning_rate is outside the qualification ray")
+        object.__setattr__(self, "learning_rate", learning_rate)
+        decision = _optional_digest(
+            self.global_learning_rate_decision_sha256,
+            field="global_learning_rate_decision_sha256",
+        )
+        resolved_leaf = _optional_digest(
+            self.resolved_leaf_config_sha256,
+            field="resolved_leaf_config_sha256",
+        )
+        if acquisition.phase == PHASE_QUALIFICATION:
+            if self.cell_key.qualification_learning_rate != learning_rate:
+                raise ValueError(
+                    "qualification CellSpec dose differs from its cell key"
+                )
+            if decision is not None:
+                raise ValueError(
+                    "qualification proposals precede the global learning-rate decision"
+                )
+        elif (decision is None) != (resolved_leaf is None):
+            raise ValueError(
+                "matrix selected-LR decision and resolved leaf hash must be paired"
+            )
+        object.__setattr__(self, "global_learning_rate_decision_sha256", decision)
+        object.__setattr__(self, "resolved_leaf_config_sha256", resolved_leaf)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -593,6 +651,11 @@ class CellSpec:
             "output_root": self.output_root,
             "max_updates": self.max_updates,
             "retry_policy": self.retry_policy,
+            "learning_rate": self.learning_rate,
+            "global_learning_rate_decision_sha256": (
+                self.global_learning_rate_decision_sha256
+            ),
+            "resolved_leaf_config_sha256": self.resolved_leaf_config_sha256,
         }
 
     @classmethod
@@ -614,6 +677,11 @@ class CellSpec:
             output_root=value["output_root"],
             max_updates=value["max_updates"],
             retry_policy=value["retry_policy"],
+            learning_rate=value.get("learning_rate", 3.0e-6),
+            global_learning_rate_decision_sha256=value.get(
+                "global_learning_rate_decision_sha256"
+            ),
+            resolved_leaf_config_sha256=value.get("resolved_leaf_config_sha256"),
         )
 
     @property
@@ -696,6 +764,241 @@ class AuditRef:
 
 
 @dataclass(frozen=True)
+class AggregateResourceReceipt:
+    """Complete measured count/resource envelope for one private proposal."""
+
+    measurement_scope: str
+    wall_time_seconds: float
+    peak_host_rss_bytes: int
+    cuda_peak_allocated_bytes: int | None
+    cuda_peak_reserved_bytes: int | None
+    acquisition_request_count: int
+    acquisition_batch_count: int
+    acquisition_token_count: int
+    decode_request_count: int
+    decode_batch_count: int
+    decode_token_count: int
+    packed_token_count: int
+    logical_token_count: int
+    forward_count: int
+    backward_count: int
+    row_bytes: int
+    artifact_bytes: int
+    update_count: int
+    audit_count: int
+    rollback_count: int
+
+    def __post_init__(self) -> None:
+        if self.measurement_scope not in {"injected_cpu", "live"}:
+            raise ValueError("resource measurement_scope must be injected_cpu or live")
+        wall = float(self.wall_time_seconds)
+        if not math.isfinite(wall) or wall < 0.0:
+            raise ValueError("resource wall time must be finite and nonnegative")
+        object.__setattr__(self, "wall_time_seconds", wall)
+        integer_fields = (
+            "peak_host_rss_bytes",
+            "acquisition_request_count",
+            "acquisition_batch_count",
+            "acquisition_token_count",
+            "decode_request_count",
+            "decode_batch_count",
+            "decode_token_count",
+            "packed_token_count",
+            "logical_token_count",
+            "forward_count",
+            "backward_count",
+            "row_bytes",
+            "artifact_bytes",
+            "update_count",
+            "audit_count",
+            "rollback_count",
+        )
+        for field in integer_fields:
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"resource {field} must be a nonnegative integer")
+        cuda_values = (
+            self.cuda_peak_allocated_bytes,
+            self.cuda_peak_reserved_bytes,
+        )
+        if (cuda_values[0] is None) != (cuda_values[1] is None):
+            raise ValueError("CUDA allocated/reserved measurements must be paired")
+        for value in cuda_values:
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ValueError("CUDA resource bytes must be nonnegative integers")
+        if self.backward_count <= 0 or (
+            self.update_count,
+            self.audit_count,
+            self.rollback_count,
+        ) != (1, 2, 1):
+            raise ValueError(
+                "proposal resources require positive backward count, one update, "
+                "two audits, and one rollback"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": AGGREGATE_RESOURCE_RECEIPT_SCHEMA,
+            **{field: getattr(self, field) for field in self.__dataclass_fields__},
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "AggregateResourceReceipt":
+        if value.get("schema_version") != AGGREGATE_RESOURCE_RECEIPT_SCHEMA:
+            raise ValueError("aggregate resource receipt schema_version differs")
+        return cls(**{field: value[field] for field in cls.__dataclass_fields__})
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self.to_dict())
+
+
+@dataclass(frozen=True)
+class DoseMechanicalReceipt:
+    """Owner-outcome-free mechanics used by the pure global dose selector."""
+
+    cell_key: CellKey
+    proposal_sha256: str
+    private_checkpoint_sha256: str
+    audit_checkpoint_sha256s: tuple[str, str]
+    greedy_decision_change_count: int
+    malformed_output_delta_count: int
+    cap_terminated_output_delta_count: int
+    unparseable_output_delta_count: int
+    active_witness_count: int
+    jvp_fd_max_abs_error: float
+    jvp_fd_tolerance: float
+    median_abs_decision_margin_displacement: float
+    median_abs_source_decision_margin: float
+    rollback_reproduced: bool
+    resources: AggregateResourceReceipt
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.cell_key, CellKey)
+            or self.cell_key.acquisition_key.phase != PHASE_QUALIFICATION
+            or self.cell_key.arm_id != "C"
+        ):
+            raise ValueError("dose mechanics require one qualification C cell key")
+        for field in ("proposal_sha256", "private_checkpoint_sha256"):
+            object.__setattr__(self, field, _digest(getattr(self, field), field=field))
+        audits = tuple(
+            _digest(value, field="audit_checkpoint_sha256")
+            for value in self.audit_checkpoint_sha256s
+        )
+        if len(audits) != 2 or audits != (self.private_checkpoint_sha256,) * 2:
+            raise ValueError("both dose audits must use one private checkpoint")
+        object.__setattr__(self, "audit_checkpoint_sha256s", audits)
+        for field in (
+            "greedy_decision_change_count",
+            "malformed_output_delta_count",
+            "cap_terminated_output_delta_count",
+            "unparseable_output_delta_count",
+            "active_witness_count",
+        ):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field} must be a nonnegative integer")
+        for field in (
+            "jvp_fd_max_abs_error",
+            "jvp_fd_tolerance",
+            "median_abs_decision_margin_displacement",
+            "median_abs_source_decision_margin",
+        ):
+            value = float(getattr(self, field))
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{field} must be finite and nonnegative")
+            object.__setattr__(self, field, value)
+        if self.jvp_fd_tolerance <= 0.0:
+            raise ValueError("JVP/finite-difference tolerance must be positive")
+        if self.rollback_reproduced is not True:
+            raise ValueError("dose mechanics require exact rollback reproduction")
+        if not isinstance(self.resources, AggregateResourceReceipt):
+            raise ValueError("dose mechanics require aggregate resource evidence")
+
+    @property
+    def learning_rate(self) -> float:
+        value = self.cell_key.qualification_learning_rate
+        assert value is not None
+        return value
+
+    @property
+    def floor_passed(self) -> bool:
+        return self.greedy_decision_change_count > 0 and self.active_witness_count > 0
+
+    @property
+    def ceiling_passed(self) -> bool:
+        return (
+            self.malformed_output_delta_count == 0
+            and self.cap_terminated_output_delta_count == 0
+            and self.unparseable_output_delta_count == 0
+            and self.jvp_fd_max_abs_error <= self.jvp_fd_tolerance
+            and self.median_abs_decision_margin_displacement
+            <= self.median_abs_source_decision_margin
+        )
+
+    @property
+    def mechanically_admissible(self) -> bool:
+        return self.floor_passed and self.ceiling_passed
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": DOSE_MECHANICAL_RECEIPT_SCHEMA,
+            "cell_key": self.cell_key.to_dict(),
+            "proposal_sha256": self.proposal_sha256,
+            "private_checkpoint_sha256": self.private_checkpoint_sha256,
+            "audit_checkpoint_sha256s": list(self.audit_checkpoint_sha256s),
+            "greedy_decision_change_count": self.greedy_decision_change_count,
+            "malformed_output_delta_count": self.malformed_output_delta_count,
+            "cap_terminated_output_delta_count": self.cap_terminated_output_delta_count,
+            "unparseable_output_delta_count": self.unparseable_output_delta_count,
+            "active_witness_count": self.active_witness_count,
+            "jvp_fd_max_abs_error": self.jvp_fd_max_abs_error,
+            "jvp_fd_tolerance": self.jvp_fd_tolerance,
+            "median_abs_decision_margin_displacement": (
+                self.median_abs_decision_margin_displacement
+            ),
+            "median_abs_source_decision_margin": self.median_abs_source_decision_margin,
+            "rollback_reproduced": self.rollback_reproduced,
+            "resources": self.resources.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "DoseMechanicalReceipt":
+        if value.get("schema_version") != DOSE_MECHANICAL_RECEIPT_SCHEMA:
+            raise ValueError("dose mechanical receipt schema_version differs")
+        return cls(
+            cell_key=CellKey.from_dict(value["cell_key"]),
+            proposal_sha256=value["proposal_sha256"],
+            private_checkpoint_sha256=value["private_checkpoint_sha256"],
+            audit_checkpoint_sha256s=tuple(value["audit_checkpoint_sha256s"]),
+            greedy_decision_change_count=value["greedy_decision_change_count"],
+            malformed_output_delta_count=value["malformed_output_delta_count"],
+            cap_terminated_output_delta_count=value[
+                "cap_terminated_output_delta_count"
+            ],
+            unparseable_output_delta_count=value["unparseable_output_delta_count"],
+            active_witness_count=value["active_witness_count"],
+            jvp_fd_max_abs_error=value["jvp_fd_max_abs_error"],
+            jvp_fd_tolerance=value["jvp_fd_tolerance"],
+            median_abs_decision_margin_displacement=value[
+                "median_abs_decision_margin_displacement"
+            ],
+            median_abs_source_decision_margin=value[
+                "median_abs_source_decision_margin"
+            ],
+            rollback_reproduced=value["rollback_reproduced"],
+            resources=AggregateResourceReceipt.from_dict(value["resources"]),
+        )
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self.to_dict())
+
+
+@dataclass(frozen=True)
 class CellReceipt:
     """The immutable outcome of one cell: proposal, audits, transaction, and status.
 
@@ -725,6 +1028,11 @@ class CellReceipt:
     retry_policy: str = "none"
     rollback_confirmed: bool = True
     failure_reason: str | None = None
+    learning_rate: float = 3.0e-6
+    global_learning_rate_decision_sha256: str | None = None
+    resolved_leaf_config_sha256: str | None = None
+    aggregate_resources: AggregateResourceReceipt | None = None
+    dose_mechanics: DoseMechanicalReceipt | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.cell_key, CellKey):
@@ -769,6 +1077,37 @@ class CellReceipt:
             raise ValueError("update_count must be exactly 1")
         if self.retry_policy != "none":
             raise ValueError("retry_policy must be exactly 'none'")
+        learning_rate = float(self.learning_rate)
+        if learning_rate not in QUALIFICATION_LEARNING_RATE_RAY:
+            raise ValueError("cell receipt learning_rate is outside the sealed ray")
+        object.__setattr__(self, "learning_rate", learning_rate)
+        object.__setattr__(
+            self,
+            "global_learning_rate_decision_sha256",
+            _optional_digest(
+                self.global_learning_rate_decision_sha256,
+                field="global_learning_rate_decision_sha256",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "resolved_leaf_config_sha256",
+            _optional_digest(
+                self.resolved_leaf_config_sha256,
+                field="resolved_leaf_config_sha256",
+            ),
+        )
+        if self.aggregate_resources is not None and not isinstance(
+            self.aggregate_resources, AggregateResourceReceipt
+        ):
+            raise ValueError("cell aggregate_resources must be a typed receipt")
+        if self.dose_mechanics is not None:
+            if not isinstance(self.dose_mechanics, DoseMechanicalReceipt):
+                raise ValueError("cell dose_mechanics must be a typed receipt")
+            if self.dose_mechanics.cell_key != self.cell_key:
+                raise ValueError("dose mechanics differ from the cell receipt key")
+            if self.dose_mechanics.resources != self.aggregate_resources:
+                raise ValueError("dose mechanics and cell resources differ")
 
         requires_projection = "preservation" in components
         for field in (
@@ -873,6 +1212,19 @@ class CellReceipt:
             "retry_policy": self.retry_policy,
             "rollback_confirmed": self.rollback_confirmed,
             "failure_reason": self.failure_reason,
+            "learning_rate": self.learning_rate,
+            "global_learning_rate_decision_sha256": (
+                self.global_learning_rate_decision_sha256
+            ),
+            "resolved_leaf_config_sha256": self.resolved_leaf_config_sha256,
+            "aggregate_resources": (
+                None
+                if self.aggregate_resources is None
+                else self.aggregate_resources.to_dict()
+            ),
+            "dose_mechanics": (
+                None if self.dose_mechanics is None else self.dose_mechanics.to_dict()
+            ),
         }
 
     @classmethod
@@ -901,6 +1253,21 @@ class CellReceipt:
             retry_policy=value["retry_policy"],
             rollback_confirmed=value["rollback_confirmed"],
             failure_reason=value["failure_reason"],
+            learning_rate=value.get("learning_rate", 3.0e-6),
+            global_learning_rate_decision_sha256=value.get(
+                "global_learning_rate_decision_sha256"
+            ),
+            resolved_leaf_config_sha256=value.get("resolved_leaf_config_sha256"),
+            aggregate_resources=(
+                None
+                if value.get("aggregate_resources") is None
+                else AggregateResourceReceipt.from_dict(value["aggregate_resources"])
+            ),
+            dose_mechanics=(
+                None
+                if value.get("dose_mechanics") is None
+                else DoseMechanicalReceipt.from_dict(value["dose_mechanics"])
+            ),
         )
 
     @property
@@ -941,9 +1308,17 @@ def validate_node_cell_specs(
     bound = tuple(specs)
     if any(not isinstance(item, CellSpec) for item in bound):
         raise ValueError("node cell specs must be CellSpec records")
-    expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",)
+    expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",) * 5
     if tuple(spec.cell_key.arm_id for spec in bound) != expected_arms:
-        raise ValueError("node cell specs must bind every planned arm of its phase")
+        raise ValueError(
+            "node cell specs must bind every planned arm/dose of its phase"
+        )
+    if (
+        phase == PHASE_QUALIFICATION
+        and tuple(spec.learning_rate for spec in bound)
+        != QUALIFICATION_LEARNING_RATE_RAY
+    ):
+        raise ValueError("qualification node must bind the exact five-dose ray")
     for spec in bound:
         if spec.cell_key.acquisition_key != acquisition_key:
             raise ValueError("every node CellSpec must bind this acquisition key")
@@ -953,14 +1328,26 @@ def validate_node_cell_specs(
         )
     if len({spec.source_checkpoint_sha256 for spec in bound}) != 1:
         raise ValueError("one node begins from one Source checkpoint identity")
-    if len({spec.adamw_config_sha256 for spec in bound}) != 1:
+    if phase == PHASE_MATRIX and len({spec.adamw_config_sha256 for spec in bound}) != 1:
         raise ValueError(
             "every cell must bind one declared AdamW configuration identity"
         )
     identities = [spec.fresh_optimizer_identity_sha256 for spec in bound]
     if len(set(identities)) != len(identities):
         raise ValueError("every cell must have an independent fresh optimizer identity")
-    _validate_group_objective_identity({spec.cell_key.arm_id: spec for spec in bound})
+    if phase == PHASE_MATRIX:
+        decisions = {spec.global_learning_rate_decision_sha256 for spec in bound}
+        if None in decisions or len(decisions) != 1:
+            raise ValueError(
+                "matrix cells require one selected global learning-rate decision"
+            )
+        if len({spec.learning_rate for spec in bound}) != 1:
+            raise ValueError("matrix cells must consume one selected learning rate")
+        _validate_group_objective_identity(
+            {spec.cell_key.arm_id: spec for spec in bound}
+        )
+    elif len({spec.objective_component_hashes for spec in bound}) != 1:
+        raise ValueError("qualification doses must reuse identical C objective bytes")
     return bound
 
 
@@ -1338,7 +1725,7 @@ class NodeTerminalReceipt:
             raise ValueError("node terminal cell_specs must be CellSpec records")
         if any(not isinstance(item, CellReceipt) for item in receipts):
             raise ValueError("node terminal cell_receipts must be CellReceipt records")
-        expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",)
+        expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",) * 5
         if specs:
             validate_node_cell_specs(self.acquisition_key, phase, specs)
         if len(receipts) > len(specs):
@@ -1362,6 +1749,11 @@ class NodeTerminalReceipt:
                 receipt.adamw_config_sha256 != spec.adamw_config_sha256
                 or receipt.fresh_optimizer_identity_sha256
                 != spec.fresh_optimizer_identity_sha256
+                or receipt.learning_rate != spec.learning_rate
+                or receipt.global_learning_rate_decision_sha256
+                != spec.global_learning_rate_decision_sha256
+                or receipt.resolved_leaf_config_sha256
+                != spec.resolved_leaf_config_sha256
             ):
                 raise ValueError(
                     "node terminal receipt optimizer identity differs from its spec"
@@ -1428,9 +1820,11 @@ class NodeTerminalReceipt:
 
 __all__ = [
     "ACQUISITION_KEY_SCHEMA",
+    "AGGREGATE_RESOURCE_RECEIPT_SCHEMA",
     "ARM_IDS",
     "AUDIT_REF_SCHEMA",
     "AcquisitionKey",
+    "AggregateResourceReceipt",
     "AuditRef",
     "CANONICAL_IMAGE_IDS",
     "CANONICAL_SEED_GROUPS",
@@ -1441,6 +1835,8 @@ __all__ = [
     "CellReceipt",
     "CellSpec",
     "DRY_RUN_COUNTER_KEYS",
+    "DOSE_MECHANICAL_RECEIPT_SCHEMA",
+    "DoseMechanicalReceipt",
     "EVALUATION_RPS",
     "MATRIX_PLAN_SCHEMA",
     "MATRIX_SEED_GROUPS",
@@ -1451,6 +1847,7 @@ __all__ = [
     "PHASE_QUALIFICATION",
     "PROPOSAL_COMPONENTS_BY_ARM",
     "QUALIFICATION_SEED_GROUP",
+    "QUALIFICATION_LEARNING_RATE_RAY",
     "SEEDS_PER_GROUP",
     "SHARED_EVIDENCE_SCHEMA",
     "SOURCE_BASELINE_SCHEMA",

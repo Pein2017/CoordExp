@@ -1,16 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from scripts.research import human13_live_model as live
+from scripts.research.human13_rp_crossover_matrix_contracts import (
+    AcquisitionKey,
+    AggregateResourceReceipt,
+    CellKey,
+    DoseMechanicalReceipt,
+    PHASE_QUALIFICATION,
+)
+from scripts.research.human13_rp_crossover_production import (
+    QUALIFICATION_LEARNING_RATE_RAY,
+    select_global_learning_rate,
+)
 
 
 CONFIG_ROOT = Path("configs/coordexp_swift/research/human13_k_union")
@@ -18,6 +30,58 @@ CONFIG_ROOT = Path("configs/coordexp_swift/research/human13_k_union")
 
 def _plan() -> live.Human13LiveModelPlan:
     return live.build_human13_live_model_plan(CONFIG_ROOT / "03_a1.yaml")
+
+
+def _selected_lr_decision(selected: float):
+    resources = AggregateResourceReceipt(
+        measurement_scope="injected_cpu",
+        wall_time_seconds=1.0,
+        peak_host_rss_bytes=1,
+        cuda_peak_allocated_bytes=None,
+        cuda_peak_reserved_bytes=None,
+        acquisition_request_count=1,
+        acquisition_batch_count=1,
+        acquisition_token_count=1,
+        decode_request_count=2,
+        decode_batch_count=2,
+        decode_token_count=2,
+        packed_token_count=1,
+        logical_token_count=1,
+        forward_count=1,
+        backward_count=1,
+        row_bytes=1,
+        artifact_bytes=1,
+        update_count=1,
+        audit_count=2,
+        rollback_count=1,
+    )
+    receipts = []
+    for rp in (1.0, 1.10):
+        acquisition = AcquisitionKey(rp, "qualification", PHASE_QUALIFICATION)
+        for dose in QUALIFICATION_LEARNING_RATE_RAY:
+            checkpoint = hashlib.sha256(f"checkpoint:{rp}:{dose}".encode()).hexdigest()
+            receipts.append(
+                DoseMechanicalReceipt(
+                    cell_key=CellKey(acquisition, "C", dose),
+                    proposal_sha256=hashlib.sha256(
+                        f"proposal:{rp}:{dose}".encode()
+                    ).hexdigest(),
+                    private_checkpoint_sha256=checkpoint,
+                    audit_checkpoint_sha256s=(checkpoint, checkpoint),
+                    greedy_decision_change_count=1,
+                    malformed_output_delta_count=int(dose > selected),
+                    cap_terminated_output_delta_count=0,
+                    unparseable_output_delta_count=0,
+                    active_witness_count=1,
+                    jvp_fd_max_abs_error=0.0,
+                    jvp_fd_tolerance=1.0e-6,
+                    median_abs_decision_margin_displacement=0.1,
+                    median_abs_source_decision_margin=1.0,
+                    rollback_reproduced=True,
+                    resources=resources,
+                )
+            )
+    return select_global_learning_rate(receipts)
 
 
 def test_successor_r1_r2_reuse_the_exact_low_dose_live_surface() -> None:
@@ -106,6 +170,52 @@ def test_rp_crossover_rejects_an_off_grid_learning_rate() -> None:
         match="sealed qualification learning-rate ray",
     ):
         live.build_human13_live_model_plan(off_grid_dose)
+
+
+def test_rp_crossover_live_plan_consumes_one_selector_resolved_nondefault_lr() -> None:
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
+    crossover = replace(
+        base,
+        unit_id=live.RP_CROSSOVER_UNIT_ID,
+        arm_id="C",
+        milestones=live.RP_CROSSOVER_MILESTONES,
+    )
+    decision = _selected_lr_decision(1.0e-6)
+
+    plan = live.build_human13_live_model_plan(
+        crossover, global_learning_rate_decision=decision
+    )
+
+    assert plan.learning_rate == 1.0e-6
+    assert plan.learning_rate_resolution == "global_selected"
+    assert plan.global_learning_rate_decision_sha256 == decision.content_sha256
+    assert plan.resolved_plan_sha256 is not None
+    with pytest.raises(live.Human13LiveModelError, match="plan hash"):
+        live.validate_human13_live_model_plan(replace(plan, learning_rate=3.0e-6))
+
+
+def test_rp_crossover_live_assembly_rejects_a_provisional_leaf_before_backend() -> None:
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
+    provisional = live.build_human13_live_model_plan(
+        replace(
+            base,
+            unit_id=live.RP_CROSSOVER_UNIT_ID,
+            arm_id="C",
+            milestones=live.RP_CROSSOVER_MILESTONES,
+        )
+    )
+
+    with pytest.raises(live.Human13LiveModelError, match="global learning-rate"):
+        live.assemble_human13_live_model(
+            provisional,
+            pack_count=1,
+            repo_root=Path.cwd(),
+            backend=cast(live.Human13AssemblyBackend, pytest.fail),
+        )
 
 
 def _validation(plan: live.Human13LiveModelPlan) -> live.Human13PlanValidationReceipt:

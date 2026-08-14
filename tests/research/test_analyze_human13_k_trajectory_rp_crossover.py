@@ -6,12 +6,17 @@ import hashlib
 import io
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
 
 import scripts.research.launch_human13_k_trajectory_rp_crossover as launcher
 import scripts.research.train_human13_k_trajectory_rp_crossover as runner
+from scripts.research.human13_rp_crossover_production import (
+    QUALIFICATION_LEARNING_RATE_RAY,
+    select_global_learning_rate,
+)
 from scripts.research.human13_adamw_proposal_preservation import (
     FrozenWitnessBank,
     OwnerWitness,
@@ -61,10 +66,12 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     QUALIFICATION_SEED_GROUP,
     TRAINING_RPS,
     AcquisitionKey,
+    AggregateResourceReceipt,
     AuditRef,
     CellKey,
     CellReceipt,
     CellSpec,
+    DoseMechanicalReceipt,
     MatrixPlan,
     NodeTerminalReceipt,
     SharedEvidenceRef,
@@ -85,6 +92,59 @@ def _content_sha256(value: dict[str, object]) -> str:
         json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _aggregate_resources(*, backward_count: int = 13) -> AggregateResourceReceipt:
+    return AggregateResourceReceipt(
+        measurement_scope="injected_cpu",
+        wall_time_seconds=1.0,
+        peak_host_rss_bytes=1,
+        cuda_peak_allocated_bytes=None,
+        cuda_peak_reserved_bytes=None,
+        acquisition_request_count=208,
+        acquisition_batch_count=52,
+        acquisition_token_count=1,
+        decode_request_count=26,
+        decode_batch_count=26,
+        decode_token_count=1,
+        packed_token_count=1,
+        logical_token_count=1,
+        forward_count=13,
+        backward_count=backward_count,
+        row_bytes=1,
+        artifact_bytes=1,
+        update_count=1,
+        audit_count=2,
+        rollback_count=1,
+    )
+
+
+def _global_learning_rate_decision():
+    receipts = []
+    for rp in TRAINING_RPS:
+        acquisition = AcquisitionKey(rp, QUALIFICATION_SEED_GROUP, "qualification")
+        for dose in QUALIFICATION_LEARNING_RATE_RAY:
+            checkpoint = _digest(f"qualification-checkpoint:{rp}:{dose}")
+            receipts.append(
+                DoseMechanicalReceipt(
+                    cell_key=CellKey(acquisition, "C", dose),
+                    proposal_sha256=_digest(f"qualification-proposal:{rp}:{dose}"),
+                    private_checkpoint_sha256=checkpoint,
+                    audit_checkpoint_sha256s=(checkpoint, checkpoint),
+                    greedy_decision_change_count=1,
+                    malformed_output_delta_count=0,
+                    cap_terminated_output_delta_count=0,
+                    unparseable_output_delta_count=0,
+                    active_witness_count=1,
+                    jvp_fd_max_abs_error=0.0,
+                    jvp_fd_tolerance=1.0e-6,
+                    median_abs_decision_margin_displacement=0.1,
+                    median_abs_source_decision_margin=1.0,
+                    rollback_reproduced=True,
+                    resources=_aggregate_resources(),
+                )
+            )
+    return select_global_learning_rate(receipts)
 
 
 def _source_trajectory(image_id: int) -> TrajectoryRecord:
@@ -669,8 +729,9 @@ def test_aggregate_admission_rejects_noncanonical_receipts(
         )
     else:
         qualification = AcquisitionKey(1.0, QUALIFICATION_SEED_GROUP, "qualification")
-        receipts[0] = replace(
-            receipts[0], cell_key=CellKey(qualification, receipts[0].cell_key.arm_id)
+        receipts[2] = replace(
+            receipts[2],
+            cell_key=CellKey(qualification, "C", QUALIFICATION_LEARNING_RATE_RAY[2]),
         )
     with pytest.raises(ValueError, match=message):
         MatrixAnalysisInput(inputs.plan, tuple(receipts), inputs.source_output_paths)
@@ -799,7 +860,11 @@ class _E2ECellServices:
         parameter = torch.nn.Parameter(torch.tensor((1.0, -1.0)))
         named = (("adapter.weight", parameter),)
         optimizer = torch.optim.AdamW(
-            (parameter,), lr=3e-6, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0
+            (parameter,),
+            lr=spec.learning_rate,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0.0,
         )
         counter = UpdateCounter()
         return CellExecutionState(
@@ -840,8 +905,11 @@ class _E2ECellServices:
                 spec.shared_evidence.trajectory_credit_acquisition_sha256
             ),
             compiler_ledger_sha256=spec.shared_evidence.compiler_ledger_sha256,
-            backward_count=1,
+            backward_count=13,
             optimizer_step_count=0,
+            trajectory_denominator=13 * 16,
+            compiler_image_denominator=(None if self.arm_id == "A" else 13),
+            released_graph_count=13,
         )
 
     def witness_bank(
@@ -923,19 +991,25 @@ class _E2ECellServices:
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None:
         return None
 
+    def aggregate_resource_receipt(
+        self, state, spec, backward_receipt, audits
+    ) -> AggregateResourceReceipt:
+        assert len(audits) == 2
+        return _aggregate_resources(backward_count=backward_receipt.backward_count)
+
 
 class _E2ENodeRuntime:
     """Injected node owner: one acquisition, three independent cells."""
 
     def __init__(
-        self, node: Mapping[str, object], manifest: Human13KUnionManifest, root: Path
+        self, node: Mapping[str, Any], manifest: Human13KUnionManifest, root: Path
     ) -> None:
         self.node = node
         self.manifest = manifest
         self.root = root
         self.terminals: list[tuple[str, Mapping[str, object]]] = []
 
-    def acquire_cell_specs(self, node: Mapping[str, object]) -> tuple[CellSpec, ...]:
+    def acquire_cell_specs(self, node: Mapping[str, Any]) -> tuple[CellSpec, ...]:
         acquisition = AcquisitionKey.from_dict(node["acquisition_key"])
         shared = _shared(
             _manifest_sha256(self.manifest),
@@ -950,9 +1024,7 @@ class _E2ENodeRuntime:
                 CellSpec(
                     cell_key=CellKey(acquisition, arm_id),
                     shared_evidence=shared,
-                    leaf_config_sha256=_digest(
-                        f"config:{acquisition.training_rp}:{arm_id}"
-                    ),
+                    leaf_config_sha256=cell["source_leaf_config_sha256"],
                     source_checkpoint_sha256=SOURCE,
                     expected_objective_components=tuple(cell["objective_components"]),
                     objective_component_hashes=_objective_hashes(arm_id, group_tag),
@@ -962,6 +1034,11 @@ class _E2ENodeRuntime:
                     ],
                     evaluation_rps=EVALUATION_RPS,
                     output_root=cell["output_root"],
+                    learning_rate=cell["learning_rate"],
+                    global_learning_rate_decision_sha256=cell[
+                        "global_learning_rate_decision_sha256"
+                    ],
+                    resolved_leaf_config_sha256=cell["resolved_leaf_config_sha256"],
                 )
             )
         return tuple(specs)
@@ -1013,6 +1090,7 @@ def _run_matrix_nodes(tmp_path: Path, manifest: Human13KUnionManifest) -> list[d
         launcher.load_leaf_configs(),
         run_id="e2e",
         output_root=tmp_path / "artifacts",
+        global_learning_rate_decision=_global_learning_rate_decision(),
     )
     dag_path = tmp_path / "dag-plan.json"
     dag_path.write_text(json.dumps(dag_plan), encoding="utf-8")

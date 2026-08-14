@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -15,12 +14,14 @@ from scripts.research import human13_rp_crossover_production as production
 from scripts.research import launch_human13_k_trajectory_rp_crossover as launcher
 from scripts.research import train_human13_k_trajectory_rp_crossover as runner
 from scripts.research.human13_rp_crossover_matrix_contracts import (
+    AggregateResourceReceipt,
     CANONICAL_IMAGE_IDS,
     AcquisitionKey,
     AuditRef,
     CellKey,
     CellReceipt,
     CellSpec,
+    DoseMechanicalReceipt,
     SharedEvidenceRef,
     SourceBaselineRef,
 )
@@ -44,9 +45,9 @@ def _qualification_node(tmp_path: Path, *, rp: float = 1.0) -> dict[str, Any]:
     return next(item for item in plan["acquisitions"] if item["node_id"] == node_id)
 
 
-def _qualification_spec(node: Mapping[str, Any]) -> CellSpec:
+def _qualification_spec(node: Mapping[str, Any], index: int = 0) -> CellSpec:
     acquisition = AcquisitionKey.from_dict(node["acquisition_key"])
-    planned = node["cells"][0]
+    planned = node["cells"][index]
     trajectory = _digest(f"trajectory:{acquisition.training_rp}")
     compiler = _digest(f"compiler:{acquisition.training_rp}")
     source = production.SOURCE_CHECKPOINT_PAYLOAD_SHA256
@@ -67,9 +68,9 @@ def _qualification_spec(node: Mapping[str, Any]) -> CellSpec:
         seeds=tuple(range(30001, 30017)),
     )
     return CellSpec(
-        cell_key=CellKey(acquisition, "C"),
+        cell_key=CellKey(acquisition, "C", planned["learning_rate"]),
         shared_evidence=shared,
-        leaf_config_sha256=production.C_LEAF_SHA256_BY_RP[acquisition.training_rp],
+        leaf_config_sha256=planned["source_leaf_config_sha256"],
         source_checkpoint_sha256=source,
         expected_objective_components=("trajectory", "compiler", "preservation"),
         objective_component_hashes=(
@@ -80,27 +81,92 @@ def _qualification_spec(node: Mapping[str, Any]) -> CellSpec:
         fresh_optimizer_identity_sha256=planned["fresh_optimizer_identity_sha256"],
         evaluation_rps=(1.0, 1.10),
         output_root=planned["output_root"],
+        learning_rate=planned["learning_rate"],
+        resolved_leaf_config_sha256=planned["resolved_leaf_config_sha256"],
     )
+
+
+def _mechanical_receipts(
+    selected: float = production.DEFAULT_QUALIFICATION_LEARNING_RATE,
+) -> tuple[DoseMechanicalReceipt, ...]:
+    if selected not in production.QUALIFICATION_LEARNING_RATE_RAY:
+        raise ValueError(
+            "selected learning rate must lie on the exact sealed qualification dose ray"
+        )
+    receipts = []
+    default = production.DEFAULT_QUALIFICATION_LEARNING_RATE
+    for rp in (1.0, 1.10):
+        acquisition = AcquisitionKey(rp, "qualification", "qualification")
+        for dose in production.QUALIFICATION_LEARNING_RATE_RAY:
+            if selected == default:
+                floor_passed = ceiling_passed = True
+            elif selected > default:
+                floor_passed = dose >= selected
+                ceiling_passed = True
+            else:
+                floor_passed = True
+                ceiling_passed = dose <= selected
+            checkpoint = _digest(f"private:{rp}:{dose}")
+            resources = AggregateResourceReceipt(
+                measurement_scope="injected_cpu",
+                wall_time_seconds=0.1,
+                peak_host_rss_bytes=1024,
+                cuda_peak_allocated_bytes=None,
+                cuda_peak_reserved_bytes=None,
+                acquisition_request_count=208,
+                acquisition_batch_count=52,
+                acquisition_token_count=4096,
+                decode_request_count=26,
+                decode_batch_count=26,
+                decode_token_count=2048,
+                packed_token_count=4096,
+                logical_token_count=3900,
+                forward_count=13,
+                backward_count=13,
+                row_bytes=8192,
+                artifact_bytes=4096,
+                update_count=1,
+                audit_count=2,
+                rollback_count=1,
+            )
+            receipts.append(
+                DoseMechanicalReceipt(
+                    cell_key=CellKey(acquisition, "C", dose),
+                    proposal_sha256=_digest(f"proposal:{rp}:{dose}"),
+                    private_checkpoint_sha256=checkpoint,
+                    audit_checkpoint_sha256s=(checkpoint, checkpoint),
+                    greedy_decision_change_count=int(floor_passed),
+                    malformed_output_delta_count=int(not ceiling_passed),
+                    cap_terminated_output_delta_count=0,
+                    unparseable_output_delta_count=0,
+                    active_witness_count=int(floor_passed),
+                    jvp_fd_max_abs_error=1.0e-6,
+                    jvp_fd_tolerance=1.0e-4,
+                    median_abs_decision_margin_displacement=0.1,
+                    median_abs_source_decision_margin=1.0,
+                    rollback_reproduced=True,
+                    resources=resources,
+                )
+            )
+    return tuple(receipts)
 
 
 def _learning_rate_decision(
     selected: float = production.DEFAULT_QUALIFICATION_LEARNING_RATE,
 ) -> production.GlobalLearningRateDecision:
-    return production.GlobalLearningRateDecision(
-        qualification_decision_sha256=_digest("qualification-lr-decision"),
-        selected_learning_rate=selected,
-        allowed_learning_rates=production.QUALIFICATION_LEARNING_RATE_RAY,
-        training_rp_learning_rates=((1.0, selected), (1.10, selected)),
-        arm_learning_rates=(("A", selected), ("B", selected), ("C", selected)),
-        seed_group_learning_rates=(
-            ("matrix_a", selected),
-            ("matrix_b", selected),
-            ("matrix_c", selected),
-        ),
-        selection_policy="sealed_qualification_global_before_matrix",
-        online_adaptation=False,
-        grad_delta_norm_role="covariate_only",
-    )
+    return production.select_global_learning_rate(_mechanical_receipts(selected))
+
+
+def _validate_forged_decision(**changes: Any) -> None:
+    source = _learning_rate_decision()
+    forged = object.__new__(production.GlobalLearningRateDecision)
+    for field in source.__dataclass_fields__:
+        object.__setattr__(
+            forged,
+            field,
+            changes.get(field, getattr(source, field)),
+        )
+    forged.__post_init__()
 
 
 def _success_receipt(spec: CellSpec) -> CellReceipt:
@@ -132,6 +198,11 @@ def _success_receipt(spec: CellSpec) -> CellReceipt:
         proposal_delta_sha256=_digest("proposal-delta"),
         projection_receipt_sha256=_digest("projection"),
         apply_receipt_sha256=_digest("apply"),
+        learning_rate=spec.learning_rate,
+        global_learning_rate_decision_sha256=(
+            spec.global_learning_rate_decision_sha256
+        ),
+        resolved_leaf_config_sha256=spec.resolved_leaf_config_sha256,
     )
 
 
@@ -188,7 +259,7 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
     tmp_path, monkeypatch
 ) -> None:
     node = _qualification_node(tmp_path)
-    spec = _qualification_spec(node)
+    specs = tuple(_qualification_spec(node, index) for index in range(5))
     events: list[str] = []
 
     class Composition:
@@ -200,9 +271,9 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
             events.append("acquire")
             assert selected_node["node_id"] == "rp100:qualification"
             assert frozen.manifest_sha256 == production.MANIFEST_SHA256
-            component_hashes = dict(spec.objective_component_hashes)
+            component_hashes = dict(specs[0].objective_component_hashes)
             return production.QualificationAcquisition(
-                cell_specs=(spec,),
+                cell_specs=specs,
                 source_baselines=tuple(
                     SourceBaselineRef(
                         evaluation_rp=rp,
@@ -228,9 +299,8 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
                         ("trajectory", component_hashes["trajectory"]),
                         ("compiler", component_hashes["compiler"]),
                     ),
-                    "C": spec.objective_component_hashes,
+                    "C": specs[0].objective_component_hashes,
                 },
-                learning_rate_decision=_learning_rate_decision(),
                 streaming_mode="per_image_or_pack",
             )
 
@@ -242,17 +312,9 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
                 panel_wide_logits_retained=False,
             )
 
-        def services_for_cell(
-            self,
-            selected_spec: CellSpec,
-            learning_rate_decision: production.GlobalLearningRateDecision,
-        ) -> CellRuntimeServices:
+        def services_for_cell(self, selected_spec: CellSpec) -> CellRuntimeServices:
             events.append("services")
-            assert selected_spec == spec
-            assert learning_rate_decision.selected_learning_rate == 3.0e-6
-            assert learning_rate_decision.content_sha256 == (
-                _learning_rate_decision().content_sha256
-            )
+            assert selected_spec in specs
             return cast(CellRuntimeServices, object())
 
     def fake_run_cell(selected_spec, *, services, receipt_writer):
@@ -263,9 +325,12 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
         return receipt
 
     monkeypatch.setattr(runner, "run_cell", fake_run_cell)
+    composition = Composition()
     factory = runner.declare_node_runtime_factory(
         lambda selected: production.create_node_runtime(
-            selected, _composition=Composition()
+            selected,
+            _acquisition_owner=composition,
+            _cell_services_owner=composition,
         )
     )
 
@@ -276,9 +341,9 @@ def test_qualification_closes_acquisition_before_real_node_requests_cell_service
     )
 
     events.append("terminal")
-    assert events == ["acquire", "close", "services", "cell", "terminal"]
+    assert events == ["acquire", "close", *(["services", "cell"] * 5), "terminal"]
     assert terminal["status"] == "succeeded"
-    assert [item["cell_key"]["arm_id"] for item in terminal["cell_specs"]] == ["C"]
+    assert [item["cell_key"]["arm_id"] for item in terminal["cell_specs"]] == ["C"] * 5
     assert Path(node["receipt_path"]).is_file()
 
 
@@ -291,25 +356,78 @@ def test_global_learning_rate_decision_rejects_arbitrary_off_grid_doses(
 
 
 def test_global_learning_rate_decision_defaults_to_three_e_minus_six() -> None:
-    decision = production.GlobalLearningRateDecision.sealed(
-        _digest("qualification-lr-decision")
-    )
+    decision = _learning_rate_decision()
 
     assert production.DEFAULT_QUALIFICATION_LEARNING_RATE == 3.0e-6
     assert decision.selected_learning_rate == 3.0e-6
+
+
+def test_global_learning_rate_decision_rejects_an_arbitrary_receipt_digest() -> None:
+    """A caller-chosen digest must not masquerade as ten mechanical receipts."""
+
+    with pytest.raises(ValueError, match="mechanical qualification receipts"):
+        production.GlobalLearningRateDecision.sealed(
+            _digest("caller-asserted-not-a-qualification-receipt"),
+            selected_learning_rate=1.0e-6,
+        )
+
+
+def test_global_selector_rejects_even_one_missing_mechanical_receipt() -> None:
+    receipts = _mechanical_receipts()
+
+    with pytest.raises(ValueError, match="exactly ten"):
+        production.select_global_learning_rate(receipts[:-1])
+
+
+def test_dose_mechanical_schema_excludes_owner_outcomes_gains_and_losses() -> None:
+    payload = _mechanical_receipts()[0].to_dict()
+    encoded = json.dumps(payload, sort_keys=True)
+
+    assert "owner" not in encoded
+    assert "gain" not in encoded
+    assert "loss" not in encoded
+    assert payload["greedy_decision_change_count"] == 1
+    assert payload["rollback_reproduced"] is True
+    assert payload["resources"]["update_count"] == 1
 
 
 @pytest.mark.parametrize("selected", production.QUALIFICATION_LEARNING_RATE_RAY)
 def test_every_sealed_qualification_dose_can_be_content_bound(
     selected: float,
 ) -> None:
-    decision = production.GlobalLearningRateDecision.sealed(
-        _digest("qualification-lr-decision"),
-        selected_learning_rate=selected,
-    )
+    decision = _learning_rate_decision(selected)
 
     assert decision.selected_learning_rate == selected
     assert len(decision.content_sha256) == 64
+
+
+def test_selector_resolved_nondefault_lr_binds_every_matrix_cell_hash(
+    tmp_path: Path,
+) -> None:
+    decision = _learning_rate_decision(1.0e-6)
+    plan = launcher.build_dag_plan(
+        launcher.load_leaf_configs(),
+        run_id="resolved-nondefault",
+        output_root=tmp_path / "artifacts",
+        global_learning_rate_decision=decision,
+    )
+
+    matrix_cells = [
+        cell
+        for node in plan["acquisitions"]
+        if node["phase"] == "matrix"
+        for cell in node["cells"]
+    ]
+    assert plan["matrix_execution_ready"] is True
+    assert plan["selected_learning_rate"] == 1.0e-6
+    assert plan["global_learning_rate_decision_sha256"] == decision.content_sha256
+    assert len(matrix_cells) == 18
+    assert {cell["learning_rate"] for cell in matrix_cells} == {1.0e-6}
+    assert {cell["global_learning_rate_decision_sha256"] for cell in matrix_cells} == {
+        decision.content_sha256
+    }
+    assert all(cell["resolved_leaf_config_sha256"] for cell in matrix_cells)
+    assert all(cell["execution_blocked"] is None for cell in matrix_cells)
 
 
 @pytest.mark.parametrize(
@@ -338,22 +456,22 @@ def test_global_learning_rate_decision_rejects_per_contract_drift(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        replace(_learning_rate_decision(), **{field: assignments})
+        _validate_forged_decision(**{field: assignments})
 
 
 def test_global_learning_rate_decision_forbids_online_norm_adaptation() -> None:
     with pytest.raises(ValueError, match="grad/delta norms are covariates only"):
-        replace(_learning_rate_decision(), online_adaptation=True)
+        _validate_forged_decision(online_adaptation=True)
 
 
-def test_missing_live_pack_owner_fails_closed_with_a_durable_node_terminal(
+def test_missing_exact_acquisition_owner_fails_closed_with_a_durable_node_terminal(
     tmp_path,
 ) -> None:
     node = _qualification_node(tmp_path, rp=1.10)
 
     with pytest.raises(
         production.ProductionCompositionUnavailable,
-        match="sampled-trajectory packed-logit materializer",
+        match="exact native qualification acquisition owner must be injected",
     ):
         runner._execute_node(
             node,

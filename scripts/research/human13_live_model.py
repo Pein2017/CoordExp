@@ -10,11 +10,11 @@ Only ``assemble_human13_live_model`` crosses the live boundary.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 
 LIVE_PLAN_SCHEMA_VERSION = "human13_live_model_plan.v1"
@@ -142,28 +142,31 @@ class Human13LiveModelPlan:
     unit_id: str
     arm_id: str
     source: Human13SourceContract
-    mixed_precision: str
-    attn_implementation: str
-    patch_embed_linearization: str
-    adapter_seed_mode: str
-    adapter_target_towers: tuple[str, ...]
-    adapter_target_modules: str
+    mixed_precision: Literal["bf16"]
+    attn_implementation: Literal["flash_attention_2"]
+    patch_embed_linearization: Literal["enabled"]
+    adapter_seed_mode: Literal["warm_start_expand_dora"]
+    adapter_target_towers: tuple[Literal["language"], ...]
+    adapter_target_modules: Literal["all_linear"]
     adapter_rank: int
     adapter_alpha: int
     adapter_dropout: float
-    adapter_bias: str
+    adapter_bias: Literal["none"]
     freeze_special_token_delta: bool
-    optimizer_name: str
+    optimizer_name: Literal["adamw_torch"]
     learning_rate: float
     betas: tuple[float, float]
     epsilon: float
     weight_decay: float
-    scheduler_name: str
+    scheduler_name: Literal["cosine_with_warmup"]
     scheduler_warmup_steps: int
     scheduler_horizon_updates: int
     max_grad_norm: float
     world_size: int
     milestones: tuple[int, ...]
+    learning_rate_resolution: str = "not_applicable"
+    global_learning_rate_decision_sha256: str | None = None
+    resolved_plan_sha256: str | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -524,6 +527,8 @@ class DefaultHuman13AssemblyBackend:
 
 def build_human13_live_model_plan(
     arm_config: str | Path | Any,
+    *,
+    global_learning_rate_decision: Any | None = None,
 ) -> Human13LiveModelPlan:
     """Project one strict updated arm into the immutable live assembly plan."""
 
@@ -555,6 +560,13 @@ def build_human13_live_model_plan(
     surface = getattr(config, "trainable_surface", None)
     if source is None or optimizer is None or scheduler is None or surface is None:
         raise Human13LiveModelError("updated arm is missing its live assembly contract")
+    if optimizer.name != "adamw_torch" or scheduler.name != "cosine_with_warmup":
+        raise Human13LiveModelError(
+            "updated arm optimizer or scheduler identity drifted"
+        )
+    max_grad_norm = getattr(config, "max_grad_norm", None)
+    if max_grad_norm is None:
+        raise Human13LiveModelError("updated arm is missing max_grad_norm")
     if (
         getattr(surface, "language_tower_dora", None),
         getattr(surface, "vision_tower", None),
@@ -563,9 +575,32 @@ def build_human13_live_model_plan(
         getattr(surface, "base_language_weights", None),
     ) != (True, False, False, False, False):
         raise Human13LiveModelError("updated arm must declare language-only DoRA")
+    unit_id = str(config.unit_id)
+    decision_sha256 = None
+    selected_learning_rate = float(optimizer.learning_rate)
+    resolution = "not_applicable"
+    if unit_id == RP_CROSSOVER_UNIT_ID:
+        resolution = "provisional_qualification"
+        if global_learning_rate_decision is not None:
+            from scripts.research.human13_rp_crossover_production import (
+                GlobalLearningRateDecision,
+            )
+
+            if type(global_learning_rate_decision) is not GlobalLearningRateDecision:
+                raise Human13LiveModelError(
+                    "RP-crossover live plan requires a selector-produced global decision"
+                )
+            typed_decision: GlobalLearningRateDecision = global_learning_rate_decision
+            selected_learning_rate = typed_decision.selected_learning_rate
+            decision_sha256 = typed_decision.content_sha256
+            resolution = "global_selected"
+    elif global_learning_rate_decision is not None:
+        raise Human13LiveModelError(
+            "global learning-rate decisions apply only to the RP-crossover unit"
+        )
     plan = Human13LiveModelPlan(
         schema_version=LIVE_PLAN_SCHEMA_VERSION,
-        unit_id=str(config.unit_id),
+        unit_id=unit_id,
         arm_id=str(config.arm_id),
         source=Human13SourceContract(
             checkpoint_path=str(source.checkpoint_path),
@@ -586,18 +621,36 @@ def build_human13_live_model_plan(
         adapter_dropout=0.0,
         adapter_bias="none",
         freeze_special_token_delta=True,
-        optimizer_name=str(optimizer.name),
-        learning_rate=float(optimizer.learning_rate),
-        betas=tuple(float(value) for value in optimizer.betas),
+        optimizer_name="adamw_torch",
+        learning_rate=selected_learning_rate,
+        betas=(float(optimizer.betas[0]), float(optimizer.betas[1])),
         epsilon=float(optimizer.epsilon),
         weight_decay=float(optimizer.weight_decay),
-        scheduler_name=str(scheduler.name),
+        scheduler_name="cosine_with_warmup",
         scheduler_warmup_steps=int(scheduler.warmup_steps),
         scheduler_horizon_updates=int(scheduler.horizon_updates),
-        max_grad_norm=float(config.max_grad_norm),
+        max_grad_norm=float(max_grad_norm),
         world_size=1,
         milestones=tuple(int(value) for value in config.milestones),
+        learning_rate_resolution=resolution,
+        global_learning_rate_decision_sha256=decision_sha256,
     )
+    if resolution == "global_selected":
+        payload = plan.to_artifact_dict()
+        payload.pop("model_actions")
+        payload["resolved_plan_sha256"] = None
+        resolved_sha256 = hashlib.sha256(
+            (
+                json.dumps(
+                    payload,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    allow_nan=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+        ).hexdigest()
+        plan = replace(plan, resolved_plan_sha256=resolved_sha256)
     _require_frozen_plan(plan)
     return plan
 
@@ -667,6 +720,13 @@ def assemble_human13_live_model(
         or pack_count <= 0
     ):
         raise Human13LiveModelError("pack_count must be a positive integer")
+    if (
+        plan.unit_id == RP_CROSSOVER_UNIT_ID
+        and plan.learning_rate_resolution != "global_selected"
+    ):
+        raise Human13LiveModelError(
+            "RP-crossover matrix assembly requires the global learning-rate decision"
+        )
     root = Path(repo_root).expanduser().resolve()
     validation = validate_human13_live_model_plan(plan)
     live_backend = backend or DefaultHuman13AssemblyBackend()
@@ -1154,6 +1214,52 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
             "RP-crossover learning_rate is outside the sealed qualification "
             "learning-rate ray"
         )
+    if plan.unit_id == RP_CROSSOVER_UNIT_ID:
+        if plan.learning_rate_resolution == "provisional_qualification":
+            if (
+                plan.global_learning_rate_decision_sha256 is not None
+                or plan.resolved_plan_sha256 is not None
+            ):
+                raise Human13LiveModelError(
+                    "provisional RP-crossover plan must not claim a global decision"
+                )
+        elif plan.learning_rate_resolution == "global_selected":
+            if not _is_sha256(
+                plan.global_learning_rate_decision_sha256
+            ) or not _is_sha256(plan.resolved_plan_sha256):
+                raise Human13LiveModelError(
+                    "resolved RP-crossover plan must bind decision and plan hashes"
+                )
+            payload = plan.to_artifact_dict()
+            payload.pop("model_actions")
+            payload["resolved_plan_sha256"] = None
+            expected_resolved = hashlib.sha256(
+                (
+                    json.dumps(
+                        payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+            ).hexdigest()
+            if plan.resolved_plan_sha256 != expected_resolved:
+                raise Human13LiveModelError(
+                    "resolved RP-crossover plan hash differs from selected LR"
+                )
+        else:
+            raise Human13LiveModelError(
+                "RP-crossover plan learning-rate resolution state differs"
+            )
+    elif (
+        plan.learning_rate_resolution != "not_applicable"
+        or plan.global_learning_rate_decision_sha256 is not None
+        or plan.resolved_plan_sha256 is not None
+    ):
+        raise Human13LiveModelError(
+            "non-crossover live plans must not bind an RP learning-rate decision"
+        )
     expected = {
         "schema_version": LIVE_PLAN_SCHEMA_VERSION,
         "unit_id": plan.unit_id,
@@ -1197,6 +1303,11 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
             if plan.unit_id == RP_CROSSOVER_UNIT_ID
             else MILESTONES
         ),
+        "learning_rate_resolution": plan.learning_rate_resolution,
+        "global_learning_rate_decision_sha256": (
+            plan.global_learning_rate_decision_sha256
+        ),
+        "resolved_plan_sha256": plan.resolved_plan_sha256,
     }
     drift = [name for name, value in expected.items() if getattr(plan, name) != value]
     if drift:

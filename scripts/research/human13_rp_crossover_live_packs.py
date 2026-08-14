@@ -275,6 +275,27 @@ class MaterializedImagePacks:
         self._released = True
 
 
+@dataclass(frozen=True)
+class StreamingObjectiveStep:
+    """One image/pack's unnormalized live objective and graph release owner."""
+
+    image_id: int
+    trajectory_numerator: Any
+    compiler_numerator: Any | None
+    release: Callable[[], None]
+
+
+@dataclass(frozen=True)
+class IncrementalBackwardReceipt:
+    """Exact denominator and graph-lifetime evidence for streamed backward."""
+
+    image_ids: tuple[int, ...]
+    trajectory_denominator: int
+    compiler_image_denominator: int | None
+    backward_count: int
+    released_graph_count: int
+
+
 # --------------------------------------------------------------------------
 # Planning
 # --------------------------------------------------------------------------
@@ -1049,6 +1070,98 @@ def stream_panel_live_packs(
             previous.release()
 
 
+def backward_incremental_objectives(
+    steps: Iterator[StreamingObjectiveStep],
+    *,
+    trajectory_denominator: int,
+    compiler_image_denominator: int | None,
+    include_compiler: bool,
+    backward: Callable[[Any], None] | None = None,
+) -> IncrementalBackwardReceipt:
+    """Backward each unnormalized image/pack numerator and release immediately.
+
+    No numerator sequence is materialized or stacked.  The global ``N*K`` and
+    image-mean compiler denominators are applied to every additive numerator,
+    which is algebraically identical to dividing once after a global sum while
+    bounding the live autograd graph to one yielded step.
+    """
+
+    import torch
+
+    if (
+        isinstance(trajectory_denominator, bool)
+        or not isinstance(trajectory_denominator, int)
+        or trajectory_denominator <= 0
+    ):
+        raise LivePackContractError("trajectory denominator must be positive")
+    if include_compiler:
+        if (
+            isinstance(compiler_image_denominator, bool)
+            or not isinstance(compiler_image_denominator, int)
+            or compiler_image_denominator <= 0
+        ):
+            raise LivePackContractError("compiler image denominator must be positive")
+    elif compiler_image_denominator is not None:
+        raise LivePackContractError(
+            "trajectory-only streaming cannot carry a compiler denominator"
+        )
+
+    image_ids: list[int] = []
+    backward_count = 0
+    released_graph_count = 0
+    for step in steps:
+        if not isinstance(step, StreamingObjectiveStep):
+            raise LivePackContractError("stream must yield StreamingObjectiveStep")
+        if step.image_id in image_ids:
+            raise LivePackContractError("streaming objective duplicated an image")
+        if not callable(step.release):
+            raise LivePackContractError("streaming objective requires a release owner")
+        trajectory = step.trajectory_numerator
+        compiler = step.compiler_numerator
+        if not torch.is_tensor(trajectory) or trajectory.numel() != 1:
+            raise LivePackContractError(
+                "trajectory numerator must be one scalar tensor"
+            )
+        if include_compiler and (
+            not torch.is_tensor(compiler) or compiler.numel() != 1
+        ):
+            raise LivePackContractError("compiler numerator must be one scalar tensor")
+        if not include_compiler and compiler is not None:
+            raise LivePackContractError(
+                "trajectory-only step must not retain a compiler numerator"
+            )
+
+        loss = trajectory.reshape(()) / trajectory_denominator
+        if include_compiler:
+            assert compiler is not None and compiler_image_denominator is not None
+            loss = loss + compiler.reshape(()) / compiler_image_denominator
+        release = step.release
+        image_id = step.image_id
+        try:
+            if backward is None:
+                loss.backward()
+            else:
+                backward(loss)
+            backward_count += 1
+            image_ids.append(image_id)
+        finally:
+            # Delete the sole local graph-bearing references before advancing
+            # the iterator to the next image.
+            del loss, trajectory, compiler, step
+            release()
+            released_graph_count += 1
+
+    if not image_ids:
+        raise LivePackContractError("incremental backward requires at least one step")
+    return IncrementalBackwardReceipt(
+        image_ids=tuple(image_ids),
+        trajectory_denominator=trajectory_denominator,
+        compiler_image_denominator=compiler_image_denominator,
+        backward_count=backward_count,
+        released_graph_count=released_graph_count,
+    )
+
+
 def combine_trajectory_numerators(numerators: Sequence[Any], ledger: Any) -> Any:
     """Sum unnormalized numerators and apply the one logical ``N*K`` denominator."""
 
@@ -1075,7 +1188,10 @@ __all__ = [
     "LivePackContractError",
     "LivePackPlan",
     "LivePackReceipt",
+    "IncrementalBackwardReceipt",
     "MaterializedImagePacks",
+    "StreamingObjectiveStep",
+    "backward_incremental_objectives",
     "PackForwardRequest",
     "PhysicalRowBinding",
     "SCHEMA_VERSION",

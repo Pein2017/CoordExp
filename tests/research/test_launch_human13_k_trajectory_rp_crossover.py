@@ -144,9 +144,19 @@ def test_build_dag_plan_has_six_matrix_acquisitions_and_two_qualification_acquis
     assert len(matrix) == 6
     assert len(qualification) == 2
     assert sum(len(a["cells"]) for a in matrix) == 18
-    assert sum(len(a["cells"]) for a in qualification) == 2
+    assert sum(len(a["cells"]) for a in qualification) == 10
     for acquisition in qualification:
-        assert [cell["cell_key"]["arm_id"] for cell in acquisition["cells"]] == ["C"]
+        assert [cell["cell_key"]["arm_id"] for cell in acquisition["cells"]] == [
+            "C"
+        ] * 5
+        assert tuple(cell["learning_rate"] for cell in acquisition["cells"]) == (
+            3.0e-7,
+            1.0e-6,
+            3.0e-6,
+            1.0e-5,
+            3.0e-5,
+        )
+        assert len({cell["output_root"] for cell in acquisition["cells"]}) == 5
 
 
 def test_build_dag_plan_qualification_cells_excluded_from_matrix_disposition(
@@ -156,8 +166,8 @@ def test_build_dag_plan_qualification_cells_excluded_from_matrix_disposition(
 
     assert len(plan["matrix_cell_keys"]) == 18
     assert len(set(plan["matrix_cell_keys"])) == 18
-    assert len(plan["qualification_cell_keys"]) == 2
-    assert len(set(plan["qualification_cell_keys"])) == 2
+    assert len(plan["qualification_cell_keys"]) == 10
+    assert len(set(plan["qualification_cell_keys"])) == 10
     assert not set(plan["matrix_cell_keys"]) & set(plan["qualification_cell_keys"])
 
 
@@ -202,9 +212,10 @@ def test_build_dag_plan_same_group_arms_share_evidence_and_have_unique_roots(
         a["shared_evidence_group_sha256"] for a in plan["acquisitions"]
     }
     assert len(all_evidence_tags) == 8
-    assert len(output_roots) == len(set(output_roots)) == 20
-    assert len(optimizer_identities) == len(set(optimizer_identities)) == 20
-    assert len(adamw_configs) == 1
+    assert len(output_roots) == len(set(output_roots)) == 28
+    assert len(optimizer_identities) == len(set(optimizer_identities)) == 28
+    assert None in adamw_configs
+    assert len(adamw_configs - {None}) == 5
 
 
 def test_build_dag_plan_binds_each_acquisition_to_its_sealed_seed_tuple(
@@ -280,7 +291,7 @@ def test_plan_launches_rejects_in_memory_dag_plan_without_bound_path(
     runner = _fake_runner(tmp_path)
 
     with pytest.raises(launcher.LaunchContractError, match="explicit dag_plan_path"):
-        launcher.plan_launches(plan, gpu_ids=tuple(range(8)), runner_entry=runner)
+        launcher.plan_launches(plan, gpu_ids=tuple(range(2)), runner_entry=runner)
 
 
 def test_plan_launches_default_dry_run_assigns_one_gpu_per_live_node(
@@ -290,13 +301,13 @@ def test_plan_launches_default_dry_run_assigns_one_gpu_per_live_node(
     runner = _fake_runner(tmp_path)
 
     launch_plan = launcher.plan_launches(
-        plan_path, gpu_ids=tuple(range(8)), runner_entry=runner
+        plan_path, gpu_ids=tuple(range(2)), runner_entry=runner
     )
 
     assert launch_plan["mode"] == "dry_run"
     assert launch_plan["actions"] == dict.fromkeys(DRY_RUN_COUNTER_KEYS, 0)
-    assert len(launch_plan["jobs"]) == 8
-    assert [job["gpu_id"] for job in launch_plan["jobs"]] == list(range(8))
+    assert len(launch_plan["jobs"]) == 2
+    assert [job["gpu_id"] for job in launch_plan["jobs"]] == list(range(2))
     for job in launch_plan["jobs"]:
         assert job["world_size"] == 1
         assert job["retry_policy"] == "none"
@@ -306,7 +317,7 @@ def test_plan_launches_default_dry_run_assigns_one_gpu_per_live_node(
         assert "--execute" in job["command"]
         assert "--user-model-gpu-authority" in job["command"]
     receipt_paths = [job["receipt_path"] for job in launch_plan["jobs"]]
-    assert len(receipt_paths) == len(set(receipt_paths)) == 8
+    assert len(receipt_paths) == len(set(receipt_paths)) == 2
 
 
 def test_plan_launches_rejects_gpu_count_mismatch_or_duplicate(tmp_path: Path) -> None:
@@ -314,17 +325,15 @@ def test_plan_launches_rejects_gpu_count_mismatch_or_duplicate(tmp_path: Path) -
     runner = _fake_runner(tmp_path)
 
     with pytest.raises(launcher.LaunchContractError, match="one unique GPU"):
-        launcher.plan_launches(plan, gpu_ids=tuple(range(7)), runner_entry=runner)
+        launcher.plan_launches(plan, gpu_ids=(0,), runner_entry=runner)
     with pytest.raises(launcher.LaunchContractError, match="unique"):
-        launcher.plan_launches(
-            plan, gpu_ids=(0, 0, 1, 2, 3, 4, 5, 6), runner_entry=runner
-        )
+        launcher.plan_launches(plan, gpu_ids=(0, 0), runner_entry=runner)
 
 
 def test_plan_launches_supports_node_subset_selection(tmp_path: Path) -> None:
     plan_path = _dag_plan_path(tmp_path)
     runner = _fake_runner(tmp_path)
-    node_ids = ("rp100:matrix_a", "rp110:qualification")
+    node_ids = ("rp100:qualification", "rp110:qualification")
 
     launch_plan = launcher.plan_launches(
         plan_path, gpu_ids=(3, 5), node_ids=node_ids, runner_entry=runner
@@ -342,7 +351,7 @@ def test_plan_launches_keeps_an_absent_factory_declared_and_not_ready(
     launch_plan = launcher.plan_launches(
         plan_path,
         gpu_ids=(3,),
-        node_ids=("rp100:matrix_a",),
+        node_ids=("rp100:qualification",),
         runtime_factory="project.runtime:create_node_runtime",
     )
 
@@ -382,7 +391,7 @@ def test_plan_launches_marks_an_importable_contract_factory_execution_ready(
     launch_plan = launcher.plan_launches(
         plan_path,
         gpu_ids=(3,),
-        node_ids=("rp100:matrix_a",),
+        node_ids=("rp100:qualification",),
         runtime_factory=reference,
     )
 
@@ -403,7 +412,7 @@ def test_plan_launches_rejects_a_factory_that_imports_but_breaks_the_contract(
     launch_plan = launcher.plan_launches(
         plan_path,
         gpu_ids=(3,),
-        node_ids=("rp100:matrix_a",),
+        node_ids=("rp100:qualification",),
         runtime_factory="rp_crossover_uncontracted_factory:build_node_runtime",
     )
 
@@ -418,7 +427,7 @@ def test_execute_launches_fails_closed_on_a_declared_but_unready_factory(
     launch_plan = launcher.plan_launches(
         plan_path,
         gpu_ids=(2,),
-        node_ids=("rp100:matrix_a",),
+        node_ids=("rp100:qualification",),
         runtime_factory="project.runtime:create_node_runtime",
     )
 
@@ -445,18 +454,15 @@ def test_plan_launches_fails_closed_on_missing_runner_entry(tmp_path: Path) -> N
     missing = tmp_path / "does_not_exist.py"
 
     with pytest.raises((launcher.LaunchContractError, FileNotFoundError, OSError)):
-        launcher.plan_launches(plan, gpu_ids=tuple(range(8)), runner_entry=missing)
+        launcher.plan_launches(plan, gpu_ids=tuple(range(2)), runner_entry=missing)
 
 
 @pytest.mark.parametrize(
-    ("node_id", "expected_arms"),
-    [
-        ("rp100:matrix_a", ["A", "B", "C"]),
-        ("rp110:qualification", ["C"]),
-    ],
+    "node_id",
+    ["rp100:qualification", "rp110:qualification"],
 )
 def test_default_launcher_job_is_accepted_by_real_node_runner_dry_run(
-    tmp_path: Path, node_id: str, expected_arms: list[str]
+    tmp_path: Path, node_id: str
 ) -> None:
     plan_path = _dag_plan_path(tmp_path)
     launch_plan = launcher.plan_launches(plan_path, gpu_ids=(0,), node_ids=(node_id,))
@@ -478,7 +484,7 @@ def test_default_launcher_job_is_accepted_by_real_node_runner_dry_run(
     payload = json.loads(output.getvalue())
     assert exit_code == 0
     assert payload["node_id"] == node_id
-    assert [cell["arm_id"] for cell in payload["cells"]] == expected_arms
+    assert [cell["arm_id"] for cell in payload["cells"]] == ["C"] * 5
     assert payload["actions"] == dict.fromkeys(DRY_RUN_COUNTER_KEYS, 0)
     assert not Path(launch_plan["jobs"][0]["receipt_path"]).exists()
 
@@ -494,7 +500,7 @@ def test_execute_launches_requires_explicit_authority(tmp_path: Path) -> None:
     launch_plan = launcher.plan_launches(
         plan_path,
         gpu_ids=(0, 1),
-        node_ids=("rp100:matrix_a", "rp110:matrix_a"),
+        node_ids=("rp100:qualification", "rp110:qualification"),
         runner_entry=runner,
     )
 
@@ -510,7 +516,7 @@ def test_execute_launches_starts_each_job_once_without_retry(
     launch_plan = launcher.plan_launches(
         plan_path,
         gpu_ids=(2, 4),
-        node_ids=("rp100:matrix_a", "rp110:matrix_a"),
+        node_ids=("rp100:qualification", "rp110:qualification"),
         runner_entry=runner,
         runtime_factory=_declared_factory_module(tmp_path, monkeypatch),
     )
@@ -582,7 +588,7 @@ def test_cli_materialize_then_launch_dry_run_smoke(
                 "--dag-plan",
                 str(dag_plan_path),
                 "--gpus",
-                ",".join(str(i) for i in range(8)),
+                "0,1",
                 "--runner-entry",
                 str(runner),
             ]
@@ -591,4 +597,4 @@ def test_cli_materialize_then_launch_dry_run_smoke(
     )
     launch_out = json.loads(capsys.readouterr().out)
     assert launch_out["mode"] == "dry_run"
-    assert len(launch_out["jobs"]) == 8
+    assert len(launch_out["jobs"]) == 2

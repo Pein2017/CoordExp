@@ -1567,6 +1567,34 @@ class CompilerSiteScore:
     hinge: torch.Tensor
 
 
+@dataclass(frozen=True)
+class PackedCompilerLineage:
+    """Semantic lineage for rows emitted by the external live pack planner."""
+
+    acquisition_sha256: str
+    trajectory_credit_sha256: str
+    repetition_penalty: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "acquisition_sha256",
+            _digest(self.acquisition_sha256, field="acquisition_sha256"),
+        )
+        object.__setattr__(
+            self,
+            "trajectory_credit_sha256",
+            _digest(
+                self.trajectory_credit_sha256,
+                field="trajectory_credit_sha256",
+            ),
+        )
+        repetition_penalty = float(self.repetition_penalty)
+        if repetition_penalty not in {1.0, 1.10}:
+            raise ValueError("packed compiler lineage RP must be exactly 1.0 or 1.10")
+        object.__setattr__(self, "repetition_penalty", repetition_penalty)
+
+
 @dataclass(frozen=True, init=False)
 class PackedLogitRows:
     """Real pack-plan remapping joined to one injected packed-forward tensor."""
@@ -1737,6 +1765,174 @@ def bind_packed_compiler_logits(
         logits_position_ids=logits_position_ids,
         raw_logits=raw_logits,
     )
+
+
+def _packed_panel_plan_sha256(packed_plan: Any) -> str:
+    """Content identity for the exact external logical and physical plan."""
+
+    return _sha256(
+        {
+            "global_max_length": packed_plan.global_max_length,
+            "logical_segments": [
+                {
+                    "segment_id": segment.segment_id,
+                    "image_id": segment.image_id,
+                    "role": segment.role,
+                    "input_ids": list(segment.encoded_example.input_ids),
+                }
+                for segment in packed_plan.logical_segments
+            ],
+            "packs": [
+                {
+                    "pack_index": packed.pack.pack_index,
+                    "input_ids": list(packed.pack.input_ids),
+                    "segments": [
+                        {
+                            "example_id": segment.example_id,
+                            "start": segment.start,
+                            "end": segment.end,
+                        }
+                        for segment in packed.pack.segments
+                    ],
+                }
+                for packed in packed_plan.packs
+            ],
+        }
+    )
+
+
+def admit_compiler_compact_logits_from_packed_plan(
+    packed_plan: Any,
+    ledger: CompilerLedger,
+    *,
+    rows: Sequence[Any],
+    lineage: PackedCompilerLineage,
+) -> AdmittedCompilerCompactLogits:
+    """Admit live compact rows against their exact externally built pack plan.
+
+    This is the Task-4/materializer join.  It deliberately constructs no
+    ``PreparedCandidateScoring`` and no second packing plan: prompt, Source
+    prefix, site, physical position, RP, and acquisition lineage are all
+    rederived from the supplied ``PackedPanelPlan`` and admitted ledger.
+    """
+
+    from scripts.research.human13_rp_crossover_live_packs import CompilerPackedRow
+    from scripts.research.run_human13_k_union_overfit import PackedPanelPlan
+
+    if type(packed_plan) is not PackedPanelPlan:
+        raise ValueError("external compiler binding requires an exact PackedPanelPlan")
+    admitted = _require_compiler_admission(ledger)
+    if not isinstance(lineage, PackedCompilerLineage) or (
+        lineage.acquisition_sha256,
+        lineage.trajectory_credit_sha256,
+        lineage.repetition_penalty,
+    ) != (
+        admitted.acquisition_sha256,
+        admitted.trajectory_credit_sha256,
+        admitted.repetition_penalty,
+    ):
+        raise ValueError("external packed compiler lineage differs from its ledger")
+
+    compact_rows = tuple(rows)
+    if not compact_rows or any(
+        type(row) is not CompilerPackedRow for row in compact_rows
+    ):
+        raise ValueError("external compiler rows must be typed materializer rows")
+    if len({row.site_id for row in compact_rows}) != len(compact_rows):
+        raise ValueError("external compiler rows duplicate a site")
+
+    sites = {
+        image.site.site_id: image.site
+        for image in admitted.images
+        if image.site is not None
+    }
+    logical_segments = {
+        segment.segment_id: segment for segment in packed_plan.logical_segments
+    }
+    packs = {packed.pack.pack_index: packed for packed in packed_plan.packs}
+    plan_sha256 = _packed_panel_plan_sha256(packed_plan)
+    bound_rows: list[PackedLogitRows] = []
+    for row in compact_rows:
+        site = sites.get(row.site_id)
+        if site is None:
+            raise ValueError("external compiler site is absent from admitted ledger")
+        logical = logical_segments.get(site.packed_segment_id)
+        if logical is None or logical.image_id != site.image_id:
+            raise ValueError("compiler logical segment differs from admitted site")
+        encoded_ids = tuple(logical.encoded_example.input_ids)
+        prompt = encoded_ids[: site.prompt_token_count]
+        prefix_end = site.prompt_token_count + site.source_prefix_token_count
+        prefix = encoded_ids[site.prompt_token_count : prefix_end]
+        history = encoded_ids[:prefix_end]
+        if (
+            token_ids_sha256(prompt) != site.prompt_token_sha256
+            or token_ids_sha256(prefix) != site.source_prefix_token_sha256
+            or len(history) != site.source_history_token_count
+            or _history_sha256(history) != site.source_history_sha256
+        ):
+            raise ValueError("external plan prompt or Source prefix lineage differs")
+
+        packed = packs.get(row.pack_index)
+        if packed is None:
+            raise ValueError("external compiler pack index is absent from packed plan")
+        physical = {
+            segment.example_id: segment for segment in packed.pack.segments
+        }.get(site.packed_segment_id)
+        if physical is None:
+            raise ValueError("compiler segment is absent from selected packed plan")
+        if tuple(packed.pack.input_ids[physical.start : physical.end]) != encoded_ids:
+            raise ValueError(
+                "external packed compiler tokens differ from logical segment"
+            )
+        expected_position = physical.start + site.local_causal_position
+        if tuple(row.logits_position_ids) != (expected_position,):
+            raise ValueError("external packed compiler causal position differs")
+        raw_logits = row.raw_logits
+        if (
+            not isinstance(raw_logits, torch.Tensor)
+            or raw_logits.ndim != 2
+            or raw_logits.shape[0] != 1
+            or not bool(torch.isfinite(raw_logits.detach()).all().item())
+        ):
+            raise ValueError(
+                "external packed compiler output differs from requested row"
+            )
+
+        mapping = {
+            "schema_version": "human13_external_packed_compiler_row.v1",
+            "packed_panel_plan_sha256": plan_sha256,
+            "site_id": site.site_id,
+            "segment_id": site.packed_segment_id,
+            "pack_index": row.pack_index,
+            "packed_causal_position": expected_position,
+            "prompt_token_sha256": site.prompt_token_sha256,
+            "source_prefix_token_sha256": site.source_prefix_token_sha256,
+            "source_history_sha256": site.source_history_sha256,
+            "compiler_ledger_sha256": admitted.content_sha256,
+            "compiler_admission_sha256": admitted.admission_sha256,
+            "acquisition_sha256": lineage.acquisition_sha256,
+            "trajectory_credit_sha256": lineage.trajectory_credit_sha256,
+            "repetition_penalty": lineage.repetition_penalty,
+        }
+        bound = object.__new__(PackedLogitRows)
+        for field, value in (
+            ("site_id", site.site_id),
+            ("segment_id", site.packed_segment_id),
+            ("pack_index", row.pack_index),
+            ("packed_causal_position", expected_position),
+            ("mapping_sha256", _sha256(mapping)),
+            ("compiler_ledger_sha256", admitted.content_sha256),
+            ("compiler_admission_sha256", cast(str, admitted.admission_sha256)),
+            ("admission_sha256", ""),
+            ("raw_logits", raw_logits),
+            ("_factory_marker", _PACKED_ROW_MARKER),
+        ):
+            object.__setattr__(bound, field, value)
+        admission_sha256 = _sha256(_packed_row_admission_preimage(bound))
+        object.__setattr__(bound, "admission_sha256", admission_sha256)
+        _register_admission(_PACKED_ROW_ADMISSIONS, bound, admission_sha256)
+        bound_rows.append(bound)
+    return admit_compiler_compact_logits(bound_rows, admitted)
 
 
 def _packed_row_admission_preimage(value: PackedLogitRows) -> dict[str, Any]:
@@ -2192,9 +2388,11 @@ __all__ = [
     "CompilerSite",
     "CompilerSiteScore",
     "NestedArmArtifacts",
+    "PackedCompilerLineage",
     "PackedLogitRows",
     "SourceBoundaryInput",
     "admit_source_compiler_panel",
+    "admit_compiler_compact_logits_from_packed_plan",
     "admit_source_greedy_decode",
     "bind_packed_compiler_logits",
     "build_compiler_ledger",

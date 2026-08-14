@@ -16,6 +16,7 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     PHASE_MATRIX,
     PHASE_QUALIFICATION,
     PROPOSAL_COMPONENTS_BY_ARM,
+    QUALIFICATION_LEARNING_RATE_RAY,
     QUALIFICATION_SEED_GROUP,
     TRAINING_RPS,
     AcquisitionKey,
@@ -115,6 +116,7 @@ def _cell_spec(
     config_tag: str | None = None,
     adamw_config_sha256: str = ADAMW_CONFIG_SHA256,
     objective_component_hashes: tuple[tuple[str, str], ...] | None = None,
+    learning_rate: float = 3.0e-6,
 ) -> CellSpec:
     tag = f"{acquisition.training_rp}:{acquisition.seed_group_id}:{arm_id}"
     components = {
@@ -123,7 +125,13 @@ def _cell_spec(
         "C": ("trajectory", "compiler", "preservation"),
     }[arm_id]
     return CellSpec(
-        cell_key=CellKey(acquisition_key=acquisition, arm_id=arm_id),
+        cell_key=CellKey(
+            acquisition_key=acquisition,
+            arm_id=arm_id,
+            qualification_learning_rate=(
+                learning_rate if acquisition.phase == PHASE_QUALIFICATION else None
+            ),
+        ),
         shared_evidence=shared_evidence,
         leaf_config_sha256=_digest(
             f"leaf-config:{config_tag or f'{acquisition.training_rp}:{arm_id}'}"
@@ -143,6 +151,15 @@ def _cell_spec(
         fresh_optimizer_identity_sha256=_digest(f"optimizer:{optimizer_tag or tag}"),
         evaluation_rps=EVALUATION_RPS,
         output_root=f"/roots/{root_tag or tag}",
+        learning_rate=learning_rate,
+        global_learning_rate_decision_sha256=(
+            _digest("global-lr-decision") if acquisition.phase == PHASE_MATRIX else None
+        ),
+        resolved_leaf_config_sha256=(
+            _digest(f"resolved-leaf:{config_tag or tag}:{learning_rate}")
+            if acquisition.phase == PHASE_MATRIX
+            else _digest(f"resolved-qualification-leaf:{tag}:{learning_rate}")
+        ),
     )
 
 
@@ -276,6 +293,11 @@ def _canonical_cell_receipt(
         if requires_projection
         else None,
         apply_receipt_sha256=_digest(f"apply:{tag}"),
+        learning_rate=cell.learning_rate,
+        global_learning_rate_decision_sha256=(
+            cell.global_learning_rate_decision_sha256
+        ),
+        resolved_leaf_config_sha256=cell.resolved_leaf_config_sha256,
     )
 
 
@@ -303,10 +325,23 @@ def _node_terminal(
     shared = _shared_evidence(
         training_rp=acquisition.training_rp, seed_group_id=acquisition.seed_group_id
     )
-    specs = tuple(
-        _cell_spec(acquisition=acquisition, arm_id=arm_id, shared_evidence=shared)
-        for arm_id in arm_ids
-    )
+    if acquisition.phase == PHASE_QUALIFICATION:
+        specs = tuple(
+            _cell_spec(
+                acquisition=acquisition,
+                arm_id="C",
+                shared_evidence=shared,
+                learning_rate=dose,
+                optimizer_tag=f"dose:{dose}",
+                root_tag=f"dose:{dose}",
+            )
+            for dose in QUALIFICATION_LEARNING_RATE_RAY
+        )
+    else:
+        specs = tuple(
+            _cell_spec(acquisition=acquisition, arm_id=arm_id, shared_evidence=shared)
+            for arm_id in arm_ids
+        )
     receipts = tuple(
         _canonical_cell_receipt(
             cell,
@@ -803,15 +838,8 @@ def test_matrix_plan_rejects_qualification_acquisition_pooled_into_matrix() -> N
         seed_group_id=QUALIFICATION_SEED_GROUP,
         phase=PHASE_QUALIFICATION,
     )
-    cells = _canonical_cells(tuple(acquisitions))
-    edges = tuple(
-        (cell.cell_key.acquisition_key.content_sha256, cell.content_sha256)
-        for cell in cells
-    )
-    with pytest.raises(ValueError, match="qualification"):
-        _canonical_matrix_plan(
-            acquisitions=tuple(acquisitions), cells=cells, dependency_edges=edges
-        )
+    with pytest.raises(ValueError, match="qualification cell keys may bind only arm C"):
+        _canonical_cells(tuple(acquisitions))
 
 
 def test_matrix_plan_rejects_duplicate_acquisition_pair() -> None:
@@ -1371,18 +1399,20 @@ def test_node_terminal_persists_typed_specs_and_receipts_and_round_trips() -> No
     ]
 
 
-def test_node_terminal_qualification_phase_binds_only_the_c_arm() -> None:
+def test_node_terminal_qualification_phase_binds_five_distinct_c_doses() -> None:
     terminal = _node_terminal(
         _acquisition_key(
             training_rp=1.10,
             seed_group_id=QUALIFICATION_SEED_GROUP,
             phase=PHASE_QUALIFICATION,
         ),
-        arm_ids=("C",),
     )
 
     assert terminal.phase == PHASE_QUALIFICATION
-    assert len(terminal.cell_specs) == 1
+    assert len(terminal.cell_specs) == 5
+    assert tuple(spec.learning_rate for spec in terminal.cell_specs) == (
+        QUALIFICATION_LEARNING_RATE_RAY
+    )
 
 
 def test_node_terminal_succeeded_status_requires_every_planned_arm() -> None:

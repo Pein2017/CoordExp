@@ -29,9 +29,11 @@ from scripts.research.human13_adamw_proposal_preservation import (
 )
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     PROPOSAL_COMPONENTS_BY_ARM,
+    AggregateResourceReceipt,
     AuditRef,
     CellReceipt,
     CellSpec,
+    DoseMechanicalReceipt,
 )
 from scripts.research.human13_training_transaction import (
     TrainingStateSnapshot,
@@ -68,6 +70,9 @@ class ObjectiveBackwardReceipt:
     compiler_ledger_sha256: str
     backward_count: int
     optimizer_step_count: int
+    trajectory_denominator: int
+    compiler_image_denominator: int | None
+    released_graph_count: int
 
 
 @dataclass(frozen=True)
@@ -137,6 +142,24 @@ class CellRuntimeServices(Protocol):
 
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None: ...
 
+    def aggregate_resource_receipt(
+        self,
+        state: CellExecutionState,
+        spec: CellSpec,
+        backward: ObjectiveBackwardReceipt,
+        audits: Sequence[AuditRef],
+    ) -> AggregateResourceReceipt: ...
+
+    def dose_mechanical_receipt(
+        self,
+        state: CellExecutionState,
+        spec: CellSpec,
+        checkpoint: PrivateCheckpointRef,
+        proposal_sha256: str,
+        audits: Sequence[AuditRef],
+        resources: AggregateResourceReceipt,
+    ) -> DoseMechanicalReceipt: ...
+
 
 class CellRuntimeError(RuntimeError):
     """A fail-closed cell outcome, optionally carrying its durable receipt."""
@@ -171,6 +194,16 @@ def _validate_state(spec: CellSpec, state: CellExecutionState) -> None:
         raise ValueError("fresh Source parameters must not carry stale gradients")
     if not isinstance(state.transaction, TrainingStateTransaction):
         raise ValueError("cell must use TrainingStateTransaction")
+    if (
+        spec.cell_key.acquisition_key.phase == "matrix"
+        and spec.global_learning_rate_decision_sha256 is None
+    ):
+        raise ValueError("matrix cell cannot execute before global LR selection")
+    if any(
+        float(group.get("lr", float("nan"))) != spec.learning_rate
+        for group in state.optimizer.param_groups
+    ):
+        raise ValueError("cell optimizer learning rate differs from CellSpec")
 
 
 def _validate_backward(spec: CellSpec, receipt: ObjectiveBackwardReceipt) -> None:
@@ -188,8 +221,20 @@ def _validate_backward(spec: CellSpec, receipt: ObjectiveBackwardReceipt) -> Non
         raise ValueError(
             "consumed objective component bytes differ from the planned CellSpec"
         )
-    if receipt.backward_count != 1 or receipt.optimizer_step_count != 0:
-        raise ValueError("cell requires exactly one backward and no adapter-owned step")
+    if (
+        receipt.backward_count <= 0
+        or receipt.released_graph_count != receipt.backward_count
+        or receipt.optimizer_step_count != 0
+    ):
+        raise ValueError(
+            "cell requires incremental backward with every graph released and no "
+            "adapter-owned step"
+        )
+    if receipt.trajectory_denominator != 13 * 16:
+        raise ValueError("trajectory backward denominator must be the sealed N*K")
+    expected_compiler_denominator = None if spec.cell_key.arm_id == "A" else 13
+    if receipt.compiler_image_denominator != expected_compiler_denominator:
+        raise ValueError("compiler backward denominator must be the sealed image count")
     if receipt.shared_evidence_sha256 != spec.shared_evidence.content_sha256:
         raise ValueError("backward pass did not consume the planned shared evidence")
     if (
@@ -261,21 +306,24 @@ def run_cell(
     proposal_delta_sha256: str | None = None
     projection_sha256: str | None = None
     apply_sha256: str | None = None
+    backward_receipt: ObjectiveBackwardReceipt | None = None
+    aggregate_resources: AggregateResourceReceipt | None = None
+    dose_mechanics: DoseMechanicalReceipt | None = None
     component_hashes: tuple[tuple[str, str], ...] = ()
     audits: list[AuditRef] = []
     update_attempted = False
     failure: Exception | None = None
 
     try:
-        backward = services.backward_objective(state, spec)
-        _validate_backward(spec, backward)
+        backward_receipt = services.backward_objective(state, spec)
+        _validate_backward(spec, backward_receipt)
         component_hashes = spec.objective_component_hashes
         proposal = capture_exact_adamw_proposal(
             state.named_trainable_parameters,
             optimizer=state.optimizer,
             transaction=state.transaction,
-            config=AdamWProposalConfig.frozen(),
-            binding=_binding(spec, backward),
+            config=AdamWProposalConfig.frozen(learning_rate=spec.learning_rate),
+            binding=_binding(spec, backward_receipt),
         )
         proposal_sha256 = proposal.proposal_sha256
         # The arm-independent identity of the measured proposal: arm C projects
@@ -347,6 +395,54 @@ def run_cell(
         except Exception as cleanup_error:
             failure = cleanup_error
 
+    if failure is None:
+        try:
+            if backward_receipt is None:
+                raise ValueError(
+                    "aggregate resource receipt is missing backward evidence"
+                )
+            aggregate_resources = services.aggregate_resource_receipt(
+                state,
+                spec,
+                backward_receipt,
+                tuple(audits),
+            )
+            if not isinstance(aggregate_resources, AggregateResourceReceipt):
+                raise ValueError("aggregate resource receipt is missing or untyped")
+            if aggregate_resources.backward_count != backward_receipt.backward_count:
+                raise ValueError(
+                    "aggregate resource receipt backward count differs from execution"
+                )
+            if spec.cell_key.acquisition_key.phase == "qualification":
+                if checkpoint is None or proposal_sha256 is None:
+                    raise ValueError(
+                        "qualification mechanics require proposal/checkpoint evidence"
+                    )
+                dose_mechanics = services.dose_mechanical_receipt(
+                    state,
+                    spec,
+                    checkpoint,
+                    proposal_sha256,
+                    tuple(audits),
+                    aggregate_resources,
+                )
+                if not isinstance(dose_mechanics, DoseMechanicalReceipt):
+                    raise ValueError("qualification dose mechanical receipt is missing")
+                if (
+                    dose_mechanics.cell_key != spec.cell_key
+                    or dose_mechanics.proposal_sha256 != proposal_sha256
+                    or dose_mechanics.private_checkpoint_sha256
+                    != checkpoint.checkpoint_sha256
+                    or dose_mechanics.audit_checkpoint_sha256s
+                    != tuple(audit.evaluated_checkpoint_sha256 for audit in audits)
+                    or dose_mechanics.resources != aggregate_resources
+                ):
+                    raise ValueError(
+                        "qualification dose mechanics differ from executed lifecycle"
+                    )
+        except Exception as resource_error:
+            failure = resource_error
+
     if failure is not None:
         if not update_attempted:
             raise CellRuntimeError(str(failure)) from failure
@@ -368,6 +464,13 @@ def run_cell(
             projection_receipt_sha256=projection_sha256,
             apply_receipt_sha256=apply_sha256,
             failure_reason=_failure_reason(failure),
+            learning_rate=spec.learning_rate,
+            global_learning_rate_decision_sha256=(
+                spec.global_learning_rate_decision_sha256
+            ),
+            resolved_leaf_config_sha256=spec.resolved_leaf_config_sha256,
+            aggregate_resources=aggregate_resources,
+            dose_mechanics=dose_mechanics,
         )
         receipt_writer(receipt)
         raise CellRuntimeError(str(failure), receipt=receipt) from failure
@@ -389,6 +492,13 @@ def run_cell(
         proposal_delta_sha256=proposal_delta_sha256,
         projection_receipt_sha256=projection_sha256,
         apply_receipt_sha256=apply_sha256,
+        learning_rate=spec.learning_rate,
+        global_learning_rate_decision_sha256=(
+            spec.global_learning_rate_decision_sha256
+        ),
+        resolved_leaf_config_sha256=spec.resolved_leaf_config_sha256,
+        aggregate_resources=aggregate_resources,
+        dose_mechanics=dose_mechanics,
     )
     receipt_writer(receipt)
     return receipt

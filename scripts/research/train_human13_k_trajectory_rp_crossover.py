@@ -20,6 +20,7 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     EVALUATION_RPS,
     PHASE_MATRIX,
     PHASE_QUALIFICATION,
+    QUALIFICATION_LEARNING_RATE_RAY,
     AcquisitionKey,
     CellKey,
     CellReceipt,
@@ -90,8 +91,8 @@ def declare_node_runtime_factory(factory: Any) -> Any:
 
     if not callable(factory):
         raise TypeError("a node runtime factory must be callable")
-    factory.node_runtime_factory_contract = NODE_RUNTIME_FACTORY_CONTRACT
-    factory.plan_contract = node_runtime_factory_plan_contract
+    setattr(factory, "node_runtime_factory_contract", NODE_RUNTIME_FACTORY_CONTRACT)
+    setattr(factory, "plan_contract", node_runtime_factory_plan_contract)
     return factory
 
 
@@ -227,7 +228,7 @@ def _validate_node_plan(
     ):
         raise ValueError("selected node sealed seed identity differs")
     phase = node.get("phase")
-    expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",)
+    expected_arms = ARM_IDS if phase == PHASE_MATRIX else ("C",) * 5
     if phase not in {PHASE_MATRIX, PHASE_QUALIFICATION}:
         raise ValueError("selected node phase differs")
     cells = node.get("cells")
@@ -235,6 +236,9 @@ def _validate_node_plan(
         cell.get("cell_key", {}).get("arm_id") for cell in cells
     ) != tuple(expected_arms):
         raise ValueError("selected node cell arms differ from its phase contract")
+    leaf_by_key = {
+        (leaf.training_rp, leaf.arm_id): leaf for leaf in launcher.load_leaf_configs()
+    }
     for cell, arm_id in zip(cells, expected_arms, strict=True):
         cell_key = CellKey.from_dict(cell["cell_key"])
         if cell_key.acquisition_key != acquisition_key or cell_key.arm_id != arm_id:
@@ -257,7 +261,66 @@ def _validate_node_plan(
             or tuple(cell.get("evaluation_rps", ())) != EVALUATION_RPS
         ):
             raise ValueError("selected node cell execution contract differs")
-    if len({cell["adamw_config_sha256"] for cell in cells}) != 1:
+        learning_rate = cell.get("learning_rate")
+        leaf = leaf_by_key[(acquisition_key.training_rp, arm_id)]
+        decision_sha256 = cell.get("global_learning_rate_decision_sha256")
+        try:
+            expected_optimizer_sha256 = launcher._adamw_config_sha256(
+                launcher._optimizer_at_learning_rate(leaf.optimizer, learning_rate)
+            )
+            expected_resolved_leaf_sha256 = launcher._resolved_leaf_config_sha256(
+                leaf,
+                learning_rate=learning_rate,
+                global_learning_rate_decision_sha256=decision_sha256,
+            )
+        except Exception as error:
+            raise ValueError(
+                "selected node learning-rate resolution is invalid"
+            ) from error
+        if (
+            cell.get("source_leaf_config_sha256") != leaf.source_sha256
+            or cell.get("adamw_config_sha256") != expected_optimizer_sha256
+            or cell.get("resolved_leaf_config_sha256") != expected_resolved_leaf_sha256
+        ):
+            raise ValueError(
+                "selected node resolved config hash differs from its exact LR decision"
+            )
+    if phase == PHASE_QUALIFICATION:
+        if tuple(cell.get("learning_rate") for cell in cells) != (
+            QUALIFICATION_LEARNING_RATE_RAY
+        ):
+            raise ValueError("qualification node must cover the exact five-dose ray")
+        if any(
+            cell.get("global_learning_rate_decision_sha256") is not None
+            or cell.get("execution_blocked") is not None
+            or not cell.get("resolved_leaf_config_sha256")
+            for cell in cells
+        ):
+            raise ValueError("qualification dose cells have unresolved identity drift")
+        if len({cell["adamw_config_sha256"] for cell in cells}) != 5:
+            raise ValueError(
+                "qualification doses require five resolved AdamW identities"
+            )
+    else:
+        if dag_plan.get("matrix_execution_ready") is not True:
+            raise ValueError("matrix node cannot execute before global LR selection")
+        decision = dag_plan.get("global_learning_rate_decision_sha256")
+        if (
+            not decision
+            or len({cell.get("learning_rate") for cell in cells}) != 1
+            or {cell.get("global_learning_rate_decision_sha256") for cell in cells}
+            != {decision}
+            or any(
+                not cell.get("resolved_leaf_config_sha256")
+                or cell.get("execution_blocked") is not None
+                for cell in cells
+            )
+        ):
+            raise ValueError("matrix cells do not consume one selected LR decision")
+    if (
+        phase == PHASE_MATRIX
+        and len({cell["adamw_config_sha256"] for cell in cells}) != 1
+    ):
         raise ValueError(
             "selected node cells must bind one declared AdamW configuration identity"
         )
@@ -330,6 +393,17 @@ def _validate_acquired_specs(
         ):
             raise ValueError(
                 "acquired CellSpec optimizer identities differ from the sealed cell"
+            )
+        if (
+            spec.learning_rate != planned["learning_rate"]
+            or spec.global_learning_rate_decision_sha256
+            != planned["global_learning_rate_decision_sha256"]
+            or spec.resolved_leaf_config_sha256
+            != planned["resolved_leaf_config_sha256"]
+            or spec.leaf_config_sha256 != planned["source_leaf_config_sha256"]
+        ):
+            raise ValueError(
+                "acquired CellSpec selected-LR or resolved leaf identity differs"
             )
     return validate_node_cell_specs(acquisition_key, node["phase"], bound)
 

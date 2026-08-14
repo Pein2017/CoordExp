@@ -682,6 +682,36 @@ def test_scored_token_partition_and_single_global_denominator() -> None:
     materialized.release()
 
 
+def test_incremental_backward_releases_each_graph_before_next_image() -> None:
+    """A consumer that first stacks panel numerators fails this iterator contract."""
+
+    parameter = torch.nn.Parameter(torch.tensor(2.0))
+    released: list[int] = []
+
+    def steps():
+        for image_id in (1584, 2299):
+            if image_id == 2299:
+                assert released == [1584]
+            yield packs.StreamingObjectiveStep(
+                image_id=image_id,
+                trajectory_numerator=parameter * float(image_id == 1584) + parameter,
+                compiler_numerator=parameter * 0.5,
+                release=lambda image_id=image_id: released.append(image_id),
+            )
+
+    receipt = packs.backward_incremental_objectives(
+        steps(),
+        trajectory_denominator=32,
+        compiler_image_denominator=2,
+        include_compiler=True,
+    )
+
+    assert receipt.backward_count == 2
+    assert receipt.released_graph_count == 2
+    assert released == [1584, 2299]
+    assert parameter.grad is not None
+
+
 def test_credit_ledger_lineage_fails_closed() -> None:
     publication = _publication()
     with pytest.raises(packs.LivePackContractError, match="credit ledger"):

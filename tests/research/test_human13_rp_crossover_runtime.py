@@ -16,12 +16,14 @@ from scripts.research.human13_adamw_proposal_preservation import (
     jacobian_sha256,
 )
 from scripts.research.human13_rp_crossover_matrix_contracts import (
+    AggregateResourceReceipt,
     AcquisitionKey,
     AuditRef,
     CANONICAL_IMAGE_IDS,
     PROPOSAL_COMPONENTS_BY_ARM,
     CellKey,
     CellSpec,
+    DoseMechanicalReceipt,
     SharedEvidenceRef,
     canonical_seeds,
 )
@@ -89,6 +91,9 @@ def _spec(arm_id: str = "A") -> CellSpec:
         fresh_optimizer_identity_sha256=_digest(f"fresh-optimizer-{arm_id}"),
         evaluation_rps=(1.0, 1.10),
         output_root=f"cells/{arm_id}",
+        learning_rate=3.0e-6,
+        global_learning_rate_decision_sha256=_digest("global-lr-decision"),
+        resolved_leaf_config_sha256=_digest(f"resolved-leaf-{arm_id}"),
     )
 
 
@@ -135,7 +140,7 @@ class FakeServices:
         named = (("adapter.weight", parameter),)
         optimizer = torch.optim.AdamW(
             (parameter,),
-            lr=3e-6,
+            lr=spec.learning_rate,
             betas=(0.9, 0.999),
             eps=1e-8,
             weight_decay=0.0,
@@ -194,8 +199,11 @@ class FakeServices:
                 spec.shared_evidence.trajectory_credit_acquisition_sha256
             ),
             compiler_ledger_sha256=spec.shared_evidence.compiler_ledger_sha256,
-            backward_count=1,
+            backward_count=13,
             optimizer_step_count=0,
+            trajectory_denominator=208,
+            compiler_image_denominator=(None if spec.cell_key.arm_id == "A" else 13),
+            released_graph_count=13,
         )
 
     def witness_bank(
@@ -239,6 +247,35 @@ class FakeServices:
 
     def cleanup_private_checkpoint(self, checkpoint: PrivateCheckpointRef) -> None:
         self.cleaned.append(checkpoint.path)
+
+    def aggregate_resource_receipt(
+        self, state, spec, backward, audits
+    ) -> AggregateResourceReceipt:
+        return AggregateResourceReceipt(
+            measurement_scope="injected_cpu",
+            wall_time_seconds=0.01,
+            peak_host_rss_bytes=1024,
+            cuda_peak_allocated_bytes=None,
+            cuda_peak_reserved_bytes=None,
+            acquisition_request_count=208,
+            acquisition_batch_count=52,
+            acquisition_token_count=4096,
+            decode_request_count=26,
+            decode_batch_count=26,
+            decode_token_count=2048,
+            packed_token_count=4096,
+            logical_token_count=3900,
+            forward_count=13,
+            backward_count=backward.backward_count,
+            row_bytes=8192,
+            artifact_bytes=4096,
+            update_count=1,
+            audit_count=len(audits),
+            rollback_count=1,
+        )
+
+    def dose_mechanical_receipt(self, *args, **kwargs) -> DoseMechanicalReceipt:
+        raise AssertionError("matrix tests must not request qualification mechanics")
 
 
 @pytest.mark.parametrize("arm_id", ["A", "B"])
@@ -426,5 +463,22 @@ def test_runtime_rejects_an_optimizer_identity_outside_the_cell_spec() -> None:
         run_cell(
             _spec("A"),
             services=WrongOptimizerIdentityServices(),
+            receipt_writer=lambda _: None,
+        )
+
+
+def test_runtime_rejects_a_succeeded_cell_without_aggregate_resource_receipt() -> None:
+    """Success must not omit the cross-phase resource/count evidence."""
+
+    class MissingResourceServices(FakeServices):
+        def aggregate_resource_receipt(
+            self, *args, **kwargs
+        ) -> AggregateResourceReceipt:
+            return None  # type: ignore[return-value]
+
+    with pytest.raises(CellRuntimeError, match="aggregate resource receipt"):
+        run_cell(
+            _spec("C"),
+            services=MissingResourceServices(),
             receipt_writer=lambda _: None,
         )

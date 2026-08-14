@@ -80,6 +80,15 @@ _MIXED_GRADIENTS = {
 }
 
 
+def test_frozen_adamw_capture_accepts_a_selected_nondefault_ray_dose() -> None:
+    """Task 5 must consume the globally selected dose, not hard-fix 3e-6."""
+
+    config = AdamWProposalConfig.frozen(learning_rate=1.0e-6)
+
+    assert config.learning_rate == 1.0e-6
+    assert config.betas == FROZEN_BETAS
+
+
 def _binding(*, arm_id: str = "C_trajectory_compiler_preservation") -> ProposalBinding:
     return ProposalBinding(
         unit_id=_UNIT_ID,

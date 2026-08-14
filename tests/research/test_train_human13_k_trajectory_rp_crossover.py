@@ -11,24 +11,85 @@ import pytest
 
 from scripts.research.human13_rp_crossover_matrix_contracts import (
     AcquisitionKey,
+    AggregateResourceReceipt,
     AuditRef,
     CANONICAL_IMAGE_IDS,
     PROPOSAL_COMPONENTS_BY_ARM,
     CellKey,
     CellReceipt,
     CellSpec,
+    DoseMechanicalReceipt,
     DRY_RUN_COUNTER_KEYS,
     NodeTerminalReceipt,
+    PHASE_QUALIFICATION,
+    QUALIFICATION_LEARNING_RATE_RAY,
     SharedEvidenceRef,
     canonical_seeds,
 )
 from scripts.research import launch_human13_k_trajectory_rp_crossover as launcher
 from scripts.research import train_human13_k_trajectory_rp_crossover as cli
 from scripts.research.human13_rp_crossover_runtime import CellRuntimeServices
+from scripts.research.human13_rp_crossover_production import (
+    GlobalLearningRateDecision,
+    select_global_learning_rate,
+)
 
 
 def _digest(label: str) -> str:
     return hashlib.sha256(label.encode()).hexdigest()
+
+
+def _resource_receipt() -> AggregateResourceReceipt:
+    return AggregateResourceReceipt(
+        measurement_scope="injected_cpu",
+        wall_time_seconds=1.0,
+        peak_host_rss_bytes=1,
+        cuda_peak_allocated_bytes=None,
+        cuda_peak_reserved_bytes=None,
+        acquisition_request_count=1,
+        acquisition_batch_count=1,
+        acquisition_token_count=1,
+        decode_request_count=2,
+        decode_batch_count=2,
+        decode_token_count=2,
+        packed_token_count=1,
+        logical_token_count=1,
+        forward_count=1,
+        backward_count=1,
+        row_bytes=1,
+        artifact_bytes=1,
+        update_count=1,
+        audit_count=2,
+        rollback_count=1,
+    )
+
+
+def _global_learning_rate_decision() -> GlobalLearningRateDecision:
+    receipts = []
+    for rp in (1.0, 1.10):
+        acquisition = AcquisitionKey(rp, "qualification", PHASE_QUALIFICATION)
+        for dose in QUALIFICATION_LEARNING_RATE_RAY:
+            checkpoint = _digest(f"checkpoint:{rp}:{dose}")
+            receipts.append(
+                DoseMechanicalReceipt(
+                    cell_key=CellKey(acquisition, "C", dose),
+                    proposal_sha256=_digest(f"proposal:{rp}:{dose}"),
+                    private_checkpoint_sha256=checkpoint,
+                    audit_checkpoint_sha256s=(checkpoint, checkpoint),
+                    greedy_decision_change_count=1,
+                    malformed_output_delta_count=0,
+                    cap_terminated_output_delta_count=0,
+                    unparseable_output_delta_count=0,
+                    active_witness_count=1,
+                    jvp_fd_max_abs_error=0.0,
+                    jvp_fd_tolerance=1.0e-6,
+                    median_abs_decision_margin_displacement=0.1,
+                    median_abs_source_decision_margin=1.0,
+                    rollback_reproduced=True,
+                    resources=_resource_receipt(),
+                )
+            )
+    return select_global_learning_rate(receipts)
 
 
 def _shared(
@@ -67,6 +128,10 @@ def _spec(
     output_root: str | None = None,
     adamw_config_sha256: str | None = None,
     fresh_optimizer_identity_sha256: str | None = None,
+    learning_rate: float = 3.0e-6,
+    global_learning_rate_decision_sha256: str | None = None,
+    resolved_leaf_config_sha256: str | None = None,
+    source_leaf_config_sha256: str | None = None,
 ) -> CellSpec:
     components = {
         "A": ("trajectory",),
@@ -78,7 +143,7 @@ def _spec(
     return CellSpec(
         cell_key=CellKey(acquisition, arm_id),
         shared_evidence=_shared(acquisition.training_rp, acquisition.seed_group_id),
-        leaf_config_sha256=_digest(f"leaf-{arm_id}"),
+        leaf_config_sha256=(source_leaf_config_sha256 or _digest(f"leaf-{arm_id}")),
         source_checkpoint_sha256=_digest("source-checkpoint"),
         expected_objective_components=components,
         objective_component_hashes=_component_hashes(arm_id, tag),
@@ -88,6 +153,13 @@ def _spec(
         ),
         evaluation_rps=(1.0, 1.10),
         output_root=output_root or f"cells/{arm_id}",
+        learning_rate=learning_rate,
+        global_learning_rate_decision_sha256=(
+            global_learning_rate_decision_sha256 or _digest("test-global-lr-decision")
+        ),
+        resolved_leaf_config_sha256=(
+            resolved_leaf_config_sha256 or _digest(f"resolved-leaf:{tag}:{arm_id}")
+        ),
     )
 
 
@@ -102,6 +174,7 @@ def _write_dag_plan(tmp_path) -> tuple[str, dict[str, Any]]:
         launcher.load_leaf_configs(),
         run_id="integration",
         output_root=tmp_path / "artifacts",
+        global_learning_rate_decision=_global_learning_rate_decision(),
     )
     path = tmp_path / "dag-plan.json"
     path.write_text(json.dumps(plan), encoding="utf-8")
@@ -142,6 +215,11 @@ def _success_receipt(spec: CellSpec) -> CellReceipt:
             _digest("projection-C") if spec.cell_key.arm_id == "C" else None
         ),
         apply_receipt_sha256=_digest(f"apply-{spec.cell_key.arm_id}"),
+        learning_rate=spec.learning_rate,
+        global_learning_rate_decision_sha256=(
+            spec.global_learning_rate_decision_sha256
+        ),
+        resolved_leaf_config_sha256=spec.resolved_leaf_config_sha256,
     )
 
 
@@ -271,6 +349,12 @@ def test_node_execute_acquires_once_runs_independent_cells_and_writes_one_termin
                     fresh_optimizer_identity_sha256=cell[
                         "fresh_optimizer_identity_sha256"
                     ],
+                    learning_rate=cell["learning_rate"],
+                    global_learning_rate_decision_sha256=cell[
+                        "global_learning_rate_decision_sha256"
+                    ],
+                    resolved_leaf_config_sha256=cell["resolved_leaf_config_sha256"],
+                    source_leaf_config_sha256=cell["source_leaf_config_sha256"],
                 )
                 for cell in selected_node["cells"]
             )
@@ -418,6 +502,7 @@ def _write_forged_dag_plan(tmp_path, mutate) -> tuple[str, dict[str, Any]]:
         launcher.load_leaf_configs(),
         run_id="forged",
         output_root=tmp_path / "forged-artifacts",
+        global_learning_rate_decision=_global_learning_rate_decision(),
     )
     mutate(plan)
     path = tmp_path / "forged-dag-plan.json"
@@ -432,7 +517,7 @@ def test_node_rejects_a_second_declared_adamw_config_in_its_dag(tmp_path) -> Non
     dag_path, plan = _write_forged_dag_plan(tmp_path, mutate)
     node = _matrix_node(plan)
 
-    with pytest.raises(ValueError, match="one declared AdamW configuration"):
+    with pytest.raises(ValueError, match="resolved config hash differs"):
         cli.run_cli(
             _node_argv(dag_path, node),
             node_runtime_factory=_declared_factory(
@@ -475,6 +560,12 @@ def test_node_accepts_one_shared_config_with_independent_optimizer_identities(
             output_root=cell["output_root"],
             adamw_config_sha256=cell["adamw_config_sha256"],
             fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+            learning_rate=cell["learning_rate"],
+            global_learning_rate_decision_sha256=cell[
+                "global_learning_rate_decision_sha256"
+            ],
+            resolved_leaf_config_sha256=cell["resolved_leaf_config_sha256"],
+            source_leaf_config_sha256=cell["source_leaf_config_sha256"],
         )
         for cell in node["cells"]
     )
@@ -512,6 +603,12 @@ def test_node_rejects_a_trajectory_objective_that_differs_across_its_arms(
             output_root=cell["output_root"],
             adamw_config_sha256=cell["adamw_config_sha256"],
             fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+            learning_rate=cell["learning_rate"],
+            global_learning_rate_decision_sha256=cell[
+                "global_learning_rate_decision_sha256"
+            ],
+            resolved_leaf_config_sha256=cell["resolved_leaf_config_sha256"],
+            source_leaf_config_sha256=cell["source_leaf_config_sha256"],
         )
         if arm_id == "C":
             spec = replace(
@@ -579,6 +676,12 @@ def test_failed_node_terminal_still_persists_its_acquired_specs(
             output_root=cell["output_root"],
             adamw_config_sha256=cell["adamw_config_sha256"],
             fresh_optimizer_identity_sha256=cell["fresh_optimizer_identity_sha256"],
+            learning_rate=cell["learning_rate"],
+            global_learning_rate_decision_sha256=cell[
+                "global_learning_rate_decision_sha256"
+            ],
+            resolved_leaf_config_sha256=cell["resolved_leaf_config_sha256"],
+            source_leaf_config_sha256=cell["source_leaf_config_sha256"],
         )
         for cell in node["cells"]
     )

@@ -60,6 +60,7 @@ JACOBIAN_SCHEMA_VERSION = "human13_owner_witness_jacobian.v1"
 PARAMETER_STATE_SCHEMA_VERSION = "human13_parameter_state.v1"
 
 FROZEN_LEARNING_RATE = 3e-6
+QUALIFICATION_LEARNING_RATE_RAY = (3e-7, 1e-6, 3e-6, 1e-5, 3e-5)
 FROZEN_BETAS = (0.9, 0.999)
 FROZEN_EPSILON = 1e-8
 FROZEN_WEIGHT_DECAY = 0.0
@@ -478,9 +479,16 @@ class AdamWProposalConfig:
                 )
 
     @classmethod
-    def frozen(cls) -> AdamWProposalConfig:
+    def frozen(
+        cls, *, learning_rate: float = FROZEN_LEARNING_RATE
+    ) -> AdamWProposalConfig:
+        if learning_rate not in QUALIFICATION_LEARNING_RATE_RAY:
+            raise ProposalAdmissionError(
+                "learning rate is outside the sealed qualification dose ray",
+                disposition="invalid_field",
+            )
         return cls(
-            learning_rate=FROZEN_LEARNING_RATE,
+            learning_rate=learning_rate,
             betas=FROZEN_BETAS,
             epsilon=FROZEN_EPSILON,
             weight_decay=FROZEN_WEIGHT_DECAY,

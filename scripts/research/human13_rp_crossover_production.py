@@ -140,7 +140,10 @@ class FrozenProductionInputs:
     default_qualification_learning_rate: float
 
 
-@dataclass(frozen=True)
+_GLOBAL_LR_DECISION_MARKER = object()
+
+
+@dataclass(frozen=True, init=False)
 class GlobalLearningRateDecision:
     """Content-addressed qualification choice applied globally to the matrix."""
 
@@ -153,6 +156,9 @@ class GlobalLearningRateDecision:
     selection_policy: str
     online_adaptation: bool
     grad_delta_norm_role: str
+    qualification_receipt_sha256s: tuple[str, ...]
+    selection_reason: str
+    _factory_marker: object
 
     def __post_init__(self) -> None:
         digest = self.qualification_decision_sha256
@@ -200,31 +206,43 @@ class GlobalLearningRateDecision:
                 "learning rate must be sealed before the matrix; grad/delta norms "
                 "are covariates only"
             )
+        receipt_sha256s = tuple(self.qualification_receipt_sha256s)
+        if len(receipt_sha256s) != 10 or len(set(receipt_sha256s)) != 10:
+            raise ValueError(
+                "global decision must bind ten distinct mechanical receipts"
+            )
+        if any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in receipt_sha256s
+        ):
+            raise ValueError("global decision mechanical receipt identity differs")
+        expected_decision = hashlib.sha256(
+            _canonical_json_bytes(
+                {
+                    "schema_version": (
+                        "human13_rp_crossover_lr_qualification_bundle.v1"
+                    ),
+                    "receipt_sha256s": list(receipt_sha256s),
+                }
+            )
+        ).hexdigest()
+        if self.qualification_decision_sha256 != expected_decision:
+            raise ValueError("global decision digest differs from mechanical receipts")
+        if self.selection_reason not in {
+            "default_passed_both_rps",
+            "default_below_floor_smallest_larger_common_pass",
+            "default_above_ceiling_largest_smaller_common_pass",
+        }:
+            raise ValueError("global decision selection reason differs")
+        if self._factory_marker is not _GLOBAL_LR_DECISION_MARKER:
+            raise ValueError("global decision must come from the pure selector")
 
     @classmethod
-    def sealed(
-        cls,
-        qualification_decision_sha256: str,
-        *,
-        selected_learning_rate: float = DEFAULT_QUALIFICATION_LEARNING_RATE,
-    ) -> GlobalLearningRateDecision:
-        return cls(
-            qualification_decision_sha256=qualification_decision_sha256,
-            selected_learning_rate=selected_learning_rate,
-            allowed_learning_rates=QUALIFICATION_LEARNING_RATE_RAY,
-            training_rp_learning_rates=tuple(
-                (rp, selected_learning_rate) for rp in EVALUATION_RPS
-            ),
-            arm_learning_rates=tuple(
-                (arm, selected_learning_rate) for arm in ("A", "B", "C")
-            ),
-            seed_group_learning_rates=tuple(
-                (group, selected_learning_rate)
-                for group in ("matrix_a", "matrix_b", "matrix_c")
-            ),
-            selection_policy="sealed_qualification_global_before_matrix",
-            online_adaptation=False,
-            grad_delta_norm_role="covariate_only",
+    def sealed(cls, *_args: Any, **_kwargs: Any) -> GlobalLearningRateDecision:
+        raise ValueError(
+            "global learning rate requires all ten mechanical qualification receipts"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -247,6 +265,8 @@ class GlobalLearningRateDecision:
             "selection_policy": self.selection_policy,
             "online_adaptation": self.online_adaptation,
             "grad_delta_norm_role": self.grad_delta_norm_role,
+            "qualification_receipt_sha256s": list(self.qualification_receipt_sha256s),
+            "selection_reason": self.selection_reason,
         }
 
     @property
@@ -258,6 +278,151 @@ class GlobalLearningRateDecision:
             allow_nan=False,
         ).encode("utf-8")
         return hashlib.sha256(payload).hexdigest()
+
+
+def _construct_global_learning_rate_decision(
+    *,
+    qualification_decision_sha256: str,
+    qualification_receipt_sha256s: tuple[str, ...],
+    selected_learning_rate: float,
+    selection_reason: str,
+) -> GlobalLearningRateDecision:
+    result = object.__new__(GlobalLearningRateDecision)
+    for field, value in (
+        ("qualification_decision_sha256", qualification_decision_sha256),
+        ("selected_learning_rate", selected_learning_rate),
+        ("allowed_learning_rates", QUALIFICATION_LEARNING_RATE_RAY),
+        (
+            "training_rp_learning_rates",
+            tuple((rp, selected_learning_rate) for rp in EVALUATION_RPS),
+        ),
+        (
+            "arm_learning_rates",
+            tuple((arm, selected_learning_rate) for arm in ("A", "B", "C")),
+        ),
+        (
+            "seed_group_learning_rates",
+            tuple(
+                (group, selected_learning_rate)
+                for group in ("matrix_a", "matrix_b", "matrix_c")
+            ),
+        ),
+        ("selection_policy", "sealed_qualification_global_before_matrix"),
+        ("online_adaptation", False),
+        ("grad_delta_norm_role", "covariate_only"),
+        ("qualification_receipt_sha256s", qualification_receipt_sha256s),
+        ("selection_reason", selection_reason),
+        ("_factory_marker", _GLOBAL_LR_DECISION_MARKER),
+    ):
+        object.__setattr__(result, field, value)
+    result.__post_init__()
+    if result._factory_marker is not _GLOBAL_LR_DECISION_MARKER:
+        raise ValueError("global learning-rate decision factory identity differs")
+    return result
+
+
+def select_global_learning_rate(
+    mechanical_receipts: Sequence[Any],
+) -> GlobalLearningRateDecision:
+    """Apply the authoritative default/floor/ceiling rule to ten receipts."""
+
+    from scripts.research.human13_rp_crossover_matrix_contracts import (
+        DoseMechanicalReceipt,
+        QUALIFICATION_LEARNING_RATE_RAY as CONTRACT_RAY,
+    )
+
+    if CONTRACT_RAY != QUALIFICATION_LEARNING_RATE_RAY:
+        raise RuntimeError("qualification dose ray drifted across production owners")
+    receipts = tuple(mechanical_receipts)
+    if len(receipts) != len(EVALUATION_RPS) * len(QUALIFICATION_LEARNING_RATE_RAY):
+        raise ValueError("global selector requires exactly ten mechanical receipts")
+    if any(type(receipt) is not DoseMechanicalReceipt for receipt in receipts):
+        raise ValueError("global selector accepts only typed mechanical receipts")
+    by_key = {
+        (receipt.cell_key.acquisition_key.training_rp, receipt.learning_rate): receipt
+        for receipt in receipts
+    }
+    expected_keys = {
+        (rp, learning_rate)
+        for rp in EVALUATION_RPS
+        for learning_rate in QUALIFICATION_LEARNING_RATE_RAY
+    }
+    if set(by_key) != expected_keys or len(by_key) != len(receipts):
+        raise ValueError("mechanical receipts must cover the exact two-RP dose ray")
+    if len({receipt.cell_key.content_sha256 for receipt in receipts}) != len(receipts):
+        raise ValueError("every qualification proposal must have a distinct cell key")
+
+    canonical = tuple(
+        by_key[(rp, learning_rate)]
+        for rp in EVALUATION_RPS
+        for learning_rate in QUALIFICATION_LEARNING_RATE_RAY
+    )
+    receipt_sha256s = tuple(receipt.content_sha256 for receipt in canonical)
+    decision_preimage = {
+        "schema_version": "human13_rp_crossover_lr_qualification_bundle.v1",
+        "receipt_sha256s": list(receipt_sha256s),
+    }
+    decision_sha256 = hashlib.sha256(
+        _canonical_json_bytes(decision_preimage)
+    ).hexdigest()
+
+    def common_pass(learning_rate: float) -> bool:
+        return all(
+            by_key[(rp, learning_rate)].mechanically_admissible for rp in EVALUATION_RPS
+        )
+
+    default_rows = tuple(
+        by_key[(rp, DEFAULT_QUALIFICATION_LEARNING_RATE)] for rp in EVALUATION_RPS
+    )
+    if all(row.mechanically_admissible for row in default_rows):
+        selected = DEFAULT_QUALIFICATION_LEARNING_RATE
+        reason = "default_passed_both_rps"
+    else:
+        floor_failed = any(not row.floor_passed for row in default_rows)
+        ceiling_failed = any(not row.ceiling_passed for row in default_rows)
+        if floor_failed and ceiling_failed:
+            raise ValueError("qualification evidence is mixed or non-monotone")
+        default_index = QUALIFICATION_LEARNING_RATE_RAY.index(
+            DEFAULT_QUALIFICATION_LEARNING_RATE
+        )
+        if floor_failed:
+            if any(
+                common_pass(value)
+                for value in QUALIFICATION_LEARNING_RATE_RAY[:default_index]
+            ):
+                raise ValueError("qualification evidence is mixed or non-monotone")
+            candidates = tuple(
+                value
+                for value in QUALIFICATION_LEARNING_RATE_RAY[default_index + 1 :]
+                if common_pass(value)
+            )
+            if not candidates:
+                raise ValueError("no common larger dose passes both RP contracts")
+            selected = min(candidates)
+            reason = "default_below_floor_smallest_larger_common_pass"
+        elif ceiling_failed:
+            if any(
+                common_pass(value)
+                for value in QUALIFICATION_LEARNING_RATE_RAY[default_index + 1 :]
+            ):
+                raise ValueError("qualification evidence is mixed or non-monotone")
+            candidates = tuple(
+                value
+                for value in QUALIFICATION_LEARNING_RATE_RAY[:default_index]
+                if common_pass(value)
+            )
+            if not candidates:
+                raise ValueError("no common smaller dose passes both RP contracts")
+            selected = max(candidates)
+            reason = "default_above_ceiling_largest_smaller_common_pass"
+        else:
+            raise ValueError("qualification evidence is mixed or non-monotone")
+    return _construct_global_learning_rate_decision(
+        qualification_decision_sha256=decision_sha256,
+        qualification_receipt_sha256s=receipt_sha256s,
+        selected_learning_rate=selected,
+        selection_reason=reason,
+    )
 
 
 @dataclass(frozen=True)
@@ -276,7 +441,6 @@ class QualificationAcquisition:
     prompt_policy_fingerprint: str
     alias_bank_sha256: str
     nested_objective_hashes: Mapping[str, tuple[tuple[str, str], ...]]
-    learning_rate_decision: GlobalLearningRateDecision
     streaming_mode: str
 
 
@@ -303,20 +467,32 @@ class LiveNodeComposition(Protocol):
 
     def close_acquisition(self) -> AcquisitionReleaseReceipt: ...
 
-    def services_for_cell(
-        self, spec: Any, learning_rate_decision: GlobalLearningRateDecision
-    ) -> Any: ...
+    def services_for_cell(self, spec: Any) -> Any: ...
 
 
-class _UnavailableLiveComposition:
+class QualificationAcquisitionOwner(Protocol):
+    """Exact owner of native acquisition, packed replay, and release."""
+
+    def acquire_qualification(
+        self, node: Mapping[str, Any], frozen: FrozenProductionInputs
+    ) -> QualificationAcquisition: ...
+
+    def close_acquisition(self) -> AcquisitionReleaseReceipt: ...
+
+
+class CellRuntimeServicesOwner(Protocol):
+    """Exact owner of fresh-model per-cell runtime service construction."""
+
+    def services_for_cell(self, spec: Any) -> Any: ...
+
+
+class _RequiredQualificationAcquisitionOwner:
     def acquire_qualification(
         self, node: Mapping[str, Any], frozen: FrozenProductionInputs
     ) -> QualificationAcquisition:
         raise ProductionCompositionUnavailable(
-            "no existing owner exposes the sampled-trajectory packed-logit "
-            "materializer plus native batch receipt builder required to compose "
-            "Task2 replay with the no-padding FA2/MRoPE backward; refusing to "
-            "substitute a second sampler or trainer"
+            "exact native qualification acquisition owner must be injected; "
+            "the production factory will not synthesize model evidence"
         )
 
     def close_acquisition(self) -> AcquisitionReleaseReceipt:
@@ -326,12 +502,31 @@ class _UnavailableLiveComposition:
             panel_wide_logits_retained=False,
         )
 
-    def services_for_cell(
-        self, spec: Any, learning_rate_decision: GlobalLearningRateDecision
-    ) -> Any:
+
+class _RequiredCellRuntimeServicesOwner:
+    def services_for_cell(self, spec: Any) -> Any:
         raise ProductionCompositionUnavailable(
-            "training services are unavailable before admitted acquisition"
+            "exact fresh-model cell runtime services owner must be injected"
         )
+
+
+@dataclass(frozen=True)
+class ComposedLiveNodeComposition:
+    """CPU-composable delegation over the two exact production service owners."""
+
+    acquisition_owner: QualificationAcquisitionOwner
+    cell_services_owner: CellRuntimeServicesOwner
+
+    def acquire_qualification(
+        self, node: Mapping[str, Any], frozen: FrozenProductionInputs
+    ) -> QualificationAcquisition:
+        return self.acquisition_owner.acquire_qualification(node, frozen)
+
+    def close_acquisition(self) -> AcquisitionReleaseReceipt:
+        return self.acquisition_owner.close_acquisition()
+
+    def services_for_cell(self, spec: Any) -> Any:
+        return self.cell_services_owner.services_for_cell(spec)
 
 
 def _plan_contract() -> dict[str, Any]:
@@ -401,27 +596,42 @@ def _validate_node(node: Mapping[str, Any]) -> float:
     cells = node.get("cells")
     if not isinstance(cells, Sequence) or isinstance(cells, (str, bytes)):
         raise ValueError("qualification node cells are malformed")
-    if len(cells) != 1 or not isinstance(cells[0], Mapping):
-        raise ValueError("qualification node must contain exactly one C cell")
-    cell = cells[0]
-    cell_key = cell.get("cell_key")
-    if not isinstance(cell_key, Mapping) or cell_key.get("arm_id") != "C":
-        raise ValueError("qualification node must execute preservation arm C only")
-    if (
-        cell_key.get("acquisition_key") != acquisition
-        or tuple(cell.get("objective_components", ()))
-        != ("trajectory", "compiler", "preservation")
-        or tuple(cell.get("evaluation_rps", ())) != EVALUATION_RPS
-        or cell.get("world_size") != 1
-        or cell.get("max_updates") != 1
-        or cell.get("retry_policy") != "none"
-        or cell.get("source") != "fresh"
-        or cell.get("optimizer") != "fresh_adamw"
-        or cell.get("adamw_config_sha256") != ADAMW_CONFIG_SHA256
+    if len(cells) != 5 or any(not isinstance(cell, Mapping) for cell in cells):
+        raise ValueError("qualification node must contain the exact five C doses")
+    if tuple(cell.get("learning_rate") for cell in cells) != (
+        QUALIFICATION_LEARNING_RATE_RAY
     ):
-        raise ValueError("qualification C cell execution contract drifted")
-    if Path(str(cell.get("output_root", ""))).exists():
-        raise FileExistsError("refusing to reuse a qualification cell output root")
+        raise ValueError("qualification node dose ray drifted")
+    roots: list[str] = []
+    for cell in cells:
+        cell_key = cell.get("cell_key")
+        if not isinstance(cell_key, Mapping) or (
+            cell_key.get("arm_id"),
+            cell_key.get("qualification_learning_rate"),
+        ) != ("C", cell.get("learning_rate")):
+            raise ValueError("qualification node must execute preservation arm C only")
+        if (
+            cell_key.get("acquisition_key") != acquisition
+            or tuple(cell.get("objective_components", ()))
+            != ("trajectory", "compiler", "preservation")
+            or tuple(cell.get("evaluation_rps", ())) != EVALUATION_RPS
+            or cell.get("world_size") != 1
+            or cell.get("max_updates") != 1
+            or cell.get("retry_policy") != "none"
+            or cell.get("source") != "fresh"
+            or cell.get("optimizer") != "fresh_adamw"
+            or cell.get("global_learning_rate_decision_sha256") is not None
+            or not cell.get("resolved_leaf_config_sha256")
+            or cell.get("adamw_config_sha256")
+            != _resolved_adamw_config_sha256(float(cell["learning_rate"]))
+        ):
+            raise ValueError("qualification C cell execution contract drifted")
+        root = str(cell.get("output_root", ""))
+        roots.append(root)
+        if Path(root).exists():
+            raise FileExistsError("refusing to reuse a qualification cell output root")
+    if len(set(roots)) != 5:
+        raise ValueError("qualification C proposals require unique immutable roots")
     return training_rp
 
 
@@ -496,7 +706,7 @@ def _validate_acquisition(
     *,
     node: Mapping[str, Any],
     training_rp: float,
-) -> tuple[tuple[Any, ...], GlobalLearningRateDecision]:
+) -> tuple[Any, ...]:
     if not isinstance(acquired, QualificationAcquisition):
         raise TypeError("live composition must return QualificationAcquisition")
     if (
@@ -513,11 +723,6 @@ def _validate_acquisition(
     ):
         raise ValueError(
             "qualification acquisition or frozen semantic identity drifted"
-        )
-    decision = acquired.learning_rate_decision
-    if not isinstance(decision, GlobalLearningRateDecision):
-        raise ValueError(
-            "qualification must publish a content-bound global learning-rate decision"
         )
     nested = acquired.nested_objective_hashes
     if not isinstance(nested, Mapping) or set(nested) != {"A", "B", "C"}:
@@ -556,22 +761,30 @@ def _validate_acquisition(
             "qualification requires two fresh deterministic Source baselines per RP"
         )
     specs = tuple(acquired.cell_specs)
-    if len(specs) != 1 or not isinstance(specs[0], CellSpec):
-        raise ValueError("qualification acquisition must return exactly one C CellSpec")
-    spec = specs[0]
-    planned = node["cells"][0]
-    if (
-        spec.cell_key.acquisition_key
-        != AcquisitionKey.from_dict(node["acquisition_key"])
-        or spec.cell_key.arm_id != "C"
-        or spec.objective_component_hashes != c
-        or spec.leaf_config_sha256 != C_LEAF_SHA256_BY_RP[training_rp]
-        or spec.source_checkpoint_sha256 != SOURCE_CHECKPOINT_PAYLOAD_SHA256
-        or spec.shared_evidence.manifest_sha256 != MANIFEST_SHA256
-        or spec.output_root != planned["output_root"]
-    ):
-        raise ValueError("qualification C CellSpec differs from frozen live evidence")
-    return specs, decision
+    if len(specs) != 5 or any(not isinstance(spec, CellSpec) for spec in specs):
+        raise ValueError("qualification acquisition must return five C CellSpecs")
+    if tuple(spec.learning_rate for spec in specs) != QUALIFICATION_LEARNING_RATE_RAY:
+        raise ValueError("qualification CellSpecs differ from the exact dose ray")
+    acquisition_key = AcquisitionKey.from_dict(node["acquisition_key"])
+    for spec, planned in zip(specs, node["cells"], strict=True):
+        if (
+            spec.cell_key.acquisition_key != acquisition_key
+            or spec.cell_key.arm_id != "C"
+            or spec.cell_key.qualification_learning_rate != spec.learning_rate
+            or spec.objective_component_hashes != c
+            or spec.leaf_config_sha256 != C_LEAF_SHA256_BY_RP[training_rp]
+            or spec.source_checkpoint_sha256 != SOURCE_CHECKPOINT_PAYLOAD_SHA256
+            or spec.shared_evidence.manifest_sha256 != MANIFEST_SHA256
+            or spec.output_root != planned["output_root"]
+            or spec.adamw_config_sha256 != planned["adamw_config_sha256"]
+            or spec.resolved_leaf_config_sha256
+            != planned["resolved_leaf_config_sha256"]
+            or spec.global_learning_rate_decision_sha256 is not None
+        ):
+            raise ValueError(
+                "qualification C CellSpec differs from frozen live evidence"
+            )
+    return specs
 
 
 def _canonical_json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -579,6 +792,23 @@ def _canonical_json_bytes(payload: Mapping[str, Any]) -> bytes:
         json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         + "\n"
     ).encode("utf-8")
+
+
+def _resolved_adamw_config_sha256(learning_rate: float) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "schema_version": "human13_rp_crossover_adamw_config.v1",
+                "name": "adamw_torch",
+                "learning_rate": learning_rate,
+                "betas": [0.9, 0.999],
+                "epsilon": 1.0e-8,
+                "weight_decay": 0.0,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _atomic_write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
@@ -613,7 +843,6 @@ class ProductionNodeRuntime:
         self._composition = composition
         self._acquisition_released = False
         self._spec_output_roots: dict[str, str] = {}
-        self._learning_rate_decision: GlobalLearningRateDecision | None = None
 
     def acquire_cell_specs(self, node: Mapping[str, Any]) -> tuple[Any, ...]:
         if node is not self._node and dict(node) != dict(self._node):
@@ -627,10 +856,7 @@ class ProductionNodeRuntime:
             release = self._composition.close_acquisition()
             _validate_release(release)
             self._acquisition_released = True
-        specs, decision = _validate_acquisition(
-            acquired, node=node, training_rp=training_rp
-        )
-        self._learning_rate_decision = decision
+        specs = _validate_acquisition(acquired, node=node, training_rp=training_rp)
         self._spec_output_roots = {
             spec.cell_key.content_sha256: spec.output_root for spec in specs
         }
@@ -641,9 +867,7 @@ class ProductionNodeRuntime:
             raise RuntimeError("training model cannot load before acquisition release")
         if spec.cell_key.content_sha256 not in self._spec_output_roots:
             raise ValueError("cell service requested for an unacquired CellSpec")
-        if self._learning_rate_decision is None:
-            raise RuntimeError("qualification learning-rate decision is unavailable")
-        return self._composition.services_for_cell(spec, self._learning_rate_decision)
+        return self._composition.services_for_cell(spec)
 
     def write_cell_receipt(self, receipt: Any) -> None:
         key = receipt.cell_key.content_sha256
@@ -672,10 +896,23 @@ def create_node_runtime(
     node: Mapping[str, Any],
     *,
     _composition: LiveNodeComposition | None = None,
+    _acquisition_owner: QualificationAcquisitionOwner | None = None,
+    _cell_services_owner: CellRuntimeServicesOwner | None = None,
 ) -> ProductionNodeRuntime:
     """Create one node runtime; all validation/live action remains execute-time."""
 
-    composition = _composition or _UnavailableLiveComposition()
+    if _composition is not None and (
+        _acquisition_owner is not None or _cell_services_owner is not None
+    ):
+        raise ValueError("inject either one composition or its exact owners, not both")
+    composition = _composition or ComposedLiveNodeComposition(
+        acquisition_owner=(
+            _acquisition_owner or _RequiredQualificationAcquisitionOwner()
+        ),
+        cell_services_owner=(
+            _cell_services_owner or _RequiredCellRuntimeServicesOwner()
+        ),
+    )
     return ProductionNodeRuntime(node, composition=composition)
 
 
@@ -684,6 +921,8 @@ __all__ = [
     "ADAMW_CONFIG_SHA256",
     "AcquisitionReleaseReceipt",
     "C_LEAF_SHA256_BY_RP",
+    "CellRuntimeServicesOwner",
+    "ComposedLiveNodeComposition",
     "DEFAULT_QUALIFICATION_LEARNING_RATE",
     "FrozenProductionInputs",
     "GlobalLearningRateDecision",
@@ -693,7 +932,9 @@ __all__ = [
     "PROMPT_POLICY_FINGERPRINT",
     "QUALIFICATION_LEARNING_RATE_RAY",
     "QualificationAcquisition",
+    "QualificationAcquisitionOwner",
     "SOURCE_CHECKPOINT_PAYLOAD_SHA256",
     "TOKENIZER_SHA256",
     "create_node_runtime",
+    "select_global_learning_rate",
 ]
