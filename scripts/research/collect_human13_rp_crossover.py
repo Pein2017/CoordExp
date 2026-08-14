@@ -71,6 +71,12 @@ def _digest(value: object, *, field: str) -> str:
     return value
 
 
+def _mapping(value: object, *, field: str, keys: set[str]) -> Mapping[str, object]:
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise ValueError(f"{field} schema differs from the canonical receipt")
+    return value
+
+
 def token_ids_sha256(token_ids: Sequence[int]) -> str:
     if not token_ids or any(isinstance(token, bool) or not isinstance(token, int) or token < 0 for token in token_ids):
         raise ValueError("prompt token ids must be nonempty nonnegative integers")
@@ -158,7 +164,11 @@ class NativeRequestReceipt:
                 raise ValueError(f"native request receipt {field} must be nonnegative")
         if not isinstance(self.sampling_params, Mapping):
             raise ValueError("native request receipt sampling parameters must be a mapping")
-        object.__setattr__(self, "sampling_params", MappingProxyType(dict(self.sampling_params)))
+        sampling_params = dict(self.sampling_params)
+        stop_token_ids = sampling_params.get("stop_token_ids")
+        if isinstance(stop_token_ids, Sequence) and not isinstance(stop_token_ids, (str, bytes)):
+            sampling_params["stop_token_ids"] = tuple(stop_token_ids)
+        object.__setattr__(self, "sampling_params", MappingProxyType(sampling_params))
         if not isinstance(self.model_id, str) or not self.model_id:
             raise ValueError("native request receipt model identity must be nonempty")
         for field in ("prompt_token_ids_sha256", "model_identity_sha256", "session_identity_sha256"):
@@ -177,6 +187,23 @@ class NativeRequestReceipt:
             "model_identity_sha256": self.model_identity_sha256,
             "session_identity_sha256": self.session_identity_sha256,
         }
+
+    @classmethod
+    def from_dict(cls, value: object) -> "NativeRequestReceipt":
+        item = _mapping(value, field="native request receipt", keys={
+            "schema_version", "request_id", "seed", "physical_batch_index", "request_order_in_batch",
+            "sampling_params", "prompt_token_ids_sha256", "model_id", "model_identity_sha256", "session_identity_sha256",
+        })
+        payload: dict[str, Any] = dict(item)
+        if payload["schema_version"] != "human13_native_request_receipt.v1":
+            raise ValueError("native request receipt schema version differs")
+        if not isinstance(payload["sampling_params"], Mapping):
+            raise ValueError("native request receipt sampling parameters are missing")
+        return cls(request_id=str(payload["request_id"]), seed=int(payload["seed"]),
+            physical_batch_index=int(payload["physical_batch_index"]), request_order_in_batch=int(payload["request_order_in_batch"]),
+            sampling_params=dict(payload["sampling_params"]), prompt_token_ids_sha256=str(payload["prompt_token_ids_sha256"]),
+            model_id=str(payload["model_id"]), model_identity_sha256=str(payload["model_identity_sha256"]),
+            session_identity_sha256=str(payload["session_identity_sha256"]))
 
     @property
     def content_sha256(self) -> str:
@@ -238,6 +265,28 @@ class NativeOutputReceipt:
     def to_dict(self) -> dict[str, object]:
         return {"schema_version": "human13_native_output_receipt.v1", **asdict(self)}
 
+    @classmethod
+    def from_dict(cls, value: object) -> "NativeOutputReceipt":
+        item = _mapping(value, field="native output receipt", keys={
+            "schema_version", "native_request_receipt_sha256", "request_id", "seed", "physical_batch_index",
+            "request_order_in_batch", "prompt_token_ids", "source_sha256", "manifest_sha256", "model_id",
+            "tokenizer_id", "processor_id", "processor_order", "sampler_backend_id", "generated_token_ids",
+            "processed_logprobs", "terminal_kind",
+        })
+        payload: dict[str, Any] = dict(item)
+        if payload["schema_version"] != "human13_native_output_receipt.v1":
+            raise ValueError("native output receipt schema version differs")
+        for field in ("prompt_token_ids", "processor_order", "generated_token_ids", "processed_logprobs"):
+            if not isinstance(payload[field], list):
+                raise ValueError(f"native output receipt {field} must be a JSON list")
+        return cls(native_request_receipt_sha256=str(payload["native_request_receipt_sha256"]), request_id=str(payload["request_id"]),
+            seed=int(payload["seed"]), physical_batch_index=int(payload["physical_batch_index"]),
+            request_order_in_batch=int(payload["request_order_in_batch"]), prompt_token_ids=tuple(payload["prompt_token_ids"]),
+            source_sha256=str(payload["source_sha256"]), manifest_sha256=str(payload["manifest_sha256"]), model_id=str(payload["model_id"]),
+            tokenizer_id=str(payload["tokenizer_id"]), processor_id=str(payload["processor_id"]), processor_order=tuple(payload["processor_order"]),
+            sampler_backend_id=str(payload["sampler_backend_id"]), generated_token_ids=tuple(payload["generated_token_ids"]),
+            processed_logprobs=tuple(payload["processed_logprobs"]), terminal_kind=str(payload["terminal_kind"]))
+
     @property
     def content_sha256(self) -> str:
         return _sha256(self.to_dict())
@@ -261,6 +310,53 @@ class NativeBatchReceipt:
 
     def to_dict(self) -> dict[str, object]:
         return {"schema_version": "human13_native_batch_receipt.v1", "requests": [item.to_dict() for item in self.requests], "outputs": [item.to_dict() for item in self.outputs]}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "NativeBatchReceipt":
+        item = _mapping(value, field="native batch receipt", keys={"schema_version", "requests", "outputs"})
+        if item["schema_version"] != "human13_native_batch_receipt.v1":
+            raise ValueError("native batch receipt schema version differs")
+        if not isinstance(item["requests"], list) or not isinstance(item["outputs"], list):
+            raise ValueError("native batch receipt members must be JSON lists")
+        return cls(requests=tuple(NativeRequestReceipt.from_dict(value) for value in item["requests"]),
+            outputs=tuple(NativeOutputReceipt.from_dict(value) for value in item["outputs"]))
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self.to_dict())
+
+
+@dataclass(frozen=True)
+class NativeReceiptsArtifact:
+    """The canonical native preimages required to independently reconstruct K16."""
+
+    plan_sha256: str
+    plan_request_ids: tuple[str, ...]
+    batch_receipts: tuple[NativeBatchReceipt, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "plan_sha256", _digest(self.plan_sha256, field="plan_sha256"))
+        if len(self.plan_request_ids) != REQUESTS_PER_IMAGE or len(set(self.plan_request_ids)) != REQUESTS_PER_IMAGE:
+            raise ValueError("native receipt artifact requires exact K16 request ordering")
+        if len(self.batch_receipts) != BATCHES_PER_IMAGE or any(type(item) is not NativeBatchReceipt for item in self.batch_receipts):
+            raise ValueError("native receipt artifact requires four canonical native batches")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"schema_version": "human13_rp_crossover_native_receipts.v1", "plan_sha256": self.plan_sha256,
+            "plan_request_ids": list(self.plan_request_ids), "batch_receipts": [item.to_dict() for item in self.batch_receipts]}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "NativeReceiptsArtifact":
+        item = _mapping(value, field="native receipt artifact", keys={"schema_version", "plan_sha256", "plan_request_ids", "batch_receipts"})
+        if item["schema_version"] != "human13_rp_crossover_native_receipts.v1":
+            raise ValueError("native receipt artifact schema version differs")
+        if not isinstance(item["plan_request_ids"], list) or not isinstance(item["batch_receipts"], list):
+            raise ValueError("native receipt artifact lists are missing")
+        artifact = cls(plan_sha256=str(item["plan_sha256"]), plan_request_ids=tuple(item["plan_request_ids"]),
+            batch_receipts=tuple(NativeBatchReceipt.from_dict(value) for value in item["batch_receipts"]))
+        if json.loads(_canonical_bytes(artifact.to_dict())) != dict(item):
+            raise ValueError("native receipt artifact is not canonical")
+        return artifact
 
     @property
     def content_sha256(self) -> str:
@@ -286,12 +382,19 @@ class AcquisitionExecution:
             raise ValueError("execution requires the exact ordered K16 request identities")
         if self.plan_request_ids != tuple(item.request_id for item in self.plan.requests):
             raise ValueError("execution request ordering differs from its sealed plan")
-        if len(self.native_batch_receipts) != BATCHES_PER_IMAGE:
+        if len(self.native_batch_receipts) != BATCHES_PER_IMAGE or any(type(item) is not NativeBatchReceipt for item in self.native_batch_receipts):
             raise ValueError("execution requires four native batch receipts")
         if type(self.group) is not AcquisitionGroup:
             raise ValueError("execution requires a sealed acquisition group")
-        if tuple(item.identity.request_id for item in self.group.trajectories) != self.plan_request_ids:
-            raise ValueError("execution group request ordering differs from its sealed plan")
+        _validate_receipts_against_plan(plan=self.plan, receipts=self.native_batch_receipts)
+        expected = _group_from_native_receipts(plan=self.plan, receipts=self.native_batch_receipts)
+        if expected.content_sha256 != self.group.content_sha256:
+            raise ValueError("execution group differs from the canonical native group")
+
+    @property
+    def native_receipts_artifact(self) -> NativeReceiptsArtifact:
+        return NativeReceiptsArtifact(plan_sha256=self.plan_sha256, plan_request_ids=self.plan_request_ids,
+            batch_receipts=self.native_batch_receipts)
 
 
 @dataclass(frozen=True)
@@ -322,6 +425,8 @@ class PublicationBinding:
     plan_sha256: str
     plan_request_ids: tuple[str, ...]
     native_batch_receipt_sha256s: tuple[str, ...]
+    native_receipts_filename: str
+    native_receipts_sha256: str
     sampled_group_sha256: str
     replayed_group_sha256: str
     parity_receipt_sha256: str
@@ -329,7 +434,7 @@ class PublicationBinding:
     token_count: int
 
     def __post_init__(self) -> None:
-        for field in ("plan_sha256", "sampled_group_sha256", "replayed_group_sha256", "parity_receipt_sha256", "tolerance_sha256"):
+        for field in ("plan_sha256", "native_receipts_sha256", "sampled_group_sha256", "replayed_group_sha256", "parity_receipt_sha256", "tolerance_sha256"):
             object.__setattr__(self, field, _digest(getattr(self, field), field=field))
         if len(self.plan_request_ids) != REQUESTS_PER_IMAGE or len(set(self.plan_request_ids)) != REQUESTS_PER_IMAGE:
             raise ValueError("publication binding requires exact K16 request ordering")
@@ -337,11 +442,32 @@ class PublicationBinding:
             raise ValueError("publication binding requires four native batch receipts")
         if any(_digest(value, field="native batch receipt SHA-256") != value for value in self.native_batch_receipt_sha256s):
             raise ValueError("publication binding native receipt digest differs")
+        if self.native_receipts_filename != "native-receipts.json":
+            raise ValueError("publication binding native receipt filename differs")
         if isinstance(self.token_count, bool) or not isinstance(self.token_count, int) or self.token_count <= 0:
             raise ValueError("publication binding token count must be positive")
 
     def to_dict(self) -> dict[str, object]:
         return {"schema_version": "human13_rp_crossover_publication_binding.v1", **asdict(self)}
+
+    @classmethod
+    def from_dict(cls, value: object) -> "PublicationBinding":
+        item = _mapping(value, field="publication binding", keys={
+            "schema_version", "plan_sha256", "plan_request_ids", "native_batch_receipt_sha256s",
+            "native_receipts_filename", "native_receipts_sha256", "sampled_group_sha256", "replayed_group_sha256",
+            "parity_receipt_sha256", "tolerance_sha256", "token_count",
+        })
+        payload: dict[str, Any] = dict(item)
+        if payload["schema_version"] != "human13_rp_crossover_publication_binding.v1":
+            raise ValueError("publication binding schema version differs")
+        for field in ("plan_request_ids", "native_batch_receipt_sha256s"):
+            if not isinstance(payload[field], list):
+                raise ValueError(f"publication binding {field} must be a JSON list")
+        return cls(plan_sha256=str(payload["plan_sha256"]), plan_request_ids=tuple(payload["plan_request_ids"]),
+            native_batch_receipt_sha256s=tuple(payload["native_batch_receipt_sha256s"]), native_receipts_filename=str(payload["native_receipts_filename"]),
+            native_receipts_sha256=str(payload["native_receipts_sha256"]), sampled_group_sha256=str(payload["sampled_group_sha256"]),
+            replayed_group_sha256=str(payload["replayed_group_sha256"]), parity_receipt_sha256=str(payload["parity_receipt_sha256"]),
+            tolerance_sha256=str(payload["tolerance_sha256"]), token_count=int(payload["token_count"]))
 
 
 def _token_ids(value: Sequence[object] | tuple[int, ...], *, field: str, nonempty: bool) -> tuple[int, ...]:
@@ -381,6 +507,11 @@ def _validate_plan(plan: AcquisitionGroupPlan) -> None:
     seeds = _seed_group(plan.seed_group_id)
     if len(plan.batches) != BATCHES_PER_IMAGE or [batch.batch_index for batch in plan.batches] != list(range(BATCHES_PER_IMAGE)):
         raise ValueError("each acquisition image requires four ordered physical batches")
+    for batch in plan.batches:
+        if type(batch) is not AcquisitionBatch or batch.image_id != plan.image_id or batch.seed_group_id != plan.seed_group_id:
+            raise ValueError("acquisition batch lineage differs from its sealed plan")
+        if any(type(request) is not AcquisitionRequest for request in batch.requests):
+            raise ValueError("acquisition plan requires sealed request records")
     requests = plan.requests
     if len(requests) != REQUESTS_PER_IMAGE or any(len(batch.requests) != REQUESTS_PER_BATCH for batch in plan.batches):
         raise ValueError("each image requires four batches of four requests")
@@ -424,8 +555,9 @@ def plan_panel_acquisition(*, repetition_penalty: float, seed_group_id: str) -> 
 def dry_run_plan() -> dict[str, object]:
     return {
         "schema_version": "human13_rp_crossover_acquisition.v2", "status": "plan_only",
-        "panel_image_count": 13, "per_group_physical_batch_count": 52, "per_group_request_count": 208,
-        "per_image_request_count": REQUESTS_PER_IMAGE,
+        "panel_image_count": 13, "group_physical_batch_count": BATCHES_PER_IMAGE,
+        "group_request_count": REQUESTS_PER_IMAGE, "panel_physical_batch_count": 52,
+        "panel_request_count": 208,
         "seed_groups": {key: list(value) for key, value in _SEED_GROUPS.items()},
         "sampling": {**_SAMPLING_BASE, "repetition_penalty": "explicit: 1.0 or 1.10"},
         "actions": {"model_imports": 0, "model_loads": 0, "engine_opens": 0, "gpu_allocations": 0, "artifact_writes": 0},
@@ -464,12 +596,10 @@ def vllm_sampling_params(request: AcquisitionRequest) -> Any:
         skip_special_tokens=False, spaces_between_special_tokens=True)
 
 
-def _validate_native_batch(*, plan_batch: AcquisitionBatch, params: tuple[Any, ...], receipt: NativeBatchReceipt) -> None:
+def _validate_receipt_batch(*, plan_batch: AcquisitionBatch, receipt: NativeBatchReceipt) -> None:
     if type(receipt) is not NativeBatchReceipt:
         raise ValueError("executor must return an immutable NativeBatchReceipt")
-    if len(params) != REQUESTS_PER_BATCH:
-        raise ValueError("native batch parameters must contain exactly four requests")
-    for request, parameter, native_request, output in zip(plan_batch.requests, params, receipt.requests, receipt.outputs, strict=True):
+    for request, native_request, output in zip(plan_batch.requests, receipt.requests, receipt.outputs, strict=True):
         if native_request.request_id != request.request_id:
             raise ValueError("native request identity differs from the sealed plan")
         if output.request_id != request.request_id:
@@ -480,7 +610,7 @@ def _validate_native_batch(*, plan_batch: AcquisitionBatch, params: tuple[Any, .
             raise ValueError("native physical batch differs from the sealed plan")
         if native_request.request_order_in_batch != request.request_order_in_batch or output.request_order_in_batch != request.request_order_in_batch:
             raise ValueError("native request order differs from the sealed plan")
-        if dict(native_request.sampling_params) != expected_native_sampling_evidence(request) or native_sampling_evidence(parameter) != expected_native_sampling_evidence(request):
+        if dict(native_request.sampling_params) != expected_native_sampling_evidence(request):
             raise ValueError("native sampling parameters differ from the sealed plan")
         if output.native_request_receipt_sha256 != native_request.content_sha256:
             raise ValueError("native output lineage differs from its actual request receipt")
@@ -488,6 +618,15 @@ def _validate_native_batch(*, plan_batch: AcquisitionBatch, params: tuple[Any, .
             raise ValueError("native output model identity differs from its actual request receipt")
         if token_ids_sha256(output.prompt_token_ids) != native_request.prompt_token_ids_sha256:
             raise ValueError("native output prompt differs from its actual request receipt")
+
+
+def _validate_native_batch(*, plan_batch: AcquisitionBatch, params: tuple[Any, ...], receipt: NativeBatchReceipt) -> None:
+    if len(params) != REQUESTS_PER_BATCH:
+        raise ValueError("native batch parameters must contain exactly four requests")
+    _validate_receipt_batch(plan_batch=plan_batch, receipt=receipt)
+    for request, parameter in zip(plan_batch.requests, params, strict=True):
+        if native_sampling_evidence(parameter) != expected_native_sampling_evidence(request):
+            raise ValueError("native SamplingParams differ from the sealed plan")
 
 
 def _validate_execution_surface(receipts: Sequence[NativeBatchReceipt]) -> None:
@@ -499,6 +638,14 @@ def _validate_execution_surface(receipts: Sequence[NativeBatchReceipt]) -> None:
         raise ValueError("native model or session identity differs within one acquisition group")
     if len({(item.source_sha256, item.manifest_sha256, item.model_id, item.tokenizer_id, item.processor_id, item.sampler_backend_id) for item in outputs}) != 1:
         raise ValueError("native output model or processor identity differs within one acquisition group")
+
+
+def _validate_receipts_against_plan(*, plan: AcquisitionGroupPlan, receipts: Sequence[NativeBatchReceipt]) -> None:
+    if len(receipts) != BATCHES_PER_IMAGE:
+        raise ValueError("execution requires four native batch receipts")
+    for batch, receipt in zip(plan.batches, receipts, strict=True):
+        _validate_receipt_batch(plan_batch=batch, receipt=receipt)
+    _validate_execution_surface(receipts)
 
 
 def _trajectory_from_native(*, request: NativeRequestReceipt, output: NativeOutputReceipt, repetition_penalty: float) -> CompleteTrajectoryEvidence:
@@ -515,6 +662,13 @@ def _trajectory_from_native(*, request: NativeRequestReceipt, output: NativeOutp
     return CompleteTrajectoryEvidence(identity=identity, policy_contract=contract, generated_tokens=tokens, terminal_kind=output.terminal_kind)
 
 
+def _group_from_native_receipts(*, plan: AcquisitionGroupPlan, receipts: Sequence[NativeBatchReceipt]) -> AcquisitionGroup:
+    trajectories = tuple(_trajectory_from_native(request=request, output=output, repetition_penalty=plan.repetition_penalty)
+        for receipt in receipts for request, output in zip(receipt.requests, receipt.outputs, strict=True))
+    return AcquisitionGroup(identity=trajectories[0].identity, policy_contract=trajectories[0].policy_contract,
+        trajectories=trajectories, seed_group_id=plan.seed_group_id)
+
+
 def execute_acquisition_group(*, plan: AcquisitionGroupPlan, execute_batch: Callable[[AcquisitionBatch, tuple[Any, ...]], NativeBatchReceipt]) -> AcquisitionExecution:
     """Validate actual native receipts in order; no caller freshness string is admitted."""
     _validate_plan(plan)
@@ -524,11 +678,8 @@ def execute_acquisition_group(*, plan: AcquisitionGroupPlan, execute_batch: Call
         receipt = execute_batch(batch, params)
         _validate_native_batch(plan_batch=batch, params=params, receipt=receipt)
         receipts.append(receipt)
-    _validate_execution_surface(receipts)
-    trajectories = tuple(_trajectory_from_native(request=request, output=output, repetition_penalty=plan.repetition_penalty)
-        for receipt in receipts for request, output in zip(receipt.requests, receipt.outputs, strict=True))
-    group = AcquisitionGroup(identity=trajectories[0].identity, policy_contract=trajectories[0].policy_contract,
-        trajectories=trajectories, seed_group_id=plan.seed_group_id)
+    _validate_receipts_against_plan(plan=plan, receipts=receipts)
+    group = _group_from_native_receipts(plan=plan, receipts=receipts)
     return AcquisitionExecution(plan=plan, plan_sha256=plan.content_sha256, plan_request_ids=tuple(item.request_id for item in plan.requests),
         native_batch_receipts=tuple(receipts), group=group)
 
@@ -559,8 +710,6 @@ def _publication_binding(*, execution: AcquisitionExecution, replayed: Acquisiti
     if canonical != replay_receipt or canonical.content_sha256 != replay_receipt.content_sha256:
         raise ValueError("parity receipt canonical serialization or invariants differ")
     sampled = execution.group
-    if replayed.content_sha256 == sampled.content_sha256:
-        raise ValueError("publication requires the replayed group, not the sampled group")
     token_count = sum(len(item.generated_tokens) for item in sampled.trajectories)
     if (replay_receipt.sampled_group_sha256, replay_receipt.replayed_group_sha256, replay_receipt.token_count) != (sampled.content_sha256, replayed.content_sha256, token_count):
         raise ValueError("parity receipt differs from the exact sampled or replayed group")
@@ -568,8 +717,10 @@ def _publication_binding(*, execution: AcquisitionExecution, replayed: Acquisiti
         raise ValueError("parity receipt fixed tolerance differs")
     if set(replay_receipt.request_ids) != set(execution.plan_request_ids):
         raise ValueError("parity receipt request identities differ from the exact K16 plan")
+    native_preimage = execution.native_receipts_artifact
     return PublicationBinding(plan_sha256=execution.plan_sha256, plan_request_ids=execution.plan_request_ids,
         native_batch_receipt_sha256s=tuple(item.content_sha256 for item in execution.native_batch_receipts),
+        native_receipts_filename="native-receipts.json", native_receipts_sha256=native_preimage.content_sha256,
         sampled_group_sha256=sampled.content_sha256, replayed_group_sha256=replayed.content_sha256,
         parity_receipt_sha256=replay_receipt.content_sha256, tolerance_sha256=replay_receipt.tolerance_sha256,
         token_count=token_count)
@@ -590,6 +741,7 @@ def publish_acquisition_group(*, output_root: str | Path, execution: Acquisition
         raise ValueError("publication requires sealed execution and replayed acquisition groups")
     binding = _publication_binding(execution=execution, replayed=replayed, replay_receipt=replay_receipt)
     typed_replay_receipt = cast(Any, replay_receipt)
+    native_preimage = execution.native_receipts_artifact
     target = Path(output_root).resolve()
     staging = target.with_name(f".{target.name}.staging")
     if target.exists() or staging.exists():
@@ -599,6 +751,7 @@ def publish_acquisition_group(*, output_root: str | Path, execution: Acquisition
     writer = write_bytes or (lambda path, payload: path.write_bytes(payload))
     payloads = (
         (staging / "acquisition-group.json", _canonical_bytes(execution.group.to_dict())),
+        (staging / "native-receipts.json", _canonical_bytes(native_preimage.to_dict())),
         (staging / "replayed-group.json", _canonical_bytes(replayed.to_dict())),
         (staging / "replay-receipt.json", _canonical_bytes(typed_replay_receipt.to_dict())),
         (staging / "publication-binding.json", _canonical_bytes(binding.to_dict())),
@@ -618,10 +771,40 @@ def publish_acquisition_group(*, output_root: str | Path, execution: Acquisition
     return target
 
 
+def _load_json(path: Path, *, field: str) -> Mapping[str, object]:
+    if not path.is_file():
+        raise FileNotFoundError(f"missing {field}: {path.name}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{field} is unreadable") from exc
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field} must be a JSON object")
+    return value
+
+
+def load_published_acquisition(output_root: str | Path, *, plan: AcquisitionGroupPlan) -> AcquisitionExecution:
+    """Reload native preimages and re-admit the exact sampled group independently."""
+    root = Path(output_root).resolve()
+    binding = PublicationBinding.from_dict(_load_json(root / "publication-binding.json", field="publication binding"))
+    native = NativeReceiptsArtifact.from_dict(_load_json(root / binding.native_receipts_filename, field="native receipt artifact"))
+    if native.content_sha256 != binding.native_receipts_sha256:
+        raise ValueError("native receipt artifact SHA differs from publication binding")
+    sampled = AcquisitionGroup.from_dict(_load_json(root / "acquisition-group.json", field="acquisition group"))
+    execution = AcquisitionExecution(plan=plan, plan_sha256=native.plan_sha256, plan_request_ids=native.plan_request_ids,
+        native_batch_receipts=native.batch_receipts, group=sampled)
+    if (binding.plan_sha256, binding.plan_request_ids, binding.native_batch_receipt_sha256s, binding.sampled_group_sha256) != (
+        execution.plan_sha256, execution.plan_request_ids,
+        tuple(item.content_sha256 for item in execution.native_batch_receipts), execution.group.content_sha256,
+    ):
+        raise ValueError("publication binding differs from reloaded native receipt lineage")
+    return execution
+
+
 __all__ = [
     "AcquisitionBatch", "AcquisitionExecution", "AcquisitionGroupPlan", "AcquisitionRequest", "MATRIX_SEED_GROUPS",
-    "NativeBatchReceipt", "NativeOutputReceipt", "NativeRequestReceipt", "PackedRawLogits", "PublicationBinding",
+    "NativeBatchReceipt", "NativeOutputReceipt", "NativeReceiptsArtifact", "NativeRequestReceipt", "PackedRawLogits", "PublicationBinding",
     "QUALIFICATION_SEEDS", "dry_run_plan", "execute_acquisition_group", "expected_native_sampling_evidence",
     "native_sampling_evidence", "plan_acquisition_group", "plan_panel_acquisition", "publish_acquisition_group",
-    "replay_acquisition_group", "token_ids_sha256", "vllm_sampling_params",
+    "load_published_acquisition", "replay_acquisition_group", "token_ids_sha256", "vllm_sampling_params",
 ]

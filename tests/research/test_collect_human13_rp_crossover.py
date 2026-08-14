@@ -81,8 +81,10 @@ def test_plan_seals_all_four_seed_groups_batch_four_and_clear_panel_totals() -> 
     assert all(item.sampling["top_p"] == 1.0 and item.sampling["top_k"] is None for item in plan.requests)
     dry = adapter.dry_run_plan()
     assert dry["panel_image_count"] == 13
-    assert dry["per_group_physical_batch_count"] == 52
-    assert dry["per_group_request_count"] == 208
+    assert dry["group_physical_batch_count"] == 4
+    assert dry["group_request_count"] == 16
+    assert dry["panel_physical_batch_count"] == 52
+    assert dry["panel_request_count"] == 208
 
 
 def test_vllm_sampling_params_captures_exact_native_no_top_k_policy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,6 +112,27 @@ def test_execute_requires_receipt_captured_lineage_in_exact_order() -> None:
     assert execution.plan_sha256 == plan.content_sha256
     assert len(execution.native_batch_receipts) == 4
     assert tuple(item.identity.request_id for item in execution.group.trajectories) == tuple(item.request_id for item in plan.requests)
+
+
+def test_direct_execution_construction_rebuilds_canonical_native_group() -> None:
+    plan = adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.0, seed_group_id="qualification")
+    execution = _execute(plan)
+    changed_request = replace(execution.native_batch_receipts[0].requests[0], session_identity_sha256="e" * 64)
+    changed_output = replace(
+        execution.native_batch_receipts[0].outputs[0], native_request_receipt_sha256=changed_request.content_sha256
+    )
+    changed_batch = adapter.NativeBatchReceipt(
+        requests=(changed_request, *execution.native_batch_receipts[0].requests[1:]),
+        outputs=(changed_output, *execution.native_batch_receipts[0].outputs[1:]),
+    )
+    with pytest.raises(ValueError, match="session"):
+        replace(execution, native_batch_receipts=(changed_batch, *execution.native_batch_receipts[1:]))
+
+    cross_rp_group = _execute(
+        adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.10, seed_group_id="qualification")
+    ).group
+    with pytest.raises(ValueError, match="canonical native group"):
+        replace(execution, group=cross_rp_group)
 
 
 @pytest.mark.parametrize("mutation, message", [
@@ -285,8 +308,34 @@ def test_publish_requires_typed_plan_bound_parity_and_is_atomic(tmp_path: Path) 
     published = adapter.publish_acquisition_group(output_root=output, execution=execution, replayed=replayed, replay_receipt=receipt)
     assert published == output
     assert (output / "publication-binding.json").is_file()
+    assert (output / "native-receipts.json").is_file()
+    restored = adapter.load_published_acquisition(output, plan=execution.plan)
+    assert restored.group.content_sha256 == execution.group.content_sha256
+    (output / "native-receipts.json").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="native receipt"):
+        adapter.load_published_acquisition(output, plan=execution.plan)
+    (output / "native-receipts.json").unlink()
+    with pytest.raises(FileNotFoundError, match="native-receipts"):
+        adapter.load_published_acquisition(output, plan=execution.plan)
     with pytest.raises(FileExistsError, match="overwrite"):
         adapter.publish_acquisition_group(output_root=output, execution=execution, replayed=replayed, replay_receipt=receipt)
+
+
+def test_publication_accepts_perfect_parity_with_identical_group_hashes(tmp_path: Path) -> None:
+    from scripts.research.human13_rp_policy import validate_acquisition_group_replay
+
+    execution = _execute(adapter.plan_acquisition_group(image_id=1584, repetition_penalty=1.0, seed_group_id="qualification"))
+    receipt = validate_acquisition_group_replay(
+        execution.group, execution.group, adapter.ReplayTolerance()
+    )
+    output = tmp_path / "perfect-parity"
+    adapter.publish_acquisition_group(
+        output_root=output,
+        execution=execution,
+        replayed=execution.group,
+        replay_receipt=receipt,
+    )
+    assert (output / "publication-binding.json").is_file()
 
 
 def test_dry_run_is_zero_action_without_runtime_import_or_artifact_write() -> None:
