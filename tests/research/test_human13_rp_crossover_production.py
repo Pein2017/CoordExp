@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 import subprocess
 import sys
@@ -88,6 +89,8 @@ def _qualification_spec(node: Mapping[str, Any], index: int = 0) -> CellSpec:
 
 def _mechanical_receipts(
     selected: float = production.DEFAULT_QUALIFICATION_LEARNING_RATE,
+    *,
+    measurement_scope: str = "live",
 ) -> tuple[DoseMechanicalReceipt, ...]:
     if selected not in production.QUALIFICATION_LEARNING_RATE_RAY:
         raise ValueError(
@@ -108,7 +111,7 @@ def _mechanical_receipts(
                 ceiling_passed = dose <= selected
             checkpoint = _digest(f"private:{rp}:{dose}")
             resources = AggregateResourceReceipt(
-                measurement_scope="injected_cpu",
+                measurement_scope=measurement_scope,
                 wall_time_seconds=0.1,
                 peak_host_rss_bytes=1024,
                 cuda_peak_allocated_bytes=None,
@@ -377,6 +380,39 @@ def test_global_selector_rejects_even_one_missing_mechanical_receipt() -> None:
 
     with pytest.raises(ValueError, match="exactly ten"):
         production.select_global_learning_rate(receipts[:-1])
+
+
+def test_injected_cpu_selector_output_cannot_admit_matrix_planning(
+    tmp_path: Path,
+) -> None:
+    decision = production.select_global_learning_rate(
+        _mechanical_receipts(measurement_scope="injected_cpu")
+    )
+    live_decision = production.select_global_learning_rate(
+        _mechanical_receipts(measurement_scope="live")
+    )
+
+    assert decision.measurement_scope == "injected_cpu"
+    assert decision.production_admitted is False
+    assert live_decision.production_admitted is True
+    assert decision.content_sha256 != live_decision.content_sha256
+
+    with pytest.raises(launcher.LaunchContractError, match="live measurement"):
+        launcher.build_dag_plan(
+            launcher.load_leaf_configs(),
+            run_id="cpu-non-admitting",
+            output_root=tmp_path / "artifacts",
+            global_learning_rate_decision=decision,
+        )
+
+
+def test_global_selector_rejects_mixed_resource_measurement_scopes() -> None:
+    receipts = list(_mechanical_receipts(measurement_scope="live"))
+    resources = replace(receipts[0].resources, measurement_scope="injected_cpu")
+    receipts[0] = replace(receipts[0], resources=resources)
+
+    with pytest.raises(ValueError, match="one resource measurement scope"):
+        production.select_global_learning_rate(receipts)
 
 
 def test_dose_mechanical_schema_excludes_owner_outcomes_gains_and_losses() -> None:

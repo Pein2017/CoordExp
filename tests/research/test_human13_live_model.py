@@ -34,7 +34,7 @@ def _plan() -> live.Human13LiveModelPlan:
 
 def _selected_lr_decision(selected: float):
     resources = AggregateResourceReceipt(
-        measurement_scope="injected_cpu",
+        measurement_scope="live",
         wall_time_seconds=1.0,
         peak_host_rss_bytes=1,
         cuda_peak_allocated_bytes=None,

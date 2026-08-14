@@ -96,7 +96,7 @@ def _content_sha256(value: dict[str, object]) -> str:
 
 def _aggregate_resources(*, backward_count: int = 13) -> AggregateResourceReceipt:
     return AggregateResourceReceipt(
-        measurement_scope="injected_cpu",
+        measurement_scope="live",
         wall_time_seconds=1.0,
         peak_host_rss_bytes=1,
         cuda_peak_allocated_bytes=None,
@@ -905,6 +905,7 @@ class _E2ECellServices:
                 spec.shared_evidence.trajectory_credit_acquisition_sha256
             ),
             compiler_ledger_sha256=spec.shared_evidence.compiler_ledger_sha256,
+            image_ids=CANONICAL_IMAGE_IDS,
             backward_count=13,
             optimizer_step_count=0,
             trajectory_denominator=13 * 16,

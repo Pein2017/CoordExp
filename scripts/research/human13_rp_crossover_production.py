@@ -141,6 +141,7 @@ class FrozenProductionInputs:
 
 
 _GLOBAL_LR_DECISION_MARKER = object()
+_INJECTED_CPU_LR_DECISION_MARKER = object()
 
 
 @dataclass(frozen=True, init=False)
@@ -158,6 +159,7 @@ class GlobalLearningRateDecision:
     grad_delta_norm_role: str
     qualification_receipt_sha256s: tuple[str, ...]
     selection_reason: str
+    measurement_scope: str
     _factory_marker: object
 
     def __post_init__(self) -> None:
@@ -236,8 +238,14 @@ class GlobalLearningRateDecision:
             "default_above_ceiling_largest_smaller_common_pass",
         }:
             raise ValueError("global decision selection reason differs")
-        if self._factory_marker is not _GLOBAL_LR_DECISION_MARKER:
-            raise ValueError("global decision must come from the pure selector")
+        expected_marker = {
+            "live": _GLOBAL_LR_DECISION_MARKER,
+            "injected_cpu": _INJECTED_CPU_LR_DECISION_MARKER,
+        }.get(self.measurement_scope)
+        if expected_marker is None or self._factory_marker is not expected_marker:
+            raise ValueError(
+                "global decision measurement scope differs from its selector factory"
+            )
 
     @classmethod
     def sealed(cls, *_args: Any, **_kwargs: Any) -> GlobalLearningRateDecision:
@@ -267,7 +275,15 @@ class GlobalLearningRateDecision:
             "grad_delta_norm_role": self.grad_delta_norm_role,
             "qualification_receipt_sha256s": list(self.qualification_receipt_sha256s),
             "selection_reason": self.selection_reason,
+            "measurement_scope": self.measurement_scope,
         }
+
+    @property
+    def production_admitted(self) -> bool:
+        return (
+            self.measurement_scope == "live"
+            and self._factory_marker is _GLOBAL_LR_DECISION_MARKER
+        )
 
     @property
     def content_sha256(self) -> str:
@@ -286,7 +302,14 @@ def _construct_global_learning_rate_decision(
     qualification_receipt_sha256s: tuple[str, ...],
     selected_learning_rate: float,
     selection_reason: str,
+    measurement_scope: str,
 ) -> GlobalLearningRateDecision:
+    marker = {
+        "live": _GLOBAL_LR_DECISION_MARKER,
+        "injected_cpu": _INJECTED_CPU_LR_DECISION_MARKER,
+    }.get(measurement_scope)
+    if marker is None:
+        raise ValueError("global decision requires one supported measurement scope")
     result = object.__new__(GlobalLearningRateDecision)
     for field, value in (
         ("qualification_decision_sha256", qualification_decision_sha256),
@@ -312,11 +335,12 @@ def _construct_global_learning_rate_decision(
         ("grad_delta_norm_role", "covariate_only"),
         ("qualification_receipt_sha256s", qualification_receipt_sha256s),
         ("selection_reason", selection_reason),
-        ("_factory_marker", _GLOBAL_LR_DECISION_MARKER),
+        ("measurement_scope", measurement_scope),
+        ("_factory_marker", marker),
     ):
         object.__setattr__(result, field, value)
     result.__post_init__()
-    if result._factory_marker is not _GLOBAL_LR_DECISION_MARKER:
+    if result._factory_marker is not marker:
         raise ValueError("global learning-rate decision factory identity differs")
     return result
 
@@ -357,6 +381,12 @@ def select_global_learning_rate(
         for rp in EVALUATION_RPS
         for learning_rate in QUALIFICATION_LEARNING_RATE_RAY
     )
+    measurement_scopes = {receipt.resources.measurement_scope for receipt in canonical}
+    if len(measurement_scopes) != 1:
+        raise ValueError(
+            "all ten qualification receipts require one resource measurement scope"
+        )
+    measurement_scope = next(iter(measurement_scopes))
     receipt_sha256s = tuple(receipt.content_sha256 for receipt in canonical)
     decision_preimage = {
         "schema_version": "human13_rp_crossover_lr_qualification_bundle.v1",
@@ -422,6 +452,7 @@ def select_global_learning_rate(
         qualification_receipt_sha256s=receipt_sha256s,
         selected_learning_rate=selected,
         selection_reason=reason,
+        measurement_scope=measurement_scope,
     )
 
 

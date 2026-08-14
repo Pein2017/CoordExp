@@ -31,6 +31,7 @@ from scripts.research.human13_rp_crossover_matrix_contracts import (
     PROPOSAL_COMPONENTS_BY_ARM,
     AggregateResourceReceipt,
     AuditRef,
+    CANONICAL_IMAGE_IDS,
     CellReceipt,
     CellSpec,
     DoseMechanicalReceipt,
@@ -68,6 +69,7 @@ class ObjectiveBackwardReceipt:
     shared_evidence_sha256: str
     trajectory_credit_acquisition_sha256: str
     compiler_ledger_sha256: str
+    image_ids: tuple[int, ...]
     backward_count: int
     optimizer_step_count: int
     trajectory_denominator: int
@@ -221,14 +223,19 @@ def _validate_backward(spec: CellSpec, receipt: ObjectiveBackwardReceipt) -> Non
         raise ValueError(
             "consumed objective component bytes differ from the planned CellSpec"
         )
+    image_ids = tuple(receipt.image_ids)
+    if image_ids != CANONICAL_IMAGE_IDS or len(set(image_ids)) != 13:
+        raise ValueError(
+            "cell backward must cover the exact canonical 13-image panel once"
+        )
     if (
-        receipt.backward_count <= 0
-        or receipt.released_graph_count != receipt.backward_count
+        receipt.backward_count != 13
+        or receipt.released_graph_count != 13
         or receipt.optimizer_step_count != 0
     ):
         raise ValueError(
-            "cell requires incremental backward with every graph released and no "
-            "adapter-owned step"
+            "canonical 13-image backward requires one released graph per image and "
+            "no adapter-owned step"
         )
     if receipt.trajectory_denominator != 13 * 16:
         raise ValueError("trajectory backward denominator must be the sealed N*K")

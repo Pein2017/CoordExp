@@ -199,6 +199,7 @@ class FakeServices:
                 spec.shared_evidence.trajectory_credit_acquisition_sha256
             ),
             compiler_ledger_sha256=spec.shared_evidence.compiler_ledger_sha256,
+            image_ids=CANONICAL_IMAGE_IDS,
             backward_count=13,
             optimizer_step_count=0,
             trajectory_denominator=208,
@@ -450,6 +451,35 @@ def test_runtime_rejects_objective_component_bytes_outside_the_cell_spec() -> No
 
     with pytest.raises(CellRuntimeError, match="objective component"):
         run_cell(_spec("B"), services=services, receipt_writer=lambda _: None)
+
+
+@pytest.mark.parametrize(
+    ("image_ids", "backward_count"),
+    [
+        (CANONICAL_IMAGE_IDS[:-1], 12),
+        ((*CANONICAL_IMAGE_IDS[:-1], CANONICAL_IMAGE_IDS[0]), 13),
+    ],
+)
+def test_runtime_rejects_partial_or_duplicate_backward_image_coverage_before_proposal(
+    image_ids: tuple[int, ...], backward_count: int
+) -> None:
+    class IncompletePanelServices(FakeServices):
+        def backward_objective(self, state, spec):
+            receipt = super().backward_objective(state, spec)
+            object.__setattr__(receipt, "image_ids", image_ids)
+            object.__setattr__(receipt, "backward_count", backward_count)
+            object.__setattr__(receipt, "released_graph_count", backward_count)
+            return receipt
+
+        def witness_bank(self, state, spec):
+            raise AssertionError("proposal admission advanced past backward coverage")
+
+    with pytest.raises(CellRuntimeError, match="canonical 13-image"):
+        run_cell(
+            _spec("C"),
+            services=IncompletePanelServices(),
+            receipt_writer=lambda _: None,
+        )
 
 
 def test_runtime_rejects_an_optimizer_identity_outside_the_cell_spec() -> None:

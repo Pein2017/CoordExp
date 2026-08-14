@@ -383,6 +383,10 @@ def build_dag_plan(
             raise LaunchContractError(
                 "matrix resolution requires the typed global LR decision"
             )
+        if not global_learning_rate_decision.production_admitted:
+            raise LaunchContractError(
+                "matrix resolution requires ten live measurement receipts"
+            )
         selected_learning_rate = global_learning_rate_decision.selected_learning_rate
         decision_sha256 = global_learning_rate_decision.content_sha256
 
