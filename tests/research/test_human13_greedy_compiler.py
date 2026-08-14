@@ -4,10 +4,12 @@ from dataclasses import asdict, dataclass, field, replace
 import hashlib
 import json
 import math
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import torch
+from src.qwen.images import QwenImageEncoding, QwenNoResizeImagePlan
 
 from scripts.research.build_human13_k_union_manifest import (
     ArmIdentity,
@@ -30,11 +32,16 @@ from scripts.research.human13_greedy_compiler import (
     EXACT_ALIAS_COUNT,
     CompilerLedger,
     SourceBoundaryInput,
+    _admit_compiler_ledger_for_test,
     _build_compiler_ledger_for_test,
     _build_nested_arm_artifacts_for_test,
+    _build_source_forward_runtime_for_test,
+    _admit_source_greedy_decode_for_test,
+    _bind_packed_compiler_logits_for_test,
     _greedy_compiler_loss_for_test,
     _greedy_compiler_numerator_for_test,
     _require_source_decode,
+    admit_compiler_compact_logits,
     admit_source_greedy_decode,
     bind_packed_compiler_logits,
     build_compiler_ledger,
@@ -54,6 +61,34 @@ ACQUISITION = "b" * 64
 CREDIT = "c" * 64
 STOP = 99
 IMAGE_TOKEN_ID = 151655
+
+
+def _image_encoding(image_sha256: str) -> QwenImageEncoding:
+    plan = QwenNoResizeImagePlan(
+        example_id="fixture-image",
+        image_path=Path("/nonexistent/fixture.png"),
+        width=2,
+        height=2,
+        patch_size=1,
+        merge_size=1,
+        temporal_patch_size=1,
+        required_spatial_factor=1,
+        raw_pixels=4,
+        raw_patch_rows=4,
+        expected_pixel_values_width=3,
+        image_grid_thw=(1, 2, 2),
+        merged_visual_tokens=4,
+        max_raw_pixels=4,
+        max_merged_visual_tokens=4,
+        image_content_sha256=image_sha256,
+        decoded_width=2,
+        decoded_height=2,
+    )
+    return QwenImageEncoding(
+        plan,
+        torch.zeros((4, 3)),
+        torch.tensor([[1, 2, 2]], dtype=torch.long),
+    )
 
 
 @dataclass(frozen=True)
@@ -198,7 +233,7 @@ def _panel_fixture(
             ImageRecord(
                 image_id=image_id,
                 panel_row_sha256=None,
-                image_sha256=None,
+                image_sha256=f"{image_offset + 1:064x}",
                 owners=owners,
                 trajectories=(source, sampled),
                 duplicate_events=(),
@@ -243,6 +278,7 @@ def _panel_fixture(
                 ),
                 prompt_token_ids=(7, STOP, 1),
                 repetition_penalty=repetition_penalty,
+                image_sha256=cast(str, image.image_sha256),
             )
         )
     return manifest, tuple(boundaries)
@@ -259,6 +295,14 @@ def _ledger(
         acquisition_sha256=ACQUISITION,
         trajectory_credit_sha256=CREDIT,
     )
+
+
+def _manifest_sha256(manifest: Human13KUnionManifest) -> str:
+    return hashlib.sha256(
+        (
+            json.dumps(asdict(manifest), sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+    ).hexdigest()
 
 
 def _raw(
@@ -384,20 +428,22 @@ def test_source_decode_receipt_proves_each_token_under_exact_rp() -> None:
     # Catches relabeling one durable Source frontier as the other RP surface.
     manifest, boundaries = _panel_fixture(repetition_penalty=1.10)
     boundary = boundaries[0]
-    vocab = STOP + 2
+    runtime = _build_source_forward_runtime_for_test(
+        source_sha256=SOURCE,
+        model_identity_sha256="d" * 64,
+        tokenizer_identity_sha256="e" * 64,
+        model_vocab_size=STOP + 3,
+        tokenizer_vocab_size=STOP + 3,
+    )
+    vocab = runtime.vocab_size
     raw = torch.full((2, vocab), -20.0, dtype=torch.float32)
     raw[0, 41] = 10.0
     raw[1, STOP] = 10.0
-    receipt = admit_source_greedy_decode(
+    receipt = _admit_source_greedy_decode_for_test(
         boundary,
         raw,
-        source_sha256=SOURCE,
-        manifest_sha256=hashlib.sha256(
-            (
-                json.dumps(asdict(manifest), sort_keys=True, separators=(",", ":"))
-                + "\n"
-            ).encode()
-        ).hexdigest(),
+        runtime=runtime,
+        manifest_sha256=_manifest_sha256(manifest),
     )
     assert receipt.repetition_penalty == 1.10
     assert receipt.generated_token_ids == (41, STOP)
@@ -410,11 +456,59 @@ def test_source_decode_receipt_proves_each_token_under_exact_rp() -> None:
     wrong = raw.clone()
     wrong[1, 42] = 11.0
     with pytest.raises(ValueError, match="greedy argmax"):
-        admit_source_greedy_decode(
+        _admit_source_greedy_decode_for_test(
             boundary,
             wrong,
-            source_sha256=SOURCE,
+            runtime=runtime,
             manifest_sha256=receipt.manifest_sha256,
+        )
+
+
+def test_source_decode_rejects_truncated_vocab_before_argmax() -> None:
+    # Catches hiding a higher-logit token just beyond the submitted row width.
+    manifest, boundaries = _panel_fixture()
+    boundary = boundaries[0]
+    runtime = _build_source_forward_runtime_for_test(
+        source_sha256=SOURCE,
+        model_identity_sha256="d" * 64,
+        tokenizer_identity_sha256="e" * 64,
+        model_vocab_size=STOP + 3,
+        tokenizer_vocab_size=STOP + 3,
+    )
+    truncated = torch.full((2, STOP + 1), -20.0)
+    truncated[0, 41] = 10.0
+    truncated[1, STOP] = 10.0
+    with pytest.raises(ValueError, match="exact runtime vocabulary width"):
+        _admit_source_greedy_decode_for_test(
+            boundary,
+            truncated,
+            runtime=runtime,
+            manifest_sha256=_manifest_sha256(manifest),
+        )
+    complete = torch.nn.functional.pad(truncated, (0, 2), value=-20.0)
+    complete[0, STOP + 1] = 11.0
+    with pytest.raises(ValueError, match="greedy argmax"):
+        _admit_source_greedy_decode_for_test(
+            boundary,
+            complete,
+            runtime=runtime,
+            manifest_sha256=_manifest_sha256(manifest),
+        )
+    with pytest.raises(ValueError, match="image encoding"):
+        admit_source_greedy_decode(
+            boundary,
+            cast(Any, complete),
+            runtime=runtime,
+            manifest_sha256=_manifest_sha256(manifest),
+            image_encoding=_image_encoding(boundary.image_sha256),
+        )
+    with pytest.raises(ValueError, match="image identity"):
+        admit_source_greedy_decode(
+            boundary,
+            cast(Any, complete),
+            runtime=runtime,
+            manifest_sha256=_manifest_sha256(manifest),
+            image_encoding=_image_encoding("f" * 64),
         )
 
 
@@ -554,11 +648,11 @@ def test_unadmitted_compiler_ledgers_cannot_drive_public_loss() -> None:
     site = ledger.images[0].site
     assert site is not None
     logits = {site.site_id: _raw(site, {7: 0.0, 8: 0.0, 9: 0.0, STOP: 1.0})}
-    with pytest.raises(ValueError, match="scientific compiler admission"):
-        public_greedy_compiler_loss(logits, ledger)
+    with pytest.raises(ValueError, match="compact-logit receipt"):
+        public_greedy_compiler_loss(cast(Any, logits), ledger)
     copied = CompilerLedger.from_dict(ledger.to_dict())
-    with pytest.raises(ValueError, match="scientific compiler admission"):
-        public_greedy_compiler_loss(logits, copied)
+    with pytest.raises(ValueError, match="compact-logit receipt"):
+        public_greedy_compiler_loss(cast(Any, logits), copied)
     with pytest.raises((TypeError, ValueError)):
         build_compiler_ledger(manifest, boundaries, object())  # type: ignore[arg-type]
 
@@ -641,7 +735,7 @@ def test_packed_position_gather_uses_exact_source_row_and_compact_tokens() -> No
         prompt_skeletons={
             7000: _Skeleton(
                 example_id="source-prompt:7000",
-                input_ids=(7, IMAGE_TOKEN_ID, 1),
+                input_ids=(7, STOP, 1),
                 prompt_token_count=3,
             )
         },
@@ -656,7 +750,7 @@ def test_packed_position_gather_uses_exact_source_row_and_compact_tokens() -> No
     expected_position = packed_segment.start + site.local_causal_position
     vocab = max(site.compact_token_ids) + 2
     full_row = torch.arange(vocab, dtype=torch.float32).unsqueeze(0)
-    packed = bind_packed_compiler_logits(
+    packed = _bind_packed_compiler_logits_for_test(
         prepared,
         site,
         pack_index=packed_segment.pack_index,
@@ -670,8 +764,50 @@ def test_packed_position_gather_uses_exact_source_row_and_compact_tokens() -> No
         torch.tensor(site.compact_token_ids, dtype=torch.float32),
     )
     assert compact[site.site_id].shape == (len(site.compact_token_ids),)
+    wrong_prompt = prepare_on_policy_candidate_scoring(
+        frontier_images={7000: boundaries[0].image},
+        prompt_skeletons={
+            7000: _Skeleton(
+                example_id="wrong-prompt:7000",
+                input_ids=(8, IMAGE_TOKEN_ID, 1),
+                prompt_token_count=3,
+            )
+        },
+        global_max_length=4096,
+    )
+    with pytest.raises(ValueError, match="prompt token digest"):
+        _bind_packed_compiler_logits_for_test(
+            wrong_prompt,
+            site,
+            pack_index=packed_segment.pack_index,
+            logits_position_ids=(expected_position,),
+            raw_logits=full_row,
+        )
+    wrong_prefix_frontier = replace(
+        boundaries[0].image,
+        generated_token_ids=(42, STOP),
+    )
+    wrong_prefix = prepare_on_policy_candidate_scoring(
+        frontier_images={7000: wrong_prefix_frontier},
+        prompt_skeletons={
+            7000: _Skeleton(
+                example_id="wrong-prefix:7000",
+                input_ids=(7, STOP, 1),
+                prompt_token_count=3,
+            )
+        },
+        global_max_length=4096,
+    )
+    with pytest.raises(ValueError, match="Source prefix token digest"):
+        _bind_packed_compiler_logits_for_test(
+            wrong_prefix,
+            site,
+            pack_index=packed_segment.pack_index,
+            logits_position_ids=(expected_position,),
+            raw_logits=full_row,
+        )
     with pytest.raises(ValueError, match="causal position"):
-        bind_packed_compiler_logits(
+        _bind_packed_compiler_logits_for_test(
             prepared,
             site,
             pack_index=packed_segment.pack_index,
@@ -680,6 +816,75 @@ def test_packed_position_gather_uses_exact_source_row_and_compact_tokens() -> No
         )
     with pytest.raises(ValueError, match="exactly"):
         gather_compiler_compact_logits((packed, packed), ledger)
+
+
+def test_public_loss_requires_bound_compact_logit_receipt() -> None:
+    # Catches direct, copied, or ledger-substituted compact tensors driving training.
+    manifest, boundaries = _panel_fixture()
+    admitted = _admit_compiler_ledger_for_test(_ledger(manifest, boundaries))
+    site = admitted.images[0].site
+    assert site is not None
+    prepared = prepare_on_policy_candidate_scoring(
+        frontier_images={7000: boundaries[0].image},
+        prompt_skeletons={
+            7000: _Skeleton(
+                example_id="source-prompt:7000",
+                input_ids=(7, STOP, 1),
+                prompt_token_count=3,
+            )
+        },
+        global_max_length=4096,
+    )
+    segment = next(
+        value
+        for pack in prepared.packed_plan.packs
+        for value in pack.pack.segments
+        if value.example_id == site.packed_segment_id
+    )
+    position = segment.start + site.local_causal_position
+    raw = torch.zeros((1, max(site.compact_token_ids) + 2), requires_grad=True)
+    packed = bind_packed_compiler_logits(
+        prepared,
+        admitted,
+        site_id=site.site_id,
+        pack_index=segment.pack_index,
+        logits_position_ids=(position,),
+        raw_logits=raw,
+    )
+    copied_packed = object.__new__(type(packed))
+    for name, value in packed.__dict__.items():
+        object.__setattr__(copied_packed, name, value)
+    with pytest.raises(ValueError, match="forged"):
+        admit_compiler_compact_logits((copied_packed,), admitted)
+    forged_site = replace(site, prompt_token_sha256="f" * 64)
+    with pytest.raises((TypeError, ValueError)):
+        bind_packed_compiler_logits(
+            prepared,
+            cast(Any, forged_site),
+            site_id=site.site_id,
+            pack_index=segment.pack_index,
+            logits_position_ids=(position,),
+            raw_logits=raw,
+        )
+    receipt = admit_compiler_compact_logits((packed,), admitted)
+    loss = public_greedy_compiler_loss(receipt, admitted)
+    loss.backward()
+    assert raw.grad is not None
+    with pytest.raises(ValueError, match="compact-logit receipt"):
+        public_greedy_compiler_loss(
+            cast(Any, gather_compiler_compact_logits((packed,), admitted)), admitted
+        )
+    copied = object.__new__(type(receipt))
+    for name, value in receipt.__dict__.items():
+        object.__setattr__(copied, name, value)
+    with pytest.raises(ValueError, match="absent or forged"):
+        public_greedy_compiler_loss(copied, admitted)
+    forged = object.__new__(type(receipt))
+    for name, value in receipt.__dict__.items():
+        object.__setattr__(forged, name, value)
+    object.__setattr__(forged, "compiler_ledger_sha256", "f" * 64)
+    with pytest.raises(ValueError, match="absent or forged"):
+        public_greedy_compiler_loss(forged, admitted)
 
 
 def test_compiler_evidence_is_compact_not_full_vocabulary() -> None:

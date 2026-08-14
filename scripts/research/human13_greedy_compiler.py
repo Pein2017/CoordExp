@@ -36,6 +36,7 @@ from scripts.research.human13_trajectory_credit import (
     TrajectoryCreditLedger,
     _require_scientific_ledger_admission,
 )
+from src.inference.backend import token_ids_sha256
 
 
 SCHEMA_VERSION = "human13_source_greedy_compiler.v1"
@@ -50,11 +51,16 @@ _ABSENT_REASONS = {
 }
 _SOURCE_PANEL_MARKER = object()
 _SOURCE_DECODE_MARKER = object()
+_SOURCE_RUNTIME_MARKER = object()
 _COMPILER_LEDGER_MARKER = object()
 _PACKED_ROW_MARKER = object()
+_COMPACT_LOGITS_MARKER = object()
 _SOURCE_DECODE_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
+_SOURCE_RUNTIME_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
 _SOURCE_PANEL_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
 _COMPILER_LEDGER_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
+_PACKED_ROW_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
+_COMPACT_LOGITS_ADMISSIONS: dict[int, tuple[weakref.ReferenceType[Any], str]] = {}
 
 
 def _canonical_bytes(value: Mapping[str, Any]) -> bytes:
@@ -116,6 +122,7 @@ class SourceBoundaryInput:
     image: FrontierImage
     prompt_token_ids: tuple[int, ...]
     repetition_penalty: float
+    image_sha256: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.image, FrontierImage):
@@ -129,6 +136,9 @@ class SourceBoundaryInput:
         if repetition_penalty not in {1.0, 1.10}:
             raise ValueError("compiler repetition penalty must be exactly 1.0 or 1.10")
         object.__setattr__(self, "repetition_penalty", repetition_penalty)
+        object.__setattr__(
+            self, "image_sha256", _digest(self.image_sha256, field="image_sha256")
+        )
 
     @property
     def source_decode_sha256(self) -> str:
@@ -138,8 +148,188 @@ class SourceBoundaryInput:
                 "image": asdict(self.image),
                 "prompt_token_ids": list(self.prompt_token_ids),
                 "repetition_penalty": self.repetition_penalty,
+                "image_sha256": self.image_sha256,
             }
         )
+
+
+@dataclass(frozen=True, init=False)
+class AdmittedSourceForwardRuntime:
+    """Exact Source runtime identity and common model/tokenizer vocabulary."""
+
+    source_sha256: str
+    runtime_artifact_sha256: str
+    model_identity_sha256: str
+    tokenizer_identity_sha256: str
+    vocab_size: int
+    admission_sha256: str
+    _model: Any = dataclass_field(repr=False, compare=False)
+    _model_state_identity: tuple[Any, ...] | None = dataclass_field(
+        repr=False, compare=False
+    )
+    _image_processor: Any = dataclass_field(repr=False, compare=False)
+    _factory_marker: object = dataclass_field(repr=False, compare=False)
+
+
+def _source_runtime_preimage(value: AdmittedSourceForwardRuntime) -> dict[str, Any]:
+    return {
+        "schema_version": "human13_admitted_source_forward_runtime.v1",
+        "source_sha256": value.source_sha256,
+        "runtime_artifact_sha256": value.runtime_artifact_sha256,
+        "model_identity_sha256": value.model_identity_sha256,
+        "tokenizer_identity_sha256": value.tokenizer_identity_sha256,
+        "vocab_size": value.vocab_size,
+    }
+
+
+def _require_source_runtime(value: object) -> AdmittedSourceForwardRuntime:
+    if type(value) is not AdmittedSourceForwardRuntime:
+        raise ValueError("Source forward runtime admission is absent")
+    admitted = _SOURCE_RUNTIME_ADMISSIONS.get(id(value))
+    expected = _sha256(_source_runtime_preimage(value))
+    if (
+        value._factory_marker is not _SOURCE_RUNTIME_MARKER
+        or admitted is None
+        or admitted[0]() is not value
+        or admitted[1] != value.admission_sha256
+        or value.admission_sha256 != expected
+    ):
+        raise ValueError("Source forward runtime admission is absent or forged")
+    return value
+
+
+def _construct_source_forward_runtime(
+    *,
+    source_sha256: str,
+    runtime_artifact_sha256: str,
+    model_identity_sha256: str,
+    tokenizer_identity_sha256: str,
+    model_vocab_size: int,
+    tokenizer_vocab_size: int,
+    model: Any = None,
+    image_processor: Any = None,
+) -> AdmittedSourceForwardRuntime:
+    for field, value in (
+        ("source_sha256", source_sha256),
+        ("runtime_artifact_sha256", runtime_artifact_sha256),
+        ("model_identity_sha256", model_identity_sha256),
+        ("tokenizer_identity_sha256", tokenizer_identity_sha256),
+    ):
+        _digest(value, field=field)
+    if (
+        isinstance(model_vocab_size, bool)
+        or not isinstance(model_vocab_size, int)
+        or model_vocab_size <= 0
+        or model_vocab_size != tokenizer_vocab_size
+    ):
+        raise ValueError("Source model/tokenizer vocabulary widths must match exactly")
+    result = object.__new__(AdmittedSourceForwardRuntime)
+    for field, value in (
+        ("source_sha256", source_sha256),
+        ("runtime_artifact_sha256", runtime_artifact_sha256),
+        ("model_identity_sha256", model_identity_sha256),
+        ("tokenizer_identity_sha256", tokenizer_identity_sha256),
+        ("vocab_size", model_vocab_size),
+        ("admission_sha256", ""),
+        ("_model", model),
+        ("_image_processor", image_processor),
+        (
+            "_model_state_identity",
+            None if model is None else _model_state_identity(model),
+        ),
+        ("_factory_marker", _SOURCE_RUNTIME_MARKER),
+    ):
+        object.__setattr__(result, field, value)
+    admission_sha256 = _sha256(_source_runtime_preimage(result))
+    object.__setattr__(result, "admission_sha256", admission_sha256)
+    _register_admission(_SOURCE_RUNTIME_ADMISSIONS, result, admission_sha256)
+    return result
+
+
+def _model_state_identity(model: Any) -> tuple[Any, ...]:
+    """Cheap live seal detecting parameter replacement or in-place mutation."""
+
+    return tuple(
+        (
+            name,
+            id(parameter),
+            int(parameter.data_ptr()),
+            int(parameter._version),
+            tuple(int(value) for value in parameter.shape),
+            str(parameter.dtype),
+        )
+        for name, parameter in model.named_parameters()
+    )
+
+
+def _build_source_forward_runtime_for_test(
+    *,
+    source_sha256: str,
+    model_identity_sha256: str,
+    tokenizer_identity_sha256: str,
+    model_vocab_size: int,
+    tokenizer_vocab_size: int,
+) -> AdmittedSourceForwardRuntime:
+    """Private CPU fixture seam; public runtime admission uses QwenComponents."""
+
+    return _construct_source_forward_runtime(
+        source_sha256=source_sha256,
+        runtime_artifact_sha256="9" * 64,
+        model_identity_sha256=model_identity_sha256,
+        tokenizer_identity_sha256=tokenizer_identity_sha256,
+        model_vocab_size=model_vocab_size,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        model=None,
+        image_processor=None,
+    )
+
+
+def admit_source_forward_runtime(components: Any) -> AdmittedSourceForwardRuntime:
+    """Derive vocabulary and runtime identity from exact loaded Qwen components."""
+
+    from src.qwen.runtime_loading import QwenComponents
+    from scripts.research.human13_live_eval import checkpoint_payload_sha256
+
+    if type(components) is not QwenComponents or components.model is None:
+        raise ValueError("Source runtime requires exact loaded QwenComponents")
+    model_vocab_size = components.model_identity.text_vocab_size
+    tokenizer_vocab_size = components.token_identity.tokenizer_vocab_size
+    if len(components.tokenizer) != tokenizer_vocab_size:
+        raise ValueError("loaded tokenizer length differs from runtime identity")
+    output_embeddings = components.model.get_output_embeddings()
+    output_weight = getattr(output_embeddings, "weight", None)
+    if output_weight is None or int(output_weight.shape[0]) != model_vocab_size:
+        raise ValueError("loaded model output vocabulary differs from runtime identity")
+    runtime_artifact = components.to_artifact_dict()
+    return _construct_source_forward_runtime(
+        source_sha256=checkpoint_payload_sha256(components.base_model_path),
+        runtime_artifact_sha256=_sha256(runtime_artifact),
+        model_identity_sha256=_sha256(asdict(components.model_identity)),
+        tokenizer_identity_sha256=_sha256(
+            {
+                "token_identity": asdict(components.token_identity),
+                "tokenizer_sha256": components.tokenizer_sha256,
+            }
+        ),
+        model_vocab_size=model_vocab_size,
+        tokenizer_vocab_size=tokenizer_vocab_size,
+        model=components.model,
+        image_processor=components.processor.image_processor,
+    )
+
+
+@dataclass(frozen=True)
+class SourceForwardRowReceipt:
+    token_index: int
+    causal_position: int
+    history_token_sha256: str
+    chosen_token_id: int
+    raw_logit_sha256: str
+    runtime_admission_sha256: str
+    vocab_size: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True, init=False)
@@ -152,7 +342,7 @@ class AdmittedSourceGreedyDecode:
     repetition_penalty: float
     prompt_token_sha256: str
     generated_token_ids: tuple[int, ...]
-    raw_logit_row_sha256s: tuple[str, ...]
+    forward_rows: tuple[SourceForwardRowReceipt, ...]
     admission_sha256: str
     _factory_marker: object = dataclass_field(repr=False, compare=False)
 
@@ -167,7 +357,7 @@ def _source_decode_preimage(value: AdmittedSourceGreedyDecode) -> dict[str, Any]
         "repetition_penalty": value.repetition_penalty,
         "prompt_token_sha256": value.prompt_token_sha256,
         "generated_token_ids": list(value.generated_token_ids),
-        "raw_logit_row_sha256s": list(value.raw_logit_row_sha256s),
+        "forward_rows": [row.to_dict() for row in value.forward_rows],
     }
 
 
@@ -189,22 +379,26 @@ def _require_source_decode(value: object) -> AdmittedSourceGreedyDecode:
     return value
 
 
-def admit_source_greedy_decode(
+def _admit_source_greedy_decode_from_rows(
     boundary: SourceBoundaryInput,
     raw_logits: torch.Tensor,
     *,
-    source_sha256: str,
+    runtime: AdmittedSourceForwardRuntime,
     manifest_sha256: str,
 ) -> AdmittedSourceGreedyDecode:
     """Verify every realized Source token is the exact RP-processed argmax."""
 
-    source_sha256 = _digest(source_sha256, field="source_sha256")
+    runtime = _require_source_runtime(runtime)
     manifest_sha256 = _digest(manifest_sha256, field="manifest_sha256")
     if not isinstance(raw_logits, torch.Tensor) or raw_logits.ndim != 2:
         raise ValueError(
             "Source greedy evidence logits must be a two-dimensional tensor"
         )
     generated = tuple(boundary.image.generated_token_ids)
+    if raw_logits.shape[1] != runtime.vocab_size:
+        raise ValueError(
+            "Source greedy evidence must use exact runtime vocabulary width"
+        )
     if raw_logits.shape[0] != len(generated) or not bool(
         torch.isfinite(raw_logits.detach()).all().item()
     ):
@@ -215,15 +409,11 @@ def admit_source_greedy_decode(
         raise ValueError(
             "Source greedy evidence vocabulary omits history or chosen token"
         )
-    row_hashes: list[str] = []
+    forward_rows: list[SourceForwardRowReceipt] = []
     for index, chosen_token_id in enumerate(generated):
         history = (*boundary.prompt_token_ids, *generated[:index])
-        row = (
-            raw_logits[index]
-            .detach()
-            .to(dtype=torch.float32, device="cpu")
-            .contiguous()
-        )
+        raw_row = raw_logits[index].detach().to(device="cpu").contiguous()
+        row = raw_row.to(dtype=torch.float32)
         processed = row.clone()
         if boundary.repetition_penalty != 1.0 and history:
             repeated = torch.tensor(
@@ -243,20 +433,43 @@ def admit_source_greedy_decode(
             raise ValueError(
                 "Source chosen token is not the RP-processed greedy argmax"
             )
-        row_hashes.append(
-            hashlib.sha256(
-                f"float32:{row.numel()}:".encode("ascii") + row.numpy().tobytes()
-            ).hexdigest()
+        causal_position = len(boundary.prompt_token_ids) + index - 1
+        history_token_sha256 = _history_sha256(history)
+        raw_logit_sha256 = hashlib.sha256(
+            _canonical_bytes(
+                {
+                    "schema_version": "human13_source_forward_row.v1",
+                    "runtime_admission_sha256": runtime.admission_sha256,
+                    "token_index": index,
+                    "causal_position": causal_position,
+                    "history_token_sha256": history_token_sha256,
+                    "chosen_token_id": chosen_token_id,
+                    "dtype": str(raw_row.dtype),
+                    "vocab_size": row.numel(),
+                }
+            )
+            + raw_row.view(torch.uint8).numpy().tobytes()
+        ).hexdigest()
+        forward_rows.append(
+            SourceForwardRowReceipt(
+                token_index=index,
+                causal_position=causal_position,
+                history_token_sha256=history_token_sha256,
+                chosen_token_id=chosen_token_id,
+                raw_logit_sha256=raw_logit_sha256,
+                runtime_admission_sha256=runtime.admission_sha256,
+                vocab_size=runtime.vocab_size,
+            )
         )
     result = object.__new__(AdmittedSourceGreedyDecode)
     for field, value in (
         ("source_decode_sha256", boundary.source_decode_sha256),
-        ("source_sha256", source_sha256),
+        ("source_sha256", runtime.source_sha256),
         ("manifest_sha256", manifest_sha256),
         ("repetition_penalty", boundary.repetition_penalty),
         ("prompt_token_sha256", _history_sha256(boundary.prompt_token_ids)),
         ("generated_token_ids", generated),
-        ("raw_logit_row_sha256s", tuple(row_hashes)),
+        ("forward_rows", tuple(forward_rows)),
         ("admission_sha256", ""),
         ("_factory_marker", _SOURCE_DECODE_MARKER),
     ):
@@ -265,6 +478,103 @@ def admit_source_greedy_decode(
     object.__setattr__(result, "admission_sha256", admission_sha256)
     _register_admission(_SOURCE_DECODE_ADMISSIONS, result, admission_sha256)
     return result
+
+
+def _admit_source_greedy_decode_for_test(
+    boundary: SourceBoundaryInput,
+    raw_logits: torch.Tensor,
+    *,
+    runtime: AdmittedSourceForwardRuntime,
+    manifest_sha256: str,
+) -> AdmittedSourceGreedyDecode:
+    """Private tensor fixture; scientific admission owns the model forward."""
+
+    return _admit_source_greedy_decode_from_rows(
+        boundary,
+        raw_logits,
+        runtime=runtime,
+        manifest_sha256=manifest_sha256,
+    )
+
+
+def admit_source_greedy_decode(
+    boundary: SourceBoundaryInput,
+    forward_inputs: Sequence[Any],
+    *,
+    runtime: AdmittedSourceForwardRuntime,
+    manifest_sha256: str,
+    image_encoding: Any,
+) -> AdmittedSourceGreedyDecode:
+    """Run the admitted Source model itself at every sealed greedy boundary."""
+
+    from src.qwen.forward import QwenForwardInputs, run_qwen_forward
+    from src.qwen.images import QwenImageEncoding, materialize_qwen_image_encoding
+
+    runtime = _require_source_runtime(runtime)
+    if type(image_encoding) is not QwenImageEncoding:
+        raise ValueError("scientific Source admission requires Qwen image encoding")
+    if image_encoding.plan.image_content_sha256 != boundary.image_sha256:
+        raise ValueError("Source forward image identity differs from boundary")
+    if (
+        image_encoding.pixel_values is not None
+        or image_encoding.image_grid_thw_tensor is not None
+        or image_encoding.image_processor is not runtime._image_processor
+        or runtime._image_processor is None
+    ):
+        raise ValueError(
+            "Source image encoding must be lazy and owned by admitted runtime"
+        )
+    materialized_image = materialize_qwen_image_encoding(image_encoding)
+    expected_pixels = materialized_image.pixel_values
+    expected_grid = materialized_image.image_grid_thw_tensor
+    if not isinstance(expected_pixels, torch.Tensor) or not isinstance(
+        expected_grid, torch.Tensor
+    ):
+        raise ValueError("Source image encoding did not materialize tensors")
+    inputs = tuple(forward_inputs) if isinstance(forward_inputs, Sequence) else ()
+    generated = tuple(boundary.image.generated_token_ids)
+    if (
+        runtime._model is None
+        or len(inputs) != len(generated)
+        or any(type(value) is not QwenForwardInputs for value in inputs)
+    ):
+        raise ValueError(
+            "scientific Source admission requires exact Qwen forward inputs"
+        )
+    typed_inputs = cast(tuple[QwenForwardInputs, ...], inputs)
+    rows: list[torch.Tensor] = []
+    for index, value in enumerate(typed_inputs):
+        if _model_state_identity(runtime._model) != runtime._model_state_identity:
+            raise ValueError("admitted Source model parameters changed before forward")
+        history = (*boundary.prompt_token_ids, *generated[:index])
+        observed_history = tuple(
+            int(token_id) for token_id in value.input_ids.detach().cpu().reshape(-1)
+        )
+        if not torch.equal(
+            value.pixel_values.detach().cpu(), expected_pixels.detach().cpu()
+        ) or not torch.equal(
+            value.image_grid_thw.detach().cpu(), expected_grid.detach().cpu()
+        ):
+            raise ValueError("Source forward pixels or image grid differ from boundary")
+        expected_position = len(history) - 1
+        if observed_history != history or value.logits_position_ids != (
+            expected_position,
+        ):
+            raise ValueError("Source forward input history or causal position differs")
+        result = run_qwen_forward(
+            runtime._model,
+            value,
+            expected_vocab_size=runtime.vocab_size,
+        )
+        if result.logits_position_ids != (expected_position,):
+            raise ValueError("Source forward output causal position differs")
+        rows.append(result.logits.reshape(-1, runtime.vocab_size)[0])
+    return _admit_source_greedy_decode_from_rows(
+        boundary,
+        torch.stack(rows),
+        runtime=runtime,
+        manifest_sha256=manifest_sha256,
+    )
 
 
 @dataclass(frozen=True, init=False)
@@ -374,9 +684,10 @@ def admit_source_compiler_panel(
             image=frontier_image,
             prompt_token_ids=publication.replayed_group.identity.prompt_token_ids,
             repetition_penalty=acquisition.training_repetition_penalty,
+            image_sha256=cast(str, manifest_image.image_sha256),
         )
-        for frontier_image, publication in zip(
-            frontier.images, publications, strict=True
+        for manifest_image, frontier_image, publication in zip(
+            manifest.images, frontier.images, publications, strict=True
         )
     )
     decodes = tuple(_require_source_decode(value) for value in source_decodes)
@@ -489,6 +800,10 @@ class CompilerSite:
     bad_token_id: int
     compact_token_ids: tuple[int, ...]
     repeated_token_ids: tuple[int, ...]
+    prompt_token_count: int
+    prompt_token_sha256: str
+    source_prefix_token_count: int
+    source_prefix_token_sha256: str
     source_history_token_count: int
     source_history_sha256: str
     alias_children: tuple[AliasChild, ...]
@@ -503,6 +818,8 @@ class CompilerSite:
         for field in (
             "source_decode_sha256",
             "alias_bank_sha256",
+            "prompt_token_sha256",
+            "source_prefix_token_sha256",
             "source_history_sha256",
         ):
             object.__setattr__(self, field, _digest(getattr(self, field), field=field))
@@ -510,6 +827,8 @@ class CompilerSite:
             "image_id",
             "generated_token_index",
             "local_causal_position",
+            "prompt_token_count",
+            "source_prefix_token_count",
             "source_history_token_count",
         ):
             value = getattr(self, field)
@@ -569,6 +888,10 @@ class CompilerSite:
             "bad_token_id": self.bad_token_id,
             "compact_token_ids": list(self.compact_token_ids),
             "repeated_token_ids": list(self.repeated_token_ids),
+            "prompt_token_count": self.prompt_token_count,
+            "prompt_token_sha256": self.prompt_token_sha256,
+            "source_prefix_token_count": self.source_prefix_token_count,
+            "source_prefix_token_sha256": self.source_prefix_token_sha256,
             "source_history_token_count": self.source_history_token_count,
             "source_history_sha256": self.source_history_sha256,
             "alias_children": [child.to_dict() for child in self.alias_children],
@@ -591,6 +914,10 @@ class CompilerSite:
             "bad_token_id",
             "compact_token_ids",
             "repeated_token_ids",
+            "prompt_token_count",
+            "prompt_token_sha256",
+            "source_prefix_token_count",
+            "source_prefix_token_sha256",
             "source_history_token_count",
             "source_history_sha256",
             "alias_children",
@@ -610,6 +937,10 @@ class CompilerSite:
             bad_token_id=value["bad_token_id"],
             compact_token_ids=tuple(value["compact_token_ids"]),
             repeated_token_ids=tuple(value["repeated_token_ids"]),
+            prompt_token_count=value["prompt_token_count"],
+            prompt_token_sha256=value["prompt_token_sha256"],
+            source_prefix_token_count=value["source_prefix_token_count"],
+            source_prefix_token_sha256=value["source_prefix_token_sha256"],
             source_history_token_count=value["source_history_token_count"],
             source_history_sha256=value["source_history_sha256"],
             alias_children=tuple(
@@ -904,6 +1235,10 @@ def _build_image_ledger(
         bad_token_id=bad_token_id,
         compact_token_ids=compact_token_ids,
         repeated_token_ids=repeated_token_ids,
+        prompt_token_count=len(boundary.prompt_token_ids),
+        prompt_token_sha256=token_ids_sha256(boundary.prompt_token_ids),
+        source_prefix_token_count=len(prefix),
+        source_prefix_token_sha256=token_ids_sha256(prefix),
         source_history_token_count=len(history),
         source_history_sha256=_history_sha256(history),
         alias_children=children,
@@ -1008,6 +1343,24 @@ def _build_compiler_ledger_for_test(
     )
 
 
+def _admit_compiler_ledger_for_test(ledger: CompilerLedger) -> CompilerLedger:
+    """Private registry seam for exercising public receipt checks on CPU."""
+
+    if type(ledger) is not CompilerLedger or ledger.admission_sha256 is not None:
+        raise ValueError("test compiler admission requires a fresh private ledger")
+    admission_sha256 = _sha256(
+        {
+            **ledger._preimage(),
+            "admission_sha256": None,
+            "admission_kind": "live-source-and-task3",
+        }
+    )
+    object.__setattr__(ledger, "admission_sha256", admission_sha256)
+    object.__setattr__(ledger, "_factory_marker", _COMPILER_LEDGER_MARKER)
+    _register_admission(_COMPILER_LEDGER_ADMISSIONS, ledger, admission_sha256)
+    return ledger
+
+
 def build_compiler_ledger(
     manifest: Human13KUnionManifest,
     source_panel: AdmittedSourceCompilerPanel,
@@ -1103,14 +1456,19 @@ class PackedLogitRows:
     pack_index: int
     packed_causal_position: int
     mapping_sha256: str
+    compiler_ledger_sha256: str | None
+    compiler_admission_sha256: str | None
+    admission_sha256: str
     raw_logits: torch.Tensor
     _factory_marker: object = dataclass_field(repr=False, compare=False)
 
 
-def bind_packed_compiler_logits(
+def _bind_packed_compiler_logits(
     prepared: Any,
     site: CompilerSite,
     *,
+    compiler_ledger_sha256: str | None,
+    compiler_admission_sha256: str | None,
     pack_index: int,
     logits_position_ids: Sequence[int],
     raw_logits: torch.Tensor,
@@ -1130,6 +1488,29 @@ def bind_packed_compiler_logits(
         or binding.local_causal_positions[0] != site.local_causal_position
     ):
         raise ValueError("compiler site differs from prepared Source-prefix segment")
+    if binding.prompt_token_sha256 != site.prompt_token_sha256:
+        raise ValueError("prepared prompt token digest differs from compiler Source")
+    if binding.natural_pre_stop_prefix_token_sha256 != site.source_prefix_token_sha256:
+        raise ValueError(
+            "prepared Source prefix token digest differs from compiler Source"
+        )
+    logical_segments = {
+        segment.segment_id: segment for segment in prepared.packed_plan.logical_segments
+    }
+    logical = logical_segments.get(site.packed_segment_id)
+    if logical is None:
+        raise ValueError("compiler logical segment is absent from prepared scoring")
+    encoded_ids = tuple(logical.encoded_example.input_ids)
+    prompt = encoded_ids[: site.prompt_token_count]
+    prefix_start = site.prompt_token_count
+    prefix_end = prefix_start + site.source_prefix_token_count
+    prefix = encoded_ids[prefix_start:prefix_end]
+    if token_ids_sha256(prompt) != site.prompt_token_sha256:
+        raise ValueError("rederived prompt token digest differs from compiler Source")
+    if token_ids_sha256(prefix) != site.source_prefix_token_sha256:
+        raise ValueError(
+            "rederived Source prefix token digest differs from compiler Source"
+        )
     packs = {pack.pack.pack_index: pack for pack in prepared.packed_plan.packs}
     pack = packs.get(pack_index)
     if pack is None:
@@ -1138,6 +1519,8 @@ def bind_packed_compiler_logits(
     segment = packed_segments.get(site.packed_segment_id)
     if segment is None:
         raise ValueError("compiler segment is absent from selected packed plan")
+    if tuple(pack.pack.input_ids[segment.start : segment.end]) != encoded_ids:
+        raise ValueError("packed compiler tokens differ from prepared logical segment")
     expected_position = segment.start + site.local_causal_position
     positions = tuple(logits_position_ids)
     if positions != (expected_position,):
@@ -1149,8 +1532,16 @@ def bind_packed_compiler_logits(
     ):
         raise ValueError("packed compiler output differs from requested causal row")
     mapping = {
+        "schema_version": "human13_prepared_compiler_row.v1",
         "site_id": site.site_id,
         "segment_id": site.packed_segment_id,
+        "source_decode_sha256": site.source_decode_sha256,
+        "alias_bank_sha256": site.alias_bank_sha256,
+        "prompt_token_sha256": site.prompt_token_sha256,
+        "source_prefix_token_sha256": site.source_prefix_token_sha256,
+        "compiler_ledger_sha256": compiler_ledger_sha256,
+        "compiler_admission_sha256": compiler_admission_sha256,
+        "prepared_segment_token_sha256": token_ids_sha256(encoded_ids),
         "pack_index": pack_index,
         "segment_start": segment.start,
         "local_causal_position": site.local_causal_position,
@@ -1163,18 +1554,107 @@ def bind_packed_compiler_logits(
         ("pack_index", pack_index),
         ("packed_causal_position", expected_position),
         ("mapping_sha256", _sha256(mapping)),
+        ("compiler_ledger_sha256", compiler_ledger_sha256),
+        ("compiler_admission_sha256", compiler_admission_sha256),
+        ("admission_sha256", ""),
         ("raw_logits", raw_logits),
         ("_factory_marker", _PACKED_ROW_MARKER),
     ):
         object.__setattr__(result, field, value)
+    admission_sha256 = _sha256(_packed_row_admission_preimage(result))
+    object.__setattr__(result, "admission_sha256", admission_sha256)
+    _register_admission(_PACKED_ROW_ADMISSIONS, result, admission_sha256)
     return result
 
 
-def gather_compiler_compact_logits(
-    packed_rows: Sequence[PackedLogitRows], ledger: CompilerLedger
-) -> dict[str, torch.Tensor]:
-    """Gather only each site's valid/bad vocabulary entries at its exact row."""
+def _bind_packed_compiler_logits_for_test(
+    prepared: Any,
+    site: CompilerSite,
+    *,
+    pack_index: int,
+    logits_position_ids: Sequence[int],
+    raw_logits: torch.Tensor,
+) -> PackedLogitRows:
+    """Private CPU fixture seam without scientific ledger admission."""
 
+    return _bind_packed_compiler_logits(
+        prepared,
+        site,
+        compiler_ledger_sha256=None,
+        compiler_admission_sha256=None,
+        pack_index=pack_index,
+        logits_position_ids=logits_position_ids,
+        raw_logits=raw_logits,
+    )
+
+
+def bind_packed_compiler_logits(
+    prepared: Any,
+    ledger: CompilerLedger,
+    *,
+    site_id: str,
+    pack_index: int,
+    logits_position_ids: Sequence[int],
+    raw_logits: torch.Tensor,
+) -> PackedLogitRows:
+    """Bind a prepared row to the exact site owned by an admitted ledger."""
+
+    ledger = _require_compiler_admission(ledger)
+    sites = {
+        image.site.site_id: image.site
+        for image in ledger.images
+        if image.site is not None
+    }
+    site = sites.get(site_id)
+    if site is None:
+        raise ValueError("compiler site is absent from admitted ledger")
+    return _bind_packed_compiler_logits(
+        prepared,
+        site,
+        compiler_ledger_sha256=ledger.content_sha256,
+        compiler_admission_sha256=ledger.admission_sha256,
+        pack_index=pack_index,
+        logits_position_ids=logits_position_ids,
+        raw_logits=raw_logits,
+    )
+
+
+def _packed_row_admission_preimage(value: PackedLogitRows) -> dict[str, Any]:
+    return {
+        "schema_version": "human13_admitted_prepared_compiler_row.v1",
+        "site_id": value.site_id,
+        "segment_id": value.segment_id,
+        "pack_index": value.pack_index,
+        "packed_causal_position": value.packed_causal_position,
+        "mapping_sha256": value.mapping_sha256,
+        "compiler_ledger_sha256": value.compiler_ledger_sha256,
+        "compiler_admission_sha256": value.compiler_admission_sha256,
+        "raw_logit_sha256": _compact_tensor_sha256(value.raw_logits),
+    }
+
+
+def _require_packed_row(value: object) -> PackedLogitRows:
+    if type(value) is not PackedLogitRows:
+        raise ValueError("packed compiler row admission is absent")
+    admitted = _PACKED_ROW_ADMISSIONS.get(id(value))
+    expected = _sha256(_packed_row_admission_preimage(value))
+    if (
+        value._factory_marker is not _PACKED_ROW_MARKER
+        or admitted is None
+        or admitted[0]() is not value
+        or admitted[1] != value.admission_sha256
+        or value.admission_sha256 != expected
+    ):
+        raise ValueError("packed compiler row admission is absent or forged")
+    return value
+
+
+def _gather_compiler_compact_logits(
+    packed_rows: Sequence[PackedLogitRows],
+    ledger: CompilerLedger,
+    *,
+    require_all: bool,
+) -> dict[str, torch.Tensor]:
     if not isinstance(ledger, CompilerLedger):
         raise ValueError("packed compiler gather requires a CompilerLedger")
     sites = {
@@ -1183,18 +1663,25 @@ def gather_compiler_compact_logits(
         if image.site is not None
     }
     rows = tuple(packed_rows)
-    if any(
-        not isinstance(row, PackedLogitRows)
-        or row._factory_marker is not _PACKED_ROW_MARKER
-        for row in rows
-    ):
-        raise ValueError("packed compiler rows differ")
+    try:
+        rows = tuple(_require_packed_row(row) for row in rows)
+    except ValueError as error:
+        raise ValueError("packed compiler rows differ or are forged") from error
     row_ids = tuple(row.site_id for row in rows)
-    if len(set(row_ids)) != len(row_ids) or set(row_ids) != set(sites):
+    if len(set(row_ids)) != len(row_ids):
+        raise ValueError("packed compiler rows must cover sites exactly once")
+    if not set(row_ids) <= set(sites):
+        raise ValueError("packed compiler rows differ from ledger sites")
+    if require_all and set(row_ids) != set(sites):
         raise ValueError("packed compiler rows must cover sites exactly once")
     compact: dict[str, torch.Tensor] = {}
     for row in rows:
         site = sites[row.site_id]
+        if ledger.admission_sha256 is not None and (
+            row.compiler_ledger_sha256 != ledger.content_sha256
+            or row.compiler_admission_sha256 != ledger.admission_sha256
+        ):
+            raise ValueError("packed compiler row differs from admitted ledger")
         if row.segment_id != site.packed_segment_id:
             raise ValueError("packed compiler segment lineage differs")
         if row.raw_logits.shape[1] <= max(site.compact_token_ids):
@@ -1206,6 +1693,111 @@ def gather_compiler_compact_logits(
         )
         compact[row.site_id] = row.raw_logits[0].index_select(0, indexes)
     return compact
+
+
+def gather_compiler_compact_logits(
+    packed_rows: Sequence[PackedLogitRows], ledger: CompilerLedger
+) -> dict[str, torch.Tensor]:
+    """Private-shape gather; public training consumes an admitted receipt."""
+
+    return _gather_compiler_compact_logits(packed_rows, ledger, require_all=True)
+
+
+def _compact_tensor_sha256(value: torch.Tensor) -> str:
+    detached = value.detach().to(device="cpu").contiguous()
+    return hashlib.sha256(
+        _canonical_bytes(
+            {
+                "schema_version": "human13_compact_logit_tensor.v1",
+                "dtype": str(detached.dtype),
+                "shape": list(detached.shape),
+            }
+        )
+        + detached.view(torch.uint8).numpy().tobytes()
+    ).hexdigest()
+
+
+@dataclass(frozen=True, init=False)
+class AdmittedCompilerCompactLogits:
+    """Factory-bound compact rows joined to one admitted compiler ledger."""
+
+    compiler_ledger_sha256: str
+    compiler_admission_sha256: str
+    site_ids: tuple[str, ...]
+    packed_mapping_sha256s: tuple[str, ...]
+    compact_tensor_sha256s: tuple[str, ...]
+    admission_sha256: str
+    _raw_logits: Mapping[str, torch.Tensor] = dataclass_field(repr=False, compare=False)
+    _factory_marker: object = dataclass_field(repr=False, compare=False)
+
+
+def _compact_logits_preimage(value: AdmittedCompilerCompactLogits) -> dict[str, Any]:
+    return {
+        "schema_version": "human13_admitted_compiler_compact_logits.v1",
+        "compiler_ledger_sha256": value.compiler_ledger_sha256,
+        "compiler_admission_sha256": value.compiler_admission_sha256,
+        "site_ids": list(value.site_ids),
+        "packed_mapping_sha256s": list(value.packed_mapping_sha256s),
+        "compact_tensor_sha256s": list(value.compact_tensor_sha256s),
+    }
+
+
+def admit_compiler_compact_logits(
+    packed_rows: Sequence[PackedLogitRows], ledger: CompilerLedger
+) -> AdmittedCompilerCompactLogits:
+    """Admit only rows produced by the prepared-pack binding factory."""
+
+    ledger = _require_compiler_admission(ledger)
+    rows = tuple(packed_rows)
+    compact = _gather_compiler_compact_logits(rows, ledger, require_all=False)
+    if not rows:
+        raise ValueError("compact-logit receipt requires at least one compiler site")
+    result = object.__new__(AdmittedCompilerCompactLogits)
+    for field, value in (
+        ("compiler_ledger_sha256", ledger.content_sha256),
+        ("compiler_admission_sha256", cast(str, ledger.admission_sha256)),
+        ("site_ids", tuple(row.site_id for row in rows)),
+        ("packed_mapping_sha256s", tuple(row.mapping_sha256 for row in rows)),
+        (
+            "compact_tensor_sha256s",
+            tuple(_compact_tensor_sha256(compact[row.site_id]) for row in rows),
+        ),
+        ("admission_sha256", ""),
+        ("_raw_logits", compact),
+        ("_factory_marker", _COMPACT_LOGITS_MARKER),
+    ):
+        object.__setattr__(result, field, value)
+    admission_sha256 = _sha256(_compact_logits_preimage(result))
+    object.__setattr__(result, "admission_sha256", admission_sha256)
+    _register_admission(_COMPACT_LOGITS_ADMISSIONS, result, admission_sha256)
+    return result
+
+
+def _require_compact_logits(
+    value: object, ledger: CompilerLedger
+) -> AdmittedCompilerCompactLogits:
+    if type(value) is not AdmittedCompilerCompactLogits:
+        raise ValueError("scientific compact-logit receipt is required")
+    admitted = _COMPACT_LOGITS_ADMISSIONS.get(id(value))
+    expected = _sha256(_compact_logits_preimage(value))
+    tensor_hashes = tuple(
+        _compact_tensor_sha256(value._raw_logits[site_id])
+        for site_id in value.site_ids
+        if site_id in value._raw_logits
+    )
+    if (
+        value._factory_marker is not _COMPACT_LOGITS_MARKER
+        or admitted is None
+        or admitted[0]() is not value
+        or admitted[1] != value.admission_sha256
+        or value.admission_sha256 != expected
+        or value.compiler_ledger_sha256 != ledger.content_sha256
+        or value.compiler_admission_sha256 != ledger.admission_sha256
+        or set(value._raw_logits) != set(value.site_ids)
+        or tensor_hashes != value.compact_tensor_sha256s
+    ):
+        raise ValueError("scientific compact-logit receipt is absent or forged")
+    return value
 
 
 def _processed_compact_logits(
@@ -1341,15 +1933,18 @@ def _greedy_compiler_numerator_for_test(
 
 
 def greedy_compiler_numerator(
-    raw_logits: Mapping[str, torch.Tensor],
+    compact_logits: AdmittedCompilerCompactLogits,
     ledger: CompilerLedger,
-    *,
-    site_ids: Sequence[str] | None = None,
 ) -> torch.Tensor:
     """Public pack numerator accepts only live admitted compiler evidence."""
 
+    if type(compact_logits) is not AdmittedCompilerCompactLogits:
+        raise ValueError("scientific compact-logit receipt is required")
     admitted = _require_compiler_admission(ledger)
-    return _greedy_compiler_numerator_impl(raw_logits, admitted, site_ids=site_ids)
+    receipt = _require_compact_logits(compact_logits, admitted)
+    return _greedy_compiler_numerator_impl(
+        receipt._raw_logits, admitted, site_ids=receipt.site_ids
+    )
 
 
 def _greedy_compiler_loss_for_test(
@@ -1363,13 +1958,21 @@ def _greedy_compiler_loss_for_test(
 
 
 def greedy_compiler_loss(
-    raw_logits: Mapping[str, torch.Tensor], ledger: CompilerLedger
+    compact_logits: AdmittedCompilerCompactLogits, ledger: CompilerLedger
 ) -> torch.Tensor:
     """Apply one global denominator to live admitted compiler evidence."""
 
+    if type(compact_logits) is not AdmittedCompilerCompactLogits:
+        raise ValueError("scientific compact-logit receipt is required")
     admitted = _require_compiler_admission(ledger)
+    receipt = _require_compact_logits(compact_logits, admitted)
+    expected_site_ids = tuple(
+        image.site.site_id for image in admitted.images if image.site is not None
+    )
+    if set(receipt.site_ids) != set(expected_site_ids):
+        raise ValueError("compact-logit receipt must cover all compiler sites")
     return (
-        _greedy_compiler_numerator_impl(raw_logits, admitted)
+        _greedy_compiler_numerator_impl(receipt._raw_logits, admitted)
         / admitted.logical_image_count
     )
 
