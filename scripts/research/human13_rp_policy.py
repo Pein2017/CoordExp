@@ -20,6 +20,17 @@ from scripts.research.human13_k_trajectory_contracts import (
 )
 
 
+_FLOAT_BOUNDARY_ABS_TOLERANCE = 1e-15
+
+
+def _at_or_below_fixed_gate(value: float, limit: float) -> bool:
+    """Use one explicit absolute boundary tolerance for serialized FP values."""
+
+    return value <= limit or math.isclose(
+        value, limit, rel_tol=0.0, abs_tol=_FLOAT_BOUNDARY_ABS_TOLERANCE
+    )
+
+
 class PolicyReplayError(ValueError):
     """Raised when sealed sampling evidence cannot be admitted for replay."""
 
@@ -47,8 +58,12 @@ class AcquisitionGroupParityReceipt:
     group_mean_absolute_error_nats: float
 
     def __post_init__(self) -> None:
-        if not isinstance(self.admitted, bool):
-            raise ValueError("admitted must be a boolean")
+        if self.admitted is not True:
+            raise ValueError("an acquisition group parity receipt must be admitted")
+        if self.tolerance_sha256 != ReplayTolerance().content_sha256:
+            raise ValueError(
+                "admitted receipt tolerance SHA-256 differs from fixed ReplayTolerance"
+            )
         for field in (
             "tolerance_sha256",
             "sampled_group_sha256",
@@ -77,8 +92,21 @@ class AcquisitionGroupParityReceipt:
         if mean < 0:
             raise ValueError("group mean error must be nonnegative")
         expected_mean = sum(errors) / self.token_count
-        if not math.isclose(mean, expected_mean, rel_tol=0.0, abs_tol=1e-15):
+        if not math.isclose(
+            mean,
+            expected_mean,
+            rel_tol=0.0,
+            abs_tol=_FLOAT_BOUNDARY_ABS_TOLERANCE,
+        ):
             raise ValueError("group mean error differs from the token-error mean")
+        fixed_tolerance = ReplayTolerance()
+        if any(
+            not _at_or_below_fixed_gate(value, fixed_tolerance.per_token_nats)
+            for value in errors
+        ):
+            raise ValueError("per-token replay error exceeds fixed ReplayTolerance")
+        if not _at_or_below_fixed_gate(mean, fixed_tolerance.group_mean_nats):
+            raise ValueError("group mean replay error exceeds fixed ReplayTolerance")
         object.__setattr__(self, "request_ids", request_ids)
         object.__setattr__(self, "per_token_absolute_error_nats", errors)
         object.__setattr__(self, "group_mean_absolute_error_nats", mean)

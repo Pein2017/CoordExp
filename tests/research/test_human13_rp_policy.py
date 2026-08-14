@@ -398,7 +398,7 @@ def test_group_replay_fails_closed_on_group_lineage_mismatch() -> None:
 def _parity_receipt() -> AcquisitionGroupParityReceipt:
     return AcquisitionGroupParityReceipt(
         admitted=True,
-        tolerance_sha256="a" * 64,
+        tolerance_sha256=ReplayTolerance().content_sha256,
         sampled_group_sha256="b" * 64,
         replayed_group_sha256="c" * 64,
         request_ids=("request:seed-11:image-7", "request:seed-12:image-7"),
@@ -450,4 +450,49 @@ def test_group_parity_receipt_rejects_noncanonical_persisted_fields(
     else:
         payload["group_mean_absolute_error_nats"] = 0.001
     with pytest.raises(ValueError, match="fields|mean"):
+        AcquisitionGroupParityReceipt.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    ("replacement", "match"),
+    [
+        ({"admitted": False}, "admitted"),
+        ({"tolerance_sha256": "d" * 64}, "tolerance"),
+        (
+            {
+                "per_token_absolute_error_nats": (0.021, 0.003),
+                "group_mean_absolute_error_nats": 0.012,
+            },
+            "per-token",
+        ),
+        (
+            {
+                "per_token_absolute_error_nats": (0.003, 0.003),
+                "group_mean_absolute_error_nats": 0.003,
+            },
+            "group mean",
+        ),
+    ],
+)
+def test_admitted_group_parity_receipt_enforces_the_fixed_replay_gate(
+    replacement: dict[str, object], match: str
+) -> None:
+    # Catches forging an admitted receipt that the replay gate itself would reject.
+    with pytest.raises(ValueError, match=match):
+        replace(_parity_receipt(), **replacement)
+
+
+@pytest.mark.parametrize("field", ("tolerance_sha256", "per_token_absolute_error_nats", "group_mean_absolute_error_nats"))
+def test_deserialized_group_parity_receipt_rechecks_the_admission_gate(field: str) -> None:
+    # Catches treating persisted receipt bytes as trusted after they are altered.
+    payload = _parity_receipt().to_dict()
+    if field == "tolerance_sha256":
+        payload[field] = "d" * 64
+    elif field == "per_token_absolute_error_nats":
+        payload[field] = [0.021, 0.003]
+        payload["group_mean_absolute_error_nats"] = 0.012
+    else:
+        payload["per_token_absolute_error_nats"] = [0.003, 0.003]
+        payload[field] = 0.003
+    with pytest.raises(ValueError, match="tolerance|per-token|group mean"):
         AcquisitionGroupParityReceipt.from_dict(payload)
