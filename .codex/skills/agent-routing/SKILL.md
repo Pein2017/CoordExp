@@ -40,6 +40,15 @@ Use these fixed responsibility cells:
 - `major_decision`: decision-grade advice only; the lead and user retain
   authority.
 
+Choose model family for problem shape before effort depth. For Claude routes,
+use Sonnet for efficient execution against a frozen plan and Opus for hidden
+dependencies, root cause, architecture, research semantics, or adversarial
+review. When a task crosses that boundary, reroute to Opus/medium or high;
+do not keep raising Sonnet effort as a substitute for a role-correct model.
+Use `xhigh` to broaden hypotheses and `max` only for unresolved consequential
+decisions, conflicting evidence, or deliberate self-counterargument. Neither
+effort nor model family transfers lead or user authority to the worker.
+
 Judge semantic dataflow rather than file count. An unresolved invariant, silent
 false acceptance, compatibility or concurrency risk, or one value crossing
 multiple lifecycle stages is complex even when the diff is small.
@@ -169,8 +178,9 @@ controller-derived `route_cohort_hash` into any comparable plan. Treat its
 output as a recommendation, not a dispatch authorization. `major_decision`
 returns the static policy route when it is eligible and live, otherwise it
 abstains; learned summaries may inform advice but never auto-promote a decision
-adviser. Fable/xhigh and Fable/max remain explicit independent-adviser choices;
-they are not automatic substitutes when Sol/max is unavailable.
+adviser. Opus/xhigh or max and Fable/xhigh or max remain explicit independent-
+adviser choices; they are not automatic substitutes when Sol/max is
+unavailable.
 
 Before spawn, fill
 [references/routing-plan-template.json](references/routing-plan-template.json)
