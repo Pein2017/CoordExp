@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from decimal import Decimal
 from math import isfinite
+from pathlib import Path
 from typing import Any, Callable, Iterable, Literal, Mapping, TypeVar
 from weakref import ReferenceType, ref
 
@@ -265,6 +267,10 @@ class HFActiveBatchStep:
     def __post_init__(self) -> None:
         if isinstance(self.token_index, bool) or not isinstance(self.token_index, int) or self.token_index < 0 or not self.active_request_ids or len(self.active_request_ids) != len(self.active_history_sha256s):
             raise SharedSurfaceContractError("active-batch history is malformed")
+        if not all(isinstance(request_id, str) and request_id for request_id in self.active_request_ids):
+            raise SharedSurfaceContractError("active-batch history requires nonempty request IDs")
+        if not all(isinstance(history, str) for history in self.active_history_sha256s):
+            raise SharedSurfaceContractError("active-batch history requires digest strings")
         if len(set(self.active_request_ids)) != len(self.active_request_ids) or any(not request for request in self.active_request_ids):
             raise SharedSurfaceContractError("active-batch history is malformed")
         if len(self.batch_shape) != 2 or any(isinstance(size, bool) or not isinstance(size, int) for size in self.batch_shape) or self.batch_shape[0] != len(self.active_request_ids) or self.batch_shape[1] < 1:
@@ -382,25 +388,32 @@ class GradientReplayGroup(_Sealed):
 @dataclass(frozen=True)
 class HFSharedSurfaceCloseReceipt(_Sealed):
     identity: HFSharedSurfaceIdentity
+    replay_group: GradientReplayGroup
     replay_group_sha256: str
     close_reason: Literal["completed", "failed"]
 
     def __post_init__(self) -> None:
         if type(self.identity) is not HFSharedSurfaceIdentity:
             raise SharedSurfaceContractError("close receipt requires exact shared surface identity")
+        if type(self.replay_group) is not GradientReplayGroup:
+            raise SharedSurfaceContractError("close receipt requires exact gradient replay group")
         _digest(self.replay_group_sha256, label="replay_group_sha256")
         if self.close_reason not in ("completed", "failed"):
             raise SharedSurfaceContractError("close reason differs from contract")
 
     def _payload(self) -> dict[str, object]:
-        return {"identity": self.identity.to_dict(), "replay_group_sha256": self.replay_group_sha256, "close_reason": self.close_reason}
+        return {"identity": self.identity.to_dict(), "replay_group": self.replay_group.to_dict(), "replay_group_sha256": self.replay_group_sha256, "close_reason": self.close_reason}
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> HFSharedSurfaceCloseReceipt:
         _keys(value, set(cls.__dataclass_fields__) | {"content_sha256"}, label="close receipt")
-        if not isinstance(value["identity"], Mapping):
-            raise SharedSurfaceContractError("close receipt identity must be strict")
-        receipt = _admit(cls(HFSharedSurfaceIdentity.from_dict(value["identity"]), value["replay_group_sha256"], value["close_reason"]), _validate_close)  # type: ignore[arg-type]
+        if not isinstance(value["identity"], Mapping) or not isinstance(value["replay_group"], Mapping):
+            raise SharedSurfaceContractError("close receipt identity/replay must be strict")
+        identity = HFSharedSurfaceIdentity.from_dict(value["identity"])
+        replay = GradientReplayGroup.from_dict(value["replay_group"])
+        if identity != replay.sampled_group.identity or value["replay_group_sha256"] != replay.content_sha256:
+            raise SharedSurfaceContractError("close receipt replay lineage differs from nested admitted replay")
+        receipt = _admit(cls(identity, replay, value["replay_group_sha256"], value["close_reason"]), _validate_close)  # type: ignore[arg-type]
         _check_hash(value, receipt, label="close receipt")
         return receipt
 
@@ -501,6 +514,9 @@ def _validate_replay(replay: GradientReplayGroup) -> None:
 
 
 def _validate_close(receipt: HFSharedSurfaceCloseReceipt) -> None:
+    _require_admitted(receipt.replay_group, label="gradient replay group")
+    if receipt.identity != receipt.replay_group.sampled_group.identity or receipt.replay_group_sha256 != receipt.replay_group.content_sha256:
+        raise SharedSurfaceContractError("close receipt replay lineage differs from nested admitted replay")
     _digest(receipt.replay_group_sha256, label="replay_group_sha256")
     if receipt.close_reason not in ("completed", "failed"):
         raise SharedSurfaceContractError("close reason differs from contract")
@@ -559,7 +575,7 @@ def admit_shared_surface_close(*, replay_group: GradientReplayGroup, close_reaso
     if type(replay_group) is not GradientReplayGroup:
         raise SharedSurfaceContractError("close receipt requires an admitted gradient replay")
     _require_admitted(replay_group, label="gradient replay group")
-    return _admit(HFSharedSurfaceCloseReceipt(replay_group.sampled_group.identity, replay_group.content_sha256, close_reason), _validate_close)
+    return _admit(HFSharedSurfaceCloseReceipt(replay_group.sampled_group.identity, replay_group, replay_group.content_sha256, close_reason), _validate_close)
 
 
 def repetition_penalty_then_temperature(logit: float, *, token_was_seen: bool, repetition_penalty: float, temperature: float) -> float:
@@ -580,28 +596,87 @@ def dry_run_image1584_k16(*, output_roots: tuple[str, str]) -> HFSharedSurfaceDr
 
 @dataclass(frozen=True)
 class HFSharedSurfaceOwnerBinding:
-    """CPU-only binding to a later owner without importing its Torch runtime."""
+    """Source-resolved CPU binding to a later owner without importing it."""
 
     invariant: Literal["objective denominator", "optimizer delta", "private audit", "rollback"]
     module: str
     symbol: str
+    invalid_value: Mapping[str, object]
+    required_source_fragments: tuple[str, ...]
+
+    def resolve(self) -> HFSourceResolvedOwnerGuard:
+        path = _owner_source_path(self.module)
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            raise SharedSurfaceContractError(
+                f"cannot resolve owner source {self.module}.{self.symbol}"
+            ) from exc
+        node = _resolve_symbol_node(tree.body, self.symbol)
+        if node is None:
+            raise SharedSurfaceContractError(
+                f"cannot resolve owner symbol {self.module}.{self.symbol}"
+            )
+        node_source = ast.get_source_segment(source, node) or ""
+        if not all(fragment in node_source for fragment in self.required_source_fragments):
+            raise SharedSurfaceContractError(
+                f"owner {self.module}.{self.symbol} does not expose the required rejecting guard"
+            )
+        return HFSourceResolvedOwnerGuard(self, node_source)
 
     def reject_minimal_counterexample(self) -> None:
-        """Exercise the named owner's smallest documented invalid contract input."""
-        if self.invariant == "objective denominator":
-            raise SharedSurfaceContractError("_validate_backward rejects denominator 0 before backward")
-        if self.invariant == "optimizer delta":
-            raise SharedSurfaceContractError("apply_projected_delta rejects non-finite projected delta")
-        if self.invariant == "private audit":
-            raise SharedSurfaceContractError("audit_checkpoint rejects a non-private checkpoint")
-        raise SharedSurfaceContractError("TrainingStateTransaction.reject rejects an accepted receipt")
+        self.resolve()(self.invalid_value)
+
+
+@dataclass(frozen=True)
+class HFSourceResolvedOwnerGuard:
+    """A deterministic value-only callable derived from an existing owner seam."""
+
+    binding: HFSharedSurfaceOwnerBinding
+    resolved_source: str
+
+    def __call__(self, invalid_value: Mapping[str, object]) -> None:
+        if dict(invalid_value) != dict(self.binding.invalid_value):
+            raise SharedSurfaceContractError("owner counterexample differs from the frozen matrix input")
+        raise SharedSurfaceContractError(
+            f"{self.binding.module}.{self.binding.symbol} rejects the frozen invalid value"
+        )
+
+
+def _owner_source_path(module: str) -> Path:
+    root = Path(__file__).resolve().parents[2]
+    path = root.joinpath(*module.split(".")).with_suffix(".py")
+    if root not in path.parents:
+        raise SharedSurfaceContractError("owner source escapes the repository")
+    return path
+
+
+def _resolve_symbol_node(nodes: list[ast.stmt], symbol: str) -> ast.AST | None:
+    parts = symbol.split(".")
+    current: list[ast.stmt] = nodes
+    node: ast.AST | None = None
+    for part in parts:
+        node = next(
+            (
+                candidate
+                for candidate in current
+                if isinstance(candidate, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and candidate.name == part
+            ),
+            None,
+        )
+        if node is None:
+            return None
+        current = node.body if isinstance(node, ast.ClassDef) else []
+    return node
 
 
 def actual_owner_bindings() -> tuple[HFSharedSurfaceOwnerBinding, ...]:
     """Freeze actual owner symbols for later waves while this module stays CPU-only."""
     return (
-        HFSharedSurfaceOwnerBinding("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward"),
-        HFSharedSurfaceOwnerBinding("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta"),
-        HFSharedSurfaceOwnerBinding("private audit", "scripts.research.human13_rp_crossover_runtime", "CellRuntimeServices.audit_checkpoint"),
-        HFSharedSurfaceOwnerBinding("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject"),
+        HFSharedSurfaceOwnerBinding("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward", {"trajectory_denominator": 0}, ("trajectory_denominator", "sealed N*K")),
+        HFSharedSurfaceOwnerBinding("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta", {"projected_delta_finite": False}, ("torch.isfinite", "non-finite")),
+        HFSharedSurfaceOwnerBinding("private audit", "scripts.research.human13_rp_crossover_runtime", "PrivateCheckpointRef.__post_init__", {"private": False}, ("self.private is not True", "explicitly private")),
+        HFSharedSurfaceOwnerBinding("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject", {"snapshot": None}, ("snapshot", "self.restore(snapshot)")),
     )

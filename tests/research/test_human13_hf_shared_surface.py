@@ -33,6 +33,7 @@ from scripts.research.human13_hf_shared_surface import (
     plan_image1584_k16,
     repetition_penalty_then_temperature,
 )
+from src.artifacts.json_values import json_sha256
 
 
 def _digest(label: str) -> str:
@@ -174,7 +175,7 @@ FAILURE_MODE_MATRIX: tuple[tuple[str, str, Callable[[], None]], ...] = (
     ("parity", "admit_gradient_replay", lambda: admit_gradient_replay(sampled_group=admit_sampled_group(**valid_group_kwargs()), replay_identity=valid_identity(), replayed_tokens=valid_replayed(admit_sampled_group(**valid_group_kwargs()), 0.03), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(admit_sampled_group(**valid_group_kwargs())))),
     ("objective denominator", "scripts.research.human13_rp_crossover_runtime._validate_backward", lambda: actual_owner_bindings()[0].reject_minimal_counterexample()),
     ("optimizer delta", "scripts.research.human13_adamw_proposal_preservation.apply_projected_delta", lambda: actual_owner_bindings()[1].reject_minimal_counterexample()),
-    ("private audit", "scripts.research.human13_rp_crossover_runtime.CellRuntimeServices.audit_checkpoint", lambda: actual_owner_bindings()[2].reject_minimal_counterexample()),
+    ("private audit", "scripts.research.human13_rp_crossover_runtime.PrivateCheckpointRef.__post_init__", lambda: actual_owner_bindings()[2].reject_minimal_counterexample()),
     ("rollback", "scripts.research.human13_training_transaction.TrainingStateTransaction.reject", lambda: actual_owner_bindings()[3].reject_minimal_counterexample()),
 )
 
@@ -195,12 +196,23 @@ def test_matrix_later_wave_entries_bind_actual_owner_seams() -> None:
     assert {(binding.invariant, binding.module, binding.symbol) for binding in bindings} == {
         ("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward"),
         ("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta"),
-        ("private audit", "scripts.research.human13_rp_crossover_runtime", "CellRuntimeServices.audit_checkpoint"),
+        ("private audit", "scripts.research.human13_rp_crossover_runtime", "PrivateCheckpointRef.__post_init__"),
         ("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject"),
     }
     for binding in bindings:
         with pytest.raises(SharedSurfaceContractError):
             binding.reject_minimal_counterexample()
+
+
+def test_matrix_resolves_actual_source_guards_and_rejects_missing_or_non_guard_symbols() -> None:
+    """Catches matrix rows whose named owner is missing or has no matching guard."""
+    binding = actual_owner_bindings()[0]
+    with pytest.raises(SharedSurfaceContractError):
+        binding.resolve()(binding.invalid_value)
+    with pytest.raises(SharedSurfaceContractError, match="cannot resolve"):
+        replace(binding, symbol="not_a_real_owner").resolve()
+    with pytest.raises(SharedSurfaceContractError, match="does not expose"):
+        replace(binding, symbol="ObjectiveBackwardReceipt").resolve()
 
 
 @pytest.mark.parametrize(
@@ -382,9 +394,41 @@ def test_close_receipt_requires_exact_admitted_replay_identity_lineage() -> None
     replay = admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=valid_replayed(sampled), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled))
     assert admit_shared_surface_close(replay_group=replay, close_reason="completed").identity == sampled.identity
     with pytest.raises(SharedSurfaceContractError, match="exact shared surface identity"):
-        HFSharedSurfaceCloseReceipt(valid_policy(), replay.content_sha256, "completed")
+        HFSharedSurfaceCloseReceipt(valid_policy(), replay, replay.content_sha256, "completed")
     with pytest.raises(SharedSurfaceContractError, match="admitted gradient replay"):
         admit_shared_surface_close(replay_group=object(), close_reason="completed")  # type: ignore[arg-type]
+
+
+def test_close_reload_rebuilds_nested_replay_and_rejects_canonical_lineage_tamper() -> None:
+    """Catches a content-rehashed close payload joining identity A to replay B."""
+    identity_a = valid_identity()
+    group_a = admit_sampled_group(**valid_group_kwargs(expected_identity=identity_a, identity=identity_a))
+    replay_a = admit_gradient_replay(sampled_group=group_a, replay_identity=identity_a, replayed_tokens=valid_replayed(group_a), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(group_a))
+    identity_b = valid_identity(parameter_state_sha256=_digest("parameters-b"))
+    group_b = admit_sampled_group(**valid_group_kwargs(expected_identity=identity_b, identity=identity_b))
+    replay_b = admit_gradient_replay(sampled_group=group_b, replay_identity=identity_b, replayed_tokens=valid_replayed(group_b), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(group_b))
+    close = admit_shared_surface_close(replay_group=replay_a, close_reason="completed")
+    payload = close.to_dict()
+    assert payload["replay_group"] == replay_a.to_dict()
+    tampered = payload | {
+        "replay_group": replay_b.to_dict(),
+        "replay_group_sha256": replay_b.content_sha256,
+    }
+    tampered["content_sha256"] = json_sha256(
+        {key: value for key, value in tampered.items() if key != "content_sha256"}
+    )
+    with pytest.raises(SharedSurfaceContractError, match="close receipt replay lineage"):
+        HFSharedSurfaceCloseReceipt.from_dict(tampered)
+
+
+def test_active_batch_loader_rejects_nonstring_request_members_with_contract_error() -> None:
+    """Catches incidental TypeError from malformed but strict-JSON list elements."""
+    step = valid_active_batch_steps(valid_requests())[0].to_dict()
+    step["active_request_ids"] = [[]]
+    step["active_history_sha256s"] = [_digest("one-history")]
+    step["batch_shape"] = [1, 32]
+    with pytest.raises(SharedSurfaceContractError, match="active-batch history"):
+        HFActiveBatchStep.from_dict(step)
 
 
 def test_sign_aware_repetition_penalty_precedes_temperature() -> None:
