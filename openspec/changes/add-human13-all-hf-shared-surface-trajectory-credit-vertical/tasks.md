@@ -34,7 +34,7 @@
   use the same model-object identity, unchanged parameters, adapter/delta,
   BF16/FA2 surface, model mode, prompt/image/tokenizer, and RP order, and fail
   before backward on any substitution.
-- [ ] 2.5 Gate Wave 2 with focused tests, Ruff/compile/Serena checks, strict
+- [x] 2.5 Gate Wave 2 with focused tests, Ruff/compile/Serena checks, strict
   OpenSpec validation, resource-bound assertions, and one bounded review plus
   one correction bundle.
 
