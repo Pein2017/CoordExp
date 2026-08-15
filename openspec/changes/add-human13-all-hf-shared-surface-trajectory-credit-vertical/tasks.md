@@ -1,16 +1,16 @@
 ## 1. Shared-surface contracts and CPU math
 
-- [ ] 1.1 Freeze one failure-mode matrix for surface identity, request/history
+- [x] 1.1 Freeze one failure-mode matrix for surface identity, request/history
   lineage, processor order, parity, objective denominator, optimizer delta,
   private audit, and rollback; name one executable owner and one minimal
   counterexample for each invariant.
-- [ ] 1.2 Add typed shared-surface identity, policy, group-plan, sampled-group,
+- [x] 1.2 Add typed shared-surface identity, policy, group-plan, sampled-group,
   replay-group, parity, and close receipts with one admission choke point used
   by constructors, loaders, publishers, and runtime consumers.
-- [ ] 1.3 Add CPU/tensor TDD for four-by-four K16 planning, no-cache enforcement,
+- [x] 1.3 Add CPU/tensor TDD for four-by-four K16 planning, no-cache enforcement,
   exact seed/request coverage, active-batch histories, sign-aware RP processing,
   chosen-token gathering, and `0.02/0.002` parity admission.
-- [ ] 1.4 Add a pure resource estimator and dry-run receipt for image/prompt
+- [x] 1.4 Add a pure resource estimator and dry-run receipt for image/prompt
   forwards, replay forwards, backward count, expected token cap, required GPU
   roles, output roots, and zero model/GPU actions.
 - [ ] 1.5 Run one independent standards/intent review of Wave 1, apply at most
