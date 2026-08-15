@@ -470,6 +470,42 @@ def test_cuda_adapter_rejects_task2_cache_configuration_drift() -> None:
         CudaHFVerticalAdapter(surface)
 
 
+def test_cuda_adapter_restores_task2_config_after_probe_mutation() -> None:
+    surface, _fixture_value = _task2_surface(module_name="_vertical_config_probe")
+    config = getattr(surface.model, "config")
+
+    def config_drifting_probe() -> dict[str, float]:
+        setattr(config, "_attn_implementation", "sdpa")
+        setattr(config, "use_cache", True)
+        return {witness.canonical_key: 0.0 for witness in surface.witness_bank.constraints}
+
+    mutated = replace(surface, realized_margin_probe=config_drifting_probe)
+    receipt = CudaHFVerticalAdapter(mutated).apply_and_rollback()
+
+    assert receipt.status == "applied_and_rolled_back"
+    assert getattr(config, "_attn_implementation") == "flash_attention_2"
+    assert getattr(config, "use_cache") is False
+
+
+def test_cuda_adapter_rejects_and_restores_task2_replay_mutation() -> None:
+    surface, _fixture_value = _task2_surface(module_name="_vertical_replay_probe")
+    key, tensor = next(iter(surface.replay_logprob_tensors.items()))
+    source = tensor.detach().clone()
+
+    def replay_drifting_probe() -> dict[str, float]:
+        with torch.no_grad():
+            tensor.add_(1.0)
+        return {witness.canonical_key: 0.0 for witness in surface.witness_bank.constraints}
+
+    mutated = replace(surface, realized_margin_probe=replay_drifting_probe)
+    with pytest.raises(CudaAdapterError, match="replay evidence"):
+        CudaHFVerticalAdapter(mutated).apply_and_rollback()
+
+    assert key in surface.replay_logprob_tensors
+    assert torch.equal(surface.replay_logprob_tensors[key], source)
+    assert surface.transaction._active_transaction_id is None
+
+
 def test_cuda_adapter_rejects_stale_compact_logits_without_compiler_sites() -> None:
     surface, fixture = _task2_surface(module_name="_vertical_stale_compact")
     source = fixture.compiler_ledger

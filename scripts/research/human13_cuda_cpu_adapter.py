@@ -12,7 +12,7 @@ is outside this seam.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 import hashlib
 from typing import Literal
@@ -240,6 +240,79 @@ def _restore_model_version_counters(
         raise CudaAdapterError("full model version counters were not restored")
 
 
+def _model_config_snapshots(
+    model: torch.nn.Module,
+) -> tuple[tuple[str, torch.nn.Module, object, bool, object, bool, object], ...]:
+    snapshots: list[tuple[str, torch.nn.Module, object, bool, object, bool, object]] = []
+    for name, module in model.named_modules():
+        config = getattr(module, "config", None)
+        if config is None:
+            continue
+        has_attention = hasattr(config, "_attn_implementation")
+        has_cache = hasattr(config, "use_cache")
+        snapshots.append(
+            (
+                name,
+                module,
+                config,
+                has_attention,
+                getattr(config, "_attn_implementation", None),
+                has_cache,
+                getattr(config, "use_cache", None),
+            )
+        )
+    return tuple(snapshots)
+
+
+def _model_config_fingerprint_payload(model: torch.nn.Module) -> list[dict[str, object]]:
+    return [
+        {
+            "name": name,
+            "object_id": id(config),
+            "attention_present": has_attention,
+            "attention": repr(attention) if has_attention else None,
+            "cache_present": has_cache,
+            "use_cache": repr(use_cache) if has_cache else None,
+        }
+        for name, _module, config, has_attention, attention, has_cache, use_cache in
+        _model_config_snapshots(model)
+    ]
+
+
+def _replay_tensor_snapshot(
+    surface: CudaProposalInput,
+) -> tuple[
+    tuple[
+        str,
+        torch.Tensor,
+        torch.Tensor,
+        tuple[int, ...],
+        tuple[int, ...],
+        torch.dtype,
+        torch.device,
+        bool,
+        frozenset[int],
+        str,
+    ],
+    ...,
+]:
+    return tuple(
+        (
+            key,
+            tensor,
+            tensor.detach().clone(),
+            tuple(tensor.shape),
+            tuple(tensor.stride()),
+            tensor.dtype,
+            tensor.device,
+            tensor.requires_grad,
+            _graph_leaf_ids(tensor),
+            _tensor_sha256(tensor),
+        )
+        for key, tensor in sorted(surface.replay_logprob_tensors.items())
+    )
+
+
 def _full_model_fingerprint(model: torch.nn.Module) -> str:
     modules = tuple(model.named_modules())
     parameters = tuple(model.named_parameters())
@@ -284,6 +357,7 @@ def _full_model_fingerprint(model: torch.nn.Module) -> str:
                 }
                 for name, buffer in buffers
             ],
+            "configs": _model_config_fingerprint_payload(model),
         }
     )
 
@@ -514,6 +588,8 @@ class CudaHFVerticalAdapter:
             (name, module, module.training)
             for name, module in surface.model.named_modules()
         )
+        self._full_model_source_configs = _model_config_snapshots(surface.model)
+        self._task2_replay_source = _replay_tensor_snapshot(surface)
         self._objective = self._derive_objective()
         if self._has_task2_lineage():
             expected_binding = _objective_binding_sha256(
@@ -823,6 +899,12 @@ class CudaHFVerticalAdapter:
             (name, id(buffer)) for name, buffer, _ in self._full_model_source_buffers
         ):
             raise CudaAdapterError("full model buffer registry drifted")
+        current_configs = _model_config_snapshots(model)
+        if tuple((name, id(config)) for name, _module, config, *_ in current_configs) != tuple(
+            (name, id(config))
+            for name, _module, config, *_ in self._full_model_source_configs
+        ):
+            raise CudaAdapterError("full model config registry drifted")
         with torch.no_grad():
             for name, parameter, saved, requires_grad in self._full_model_source_values:
                 del name
@@ -853,6 +935,27 @@ class CudaHFVerticalAdapter:
         # mixed train/eval module-mode registry captured at the Source seam.
         for _name, module, training in self._full_model_source_modes:
             module.training = training
+        for (
+            name,
+            module,
+            config,
+            has_attention,
+            attention,
+            has_cache,
+            use_cache,
+        ) in self._full_model_source_configs:
+            del name
+            current_config = getattr(module, "config", None)
+            if current_config is not config:
+                raise CudaAdapterError("full model config registry drifted")
+            if has_attention:
+                setattr(config, "_attn_implementation", attention)
+            elif hasattr(config, "_attn_implementation"):
+                delattr(config, "_attn_implementation")
+            if has_cache:
+                setattr(config, "use_cache", use_cache)
+            elif hasattr(config, "use_cache"):
+                delattr(config, "use_cache")
         if _full_model_fingerprint(model) != self._full_model_source_sha256:
             raise CudaAdapterError("full model Source restoration differs")
 
@@ -883,6 +986,58 @@ class CudaHFVerticalAdapter:
             or current_buffers[name].stride() != source_buffers[name].stride()
             for name in source_buffers
         )
+
+    def _validate_task2_replay_source(self) -> None:
+        expected = self._task2_replay_source
+        if not expected:
+            return
+        current = _replay_tensor_snapshot(self._surface)
+        if len(current) != len(expected):
+            raise CudaAdapterError("Task2 replay evidence changed during probe")
+        for current_item, expected_item in zip(current, expected, strict=True):
+            if (
+                current_item[0] != expected_item[0]
+                or current_item[1] is not expected_item[1]
+                or current_item[3:] != expected_item[3:]
+            ):
+                raise CudaAdapterError("Task2 replay evidence changed during probe")
+
+    def _restore_task2_replay_source(self) -> None:
+        if not self._task2_replay_source:
+            return
+        mapping = self._surface.replay_logprob_tensors
+        for (
+            key,
+            tensor,
+            saved,
+            shape,
+            stride,
+            dtype,
+            device,
+            requires_grad,
+            _leaves,
+            _digest,
+        ) in self._task2_replay_source:
+            current = mapping.get(key)
+            if current is not tensor:
+                if not isinstance(mapping, MutableMapping):
+                    raise CudaAdapterError("Task2 replay mapping identity drifted")
+                mapping[key] = tensor
+                current = tensor
+            if not isinstance(current, torch.Tensor):
+                raise CudaAdapterError("Task2 replay tensor mapping is invalid")
+            with torch.no_grad():
+                if (
+                    tuple(current.shape) != shape
+                    or tuple(current.stride()) != stride
+                    or current.dtype != dtype
+                    or current.device != device
+                ):
+                    current.data = saved.detach().clone(memory_format=torch.preserve_format)
+                else:
+                    current.copy_(saved)
+                current.requires_grad_(requires_grad)
+        self._validate_task2_replay_source()
 
     def apply_and_rollback(self) -> CudaAdapterReceipt:
         surface = self._surface
@@ -926,6 +1081,7 @@ class CudaHFVerticalAdapter:
             )
             if applied.update_count_before != 0 or applied.update_count_after != 1:
                 raise CudaAdapterError("adapter did not apply exactly one update")
+            self._validate_task2_replay_source()
             applied_parameter_sha256 = parameter_state_sha256(self._named, layout)
             applied_version_counters = _model_version_counters(surface.model)
             applied_version_sha256 = _version_counters_sha256(applied_version_counters)
@@ -989,6 +1145,11 @@ class CudaHFVerticalAdapter:
         except Exception as error:
             rollback_error: Exception | None = None
             restore_error: Exception | None = None
+            replay_restore_error: Exception | None = None
+            try:
+                self._restore_task2_replay_source()
+            except Exception as replay_exc:
+                replay_restore_error = replay_exc
             storage_metadata_drifted = self._full_model_storage_metadata_drifted()
             if not full_model_restore_attempted:
                 full_model_restore_attempted = True
@@ -1063,6 +1224,12 @@ class CudaHFVerticalAdapter:
                     f"full model rollback failed after {error}: {restore_error}",
                     receipt=receipt,
                 ) from restore_error
+            if replay_restore_error is not None:
+                receipt = failure_receipt("task2_replay_restore", replay_restore_error)
+                raise CudaAdapterRollbackError(
+                    f"Task2 replay rollback failed after {error}: {replay_restore_error}",
+                    receipt=receipt,
+                ) from replay_restore_error
             if rollback_error is not None:
                 receipt = failure_receipt("transaction_reject", rollback_error)
                 raise CudaAdapterRollbackError(

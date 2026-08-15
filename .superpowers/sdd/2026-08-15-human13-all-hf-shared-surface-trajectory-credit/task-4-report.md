@@ -43,15 +43,22 @@ identity, moves only detached witness-solver evidence to the live device, and
 records Source/applied/restored parameter, version-counter, CUDA-RNG, and
 transaction digests.  The one-update probe always rejects/restores the
 transaction; a failed reject emits a typed terminal receipt without retry.
-Full-model frozen parameters, buffers, module modes, registry identity, and
-version counters are included in the source fingerprint and are restored or
-fail closed on drift; storage dtype/device/layout drift emits a typed terminal
-restore receipt rather than claiming an exact success.  Task-2/Task-3 objective binding includes the admitted
-surface, full-model, witness, replay-group/tensor, trajectory/compiler,
-denominator, and coefficient hashes.  Receipts are sealed in-process and a
-consumer must present the exact issued object.  The lower-level device-aware
-projection and apply wrappers live beside the existing CPU owner; the CPU entry
-remains the default and its behavior is regression-tested unchanged.
+Full-model frozen parameters, buffers, module modes, registry identity, version
+counters, and Task-2 model-config identity/backend/cache fields are included
+in the source fingerprint and are restored or fail closed on drift; storage
+dtype/device/layout drift emits a typed terminal restore receipt rather than
+claiming an exact success.  Task-2 replay mapping keys, tensor identity,
+device/layout, graph leaves, and content hashes are snapshotted and
+revalidated around the realized-margin probe; drift is restored when possible
+and never yields a sealed receipt.  Task-2/Task-3 objective binding includes
+the admitted surface, full-model, witness, replay-group/tensor,
+trajectory/compiler, denominator, and coefficient hashes.  Receipts are
+sealed in-process and a consumer must present the exact issued object.  The
+lower-level device-aware projection and apply wrappers live beside the
+existing CPU owner; the CPU entry remains the default and its behavior is
+regression-tested unchanged.  The injected realized-margin probe remains a
+read-only measurement callback, with the replay-evidence guard enforcing that
+precondition for the admitted Task-2 path.
 
 The adapter's `human13_cuda_objective_binding.v1` is intentionally a converted
 consumer-side binding, distinct from Task 3's
@@ -67,9 +74,9 @@ Focused Task-4 tests pass with CPU/value doubles:
 27 passed — tests/research/test_run_human13_all_hf_shared_surface_vertical.py
 ```
 
-The CUDA adapter focused suite passes 16 tests (including one CUDA test on the
+The CUDA adapter focused suite passes 18 tests (including one CUDA test on the
 available injected device and a skipped-device-safe path when CUDA is absent).
-The adapter plus the CPU preservation and vertical owner suites pass 93 tests
+The adapter plus the CPU preservation and vertical owner suites pass 95 tests
 with two expected CUDA-unavailable skips under
 `CUDA_VISIBLE_DEVICES=''`.
 
@@ -126,10 +133,11 @@ CUDA_VISIBLE_DEVICES='' PYTHONDONTWRITEBYTECODE=1 pytest -q \
 Pytest: 328 passed, 2 warnings
 ```
 
-All sets use CPU/value doubles only.  Compileall, Ruff, strict OpenSpec
-validation, Serena diagnostics, and Pyright (`0 errors, 0 warnings, 0
-informations`) are clean.  No model/GPU/network action was used for any
-diagnostic.
+The broad adjacent sets use CPU/value doubles; the adapter's CUDA case uses
+only a tiny injected CUDA surface, not a live HF model.  Compileall, Ruff,
+strict OpenSpec validation, Serena diagnostics, and Pyright (`0 errors, 0
+warnings, 0 informations`) are clean.  No live model, network, checkpoint, or
+output action was used for any diagnostic.
 
 The Task-4 boundary remains explicit: real model assembly, GPU reservation,
 private checkpoint bytes, output-root reservation, and Task-5 live adapters are
