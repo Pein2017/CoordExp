@@ -1,0 +1,51 @@
+schema_version: human13_all_hf_shared_surface_vertical_config.v1
+unit_id: 2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical
+image_id: 1584
+seed_groups:
+  - [35001, 35002, 35003, 35004]
+  - [35005, 35006, 35007, 35008]
+  - [35009, 35010, 35011, 35012]
+  - [35013, 35014, 35015, 35016]
+training:
+  repetition_penalty: 1.0
+  temperature: 0.4
+  top_p: 1.0
+  top_k: null
+  max_new_tokens: 512
+  stop_token: <|im_end|>
+surface:
+  dtype: bfloat16
+  attention_backend: flash_attention_2
+  use_cache: false
+optimizer:
+  name: adamw_torch
+  learning_rate: 3.0e-6
+  betas: [0.9, 0.999]
+  epsilon: 1.0e-8
+  weight_decay: 0.0
+audit:
+  backend: hf
+  dtype: float32
+  attention_backend: sdpa
+  batch_size: 1
+  repetition_penalties: [1.0, 1.10]
+  parser: compact_object_box_closed_only
+  matcher_algorithm: cardinality_first_max_total_iou
+  duplicate_iou_threshold: 0.95
+  owner_iou_threshold: 0.50
+source:
+  checkpoint_path: /data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444
+  base_model_path: /data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent
+  adapter_path: /data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/adapter
+  special_embedding_path: /data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/special_token_embeddings
+  adapter_sha256: 49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da
+  special_embedding_sha256: a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2
+manifest_sha256: a8f88716c1227054ab29dc698f89462c9369c47c8d6415de3783c0937f60a6fb
+run:
+  output_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/one-image
+  collision_policy: fail
+resource:
+  training_gpu: 0
+  audit_gpu: 1
+  retry_policy: none
+  promotion: false
