@@ -14,7 +14,7 @@ Frozen failure-mode matrix (OpenSpec task 6.3 mechanics):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import importlib.util
 import json
@@ -29,6 +29,8 @@ import pytest
 import torch
 
 from scripts.research import collect_human13_rp_crossover as acquisition
+from scripts.research import human13_rp_crossover_production_backend as production_backend
+from scripts.research import launch_human13_k_trajectory_rp_crossover as launcher
 
 
 SCRIPT = (
@@ -186,7 +188,7 @@ class FakeBackend:
         del packed, execution
         self.events.append(f"rp:{self.rp}:hf:lineage")
         return {
-            "model_plan_sha256": _digest(f"model-plan:{self.rp}"),
+            "model_plan_content_sha256": _digest(f"model-plan:{self.rp}"),
             "mixed_precision": "fp32",
             "attn_implementation": "sdpa",
             "batch_size": 1,
@@ -264,6 +266,7 @@ def test_success_runs_exact_rp_order_and_publishes_one_terminal(
         output_root=output_root,
         backend_factory=lambda rp, root: FakeBackend(rp, events),
         frozen_loader=_frozen,
+        execution_authorized=True,
     )
 
     assert terminal["status"] == "passed"
@@ -341,6 +344,7 @@ def test_first_parity_failure_is_durable_and_stops_before_second_rp(
             rp, events, sampled_error=0.5 if rp == 1.0 else 0.0
         ),
         frozen_loader=_frozen,
+        execution_authorized=True,
     )
 
     assert terminal["status"] == "failed"
@@ -386,6 +390,7 @@ def test_infrastructure_failure_holds_without_claiming_negative_parity(
         output_root=output_root,
         backend_factory=lambda rp, root: BrokenExactSurface(rp, events),
         frozen_loader=_frozen,
+        execution_authorized=True,
     )
 
     assert terminal["status"] == "failed"
@@ -409,6 +414,7 @@ def test_frozen_lineage_error_is_durable_before_any_backend_action(
         frozen_loader=lambda rp: SimpleNamespace(
             source_checkpoint_path=f"/missing-lineage/{rp}"
         ),
+        execution_authorized=True,
     )
 
     assert calls == []
@@ -439,10 +445,67 @@ def test_existing_root_fails_before_backend_or_frozen_input_action(
             output_root=output_root,
             backend_factory=lambda rp, root: calls.append((rp, root)),
             frozen_loader=lambda rp: calls.append(rp),
+            execution_authorized=True,
         )
 
     assert calls == []
     assert tuple(output_root.iterdir()) == ()
+
+
+def test_public_runner_requires_authority_before_write_or_live_construction(
+    tmp_path: Path,
+) -> None:
+    subject = _subject()
+    calls: list[object] = []
+    output_root = tmp_path / "v5"
+
+    with pytest.raises(PermissionError, match="execution authority"):
+        subject.run_v5_parity_qualification(
+            output_root=output_root,
+            backend_factory=lambda rp, root: calls.append((rp, root)),
+            frozen_loader=lambda rp: calls.append(rp),
+        )
+
+    assert calls == []
+    assert not output_root.exists()
+
+
+def test_production_lineage_content_binds_the_real_provisional_plan() -> None:
+    subject = _subject()
+    leaf = next(
+        item
+        for item in launcher.load_leaf_configs()
+        if item.training_rp == 1.0 and item.arm_id == "C"
+    )
+    frozen = SimpleNamespace(
+        c_leaf_path=leaf.source_path,
+        qualification_learning_rate_ray=(3.0e-7, 1.0e-6, 3.0e-6, 1.0e-5, 3.0e-5),
+    )
+    plan = production_backend.Human13RPCrossoverProductionBackend._qualification_plan(
+        frozen,
+        learning_rate=3.0e-6,
+    )
+
+    assert plan.learning_rate_resolution == "provisional_qualification"
+    assert plan.global_learning_rate_decision_sha256 is None
+    assert plan.resolved_plan_sha256 is None
+    lineage = subject._provisional_model_plan_lineage(plan)
+    assert lineage == {
+        "model_plan_content_sha256": subject._sha256(plan.to_artifact_dict()),
+        "model_plan": plan.to_artifact_dict(),
+    }
+
+    drifted_plans = (
+        replace(plan, learning_rate_resolution="not_applicable"),
+        replace(plan, global_learning_rate_decision_sha256="a" * 64),
+        replace(plan, resolved_plan_sha256="b" * 64),
+        replace(plan, mixed_precision="bf16"),
+        replace(plan, arm_id="A"),
+        replace(plan, learning_rate=9.0e-6),
+    )
+    for drifted in drifted_plans:
+        with pytest.raises(subject.ParityV5ContractError, match="provisional"):
+            subject._provisional_model_plan_lineage(drifted)
 
 
 def test_execute_requires_the_existing_model_gpu_authority_flag(

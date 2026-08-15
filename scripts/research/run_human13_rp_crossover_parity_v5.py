@@ -418,9 +418,12 @@ def run_v5_parity_qualification(
     output_root: str | Path = V5_OUTPUT_ROOT,
     backend_factory: Callable[[float, Path], ParityBackend] | None = None,
     frozen_loader: Callable[[float], Any] | None = None,
+    execution_authorized: bool = False,
 ) -> dict[str, Any]:
     """Execute the exact two-RP parity-only route and seal one terminal."""
 
+    if execution_authorized is not True:
+        raise PermissionError("v5 execution requires explicit execution authority")
     root = Path(output_root).expanduser().resolve()
     if root.exists() or root.is_symlink():
         raise FileExistsError(f"refusing to reuse v5 output root: {root}")
@@ -530,7 +533,7 @@ class _ProductionParityBackend:
         self._owner.close_sampler(sampler)
 
     def open_packed_surface(self, frozen: Any) -> Any:
-        return self._owner.open_packed_surface(frozen)
+        return self._owner.open_parity_surface(frozen, image_id=IMAGE_ID)
 
     def packed_raw_logits(self, packed: Any, execution: Any) -> Any:
         return self._owner.packed_raw_logits(packed, execution)
@@ -543,15 +546,15 @@ class _ProductionParityBackend:
 
         assembly = getattr(packed, "assembly", None)
         skeletons = getattr(packed, "skeletons", None)
-        if assembly is None or not isinstance(skeletons, Mapping):
+        if (
+            assembly is None
+            or not isinstance(skeletons, Mapping)
+            or tuple(skeletons) != (IMAGE_ID,)
+            or hasattr(skeletons[IMAGE_ID], "owner_row_tokens")
+        ):
             raise ParityV5ContractError("production exact surface lacks assembly")
         model_plan = assembly.plan
-        if (
-            model_plan.mixed_precision != "fp32"
-            or model_plan.attn_implementation != "sdpa"
-            or not model_plan.resolved_plan_sha256
-        ):
-            raise ParityV5ContractError("production model plan is not frozen fp32/SDPA")
+        model_lineage = _provisional_model_plan_lineage(model_plan)
         pack_plan = plan_live_packs(
             execution=execution,
             skeleton=skeletons[IMAGE_ID],
@@ -561,8 +564,7 @@ class _ProductionParityBackend:
             f"{default_exact_history_forward.__name__}"
         )
         return {
-            "model_plan_sha256": model_plan.resolved_plan_sha256,
-            "model_plan": model_plan.to_artifact_dict(),
+            **model_lineage,
             "model_validation": assembly.validation.to_artifact_dict(),
             "mixed_precision": model_plan.mixed_precision,
             "attn_implementation": model_plan.attn_implementation,
@@ -587,6 +589,41 @@ class _ProductionParityBackend:
 
     def resource_snapshot(self) -> Any:
         return self._owner.resource_snapshot()
+
+
+def _provisional_model_plan_lineage(model_plan: Any) -> dict[str, Any]:
+    """Admit and bind the actual pre-selection qualification plan state."""
+
+    from scripts.research.human13_live_model import (
+        Human13LiveModelPlan,
+        RP_CROSSOVER_LEARNING_RATE_RAY,
+    )
+
+    if (
+        type(model_plan) is not Human13LiveModelPlan
+        or model_plan.unit_id != UNIT_ID
+        or getattr(model_plan, "arm_id", None) != "C"
+        or getattr(model_plan, "learning_rate_resolution", None)
+        != "provisional_qualification"
+        or getattr(model_plan, "global_learning_rate_decision_sha256", None)
+        is not None
+        or getattr(model_plan, "resolved_plan_sha256", None) is not None
+        or getattr(model_plan, "mixed_precision", None) != "fp32"
+        or getattr(model_plan, "attn_implementation", None) != "sdpa"
+        or getattr(model_plan, "learning_rate", None)
+        not in RP_CROSSOVER_LEARNING_RATE_RAY
+    ):
+        raise ParityV5ContractError(
+            "production model plan is not the provisional fp32/SDPA C plan"
+        )
+    artifact = model_plan.to_artifact_dict()
+    if not isinstance(artifact, Mapping):
+        raise ParityV5ContractError("provisional model plan is not content-bindable")
+    bound = dict(artifact)
+    return {
+        "model_plan_content_sha256": _sha256(bound),
+        "model_plan": bound,
+    }
 
 
 def _production_backend_factory(
@@ -648,7 +685,7 @@ def main(
         return 0
     if not args.user_model_gpu_authority:
         raise PermissionError("--execute requires --user-model-gpu-authority")
-    terminal = _runner(output_root=_output_root)
+    terminal = _runner(output_root=_output_root, execution_authorized=True)
     print(json.dumps(terminal, sort_keys=True, indent=2))
     return 0 if terminal["status"] == "passed" else 1
 

@@ -723,3 +723,13 @@ per-RP evidence plus one terminal while stopping at the first failure.  CPU
 tests cover lifecycle release, lineage, immutable-root, error-field, and
 terminal semantics.  No model, GPU, vLLM, optimizer, or v5 output-root action
 occurred, so task 6.3 remains unchecked pending the real run.
+
+The post-review CPU correction binds the actual provisional qualification-plan
+payload (where both global-decision and resolved-plan hashes are absent), moves
+the authority check onto the public runner boundary, and replaces the reused
+training assembly with a dedicated inference-only Source loader.  That loader
+uses only fp32/SDPA Qwen loading, warm-start DoRA, the frozen Source embedding
+delta, one image-1584 processor skeleton, and a batch-one replay runtime; it
+constructs no optimizer, scheduler, `TrainRuntime`, full-panel skeleton, or
+owner rows.  Real-default-shape CPU spies close those prohibited call paths.
+No live action occurred and task 6.3 remains unchecked.

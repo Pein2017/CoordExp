@@ -231,6 +231,28 @@ class Human13LiveAssembly:
 
 
 @dataclass(frozen=True)
+class Human13ParityRuntime:
+    """Inference-only runtime surface required by exact-history replay."""
+
+    accelerator: Any
+    world_size: int = 1
+
+
+@dataclass(frozen=True)
+class Human13ParityAssembly:
+    """One fp32/SDPA Source model without any training construction."""
+
+    plan: Human13LiveModelPlan
+    validation: Human13PlanValidationReceipt
+    components: Any
+    accelerator: Any
+    model: Any
+    adapter_result: Any
+    special_token_result: Any
+    runtime: Human13ParityRuntime
+
+
+@dataclass(frozen=True)
 class Human13CheckpointReadback:
     step: int
     checkpoint_dir: Path
@@ -305,6 +327,36 @@ class Human13AssemblyBackend(Protocol):
         accelerator: Any,
         plan: Human13LiveModelPlan,
         pack_count: int,
+    ) -> Any: ...
+
+
+class Human13ParityAssemblyBackend(Protocol):
+    """Only the lower model-loading seams needed by parity replay."""
+
+    def create_accelerator(self, plan: Human13LiveModelPlan) -> Any: ...
+
+    def validate_accelerator(
+        self, accelerator: Any, plan: Human13LiveModelPlan
+    ) -> None: ...
+
+    def load_qwen(self, plan: Human13LiveModelPlan) -> Any: ...
+
+    def warm_start_language_dora(
+        self,
+        model: Any,
+        components: Any,
+        plan: Human13LiveModelPlan,
+        *,
+        repo_root: Path,
+    ) -> Any: ...
+
+    def load_and_freeze_special_token_delta(
+        self,
+        model: Any,
+        components: Any,
+        plan: Human13LiveModelPlan,
+        *,
+        repo_root: Path,
     ) -> Any: ...
 
 
@@ -843,6 +895,72 @@ def assemble_human13_qualification_model(
     )
 
 
+def assemble_human13_parity_model(
+    plan: Human13LiveModelPlan,
+    *,
+    repo_root: str | Path,
+    backend: Human13ParityAssemblyBackend | None = None,
+) -> Human13ParityAssembly:
+    """Load one provisional C Source surface for inference-only parity replay."""
+
+    if (
+        plan.unit_id != RP_CROSSOVER_UNIT_ID
+        or plan.arm_id != "C"
+        or plan.learning_rate_resolution != "provisional_qualification"
+        or plan.global_learning_rate_decision_sha256 is not None
+        or plan.resolved_plan_sha256 is not None
+        or plan.learning_rate not in RP_CROSSOVER_LEARNING_RATE_RAY
+        or plan.mixed_precision != "fp32"
+        or plan.attn_implementation != "sdpa"
+    ):
+        raise Human13LiveModelError(
+            "parity assembly requires one provisional fp32/SDPA sealed C dose"
+        )
+    _require_frozen_plan(plan)
+    root = Path(repo_root).expanduser().resolve()
+    validation = validate_human13_live_model_plan(plan)
+    live_backend = backend or DefaultHuman13AssemblyBackend()
+
+    accelerator = live_backend.create_accelerator(plan)
+    live_backend.validate_accelerator(accelerator, plan)
+    _require_world_size_one_cuda(accelerator)
+    components = live_backend.load_qwen(plan)
+    base_model = getattr(components, "model", None)
+    if base_model is None:
+        raise Human13LiveModelError("parity Qwen assembly did not load a model")
+    _require_loaded_component_identity(components, plan)
+    adapter_result = live_backend.warm_start_language_dora(
+        base_model,
+        components,
+        plan,
+        repo_root=root,
+    )
+    special_result = live_backend.load_and_freeze_special_token_delta(
+        adapter_result.model,
+        components,
+        plan,
+        repo_root=root,
+    )
+    if getattr(special_result.shared_embed_delta, "requires_grad", None) is not False:
+        raise Human13LiveModelError(
+            "loaded Source special-token delta must remain frozen"
+        )
+    model = special_result.model
+    model.requires_grad_(False)
+    model.eval()
+    model = accelerator.prepare_model(model, evaluation_mode=True)
+    return Human13ParityAssembly(
+        plan=plan,
+        validation=validation,
+        components=components,
+        accelerator=accelerator,
+        model=model,
+        adapter_result=adapter_result,
+        special_token_result=special_result,
+        runtime=Human13ParityRuntime(accelerator=accelerator),
+    )
+
+
 def bind_human13_selected_rp_crossover_plan(
     plan: Human13LiveModelPlan, *, decision_sha256: str
 ) -> Human13LiveModelPlan:
@@ -1021,6 +1139,95 @@ def build_human13_processor_skeletons(
             "processor skeletons must cover exactly 13 images and 392 owners"
         )
     return skeletons
+
+
+def build_human13_parity_skeleton(
+    *,
+    image_id: int,
+    components: Any,
+    repo_root: str | Path,
+) -> Any:
+    """Encode only image 1584 for exact-history inference replay."""
+
+    if image_id != 1584:
+        raise Human13LiveModelError("parity replay is reserved for image 1584")
+    root = Path(repo_root).expanduser().resolve()
+    from src.config.inference import load_infer_config
+    from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
+    from src.data import load_raw_examples
+    from src.qwen import encode_rendered_example
+    from src.templates import render_example
+    from scripts.research.collect_human13_discovery import (
+        _prompt_policy_fingerprint,
+    )
+
+    resolved = load_infer_config(root / HUMAN13_SOURCE_INFER_CONFIG)
+    infer_config = resolved.config
+    if (
+        infer_config.backend.type != "hf"
+        or infer_config.model.dtype != "fp32"
+        or infer_config.backend.hf.attn_implementation != "sdpa"
+        or str(Path(infer_config.data.input_jsonl).resolve()) != HUMAN13_PANEL_PATH
+        or str(Path(infer_config.model.base_model).resolve())
+        != SOURCE_BASE_MODEL_PATH
+        or infer_config.adapter is None
+        or str(Path(infer_config.adapter.path).resolve()) != SOURCE_ADAPTER_PATH
+        or infer_config.embedding_delta is None
+        or str(Path(infer_config.embedding_delta.path).resolve())
+        != SOURCE_SPECIAL_EMBEDDING_PATH
+    ):
+        raise Human13LiveModelError("Source parity inference config identity drifted")
+    template = TemplateConfig(
+        object_field_order=infer_config.template.object_field_order,
+        object_ordering=infer_config.template.object_ordering,
+        assistant_format=infer_config.template.assistant_format,
+        prompt=TemplatePromptConfig(
+            system=infer_config.template.prompt.system,
+            user=infer_config.template.prompt.user,
+        ),
+    )
+    if (
+        template.object_field_order,
+        template.object_ordering,
+        template.assistant_format,
+    ) != ("desc_first", "geo_sorted_xy", "object_box_closed"):
+        raise Human13LiveModelError("Source prompt template structure drifted")
+    if _prompt_policy_fingerprint(resolved) != HUMAN13_PROMPT_POLICY_FINGERPRINT:
+        raise Human13LiveModelError("Source prompt-policy fingerprint drifted")
+
+    raw = next(
+        (
+            item
+            for item in load_raw_examples(HUMAN13_PANEL_PATH)
+            if _raw_example_image_id(item) == image_id
+        ),
+        None,
+    )
+    if raw is None:
+        raise Human13LiveModelError("canonical panel lacks image 1584")
+    rendered = render_example(raw, template)
+    encoded = encode_rendered_example(
+        raw,
+        rendered,
+        components=components,
+        processor_config=ProcessorConfig(
+            do_resize=False,
+            max_raw_pixels=1_000_000_000,
+            max_merged_visual_tokens=1_000_000,
+        ),
+        global_max_length=12_000,
+        materialize_image_pixels=True,
+    )
+    starts = tuple(
+        int(span.physical_token_start)
+        for span in getattr(encoded, "supervised_token_spans", ())
+    )
+    if not starts or min(starts) <= 0 or min(starts) >= len(encoded.input_ids):
+        raise Human13LiveModelError(
+            "image 1584 exact-history prompt boundary is absent"
+        )
+    object.__setattr__(encoded, "prompt_token_count", min(starts))
+    return encoded
 
 
 def build_human13_checkpoint_kwargs(
@@ -1553,6 +1760,9 @@ __all__ = [
     "Human13LiveAssembly",
     "Human13LiveModelError",
     "Human13LiveModelPlan",
+    "Human13ParityAssembly",
+    "Human13ParityAssemblyBackend",
+    "Human13ParityRuntime",
     "Human13PlanValidationReceipt",
     "Human13SourceContract",
     "HUMAN13_IMAGE_IDS",
@@ -1574,11 +1784,13 @@ __all__ = [
     "SUCCESSOR_UNIT_ID",
     "ZERO_MODEL_ACTIONS",
     "assemble_human13_live_model",
+    "assemble_human13_parity_model",
     "assemble_human13_qualification_model",
     "bind_human13_selected_rp_crossover_plan",
     "build_human13_checkpoint_kwargs",
     "build_human13_checkpoint_writer",
     "build_human13_live_model_plan",
+    "build_human13_parity_skeleton",
     "build_human13_processor_skeletons",
     "build_human13_update_schedule",
     "readback_human13_checkpoint",

@@ -654,6 +654,50 @@ class Human13RPCrossoverProductionBackend:
 
     # -- packed replay/compiler -----------------------------------------
 
+    def open_parity_surface(
+        self,
+        frozen: Any,
+        *,
+        image_id: int,
+        _assembly_backend: Any | None = None,
+        _skeleton_builder: Any | None = None,
+    ) -> _PackedHandle:
+        """Open the one-image inference-only fp32/SDPA replay surface."""
+
+        from scripts.research.human13_live_model import (
+            assemble_human13_parity_model,
+            build_human13_parity_skeleton,
+        )
+
+        if image_id != 1584:
+            raise ProductionBackendError("parity replay is reserved for image 1584")
+        if self._packed is not None and not self._packed.closed:
+            raise ProductionBackendError("packed Source model is already open")
+        plan = self._qualification_plan(
+            frozen, learning_rate=frozen.default_qualification_learning_rate
+        )
+        assembly = assemble_human13_parity_model(
+            plan,
+            repo_root=REPO_ROOT,
+            backend=_assembly_backend,
+        )
+        builder = _skeleton_builder or build_human13_parity_skeleton
+        skeleton = builder(
+            image_id=image_id,
+            components=assembly.components,
+            repo_root=REPO_ROOT,
+        )
+        if (
+            getattr(skeleton, "prompt_token_count", 0) <= 0
+            or hasattr(skeleton, "owner_row_tokens")
+        ):
+            raise ProductionBackendError(
+                "parity skeleton must expose one prompt without owner rows"
+            )
+        handle = _PackedHandle(assembly, {image_id: skeleton}, None, frozen)
+        self._packed = handle
+        return handle
+
     def open_packed_surface(self, frozen: Any) -> _PackedHandle:
         from scripts.research.build_human13_k_union_manifest import load_manifest
         from scripts.research.human13_live_model import (

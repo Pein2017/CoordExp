@@ -763,6 +763,94 @@ def test_live_assembly_fails_closed_on_world_size_or_surface_drift(
         )
 
 
+def test_parity_skeleton_encodes_only_image_1584_without_owner_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.research import collect_human13_discovery as discovery
+    from src.config import inference
+    from src import data, qwen, templates
+
+    calls: list[object] = []
+    config = SimpleNamespace(
+        backend=SimpleNamespace(
+            type="hf", hf=SimpleNamespace(attn_implementation="sdpa")
+        ),
+        model=SimpleNamespace(
+            dtype="fp32",
+            base_model=live.SOURCE_BASE_MODEL_PATH,
+        ),
+        data=SimpleNamespace(input_jsonl=live.HUMAN13_PANEL_PATH),
+        adapter=SimpleNamespace(path=live.SOURCE_ADAPTER_PATH),
+        embedding_delta=SimpleNamespace(path=live.SOURCE_SPECIAL_EMBEDDING_PATH),
+        template=SimpleNamespace(
+            object_field_order="desc_first",
+            object_ordering="geo_sorted_xy",
+            assistant_format="object_box_closed",
+            prompt=SimpleNamespace(system="system", user="user"),
+        ),
+    )
+    resolved = SimpleNamespace(config=config)
+    raw = SimpleNamespace(metadata={"source": {"image_id": 1584}})
+    encoded = _FakeEncoded(
+        example_id="image-1584",
+        input_ids=(10, 11, 12, 13, 14),
+        supervised_token_spans=(SimpleNamespace(physical_token_start=3),),
+    )
+
+    monkeypatch.setattr(inference, "load_infer_config", lambda path: resolved)
+    monkeypatch.setattr(
+        discovery,
+        "_prompt_policy_fingerprint",
+        lambda value: live.HUMAN13_PROMPT_POLICY_FINGERPRINT,
+    )
+
+    def raw_rows(path):
+        calls.append(("load_rows", str(path)))
+        yield raw
+        raise AssertionError("parity skeleton must stop after image 1584")
+
+    monkeypatch.setattr(data, "load_raw_examples", raw_rows)
+    monkeypatch.setattr(
+        templates,
+        "render_example",
+        lambda item, template: calls.append("render") or object(),
+    )
+
+    components = object()
+
+    def encode(item, rendered, **kwargs):
+        del rendered
+        calls.append(("encode", item.metadata["source"]["image_id"]))
+        assert kwargs["components"] is components
+        assert kwargs["global_max_length"] == 12_000
+        assert kwargs["materialize_image_pixels"] is True
+        return encoded
+
+    monkeypatch.setattr(qwen, "encode_rendered_example", encode)
+    monkeypatch.setattr(
+        live,
+        "_derive_owner_row_tokens",
+        lambda *args: (_ for _ in ()).throw(
+            AssertionError("parity skeleton must not derive owner rows")
+        ),
+    )
+
+    result = live.build_human13_parity_skeleton(
+        image_id=1584,
+        components=components,
+        repo_root=Path.cwd(),
+    )
+
+    assert result is encoded
+    assert result.prompt_token_count == 3
+    assert not hasattr(result, "owner_row_tokens")
+    assert calls == [
+        ("load_rows", live.HUMAN13_PANEL_PATH),
+        "render",
+        ("encode", 1584),
+    ]
+
+
 def test_live_assembly_rejects_trainable_source_delta_or_nonfresh_optimizer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

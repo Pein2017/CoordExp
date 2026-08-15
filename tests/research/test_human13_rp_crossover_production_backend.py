@@ -7,6 +7,7 @@ import weakref
 
 import pytest
 
+from scripts.research import human13_live_model as live_model
 from scripts.research import human13_rp_crossover_production_backend as backend_owner
 from scripts.research import launch_human13_k_trajectory_rp_crossover as launcher
 from scripts.research.collect_human13_rp_crossover import (
@@ -250,6 +251,154 @@ def test_cell_plan_projects_each_matrix_arm_without_changing_the_sealed_ray() ->
     assert plan.arm_id == "A"
     assert plan.learning_rate == 1.0e-6
     assert plan.learning_rate_resolution == "provisional_qualification"
+
+
+def test_parity_surface_uses_only_one_image_inference_assembly(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    leaf = next(
+        item
+        for item in launcher.load_leaf_configs()
+        if item.training_rp == 1.0 and item.arm_id == "C"
+    )
+    frozen = SimpleNamespace(
+        c_leaf_path=leaf.source_path,
+        qualification_learning_rate_ray=(3.0e-7, 1.0e-6, 3.0e-6, 1.0e-5, 3.0e-5),
+        default_qualification_learning_rate=3.0e-6,
+    )
+    calls: list[object] = []
+
+    class Model:
+        def __init__(self) -> None:
+            self.training = True
+            self.requires_grad = True
+
+        def requires_grad_(self, value: bool):
+            calls.append(("requires_grad", value))
+            self.requires_grad = value
+            return self
+
+        def eval(self):
+            calls.append("eval")
+            self.training = False
+            return self
+
+    model = Model()
+
+    class Accelerator:
+        num_processes = 1
+        process_index = 0
+        device = "cuda:0"
+
+        def prepare_model(self, candidate, *, evaluation_mode):
+            calls.append(("prepare_model", evaluation_mode))
+            assert candidate is model
+            return candidate
+
+    accelerator = Accelerator()
+    components = SimpleNamespace(
+        model=object(),
+        base_model_path=live_model.SOURCE_BASE_MODEL_PATH,
+        base_config_sha256=live_model.SOURCE_BASE_CONFIG_SHA256,
+        tokenizer_sha256=live_model.SOURCE_TOKENIZER_SHA256,
+        tokenizer=object(),
+    )
+
+    class InferenceOnlyBackend:
+        def create_accelerator(self, plan):
+            calls.append(("accelerator", plan.mixed_precision))
+            return accelerator
+
+        def validate_accelerator(self, candidate, plan):
+            calls.append(("validate_accelerator", plan.attn_implementation))
+            assert candidate is accelerator
+
+        def load_qwen(self, plan):
+            calls.append(("load_qwen", plan.mixed_precision, plan.attn_implementation))
+            return components
+
+        def warm_start_language_dora(
+            self, base_model, loaded, plan, *, repo_root
+        ):
+            calls.append(("warm_start_dora", plan.adapter_rank, plan.adapter_alpha))
+            assert base_model is components.model
+            assert loaded is components
+            return SimpleNamespace(model=model, receipt=object())
+
+        def load_and_freeze_special_token_delta(
+            self, candidate, loaded, plan, *, repo_root
+        ):
+            calls.append(("load_frozen_delta", plan.freeze_special_token_delta))
+            assert candidate is model
+            assert loaded is components
+            return SimpleNamespace(
+                model=model,
+                shared_embed_delta=SimpleNamespace(requires_grad=False),
+                receipt=object(),
+            )
+
+        def enable_memory_savers(self, model):
+            raise AssertionError("parity must not enable training memory savers")
+
+        def build_optimizer(self, model, adapter_result, plan):
+            raise AssertionError("parity must not construct an optimizer")
+
+        def build_trainable_surface_receipt(self, *args):
+            raise AssertionError("parity must not construct a trainable surface")
+
+        def build_runtime(self, **kwargs):
+            raise AssertionError("parity must not construct TrainRuntime")
+
+    validation = SimpleNamespace(to_artifact_dict=lambda: {"validated": True})
+    monkeypatch.setattr(
+        live_model,
+        "validate_human13_live_model_plan",
+        lambda plan: validation,
+    )
+
+    skeleton = SimpleNamespace(
+        input_ids=(1, 2, 3),
+        prompt_token_count=3,
+        image_encoding=object(),
+    )
+
+    def build_skeleton(*, image_id, components, repo_root):
+        calls.append(("skeleton", image_id))
+        assert image_id == 1584
+        assert components is not None
+        return skeleton
+
+    owner = backend_owner.Human13RPCrossoverProductionBackend(
+        {"cells": ({"output_root": str(tmp_path / "node" / "cell")},)}
+    )
+    handle = owner.open_parity_surface(
+        frozen,
+        image_id=1584,
+        _assembly_backend=InferenceOnlyBackend(),
+        _skeleton_builder=build_skeleton,
+    )
+
+    assert handle.assembly.plan.learning_rate_resolution == "provisional_qualification"
+    assert handle.assembly.plan.mixed_precision == "fp32"
+    assert handle.assembly.plan.attn_implementation == "sdpa"
+    assert handle.assembly.validation is validation
+    assert tuple(handle.skeletons) == (1584,)
+    assert handle.skeletons[1584] is skeleton
+    assert not hasattr(skeleton, "owner_row_tokens")
+    assert not hasattr(handle.assembly, "optimizer")
+    assert not hasattr(handle.assembly, "scheduler")
+    assert calls == [
+        ("accelerator", "fp32"),
+        ("validate_accelerator", "sdpa"),
+        ("load_qwen", "fp32", "sdpa"),
+        ("warm_start_dora", 16, 32),
+        ("load_frozen_delta", True),
+        ("requires_grad", False),
+        "eval",
+        ("prepare_model", True),
+        ("skeleton", 1584),
+    ]
 
 
 def test_margin_surface_scorer_failure_releases_before_ownership_transfer(
