@@ -418,3 +418,94 @@ No implementation stop concern within Task 1.  This is source/value-level
 handoff evidence only; it does not claim that later-wave Torch owners have been
 executed.  Task 1.5 remains the independent review gate and is deliberately
 unchecked.
+
+## Fix round 5: dependency-isolated artifact exports
+
+### Status and scope
+
+T1-N4 repair bundle.  Task 1.5 remains unchecked.  Owned paths are the
+artifact-package export surface, the focused Task 1 tests, and this report;
+the scientific contract module did not require a change.  The unrelated
+untracked memory note remains outside the bundle.
+
+### RED evidence
+
+The fresh-process import-isolation test was added before production code and
+run alone with bytecode and pytest-cache writes disabled:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 conda run -n ms python -m pytest -q \
+  -p no:cacheprovider tests/research/test_human13_hf_shared_surface.py \
+  -k shared_surface_import_does_not_load_model_runtime_packages
+Pytest: 0 passed, 1 failed
+RuntimeError: forbidden import: transformers
+```
+
+The child process began with an empty intersection between `sys.modules` and
+`torch`, `transformers`, `accelerate`, and `vllm`, installed a meta-path
+blocker for all four package roots, and failed on the exact eager chain
+`src.artifacts.__init__ -> checkpoints -> qwen -> transformers`.
+
+### Corrected import contract
+
+- `src.artifacts.__all__` is unchanged.  Each public name now maps to its
+  canonical owning module and is imported only through package `__getattr__`
+  when a caller requests that name.  Resolved values are cached on the package,
+  preserving eager-package attribute identity after first access.
+- Importing `src.artifacts.json_values` therefore executes only the lightweight
+  package initializer and the canonical JSON helper module.  The Task 1 module
+  still imports the exact canonical `json_sha256`; no hash logic or scientific
+  value behavior was duplicated or changed.
+- Unknown names retain normal `AttributeError` behavior, `__dir__` advertises
+  the stable public surface, direct submodule imports remain available, and
+  existing `from src.artifacts import CheckpointWriter, RunWriter, ...`
+  consumers continue to resolve their original owner objects on demand.
+
+### GREEN and compatibility evidence
+
+The isolated regression then passed and printed an empty forbidden-module
+intersection.  Focused, adjacent artifact, package-root, and circular-import
+consumers were exercised without model, GPU, or network execution:
+
+```text
+PYTHONDONTWRITEBYTECODE=1 conda run -n ms python -m pytest -q \
+  -p no:cacheprovider tests/research/test_human13_hf_shared_surface.py \
+  -k shared_surface_import_does_not_load_model_runtime_packages
+Pytest: 1 passed
+
+PYTHONDONTWRITEBYTECODE=1 conda run -n ms python -m pytest -q \
+  -p no:cacheprovider tests/research/test_human13_hf_shared_surface.py \
+  tests/artifacts/test_research_probe_admission.py \
+  tests/artifacts/test_evidence_journal.py \
+  tests/artifacts/test_run_artifacts.py
+Pytest: 130 passed
+
+PYTHONDONTWRITEBYTECODE=1 conda run -n ms python -m pytest -q \
+  -p no:cacheprovider tests/artifacts/test_checkpoint_writer.py \
+  tests/training/test_pipeline_assembly.py
+Pytest: 30 passed
+
+conda run -n ms ruff check src/artifacts/__init__.py \
+  scripts/research/human13_hf_shared_surface.py \
+  tests/research/test_human13_hf_shared_surface.py
+exit 0; no findings
+
+conda run -n ms python -m compileall -q src/artifacts/__init__.py \
+  scripts/research/human13_hf_shared_surface.py \
+  tests/research/test_human13_hf_shared_surface.py
+exit 0; no output
+
+openspec validate \
+  add-human13-all-hf-shared-surface-trajectory-credit-vertical --strict
+Change 'add-human13-all-hf-shared-surface-trajectory-credit-vertical' is valid
+
+git diff --check
+exit 0; no output
+```
+
+### Remaining concern
+
+No implementation stop concern for T1-N4.  Attribute access to an intentionally
+heavy export such as `CheckpointWriter` still imports its canonical runtime
+owner by design; value-only consumers no longer pay that dependency cost.
+Task 1.5 remains the independent review gate and is deliberately unchecked.

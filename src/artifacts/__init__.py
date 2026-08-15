@@ -1,32 +1,6 @@
-"""Canonical training run and checkpoint writers."""
+"""Canonical artifact exports with dependency-isolated lazy loading."""
 
-from src.artifacts.checkpoints import CheckpointWriteResult, CheckpointWriter
-from src.artifacts.evidence_journal import (
-    ExecutionEvidenceJournal,
-    JournalAttemptView,
-    JournalInspection,
-    JournalRecordView,
-    JournalSnapshot,
-)
-from src.artifacts.json_values import (
-    canonical_json_bytes,
-    json_sha256,
-    load_canonical_json,
-    validate_json_value,
-)
-from src.artifacts.research_probe_admission import (
-    AbsoluteExecutableBinding,
-    DirectoryTreeBinding,
-    RegularFileBinding,
-    ResearchProbeAdmission,
-    ResearchProbeAdmissionError,
-    ReservedOutputPath,
-    ResolvedDataFileBinding,
-    StageEvidence,
-    StrictValueBinding,
-    capture_binding_manifest,
-)
-from src.artifacts.run_writer import RunWriter
+from importlib import import_module
 
 __all__ = [
     "CheckpointWriteResult",
@@ -52,3 +26,42 @@ __all__ = [
     "load_canonical_json",
     "validate_json_value",
 ]
+
+
+_EXPORT_MODULES = {
+    "CheckpointWriteResult": "src.artifacts.checkpoints",
+    "CheckpointWriter": "src.artifacts.checkpoints",
+    "AbsoluteExecutableBinding": "src.artifacts.research_probe_admission",
+    "DirectoryTreeBinding": "src.artifacts.research_probe_admission",
+    "ExecutionEvidenceJournal": "src.artifacts.evidence_journal",
+    "JournalAttemptView": "src.artifacts.evidence_journal",
+    "JournalInspection": "src.artifacts.evidence_journal",
+    "JournalRecordView": "src.artifacts.evidence_journal",
+    "JournalSnapshot": "src.artifacts.evidence_journal",
+    "RegularFileBinding": "src.artifacts.research_probe_admission",
+    "ResearchProbeAdmission": "src.artifacts.research_probe_admission",
+    "ResearchProbeAdmissionError": "src.artifacts.research_probe_admission",
+    "ReservedOutputPath": "src.artifacts.research_probe_admission",
+    "ResolvedDataFileBinding": "src.artifacts.research_probe_admission",
+    "RunWriter": "src.artifacts.run_writer",
+    "StageEvidence": "src.artifacts.research_probe_admission",
+    "StrictValueBinding": "src.artifacts.research_probe_admission",
+    "canonical_json_bytes": "src.artifacts.json_values",
+    "capture_binding_manifest": "src.artifacts.research_probe_admission",
+    "json_sha256": "src.artifacts.json_values",
+    "load_canonical_json": "src.artifacts.json_values",
+    "validate_json_value": "src.artifacts.json_values",
+}
+
+
+def __getattr__(name: str) -> object:
+    module_name = _EXPORT_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})

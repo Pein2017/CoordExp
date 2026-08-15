@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 from hashlib import sha256
 from math import inf
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
 from typing import Callable
 
 import pytest
@@ -37,6 +41,44 @@ from scripts.research.human13_hf_shared_surface import (
     repetition_penalty_then_temperature,
 )
 from src.artifacts.json_values import json_sha256
+
+
+def test_shared_surface_import_does_not_load_model_runtime_packages() -> None:
+    """Catches the value-only module crossing into the model/runtime import graph."""
+    probe = textwrap.dedent(
+        """
+        import importlib.abc
+        import json
+        import sys
+
+        forbidden = {"torch", "transformers", "accelerate", "vllm"}
+        preloaded = forbidden.intersection(sys.modules)
+        if preloaded:
+            raise AssertionError(f"forbidden modules preloaded: {sorted(preloaded)}")
+
+        class ForbiddenImportBlocker(importlib.abc.MetaPathFinder):
+            def find_spec(self, fullname, path, target=None):
+                root_name = fullname.partition(".")[0]
+                if root_name in forbidden:
+                    raise RuntimeError(f"forbidden import: {fullname}")
+                return None
+
+        sys.meta_path.insert(0, ForbiddenImportBlocker())
+        import scripts.research.human13_hf_shared_surface  # noqa: F401
+
+        print(json.dumps(sorted(forbidden.intersection(sys.modules))))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(__file__).resolve().parents[2],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "[]"
 
 
 def _digest(label: str) -> str:
