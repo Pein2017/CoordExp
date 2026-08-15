@@ -53,6 +53,12 @@ _CAP_STOP_REASONS = frozenset(
 )
 _NATURAL_STOP_REASONS = frozenset({"eos", "im_end", "natural_stop"})
 _SUPPORTED_STOP_REASONS = _CAP_STOP_REASONS | _NATURAL_STOP_REASONS
+_CANONICAL_AUDIT_PARSER = "compact_object_box_closed_only"
+_CANONICAL_PARSER_STATUSES = frozenset(
+    {"accepted", "accepted_with_drops", "empty", "all_spans_dropped"}
+)
+_SOURCE_AUDIT_ARM_ID = "frozen_source"
+_PROPOSAL_AUDIT_ARM_ID = "private_proposal"
 _DIGEST_RE = frozenset("0123456789abcdef")
 _TERMINAL_SEALS: dict[int, tuple[ReferenceType[Any], str]] = {}
 _TERMINAL_ISSUER_TOKEN = object()
@@ -1153,6 +1159,8 @@ def _validate_audit_provenance(
     manifest_binding: Any | None = None,
     expected_checkpoint_sha256: str | None = None,
     expected_checkpoint_path: str | None = None,
+    expected_parser: str = _CANONICAL_AUDIT_PARSER,
+    expected_arm_id: str | None = None,
     expected_source_identity: Mapping[str, Any] | None = None,
 ) -> None:
     image_id = getattr(image, "image_id", None)
@@ -1163,8 +1171,65 @@ def _validate_audit_provenance(
         raise ValueError("audit provenance must be an object")
     if provenance.get("image_id") != image_id:
         raise ValueError("audit provenance.image_id does not match the manifest image")
-    if "arm_id" in output and output.get("arm_id") != provenance.get("arm_id"):
+    parser = output.get("parser")
+    provenance_parser = provenance.get("parser")
+    if not isinstance(parser, str) or not parser:
+        raise ValueError("audit parser is required")
+    if not isinstance(provenance_parser, str) or not provenance_parser:
+        raise ValueError("audit provenance.parser is required")
+    if parser != provenance_parser:
+        raise ValueError("audit parser differs between output and provenance")
+    if parser != expected_parser:
+        raise ValueError("audit parser differs from the canonical parser")
+    parser_status = output.get("parser_status")
+    if parser_status not in _CANONICAL_PARSER_STATUSES:
+        raise ValueError("audit parser_status is outside the canonical parser")
+    arm_id = output.get("arm_id")
+    provenance_arm_id = provenance.get("arm_id")
+    if not isinstance(arm_id, str) or not arm_id:
+        raise ValueError("audit arm_id is required")
+    if not isinstance(provenance_arm_id, str) or not provenance_arm_id:
+        raise ValueError("audit provenance.arm_id is required")
+    if arm_id != provenance_arm_id:
         raise ValueError("audit arm_id differs between output and provenance")
+    if expected_arm_id is not None and arm_id != expected_arm_id:
+        raise ValueError("audit arm_id differs from the expected Source/proposal arm")
+    milestone = output.get("milestone")
+    provenance_milestone = provenance.get("milestone")
+    if (
+        isinstance(milestone, bool)
+        or not isinstance(milestone, int)
+        or milestone < 0
+        or isinstance(provenance_milestone, bool)
+        or not isinstance(provenance_milestone, int)
+        or provenance_milestone < 0
+    ):
+        raise ValueError("audit milestone must be a nonnegative integer")
+    if milestone != provenance_milestone:
+        raise ValueError("audit milestone differs between output and provenance")
+    trajectory_id = output.get("trajectory_id")
+    provenance_trajectory_id = provenance.get("trajectory_id")
+    if not isinstance(trajectory_id, str) or not trajectory_id:
+        raise ValueError("audit trajectory_id is required")
+    if not isinstance(provenance_trajectory_id, str) or not provenance_trajectory_id:
+        raise ValueError("audit provenance.trajectory_id is required")
+    if trajectory_id != provenance_trajectory_id:
+        raise ValueError("audit trajectory_id differs between output and provenance")
+    source_trajectory_id = provenance.get("source_trajectory_id")
+    if not isinstance(source_trajectory_id, str) or not source_trajectory_id:
+        raise ValueError("audit provenance.source_trajectory_id is required")
+    trajectories = getattr(image, "trajectories", ())
+    if isinstance(trajectories, (list, tuple)) and trajectories:
+        expected_source_trajectory_id = getattr(trajectories[0], "trajectory_id", None)
+        if (
+            isinstance(expected_source_trajectory_id, str)
+            and source_trajectory_id != expected_source_trajectory_id
+        ):
+            raise ValueError("audit source trajectory differs from the manifest Source")
+    for field in ("run_id", "run_root"):
+        value = provenance.get(field)
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"audit provenance.{field} is required")
     metadata_fields = (
         "decode_mode",
         "backend",
@@ -1185,15 +1250,6 @@ def _validate_audit_provenance(
         "do_sample": False,
     }:
         raise ValueError("audit surface must be original-prompt clean HF greedy batch-one")
-    arm_id = provenance.get("arm_id")
-    if not isinstance(arm_id, str) or not arm_id:
-        raise ValueError("audit provenance.arm_id is required")
-    if "milestone" in provenance:
-        milestone = provenance["milestone"]
-        if isinstance(milestone, bool) or not isinstance(milestone, int) or milestone < 0:
-            raise ValueError("audit provenance.milestone must be a nonnegative integer")
-        if "milestone" in output and output.get("milestone") != milestone:
-            raise ValueError("audit milestone differs between output and provenance")
     if "repetition_penalty" in provenance:
         if _rp(
             provenance["repetition_penalty"], field="audit provenance.repetition_penalty"
@@ -1241,6 +1297,8 @@ def _validate_audit_provenance(
         expected_source_identity
     ):
         raise ValueError("audit source checkpoint identity differs from the sealed source")
+    if "checkpoint_path" not in provenance:
+        raise ValueError("audit provenance.checkpoint_path is required")
     checkpoint_paths = [
         container["checkpoint_path"]
         for container in (output, provenance)
@@ -1337,6 +1395,8 @@ def _project_audit(
     manifest_binding: Any | None = None,
     expected_checkpoint_sha256: str | None = None,
     expected_checkpoint_path: str | None = None,
+    expected_parser: str = _CANONICAL_AUDIT_PARSER,
+    expected_arm_id: str | None = None,
     expected_source_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     from scripts.research.analyze_human13_k_union import _match_prefix, _ordered_predictions
@@ -1348,6 +1408,8 @@ def _project_audit(
         manifest_binding=manifest_binding,
         expected_checkpoint_sha256=expected_checkpoint_sha256,
         expected_checkpoint_path=expected_checkpoint_path,
+        expected_parser=expected_parser,
+        expected_arm_id=expected_arm_id,
         expected_source_identity=expected_source_identity,
     )
     if expected_repetition_penalty is not None:
@@ -1402,6 +1464,9 @@ def analyze_audit_pair(
     expected_proposal_checkpoint_sha256: str | None = None,
     expected_source_checkpoint_path: str | None = None,
     expected_proposal_checkpoint_path: str | None = None,
+    expected_parser: str = _CANONICAL_AUDIT_PARSER,
+    expected_source_arm_id: str = _SOURCE_AUDIT_ARM_ID,
+    expected_proposal_arm_id: str = _PROPOSAL_AUDIT_ARM_ID,
     expected_source_identity: Mapping[str, Any] | None = None,
 ) -> AuditPairAnalysis:
     """Project both clean-greedy surfaces through the canonical parser/matcher."""
@@ -1414,10 +1479,16 @@ def analyze_audit_pair(
     if (
         expected_source_checkpoint_sha256 is None
         or expected_proposal_checkpoint_sha256 is None
+        or expected_source_checkpoint_path is None
+        or expected_proposal_checkpoint_path is None
     ):
         raise ValueError(
-            "audit analyzer requires sealed Source and proposal checkpoint identities"
+            "audit analyzer requires sealed Source/proposal checkpoint identities and paths"
         )
+    if expected_source_checkpoint_sha256 == expected_proposal_checkpoint_sha256:
+        raise ValueError("proposal checkpoint payload must differ from Source")
+    if expected_source_checkpoint_path == expected_proposal_checkpoint_path:
+        raise ValueError("proposal checkpoint path must differ from Source")
     _digest(
         expected_source_checkpoint_sha256,
         field="expected_source_checkpoint_sha256",
@@ -1482,6 +1553,8 @@ def analyze_audit_pair(
             manifest_binding=manifest_binding,
             expected_checkpoint_sha256=expected_source_checkpoint_sha256,
             expected_checkpoint_path=expected_source_checkpoint_path,
+            expected_parser=expected_parser,
+            expected_arm_id=expected_source_arm_id,
             expected_source_identity=expected_source_identity,
         )
         proposal = _project_audit(
@@ -1492,6 +1565,8 @@ def analyze_audit_pair(
             manifest_binding=manifest_binding,
             expected_checkpoint_sha256=expected_proposal_checkpoint_sha256,
             expected_checkpoint_path=expected_proposal_checkpoint_path,
+            expected_parser=expected_parser,
+            expected_arm_id=expected_proposal_arm_id,
             expected_source_identity=expected_source_identity,
         )
         source_ids = set(source["owner_ids"])
@@ -1937,6 +2012,8 @@ def run_one_image(
                 manifest_binding=manifest_binding,
                 expected_checkpoint_sha256=source_checkpoint_sha256,
                 expected_checkpoint_path=source_assembly.checkpoint_path,
+                expected_parser=config.parser,
+                expected_arm_id=_SOURCE_AUDIT_ARM_ID,
                 expected_source_identity=source_identity,
             )
             phases.append(f"source_audit_rp_{rp:g}")
@@ -1956,6 +2033,12 @@ def run_one_image(
         proposal_checkpoint_sha256 = _checkpoint_payload_digest(
             private_proposal, field="private proposal checkpoint_sha256"
         )
+        if proposal_checkpoint_sha256 == source_checkpoint_sha256:
+            raise ValueError(
+                "private proposal checkpoint payload must differ from Source"
+            )
+        if proposal_checkpoint_path == source_assembly.checkpoint_path:
+            raise ValueError("private proposal checkpoint path must differ from Source")
         phases.append("private_proposal_written")
         for rp in config.audit_repetition_penalties:
             proposal_outputs[rp] = services.proposal_audit(audit_session, private_proposal, rp)
@@ -1980,6 +2063,9 @@ def run_one_image(
             expected_proposal_checkpoint_sha256=proposal_checkpoint_sha256,
             expected_source_checkpoint_path=source_assembly.checkpoint_path,
             expected_proposal_checkpoint_path=proposal_checkpoint_path,
+            expected_parser=config.parser,
+            expected_source_arm_id=_SOURCE_AUDIT_ARM_ID,
+            expected_proposal_arm_id=_PROPOSAL_AUDIT_ARM_ID,
             expected_source_identity=source_identity,
         )
         gate = evaluate_continuation_gate(audit_pair)

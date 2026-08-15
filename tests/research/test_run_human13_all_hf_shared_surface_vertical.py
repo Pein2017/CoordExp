@@ -68,6 +68,12 @@ def _row(
     image_id: int = 1584,
     provenance: bool = True,
     repetition_penalty: float = 1.0,
+    arm_id: str = "frozen_source",
+    checkpoint_payload_sha256: str = "d" * 64,
+    checkpoint_path: str = "/source/checkpoint",
+    trajectory_id: str = "source-trajectory-1584",
+    run_id: str = "source-run",
+    run_root: str = "/source/run",
 ) -> dict[str, Any]:
     bbox = [0.0, 0.0, 10.0, 10.0] if owner == "g-1" else [20.0, 20.0, 30.0, 30.0]
     category = "person"
@@ -84,6 +90,11 @@ def _row(
         "stop_reason": stop,
         "repetition_penalty": repetition_penalty,
         "malformed_row_count": malformed,
+        "arm_id": arm_id,
+        "milestone": 0,
+        "trajectory_id": trajectory_id,
+        "parser": "compact_object_box_closed_only",
+        "parser_status": "accepted",
     }
     if provenance:
         row["provenance"] = {
@@ -99,8 +110,15 @@ def _row(
             "backend": "hf",
             "physical_batch_size": 1,
             "do_sample": False,
-            "arm_id": "source",
-            "checkpoint_payload_sha256": "d" * 64,
+            "arm_id": arm_id,
+            "milestone": 0,
+            "trajectory_id": trajectory_id,
+            "source_trajectory_id": "source-trajectory-1584",
+            "parser": "compact_object_box_closed_only",
+            "run_id": run_id,
+            "run_root": run_root,
+            "checkpoint_path": checkpoint_path,
+            "checkpoint_payload_sha256": checkpoint_payload_sha256,
             "source_checkpoint_identity": {
                 "checkpoint_path": "/source/checkpoint",
                 "base_model_path": "/source/base-model",
@@ -109,6 +127,31 @@ def _row(
             },
         }
     return row
+
+
+def _proposal_row(
+    *,
+    owner: str = "g-1",
+    malformed: int = 0,
+    stop: str = "im_end",
+    image_id: int = 1584,
+    provenance: bool = True,
+    repetition_penalty: float = 1.0,
+) -> dict[str, Any]:
+    return _row(
+        owner=owner,
+        malformed=malformed,
+        stop=stop,
+        image_id=image_id,
+        provenance=provenance,
+        repetition_penalty=repetition_penalty,
+        arm_id="private_proposal",
+        checkpoint_payload_sha256="e" * 64,
+        checkpoint_path="/private/proposal",
+        trajectory_id="proposal-trajectory-1584",
+        run_id="proposal-run",
+        run_root="/private/run",
+    )
 
 
 def _config(tmp_path: Path) -> EntryConfig:
@@ -142,11 +185,13 @@ def _resources() -> tuple[GPUResource, GPUResource]:
 
 
 def _audit_identity_kwargs(
-    *, source: str = "d" * 64, proposal: str = "d" * 64
+    *, source: str = "d" * 64, proposal: str = "e" * 64
 ) -> dict[str, Any]:
     return {
         "expected_source_checkpoint_sha256": source,
         "expected_proposal_checkpoint_sha256": proposal,
+        "expected_source_checkpoint_path": "/source/checkpoint",
+        "expected_proposal_checkpoint_path": "/private/proposal",
         "expected_source_identity": {
             "checkpoint_path": "/source/checkpoint",
             "base_model_path": "/source/base-model",
@@ -223,14 +268,14 @@ class _FakeServices:
         self.events.append("write_private")
         self.private = SimpleNamespace(
             checkpoint_path="/private/proposal",
-            checkpoint_payload_sha256="d" * 64,
+            checkpoint_payload_sha256="e" * 64,
         )
         return self.private
 
     def proposal_audit(self, audit_session: object, private: object, repetition_penalty: float) -> dict[str, Any]:
         del audit_session, private
         self.events.append(f"proposal_audit:{repetition_penalty}")
-        return _row(owner="g-1", repetition_penalty=repetition_penalty)
+        return _proposal_row(owner="g-1", repetition_penalty=repetition_penalty)
 
     def rollback_and_reproduce_source(self, training_session: object, proposal: object) -> bool:
         del training_session, proposal
@@ -348,10 +393,7 @@ def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(tmp_pa
         def proposal_audit(self, audit_session: object, private: object, repetition_penalty: float) -> dict[str, Any]:
             del audit_session, private
             self.events.append(f"proposal_audit:{repetition_penalty}")
-            row = _row(owner="g-1", repetition_penalty=repetition_penalty)
-            row["provenance"] = dict(row["provenance"])
-            row["provenance"]["checkpoint_payload_sha256"] = "e" * 64
-            return row
+            return _proposal_row(owner="g-1", repetition_penalty=repetition_penalty)
 
     result = run_one_image(
         config,
@@ -362,6 +404,34 @@ def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(tmp_pa
         manifest_image=_image(),
     )
     assert result.terminal_status == "completed_null_or_unsafe"
+
+
+def test_private_proposal_identity_must_differ_from_source_before_audit(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    class SameAsSource(_FakeServices):
+        def write_private_proposal(
+            self, training_session: object, proposal: object, output_root: Path
+        ) -> object:
+            del training_session, proposal, output_root
+            self.events.append("write_private")
+            self.private = SimpleNamespace(
+                checkpoint_path="/source/checkpoint",
+                checkpoint_payload_sha256="d" * 64,
+            )
+            return self.private
+
+    services = SameAsSource()
+    result = run_one_image(
+        config,
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=Path(config.output_root),
+        services=services,
+        manifest_image=_image(),
+    )
+    assert result.terminal_status == "update_failure"
+    assert not any(event.startswith("proposal_audit:") for event in services.events)
 
 
 def test_prebuilt_resource_receipt_cannot_rebind_training_or_audit_roles(tmp_path: Path) -> None:
@@ -541,7 +611,7 @@ def test_private_bytes_failure_cleans_partial_private_proposal(tmp_path: Path) -
 def test_audit_arithmetic_reuses_canonical_matcher_and_parser() -> None:
     image = _image()
     source = {1.0: _row(), 1.1: _row(repetition_penalty=1.1)}
-    proposal = {1.0: _row(), 1.1: _row(repetition_penalty=1.1)}
+    proposal = {1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)}
     result = analyze_audit_pair(
         image=image,
         source_outputs=source,
@@ -565,7 +635,7 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: _row(image_id=2299), 1.1: _row(image_id=2299, repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -573,7 +643,7 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: _row(provenance=False), 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -584,7 +654,7 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: bad_nested_identity, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -592,7 +662,7 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: _row(stop="unknown"), 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -603,27 +673,23 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: bad_surface, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
-    bad_identity = _row()
+    bad_identity = _proposal_row()
     bad_identity["provenance"] = dict(bad_identity["provenance"])
-    bad_identity["provenance"]["checkpoint_payload_sha256"] = "e" * 64
+    bad_identity["provenance"]["checkpoint_payload_sha256"] = "d" * 64
     with pytest.raises(ValueError, match="identity"):
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: bad_identity, 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: bad_identity, 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
-    distinct_proposal = _row()
-    distinct_proposal["provenance"] = dict(distinct_proposal["provenance"])
-    distinct_proposal["provenance"]["checkpoint_payload_sha256"] = "e" * 64
-    distinct_proposal_rp = _row(repetition_penalty=1.1)
-    distinct_proposal_rp["provenance"] = dict(distinct_proposal_rp["provenance"])
-    distinct_proposal_rp["provenance"]["checkpoint_payload_sha256"] = "e" * 64
+    distinct_proposal = _proposal_row()
+    distinct_proposal_rp = _proposal_row(repetition_penalty=1.1)
     accepted_distinct = analyze_audit_pair(
         image=image,
         source_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
@@ -639,7 +705,7 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
     projected = analyze_audit_pair(
         image=image,
         source_outputs={1.0: malformed_row, 1.1: _row(repetition_penalty=1.1)},
-        proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+        proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
         acquired_h_owner_ids=("h-1",),
         **_audit_identity_kwargs(),
     )
@@ -659,7 +725,7 @@ def test_audit_rejects_conflicting_nested_surface_and_unbound_checkpoint_path() 
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: conflicting_surface, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -671,7 +737,7 @@ def test_audit_rejects_conflicting_nested_surface_and_unbound_checkpoint_path() 
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: conflicting_payload, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+        proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -683,7 +749,38 @@ def test_audit_rejects_conflicting_nested_surface_and_unbound_checkpoint_path() 
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: forged_checkpoint_path, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            acquired_h_owner_ids=("h-1",),
+            **_audit_identity_kwargs(),
+        )
+
+    missing_checkpoint_path = _proposal_row()
+    missing_checkpoint_path["provenance"] = dict(missing_checkpoint_path["provenance"])
+    missing_checkpoint_path["provenance"].pop("checkpoint_path")
+    with pytest.raises(ValueError, match="checkpoint_path"):
+        analyze_audit_pair(
+            image=image,
+            source_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={
+                1.0: missing_checkpoint_path,
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
+            acquired_h_owner_ids=("h-1",),
+            **_audit_identity_kwargs(),
+        )
+
+
+def test_audit_requires_canonical_parser_and_lineage_fields() -> None:
+    image = _image()
+    missing_parser = _row()
+    missing_parser.pop("parser")
+    missing_parser["provenance"] = dict(missing_parser["provenance"])
+    missing_parser["provenance"].pop("parser")
+    with pytest.raises(ValueError, match="parser"):
+        analyze_audit_pair(
+            image=image,
+            source_outputs={1.0: missing_parser, 1.1: _row(repetition_penalty=1.1)},
+            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
