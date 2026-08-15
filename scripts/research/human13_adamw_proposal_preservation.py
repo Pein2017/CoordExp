@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextvars import ContextVar
 import ctypes
 from dataclasses import dataclass, field as dataclass_field
 import errno
@@ -87,6 +88,9 @@ _RADIUS_RELATIVE = 1e-9
 _APPLIED_RELATIVE = 1e-6
 _CANONICAL_RELATIVE = 1e-9
 _ACCUMULATION_GUARD = 8.0
+_APPLY_TARGET_DEVICE: ContextVar[torch.device | None] = ContextVar(
+    "human13_apply_target_device", default=None
+)
 
 
 class ProposalPreservationError(ValueError):
@@ -1920,10 +1924,36 @@ def project_adamw_proposal(
 ) -> ProjectionReceipt:
     """Project one exact AdamW proposal onto the frozen witness constraints."""
 
-    return _project_admitted(_admit_evidence(proposal, witness_bank))
+    return _project_admitted(
+        _admit_evidence(proposal, witness_bank), device=torch.device("cpu")
+    )
 
 
-def _project_admitted(evidence: PreservationEvidence) -> ProjectionReceipt:
+def project_adamw_proposal_on_device(
+    *,
+    proposal: ExactAdamWProposal,
+    witness_bank: FrozenWitnessBank,
+    device: torch.device | str,
+) -> ProjectionReceipt:
+    """Project an admitted proposal while keeping solver tensors on ``device``.
+
+    The default scientific projection remains CPU-only and unchanged.  This
+    explicit adapter seam is for a live CUDA optimizer surface: frozen witness
+    Jacobians are detached CPU evidence, moved into the requested working
+    device only for the bounded solve, and never fed back into the Source
+    graph.
+    """
+
+    return _project_admitted(
+        _admit_evidence(proposal, witness_bank), device=torch.device(device)
+    )
+
+
+def _project_admitted(
+    evidence: PreservationEvidence,
+    *,
+    device: torch.device | str = torch.device("cpu"),
+) -> ProjectionReceipt:
     """Derive the one canonical projection of an admitted proposal/witness pair.
 
     Both the public projection entry and the apply path re-enter this owner, so
@@ -1933,12 +1963,13 @@ def _project_admitted(evidence: PreservationEvidence) -> ProjectionReceipt:
 
     proposal = evidence.proposal
     witness_bank = evidence.witness_bank
-    delta0 = proposal.flat_delta()
-    metric = proposal.flat_metric_denominator()
+    target_device = torch.device(device)
+    delta0 = proposal.flat_delta().to(device=target_device)
+    metric = proposal.flat_metric_denominator().to(device=target_device)
 
     def row_factory() -> Iterator[tuple[int, torch.Tensor]]:
         for index, _, jacobian in witness_bank.stream_constraints():
-            yield index, jacobian
+            yield index, jacobian.to(device=target_device)
 
     iteration_bound = 4 * len(witness_bank.constraints) + 16
     result = _solve_metric_projection(
@@ -1952,8 +1983,9 @@ def _project_admitted(evidence: PreservationEvidence) -> ProjectionReceipt:
     predicted: list[WitnessChange] = []
     unprojected: list[WitnessChange] = []
     for _, witness, jacobian in witness_bank.stream_constraints():
-        predicted.append(_change(witness, float(jacobian @ result.delta)))
-        unprojected.append(_change(witness, float(jacobian @ delta0)))
+        working_jacobian = jacobian.to(device=target_device)
+        predicted.append(_change(witness, float(working_jacobian @ result.delta)))
+        unprojected.append(_change(witness, float(working_jacobian @ delta0)))
     minimum_predicted = min(item.change for item in predicted)
     if minimum_predicted < -WITNESS_FIRST_ORDER_TOLERANCE * (1.0 + _APPLIED_RELATIVE):
         raise ProposalProjectionError(
@@ -2264,9 +2296,15 @@ def apply_projected_delta(
         raise ProjectedApplyError(
             "a real torch optimizer is required", disposition="invalid_field"
         )
-    metric = proposal.flat_metric_denominator()
-    canonical = _project_admitted(evidence)
-    submitted_delta = projection.flat_projected_delta()
+    if not bound:
+        raise ProjectedApplyError(
+            "the apply path requires bound trainable parameters",
+            disposition="parameter_layout_mismatch",
+        )
+    target_device = _APPLY_TARGET_DEVICE.get() or bound[0][1].device
+    metric = proposal.flat_metric_denominator().to(device=target_device)
+    canonical = _project_admitted(evidence, device=target_device)
+    submitted_delta = projection.flat_projected_delta().to(device=target_device)
     canonical_delta = canonical.flat_projected_delta()
     disagreement = _metric_quadratic(metric, submitted_delta - canonical_delta)
     if (
@@ -2302,7 +2340,11 @@ def apply_projected_delta(
     for entry, parameter, piece in zip(
         proposal.layout.entries, (p for _, p in bound), canonical.projected_delta
     ):
-        applied.append(piece.reshape(entry.shape).to(parameter.dtype))
+        applied.append(
+            piece.reshape(entry.shape).to(
+                device=parameter.device, dtype=parameter.dtype
+            )
+        )
     applied_flat = torch.cat(
         [tensor.detach().to(torch.float64).reshape(-1) for tensor in applied]
     )
@@ -2342,7 +2384,7 @@ def apply_projected_delta(
                 "the physical parameter change is not finite",
                 disposition="applied_non_finite",
             )
-        certified_flat = canonical.flat_projected_delta()
+        certified_flat = canonical.flat_projected_delta().to(device=physical_flat.device)
         applied_residual = float((physical_flat - certified_flat).abs().max())
         allowance, deliverable = _representation_allowance(
             layout=proposal.layout,
@@ -2405,8 +2447,11 @@ def apply_projected_delta(
                 disposition="applied_trust_radius_breach",
             )
         applied_minimum = math.inf
+        physical_for_witness = physical_flat.detach().to(device="cpu")
         for _, _witness, jacobian in witness_bank.stream_constraints():
-            applied_minimum = min(applied_minimum, float(jacobian @ physical_flat))
+            applied_minimum = min(
+                applied_minimum, float(jacobian @ physical_for_witness)
+            )
         if applied_minimum < -WITNESS_FIRST_ORDER_TOLERANCE * (1.0 + _APPLIED_RELATIVE):
             raise ProjectedApplyError(
                 "the physical parameter change is not first-order feasible",
@@ -3117,6 +3162,41 @@ def load_projected_apply_receipt(
     return receipt
 
 
+def apply_projected_delta_on_device(
+    named_trainable_parameters: Sequence[tuple[str, torch.nn.Parameter]],
+    *,
+    proposal: ExactAdamWProposal,
+    witness_bank: FrozenWitnessBank,
+    projection: ProjectionReceipt,
+    optimizer: torch.optim.Optimizer,
+    transaction: TrainingStateTransaction,
+    update_counter: UpdateCounter,
+    realized_margin_probe: Callable[[], Mapping[str, float]],
+    device: torch.device | str,
+) -> ProjectedApplyReceipt:
+    """Apply one certified projection on a live parameter device.
+
+    This is the explicit CUDA adapter seam.  The legacy
+    :func:`apply_projected_delta` call remains CPU-default; this wrapper only
+    opts into device-aware metric, witness, and projected-delta arithmetic.
+    """
+
+    token = _APPLY_TARGET_DEVICE.set(torch.device(device))
+    try:
+        return apply_projected_delta(
+            named_trainable_parameters,
+            proposal=proposal,
+            witness_bank=witness_bank,
+            projection=projection,
+            optimizer=optimizer,
+            transaction=transaction,
+            update_counter=update_counter,
+            realized_margin_probe=realized_margin_probe,
+        )
+    finally:
+        _APPLY_TARGET_DEVICE.reset(token)
+
+
 __all__ = [
     "APPLY_SCHEMA_VERSION",
     "EVIDENCE_SCHEMA_VERSION",
@@ -3154,6 +3234,7 @@ __all__ = [
     "WitnessChange",
     "admit_preservation_evidence",
     "apply_projected_delta",
+    "apply_projected_delta_on_device",
     "capture_exact_adamw_proposal",
     "jacobian_sha256",
     "load_exact_adamw_proposal",
@@ -3162,6 +3243,7 @@ __all__ = [
     "load_projection_receipt",
     "parameter_state_sha256",
     "project_adamw_proposal",
+    "project_adamw_proposal_on_device",
     "write_exact_adamw_proposal",
     "write_frozen_witness_bank",
     "write_projected_apply_receipt",

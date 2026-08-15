@@ -66,12 +66,18 @@ _ACQUISITION = "3" * 64
 
 
 class _TinySurface(torch.nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.float64) -> None:
         super().__init__()
-        self.weight = torch.nn.Parameter(torch.tensor([0.25, 0.75], dtype=torch.float64))
+        self.weight = torch.nn.Parameter(torch.tensor([0.25, 0.75], dtype=dtype))
         self.frozen_base = torch.nn.Parameter(
-            torch.tensor([2.0], dtype=torch.float64), requires_grad=False
+            torch.tensor([2.0], dtype=dtype), requires_grad=False
         )
+        if dtype is torch.bfloat16:
+            self.config = type(
+                "_TinyHFConfig",
+                (),
+                {"_attn_implementation": "flash_attention_2", "use_cache": False},
+            )()
         self.eval()
 
 
@@ -137,7 +143,7 @@ def _surface_evidence(
     replay_tensors: dict[str, torch.Tensor] = {}
     for group_index, seeds in enumerate(plan.seed_groups):
         live = model.weight[0].expand(4) + torch.tensor(
-            [0.001 * (seed - 35000) for seed in seeds], dtype=torch.float64
+            [0.001 * (seed - 35000) for seed in seeds], dtype=model.weight.dtype
         )
         requests: list[SampledHFRequest] = []
         replayed_tokens: list[SampledHFToken] = []
@@ -344,9 +350,9 @@ def _compiler_evidence(
     return ledger, compiler.admit_compiler_compact_logits((row,), ledger)
 
 
-def _fixture() -> _Fixture:
+def _fixture(*, dtype: torch.dtype = torch.float64) -> _Fixture:
     torch.manual_seed(123)
-    model = _TinySurface()
+    model = _TinySurface(dtype=dtype)
     named = tuple(
         (name, parameter)
         for name, parameter in model.named_parameters()
