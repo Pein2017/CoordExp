@@ -23,6 +23,14 @@ class SharedSurfaceContractError(ValueError):
     """A value cannot cross a shared-surface contract boundary."""
 
 
+class HFSourceOwnerResolutionError(SharedSurfaceContractError):
+    """A frozen owner symbol, signature, or rejecting guard cannot be resolved."""
+
+
+class HFSourceOwnerNonRejectionError(SharedSurfaceContractError):
+    """A resolved owner guard does not reject the supplied value binding."""
+
+
 def _digest(value: object, *, label: str) -> str:
     if not isinstance(value, str) or len(value) != 64:
         raise SharedSurfaceContractError(f"{label} must be a SHA-256 digest")
@@ -601,8 +609,12 @@ class HFSharedSurfaceOwnerBinding:
     invariant: Literal["objective denominator", "optimizer delta", "private audit", "rollback"]
     module: str
     symbol: str
+    expected_signature: str
+    guard_symbol: str
+    guard_expected_signature: str
     invalid_value: Mapping[str, object]
     required_source_fragments: tuple[str, ...]
+    guard_source_fragments: tuple[str, ...]
 
     def resolve(self) -> HFSourceResolvedOwnerGuard:
         path = _owner_source_path(self.module)
@@ -610,23 +622,69 @@ class HFSharedSurfaceOwnerBinding:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(path))
         except (OSError, SyntaxError) as exc:
-            raise SharedSurfaceContractError(
+            raise HFSourceOwnerResolutionError(
                 f"cannot resolve owner source {self.module}.{self.symbol}"
             ) from exc
         node = _resolve_symbol_node(tree.body, self.symbol)
-        if node is None:
-            raise SharedSurfaceContractError(
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            raise HFSourceOwnerResolutionError(
                 f"cannot resolve owner symbol {self.module}.{self.symbol}"
             )
         node_source = ast.get_source_segment(source, node) or ""
+        owner_signature = _source_signature(node)
+        if owner_signature != self.expected_signature:
+            raise HFSourceOwnerResolutionError(
+                f"owner {self.module}.{self.symbol} signature {owner_signature} "
+                f"differs from frozen {self.expected_signature}"
+            )
         if not all(fragment in node_source for fragment in self.required_source_fragments):
-            raise SharedSurfaceContractError(
+            raise HFSourceOwnerResolutionError(
                 f"owner {self.module}.{self.symbol} does not expose the required rejecting guard"
             )
-        return HFSourceResolvedOwnerGuard(self, node_source)
+        guard_node = _resolve_symbol_node(tree.body, self.guard_symbol)
+        if not isinstance(guard_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            raise HFSourceOwnerResolutionError(
+                f"cannot resolve owner guard {self.module}.{self.guard_symbol}"
+            )
+        guard_signature = _source_signature(guard_node)
+        if guard_signature != self.guard_expected_signature:
+            raise HFSourceOwnerResolutionError(
+                f"owner guard {self.module}.{self.guard_symbol} signature "
+                f"{guard_signature} differs from frozen {self.guard_expected_signature}"
+            )
+        guard = _resolve_guard_if(
+            guard_node, source=source, fragments=self.guard_source_fragments
+        )
+        if guard is None:
+            raise HFSourceOwnerResolutionError(
+                f"owner {self.module}.{self.guard_symbol} does not expose the required rejecting guard"
+            )
+        guard_source = ast.get_source_segment(source, guard) or ""
+        return HFSourceResolvedOwnerGuard(
+            binding=self,
+            resolved_source=node_source,
+            owner_signature=owner_signature,
+            guard_signature=guard_signature,
+            guard_source=guard_source,
+            guard_test=guard.test,
+        )
 
-    def reject_minimal_counterexample(self) -> None:
-        self.resolve()(self.invalid_value)
+    def reject_minimal_counterexample(self) -> HFSourceOwnerRejection:
+        return self.resolve().reject(self.invalid_value)
+
+
+@dataclass(frozen=True)
+class HFSourceOwnerRejection:
+    """Value evidence that one exact source-resolved owner guard rejected."""
+
+    invariant: str
+    module: str
+    symbol: str
+    owner_signature: str
+    guard_symbol: str
+    guard_signature: str
+    guard_source: str
+    rejection_kind: Literal["predicate_true", "required_field_unavailable"]
 
 
 @dataclass(frozen=True)
@@ -635,12 +693,44 @@ class HFSourceResolvedOwnerGuard:
 
     binding: HFSharedSurfaceOwnerBinding
     resolved_source: str
+    owner_signature: str
+    guard_signature: str
+    guard_source: str
+    guard_test: ast.expr
 
-    def __call__(self, invalid_value: Mapping[str, object]) -> None:
-        if dict(invalid_value) != dict(self.binding.invalid_value):
-            raise SharedSurfaceContractError("owner counterexample differs from the frozen matrix input")
-        raise SharedSurfaceContractError(
-            f"{self.binding.module}.{self.binding.symbol} rejects the frozen invalid value"
+    def reject(self, invalid_value: Mapping[str, object]) -> HFSourceOwnerRejection:
+        try:
+            rejected = _evaluate_source_guard(self.guard_test, invalid_value)
+            rejection_kind: Literal[
+                "predicate_true", "required_field_unavailable"
+            ] = "predicate_true"
+        except _SourceGuardFieldUnavailable as exc:
+            if not (
+                self.binding.guard_symbol
+                == "TrainingStateTransaction._require_active"
+                and invalid_value.get("snapshot") is None
+                and exc.field == "transaction_id"
+            ):
+                raise HFSourceOwnerNonRejectionError(
+                    f"owner {self.binding.module}.{self.binding.symbol} does not bind "
+                    f"required source guard field {exc.field!r}"
+                ) from exc
+            rejected = True
+            rejection_kind = "required_field_unavailable"
+        if rejected is not True:
+            raise HFSourceOwnerNonRejectionError(
+                f"owner {self.binding.module}.{self.binding.symbol} did not reject "
+                "the bound source-level value"
+            )
+        return HFSourceOwnerRejection(
+            invariant=self.binding.invariant,
+            module=self.binding.module,
+            symbol=self.binding.symbol,
+            owner_signature=self.owner_signature,
+            guard_symbol=self.binding.guard_symbol,
+            guard_signature=self.guard_signature,
+            guard_source=self.guard_source,
+            rejection_kind=rejection_kind,
         )
 
 
@@ -672,11 +762,168 @@ def _resolve_symbol_node(nodes: list[ast.stmt], symbol: str) -> ast.AST | None:
     return node
 
 
+def _source_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    arguments = node.args
+    pieces = [argument.arg for argument in (*arguments.posonlyargs, *arguments.args)]
+    if arguments.posonlyargs:
+        pieces.insert(len(arguments.posonlyargs), "/")
+    if arguments.vararg is not None:
+        pieces.append(f"*{arguments.vararg.arg}")
+    elif arguments.kwonlyargs:
+        pieces.append("*")
+    pieces.extend(argument.arg for argument in arguments.kwonlyargs)
+    if arguments.kwarg is not None:
+        pieces.append(f"**{arguments.kwarg.arg}")
+    return f"({', '.join(pieces)})"
+
+
+def _resolve_guard_if(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    source: str,
+    fragments: tuple[str, ...],
+) -> ast.If | None:
+    matches = [
+        candidate
+        for candidate in ast.walk(node)
+        if isinstance(candidate, ast.If)
+        and all(
+            fragment in (ast.get_source_segment(source, candidate) or "")
+            for fragment in fragments
+        )
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+class _SourceGuardFieldUnavailable(ValueError):
+    def __init__(self, field: str) -> None:
+        super().__init__(field)
+        self.field = field
+
+
+def _evaluate_source_guard(node: ast.expr, values: Mapping[str, object]) -> object:
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id not in values:
+            raise HFSourceOwnerResolutionError(
+                f"source guard value {node.id!r} is not bound"
+            )
+        return values[node.id]
+    if isinstance(node, ast.Attribute):
+        owner = _evaluate_source_guard(node.value, values)
+        if not isinstance(owner, Mapping) or node.attr not in owner:
+            raise _SourceGuardFieldUnavailable(node.attr)
+        return owner[node.attr]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        return _evaluate_source_guard(node.left, values) * _evaluate_source_guard(  # type: ignore[operator]
+            node.right, values
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not bool(_evaluate_source_guard(node.operand, values))
+    if isinstance(node, ast.Compare) and len(node.ops) == len(node.comparators) == 1:
+        left = _evaluate_source_guard(node.left, values)
+        right = _evaluate_source_guard(node.comparators[0], values)
+        if isinstance(node.ops[0], ast.NotEq):
+            return left != right
+        if isinstance(node.ops[0], ast.IsNot):
+            return left is not right
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id == "bool" and len(node.args) == 1:
+            return bool(_evaluate_source_guard(node.args[0], values))
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "all"
+            and not node.args
+            and not node.keywords
+        ):
+            return all(_evaluate_source_guard(node.func.value, values))  # type: ignore[arg-type]
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "isfinite"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "torch"
+            and len(node.args) == 1
+        ):
+            source_values = _evaluate_source_guard(node.args[0], values)
+            if not isinstance(source_values, (tuple, list)):
+                raise HFSourceOwnerResolutionError(
+                    "source-level torch.isfinite guard requires a value sequence"
+                )
+            return tuple(
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and isfinite(value)
+                for value in source_values
+            )
+    raise HFSourceOwnerResolutionError(
+        f"unsupported source guard expression: {ast.dump(node, include_attributes=False)}"
+    )
+
+
 def actual_owner_bindings() -> tuple[HFSharedSurfaceOwnerBinding, ...]:
     """Freeze actual owner symbols for later waves while this module stays CPU-only."""
     return (
-        HFSharedSurfaceOwnerBinding("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward", {"trajectory_denominator": 0}, ("trajectory_denominator", "sealed N*K")),
-        HFSharedSurfaceOwnerBinding("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta", {"projected_delta_finite": False}, ("torch.isfinite", "non-finite")),
-        HFSharedSurfaceOwnerBinding("private audit", "scripts.research.human13_rp_crossover_runtime", "PrivateCheckpointRef.__post_init__", {"private": False}, ("self.private is not True", "explicitly private")),
-        HFSharedSurfaceOwnerBinding("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject", {"snapshot": None}, ("snapshot", "self.restore(snapshot)")),
+        HFSharedSurfaceOwnerBinding(
+            invariant="objective denominator",
+            module="scripts.research.human13_rp_crossover_runtime",
+            symbol="_validate_backward",
+            expected_signature="(spec, receipt)",
+            guard_symbol="_validate_backward",
+            guard_expected_signature="(spec, receipt)",
+            invalid_value={"receipt": {"trajectory_denominator": 0}},
+            required_source_fragments=("receipt.trajectory_denominator", "sealed N*K"),
+            guard_source_fragments=(
+                "receipt.trajectory_denominator != 13 * 16",
+                "sealed N*K",
+            ),
+        ),
+        HFSharedSurfaceOwnerBinding(
+            invariant="optimizer delta",
+            module="scripts.research.human13_adamw_proposal_preservation",
+            symbol="apply_projected_delta",
+            expected_signature="(named_trainable_parameters, *, proposal, witness_bank, projection, optimizer, transaction, update_counter, realized_margin_probe)",
+            guard_symbol="apply_projected_delta",
+            guard_expected_signature="(named_trainable_parameters, *, proposal, witness_bank, projection, optimizer, transaction, update_counter, realized_margin_probe)",
+            invalid_value={"applied_flat": (0.0, float("inf"))},
+            required_source_fragments=(
+                "torch.isfinite(applied_flat).all()",
+                "the applied delta is not finite",
+            ),
+            guard_source_fragments=(
+                "torch.isfinite(applied_flat).all()",
+                "the applied delta is not finite",
+            ),
+        ),
+        HFSharedSurfaceOwnerBinding(
+            invariant="private audit",
+            module="scripts.research.human13_rp_crossover_runtime",
+            symbol="PrivateCheckpointRef.__post_init__",
+            expected_signature="(self)",
+            guard_symbol="PrivateCheckpointRef.__post_init__",
+            guard_expected_signature="(self)",
+            invalid_value={"self": {"private": False}},
+            required_source_fragments=("self.private is not True", "explicitly private"),
+            guard_source_fragments=("self.private is not True", "explicitly private"),
+        ),
+        HFSharedSurfaceOwnerBinding(
+            invariant="rollback",
+            module="scripts.research.human13_training_transaction",
+            symbol="TrainingStateTransaction.reject",
+            expected_signature="(self, snapshot)",
+            guard_symbol="TrainingStateTransaction._require_active",
+            guard_expected_signature="(self, snapshot)",
+            invalid_value={
+                "self": {"_active_transaction_id": "active"},
+                "snapshot": None,
+            },
+            required_source_fragments=(
+                "self._require_active(snapshot)",
+                "self.restore(snapshot)",
+            ),
+            guard_source_fragments=(
+                "snapshot.transaction_id != self._active_transaction_id",
+                "does not belong to the active transaction",
+            ),
+        ),
     )

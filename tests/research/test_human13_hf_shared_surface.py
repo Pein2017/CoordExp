@@ -19,6 +19,9 @@ from scripts.research.human13_hf_shared_surface import (
     HFSharedSurfaceParityReceipt,
     HFSharedSurfacePolicy,
     HFSharedSurfaceResourceEstimate,
+    HFSourceOwnerNonRejectionError,
+    HFSourceOwnerRejection,
+    HFSourceOwnerResolutionError,
     SampledHFGroup,
     SampledHFRequest,
     SampledHFToken,
@@ -168,7 +171,7 @@ def valid_gathers(group: SampledHFGroup) -> tuple[HFReplayCausalGather, ...]:
 
 # The active Task 1.1 matrix names the actual value-contract owner and executes
 # a minimal invalid input for every invariant, including later-wave handoff guards.
-FAILURE_MODE_MATRIX: tuple[tuple[str, str, Callable[[], None]], ...] = (
+FAILURE_MODE_MATRIX: tuple[tuple[str, str, Callable[[], object]], ...] = (
     ("surface identity", "admit_sampled_group", lambda: admit_sampled_group(**valid_group_kwargs(identity=valid_identity(dtype="float32")))),
     ("request/history lineage", "admit_sampled_group", lambda: admit_sampled_group(**valid_group_kwargs(requests=valid_requests(request_id="")))),
     ("processor order", "admit_sampled_group", lambda: admit_sampled_group(**valid_group_kwargs(requests=valid_requests(processor_order=("temperature", "repetition_penalty", "top_p"))))),
@@ -182,37 +185,113 @@ FAILURE_MODE_MATRIX: tuple[tuple[str, str, Callable[[], None]], ...] = (
 
 @pytest.mark.parametrize(("invariant", "owner", "counterexample"), FAILURE_MODE_MATRIX)
 def test_failure_mode_matrix_rejects_minimal_counterexample(
-    invariant: str, owner: str, counterexample: Callable[[], None]
+    invariant: str, owner: str, counterexample: Callable[[], object]
 ) -> None:
     """Catches a missing executable guard named by the authoritative Task 1.1 matrix."""
     assert owner
-    with pytest.raises(SharedSurfaceContractError):
-        counterexample()
+    if owner.startswith("scripts."):
+        rejection = counterexample()
+        assert isinstance(rejection, HFSourceOwnerRejection)
+        assert rejection.invariant == invariant
+        assert f"{rejection.module}.{rejection.symbol}" == owner
+    else:
+        with pytest.raises(SharedSurfaceContractError):
+            counterexample()
 
 
 def test_matrix_later_wave_entries_bind_actual_owner_seams() -> None:
-    """Catches placeholder owner labels that no longer identify the real guard."""
+    """Catches placeholder owner labels/signatures or unresolved actual guards."""
     bindings = actual_owner_bindings()
-    assert {(binding.invariant, binding.module, binding.symbol) for binding in bindings} == {
-        ("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward"),
-        ("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta"),
-        ("private audit", "scripts.research.human13_rp_crossover_runtime", "PrivateCheckpointRef.__post_init__"),
-        ("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject"),
+    assert {
+        (binding.invariant, binding.module, binding.symbol, binding.expected_signature)
+        for binding in bindings
+    } == {
+        (
+            "objective denominator",
+            "scripts.research.human13_rp_crossover_runtime",
+            "_validate_backward",
+            "(spec, receipt)",
+        ),
+        (
+            "optimizer delta",
+            "scripts.research.human13_adamw_proposal_preservation",
+            "apply_projected_delta",
+            "(named_trainable_parameters, *, proposal, witness_bank, projection, "
+            "optimizer, transaction, update_counter, realized_margin_probe)",
+        ),
+        (
+            "private audit",
+            "scripts.research.human13_rp_crossover_runtime",
+            "PrivateCheckpointRef.__post_init__",
+            "(self)",
+        ),
+        (
+            "rollback",
+            "scripts.research.human13_training_transaction",
+            "TrainingStateTransaction.reject",
+            "(self, snapshot)",
+        ),
     }
-    for binding in bindings:
-        with pytest.raises(SharedSurfaceContractError):
-            binding.reject_minimal_counterexample()
+    guards = tuple(binding.resolve() for binding in bindings)
+    assert tuple(guard.owner_signature for guard in guards) == tuple(
+        binding.expected_signature for binding in bindings
+    )
+    rejections = tuple(
+        guard.reject(binding.invalid_value) for guard, binding in zip(guards, bindings)
+    )
+    assert all(isinstance(result, HFSourceOwnerRejection) for result in rejections)
+    for binding, result in zip(bindings, rejections):
+        assert result.module == binding.module
+        assert result.symbol == binding.symbol
+        assert result.owner_signature == binding.expected_signature
+        assert result.guard_symbol == binding.guard_symbol
+        assert result.guard_source
 
 
-def test_matrix_resolves_actual_source_guards_and_rejects_missing_or_non_guard_symbols() -> None:
-    """Catches matrix rows whose named owner is missing or has no matching guard."""
+def test_matrix_resolution_errors_are_distinct_from_owner_rejection() -> None:
+    """Catches resolver failures being counted as rejection evidence."""
     binding = actual_owner_bindings()[0]
-    with pytest.raises(SharedSurfaceContractError):
-        binding.resolve()(binding.invalid_value)
-    with pytest.raises(SharedSurfaceContractError, match="cannot resolve"):
+    assert isinstance(binding.reject_minimal_counterexample(), HFSourceOwnerRejection)
+    with pytest.raises(HFSourceOwnerResolutionError, match="cannot resolve"):
         replace(binding, symbol="not_a_real_owner").resolve()
-    with pytest.raises(SharedSurfaceContractError, match="does not expose"):
-        replace(binding, symbol="ObjectiveBackwardReceipt").resolve()
+    with pytest.raises(HFSourceOwnerResolutionError, match="signature"):
+        replace(binding, expected_signature="(receipt)").resolve()
+    with pytest.raises(HFSourceOwnerResolutionError, match="does not expose"):
+        replace(binding, required_source_fragments=("not an actual guard",)).resolve()
+
+
+@pytest.mark.parametrize(
+    ("binding_index", "nonrejecting_value"),
+    [
+        (0, {"receipt": {"trajectory_denominator": 13 * 16}}),
+        (1, {"applied_flat": (0.0, 1.0)}),
+        (2, {"self": {"private": True}}),
+        (
+            3,
+            {
+                "self": {"_active_transaction_id": "active"},
+                "snapshot": {"transaction_id": "active"},
+            },
+        ),
+    ],
+)
+def test_matrix_source_guard_must_actually_reject(
+    binding_index: int, nonrejecting_value: dict[str, object]
+) -> None:
+    """Catches an unconditional local raise after a non-rejecting owner predicate."""
+    binding = replace(
+        actual_owner_bindings()[binding_index], invalid_value=nonrejecting_value
+    )
+    binding.resolve()
+    with pytest.raises(HFSourceOwnerNonRejectionError, match="did not reject"):
+        binding.reject_minimal_counterexample()
+
+
+def test_matrix_missing_value_field_is_not_owner_rejection() -> None:
+    """Catches arbitrary incomplete evaluator inputs being treated as owner rejection."""
+    guard = actual_owner_bindings()[0].resolve()
+    with pytest.raises(HFSourceOwnerNonRejectionError, match="does not bind"):
+        guard.reject({"receipt": {}})
 
 
 @pytest.mark.parametrize(
