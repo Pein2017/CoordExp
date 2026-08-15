@@ -40,19 +40,19 @@
 
 ## 3. Complete one-update composition
 
-- [ ] 3.1 Adapt the admitted replay rows to the existing sealed
+- [x] 3.1 Adapt the admitted replay rows to the existing sealed
   `TrajectoryCreditLedger` and global `N*K` numerator/denominator without
   changing first-hit, burden, STOP, RLOO, or legacy-M semantics.
-- [ ] 3.2 Materialize the existing sparse compiler on the same live BF16/FA2
+- [x] 3.2 Materialize the existing sparse compiler on the same live BF16/FA2
   Source session, including absent-site zero semantics, frozen alias binding,
   `kappa=1`, margin `1e-4`, and coefficient `1.0`.
-- [ ] 3.3 Reuse fresh AdamW at fixed `3e-6` and the existing actual-delta
+- [x] 3.3 Reuse fresh AdamW at fixed `3e-6` and the existing actual-delta
   owner-wise preservation projection; require all three components and forbid
   CE, unprojected, or missing-component fallback.
-- [ ] 3.4 Wrap backward, proposal apply, private checkpoint, and failure paths in
+- [x] 3.4 Wrap backward, proposal apply, private checkpoint, and failure paths in
   the complete `TrainingStateTransaction`, including gradients, counters,
   optimizer/scheduler, CPU/CUDA RNG, and exact Source restore.
-- [ ] 3.5 Add objective/component/resource receipts and tests showing exactly
+- [x] 3.5 Add objective/component/resource receipts and tests showing exactly
   one update, unchanged global normalization across group boundaries, finite
   gradient/delta diagnostics, exact projected apply, and exact rollback.
 - [ ] 3.6 Gate Wave 3 with the focused and adjacent Human-13 suites, strict
