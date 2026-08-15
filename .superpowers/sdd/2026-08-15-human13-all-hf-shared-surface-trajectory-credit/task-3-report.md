@@ -290,3 +290,77 @@ No objective/projection math or legacy runtime file changed. Execution remained
 CPU/injected only with no real HF model action, GPU/CUDA execution, network,
 checkpoint/output action, accepted checkpoint, retry, or fallback objective.
 OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.
+
+## Fix round 5 — recoverable pre-transaction preflight
+
+The rereview of round 4 confirmed its callback ownership, exact version, and
+terminal public rollback repairs, then found the same ownership invariant could
+fail after preparation but before `TrainingStateTransaction.begin()`. The
+preflight correctly rejected a substituted optimizer parameter reference,
+nonempty optimizer state, or nonzero counter, but `snapshot` remained `None`;
+the error path therefore released the private Source evidence without restoring
+the mutated ownership state or producing a rollback receipt.
+
+Three parameterized focused cases were added before production correction. The
+exact RED was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 26 passed, 3 failed
+Failure: rollback receipt was None
+```
+
+Preparation now retains a complete private Source recovery snapshot alongside
+the existing full-model snapshot: optimizer state dict, parameter groups,
+defaults, scheduler state, update count, transaction owner references, runtime
+counters, CPU/CUDA RNG, model values/mode, and tensor versions. If preflight
+fails before an active transaction exists, the vertical:
+
+1. restores every prepare-time Source component and verifies the complete
+   transaction digest, optimizer ownership/defaults/empty state, gradients,
+   model content/mode, and versions;
+2. begins a real transaction on that restored Source;
+3. rejects that recovery transaction through the ordinary `_reject` path,
+   producing the same sealed rollback receipt contract;
+4. only then releases the one-shot live evidence and raises the original
+   preflight error with the rollback receipt attached.
+
+If either recovery or receipt construction fails, a second complete Source
+restore is attempted, the owner still terminalizes to `rolled_back`, and the
+primary plus recovery/fallback failures remain explicit in the typed error.
+
+The fixed-point review also identified a second case in this same boundary:
+model parameter registry substitution and `requires_grad` mutation were
+detected, but value-only restoration could not reconnect the exact Source
+objects/trainability and therefore produced no receipt. Two additional tests
+were written before that repair:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 29 passed, 2 failed
+Failure: rollback receipt was None
+```
+
+The prepare-time snapshot now also retains every Source module's registered
+parameter and child-module entries plus each parameter's exact `requires_grad`
+flag. Full-model restoration reconnects those exact registered objects and
+module structure, restores trainability before values, clears gradients, and
+then certifies eval mode, content, and exact tensor versions. Registry swaps and
+trainability flips now follow the ordinary sealed rollback-receipt path.
+
+## Fix round 5 gates
+
+```text
+focused: 31 passed
+focused + adjacent Human-13 suites: 262 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No legacy runtime or objective/projection math changed. Execution remained
+CPU/injected only with no real HF model action, GPU/CUDA execution, network,
+checkpoint/output action, accepted checkpoint, retry, or fallback objective.
+OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.

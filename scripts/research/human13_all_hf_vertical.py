@@ -1062,6 +1062,18 @@ class PreparedAllHFVertical:
             (name, parameter, parameter.detach().clone())
             for name, parameter in full_named
         )
+        self._source_parameter_trainability = tuple(
+            (parameter, parameter.requires_grad) for _, parameter in full_named
+        )
+        self._source_module_registries = tuple(
+            (
+                name,
+                module,
+                tuple(module._parameters.items()),
+                tuple(module._modules.items()),
+            )
+            for name, module in model.named_modules()
+        )
         self._sampled_hashes = tuple(sampled_hashes)
         self._replay_hashes = tuple(replay_hashes)
         self._request_ids = tuple(request_ids)
@@ -1069,6 +1081,15 @@ class PreparedAllHFVertical:
         self._source_state_digest = transaction.state_digest()
         self._source_optimizer_param_groups = _capture_optimizer_param_groups(optimizer)
         self._source_optimizer_defaults = copy.deepcopy(optimizer.defaults)
+        self._source_optimizer_state = copy.deepcopy(optimizer.state_dict())
+        self._source_scheduler_state = (
+            None
+            if transaction._scheduler is None
+            else copy.deepcopy(transaction._scheduler.state_dict())
+        )
+        self._source_update_count = int(update_counter.value)
+        self._source_cpu_rng_state = torch.get_rng_state().clone()
+        self._source_cuda_rng_states = transaction._cuda_rng_states()
         self._source_transaction_ownership = (
             tuple(transaction._named_parameters),
             transaction._optimizer,
@@ -1557,6 +1578,27 @@ class PreparedAllHFVertical:
                         "rollback failed after "
                         f"{type(error).__name__}: {error}: {rollback_error}{suffix}"
                     ) from rollback_error
+            else:
+                try:
+                    rollback = self._recover_preflight_failure()
+                except Exception as rollback_error:
+                    terminal_error: Exception | None = None
+                    try:
+                        self._restore_prepare_time_source()
+                    except Exception as fallback_error:
+                        terminal_error = fallback_error
+                    self._state = "rolled_back"
+                    self._snapshot = None
+                    self._release_live_graphs()
+                    suffix = (
+                        ""
+                        if terminal_error is None
+                        else f"; terminal restore failed: {terminal_error}"
+                    )
+                    raise AllHFVerticalError(
+                        "preflight rollback failed after "
+                        f"{type(error).__name__}: {error}: {rollback_error}{suffix}"
+                    ) from rollback_error
             self._state = "rolled_back"
             self._release_live_graphs()
             raise AllHFVerticalError(str(error), rollback_receipt=rollback) from error
@@ -1622,6 +1664,58 @@ class PreparedAllHFVertical:
         self._rollback_receipt = receipt
         return receipt
 
+    def _recover_preflight_failure(self) -> RollbackReceipt:
+        self._restore_prepare_time_source()
+        recovery_snapshot = self._transaction.begin()
+        self._attempt_transaction_id = recovery_snapshot.transaction_id
+        return self._reject(
+            recovery_snapshot, applied_state_digest=self._source_state_digest
+        )
+
+    @torch.no_grad()
+    def _restore_prepare_time_source(self) -> None:
+        self._restore_attempt_ownership(
+            expected_update_count=self._source_update_count,
+            active_transaction_id=None,
+        )
+        self._optimizer.load_state_dict(copy.deepcopy(self._source_optimizer_state))
+        if self._transaction._scheduler is not None:
+            if self._source_scheduler_state is None:
+                raise RuntimeError("prepare-time Source lacks scheduler state")
+            self._transaction._scheduler.load_state_dict(
+                copy.deepcopy(self._source_scheduler_state)
+            )
+        elif self._source_scheduler_state is not None:
+            raise RuntimeError("prepare-time Source has unexpected scheduler state")
+        self._update_counter.value = self._source_update_count
+        if self._transaction._runtime is not None:
+            if self._source_runtime_counts is None:
+                raise RuntimeError("prepare-time Source lacks runtime counters")
+            (
+                self._transaction._runtime.optimizer_step_count,
+                self._transaction._runtime.scheduler_step_count,
+            ) = self._source_runtime_counts
+        torch.set_rng_state(self._source_cpu_rng_state.clone())
+        if self._source_cuda_rng_states is not None:
+            if not torch.cuda.is_available():
+                raise RuntimeError("prepare-time Source cannot restore captured CUDA RNG")
+            torch.cuda.set_rng_state_all(
+                [state.clone() for state in self._source_cuda_rng_states]
+            )
+        self._restore_full_model_source()
+        self._optimizer.zero_grad(set_to_none=True)
+        self._transaction._active_transaction_id = None
+        if (
+            self._transaction.state_digest() != self._source_state_digest
+            or not _optimizer_param_groups_match(
+                self._optimizer, self._source_optimizer_param_groups
+            )
+            or self._optimizer.defaults != self._source_optimizer_defaults
+            or self._optimizer.state
+            or any(parameter.grad is not None for _, parameter in self._named)
+        ):
+            raise RuntimeError("prepare-time Source restore differs")
+
     @torch.no_grad()
     def _terminal_restore(self, snapshot: TrainingStateSnapshot) -> None:
         """Best-effort exact Source restore after the ordinary reject path fails."""
@@ -1673,6 +1767,13 @@ class PreparedAllHFVertical:
 
     @torch.no_grad()
     def _restore_full_model_source(self) -> None:
+        for _, module, source_parameters, source_modules in self._source_module_registries:
+            module._parameters.clear()
+            module._parameters.update(source_parameters)
+            module._modules.clear()
+            module._modules.update(source_modules)
+        for parameter, source_requires_grad in self._source_parameter_trainability:
+            parameter.requires_grad_(source_requires_grad)
         current = _full_model_parameters(self._model)
         if tuple((name, id(parameter)) for name, parameter in current) != tuple(
             (name, id(parameter)) for name, parameter, _ in self._full_model_source_values
@@ -1682,6 +1783,7 @@ class PreparedAllHFVertical:
             if name not in dict(current):
                 raise RuntimeError("full model Source parameter is missing during restore")
             parameter.copy_(saved.to(device=parameter.device, dtype=parameter.dtype))
+            parameter.grad = None
         self._model.eval()
         if _model_mode_fingerprint(self._model) != self._source_model_mode_fingerprint:
             raise RuntimeError("full model Source mode restore differs")

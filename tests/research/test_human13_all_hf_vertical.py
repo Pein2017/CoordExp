@@ -930,6 +930,94 @@ def test_probe_optimizer_substitution_is_restored_and_terminally_rejected() -> N
         prepared.rollback()
 
 
+@pytest.mark.parametrize("drift", ("optimizer_ref", "optimizer_state", "counter"))
+def test_pre_transaction_ownership_drift_restores_prepare_time_source(
+    drift: str,
+) -> None:
+    fixture = _fixture()
+    source_digest = fixture.transaction.state_digest()
+    source_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+    source_optimizer_parameters = tuple(
+        parameter
+        for group in fixture.optimizer.param_groups
+        for parameter in group["params"]
+    )
+    prepared = _prepare(fixture)
+    if drift == "optimizer_ref":
+        fixture.optimizer.param_groups[0]["params"][0] = torch.nn.Parameter(
+            fixture.model.weight.detach().clone()
+        )
+    elif drift == "optimizer_state":
+        fixture.optimizer.state[fixture.model.weight] = {
+            "step": torch.tensor(1.0, dtype=torch.float64)
+        }
+    else:
+        fixture.counter.value = 7
+
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    rollback = error.value.rollback_receipt
+    assert rollback is not None
+    assert prepared._proposal_receipt is None
+    assert prepared._state == "rolled_back"
+    assert rollback.full_model_source_versions == source_versions
+    assert rollback.full_model_restored_versions == source_versions
+    assert tuple(
+        parameter
+        for group in fixture.optimizer.param_groups
+        for parameter in group["params"]
+    ) == source_optimizer_parameters
+    assert fixture.transaction.state_digest() == source_digest
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert fixture.model.training is False
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == source_versions
+    assert all(parameter.grad is None for _, parameter in fixture.named)
+    with pytest.raises(RuntimeError, match="already rolled back"):
+        prepared.rollback()
+
+
+@pytest.mark.parametrize("drift", ("registry_swap", "requires_grad"))
+def test_model_registry_or_trainability_drift_restores_exact_source_objects(
+    drift: str,
+) -> None:
+    fixture = _fixture()
+    source_weight = fixture.model.weight
+    source_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+    source_digest = fixture.transaction.state_digest()
+    prepared = _prepare(fixture)
+    if drift == "registry_swap":
+        fixture.model.weight = torch.nn.Parameter(source_weight.detach().clone())
+    else:
+        fixture.model.weight.requires_grad_(False)
+
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    rollback = error.value.rollback_receipt
+    assert rollback is not None
+    assert prepared._state == "rolled_back"
+    assert fixture.model.weight is source_weight
+    assert fixture.model.weight.requires_grad is True
+    assert fixture.optimizer.param_groups[0]["params"][0] is source_weight
+    assert fixture.transaction.state_digest() == source_digest
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == source_versions
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert all(parameter.grad is None for _, parameter in fixture.named)
+    with pytest.raises(RuntimeError, match="already rolled back"):
+        prepared.rollback()
+
+
 def test_normal_rollback_restores_exact_source_tensor_versions() -> None:
     fixture = _fixture()
     source_versions = tuple(
