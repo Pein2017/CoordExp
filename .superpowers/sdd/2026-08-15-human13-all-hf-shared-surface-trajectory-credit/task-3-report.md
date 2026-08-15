@@ -470,3 +470,50 @@ No legacy runtime, objective, or projection math changed. Execution remained
 CPU/injected only with no real HF model action, GPU/CUDA execution, network,
 checkpoint/output action, accepted checkpoint, retry, or fallback objective.
 OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.
+
+## Fix round 8 — pre-callback applied-state receipt binding
+
+The fresh review of commit `3945262` confirmed frozen-parameter device/layout
+recovery but found one remaining callback ordering gap. A realized-margin probe
+could preserve the trainable Parameter identity while swapping its TensorImpl to
+`meta` or `sparse_coo`. `_reject` attempted `transaction.state_digest()` before
+restoring storage, so the unreadable live tensor raised before the otherwise
+successful terminal restore could seal a rollback receipt.
+
+Two trainable callback cases were added before production correction. The exact
+RED was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 40 passed, 2 failed
+Failure: rollback receipt was None
+```
+
+The guarded realized-margin owner now certifies exactly one post-apply,
+pre-callback transaction digest after checking transaction/optimizer ownership
+and before invoking external callback code. If the callback makes the live
+TensorImpl unreadable, the exception path passes that certified digest into
+`_reject`; Source storage is restored before `TrainingStateTransaction.reject`
+or any further state hash. Receipt construction therefore never invents a hash
+for the mutated unreadable state, and remains conditional on exact Source
+storage, identity, trainability, versions, RNG, optimizer, counter, and complete
+transaction-digest certification. The regression also rebuilds fresh injected
+trajectory/compiler graphs on the restored same Parameter object and proves a
+subsequent proposal and rollback complete.
+
+## Fix round 8 gates
+
+```text
+focused: 42 passed
+focused + adjacent Human-13 suites: 273 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No legacy runtime, objective, or projection math changed. Execution remained
+CPU/injected only with no real HF model action, GPU/CUDA execution, network,
+checkpoint/output action, accepted checkpoint, retry, or fallback objective.
+OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.

@@ -1167,6 +1167,7 @@ class PreparedAllHFVertical:
             )
         )
         self._attempt_transaction_id: str | None = None
+        self._certified_post_apply_state_digest: str | None = None
         self._compiler_evidence_sha256 = compiler_evidence_sha256
         self._objective_ledger_sha256 = objective_ledger_sha256
         self._state: Literal["prepared", "applied", "rolled_back"] = "prepared"
@@ -1384,6 +1385,21 @@ class PreparedAllHFVertical:
             ) = self._source_runtime_counts
 
     def _guarded_realized_margin_probe(self) -> Mapping[str, float]:
+        if self._certified_post_apply_state_digest is not None:
+            raise ProjectedApplyError(
+                "realized margin probe was invoked more than once",
+                disposition="post_probe_ownership_drift",
+            )
+        try:
+            self._require_attempt_ownership(expected_update_count=0)
+            self._certified_post_apply_state_digest = (
+                self._transaction.state_digest()
+            )
+        except Exception as certification_error:
+            raise ProjectedApplyError(
+                "pre-probe applied transaction state could not be certified",
+                disposition="post_probe_ownership_drift",
+            ) from certification_error
         try:
             result = self._realized_margin_probe()
         except Exception as primary_error:
@@ -1629,7 +1645,10 @@ class PreparedAllHFVertical:
             rollback: RollbackReceipt | None = None
             if snapshot is not None:
                 try:
-                    rollback = self._reject(snapshot, applied_state_digest=None)
+                    rollback = self._reject(
+                        snapshot,
+                        applied_state_digest=self._certified_post_apply_state_digest,
+                    )
                 except Exception as rollback_error:
                     terminal_error: Exception | None = None
                     try:
@@ -1887,6 +1906,7 @@ class PreparedAllHFVertical:
         self._compiler_compact_logits = None
         self._full_model_source_values = ()
         self._attempt_transaction_id = None
+        self._certified_post_apply_state_digest = None
 
     def rollback(self) -> RollbackReceipt:
         if self._state == "rolled_back":

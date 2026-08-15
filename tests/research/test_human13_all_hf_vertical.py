@@ -1124,12 +1124,13 @@ def test_realized_probe_dtype_drift_restores_exact_source_metadata() -> None:
     assert prepared._state == "rolled_back"
 
 
-def _swap_frozen_parameter_storage(
+def _swap_parameter_storage(
     fixture: _Fixture,
     *,
     drift: str,
+    parameter_name: str = "frozen_base",
 ) -> torch.nn.Parameter:
-    source_parameter = fixture.model.frozen_base
+    source_parameter = getattr(fixture.model, parameter_name)
     if drift == "meta":
         replacement_tensor = torch.empty(
             source_parameter.shape,
@@ -1140,9 +1141,12 @@ def _swap_frozen_parameter_storage(
         replacement_tensor = source_parameter.detach().to_sparse()
     else:  # pragma: no cover - test helper is intentionally closed over two cases.
         raise AssertionError(f"unexpected storage drift: {drift}")
-    replacement = torch.nn.Parameter(replacement_tensor, requires_grad=False)
+    replacement = torch.nn.Parameter(
+        replacement_tensor,
+        requires_grad=source_parameter.requires_grad,
+    )
     torch.utils.swap_tensors(source_parameter, replacement)
-    assert fixture.model.frozen_base is source_parameter
+    assert getattr(fixture.model, parameter_name) is source_parameter
     return source_parameter
 
 
@@ -1156,7 +1160,7 @@ def test_pre_backward_device_or_layout_drift_restores_exact_source_storage(
     source_version = source_parameter._version
     source_digest = fixture.transaction.state_digest()
     prepared = _prepare(fixture)
-    _swap_frozen_parameter_storage(fixture, drift=drift)
+    _swap_parameter_storage(fixture, drift=drift)
 
     with pytest.raises(AllHFVerticalError) as error:
         prepared.backward_and_propose()
@@ -1183,7 +1187,7 @@ def test_realized_probe_device_or_layout_drift_restores_exact_source_storage(
     source_digest = fixture.transaction.state_digest()
 
     def storage_probe() -> dict[str, float]:
-        _swap_frozen_parameter_storage(fixture, drift=drift)
+        _swap_parameter_storage(fixture, drift=drift)
         return {
             witness.canonical_key: witness.margin_value
             for witness in fixture.witness_bank.constraints
@@ -1203,6 +1207,65 @@ def test_realized_probe_device_or_layout_drift_restores_exact_source_storage(
     assert torch.equal(source_parameter, source_value)
     assert source_parameter._version == source_version
     assert fixture.transaction.state_digest() == source_digest
+
+
+@pytest.mark.parametrize("drift", ("meta", "sparse_coo"))
+def test_realized_probe_trainable_device_or_layout_drift_has_exact_receipt(
+    drift: str,
+) -> None:
+    fixture = _fixture()
+    source_parameter = fixture.model.weight
+    source_value = source_parameter.detach().clone()
+    source_version = source_parameter._version
+    source_digest = fixture.transaction.state_digest()
+
+    def storage_probe() -> dict[str, float]:
+        _swap_parameter_storage(
+            fixture,
+            drift=drift,
+            parameter_name="weight",
+        )
+        return {
+            witness.canonical_key: witness.margin_value
+            for witness in fixture.witness_bank.constraints
+        }
+
+    prepared = _prepare(fixture, realized_margin_probe=storage_probe)
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    rollback = error.value.rollback_receipt
+    assert rollback is not None
+    assert rollback.before_state_digest == rollback.after_state_digest == source_digest
+    assert prepared._state == "rolled_back"
+    assert prepared._proposal_receipt is None
+    assert fixture.model.weight is source_parameter
+    assert source_parameter.device.type == "cpu"
+    assert source_parameter.layout == torch.strided
+    assert source_parameter.dtype == source_value.dtype
+    assert source_parameter.requires_grad is True
+    assert torch.equal(source_parameter, source_value)
+    assert source_parameter._version == source_version
+    assert fixture.transaction.state_digest() == source_digest
+
+    sampled, replayed, replay_tensors = _surface_evidence(
+        fixture.model,
+        fixture.named,
+    )
+    trajectory_ledger = _trajectory_ledger(sampled)
+    compiler_ledger, compact_logits = _compiler_evidence(
+        fixture.model,
+        trajectory_ledger,
+    )
+    fixture.sampled_groups = sampled
+    fixture.replay_groups = replayed
+    fixture.replay_tensors = replay_tensors
+    fixture.trajectory_ledger = trajectory_ledger
+    fixture.compiler_ledger = compiler_ledger
+    fixture.compact_logits = compact_logits
+    retry = _prepare(fixture)
+    assert isinstance(retry.backward_and_propose(), PrivateProposalReceipt)
+    assert isinstance(retry.rollback(), RollbackReceipt)
 
 
 def test_normal_rollback_restores_exact_source_tensor_versions() -> None:
