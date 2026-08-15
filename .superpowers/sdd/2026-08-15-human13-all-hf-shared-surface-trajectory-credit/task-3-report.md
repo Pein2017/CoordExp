@@ -110,3 +110,60 @@ All execution remained CPU-only with injected toy tensors. There was no real HF
 load/forward/backward/optimizer action, CUDA/GPU use, network access, checkpoint
 write, output publication, accepted state, adaptive retry, or fallback path.
 OpenSpec Task 3.6 remains unchecked pending the fresh committed-target rereview.
+
+## Fix round 2 — full registered model state
+
+The fresh rereview of commit `d6b7fdf` confirmed that all three round-1 P1s
+were closed, then returned HOLD with one additional P1: the runtime fingerprint
+and rollback boundary covered the optimizer-bound trainable subset, but not a
+registered frozen base parameter. A frozen value could therefore change after
+preparation, pass proposal admission, and remain changed after rollback.
+
+This was accepted as a repairable full-model contract gap, with no change to
+the research objective, projection semantics, or legacy runtime seam. Before
+production correction, the toy surface gained one registered frozen parameter
+and the adversarial focused test mutated it after preparation. The exact RED
+was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 19 passed, 1 failed
+Failed: DID NOT RAISE AllHFVerticalError
+```
+
+The correction keeps AdamW and the supplied `TrainingStateTransaction` bound
+only to the trainable proposal parameters. Separately, the vertical owner now:
+
+- captures the exact complete `model.named_parameters()` registry at prepare,
+  including every parameter's name, object identity, shape, dtype,
+  `requires_grad`, tensor version, and content hash;
+- carries a detached full-model Source hash in the objective/proposal receipt;
+- revalidates the full registry and content before backward and again after
+  exact AdamW capture immediately before projected apply;
+- begins the existing trainable transaction before the final live-state
+  revalidation, then on rejection uses that transaction for optimizer,
+  trainable, counter, and RNG restoration and restores all still-identical
+  registered model parameters from the private Source snapshot;
+- records equal full-model Source/restored hashes in the sealed rollback
+  receipt. A registry identity change remains an explicit fail-closed restore
+  error rather than silently rebinding optimizer ownership.
+
+The existing trainable Source-drift test was also strengthened to require a
+rollback receipt and exact Source parameter/transaction digest restoration.
+
+## Fix round 2 gates
+
+```text
+focused: 20 passed
+focused + adjacent Human-13 suites: 251 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No legacy runtime file changed. Execution remained CPU-only with injected toy
+tensors and no real HF load/forward/backward/optimizer action, GPU/CUDA,
+network, checkpoint/output action, accepted checkpoint, retry, or fallback.
+OpenSpec Task 3.6 remains unchecked pending another committed-target rereview.

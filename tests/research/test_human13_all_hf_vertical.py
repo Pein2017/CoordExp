@@ -69,6 +69,9 @@ class _TinySurface(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.tensor([0.25, 0.75], dtype=torch.float64))
+        self.frozen_base = torch.nn.Parameter(
+            torch.tensor([2.0], dtype=torch.float64), requires_grad=False
+        )
         self.eval()
 
 
@@ -327,7 +330,11 @@ def _compiler_evidence(
 def _fixture() -> _Fixture:
     torch.manual_seed(123)
     model = _TinySurface()
-    named = tuple(model.named_parameters())
+    named = tuple(
+        (name, parameter)
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    )
     optimizer = torch.optim.AdamW(
         [parameter for _, parameter in named],
         lr=3e-6,
@@ -624,7 +631,14 @@ def test_model_parameter_optimizer_and_source_state_substitution_fail_closed() -
     fixture = _fixture()
     foreign = _TinySurface()
     with pytest.raises(ValueError, match="model trainable"):
-        _prepare(fixture, named_trainable_parameters=tuple(foreign.named_parameters()))
+        _prepare(
+            fixture,
+            named_trainable_parameters=tuple(
+                (name, parameter)
+                for name, parameter in foreign.named_parameters()
+                if parameter.requires_grad
+            ),
+        )
 
     fixture = _fixture()
     fixture.optimizer.param_groups[0]["lr"] = 1e-6
@@ -632,11 +646,19 @@ def test_model_parameter_optimizer_and_source_state_substitution_fail_closed() -
         _prepare(fixture)
 
     fixture = _fixture()
+    source = tuple(parameter.detach().clone() for _, parameter in fixture.named)
+    source_digest = fixture.transaction.state_digest()
     prepared = _prepare(fixture)
     with torch.no_grad():
         fixture.model.weight.add_(1.0)
-    with pytest.raises(AllHFVerticalError, match="Source state drifted"):
+    with pytest.raises(AllHFVerticalError, match="Source state drifted") as error:
         prepared.backward_and_propose()
+    assert error.value.rollback_receipt is not None
+    assert fixture.transaction.state_digest() == source_digest
+    assert all(
+        torch.equal(parameter, saved)
+        for (_, parameter), saved in zip(fixture.named, source, strict=True)
+    )
     assert fixture.counter.value == 0
 
 
@@ -658,6 +680,29 @@ def test_post_prepare_model_mode_or_parameter_registry_drift_fails_closed(
     with pytest.raises(AllHFVerticalError, match="eval-mode|trainable surface"):
         prepared.backward_and_propose()
 
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert all(parameter.grad is None for _, parameter in fixture.named)
+
+
+def test_post_prepare_frozen_parameter_drift_rejects_and_restores_full_source() -> None:
+    # The HF shared surface includes registered frozen base parameters even
+    # though AdamW remains bound only to the trainable proposal surface.
+    fixture = _fixture()
+    source_frozen = fixture.model.frozen_base.detach().clone()
+    source_transaction_digest = fixture.transaction.state_digest()
+    prepared = _prepare(fixture)
+    with torch.no_grad():
+        fixture.model.frozen_base.add_(1.0)
+
+    with pytest.raises(AllHFVerticalError, match="full model Source") as error:
+        prepared.backward_and_propose()
+
+    rollback = error.value.rollback_receipt
+    assert rollback is not None
+    assert rollback.full_model_source_sha256 == rollback.full_model_restored_sha256
+    assert torch.equal(fixture.model.frozen_base, source_frozen)
+    assert fixture.transaction.state_digest() == source_transaction_digest
     assert fixture.counter.value == 0
     assert fixture.optimizer.state == {}
     assert all(parameter.grad is None for _, parameter in fixture.named)

@@ -167,12 +167,65 @@ def _require_graph_owner(
     return tuple(fingerprints)
 
 
+def _full_model_parameters(
+    model: torch.nn.Module,
+) -> tuple[tuple[str, torch.nn.Parameter], ...]:
+    if not isinstance(model, torch.nn.Module):
+        raise ValueError("shared-surface model must be a live module")
+    full_named = tuple(model.named_parameters())
+    if (
+        not full_named
+        or len({name for name, _ in full_named}) != len(full_named)
+        or len({id(parameter) for _, parameter in full_named}) != len(full_named)
+        or any(parameter.device.type != "cpu" for _, parameter in full_named)
+    ):
+        raise ValueError("full model parameter registry must be unique and CPU-resident")
+    return full_named
+
+
+def _full_model_state_sha256(
+    full_named: Sequence[tuple[str, torch.nn.Parameter]],
+) -> str:
+    return json_sha256(
+        {
+            "schema_version": "human13_all_hf_full_model_state.v1",
+            "parameters": [
+                {
+                    "name": name,
+                    "shape": list(parameter.shape),
+                    "dtype": str(parameter.dtype),
+                    "requires_grad": parameter.requires_grad,
+                    "content_sha256": _tensor_sha256(parameter),
+                }
+                for name, parameter in full_named
+            ],
+        }
+    )
+
+
 def _surface_fingerprint(
     model: torch.nn.Module,
-    named: tuple[tuple[str, torch.nn.Parameter], ...],
-) -> tuple[tuple[str, int, int], ...]:
-    exact = _exact_named_parameters(model, named)
-    return tuple((name, id(parameter), parameter._version) for name, parameter in exact)
+    full_named: tuple[tuple[str, torch.nn.Parameter], ...],
+) -> tuple[tuple[str, int, tuple[int, ...], str, bool, int, str], ...]:
+    if model.training:
+        raise ValueError("shared-surface model must be the live eval-mode module")
+    current = _full_model_parameters(model)
+    if tuple((name, id(parameter)) for name, parameter in current) != tuple(
+        (name, id(parameter)) for name, parameter in full_named
+    ):
+        raise ValueError("full model parameter registry was substituted")
+    return tuple(
+        (
+            name,
+            id(parameter),
+            tuple(parameter.shape),
+            str(parameter.dtype),
+            parameter.requires_grad,
+            parameter._version,
+            _tensor_sha256(parameter),
+        )
+        for name, parameter in current
+    )
 
 
 class _SealedReceipt:
@@ -215,6 +268,7 @@ class PrivateProposalReceipt(_SealedReceipt):
     surface_identity_sha256: str
     source_checkpoint_sha256: str
     surface_parameter_sha256: str
+    full_model_parameter_sha256: str
     sampled_group_sha256s: tuple[str, ...]
     replay_group_sha256s: tuple[str, ...]
     request_ids: tuple[str, ...]
@@ -265,6 +319,7 @@ class PrivateProposalReceipt(_SealedReceipt):
             "surface_identity_sha256",
             "source_checkpoint_sha256",
             "surface_parameter_sha256",
+            "full_model_parameter_sha256",
             "trajectory_ledger_sha256",
             "compiler_ledger_sha256",
             "compiler_evidence_sha256",
@@ -381,6 +436,8 @@ class RollbackReceipt(_SealedReceipt):
     after_state_digest: str
     source_parameter_sha256: str
     restored_parameter_sha256: str
+    full_model_source_sha256: str
+    full_model_restored_sha256: str
     cpu_rng_before_sha256: str
     cpu_rng_after_sha256: str
     cuda_rng_before_sha256s: tuple[str, ...]
@@ -399,6 +456,8 @@ class RollbackReceipt(_SealedReceipt):
             "after_state_digest",
             "source_parameter_sha256",
             "restored_parameter_sha256",
+            "full_model_source_sha256",
+            "full_model_restored_sha256",
             "cpu_rng_before_sha256",
             "cpu_rng_after_sha256",
         ):
@@ -410,6 +469,7 @@ class RollbackReceipt(_SealedReceipt):
             self.decision != "rejected_restored"
             or self.before_state_digest != self.after_state_digest
             or self.source_parameter_sha256 != self.restored_parameter_sha256
+            or self.full_model_source_sha256 != self.full_model_restored_sha256
             or self.cpu_rng_before_sha256 != self.cpu_rng_after_sha256
             or self.cuda_rng_before_sha256s != self.cuda_rng_after_sha256s
             or self.update_count_after != self.update_count_before
@@ -591,6 +651,7 @@ class PreparedAllHFVertical:
         if KAPPA != 1.0 or MARGIN != 1e-4 or WITNESS_FIRST_ORDER_TOLERANCE != 1e-4:
             raise ValueError("compiler/preservation constants drifted from the vertical")
         named = _exact_named_parameters(model, named_trainable_parameters)
+        full_named = _full_model_parameters(model)
         _require_optimizer_and_transaction(
             named,
             optimizer=optimizer,
@@ -640,6 +701,7 @@ class PreparedAllHFVertical:
             raise ValueError("shared surface or K16 request/group identity differs")
         layout = ParameterLayout.from_named_parameters(named)
         source_parameter_sha256 = parameter_state_sha256(named, layout)
+        full_model_parameter_sha256 = _full_model_state_sha256(full_named)
         if identities[0].parameter_state_sha256 != source_parameter_sha256:
             raise ValueError("shared-surface parameter state differs from live Source")
 
@@ -815,6 +877,7 @@ class PreparedAllHFVertical:
                 "schema_version": "human13_all_hf_objective_binding.v1",
                 "surface_identity_sha256": surface_identity_sha256,
                 "source_checkpoint_sha256": identities[0].checkpoint_payload_sha256,
+                "full_model_parameter_sha256": full_model_parameter_sha256,
                 "trajectory_ledger_sha256": admitted_trajectory.content_sha256,
                 "compiler_ledger_sha256": admitted_compiler.content_sha256,
                 "compiler_evidence_sha256": compiler_evidence_sha256,
@@ -826,6 +889,7 @@ class PreparedAllHFVertical:
         )
         self._model = model
         self._named = named
+        self._full_named = full_named
         self._optimizer = optimizer
         self._transaction = transaction
         self._update_counter = update_counter
@@ -852,7 +916,12 @@ class PreparedAllHFVertical:
         self._objective: torch.Tensor | None = objective
         self._identity = identities[0]
         self._surface_identity_sha256 = surface_identity_sha256
-        self._surface_fingerprint = _surface_fingerprint(model, named)
+        self._surface_fingerprint = _surface_fingerprint(model, full_named)
+        self._full_model_parameter_sha256 = full_model_parameter_sha256
+        self._full_model_source_values = tuple(
+            (name, parameter, parameter.detach().clone())
+            for name, parameter in full_named
+        )
         self._sampled_hashes = tuple(sampled_hashes)
         self._replay_hashes = tuple(replay_hashes)
         self._request_ids = tuple(request_ids)
@@ -871,12 +940,6 @@ class PreparedAllHFVertical:
         if id(self._model) != self._identity.model_object_id:
             raise ValueError("shared-surface model object was substituted")
         _exact_named_parameters(self._model, self._named)
-        _require_optimizer_and_transaction(
-            self._named,
-            optimizer=self._optimizer,
-            transaction=self._transaction,
-            update_counter=self._update_counter,
-        )
         layout = ParameterLayout.from_named_parameters(self._named)
         if (
             parameter_state_sha256(self._named, layout)
@@ -884,8 +947,13 @@ class PreparedAllHFVertical:
             or self._transaction.state_digest() != self._source_state_digest
         ):
             raise ValueError("Source state drifted after vertical preparation")
-        if _surface_fingerprint(self._model, self._named) != self._surface_fingerprint:
-            raise ValueError("model trainable surface identity/version drifted")
+        if (
+            _surface_fingerprint(self._model, self._full_named)
+            != self._surface_fingerprint
+            or _full_model_state_sha256(self._full_named)
+            != self._full_model_parameter_sha256
+        ):
+            raise ValueError("full model Source identity/version/content drifted")
         if any(parameter.grad is not None for _, parameter in self._named):
             raise ValueError("Source gradients drifted after vertical preparation")
         for group, expected in zip(self._sampled, self._sampled_hashes, strict=True):
@@ -946,13 +1014,21 @@ class PreparedAllHFVertical:
             raise ValueError("compiler component graph drifted after preparation")
 
     def _revalidate_before_apply(
-        self, expected_surface_fingerprint: tuple[tuple[str, int, int], ...]
+        self,
+        expected_surface_fingerprint: tuple[
+            tuple[str, int, tuple[int, ...], str, bool, int, str], ...
+        ],
     ) -> None:
-        if _surface_fingerprint(self._model, self._named) != expected_surface_fingerprint:
-            raise ValueError("model trainable surface drifted before projected apply")
+        if (
+            _surface_fingerprint(self._model, self._full_named)
+            != expected_surface_fingerprint
+        ):
+            raise ValueError("full model surface drifted before projected apply")
         layout = ParameterLayout.from_named_parameters(self._named)
         if parameter_state_sha256(self._named, layout) != self._source_parameter_sha256:
             raise ValueError("Source parameter state drifted before projected apply")
+        if _full_model_state_sha256(self._full_named) != self._full_model_parameter_sha256:
+            raise ValueError("full model Source drifted before projected apply")
         bound_parameter_ids = frozenset(id(parameter) for _, parameter in self._named)
         if _require_graph_owner(
             tuple(
@@ -1012,11 +1088,17 @@ class PreparedAllHFVertical:
             raise RuntimeError("vertical proposal is one-shot")
         snapshot: TrainingStateSnapshot | None = None
         try:
+            _require_optimizer_and_transaction(
+                self._named,
+                optimizer=self._optimizer,
+                transaction=self._transaction,
+                update_counter=self._update_counter,
+            )
+            snapshot = self._transaction.begin()
             self._revalidate()
             objective = cast(torch.Tensor, self._objective)
             trajectory_numerator = cast(torch.Tensor, self._trajectory_numerator)
             compiler_numerator = cast(torch.Tensor, self._compiler_numerator)
-            snapshot = self._transaction.begin()
             objective.backward()
             gradients = tuple(parameter.grad for _, parameter in self._named)
             if any(gradient is None for gradient in gradients):
@@ -1037,7 +1119,7 @@ class PreparedAllHFVertical:
                 binding=self._proposal_binding(),
             )
             post_capture_surface_fingerprint = _surface_fingerprint(
-                self._model, self._named
+                self._model, self._full_named
             )
             projection = project_adamw_proposal(
                 proposal=proposal, witness_bank=self._witness_bank
@@ -1074,6 +1156,7 @@ class PreparedAllHFVertical:
                     surface_identity_sha256=self._surface_identity_sha256,
                     source_checkpoint_sha256=self._identity.checkpoint_payload_sha256,
                     surface_parameter_sha256=self._source_parameter_sha256,
+                    full_model_parameter_sha256=self._full_model_parameter_sha256,
                     sampled_group_sha256s=self._sampled_hashes,
                     replay_group_sha256s=self._replay_hashes,
                     request_ids=self._request_ids,
@@ -1159,6 +1242,7 @@ class PreparedAllHFVertical:
         )
         transaction_receipt: TransactionReceipt = self._transaction.reject(snapshot)
         self._optimizer.zero_grad(set_to_none=True)
+        self._restore_full_model_source()
         restored_parameter_sha256 = parameter_state_sha256(
             self._named, ParameterLayout.from_named_parameters(self._named)
         )
@@ -1167,11 +1251,16 @@ class PreparedAllHFVertical:
             RollbackReceipt(
                 decision=cast(Literal["rejected_restored"], transaction_receipt.decision),
                 transaction_id=snapshot.transaction_id,
-                before_state_digest=snapshot.state_digest,
+                # The vertical receipt binds restoration to the Source captured
+                # at preparation, even when the transaction had to begin after
+                # detecting an externally drifted trainable value.
+                before_state_digest=self._source_state_digest,
                 applied_state_digest=observed_applied_digest,
                 after_state_digest=after_digest,
                 source_parameter_sha256=self._source_parameter_sha256,
                 restored_parameter_sha256=restored_parameter_sha256,
+                full_model_source_sha256=self._full_model_parameter_sha256,
+                full_model_restored_sha256=_full_model_state_sha256(self._full_named),
                 cpu_rng_before_sha256=_rng_sha256(snapshot.cpu_rng_state),
                 cpu_rng_after_sha256=_rng_sha256(torch.get_rng_state()),
                 cuda_rng_before_sha256s=_cuda_rng_sha256s(snapshot.cuda_rng_states),
@@ -1191,12 +1280,27 @@ class PreparedAllHFVertical:
         self._rollback_receipt = receipt
         return receipt
 
+    @torch.no_grad()
+    def _restore_full_model_source(self) -> None:
+        current = _full_model_parameters(self._model)
+        if tuple((name, id(parameter)) for name, parameter in current) != tuple(
+            (name, id(parameter)) for name, parameter, _ in self._full_model_source_values
+        ):
+            raise RuntimeError("full model registry drift prevents exact Source restore")
+        for name, parameter, saved in self._full_model_source_values:
+            if name not in dict(current):
+                raise RuntimeError("full model Source parameter is missing during restore")
+            parameter.copy_(saved.to(device=parameter.device, dtype=parameter.dtype))
+        if _full_model_state_sha256(self._full_named) != self._full_model_parameter_sha256:
+            raise RuntimeError("full model Source restore digest differs")
+
     def _release_live_graphs(self) -> None:
         self._objective = None
         self._trajectory_numerator = None
         self._compiler_numerator = None
         self._replay_tensors = {}
         self._compiler_compact_logits = None
+        self._full_model_source_values = ()
 
     def rollback(self) -> RollbackReceipt:
         if self._state == "rolled_back":
