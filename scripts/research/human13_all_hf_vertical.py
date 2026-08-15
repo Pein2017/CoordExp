@@ -201,6 +201,8 @@ def _full_model_state_sha256(
                     "name": name,
                     "shape": list(parameter.shape),
                     "dtype": str(parameter.dtype),
+                    "device": str(parameter.device),
+                    "layout": str(parameter.layout),
                     "requires_grad": parameter.requires_grad,
                     "content_sha256": _tensor_sha256(parameter),
                 }
@@ -301,7 +303,9 @@ def _restore_optimizer_param_groups(
 def _surface_fingerprint(
     model: torch.nn.Module,
     full_named: tuple[tuple[str, torch.nn.Parameter], ...],
-) -> tuple[tuple[str, int, tuple[int, ...], str, bool, int, str], ...]:
+) -> tuple[
+    tuple[str, int, tuple[int, ...], str, str, str, bool, int, str], ...
+]:
     if any(training for _, _, training in _model_mode_fingerprint(model)):
         raise ValueError("shared-surface model must be the live eval-mode module")
     current = _full_model_parameters(model)
@@ -315,6 +319,8 @@ def _surface_fingerprint(
             id(parameter),
             tuple(parameter.shape),
             str(parameter.dtype),
+            str(parameter.device),
+            str(parameter.layout),
             parameter.requires_grad,
             parameter._version,
             _tensor_sha256(parameter),
@@ -1196,7 +1202,7 @@ class PreparedAllHFVertical:
     def _revalidate_before_apply(
         self,
         expected_surface_fingerprint: tuple[
-            tuple[str, int, tuple[int, ...], str, bool, int, str], ...
+            tuple[str, int, tuple[int, ...], str, str, str, bool, int, str], ...
         ],
     ) -> None:
         if (
@@ -1363,7 +1369,7 @@ class PreparedAllHFVertical:
         self,
         *,
         pre_apply_surface_fingerprint: tuple[
-            tuple[str, int, tuple[int, ...], str, bool, int, str], ...
+            tuple[str, int, tuple[int, ...], str, str, str, bool, int, str], ...
         ],
         applied_post_parameter_sha256: str,
     ) -> None:
@@ -1379,12 +1385,12 @@ class PreparedAllHFVertical:
             raise ValueError("post-probe model surface registry drifted")
         trainable_ids = frozenset(id(parameter) for _, parameter in self._named)
         for before, after in zip(pre_apply_surface_fingerprint, current, strict=True):
-            if before[:5] != after[:5]:
+            if before[:7] != after[:7]:
                 raise ValueError("post-probe model surface metadata drifted")
-            expected_version = before[5] + (1 if before[1] in trainable_ids else 0)
-            if after[5] != expected_version:
+            expected_version = before[7] + (1 if before[1] in trainable_ids else 0)
+            if after[7] != expected_version:
                 raise ValueError("post-probe model surface version drifted")
-            if before[1] not in trainable_ids and before[6] != after[6]:
+            if before[1] not in trainable_ids and before[8] != after[8]:
                 raise ValueError("post-probe model surface frozen value drifted")
         layout = ParameterLayout.from_named_parameters(self._named)
         if (
@@ -1414,6 +1420,15 @@ class PreparedAllHFVertical:
             objective_ledger_sha256=self._objective_ledger_sha256,
         )
 
+    def _revalidate_before_transaction_begin(self) -> None:
+        try:
+            self._require_attempt_ownership(
+                expected_update_count=self._source_update_count
+            )
+        except ValueError as error:
+            raise ValueError("preflight transaction ownership drifted") from error
+        self._revalidate()
+
     def backward_and_propose(self) -> PrivateProposalReceipt:
         if self._state != "prepared":
             raise RuntimeError("vertical proposal is one-shot")
@@ -1425,6 +1440,7 @@ class PreparedAllHFVertical:
                 transaction=self._transaction,
                 update_counter=self._update_counter,
             )
+            self._revalidate_before_transaction_begin()
             snapshot = self._transaction.begin()
             self._attempt_transaction_id = snapshot.transaction_id
             self._revalidate()
@@ -1618,6 +1634,10 @@ class PreparedAllHFVertical:
             expected_update_count=None,
             active_transaction_id=snapshot.transaction_id,
         )
+        # Restore registry/trainability/storage metadata before the transaction
+        # copies saved values; otherwise dtype/device drift would make its
+        # value-only restore cast into the wrong live storage.
+        self._restore_full_model_source()
         transaction_receipt: TransactionReceipt = self._transaction.reject(snapshot)
         self._optimizer.zero_grad(set_to_none=True)
         self._restore_full_model_source()
@@ -1774,7 +1794,7 @@ class PreparedAllHFVertical:
             module._modules.update(source_modules)
         for parameter, source_requires_grad in self._source_parameter_trainability:
             parameter.requires_grad_(source_requires_grad)
-        current = _full_model_parameters(self._model)
+        current = tuple(self._model.named_parameters())
         if tuple((name, id(parameter)) for name, parameter in current) != tuple(
             (name, id(parameter)) for name, parameter, _ in self._full_model_source_values
         ):
@@ -1782,8 +1802,9 @@ class PreparedAllHFVertical:
         for name, parameter, saved in self._full_model_source_values:
             if name not in dict(current):
                 raise RuntimeError("full model Source parameter is missing during restore")
-            parameter.copy_(saved.to(device=parameter.device, dtype=parameter.dtype))
+            parameter.data = saved.detach().clone()
             parameter.grad = None
+        _full_model_parameters(self._model)
         self._model.eval()
         if _model_mode_fingerprint(self._model) != self._source_model_mode_fingerprint:
             raise RuntimeError("full model Source mode restore differs")

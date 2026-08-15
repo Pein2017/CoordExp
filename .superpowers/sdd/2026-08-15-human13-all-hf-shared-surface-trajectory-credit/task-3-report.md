@@ -291,6 +291,63 @@ CPU/injected only with no real HF model action, GPU/CUDA execution, network,
 checkpoint/output action, accepted checkpoint, retry, or fallback objective.
 OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.
 
+## Fix round 6 — pre-begin fixed point and storage metadata
+
+The fixed-point rereview confirmed round-5 snapshot-less ownership and exact
+registry/trainability recovery, then identified two remaining Source metadata
+paths:
+
+- valid runtime or scheduler owner substitution, or CPU RNG drift, was not
+  rejected until after `transaction.begin()`. The drifted incidental snapshot
+  was then used for ordinary rejection instead of prepare-time recovery;
+- `model.float()` before backward or inside the realized-margin callback was
+  detected, but value restoration copied the Source tensor into the current
+  float32 storage, leaving dtype and transaction digest drifted without a
+  rollback receipt.
+
+Five focused cases (three parameterized ownership/RNG cases and two dtype
+locations) were added before production correction. The RED was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 31 passed, 5 failed
+Failure: rollback receipt was None
+```
+
+The vertical now runs the complete prepare-time optimizer/transaction ownership
+guard and full `_revalidate()` Source-state check before
+`TrainingStateTransaction.begin()`. Runtime/scheduler owner changes, their
+state/counter drift, CPU/CUDA RNG drift, model registry/mode/metadata/content,
+ledger/graph drift, optimizer state/default/group drift, and counter changes
+therefore all enter the prepare-time recovery path rather than being captured
+as a new baseline. The check still repeats after begin before backward.
+
+Full-model source hashing/fingerprinting now includes device and tensor layout
+in addition to shape, dtype, trainability, version, and content. Restoration
+first reconnects exact Source registry objects and flags, then reinstalls a
+detached clone of each saved Source tensor as the Parameter's storage. This
+recovers dtype/device/layout/shape before value, eval-mode, content, and exact
+version verification. `_reject` performs that metadata restore before the
+existing transaction copies its saved values, avoiding casts into drifted
+storage, and repeats full certification after rejection.
+
+## Fix round 6 gates
+
+```text
+focused: 36 passed
+focused + adjacent Human-13 suites: 267 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No legacy runtime or objective/projection math changed. Execution remained
+CPU/injected only with no real HF model action, GPU/CUDA execution, network,
+checkpoint/output action, accepted checkpoint, retry, or fallback objective.
+OpenSpec Task 3.6 remains unchecked pending fresh fixed-point rereview.
+
 ## Fix round 5 — recoverable pre-transaction preflight
 
 The rereview of round 4 confirmed its callback ownership, exact version, and

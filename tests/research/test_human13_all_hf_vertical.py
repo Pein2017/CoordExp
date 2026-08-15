@@ -75,6 +75,23 @@ class _TinySurface(torch.nn.Module):
         self.eval()
 
 
+class _FakeScheduler:
+    def __init__(self) -> None:
+        self.value = 0
+
+    def state_dict(self) -> dict[str, int]:
+        return {"value": self.value}
+
+    def load_state_dict(self, value: dict[str, int]) -> None:
+        self.value = value["value"]
+
+
+@dataclass
+class _FakeRuntime:
+    optimizer_step_count: int = 0
+    scheduler_step_count: int = 0
+
+
 @dataclass
 class _Fixture:
     model: _TinySurface
@@ -1016,6 +1033,95 @@ def test_model_registry_or_trainability_drift_restores_exact_source_objects(
     assert all(parameter.grad is None for _, parameter in fixture.named)
     with pytest.raises(RuntimeError, match="already rolled back"):
         prepared.rollback()
+
+
+@pytest.mark.parametrize("drift", ("runtime", "scheduler", "rng"))
+def test_pre_begin_transaction_owner_or_rng_drift_uses_prepare_source_recovery(
+    drift: str,
+) -> None:
+    fixture = _fixture()
+    source_rng = torch.get_rng_state().clone()
+    source_digest = fixture.transaction.state_digest()
+    prepared = _prepare(fixture)
+    if drift == "runtime":
+        fixture.transaction._runtime = _FakeRuntime()
+    elif drift == "scheduler":
+        fixture.transaction._scheduler = _FakeScheduler()
+    else:
+        torch.manual_seed(999)
+
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    assert error.value.rollback_receipt is not None
+    assert prepared._state == "rolled_back"
+    assert fixture.transaction._runtime is None
+    assert fixture.transaction._scheduler is None
+    assert torch.equal(torch.get_rng_state(), source_rng)
+    assert fixture.transaction.state_digest() == source_digest
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert all(parameter.grad is None for _, parameter in fixture.named)
+    with pytest.raises(RuntimeError, match="already rolled back"):
+        prepared.rollback()
+
+
+def test_pre_backward_dtype_drift_restores_exact_source_metadata() -> None:
+    fixture = _fixture()
+    source_digest = fixture.transaction.state_digest()
+    source_dtypes = tuple(
+        parameter.dtype for _, parameter in fixture.model.named_parameters()
+    )
+    source_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+    prepared = _prepare(fixture)
+    fixture.model.float()
+
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    assert error.value.rollback_receipt is not None
+    assert tuple(
+        parameter.dtype for _, parameter in fixture.model.named_parameters()
+    ) == source_dtypes
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == source_versions
+    assert fixture.transaction.state_digest() == source_digest
+    assert prepared._state == "rolled_back"
+
+
+def test_realized_probe_dtype_drift_restores_exact_source_metadata() -> None:
+    fixture = _fixture()
+    source_digest = fixture.transaction.state_digest()
+    source_dtypes = tuple(
+        parameter.dtype for _, parameter in fixture.model.named_parameters()
+    )
+    source_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+
+    def dtype_probe() -> dict[str, float]:
+        fixture.model.float()
+        return {
+            witness.canonical_key: witness.margin_value
+            for witness in fixture.witness_bank.constraints
+        }
+
+    prepared = _prepare(fixture, realized_margin_probe=dtype_probe)
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    assert error.value.rollback_receipt is not None
+    assert tuple(
+        parameter.dtype for _, parameter in fixture.model.named_parameters()
+    ) == source_dtypes
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == source_versions
+    assert fixture.transaction.state_digest() == source_digest
+    assert prepared._state == "rolled_back"
 
 
 def test_normal_rollback_restores_exact_source_tensor_versions() -> None:
