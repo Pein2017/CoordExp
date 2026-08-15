@@ -554,6 +554,83 @@ That exact path was confirmed absent before this second CPU-only correction.
 A later activation must revalidate its absence and retain the same scientific
 contrast; this correction grants no model, vLLM, GPU, or output-root action.
 
+That `vertical-dose-qualification-v3` root is now also a consumed, immutable
+failed activation.  It completed the sealed dual-RP Source clean-greedy
+baselines and frontiers, the fp32/SDPA DoRA witness surface, and native K16
+acquisition on vLLM 0.14.1 fp32, then stopped before any optimizer update or
+public acquisition at
+`replay_acquisition_group -> validate_acquisition_group_replay` with
+`PolicyReplayError: per-token replay error exceeds the sealed tolerance`.
+No cell receipt exists and the GPU was released.  The root remains failure
+evidence and MUST NOT be retried, repaired in place, or overwritten.
+
+The CPU-only diagnosis rules out four of the five candidate causes and leaves
+the fifth as the designed contrast itself:
+
+- Processed-logprob semantics match.  vLLM 0.14.1 with
+  `logprobs_mode="processed_logprobs"`, seeded sampling, `top_p=1.0`,
+  `top_k=0` returns fp32 `log_softmax(logits/T)` after penalties
+  (`Sampler.forward -> sample -> TopKTopPSampler.forward_native`), which is
+  exactly the sealed `processed_policy_logprobs` reconstruction (RP once per
+  distinct history token, sign-split, then temperature, then log-softmax).
+- Evidence capture is correct.  `_chosen_logprobs` indexes the vLLM logprob
+  candidates by the chosen token ID, not by rank, and the sealed history and
+  causal-row conventions (`len(prompt)-1+index`) agree between sampler,
+  packed replay, and the census seam.
+- Model/adapter/embedding identity binds: the sampler serves the
+  execution-model-receipted merged Source snapshot; the replay assembles the
+  same Source function as fresh warm-start rank-16 DoRA plus the frozen
+  special-token delta, function-preserving in exact arithmetic.
+- No MRoPE/packing contract mismatch was found on CPU; the packed forward is
+  the production `src.qwen.forward` FA2/MRoPE seam with branch proof
+  required.
+- What remains is the sealed numeric-surface pairing: the sampled side is a
+  bf16-free fp32 vLLM TRITON_ATTN forward, while the replay side is the
+  gradient-bearing packed forward on the `Human13LiveModelPlan`-typed
+  `bf16` weights with `flash_attention_2`, compared at `temperature=0.4`
+  (which multiplies logit deviations by 2.5 in log-probability space) under
+  the sealed `0.02`/`0.002` nats gate.
+
+The parity gate therefore stopped exactly as the protocol requires ("if the
+fast batch sampler and packed replay cannot meet this sealed contract, the
+unit stops before model-quality execution").  The tolerance is not revised
+and the unit HOLDs on a user-owned decision: revise the sealed tolerance,
+change the replay/training numeric surface, change the sampling surface, or
+retire the exactly-on-policy claim.  No agent-side correction can preserve
+the scientific semantics.
+
+One evidentiary defect is repaired CPU-only: the gate raised at the first
+breaching token and discarded the error field, so the v3 receipt carries no
+magnitudes and cannot distinguish expected bf16/FA2-versus-fp32 numeric
+spread from a gross misalignment bug.  The failure-mode matrix frozen before
+that correction:
+
+- All tokens within the sealed per-token and group-mean gates: the admitted
+  receipt is byte-identical to the previous behavior.
+- Any per-token breach: fail closed with the same message prefix, now
+  carrying max/mean absolute error, token counts over tolerance, and the
+  arg-max offender `(request_id, token_index)` from a complete scan of the
+  group, not the first breach.
+- Group-mean breach without a per-token breach: same complete diagnostic
+  field on the sealed group-mean message.
+- Non-finite errors and identity/contract/history mismatches keep their
+  immediate structural failures unchanged.
+- The diagnostic field carries only error magnitudes, counts, and lineage
+  coordinates; chosen tokens, log-probability values, decode text, and owner
+  outcomes never enter the message.
+
+The repair successor identity is frozen, but not activated, as
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+  2026-08-14-human13-k-trajectory-rp-crossover-screen/
+  vertical-dose-qualification-v4/
+```
+
+That exact path was confirmed absent during this third CPU-only correction.
+Activating it requires the user-owned parity-surface decision above; this
+correction grants no model, vLLM, GPU, or output-root action.
+
 Implementation and bounded model/GPU execution were explicitly authorized by
 the user; this unit still grants no authority beyond its named tasks and roots.
 No K-miss supervision, full-sequence CE control, DPO, GFlowNet, bridge,

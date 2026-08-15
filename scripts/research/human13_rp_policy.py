@@ -7,7 +7,7 @@ import hashlib
 import json
 import math
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import torch
 
@@ -22,6 +22,70 @@ from scripts.research.human13_k_trajectory_contracts import (
 
 class PolicyReplayError(ValueError):
     """Raised when sealed sampling evidence cannot be admitted for replay."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_field: "ReplayErrorField | None" = None,
+    ) -> None:
+        if error_field is not None:
+            message = f"{message} | {error_field.describe()}"
+        super().__init__(message)
+        self.error_field = error_field
+
+
+@dataclass(frozen=True)
+class ReplayErrorField:
+    """Outcome-free numeric diagnostics for one replay parity breach.
+
+    Carries only error magnitudes, counts, and lineage coordinates; chosen
+    tokens, log-probability values, decode text, and owner outcomes must
+    never enter this record.
+    """
+
+    token_count: int
+    tokens_over_tolerance: int
+    max_absolute_error_nats: float
+    mean_absolute_error_nats: float
+    max_error_request_id: str
+    max_error_token_index: int
+
+    def describe(self) -> str:
+        return (
+            f"max={self.max_absolute_error_nats:.6f} nats at "
+            f"request_id={self.max_error_request_id} "
+            f"token_index={self.max_error_token_index}; "
+            f"mean={self.mean_absolute_error_nats:.6f} nats over "
+            f"{self.token_count} token(s); "
+            f"{self.tokens_over_tolerance} token(s) over "
+            f"{ReplayTolerance().per_token_nats} nats"
+        )
+
+
+def _replay_error_field(
+    errors_by_request: Sequence[tuple[str, tuple[float, ...]]],
+    tolerance: ReplayTolerance,
+) -> ReplayErrorField:
+    flat = [
+        (error, request_id, token_index)
+        for request_id, errors in errors_by_request
+        for token_index, error in enumerate(errors)
+    ]
+    max_error, max_request_id, max_token_index = max(
+        flat, key=lambda item: item[0]
+    )
+    errors = [item[0] for item in flat]
+    return ReplayErrorField(
+        token_count=len(errors),
+        tokens_over_tolerance=sum(
+            1 for error in errors if error > tolerance.per_token_nats
+        ),
+        max_absolute_error_nats=max_error,
+        mean_absolute_error_nats=sum(errors) / len(errors),
+        max_error_request_id=max_request_id,
+        max_error_token_index=max_token_index,
+    )
 
 
 @dataclass(frozen=True)
@@ -241,8 +305,6 @@ def _trajectory_replay_errors(
         error = abs(sampled_token.processed_logprob - replayed_token.processed_logprob)
         if not math.isfinite(error):
             raise PolicyReplayError("processed log probability error is non-finite")
-        if error > tolerance.per_token_nats:
-            raise PolicyReplayError("per-token replay error exceeds the sealed tolerance")
         errors.append(error)
     return tuple(errors)
 
@@ -255,6 +317,14 @@ def validate_policy_replay(
     """Validate one trajectory's identity and token gates, without a group claim."""
 
     errors = _trajectory_replay_errors(sampled, replayed, tolerance)
+    field = _replay_error_field(
+        ((sampled.identity.request_id, errors),), tolerance
+    )
+    if field.tokens_over_tolerance:
+        raise PolicyReplayError(
+            "per-token replay error exceeds the sealed tolerance",
+            error_field=field,
+        )
     mean_error = sum(errors) / len(errors)
     return PolicyReplayReceipt(
         admitted=True,
@@ -286,17 +356,29 @@ def validate_acquisition_group_replay(
     replayed_by_request = {item.identity.request_id: item for item in replayed.trajectories}
     if set(sampled_by_request) != set(replayed_by_request):
         raise PolicyReplayError("acquisition group request identities differ")
-    errors: list[float] = []
     request_ids = tuple(sorted(sampled_by_request))
-    for request_id in request_ids:
-        errors.extend(
+    errors_by_request = tuple(
+        (
+            request_id,
             _trajectory_replay_errors(
                 sampled_by_request[request_id], replayed_by_request[request_id], tolerance
-            )
+            ),
+        )
+        for request_id in request_ids
+    )
+    errors = [error for _, request_errors in errors_by_request for error in request_errors]
+    field = _replay_error_field(errors_by_request, tolerance)
+    if field.tokens_over_tolerance:
+        raise PolicyReplayError(
+            "per-token replay error exceeds the sealed tolerance",
+            error_field=field,
         )
     mean_error = sum(errors) / len(errors)
     if mean_error > tolerance.group_mean_nats:
-        raise PolicyReplayError("group mean replay error exceeds the sealed tolerance")
+        raise PolicyReplayError(
+            "group mean replay error exceeds the sealed tolerance",
+            error_field=field,
+        )
     return AcquisitionGroupParityReceipt(
         admitted=True,
         tolerance_sha256=tolerance.content_sha256,
@@ -312,6 +394,7 @@ def validate_acquisition_group_replay(
 __all__ = [
     "PolicyReplayError",
     "PolicyReplayReceipt",
+    "ReplayErrorField",
     "AcquisitionGroupParityReceipt",
     "AcquisitionGroupReplayReceipt",
     "processed_policy_logprobs",

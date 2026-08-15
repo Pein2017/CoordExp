@@ -375,6 +375,98 @@ def test_group_replay_can_admit_when_one_local_mean_exceeds_group_mean() -> None
     assert receipt.content_sha256 == receipt.content_sha256
 
 
+def test_per_token_breach_reports_complete_outcome_free_error_field() -> None:
+    # Catches discarding the error field: v3 stopped with no magnitudes, so
+    # bf16-surface spread and gross misalignment were indistinguishable.
+    first = _contract(identity=_identity(request_id="request:seed-11:image-7"))
+    second = _contract(identity=_identity(request_id="request:seed-12:image-7"))
+    sampled = _group(
+        _trajectory(contract=first, logprobs=(-0.4, -0.8)),
+        _trajectory(contract=second, logprobs=(-0.4, -0.8)),
+    )
+    replayed = _group(
+        _trajectory(contract=first, logprobs=(-0.43, -0.8)),
+        _trajectory(contract=second, logprobs=(-0.4, -0.95)),
+    )
+
+    with pytest.raises(
+        PolicyReplayError,
+        match="per-token replay error exceeds the sealed tolerance",
+    ) as exc_info:
+        validate_acquisition_group_replay(sampled, replayed, ReplayTolerance())
+
+    field = exc_info.value.error_field
+    assert field is not None
+    assert field.token_count == 4
+    assert field.tokens_over_tolerance == 2
+    assert field.max_absolute_error_nats == pytest.approx(0.15)
+    assert field.mean_absolute_error_nats == pytest.approx(0.045)
+    # the global arg-max offender lives in the second trajectory: the scan
+    # must cover the complete group, not stop at the first breach
+    assert field.max_error_request_id == "request:seed-12:image-7"
+    assert field.max_error_token_index == 1
+
+
+def test_group_mean_breach_reports_error_field_without_leaking_evidence() -> None:
+    # Catches leaking sampled evidence through the diagnostic channel.
+    contract = _contract(identity=_identity(request_id="request:seed-11:image-7"))
+    sampled = _group(
+        _trajectory(
+            generated=(4, 5, 6, 2),
+            logprobs=(-0.4, -0.4, -0.4, -0.4),
+            contract=contract,
+        )
+    )
+    replayed = _group(
+        _trajectory(
+            generated=(4, 5, 6, 2),
+            logprobs=(-0.4029, -0.4029, -0.4029, -0.4029),
+            contract=contract,
+        )
+    )
+
+    with pytest.raises(
+        PolicyReplayError,
+        match="group mean replay error exceeds the sealed tolerance",
+    ) as exc_info:
+        validate_acquisition_group_replay(sampled, replayed, ReplayTolerance())
+
+    field = exc_info.value.error_field
+    assert field is not None
+    assert field.tokens_over_tolerance == 0
+    assert field.max_absolute_error_nats == pytest.approx(0.0029)
+    assert field.mean_absolute_error_nats == pytest.approx(0.0029)
+    message = str(exc_info.value)
+    assert message == (
+        "group mean replay error exceeds the sealed tolerance | "
+        + field.describe()
+    )
+    # only error magnitudes, counts, and lineage coordinates may appear
+    assert "-0.4029" not in message
+    assert "chosen" not in message
+
+
+def test_single_trajectory_replay_breach_reports_error_field() -> None:
+    # Catches restricting the diagnostic channel to the group gate only.
+    with pytest.raises(
+        PolicyReplayError,
+        match="per-token replay error exceeds the sealed tolerance",
+    ) as exc_info:
+        validate_policy_replay(
+            _trajectory(logprobs=(-0.400, -0.800)),
+            _trajectory(logprobs=(-0.421, -0.800)),
+            ReplayTolerance(),
+        )
+
+    field = exc_info.value.error_field
+    assert field is not None
+    assert field.token_count == 2
+    assert field.tokens_over_tolerance == 1
+    assert field.max_absolute_error_nats == pytest.approx(0.021)
+    assert field.max_error_request_id == "request:seed-11:image-7"
+    assert field.max_error_token_index == 0
+
+
 def test_group_replay_fails_closed_on_group_lineage_mismatch() -> None:
     # Catches pooling trajectories from a sampler contract with a different top-p.
     contract = _contract()
