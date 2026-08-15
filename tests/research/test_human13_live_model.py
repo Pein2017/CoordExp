@@ -392,12 +392,18 @@ class FakeBackend:
         )
         self.adapter_result = SimpleNamespace(
             model="dora-model",
-            receipt=SimpleNamespace(adapter_name="default"),
+            receipt=SimpleNamespace(
+                adapter_name="default",
+                warm_start={
+                    "source_adapter_tensor_sha256": live.SOURCE_ADAPTER_SHA256
+                },
+            ),
         )
         self.special_result = SimpleNamespace(
             model="dora-plus-frozen-delta",
             shared_embed_delta=_FrozenDelta(),
             receipt="special-receipt",
+            loaded_tensor_sha256=live.SOURCE_SPECIAL_EMBEDDING_SHA256,
         )
         self.optimizer = _Optimizer()
         self.scheduler = object()
@@ -761,6 +767,55 @@ def test_live_assembly_fails_closed_on_world_size_or_surface_drift(
             repo_root=Path.cwd(),
             backend=unfrozen_vision,
         )
+
+
+@pytest.mark.parametrize("payload", ("adapter", "special"))
+def test_live_assembly_seals_exact_loaded_source_hashes(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: str,
+) -> None:
+    plan = _plan()
+    backend = FakeBackend()
+    monkeypatch.setattr(
+        live,
+        "validate_human13_live_model_plan",
+        lambda _: _validation(plan),
+    )
+    if payload == "adapter":
+        backend.adapter_result.receipt.warm_start[
+            "source_adapter_tensor_sha256"
+        ] = "0" * 64
+    else:
+        backend.special_result.loaded_tensor_sha256 = "0" * 64
+
+    with pytest.raises(live.Human13LiveModelError, match="loaded .* receipt"):
+        live.assemble_human13_live_model(
+            plan,
+            pack_count=1,
+            repo_root=Path.cwd(),
+            backend=backend,
+        )
+
+
+def test_live_assembly_builder_seal_rejects_constructed_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _plan()
+    monkeypatch.setattr(
+        live,
+        "validate_human13_live_model_plan",
+        lambda _: _validation(plan),
+    )
+    assembly = live.assemble_human13_live_model(
+        plan,
+        pack_count=1,
+        repo_root=Path.cwd(),
+        backend=FakeBackend(),
+    )
+
+    live.require_admitted_human13_live_assembly(assembly)
+    with pytest.raises(live.Human13LiveModelError, match="not issued"):
+        live.require_admitted_human13_live_assembly(replace(assembly))
 
 
 def test_parity_skeleton_encodes_only_image_1584_without_owner_rows(
@@ -1265,12 +1320,19 @@ def test_default_backend_freezes_delta_and_builds_exact_optimizer_runtime(
     monkeypatch.setattr(
         "src.qwen.load_special_token_embedding_deltas", fake_load_special
     )
-    assert (
-        backend.load_and_freeze_special_token_delta(
-            "dora-model", components, plan, repo_root=Path("/repo")
-        )
-        is special_result
+    monkeypatch.setattr(
+        live,
+        "_sha256_file",
+        lambda path: live.SOURCE_SPECIAL_EMBEDDING_SHA256,
     )
+    loaded = backend.load_and_freeze_special_token_delta(
+        "dora-model", components, plan, repo_root=Path("/repo")
+    )
+    assert loaded.model == special_result.model
+    assert loaded.shared_embed_delta is special_result.shared_embed_delta
+    assert loaded.receipt == special_result.receipt
+    assert loaded.load_receipt == "load-receipt"
+    assert loaded.loaded_tensor_sha256 == live.SOURCE_SPECIAL_EMBEDDING_SHA256
     assert delta.requires_grad is False
     assert captured["special_gate_selection"] == (captured["special_config"], "tokens")
     assert captured["payload"] == Path(plan.source.special_embedding_path)

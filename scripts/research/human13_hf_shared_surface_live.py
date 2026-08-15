@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-from typing import Any, Literal
+from collections.abc import Callable, Iterable
+from typing import Any, Literal, Mapping, cast
+from weakref import ReferenceType, ref
 
 import torch
 
@@ -32,12 +34,14 @@ from scripts.research.human13_hf_shared_surface import (
     causal_history_sha256,
     plan_image1584_k16,
 )
+from scripts.research import human13_live_model as live_model
 from scripts.research.human13_live_model import Human13LiveAssembly
 from src.artifacts.json_values import json_sha256
 from src.inference.hf_backend import _derive_qwen_position_ids
 
 
 _PROCESSOR_ORDER = ("repetition_penalty", "temperature", "top_p")
+_RESOURCE_SEALS: dict[int, tuple[ReferenceType[object], str]] = {}
 
 
 class HFSharedSurfaceLiveError(RuntimeError):
@@ -46,7 +50,7 @@ class HFSharedSurfaceLiveError(RuntimeError):
 
 @dataclass(frozen=True)
 class SharedSurfaceResourceReceipt:
-    """A lifecycle snapshot for one session; it owns no live tensor."""
+    """Sealed terminal lifecycle evidence; it owns no live object or tensor."""
 
     identity: HFSharedSurfaceIdentity
     model_object_id: int
@@ -55,18 +59,24 @@ class SharedSurfaceResourceReceipt:
     tokenizer_object_id: int
     processor_order: tuple[str, str, str]
     observed_logits_dtype: Literal["float32"]
+    sampled_seed_groups: tuple[tuple[int, int, int, int], ...]
+    sampled_group_sha256s: tuple[str, ...]
+    replay_group_sha256s: tuple[str, ...]
     sample_forward_count: int
     replay_forward_count: int
     total_forward_count: int
     no_cache_forward_count: int
-    live_replay_group_count: int
+    retained_graph_count: Literal[0]
     latest_replay_group_sha256: str | None
-    retained_live_resource_count: int
-    cleanup_state: Literal["open", "closed"]
-    cleanup_reason: Literal["completed", "failed"] | None
-    cleanup_call_count: int
+    session_held_reference_count: Literal[0]
+    assembly_ownership: Literal["borrowed_external"]
+    caller_release_claim: Literal["not_claimed"]
+    cleanup_state: Literal["closed"]
+    cleanup_reason: Literal["completed", "failed"]
+    cleanup_failures: tuple[str, ...]
+    cleanup_call_count: Literal[1]
 
-    def to_dict(self) -> dict[str, object]:
+    def _payload(self) -> dict[str, object]:
         return {
             "identity": self.identity.to_dict(),
             "model_object_id": self.model_object_id,
@@ -75,17 +85,174 @@ class SharedSurfaceResourceReceipt:
             "tokenizer_object_id": self.tokenizer_object_id,
             "processor_order": list(self.processor_order),
             "observed_logits_dtype": self.observed_logits_dtype,
+            "sampled_seed_groups": [list(group) for group in self.sampled_seed_groups],
+            "sampled_group_sha256s": list(self.sampled_group_sha256s),
+            "replay_group_sha256s": list(self.replay_group_sha256s),
             "sample_forward_count": self.sample_forward_count,
             "replay_forward_count": self.replay_forward_count,
             "total_forward_count": self.total_forward_count,
             "no_cache_forward_count": self.no_cache_forward_count,
-            "live_replay_group_count": self.live_replay_group_count,
+            "retained_graph_count": self.retained_graph_count,
             "latest_replay_group_sha256": self.latest_replay_group_sha256,
-            "retained_live_resource_count": self.retained_live_resource_count,
+            "session_held_reference_count": self.session_held_reference_count,
+            "assembly_ownership": self.assembly_ownership,
+            "caller_release_claim": self.caller_release_claim,
             "cleanup_state": self.cleanup_state,
             "cleanup_reason": self.cleanup_reason,
+            "cleanup_failures": list(self.cleanup_failures),
             "cleanup_call_count": self.cleanup_call_count,
         }
+
+    @property
+    def content_sha256(self) -> str:
+        _require_resource_receipt(self)
+        return json_sha256(self._payload())
+
+    def to_dict(self) -> dict[str, object]:
+        _require_resource_receipt(self)
+        return self._payload() | {"content_sha256": self.content_sha256}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> SharedSurfaceResourceReceipt:
+        expected = set(cls.__dataclass_fields__) | {"content_sha256"}
+        if set(value) != expected or not isinstance(value.get("identity"), Mapping):
+            raise HFSharedSurfaceLiveError(
+                "resource receipt fields differ from canonical schema"
+            )
+        receipt = cls(
+            identity=HFSharedSurfaceIdentity.from_dict(value["identity"]),
+            model_object_id=value["model_object_id"],
+            parameter_state_sha256=value["parameter_state_sha256"],
+            processor_object_id=value["processor_object_id"],
+            tokenizer_object_id=value["tokenizer_object_id"],
+            processor_order=tuple(value["processor_order"]),
+            observed_logits_dtype=value["observed_logits_dtype"],
+            sampled_seed_groups=tuple(
+                tuple(group) for group in value["sampled_seed_groups"]
+            ),
+            sampled_group_sha256s=tuple(value["sampled_group_sha256s"]),
+            replay_group_sha256s=tuple(value["replay_group_sha256s"]),
+            sample_forward_count=value["sample_forward_count"],
+            replay_forward_count=value["replay_forward_count"],
+            total_forward_count=value["total_forward_count"],
+            no_cache_forward_count=value["no_cache_forward_count"],
+            retained_graph_count=value["retained_graph_count"],
+            latest_replay_group_sha256=value["latest_replay_group_sha256"],
+            session_held_reference_count=value["session_held_reference_count"],
+            assembly_ownership=value["assembly_ownership"],
+            caller_release_claim=value["caller_release_claim"],
+            cleanup_state=value["cleanup_state"],
+            cleanup_reason=value["cleanup_reason"],
+            cleanup_failures=tuple(value["cleanup_failures"]),
+            cleanup_call_count=value["cleanup_call_count"],
+        )
+        _admit_resource_receipt(receipt)
+        if value["content_sha256"] != receipt.content_sha256:
+            raise HFSharedSurfaceLiveError("resource receipt content hash differs")
+        return receipt
+
+
+def _digest(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise HFSharedSurfaceLiveError(f"{label} must be a SHA-256 digest")
+    try:
+        int(value, 16)
+    except ValueError as exc:
+        raise HFSharedSurfaceLiveError(f"{label} must be a SHA-256 digest") from exc
+    return value
+
+
+def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
+    if type(receipt.identity) is not HFSharedSurfaceIdentity:
+        raise HFSharedSurfaceLiveError("resource receipt identity is not exact")
+    for label, values in (
+        ("sampled group", receipt.sampled_group_sha256s),
+        ("replay group", receipt.replay_group_sha256s),
+    ):
+        for value in values:
+            _digest(value, label=label)
+    counts = (
+        receipt.sample_forward_count,
+        receipt.replay_forward_count,
+        receipt.total_forward_count,
+        receipt.no_cache_forward_count,
+    )
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts):
+        raise HFSharedSurfaceLiveError("resource receipt forward counts are invalid")
+    if (
+        receipt.processor_order != _PROCESSOR_ORDER
+        or receipt.observed_logits_dtype != "float32"
+        or receipt.parameter_state_sha256 != receipt.identity.parameter_state_sha256
+        or receipt.model_object_id != receipt.identity.model_object_id
+        or receipt.total_forward_count
+        != receipt.sample_forward_count + receipt.replay_forward_count
+        or receipt.no_cache_forward_count != receipt.total_forward_count
+        or receipt.replay_forward_count < len(receipt.replay_group_sha256s)
+        or receipt.replay_forward_count > len(receipt.replay_group_sha256s) + 1
+        or len(receipt.sampled_seed_groups) != len(receipt.sampled_group_sha256s)
+        or len(receipt.replay_group_sha256s) > len(receipt.sampled_group_sha256s)
+        or receipt.retained_graph_count != 0
+        or receipt.session_held_reference_count != 0
+        or receipt.assembly_ownership != "borrowed_external"
+        or receipt.caller_release_claim != "not_claimed"
+        or receipt.cleanup_state != "closed"
+        or receipt.cleanup_call_count != 1
+    ):
+        raise HFSharedSurfaceLiveError("resource receipt lifecycle values differ")
+    if (
+        len(set(receipt.sampled_seed_groups)) != len(receipt.sampled_seed_groups)
+        or any(
+            group not in plan_image1584_k16().seed_groups
+            for group in receipt.sampled_seed_groups
+        )
+    ):
+        raise HFSharedSurfaceLiveError("resource receipt seed coverage differs")
+    expected_latest = (
+        receipt.replay_group_sha256s[-1] if receipt.replay_group_sha256s else None
+    )
+    if receipt.latest_replay_group_sha256 != expected_latest:
+        raise HFSharedSurfaceLiveError("resource receipt replay lineage differs")
+    completed = receipt.cleanup_reason == "completed"
+    if completed and (
+        receipt.sampled_seed_groups != plan_image1584_k16().seed_groups
+        or len(receipt.sampled_group_sha256s) != 4
+        or len(receipt.replay_group_sha256s) != 4
+        or receipt.replay_forward_count != 4
+        or receipt.cleanup_failures
+    ):
+        raise HFSharedSurfaceLiveError(
+            "completed resource receipt requires four sampled and replayed groups"
+        )
+    if receipt.cleanup_reason not in ("completed", "failed"):
+        raise HFSharedSurfaceLiveError("resource receipt terminal reason differs")
+    if any(not isinstance(item, str) or not item for item in receipt.cleanup_failures):
+        raise HFSharedSurfaceLiveError("resource receipt cleanup failures are invalid")
+
+
+def _admit_resource_receipt(
+    receipt: SharedSurfaceResourceReceipt,
+) -> SharedSurfaceResourceReceipt:
+    _validate_resource_receipt(receipt)
+    fingerprint = json_sha256(receipt._payload())
+    identity = id(receipt)
+
+    def cleanup(_: ReferenceType[object], *, key: int = identity) -> None:
+        _RESOURCE_SEALS.pop(key, None)
+
+    _RESOURCE_SEALS[identity] = (ref(receipt, cleanup), fingerprint)
+    return receipt
+
+
+def _require_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
+    entry = _RESOURCE_SEALS.get(id(receipt))
+    if (
+        entry is None
+        or entry[0]() is not receipt
+        or entry[1] != json_sha256(receipt._payload())
+    ):
+        raise HFSharedSurfaceLiveError(
+            "resource receipt was not admitted through the lifecycle choke point"
+        )
 
 
 def _tensor_sha256(tensor: torch.Tensor, *, label: str) -> str:
@@ -175,7 +342,10 @@ def _named_parameters(model: Any) -> tuple[tuple[str, torch.Tensor], ...]:
     method = getattr(model, "named_parameters", None)
     if not callable(method):
         raise HFSharedSurfaceLiveError("shared-surface model lacks named parameters")
-    values = tuple(method())
+    typed_method = cast(
+        Callable[[], Iterable[tuple[str, torch.Tensor]]], method
+    )
+    values = tuple(typed_method())
     if not values or any(
         not isinstance(item, tuple)
         or len(item) != 2
@@ -267,6 +437,73 @@ def _checkpoint_payload_sha256(assembly: Human13LiveAssembly) -> str:
     )
 
 
+def _require_exact_source_assembly(assembly: Human13LiveAssembly) -> None:
+    """Re-admit builder provenance before publishing a shared-surface identity."""
+
+    try:
+        live_model.validate_human13_live_assembly_values(assembly)
+    except live_model.Human13LiveModelError as exc:
+        raise HFSharedSurfaceLiveError(str(exc)) from exc
+    if assembly.plan.unit_id != live_model.UNIT_ID or assembly.plan.arm_id != "A1":
+        raise HFSharedSurfaceLiveError(
+            "shared-surface assembly must be the exact Human-13 Source A1 plan"
+        )
+    validation = assembly.validation
+    source = assembly.plan.source
+    if (
+        type(validation) is not live_model.Human13PlanValidationReceipt
+        or validation.arm_id != assembly.plan.arm_id
+        or validation.schema_version != live_model.VALIDATION_SCHEMA_VERSION
+        or validation.adapter_tensor_sha256 != source.adapter_sha256
+        or validation.special_embedding_tensor_sha256
+        != source.special_embedding_sha256
+    ):
+        raise HFSharedSurfaceLiveError(
+            "shared-surface loaded adapter/delta validation hashes differ"
+        )
+    if (
+        getattr(
+            getattr(assembly.special_token_result, "shared_embed_delta", None),
+            "requires_grad",
+            None,
+        )
+        is not False
+    ):
+        raise HFSharedSurfaceLiveError(
+            "shared-surface selected-token delta must remain frozen"
+        )
+    surface = assembly.trainable_surface_receipt.to_artifact_dict()
+    exact = surface.get("exact_surface_groups")
+    language = (
+        exact.get("trainable_language_dora") if isinstance(exact, Mapping) else None
+    )
+    expected_trainable_names = (
+        tuple(language.get("parameter_names", ()))
+        if isinstance(language, Mapping)
+        else ()
+    )
+    actual_trainable_names = tuple(
+        name
+        for name, parameter in _named_parameters(assembly.model)
+        if parameter.requires_grad
+    )
+    if (
+        not expected_trainable_names
+        or actual_trainable_names != expected_trainable_names
+    ):
+        raise HFSharedSurfaceLiveError(
+            "shared-surface actual trainables must be exact language DoRA only"
+        )
+    if (
+        getattr(assembly.runtime, "model", None) is not assembly.model
+        or getattr(assembly.runtime, "optimizer", None) is not assembly.optimizer
+        or getattr(assembly.runtime, "scheduler", None) is not assembly.scheduler
+    ):
+        raise HFSharedSurfaceLiveError(
+            "shared-surface runtime substituted prepared model/state aliases"
+        )
+
+
 def _apply_policy(
     input_ids: torch.Tensor,
     logits: torch.Tensor,
@@ -282,11 +519,13 @@ def _apply_policy(
 
     scores = RepetitionPenaltyLogitsProcessor(
         penalty=plan.policy.repetition_penalty
-    )(input_ids, logits)
+    )(input_ids, logits)  # pyright: ignore[reportArgumentType] - HF stub aliases
     scores = TemperatureLogitsWarper(temperature=plan.policy.temperature)(
-        input_ids, scores
+        input_ids, scores  # pyright: ignore[reportArgumentType] - HF stub aliases
     )
-    return TopPLogitsWarper(top_p=plan.policy.top_p)(input_ids, scores)
+    return TopPLogitsWarper(top_p=plan.policy.top_p)(
+        input_ids, scores  # pyright: ignore[reportArgumentType] - HF stub aliases
+    )
 
 
 class HFSharedSurfaceSession:
@@ -306,6 +545,7 @@ class HFSharedSurfaceSession:
             raise HFSharedSurfaceLiveError(
                 "shared-surface session requires Human13LiveAssembly"
             )
+        _require_exact_source_assembly(assembly)
         if (
             getattr(assembly.plan, "mixed_precision", None) != "bf16"
             or getattr(assembly.plan, "attn_implementation", None)
@@ -345,7 +585,10 @@ class HFSharedSurfaceSession:
         image_sha256 = _image_sha256(skeleton)
         validation = assembly.validation
         tokenizer_sha256 = getattr(assembly.components, "tokenizer_sha256", None)
-        if tokenizer_sha256 != getattr(validation, "tokenizer_sha256", None):
+        if (
+            not isinstance(tokenizer_sha256, str)
+            or tokenizer_sha256 != getattr(validation, "tokenizer_sha256", None)
+        ):
             raise HFSharedSurfaceLiveError("shared-surface tokenizer identity drifted")
         source = assembly.plan.source
         checkpoint_payload_sha256 = _checkpoint_payload_sha256(assembly)
@@ -366,18 +609,33 @@ class HFSharedSurfaceSession:
         self._sample_forward_count = 0
         self._replay_forward_count = 0
         self._no_cache_forward_count = 0
-        self._sampled_group_indexes: set[int] = set()
-        self._replayed_group_sha256s: set[str] = set()
+        self._sampled_groups: list[
+            tuple[tuple[int, int, int, int], str]
+        ] = []
+        self._replayed_groups: list[tuple[str, str]] = []
         self._live_replay_tensors: dict[str, torch.Tensor] = {}
         self._latest_replay_group_sha256: str | None = None
         self._closed = False
         self._cleanup_reason: Literal["completed", "failed"] | None = None
         self._cleanup_call_count = 0
+        self._terminal_receipt: SharedSurfaceResourceReceipt | None = None
         self._require_invariants()
 
     @property
     def resource_receipt(self) -> SharedSurfaceResourceReceipt:
-        return SharedSurfaceResourceReceipt(
+        if self._terminal_receipt is None:
+            raise HFSharedSurfaceLiveError(
+                "resource receipt is available only after terminal cleanup"
+            )
+        return self._terminal_receipt
+
+    def _build_terminal_receipt(
+        self,
+        *,
+        reason: Literal["completed", "failed"],
+        cleanup_failures: tuple[str, ...],
+    ) -> SharedSurfaceResourceReceipt:
+        return _admit_resource_receipt(SharedSurfaceResourceReceipt(
             identity=self._identity,
             model_object_id=self._model_object_id,
             parameter_state_sha256=self._identity.parameter_state_sha256,
@@ -385,19 +643,31 @@ class HFSharedSurfaceSession:
             tokenizer_object_id=self._tokenizer_object_id,
             processor_order=_PROCESSOR_ORDER,
             observed_logits_dtype="float32",
+            sampled_seed_groups=tuple(
+                seeds for seeds, _sha256 in self._sampled_groups
+            ),
+            sampled_group_sha256s=tuple(
+                sha256 for _seeds, sha256 in self._sampled_groups
+            ),
+            replay_group_sha256s=tuple(
+                replay_sha256 for _sampled_sha256, replay_sha256 in self._replayed_groups
+            ),
             sample_forward_count=self._sample_forward_count,
             replay_forward_count=self._replay_forward_count,
             total_forward_count=(
                 self._sample_forward_count + self._replay_forward_count
             ),
             no_cache_forward_count=self._no_cache_forward_count,
-            live_replay_group_count=len(self._live_replay_tensors),
+            retained_graph_count=0,
             latest_replay_group_sha256=self._latest_replay_group_sha256,
-            retained_live_resource_count=self._retained_live_resource_count(),
-            cleanup_state="closed" if self._closed else "open",
-            cleanup_reason=self._cleanup_reason,
-            cleanup_call_count=self._cleanup_call_count,
-        )
+            session_held_reference_count=0,
+            assembly_ownership="borrowed_external",
+            caller_release_claim="not_claimed",
+            cleanup_state="closed",
+            cleanup_reason=reason,
+            cleanup_failures=cleanup_failures,
+            cleanup_call_count=1,
+        ))
 
     @property
     def live_replay_tensor_count(self) -> int:
@@ -428,7 +698,10 @@ class HFSharedSurfaceSession:
     ) -> Literal[False]:
         del exc_type, traceback
         if not self._closed:
-            self._close_internal("failed" if exc is not None else "completed")
+            if exc is not None:
+                self._close_internal("failed", primary_exception=exc)
+            else:
+                self.close()
         return False
 
     def _require_open(self) -> None:
@@ -437,14 +710,31 @@ class HFSharedSurfaceSession:
 
     def _require_invariants(self, *, verify_parameter_values: bool = True) -> None:
         self._require_open()
+        model = self._model
+        assembly = self._assembly
+        components = self._components
+        skeleton = self._skeleton
+        tokenizer = self._tokenizer
+        processor = self._processor
         if (
-            self._model is not self._expected_model
-            or id(self._model) != self._identity.model_object_id
+            model is None
+            or assembly is None
+            or components is None
+            or skeleton is None
+            or tokenizer is None
+            or processor is None
+        ):
+            raise HFSharedSurfaceLiveError(
+                "shared-surface session live references are unavailable"
+            )
+        if (
+            model is not self._expected_model
+            or id(model) != self._identity.model_object_id
         ):
             raise HFSharedSurfaceLiveError("shared-surface model object was substituted")
-        if self._model.training:
+        if model.training:
             raise HFSharedSurfaceLiveError("shared-surface model must remain in eval mode")
-        current = _named_parameters(self._model)
+        current = _named_parameters(model)
         dtypes = {str(parameter.dtype) for _name, parameter in current}
         if dtypes != {"torch.bfloat16"}:
             raise HFSharedSurfaceLiveError(
@@ -456,28 +746,36 @@ class HFSharedSurfaceSession:
             _layout, state_sha256 = _trainable_state(current)
             if state_sha256 != self._identity.parameter_state_sha256:
                 raise HFSharedSurfaceLiveError("shared-surface parameter state changed")
-        backends = _observed_attention_backends(self._model)
+        backends = _observed_attention_backends(model)
         if not backends or any(value != "flash_attention_2" for value in backends):
             raise HFSharedSurfaceLiveError(
                 "shared-surface attention backend must remain flash_attention_2"
             )
         if any(
             getattr(getattr(owner, "config", None), "use_cache", False) is not False
-            for owner in (self._model,)
+            for owner in (model,)
         ):
             raise HFSharedSurfaceLiveError("shared-surface cache configuration drifted")
-        if getattr(self._components, "tokenizer", None) is not self._tokenizer:
+        if getattr(components, "tokenizer", None) is not tokenizer:
             raise HFSharedSurfaceLiveError("shared-surface tokenizer object was substituted")
         if (
-            getattr(self._components, "tokenizer_sha256", None)
+            getattr(components, "tokenizer_sha256", None)
             != self._identity.tokenizer_sha256
-            or getattr(self._assembly.validation, "tokenizer_sha256", None)
+            or getattr(assembly.validation, "tokenizer_sha256", None)
             != self._identity.tokenizer_sha256
         ):
             raise HFSharedSurfaceLiveError("shared-surface tokenizer identity drifted")
-        if getattr(self._components, "processor", None) is not self._processor:
+        if getattr(components, "processor", None) is not processor:
             raise HFSharedSurfaceLiveError("shared-surface processor object was substituted")
-        source = self._assembly.plan.source
+        if (
+            getattr(assembly.runtime, "model", None) is not model
+            or getattr(assembly.runtime, "optimizer", None) is not assembly.optimizer
+            or getattr(assembly.runtime, "scheduler", None) is not assembly.scheduler
+        ):
+            raise HFSharedSurfaceLiveError(
+                "shared-surface prepared runtime aliases were substituted"
+            )
+        source = assembly.plan.source
         if getattr(source, "adapter_sha256", None) != self._identity.adapter_sha256:
             raise HFSharedSurfaceLiveError("shared-surface adapter identity drifted")
         if (
@@ -488,16 +786,21 @@ class HFSharedSurfaceSession:
                 "shared-surface embedding delta identity drifted"
             )
         if (
-            _checkpoint_payload_sha256(self._assembly)
+            _checkpoint_payload_sha256(assembly)
             != self._identity.checkpoint_payload_sha256
         ):
             raise HFSharedSurfaceLiveError(
                 "shared-surface checkpoint payload identity drifted"
             )
-        if _prompt_tokens(self._skeleton) != self._prompt:
+        if _prompt_tokens(skeleton) != self._prompt:
             raise HFSharedSurfaceLiveError("shared-surface prompt identity drifted")
-        if _image_sha256(self._skeleton) != self._identity.image_sha256:
+        if _image_sha256(skeleton) != self._identity.image_sha256:
             raise HFSharedSurfaceLiveError("shared-surface image identity drifted")
+        if verify_parameter_values:
+            try:
+                live_model.validate_human13_live_assembly_values(assembly)
+            except live_model.Human13LiveModelError as exc:
+                raise HFSharedSurfaceLiveError(str(exc)) from exc
 
     def _forward(
         self,
@@ -508,11 +811,17 @@ class HFSharedSurfaceSession:
     ) -> torch.Tensor:
         self._require_invariants(verify_parameter_values=False)
         model = self._model
+        tokenizer = self._tokenizer
+        skeleton = self._skeleton
+        if model is None or tokenizer is None or skeleton is None:
+            raise HFSharedSurfaceLiveError(
+                "shared-surface forward references are unavailable"
+            )
         first_parameter = next(iter(model.parameters()))
         device = first_parameter.device
         input_ids = input_ids.to(device=device, dtype=torch.long)
         attention_mask = attention_mask.to(device=device, dtype=torch.long)
-        pixels, grid = _materialized_image(self._skeleton)
+        pixels, grid = _materialized_image(skeleton)
         batch = int(input_ids.shape[0])
         pixel_values = pixels.repeat((batch, 1)).to(
             device=device, dtype=first_parameter.dtype
@@ -553,7 +862,7 @@ class HFSharedSurfaceSession:
             not isinstance(logits, torch.Tensor)
             or logits.ndim != 3
             or tuple(logits.shape[:2]) != tuple(input_ids.shape)
-            or int(logits.shape[2]) != len(self._tokenizer)
+            or int(logits.shape[2]) != len(tokenizer)
         ):
             raise HFSharedSurfaceLiveError(
                 "shared-surface causal logits have the wrong shape"
@@ -578,9 +887,17 @@ class HFSharedSurfaceSession:
                     "sample group seeds differ from the frozen image-1584 K16 plan"
                 )
             group_index = self._plan.seed_groups.index(seeds)
-            if group_index in self._sampled_group_indexes:
-                raise HFSharedSurfaceLiveError("sample group cannot be acquired twice")
-            device = next(iter(self._model.parameters())).device
+            if group_index != len(self._sampled_groups):
+                raise HFSharedSurfaceLiveError(
+                    "sample groups must follow the frozen K16 order exactly"
+                )
+            model = self._model
+            tokenizer = self._tokenizer
+            if model is None or tokenizer is None:
+                raise HFSharedSurfaceLiveError(
+                    "shared-surface sampling references are unavailable"
+                )
+            device = next(iter(model.parameters())).device
             generators = tuple(
                 torch.Generator(device=device).manual_seed(seed) for seed in seeds
             )
@@ -589,14 +906,14 @@ class HFSharedSurfaceSession:
             token_rows: list[list[SampledHFToken]] = [[] for _ in seeds]
             stopped = [False for _ in seeds]
             steps: list[HFActiveBatchStep] = []
-            stop_token_id = self._tokenizer.convert_tokens_to_ids(
+            stop_token_id = tokenizer.convert_tokens_to_ids(
                 self._plan.policy.stop_token
             )
             if (
                 isinstance(stop_token_id, bool)
                 or not isinstance(stop_token_id, int)
                 or stop_token_id < 0
-                or stop_token_id >= len(self._tokenizer)
+                or stop_token_id >= len(tokenizer)
             ):
                 raise HFSharedSurfaceLiveError(
                     "shared-surface tokenizer lacks the exact im_end stop token"
@@ -658,7 +975,10 @@ class HFSharedSurfaceSession:
                         active_history_sha256s=tuple(
                             token_rows[index][-1].history_sha256 for index in active
                         ),
-                        batch_shape=tuple(int(size) for size in input_ids.shape),
+                        batch_shape=(
+                            int(input_ids.shape[0]),
+                            int(input_ids.shape[1]),
+                        ),
                         rng_before_sha256=rng_before,
                         rng_after_sha256=rng_after,
                     )
@@ -699,11 +1019,13 @@ class HFSharedSurfaceSession:
                 active_batch_steps=tuple(steps),
             )
             self._require_invariants()
-            self._sampled_group_indexes.add(group_index)
+            self._sampled_groups.append(
+                (cast(tuple[int, int, int, int], seeds), group.content_sha256)
+            )
             return group
-        except Exception:
+        except Exception as exc:
             if not self._closed:
-                self._close_internal("failed")
+                self._close_internal("failed", primary_exception=exc)
             raise
 
     def replay_group(self, group: SampledHFGroup) -> GradientReplayGroup:
@@ -718,12 +1040,19 @@ class HFSharedSurfaceSession:
                 raise HFSharedSurfaceLiveError(
                     "replay group differs from the frozen shared-surface plan"
                 )
-            if group.group_index not in self._sampled_group_indexes:
+            if group.group_index >= len(self._sampled_groups):
                 raise HFSharedSurfaceLiveError(
                     "replay group was not sampled by this live session"
                 )
-            if group.content_sha256 in self._replayed_group_sha256s:
-                raise HFSharedSurfaceLiveError("sampled group cannot be replayed twice")
+            expected_replay_index = len(self._replayed_groups)
+            if (
+                group.group_index != expected_replay_index
+                or self._sampled_groups[expected_replay_index][1]
+                != group.content_sha256
+            ):
+                raise HFSharedSurfaceLiveError(
+                    "replay groups must follow sampled K16 order exactly"
+                )
             histories = tuple(
                 self._prompt
                 + tuple(token.chosen_token_id for token in request.tokens)
@@ -826,41 +1155,81 @@ class HFSharedSurfaceSession:
             self._require_invariants()
             self._live_replay_tensors[replay.content_sha256] = chosen_logps
             self._latest_replay_group_sha256 = replay.content_sha256
-            self._replayed_group_sha256s.add(group.content_sha256)
+            self._replayed_groups.append(
+                (group.content_sha256, replay.content_sha256)
+            )
             return replay
-        except Exception:
+        except Exception as exc:
             if not self._closed:
-                self._close_internal("failed")
+                self._close_internal("failed", primary_exception=exc)
             raise
 
     def _close_internal(
-        self, reason: Literal["completed", "failed"]
+        self,
+        reason: Literal["completed", "failed"],
+        *,
+        primary_exception: BaseException | None = None,
     ) -> SharedSurfaceResourceReceipt:
+        if self._closed:
+            raise HFSharedSurfaceLiveError("shared-surface session is already closed")
         self._cleanup_call_count += 1
         self._cleanup_reason = reason
-        self._live_replay_tensors.clear()
         model = self._expected_model
-        zero_grad = getattr(model, "zero_grad", None)
-        if callable(zero_grad):
-            zero_grad(set_to_none=True)
-        free_memory = getattr(self._assembly.accelerator, "free_memory", None)
-        if callable(free_memory):
-            free_memory()
-        self._closed = True
-        self._model = None
-        self._expected_model = None
-        self._assembly = None
-        self._components = None
-        self._skeleton = None
-        self._tokenizer = None
-        self._processor = None
-        self._parameters = ()
-        self._parameter_layout = None
-        self._prompt = ()
+        accelerator = getattr(self._assembly, "accelerator", None)
+        cleanup_failures: list[str] = []
+        try:
+            zero_grad = getattr(model, "zero_grad", None)
+            if callable(zero_grad):
+                try:
+                    zero_grad(set_to_none=True)
+                except Exception as exc:  # cleanup must continue
+                    cleanup_failures.append(f"zero_grad: {type(exc).__name__}: {exc}")
+            free_memory = getattr(accelerator, "free_memory", None)
+            if callable(free_memory):
+                try:
+                    free_memory()
+                except Exception as exc:  # cleanup must continue
+                    cleanup_failures.append(f"free_memory: {type(exc).__name__}: {exc}")
+        finally:
+            self._live_replay_tensors.clear()
+            self._closed = True
+            self._model = None
+            self._expected_model = None
+            self._assembly = None
+            self._components = None
+            self._skeleton = None
+            self._tokenizer = None
+            self._processor = None
+            self._parameters = ()
+            self._parameter_layout = None
+            self._prompt = ()
+            terminal_reason: Literal["completed", "failed"] = (
+                "failed" if cleanup_failures or reason == "failed" else "completed"
+            )
+            self._terminal_receipt = self._build_terminal_receipt(
+                reason=terminal_reason,
+                cleanup_failures=tuple(cleanup_failures),
+            )
+        if cleanup_failures and primary_exception is None:
+            raise HFSharedSurfaceLiveError(
+                "shared-surface cleanup failed: " + "; ".join(cleanup_failures)
+            )
         return self.resource_receipt
 
     def close(self) -> SharedSurfaceResourceReceipt:
         self._require_open()
+        complete = (
+            tuple(seeds for seeds, _sha256 in self._sampled_groups)
+            == self._plan.seed_groups
+            and len(self._sampled_groups) == 4
+            and len(self._replayed_groups) == 4
+        )
+        if not complete:
+            error = HFSharedSurfaceLiveError(
+                "completed close requires four sampled and replayed groups"
+            )
+            self._close_internal("failed", primary_exception=error)
+            raise error
         return self._close_internal("completed")
 
 
@@ -873,15 +1242,24 @@ def open_hf_shared_surface(
 
     try:
         return HFSharedSurfaceSession(plan, assembly, skeleton)
-    except Exception:
+    except Exception as primary:
         model = getattr(assembly, "model", None)
         zero_grad = getattr(model, "zero_grad", None)
+        cleanup_failures: list[str] = []
         if callable(zero_grad):
-            zero_grad(set_to_none=True)
+            try:
+                zero_grad(set_to_none=True)
+            except Exception as exc:
+                cleanup_failures.append(f"zero_grad: {type(exc).__name__}: {exc}")
         accelerator = getattr(assembly, "accelerator", None)
         free_memory = getattr(accelerator, "free_memory", None)
         if callable(free_memory):
-            free_memory()
+            try:
+                free_memory()
+            except Exception as exc:
+                cleanup_failures.append(f"free_memory: {type(exc).__name__}: {exc}")
+        for failure in cleanup_failures:
+            primary.add_note(f"shared-surface open cleanup failure: {failure}")
         raise
 
 

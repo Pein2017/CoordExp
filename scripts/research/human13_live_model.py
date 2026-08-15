@@ -14,7 +14,8 @@ from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Callable, Literal, Protocol, cast
+from weakref import ReferenceType, ref
 
 
 LIVE_PLAN_SCHEMA_VERSION = "human13_live_model_plan.v1"
@@ -228,6 +229,138 @@ class Human13LiveAssembly:
     trainable_surface_receipt: Any
     runtime: Any
     memory_saver_receipt: Any
+
+
+@dataclass(frozen=True)
+class Human13LoadedSpecialTokenResult:
+    """Special-token install result plus the exact loaded tensor identity."""
+
+    model: Any
+    shared_embed_delta: Any
+    receipt: Any
+    load_receipt: Any
+    loaded_tensor_sha256: str
+
+
+_ADMITTED_LIVE_ASSEMBLIES: dict[
+    int, tuple[ReferenceType[object], str]
+] = {}
+
+
+def _loaded_adapter_tensor_sha256(adapter_result: Any) -> str | None:
+    warm_start = getattr(getattr(adapter_result, "receipt", None), "warm_start", None)
+    if not isinstance(warm_start, Mapping):
+        return None
+    value = warm_start.get("source_adapter_tensor_sha256")
+    return value if isinstance(value, str) else None
+
+
+def _loaded_special_embedding_tensor_sha256(special_result: Any) -> str | None:
+    value = getattr(special_result, "loaded_tensor_sha256", None)
+    return value if isinstance(value, str) else None
+
+
+def _live_assembly_fingerprint(assembly: Human13LiveAssembly) -> str:
+    try:
+        surface = assembly.trainable_surface_receipt.to_artifact_dict()
+    except AttributeError as exc:
+        raise Human13LiveModelError(
+            "trainable-surface receipt is unavailable"
+        ) from exc
+    payload = {
+        "plan": assembly.plan.to_artifact_dict(),
+        "validation": assembly.validation.to_artifact_dict(),
+        "surface": surface,
+        "loaded_adapter_tensor_sha256": _loaded_adapter_tensor_sha256(
+            assembly.adapter_result
+        ),
+        "loaded_special_embedding_tensor_sha256": (
+            _loaded_special_embedding_tensor_sha256(assembly.special_token_result)
+        ),
+        "model_object_id": id(assembly.model),
+        "runtime_model_object_id": id(getattr(assembly.runtime, "model", None)),
+        "adapter_model_object_id": id(getattr(assembly.adapter_result, "model", None)),
+        "special_model_object_id": id(
+            getattr(assembly.special_token_result, "model", None)
+        ),
+        "runtime_optimizer_object_id": id(
+            getattr(assembly.runtime, "optimizer", None)
+        ),
+        "runtime_scheduler_object_id": id(
+            getattr(assembly.runtime, "scheduler", None)
+        ),
+        "delta_requires_grad": getattr(
+            getattr(assembly.special_token_result, "shared_embed_delta", None),
+            "requires_grad",
+            None,
+        ),
+    }
+    return hashlib.sha256(
+        (json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode()
+    ).hexdigest()
+
+
+def _seal_human13_live_assembly(
+    assembly: Human13LiveAssembly,
+) -> Human13LiveAssembly:
+    fingerprint = _live_assembly_fingerprint(assembly)
+    identity = id(assembly)
+
+    def cleanup(_: ReferenceType[object], *, key: int = identity) -> None:
+        _ADMITTED_LIVE_ASSEMBLIES.pop(key, None)
+
+    _ADMITTED_LIVE_ASSEMBLIES[identity] = (ref(assembly, cleanup), fingerprint)
+    return assembly
+
+
+def require_admitted_human13_live_assembly(
+    assembly: Human13LiveAssembly,
+) -> None:
+    """Reject assemblies not issued by the exact live-model builder."""
+
+    if type(assembly) is not Human13LiveAssembly:
+        raise Human13LiveModelError("live assembly has the wrong value type")
+    entry = _ADMITTED_LIVE_ASSEMBLIES.get(id(assembly))
+    if (
+        entry is None
+        or entry[0]() is not assembly
+        or entry[1] != _live_assembly_fingerprint(assembly)
+    ):
+        raise Human13LiveModelError(
+            "live assembly was not issued by the admitted Human-13 builder"
+        )
+
+
+def validate_human13_live_assembly_values(
+    assembly: Human13LiveAssembly,
+) -> None:
+    """Revalidate the sealed builder surface at a downstream live boundary."""
+
+    require_admitted_human13_live_assembly(assembly)
+    _require_frozen_plan(assembly.plan)
+    _require_language_only_surface(assembly.trainable_surface_receipt)
+    validation = assembly.validation
+    if (
+        type(validation) is not Human13PlanValidationReceipt
+        or validation.arm_id != assembly.plan.arm_id
+        or validation.schema_version != VALIDATION_SCHEMA_VERSION
+        or validation.adapter_tensor_sha256 != assembly.plan.source.adapter_sha256
+        or validation.special_embedding_tensor_sha256
+        != assembly.plan.source.special_embedding_sha256
+        or _loaded_adapter_tensor_sha256(assembly.adapter_result)
+        != validation.adapter_tensor_sha256
+        or _loaded_special_embedding_tensor_sha256(assembly.special_token_result)
+        != validation.special_embedding_tensor_sha256
+        or getattr(
+            getattr(assembly.special_token_result, "shared_embed_delta", None),
+            "requires_grad",
+            None,
+        )
+        is not False
+    ):
+        raise Human13LiveModelError(
+            "live assembly validation and loaded Source identities differ"
+        )
 
 
 @dataclass(frozen=True)
@@ -478,7 +611,7 @@ class DefaultHuman13AssemblyBackend:
             selection,
             source_gate=source_gate,
         )
-        load_special_token_embedding_deltas(
+        load_receipt = load_special_token_embedding_deltas(
             result,
             Path(plan.source.special_embedding_path),
             expected_base_model_path=components.base_model_path,
@@ -486,7 +619,16 @@ class DefaultHuman13AssemblyBackend:
             expected_tokenizer_sha256=components.tokenizer_sha256,
         )
         result.shared_embed_delta.requires_grad_(False)
-        return result
+        return Human13LoadedSpecialTokenResult(
+            model=result.model,
+            shared_embed_delta=result.shared_embed_delta,
+            receipt=result.receipt,
+            load_receipt=load_receipt,
+            loaded_tensor_sha256=_sha256_file(
+                Path(plan.source.special_embedding_path)
+                / "special_token_embeddings.safetensors"
+            ),
+        )
 
     def enable_memory_savers(self, model: Any) -> Any:
         from src.training.pipeline import enable_training_memory_savers
@@ -826,6 +968,23 @@ def assemble_human13_live_model(
         raise Human13LiveModelError(
             "loaded Source special-token delta must remain frozen"
         )
+    if (
+        _loaded_adapter_tensor_sha256(adapter_result)
+        != validation.adapter_tensor_sha256
+        or validation.adapter_tensor_sha256 != plan.source.adapter_sha256
+    ):
+        raise Human13LiveModelError(
+            "loaded adapter receipt differs from the validated Source identity"
+        )
+    if (
+        _loaded_special_embedding_tensor_sha256(special_result)
+        != validation.special_embedding_tensor_sha256
+        or validation.special_embedding_tensor_sha256
+        != plan.source.special_embedding_sha256
+    ):
+        raise Human13LiveModelError(
+            "loaded special-token receipt differs from the validated Source identity"
+        )
     model = special_result.model
     memory_saver_receipt = live_backend.enable_memory_savers(model)
     optimizer, scheduler, optimizer_group_plan = live_backend.build_optimizer(
@@ -851,7 +1010,7 @@ def assemble_human13_live_model(
     )
     if int(getattr(runtime, "world_size", -1)) != 1:
         raise Human13LiveModelError("TrainRuntime must remain world size one")
-    return Human13LiveAssembly(
+    return _seal_human13_live_assembly(Human13LiveAssembly(
         plan=plan,
         validation=validation,
         components=components,
@@ -865,7 +1024,7 @@ def assemble_human13_live_model(
         trainable_surface_receipt=surface_receipt,
         runtime=runtime,
         memory_saver_receipt=memory_saver_receipt,
-    )
+    ))
 
 
 def assemble_human13_qualification_model(
@@ -1256,7 +1415,8 @@ def build_human13_checkpoint_writer(run_dir: str | Path) -> Any:
         raise Human13LiveModelError("checkpoint run_dir must be absolute")
     from src.artifacts import CheckpointWriter
 
-    return CheckpointWriter(run_dir=root.resolve())
+    writer = cast(Callable[..., Any], CheckpointWriter)
+    return writer(run_dir=root.resolve())
 
 
 def readback_human13_checkpoint(
@@ -1758,6 +1918,7 @@ __all__ = [
     "Human13AssemblyBackend",
     "Human13CheckpointReadback",
     "Human13LiveAssembly",
+    "Human13LoadedSpecialTokenResult",
     "Human13LiveModelError",
     "Human13LiveModelPlan",
     "Human13ParityAssembly",
@@ -1794,5 +1955,7 @@ __all__ = [
     "build_human13_processor_skeletons",
     "build_human13_update_schedule",
     "readback_human13_checkpoint",
+    "require_admitted_human13_live_assembly",
     "validate_human13_live_model_plan",
+    "validate_human13_live_assembly_values",
 ]
