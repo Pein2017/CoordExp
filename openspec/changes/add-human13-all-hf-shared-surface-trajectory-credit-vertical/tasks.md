@@ -55,7 +55,7 @@
 - [x] 3.5 Add objective/component/resource receipts and tests showing exactly
   one update, unchanged global normalization across group boundaries, finite
   gradient/delta diagnostics, exact projected apply, and exact rollback.
-- [ ] 3.6 Gate Wave 3 with the focused and adjacent Human-13 suites, strict
+- [x] 3.6 Gate Wave 3 with the focused and adjacent Human-13 suites, strict
   OpenSpec validation, one production-shaped zero-action entry, and the bounded
   review/correction discipline from Wave 1.
 
