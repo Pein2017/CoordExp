@@ -52,9 +52,13 @@ receipt with zero model loads, forwards, backwards, optimizer steps, GPU
 allocations, network actions, and output creations.  No live HF/model/GPU,
 network, checkpoint, or output action was performed.
 
-Task 4.6 remains intentionally unchecked pending the requested independent
-bounded prelaunch review.  Task 5 owns any future live-state reservation and
-execution decision.
+Task 4.6 remains intentionally unchecked.  The independent bounded prelaunch
+review is a HOLD for a conclusion-changing owner-interface seam: Task 3's
+CPU-only replay/compiler/Jacobian contract has no proven adapter to the BF16 /
+FlashAttention-2 CUDA model and replay tensors owned by Task 2/Task 5 while
+preserving autograd ownership, optimizer identity, and rollback semantics.  No
+Task-4 guarded-entry change can safely infer that adapter, so Task 5 owns the
+live-state design and execution decision.
 
 The prelaunch smoke reached the public CLI help/config/dry-run and the
 injected Task-1/2/3 seams, but it is **HOLD** for the live handoff: Task 3's
