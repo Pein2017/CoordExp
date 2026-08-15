@@ -61,20 +61,20 @@
 
 ## 4. Dual-RP behavioral audit and live entry
 
-- [ ] 4.1 Add one leaf config and guarded entry for image 1584, disjoint seeds
+- [x] 4.1 Add one leaf config and guarded entry for image 1584, disjoint seeds
   `35001..35016`, K16 batch-four, training RP 1.0, BF16/FA2 shared surface,
   fixed AdamW `3e-6`, and a new confirmed-absent immutable output root.
-- [ ] 4.2 Bind GPU 0 to the shared training session and GPU 1 to the established
+- [x] 4.2 Bind GPU 0 to the shared training session and GPU 1 to the established
   HF fp32/SDPA batch-one audit path; fail before model load when two distinct
   cards, output roots, or authority receipts are unavailable.
-- [ ] 4.3 Compute fresh Source and private-proposal clean greedy at RP 1.0 and
+- [x] 4.3 Compute fresh Source and private-proposal clean greedy at RP 1.0 and
   RP 1.10, then publish H gained, G lost, incidental M gained, net unique
   owners, duplicate/unmatched/malformed burdens, stop/cap, rows, and tokens
   under the canonical parser/matcher.
-- [ ] 4.4 Implement the exact continuation gate and a full-panel entry that
+- [x] 4.4 Implement the exact continuation gate and a full-panel entry that
   remains model/GPU-inert unless it receives the content hash of a passing
   one-image terminal; add fail-closed tests for every missing condition.
-- [ ] 4.5 Add immutable phase receipts, private-proposal cleanup, Source
+- [x] 4.5 Add immutable phase receipts, private-proposal cleanup, Source
   reproduction, resource telemetry, and one terminal that distinguishes
   parity failure, update failure, completed-null/unsafe result, and passing
   one-image result.
