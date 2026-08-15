@@ -247,6 +247,60 @@ def _restore_parameter_versions(
         raise RuntimeError("full model tensor version restore differs")
 
 
+@torch.no_grad()
+def _restore_parameter_storage(
+    parameter: torch.nn.Parameter,
+    saved: torch.Tensor,
+    *,
+    source_requires_grad: bool,
+) -> None:
+    """Restore Source storage without substituting the registered Parameter."""
+
+    metadata_matches = (
+        tuple(parameter.shape) == tuple(saved.shape)
+        and parameter.dtype == saved.dtype
+        and parameter.device == saved.device
+        and parameter.layout == saved.layout
+    )
+    storage_domain_matches = (
+        parameter.device == saved.device and parameter.layout == saved.layout
+    )
+    if metadata_matches:
+        parameter.copy_(saved)
+    elif storage_domain_matches:
+        # Reinstalling dense Source storage remains necessary for dtype/shape
+        # drift, but unlike a device/layout transition it does not require an
+        # object-implementation swap that can be blocked by AccumulateGrad.
+        parameter.data = saved.detach().clone()
+    else:
+        swap_tensors = getattr(torch.utils, "swap_tensors", None)
+        if not callable(swap_tensors):
+            raise RuntimeError(
+                "torch cannot restore exact Source parameter storage metadata"
+            )
+        replacement = torch.nn.Parameter(
+            saved.detach().clone(),
+            requires_grad=source_requires_grad,
+        )
+        try:
+            swap_tensors(parameter, replacement)
+        except Exception as error:
+            raise RuntimeError(
+                "exact Source parameter storage swap failed"
+            ) from error
+    parameter.requires_grad_(source_requires_grad)
+    parameter.grad = None
+    if (
+        tuple(parameter.shape) != tuple(saved.shape)
+        or parameter.dtype != saved.dtype
+        or parameter.device != saved.device
+        or parameter.layout != saved.layout
+        or parameter.requires_grad != source_requires_grad
+        or not torch.equal(parameter, saved)
+    ):
+        raise RuntimeError("exact Source parameter storage restore differs")
+
+
 def _capture_optimizer_param_groups(
     optimizer: torch.optim.Optimizer,
 ) -> tuple[tuple[tuple[str, ...], tuple[torch.nn.Parameter, ...], dict[str, object]], ...]:
@@ -1792,8 +1846,10 @@ class PreparedAllHFVertical:
             module._parameters.update(source_parameters)
             module._modules.clear()
             module._modules.update(source_modules)
-        for parameter, source_requires_grad in self._source_parameter_trainability:
-            parameter.requires_grad_(source_requires_grad)
+        source_trainability = {
+            id(parameter): source_requires_grad
+            for parameter, source_requires_grad in self._source_parameter_trainability
+        }
         current = tuple(self._model.named_parameters())
         if tuple((name, id(parameter)) for name, parameter in current) != tuple(
             (name, id(parameter)) for name, parameter, _ in self._full_model_source_values
@@ -1802,8 +1858,14 @@ class PreparedAllHFVertical:
         for name, parameter, saved in self._full_model_source_values:
             if name not in dict(current):
                 raise RuntimeError("full model Source parameter is missing during restore")
-            parameter.data = saved.detach().clone()
-            parameter.grad = None
+            source_requires_grad = source_trainability.get(id(parameter))
+            if source_requires_grad is None:
+                raise RuntimeError("full model Source trainability binding is missing")
+            _restore_parameter_storage(
+                parameter,
+                saved,
+                source_requires_grad=source_requires_grad,
+            )
         _full_model_parameters(self._model)
         self._model.eval()
         if _model_mode_fingerprint(self._model) != self._source_model_mode_fingerprint:

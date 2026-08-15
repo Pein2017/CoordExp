@@ -1124,6 +1124,87 @@ def test_realized_probe_dtype_drift_restores_exact_source_metadata() -> None:
     assert prepared._state == "rolled_back"
 
 
+def _swap_frozen_parameter_storage(
+    fixture: _Fixture,
+    *,
+    drift: str,
+) -> torch.nn.Parameter:
+    source_parameter = fixture.model.frozen_base
+    if drift == "meta":
+        replacement_tensor = torch.empty(
+            source_parameter.shape,
+            dtype=source_parameter.dtype,
+            device="meta",
+        )
+    elif drift == "sparse_coo":
+        replacement_tensor = source_parameter.detach().to_sparse()
+    else:  # pragma: no cover - test helper is intentionally closed over two cases.
+        raise AssertionError(f"unexpected storage drift: {drift}")
+    replacement = torch.nn.Parameter(replacement_tensor, requires_grad=False)
+    torch.utils.swap_tensors(source_parameter, replacement)
+    assert fixture.model.frozen_base is source_parameter
+    return source_parameter
+
+
+@pytest.mark.parametrize("drift", ("meta", "sparse_coo"))
+def test_pre_backward_device_or_layout_drift_restores_exact_source_storage(
+    drift: str,
+) -> None:
+    fixture = _fixture()
+    source_parameter = fixture.model.frozen_base
+    source_value = source_parameter.detach().clone()
+    source_version = source_parameter._version
+    source_digest = fixture.transaction.state_digest()
+    prepared = _prepare(fixture)
+    _swap_frozen_parameter_storage(fixture, drift=drift)
+
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    assert error.value.rollback_receipt is not None
+    assert prepared._state == "rolled_back"
+    assert fixture.model.frozen_base is source_parameter
+    assert source_parameter.device.type == "cpu"
+    assert source_parameter.layout == torch.strided
+    assert source_parameter.dtype == source_value.dtype
+    assert torch.equal(source_parameter, source_value)
+    assert source_parameter._version == source_version
+    assert fixture.transaction.state_digest() == source_digest
+
+
+@pytest.mark.parametrize("drift", ("meta", "sparse_coo"))
+def test_realized_probe_device_or_layout_drift_restores_exact_source_storage(
+    drift: str,
+) -> None:
+    fixture = _fixture()
+    source_parameter = fixture.model.frozen_base
+    source_value = source_parameter.detach().clone()
+    source_version = source_parameter._version
+    source_digest = fixture.transaction.state_digest()
+
+    def storage_probe() -> dict[str, float]:
+        _swap_frozen_parameter_storage(fixture, drift=drift)
+        return {
+            witness.canonical_key: witness.margin_value
+            for witness in fixture.witness_bank.constraints
+        }
+
+    prepared = _prepare(fixture, realized_margin_probe=storage_probe)
+    with pytest.raises(AllHFVerticalError) as error:
+        prepared.backward_and_propose()
+
+    assert error.value.rollback_receipt is not None
+    assert prepared._state == "rolled_back"
+    assert prepared._proposal_receipt is None
+    assert fixture.model.frozen_base is source_parameter
+    assert source_parameter.device.type == "cpu"
+    assert source_parameter.layout == torch.strided
+    assert source_parameter.dtype == source_value.dtype
+    assert torch.equal(source_parameter, source_value)
+    assert source_parameter._version == source_version
+    assert fixture.transaction.state_digest() == source_digest
+
+
 def test_normal_rollback_restores_exact_source_tensor_versions() -> None:
     fixture = _fixture()
     source_versions = tuple(

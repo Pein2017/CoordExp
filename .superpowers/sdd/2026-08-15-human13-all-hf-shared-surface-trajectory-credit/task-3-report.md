@@ -421,3 +421,52 @@ No legacy runtime or objective/projection math changed. Execution remained
 CPU/injected only with no real HF model action, GPU/CUDA execution, network,
 checkpoint/output action, accepted checkpoint, retry, or fallback objective.
 OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.
+
+## Fix round 7 — device/layout storage-domain recovery
+
+The next bounded review isolated one narrower exact-rollback gap in the round-6
+metadata restoration: assigning a dense CPU Source clone through `Parameter.data`
+does not reliably cross from a live `meta` device or `sparse_coo` layout back to
+the Source CPU/strided storage domain. The failure was detected, but terminal
+cleanup could repeat the same failed restore and therefore could not attach a
+truthful rollback receipt.
+
+Four focused cases were added before production correction: both post-prepare
+and realized-margin-callback mutation of the registered frozen parameter to
+`meta` or `sparse_coo`, preserving the original Parameter object identity. The
+exact RED was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 36 passed, 4 failed
+Failure: rollback receipt was None
+```
+
+Full-model Source restoration now uses a narrow guarded
+`torch.utils.swap_tensors` path only when device or layout differs. It swaps a
+fresh Source-metadata Parameter implementation into the exact already-registered
+Parameter object, then reapplies Source `requires_grad`, clears gradients,
+restores the recorded version counters, and runs the existing full content and
+metadata certification. Same-device/layout dtype or shape drift keeps the
+existing storage reinstall path because swapping a trainable Parameter that is
+already rooted in the admitted autograd graph can be rejected by PyTorch's
+AccumulateGrad ownership guard. Missing or failed `swap_tensors` remains an
+explicit restore error; no receipt claims restoration unless the complete
+Source fingerprint and transaction digest certify it.
+
+## Fix round 7 gates
+
+```text
+focused: 40 passed
+focused + adjacent Human-13 suites: 271 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No legacy runtime, objective, or projection math changed. Execution remained
+CPU/injected only with no real HF model action, GPU/CUDA execution, network,
+checkpoint/output action, accepted checkpoint, retry, or fallback objective.
+OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.
