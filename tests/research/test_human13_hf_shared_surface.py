@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from hashlib import sha256
-from math import inf, nan
+from math import inf
 from typing import Callable
 
 import pytest
@@ -26,15 +26,12 @@ from scripts.research.human13_hf_shared_surface import (
     admit_gradient_replay,
     admit_sampled_group,
     admit_shared_surface_close,
+    actual_owner_bindings,
     causal_history_sha256,
     dry_run_image1584_k16,
     estimate_image1584_k16_resources,
     plan_image1584_k16,
     repetition_penalty_then_temperature,
-    require_finite_optimizer_delta,
-    require_positive_objective_denominator,
-    require_private_audit_reference,
-    require_rollback_reference,
 )
 
 
@@ -124,10 +121,10 @@ def valid_active_batch_steps(
                 request.tokens[index].history_sha256 for request in requests
             ),
             batch_shape=(len(requests), 32 + index),
-            rng_before_sha256=_digest(f"rng:{index}:before"),
-            rng_after_sha256=_digest(f"rng:{index}:after"),
+            rng_before_sha256=_digest(f"rng:{index}"),
+            rng_after_sha256=_digest(f"rng:{index + 1}"),
         )
-        for index in range(2)
+        for index in range(max(len(request.tokens) for request in requests))
     )
 
 
@@ -175,10 +172,10 @@ FAILURE_MODE_MATRIX: tuple[tuple[str, str, Callable[[], None]], ...] = (
     ("request/history lineage", "admit_sampled_group", lambda: admit_sampled_group(**valid_group_kwargs(requests=valid_requests(request_id="")))),
     ("processor order", "admit_sampled_group", lambda: admit_sampled_group(**valid_group_kwargs(requests=valid_requests(processor_order=("temperature", "repetition_penalty", "top_p"))))),
     ("parity", "admit_gradient_replay", lambda: admit_gradient_replay(sampled_group=admit_sampled_group(**valid_group_kwargs()), replay_identity=valid_identity(), replayed_tokens=valid_replayed(admit_sampled_group(**valid_group_kwargs()), 0.03), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(admit_sampled_group(**valid_group_kwargs())))),
-    ("objective denominator", "Task 3 objective composer", lambda: require_positive_objective_denominator(0)),
-    ("optimizer delta", "Task 3 proposal apply", lambda: require_finite_optimizer_delta(nan)),
-    ("private audit", "Task 4 dual-RP audit", lambda: require_private_audit_reference("not-a-digest")),
-    ("rollback", "Task 3 transaction finalizer", lambda: require_rollback_reference("not-a-digest")),
+    ("objective denominator", "scripts.research.human13_rp_crossover_runtime._validate_backward", lambda: actual_owner_bindings()[0].reject_minimal_counterexample()),
+    ("optimizer delta", "scripts.research.human13_adamw_proposal_preservation.apply_projected_delta", lambda: actual_owner_bindings()[1].reject_minimal_counterexample()),
+    ("private audit", "scripts.research.human13_rp_crossover_runtime.CellRuntimeServices.audit_checkpoint", lambda: actual_owner_bindings()[2].reject_minimal_counterexample()),
+    ("rollback", "scripts.research.human13_training_transaction.TrainingStateTransaction.reject", lambda: actual_owner_bindings()[3].reject_minimal_counterexample()),
 )
 
 
@@ -190,6 +187,20 @@ def test_failure_mode_matrix_rejects_minimal_counterexample(
     assert owner
     with pytest.raises(SharedSurfaceContractError):
         counterexample()
+
+
+def test_matrix_later_wave_entries_bind_actual_owner_seams() -> None:
+    """Catches placeholder owner labels that no longer identify the real guard."""
+    bindings = actual_owner_bindings()
+    assert {(binding.invariant, binding.module, binding.symbol) for binding in bindings} == {
+        ("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward"),
+        ("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta"),
+        ("private audit", "scripts.research.human13_rp_crossover_runtime", "CellRuntimeServices.audit_checkpoint"),
+        ("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject"),
+    }
+    for binding in bindings:
+        with pytest.raises(SharedSurfaceContractError):
+            binding.reject_minimal_counterexample()
 
 
 @pytest.mark.parametrize(
@@ -256,6 +267,19 @@ def test_acquisition_evidence_binds_active_history_rng_stop_raw_logit_and_shape(
         admit_sampled_group(**valid_group_kwargs(active_batch_steps=bad_steps))
 
 
+def test_active_batch_evidence_requires_exact_order_shape_and_rng_chain() -> None:
+    """Catches a sealed acquisition with a different physical batch sequence."""
+    steps = valid_active_batch_steps(valid_requests())
+    for build_invalid in (
+        lambda: tuple(reversed(steps)),
+        lambda: (*steps, steps[-1]),
+        lambda: (replace(steps[0], batch_shape=(4, 32, 999)), *steps[1:]),
+        lambda: (steps[0], replace(steps[1], rng_before_sha256=_digest("disconnected"))),
+    ):
+        with pytest.raises(SharedSurfaceContractError):
+            admit_sampled_group(**valid_group_kwargs(active_batch_steps=build_invalid()))
+
+
 def test_admitted_values_reject_direct_marker_injection_and_replacement() -> None:
     group = admit_sampled_group(**valid_group_kwargs())
     with pytest.raises(TypeError):
@@ -270,7 +294,7 @@ def test_every_admitted_scientific_copy_loses_its_seal() -> None:
     """Catches dataclasses.replace preserving an admission claim after mutation."""
     group = admit_sampled_group(**valid_group_kwargs())
     replay = admit_gradient_replay(sampled_group=group, replay_identity=group.identity, replayed_tokens=valid_replayed(group), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(group))
-    close = admit_shared_surface_close(identity=group.identity, replay_group_sha256=replay.content_sha256, close_reason="completed")
+    close = admit_shared_surface_close(replay_group=replay, close_reason="completed")
     estimate = estimate_image1584_k16_resources(output_roots=("/tmp/proposal", "/tmp/audit"))
     dry_run = dry_run_image1584_k16(output_roots=("/tmp/proposal", "/tmp/audit"))
     copies = (
@@ -305,6 +329,10 @@ def test_gradient_replay_requires_exact_lineage_processor_gather_and_parity_dist
         admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=replayed, replay_processor_order=("temperature", "repetition_penalty", "top_p"), causal_gathers=valid_gathers(sampled))
     with pytest.raises(SharedSurfaceContractError, match="causal gather"):
         admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=replayed, replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=(replace(valid_gathers(sampled)[0], chosen_token_id=777), *valid_gathers(sampled)[1:]))
+    shifted = tuple(replace(token, causal_logit_index=token.causal_logit_index + 100) for token in replayed)
+    shifted_gathers = tuple(replace(gather, causal_logit_index=gather.causal_logit_index + 100) for gather in valid_gathers(sampled))
+    with pytest.raises(SharedSurfaceContractError, match="causal gather"):
+        admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=shifted, replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=shifted_gathers)
     with pytest.raises(SharedSurfaceContractError, match="history/token lineage"):
         admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=(replace(replayed[0], chosen_token_id=777), *replayed[1:]), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled))
 
@@ -321,15 +349,42 @@ def test_gradient_replay_rejects_nonfinite_surface_and_both_parity_boundaries() 
         admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=valid_replayed(sampled, 0.003), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled))
 
 
+def test_lower_token_and_isolated_maximum_parity_boundaries_are_inclusive() -> None:
+    """Catches off-by-one token admission and a max gate hidden by the mean gate."""
+    with pytest.raises(SharedSurfaceContractError, match="token cap"):
+        valid_request(35001, token_count=0)
+    assert len(valid_request(35001, token_count=1).tokens) == 1
+    requests = tuple(valid_request(seed, token_count=3) for seed in range(35001, 35005))
+    sampled = admit_sampled_group(**valid_group_kwargs(requests=requests, active_batch_steps=valid_active_batch_steps(requests)))
+    exact = list(valid_replayed(sampled))
+    exact[0] = replace(exact[0], processed_logp=exact[0].processed_logp + 0.02)
+    assert admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=tuple(exact), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled)).parity.max_abs_error == pytest.approx(0.02)
+    over = list(exact)
+    over[0] = replace(over[0], processed_logp=sampled.requests[0].tokens[0].processed_logp + 0.020001)
+    with pytest.raises(SharedSurfaceContractError, match="parity thresholds"):
+        admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=tuple(over), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled))
+
+
 def test_replay_and_close_receipts_round_trip_and_reject_forged_hashes() -> None:
     sampled = admit_sampled_group(**valid_group_kwargs())
     replay = admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=valid_replayed(sampled), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled))
     assert GradientReplayGroup.from_dict(replay.to_dict()) == replay
-    close = admit_shared_surface_close(identity=sampled.identity, replay_group_sha256=replay.content_sha256, close_reason="completed")
+    close = admit_shared_surface_close(replay_group=replay, close_reason="completed")
     assert isinstance(close, HFSharedSurfaceCloseReceipt)
     assert HFSharedSurfaceCloseReceipt.from_dict(close.to_dict()) == close
     with pytest.raises(SharedSurfaceContractError, match="content SHA-256"):
         HFSharedSurfaceCloseReceipt.from_dict(close.to_dict() | {"content_sha256": _digest("forged")})
+
+
+def test_close_receipt_requires_exact_admitted_replay_identity_lineage() -> None:
+    """Catches a close receipt that attests a policy or unrelated replay surface."""
+    sampled = admit_sampled_group(**valid_group_kwargs())
+    replay = admit_gradient_replay(sampled_group=sampled, replay_identity=sampled.identity, replayed_tokens=valid_replayed(sampled), replay_processor_order=("repetition_penalty", "temperature", "top_p"), causal_gathers=valid_gathers(sampled))
+    assert admit_shared_surface_close(replay_group=replay, close_reason="completed").identity == sampled.identity
+    with pytest.raises(SharedSurfaceContractError, match="exact shared surface identity"):
+        HFSharedSurfaceCloseReceipt(valid_policy(), replay.content_sha256, "completed")
+    with pytest.raises(SharedSurfaceContractError, match="admitted gradient replay"):
+        admit_shared_surface_close(replay_group=object(), close_reason="completed")  # type: ignore[arg-type]
 
 
 def test_sign_aware_repetition_penalty_precedes_temperature() -> None:

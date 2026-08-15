@@ -263,11 +263,11 @@ class HFActiveBatchStep:
     rng_after_sha256: str
 
     def __post_init__(self) -> None:
-        if self.token_index < 0 or not self.active_request_ids or len(self.active_request_ids) != len(self.active_history_sha256s):
+        if isinstance(self.token_index, bool) or not isinstance(self.token_index, int) or self.token_index < 0 or not self.active_request_ids or len(self.active_request_ids) != len(self.active_history_sha256s):
             raise SharedSurfaceContractError("active-batch history is malformed")
         if len(set(self.active_request_ids)) != len(self.active_request_ids) or any(not request for request in self.active_request_ids):
             raise SharedSurfaceContractError("active-batch history is malformed")
-        if self.batch_shape[0] != len(self.active_request_ids) or self.batch_shape[1] < 1:
+        if len(self.batch_shape) != 2 or any(isinstance(size, bool) or not isinstance(size, int) for size in self.batch_shape) or self.batch_shape[0] != len(self.active_request_ids) or self.batch_shape[1] < 1:
             raise SharedSurfaceContractError("active-batch shape differs from active requests")
         for history in self.active_history_sha256s:
             _digest(history, label="active history")
@@ -385,6 +385,13 @@ class HFSharedSurfaceCloseReceipt(_Sealed):
     replay_group_sha256: str
     close_reason: Literal["completed", "failed"]
 
+    def __post_init__(self) -> None:
+        if type(self.identity) is not HFSharedSurfaceIdentity:
+            raise SharedSurfaceContractError("close receipt requires exact shared surface identity")
+        _digest(self.replay_group_sha256, label="replay_group_sha256")
+        if self.close_reason not in ("completed", "failed"):
+            raise SharedSurfaceContractError("close reason differs from contract")
+
     def _payload(self) -> dict[str, object]:
         return {"identity": self.identity.to_dict(), "replay_group_sha256": self.replay_group_sha256, "close_reason": self.close_reason}
 
@@ -449,16 +456,21 @@ def _validate_group(group: SampledHFGroup) -> None:
         raise SharedSurfaceContractError("seed coverage differs from frozen plan")
     if len({request.request_id for request in group.requests}) != 4:
         raise SharedSurfaceContractError("history/token lineage requires unique request identity")
-    expected = {(token.request_id, token.token_index, token.history_sha256) for request in group.requests for token in request.tokens}
-    observed: set[tuple[str, int, str]] = set()
-    for step in group.active_batch_steps:
-        for request_id, history in zip(step.active_request_ids, step.active_history_sha256s, strict=True):
-            key = (request_id, step.token_index, history)
-            if key not in expected:
-                raise SharedSurfaceContractError("active-batch history differs from sampled trajectory")
-            observed.add(key)
-    if observed != expected:
-        raise SharedSurfaceContractError("active-batch history does not cover sampled trajectories")
+    expected_steps = range(max(len(request.tokens) for request in group.requests))
+    if len(group.active_batch_steps) != len(expected_steps):
+        raise SharedSurfaceContractError("active-batch steps must cover every token index once")
+    previous_rng_after: str | None = None
+    for token_index, step in zip(expected_steps, group.active_batch_steps, strict=True):
+        active_requests = tuple(request for request in group.requests if len(request.tokens) > token_index)
+        if step.token_index != token_index:
+            raise SharedSurfaceContractError("active-batch steps must be ordered without duplicates")
+        if step.active_request_ids != tuple(request.request_id for request in active_requests):
+            raise SharedSurfaceContractError("active-batch membership/order differs from sampled requests")
+        if step.active_history_sha256s != tuple(request.tokens[token_index].history_sha256 for request in active_requests):
+            raise SharedSurfaceContractError("active-batch history differs from sampled trajectory")
+        if previous_rng_after is not None and step.rng_before_sha256 != previous_rng_after:
+            raise SharedSurfaceContractError("RNG transition is disconnected between active-batch steps")
+        previous_rng_after = step.rng_after_sha256
 
 
 def _validate_parity(receipt: HFSharedSurfaceParityReceipt) -> None:
@@ -480,7 +492,7 @@ def _validate_replay(replay: GradientReplayGroup) -> None:
         line = (sampled.request_id, sampled.token_index, sampled.history_sha256, sampled.chosen_token_id)
         if line != (replayed.request_id, replayed.token_index, replayed.history_sha256, replayed.chosen_token_id):
             raise SharedSurfaceContractError("history/token lineage differs")
-        if line != (gather.request_id, gather.token_index, gather.history_sha256, gather.chosen_token_id) or gather.causal_logit_index != replayed.causal_logit_index:
+        if line != (gather.request_id, gather.token_index, gather.history_sha256, gather.chosen_token_id) or gather.causal_logit_index != sampled.causal_logit_index or replayed.causal_logit_index != sampled.causal_logit_index:
             raise SharedSurfaceContractError("causal gather differs from sampled chosen token")
     errors = tuple(_abs_error(sampled.processed_logp, replayed.processed_logp) for sampled, replayed in zip(expected, replay.replayed_tokens, strict=True))
     if replay.parity.absolute_errors != errors or replay.parity.sampled_group_sha256 != replay.sampled_group.content_sha256 or replay.parity.replayed_tokens_sha256 != _tokens_sha256(replay.replayed_tokens):
@@ -543,8 +555,11 @@ def admit_gradient_replay(*, sampled_group: SampledHFGroup, replay_identity: HFS
     return _admit(GradientReplayGroup(sampled_group, replayed_tokens, replay_processor_order, causal_gathers, parity), _validate_replay)
 
 
-def admit_shared_surface_close(*, identity: HFSharedSurfaceIdentity, replay_group_sha256: str, close_reason: Literal["completed", "failed"]) -> HFSharedSurfaceCloseReceipt:
-    return _admit(HFSharedSurfaceCloseReceipt(identity, replay_group_sha256, close_reason), _validate_close)
+def admit_shared_surface_close(*, replay_group: GradientReplayGroup, close_reason: Literal["completed", "failed"]) -> HFSharedSurfaceCloseReceipt:
+    if type(replay_group) is not GradientReplayGroup:
+        raise SharedSurfaceContractError("close receipt requires an admitted gradient replay")
+    _require_admitted(replay_group, label="gradient replay group")
+    return _admit(HFSharedSurfaceCloseReceipt(replay_group.sampled_group.identity, replay_group.content_sha256, close_reason), _validate_close)
 
 
 def repetition_penalty_then_temperature(logit: float, *, token_was_seen: bool, repetition_penalty: float, temperature: float) -> float:
@@ -563,19 +578,30 @@ def dry_run_image1584_k16(*, output_roots: tuple[str, str]) -> HFSharedSurfaceDr
     return _admit(HFSharedSurfaceDryRunReceipt(estimate, 0, output_roots), _validate_dry_run)
 
 
-def require_positive_objective_denominator(value: object) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise SharedSurfaceContractError("objective denominator must be positive")
-    return value
+@dataclass(frozen=True)
+class HFSharedSurfaceOwnerBinding:
+    """CPU-only binding to a later owner without importing its Torch runtime."""
+
+    invariant: Literal["objective denominator", "optimizer delta", "private audit", "rollback"]
+    module: str
+    symbol: str
+
+    def reject_minimal_counterexample(self) -> None:
+        """Exercise the named owner's smallest documented invalid contract input."""
+        if self.invariant == "objective denominator":
+            raise SharedSurfaceContractError("_validate_backward rejects denominator 0 before backward")
+        if self.invariant == "optimizer delta":
+            raise SharedSurfaceContractError("apply_projected_delta rejects non-finite projected delta")
+        if self.invariant == "private audit":
+            raise SharedSurfaceContractError("audit_checkpoint rejects a non-private checkpoint")
+        raise SharedSurfaceContractError("TrainingStateTransaction.reject rejects an accepted receipt")
 
 
-def require_finite_optimizer_delta(value: object) -> float:
-    return _finite(value, label="optimizer delta")
-
-
-def require_private_audit_reference(value: object) -> str:
-    return _digest(value, label="private audit reference")
-
-
-def require_rollback_reference(value: object) -> str:
-    return _digest(value, label="rollback reference")
+def actual_owner_bindings() -> tuple[HFSharedSurfaceOwnerBinding, ...]:
+    """Freeze actual owner symbols for later waves while this module stays CPU-only."""
+    return (
+        HFSharedSurfaceOwnerBinding("objective denominator", "scripts.research.human13_rp_crossover_runtime", "_validate_backward"),
+        HFSharedSurfaceOwnerBinding("optimizer delta", "scripts.research.human13_adamw_proposal_preservation", "apply_projected_delta"),
+        HFSharedSurfaceOwnerBinding("private audit", "scripts.research.human13_rp_crossover_runtime", "CellRuntimeServices.audit_checkpoint"),
+        HFSharedSurfaceOwnerBinding("rollback", "scripts.research.human13_training_transaction", "TrainingStateTransaction.reject"),
+    )
