@@ -10,7 +10,7 @@ unit_id: 2026-08-14-human13-k-trajectory-rp-crossover-screen
 topic: qwen3-vl-dense-enumeration
 status: planned
 evidence_status: none
-updated: 2026-08-14
+updated: 2026-08-15
 ---
 
 # Human-13 K-Trajectory Credit to Greedy Repetition-Penalty Crossover Screen
@@ -712,3 +712,14 @@ reviews are advisory; this unit owns the resulting protocol.
 A subsequent GPT-5.6-sol-max peer audit and independent coherence re-review
 returned `PASS` with no remaining P0/P1.  These verdicts are also advisory and
 grant neither implementation nor execution authority.
+
+Task 6.3 now has a CPU-only parity entry at
+`scripts/research/run_human13_rp_crossover_parity_v5.py`.  It admits only the
+reserved image 1584, qualification seeds `30001..30016`, and sequential
+`rp=1.0` then `rp=1.10` native K16 acquisition followed by the Task 6.2 exact
+fp32/SDPA batch-one replay.  Its dry run is zero-action, its live path requires
+the existing execution-authority acknowledgement, and it publishes append-only
+per-RP evidence plus one terminal while stopping at the first failure.  CPU
+tests cover lifecycle release, lineage, immutable-root, error-field, and
+terminal semantics.  No model, GPU, vLLM, optimizer, or v5 output-root action
+occurred, so task 6.3 remains unchecked pending the real run.
