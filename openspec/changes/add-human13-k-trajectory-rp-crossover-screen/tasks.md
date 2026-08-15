@@ -84,19 +84,35 @@
 
 - [x] 6.1 Obtain explicit model/GPU execution authorization and freeze a new
   immutable vertical root; do not infer this authority from completed docs.
-- [ ] 6.2 Run one real batch-four K16 acquisition per RP on the disjoint
-  qualification seed group and require exact request coverage plus sampler/
-  replay numeric parity on both contracts.
-- [ ] 6.3 Evaluate the sealed qualification-only AdamW dose ray
+- [ ] 6.2 Implement exact score-function replay and the score-function
+  gradient forward on the existing HF fp32/SDPA exact-history batch-one
+  surface with focused CPU tests on real frozen shapes; forbid BF16/FA2
+  packed score-function evidence and admit packed materialization only for
+  non-score-function plumbing with proof of mathematical identity.  This is
+  an execution-surface correction: keep A/B/C arms, both RP contracts, the
+  sealed 0.02/0.002 gates, exact histories/processed semantics, estimand,
+  optimizer, and owner gates unchanged.
+- [ ] 6.3 Run the reserved, confirmed-absent v5 root as a one-image (1584)
+  K16 parity-only qualification: acquisition plus exact-surface replay at
+  rp=1.0 and then rp=1.10, each against the unchanged sealed gate, before any
+  witness, dose, update, or owner analysis.  If either contract fails, retire
+  the exact-on-policy route on that recorded result without tolerance
+  revision; if both pass, reserve a fresh full-panel successor root for the
+  remaining vertical.
+- [ ] 6.4 On the passing successor root, run one real batch-four K16
+  acquisition per RP on the disjoint qualification seed group and require
+  exact request coverage plus sampler/replay numeric parity on both
+  contracts.
+- [ ] 6.5 Evaluate the sealed qualification-only AdamW dose ray
   `{3e-7,1e-6,3e-6,1e-5,3e-5}` from fresh Source state under both RP
   contracts; run at most one independent C proposal per attempted `(RP,dose)`,
   quarantine owner outcomes, apply the declared mechanical floor/ceiling, and
   publish exactly one content-bound global learning-rate choice.
-- [ ] 6.4 Materialize all three nested objectives, then admit the selected ray
+- [ ] 6.6 Materialize all three nested objectives, then admit the selected ray
   proposal per training RP only after backward, exact AdamW capture,
   projection, private apply, both clean-greedy audits, and exact rollback
   reproduction are complete.
-- [ ] 6.5 Publish vertical wall time, peak memory, decode/packed tokens,
+- [ ] 6.7 Publish vertical wall time, peak memory, decode/packed tokens,
   forward/backward counts, witness counts, artifact sizes, and a bounded
   admission verdict; exclude owner outcomes from matrix disposition and stop on
   any unresolved P0 or P1.

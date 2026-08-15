@@ -13,7 +13,11 @@ token MUST bind its complete conditioning history, chosen token, processed
 policy log probability, decode processors in application order, sampler
 settings, model identity, and request identity.  Sampling and replay MUST pass
 the declared no-update numeric-parity gate before the evidence can enter a
-scientific proposal.
+scientific proposal.  Replay and every score-function gradient forward MUST
+run on the HF fp32/SDPA exact-history batch-one surface; the BF16/FA2 packed
+forward MUST NOT produce score-function replay or gradient evidence.  The
+sealed tolerance and the exact-history processed-likelihood semantics MUST
+NOT be revised to admit a numeric surface.
 
 #### Scenario: Matched sampling and replay
 - **WHEN** a generated token is replayed under the same sealed policy contract
@@ -36,6 +40,24 @@ scientific proposal.
   the sealed natural stop token
 - **THEN** the cap and retained trace are reported as harm and MUST NOT be
   relabeled as natural termination
+
+#### Scenario: Parity precedes expensive work
+- **WHEN** a run root has not yet passed the sealed parity gate on the exact
+  score-function surface for a policy contract
+- **THEN** witness, dose, update, and owner analysis MUST NOT execute for
+  that contract
+
+#### Scenario: Parity-only qualification passes
+- **WHEN** the one-image K16 parity-only qualification passes the unchanged
+  sealed gate on the exact surface for both RP contracts
+- **THEN** a fresh full-panel successor root may continue the existing
+  vertical unchanged
+
+#### Scenario: Parity-only qualification fails
+- **WHEN** either RP contract of the one-image K16 parity-only qualification
+  breaches the unchanged sealed gate on the exact surface
+- **THEN** the exact-on-policy route is retired on that recorded result and
+  the sealed tolerance MUST NOT be revised to admit it
 
 ### Requirement: Detached trusted-owner trajectory credit
 The screen SHALL project every admitted K16 group into a deterministic signed
@@ -71,11 +93,18 @@ model gradient.
 - **THEN** their leave-one-out trajectory advantages at that position are zero
   rather than fabricated by normalization
 
-#### Scenario: Equivalent packing partitions
+#### Scenario: Equivalent accumulation partitions
 - **WHEN** the same logical image and trajectory ledger is split across
-  different no-padding packs or gradient-accumulation boundaries
+  gradient-accumulation boundaries on the exact score-function surface
 - **THEN** one sealed global numerator and denominator produce the same loss
   and parameter gradient within the declared numeric tolerance
+
+#### Scenario: Packed plumbing without score-function claims
+- **WHEN** a no-padding packed forward materializes non-score-function
+  evidence for this screen
+- **THEN** it is admissible only with proof of mathematical identity to the
+  exact surface, and packed trajectory replay or gradient evidence MUST NOT
+  be claimed
 
 ### Requirement: Sparse greedy compiler
 The compiler SHALL use only the frozen metric-valid native alias bank and the

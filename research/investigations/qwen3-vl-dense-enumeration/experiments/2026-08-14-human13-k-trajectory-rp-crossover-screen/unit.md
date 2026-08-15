@@ -631,6 +631,56 @@ That exact path was confirmed absent during this third CPU-only correction.
 Activating it requires the user-owned parity-surface decision above; this
 correction grants no model, vLLM, GPU, or output-root action.
 
+That `vertical-dose-qualification-v4` root is now also a consumed, immutable
+failed activation.  It was the authorized quantification run of the unchanged
+sealed gate and stopped at the same replay seam before any optimizer update,
+this time with the complete error field:
+`max=0.868143` nats at `request_id=human13:1584:rp-crossover:qualification:30007`
+`token_index=77`, `mean=0.055759` nats over `1573` tokens, `620` tokens over
+the `0.02` per-token gate, at `rp=1.0`.  No cell receipts exist and zero
+updates occurred.  The root remains failure evidence and MUST NOT be retried,
+repaired in place, or overwritten.
+
+The v4 magnitudes decide the open surface question.  A 39% over-gate token
+fraction with mean 28x the sealed group gate and a sub-nat maximum is the
+intrinsic numeric spread of the BF16/FA2 packed replay against the fp32
+sampler at temperature 0.4, not a misalignment defect.  For this
+exact-on-policy unit that rules out both tolerance widening (any admitting
+tolerance would retire the exactly-on-policy claim silently) and the BF16/FA2
+packed forward as a score-function surface.
+
+The user delegated this hard decision to the lead plus Fable review; the lead
+accepted the narrow option (b): exact score-function replay AND the
+score-function gradient forward move to the existing HF fp32/SDPA
+exact-history batch-one surface — the same surface this unit already seals
+for witness, Jacobian, and margin evidence.  This is an execution-surface
+correction, not a new scientific contrast: the A/B/C arms, both RP contracts,
+the sealed `0.02`/`0.002` gates, exact histories and processed-likelihood
+semantics, the estimand, the optimizer contract, and every owner gate are
+unchanged.  The added compute cost is accepted.  No-padding packing remains
+available only for non-score-function plumbing and only with proof of
+mathematical identity to the exact surface; packed trajectory gradients are
+not claimed.  The image-width scale claim remains deferred.
+
+The repair successor identity is reserved, but not activated, as
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+  2026-08-14-human13-k-trajectory-rp-crossover-screen/
+  vertical-dose-qualification-v5/
+```
+
+That exact path was confirmed absent during this planning-only revision.  v5
+is a parity-only qualification on one image — 1584, the same K16 group that
+quantified the v4 failure: K16 acquisition plus exact-surface replay at
+`rp=1.0` and then `rp=1.10`, each required to pass the unchanged sealed gate.
+No witness, dose, update, or owner analysis may run on v5, and parity always
+precedes expensive witness/dose work.  If either RP contract fails, the
+exact-on-policy trajectory-credit route is retired and the unit closes on
+that negative result rather than revising the sealed tolerance.  If both
+pass, a fresh full-panel successor root continues the existing vertical
+unchanged.  This revision grants no model, vLLM, GPU, or output-root action.
+
 Implementation and bounded model/GPU execution were explicitly authorized by
 the user; this unit still grants no authority beyond its named tasks and roots.
 No K-miss supervision, full-sequence CE control, DPO, GFlowNet, bridge,

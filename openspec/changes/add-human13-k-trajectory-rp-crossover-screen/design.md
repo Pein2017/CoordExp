@@ -55,7 +55,7 @@ unchanged unless a real vertical proves one narrow adapter is missing.
 Two further experiment-local owners close the live boundary: a witness/dose
 measurement owner that turns the sealed Source surfaces into the frozen
 owner-wise witness bank and the qualification dose mechanics, and one live
-composition that binds native acquisition, packed replay, ledger
+composition that binds native acquisition, exact-surface replay, ledger
 materialization, and per-cell runtime services into the public node runtime
 factory default.  Both keep every live seam injectable so their contracts stay
 CPU-testable.
@@ -70,10 +70,24 @@ has any positive evidence.
 ### 2. Treat RP as part of the sampled policy
 
 The batch-four sampler records the exact token history and chosen-token policy
-log probability after repetition penalty and temperature.  Packed replay
-reconstructs that same processed distribution from the frozen history.  A
-no-update qualification compares the native sampled evidence with replay at
-every generated token and seals the numeric tolerance and processor order.
+log probability after repetition penalty and temperature.  Replay reconstructs
+that same processed distribution from the frozen history on the HF fp32/SDPA
+exact-history batch-one surface, which also owns the score-function gradient
+forward.  A no-update qualification compares the native sampled evidence with
+replay at every generated token and seals the numeric tolerance and processor
+order, and parity always runs before expensive witness/dose work.
+
+The exact surface is a live-falsified requirement, not a preference.  The v3
+activation stopped at the sealed gate without magnitudes; the quantified v4
+activation, run with the gate unchanged, measured the BF16/FA2 packed replay
+against the fp32 sampler at `max=0.868143` nats, `mean=0.055759` nats over
+`1573` tokens, `620` tokens over the `0.02` per-token gate, at `rp=1.0` with
+zero updates.  That spread is intrinsic to the numeric-surface pairing and
+rules out both tolerance widening and BF16/FA2 replay for an exact-on-policy
+unit.  Moving replay and gradients to the exact surface is an
+execution-surface correction that preserves the frozen scientific contrast;
+the image-width scale claim remains deferred, and the accepted cost is
+compute, not semantics.
 
 The implementation will not attempt to algebraically “remove” RP after
 sampling.  The two training policies are independent contracts, while every
@@ -82,6 +96,15 @@ proposal is behaviorally audited under both policies.
 **Alternative rejected:** sample with RP 1.10 but optimize raw logits or RP 1.0
 likelihoods.  That changes the policy whose score function is being estimated
 and makes cross-RP conclusions uninterpretable.
+
+**Alternative rejected:** align by sampling from a bf16 vLLM engine instead.
+That redefines the sampled policy itself, de-aligns acquisition from every
+sealed fp32 audit surface in the unit, and still compares two kernel-different
+bf16 surfaces that have no reason to agree within the sealed gate.
+
+**Alternative rejected:** widen the sealed tolerance to admit the measured
+spread.  A gate that admits a 0.055-nat mean silently retires the
+exactly-on-policy claim while keeping its name.
 
 ### 3. Build trajectory credit as a pure detached projection
 
@@ -100,10 +123,13 @@ are masked even if downstream trusted hits would give that row positive
 return-to-go.  It remains in causal history for later scored actions.  This is
 an intentional biased quarantine, not an unbiased-policy-gradient claim.
 
-Loss reduction is over logical images and trajectories, not physical packs.
-Every microstep contributes an unnormalized numerator and the runtime applies
-the one sealed `N*K` denominator exactly once.  This makes no-padding packing
-and gradient accumulation execution details rather than objective changes.
+Loss reduction is over logical images and trajectories.  Every microstep
+contributes an unnormalized numerator and the runtime applies the one sealed
+`N*K` denominator exactly once, which keeps gradient accumulation an
+execution detail rather than an objective change.  Score-function loss and
+gradients run on the exact fp32/SDPA surface; no-padding packing may carry
+only non-score-function plumbing, and only with proof of mathematical
+identity to that surface.
 
 **Alternative rejected:** give all K samples the union reward or use
 within-group normalized cardinality.  The former ties all advantages and the
@@ -191,6 +217,15 @@ would confound nested objective additions with optimization history.
 
 ### 7. Make the vertical decision-bearing
 
+The vertical is now gated by a parity-only qualification: the reserved v5
+root runs one image (1584, the K16 group that quantified the v4 failure)
+through K16 acquisition and exact-surface replay at `rp=1.0` and then
+`rp=1.10`, each against the unchanged sealed gate, with no witness, dose,
+update, or owner analysis.  If either contract fails, the exact-on-policy
+route is retired on that recorded result rather than tuning tolerance.  If
+both pass, a fresh full-panel successor root continues the vertical below
+unchanged.
+
 The real vertical includes one complete K16 batch-four acquisition per training
 RP, sampler/replay parity, all three objective constructions, one exact AdamW
 preservation proposal per training RP, both HF RP audits for each proposal, and
@@ -231,7 +266,12 @@ may change.
 ## Risks / Trade-offs
 
 - **[Native sampler and replay processor semantics differ]** -> Stop at the
-  token-level parity gate; do not reinterpret the estimator.
+  token-level parity gate; do not reinterpret the estimator.  Realized in
+  v3/v4 as a numeric-surface breach; resolved by the exact-surface
+  correction, never by tolerance revision.
+- **[Exact fp32/SDPA parity still fails cross-engine]** -> The v5 parity-only
+  root becomes the decisive negative measurement and the exact-on-policy
+  route is retired; the sealed tolerance is not tuned.
 - **[RLOO remains high variance at K16]** -> Use fixed paired seed groups and
   report individual cells; do not claim population inference.
 - **[The compiler overfits one Source boundary]** -> Keep it a nested arm and
@@ -254,12 +294,17 @@ may change.
    helpers under focused CPU/tensor tests.
 2. Add the experiment-local runtime, analyzer, six leaf configs, and dry-run
    matrix receipts without launching a model.
-3. After explicit execution authorization, run the qualification dose ray,
-   freeze one global learning rate, then complete the real vertical and publish
-   its bounded infrastructure evidence.
-4. Only if the vertical passes, run the fixed eighteen-proposal matrix and
+3. Move score-function replay and gradients to the exact HF fp32/SDPA
+   surface under focused CPU tests on real frozen shapes, then run the
+   reserved v5 one-image parity-only qualification on both RP contracts; on
+   failure, retire the exact-on-policy route on that recorded result.
+4. Only after both v5 contracts pass, on a fresh full-panel successor root:
+   run the qualification dose ray, freeze one global learning rate, then
+   complete the real vertical and publish its bounded infrastructure
+   evidence.
+5. Only if the vertical passes, run the fixed eighteen-proposal matrix and
    publish same-panel results.
-5. Stop and close the unit.  Any multi-update continuation or wider-image study
+6. Stop and close the unit.  Any multi-update continuation or wider-image study
    requires a new research decision.
 
 Implementation rollback is deletion of the successor-only scripts, configs,
