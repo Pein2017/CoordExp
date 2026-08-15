@@ -13,7 +13,7 @@
 - [x] 1.4 Add a pure resource estimator and dry-run receipt for image/prompt
   forwards, replay forwards, backward count, expected token cap, required GPU
   roles, output roots, and zero model/GPU actions.
-- [ ] 1.5 Run one independent standards/intent review of Wave 1, apply at most
+- [x] 1.5 Run one independent standards/intent review of Wave 1, apply at most
   one bundled P0/P1 correction, rerun only localized checks, and stop CPU tamper
   hardening when no P0/P1 remains.
 
