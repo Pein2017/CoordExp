@@ -39,11 +39,19 @@ BF16/FA2 packed execution to fp32/SDPA exact history reduced mean error about
 kernel/materialization difference is still too large for the sealed exact
 claim.
 
-The next decision is a new-unit fork, not an implementation continuation:
-either use one genuinely shared sampler/gradient forward, or declare an
-approximate/off-policy objective and measure its bias and greedy transfer.
-Neither is currently authorized.  See
-`memories/notes/2026-08-15-k-trajectory-parity-closure.md`.
+The next decision has been made as a new unit, not an implementation
+continuation.  The planned
+`2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical` spends
+more compute on one HF BF16/FA2 model: no-cache stepwise K16 sampling,
+vectorized replay on the same live parameter object, then one complete
+trajectory-credit + compiler + preservation update on image 1584.  Dual-RP
+clean greedy owns H gain, G loss, net owners, and burden; only a protected
+positive one-image result may authorize the 13-image continuation.
+
+Documentation and planning are authorized and complete; implementation and
+model/GPU execution have not started.  Do not substitute vLLM data, reopen the
+old unit, add an LR ray, or run the full panel before the one-image gate.  See
+`memories/notes/2026-08-15-all-hf-shared-surface-successor.md`.
 
 ## Prior evidence disposition
 
