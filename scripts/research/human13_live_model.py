@@ -9,7 +9,7 @@ Only ``assemble_human13_live_model`` crosses the live boundary.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
@@ -24,6 +24,11 @@ UNIT_ID = "2026-08-12-human13-k-union-to-greedy-overfit-screen"
 SUCCESSOR_UNIT_ID = "2026-08-13-human13-row-contrast-geometry-preservation-successor"
 ON_POLICY_UNIT_ID = "2026-08-13-human13-on-policy-first-bottleneck-successor"
 RP_CROSSOVER_UNIT_ID = "2026-08-14-human13-k-trajectory-rp-crossover-screen"
+ALL_HF_VERTICAL_UNIT_ID = (
+    "2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical"
+)
+ALL_HF_VERTICAL_ARM_ID = "C-One-Image"
+ALL_HF_VERTICAL_MILESTONES = (0, 1)
 SOURCE_CHECKPOINT_PATH = (
     "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/"
     "2026-08-05-closeout/artifacts/training/four-coordinate-xy/"
@@ -119,6 +124,7 @@ _UPDATED_ARM_IDS = frozenset(
         "A",
         "B",
         "C",
+        ALL_HF_VERTICAL_ARM_ID,
     }
 )
 
@@ -192,6 +198,46 @@ def _resolved_plan_sha256(plan: Human13LiveModelPlan) -> str:
     ).hexdigest()
 
 
+def build_human13_all_hf_vertical_source_plan() -> Human13LiveModelPlan:
+    """Return the value-only Source plan owned by the all-HF one-update vertical."""
+
+    return Human13LiveModelPlan(
+        schema_version=LIVE_PLAN_SCHEMA_VERSION,
+        unit_id=ALL_HF_VERTICAL_UNIT_ID,
+        arm_id=ALL_HF_VERTICAL_ARM_ID,
+        source=Human13SourceContract(
+            checkpoint_path=SOURCE_CHECKPOINT_PATH,
+            base_model_path=SOURCE_BASE_MODEL_PATH,
+            adapter_path=SOURCE_ADAPTER_PATH,
+            special_embedding_path=SOURCE_SPECIAL_EMBEDDING_PATH,
+            adapter_sha256=SOURCE_ADAPTER_SHA256,
+            special_embedding_sha256=SOURCE_SPECIAL_EMBEDDING_SHA256,
+        ),
+        mixed_precision="bf16",
+        attn_implementation="flash_attention_2",
+        patch_embed_linearization="enabled",
+        adapter_seed_mode="warm_start_expand_dora",
+        adapter_target_towers=("language",),
+        adapter_target_modules="all_linear",
+        adapter_rank=16,
+        adapter_alpha=32,
+        adapter_dropout=0.0,
+        adapter_bias="none",
+        freeze_special_token_delta=True,
+        optimizer_name="adamw_torch",
+        learning_rate=3.0e-6,
+        betas=(0.9, 0.999),
+        epsilon=1.0e-8,
+        weight_decay=0.0,
+        scheduler_name="cosine_with_warmup",
+        scheduler_warmup_steps=0,
+        scheduler_horizon_updates=1,
+        max_grad_norm=1.0,
+        world_size=1,
+        milestones=ALL_HF_VERTICAL_MILESTONES,
+    )
+
+
 @dataclass(frozen=True)
 class Human13PlanValidationReceipt:
     schema_version: str
@@ -229,6 +275,53 @@ class Human13LiveAssembly:
     trainable_surface_receipt: Any
     runtime: Any
     memory_saver_receipt: Any
+    parameter_state_receipt: Human13ParameterStateReceipt
+
+
+@dataclass(frozen=True)
+class Human13ParameterValueReceipt:
+    name: str
+    shape: tuple[int, ...]
+    dtype: str
+    requires_grad: bool
+    version: int
+    tensor_sha256: str
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "shape": list(self.shape),
+            "dtype": self.dtype,
+            "requires_grad": self.requires_grad,
+            "version": self.version,
+            "tensor_sha256": self.tensor_sha256,
+        }
+
+
+@dataclass(frozen=True)
+class Human13ParameterStateReceipt:
+    schema_version: Literal["human13_parameter_state.v1"]
+    parameters: tuple[Human13ParameterValueReceipt, ...]
+    selected_delta_parameter_name: str
+    selected_delta_tensor_sha256: str
+    selected_delta_requires_grad: Literal[False]
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema_version": self.schema_version,
+            "parameters": [item.to_artifact_dict() for item in self.parameters],
+            "selected_delta_parameter_name": self.selected_delta_parameter_name,
+            "selected_delta_tensor_sha256": self.selected_delta_tensor_sha256,
+            "selected_delta_requires_grad": self.selected_delta_requires_grad,
+        }
+        return payload | {
+            "content_sha256": hashlib.sha256(
+                (
+                    json.dumps(payload, sort_keys=True, separators=(",", ":"))
+                    + "\n"
+                ).encode()
+            ).hexdigest()
+        }
 
 
 @dataclass(frozen=True)
@@ -260,13 +353,95 @@ def _loaded_special_embedding_tensor_sha256(special_result: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _live_assembly_fingerprint(assembly: Human13LiveAssembly) -> str:
+def _tensor_value_sha256(value: Any) -> str:
+    import torch
+
+    if not isinstance(value, torch.Tensor):
+        raise Human13LiveModelError("live assembly parameter must be a tensor")
+    contiguous = value.detach().cpu().contiguous()
+    return hashlib.sha256(
+        contiguous.view(torch.uint8).numpy().tobytes()
+    ).hexdigest()
+
+
+def _build_parameter_state_receipt(
+    model: Any,
+    special_result: Any,
+) -> Human13ParameterStateReceipt:
+    import torch
+
+    named_parameters = getattr(model, "named_parameters", None)
+    if not callable(named_parameters):
+        raise Human13LiveModelError("live assembly model lacks named parameters")
+    typed_named_parameters = cast(
+        Callable[[], Iterable[tuple[str, Any]]], named_parameters
+    )
+    values = tuple(typed_named_parameters())
+    if not values:
+        raise Human13LiveModelError("live assembly model has no parameters")
+    rows: list[Human13ParameterValueReceipt] = []
+    delta = getattr(special_result, "shared_embed_delta", None)
+    delta_names: list[str] = []
+    for item in values:
+        if (
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or not isinstance(item[0], str)
+            or not isinstance(item[1], torch.Tensor)
+        ):
+            raise Human13LiveModelError(
+                "live assembly named-parameter surface is malformed"
+            )
+        name, parameter = item
+        rows.append(
+            Human13ParameterValueReceipt(
+                name=name,
+                shape=tuple(int(size) for size in parameter.shape),
+                dtype=str(parameter.dtype),
+                requires_grad=bool(parameter.requires_grad),
+                version=int(getattr(parameter, "_version", -1)),
+                tensor_sha256=_tensor_value_sha256(parameter),
+            )
+        )
+        if parameter is delta:
+            delta_names.append(name)
+    if len(delta_names) != 1 or not isinstance(delta, torch.Tensor):
+        raise Human13LiveModelError(
+            "selected-token delta must be one named live-model parameter"
+        )
+    if delta.requires_grad:
+        raise Human13LiveModelError(
+            "selected-token delta must remain frozen in parameter provenance"
+        )
+    return Human13ParameterStateReceipt(
+        schema_version="human13_parameter_state.v1",
+        parameters=tuple(rows),
+        selected_delta_parameter_name=delta_names[0],
+        selected_delta_tensor_sha256=_tensor_value_sha256(delta),
+        selected_delta_requires_grad=False,
+    )
+
+
+def _live_assembly_fingerprint(
+    assembly: Human13LiveAssembly,
+    *,
+    verify_parameter_state: bool = True,
+) -> str:
     try:
         surface = assembly.trainable_surface_receipt.to_artifact_dict()
     except AttributeError as exc:
         raise Human13LiveModelError(
             "trainable-surface receipt is unavailable"
         ) from exc
+    observed_parameter_state = assembly.parameter_state_receipt
+    if verify_parameter_state:
+        observed_parameter_state = _build_parameter_state_receipt(
+            assembly.model, assembly.special_token_result
+        )
+        if observed_parameter_state != assembly.parameter_state_receipt:
+            raise Human13LiveModelError(
+                "live assembly parameter state differs from builder provenance"
+            )
     payload = {
         "plan": assembly.plan.to_artifact_dict(),
         "validation": assembly.validation.to_artifact_dict(),
@@ -294,6 +469,7 @@ def _live_assembly_fingerprint(assembly: Human13LiveAssembly) -> str:
             "requires_grad",
             None,
         ),
+        "parameter_state": observed_parameter_state.to_artifact_dict(),
     }
     return hashlib.sha256(
         (json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode()
@@ -303,7 +479,9 @@ def _live_assembly_fingerprint(assembly: Human13LiveAssembly) -> str:
 def _seal_human13_live_assembly(
     assembly: Human13LiveAssembly,
 ) -> Human13LiveAssembly:
-    fingerprint = _live_assembly_fingerprint(assembly)
+    fingerprint = _live_assembly_fingerprint(
+        assembly, verify_parameter_state=False
+    )
     identity = id(assembly)
 
     def cleanup(_: ReferenceType[object], *, key: int = identity) -> None:
@@ -764,6 +942,7 @@ def build_human13_live_model_plan(
         SUCCESSOR_UNIT_ID,
         ON_POLICY_UNIT_ID,
         RP_CROSSOVER_UNIT_ID,
+        ALL_HF_VERTICAL_UNIT_ID,
     }:
         raise Human13LiveModelError("arm config is not bound to the Human-13 unit")
     if getattr(config, "updates", None) is not True:
@@ -1010,12 +1189,16 @@ def assemble_human13_live_model(
     )
     if int(getattr(runtime, "world_size", -1)) != 1:
         raise Human13LiveModelError("TrainRuntime must remain world size one")
+    prepared_model = getattr(runtime, "model", model)
+    parameter_state_receipt = _build_parameter_state_receipt(
+        prepared_model, special_result
+    )
     return _seal_human13_live_assembly(Human13LiveAssembly(
         plan=plan,
         validation=validation,
         components=components,
         accelerator=accelerator,
-        model=getattr(runtime, "model", model),
+        model=prepared_model,
         adapter_result=adapter_result,
         special_token_result=special_result,
         optimizer=getattr(runtime, "optimizer", optimizer),
@@ -1024,6 +1207,7 @@ def assemble_human13_live_model(
         trainable_surface_receipt=surface_receipt,
         runtime=runtime,
         memory_saver_receipt=memory_saver_receipt,
+        parameter_state_receipt=parameter_state_receipt,
     ))
 
 
@@ -1640,6 +1824,7 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         SUCCESSOR_UNIT_ID,
         ON_POLICY_UNIT_ID,
         RP_CROSSOVER_UNIT_ID,
+        ALL_HF_VERTICAL_UNIT_ID,
     }:
         raise Human13LiveModelError("plan has an unknown Human-13 unit identity")
     if (plan.unit_id == SUCCESSOR_UNIT_ID) != (plan.arm_id in {"R1", "R2"}):
@@ -1650,6 +1835,12 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         raise Human13LiveModelError("on-policy unit and O-arm identity differ")
     if (plan.unit_id == RP_CROSSOVER_UNIT_ID) != (plan.arm_id in {"A", "B", "C"}):
         raise Human13LiveModelError("RP-crossover unit and A/B/C arm identity differ")
+    if (plan.unit_id == ALL_HF_VERTICAL_UNIT_ID) != (
+        plan.arm_id == ALL_HF_VERTICAL_ARM_ID
+    ):
+        raise Human13LiveModelError(
+            "all-HF vertical unit and one-image C arm identity differ"
+        )
     if (
         plan.unit_id == RP_CROSSOVER_UNIT_ID
         and plan.learning_rate not in RP_CROSSOVER_LEARNING_RATE_RAY
@@ -1719,14 +1910,20 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
         "freeze_special_token_delta": True,
         "optimizer_name": "adamw_torch",
         "learning_rate": (
-            plan.learning_rate if plan.unit_id == RP_CROSSOVER_UNIT_ID else 1.0e-5
+            plan.learning_rate
+            if plan.unit_id == RP_CROSSOVER_UNIT_ID
+            else 3.0e-6
+            if plan.unit_id == ALL_HF_VERTICAL_UNIT_ID
+            else 1.0e-5
         ),
         "betas": (0.9, 0.999),
         "epsilon": 1.0e-8,
         "weight_decay": 0.0,
         "scheduler_name": "cosine_with_warmup",
         "scheduler_warmup_steps": 0,
-        "scheduler_horizon_updates": 16,
+        "scheduler_horizon_updates": (
+            1 if plan.unit_id == ALL_HF_VERTICAL_UNIT_ID else 16
+        ),
         "max_grad_norm": 1.0,
         "world_size": 1,
         "milestones": (
@@ -1736,6 +1933,8 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
             if plan.unit_id == ON_POLICY_UNIT_ID
             else RP_CROSSOVER_MILESTONES
             if plan.unit_id == RP_CROSSOVER_UNIT_ID
+            else ALL_HF_VERTICAL_MILESTONES
+            if plan.unit_id == ALL_HF_VERTICAL_UNIT_ID
             else MILESTONES
         ),
         "learning_rate_resolution": plan.learning_rate_resolution,
@@ -1913,6 +2112,9 @@ def _read_json_object(path: Path, label: str) -> dict[str, Any]:
 
 
 __all__ = [
+    "ALL_HF_VERTICAL_ARM_ID",
+    "ALL_HF_VERTICAL_MILESTONES",
+    "ALL_HF_VERTICAL_UNIT_ID",
     "CHECKPOINT_STEPS",
     "DefaultHuman13AssemblyBackend",
     "Human13AssemblyBackend",
@@ -1924,6 +2126,8 @@ __all__ = [
     "Human13ParityAssembly",
     "Human13ParityAssemblyBackend",
     "Human13ParityRuntime",
+    "Human13ParameterStateReceipt",
+    "Human13ParameterValueReceipt",
     "Human13PlanValidationReceipt",
     "Human13SourceContract",
     "HUMAN13_IMAGE_IDS",
@@ -1950,6 +2154,7 @@ __all__ = [
     "bind_human13_selected_rp_crossover_plan",
     "build_human13_checkpoint_kwargs",
     "build_human13_checkpoint_writer",
+    "build_human13_all_hf_vertical_source_plan",
     "build_human13_live_model_plan",
     "build_human13_parity_skeleton",
     "build_human13_processor_skeletons",

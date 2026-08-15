@@ -187,3 +187,79 @@ All tests used injected CPU causal fakes and value-only plans/receipts.  No real
 model load, CUDA/GPU action, network access, launch, output publication, vLLM,
 prefix cache, retry, fallback, backward, or optimizer update occurred.  This is
 still plumbing evidence only; Task 2.5 remains unchecked pending rereview.
+
+## Fix round 2: parameter provenance and nested lifecycle lineage
+
+The second bounded rereview left T2-R1/T2-R2 open.  The user explicitly
+authorized another correction round covering those fixable issues.  OpenSpec
+2.5 and all later tasks remain unchanged.
+
+### RED
+
+Fresh adversarial tests were added before production changes.  They proved six
+failures: post-builder mutation of the trainable adapter and frozen selected
+delta was admitted; predecessor A1 was admitted instead of an owning vertical
+plan; no owning plan builder existed; completed lifecycle serialization had no
+nested Task-1 groups; and a canonical outer rehash could fabricate completed
+K16 evidence.
+
+```text
+conda run -n ms pytest -q <round-2 focused selectors>
+Pytest: 0 passed, 6 failed
+```
+
+### Correction
+
+- Added the value-only all-HF vertical Source plan with unit
+  `2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical`, arm
+  `C-One-Image`, BF16/FA2 language DoRA, frozen selected delta, AdamW
+  `3e-6`, scheduler horizon one, and pre/post milestones `(0,1)`.  Existing
+  predecessor plan builders and consumers remain valid and unchanged.
+- Builder-issued `Human13LiveAssembly` now carries canonical parameter-state
+  provenance for every named prepared-model parameter: name, shape, dtype,
+  `requires_grad`, tensor version, and exact CPU-byte SHA-256.  The exact named
+  selected-token delta has an additional frozen/content binding.  The builder
+  seals that state; downstream admission recomputes it before constructing the
+  HF shared-surface identity, so post-builder value or trainability mutation is
+  rejected rather than snapshotted as a new Source.
+- `SharedSurfaceResourceReceipt` now embeds the admitted Task-1
+  `SampledHFGroup` and `GradientReplayGroup` values.  Admission/reload checks
+  exact shared identity, group index, seed order, sampled-to-replay lineage,
+  nested admission seals, and derives group hashes plus completed sample/replay
+  forward counts from those nested values.  Arbitrary hashes, zero-forward
+  completed evidence, nested tamper, derived-hash rehash, copy/replace, and
+  wrong order fail; a valid four-group terminal receipt serializes and reloads.
+- Borrowed external assembly ownership, finally-safe cleanup, primary-error
+  preservation, one terminal cleanup attempt, and double-close behavior remain
+  unchanged.
+
+### Verification and boundary
+
+```text
+conda run -n ms pytest -q \
+  tests/research/test_human13_hf_shared_surface.py \
+  tests/research/test_human13_hf_shared_surface_live.py \
+  tests/research/test_human13_live_model.py
+Pytest: 122 passed
+
+conda run -n ms ruff check <six Task-1/Task-2/live-model paths>
+[]
+
+conda run -n ms python -m compileall -q <same six paths>
+(exit 0; no output)
+
+Serena/Pyright error-severity diagnostics
+{} for all four changed source/test files
+
+openspec validate add-human13-all-hf-shared-surface-trajectory-credit-vertical --strict
+Change 'add-human13-all-hf-shared-surface-trajectory-credit-vertical' is valid
+
+git diff --check
+(exit 0; no output)
+```
+
+This remains injected CPU/value-contract evidence.  It does not prove a real
+Qwen load, CUDA RNG, BF16/FA2 forward/backward, GPU memory headroom, live
+numerical parity, optimizer update, or model quality.  No model, GPU, network,
+launch, output, cache, vLLM, retry, fallback, backward, or update action ran.
+Task 2.5 remains unchecked until the fresh bounded rereview is clean.

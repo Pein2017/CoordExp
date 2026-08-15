@@ -177,11 +177,13 @@ class SurfaceReceipt:
 class TinyOptimizer:
     state: dict[str, object] = {}
 
-    def __init__(self, parameter: torch.nn.Parameter) -> None:
+    def __init__(
+        self, parameter: torch.nn.Parameter, *, learning_rate: float
+    ) -> None:
         self.param_groups = [
             {
                 "name": "adapter.language",
-                "lr": 1.0e-5,
+                "lr": learning_rate,
                 "weight_decay": 0.0,
                 "params": [parameter],
             }
@@ -212,6 +214,7 @@ class TinyAssemblyBackend:
         self,
         model: TinyCausalModel,
         tokenizer: TinyTokenizer,
+        plan: live_model.Human13LiveModelPlan,
     ) -> None:
         self.model = model
         self.accelerator = TinyAccelerator()
@@ -238,7 +241,9 @@ class TinyAssemblyBackend:
             receipt=SimpleNamespace(name="selected-delta"),
             loaded_tensor_sha256=live_model.SOURCE_SPECIAL_EMBEDDING_SHA256,
         )
-        self.optimizer = TinyOptimizer(model.weight)
+        self.optimizer = TinyOptimizer(
+            model.weight, learning_rate=plan.learning_rate
+        )
         self.scheduler = object()
         self.group_plan = object()
 
@@ -289,13 +294,14 @@ class TinyAssemblyBackend:
 def _assembly(
     model: TinyCausalModel | None = None,
     tokenizer: TinyTokenizer | None = None,
+    plan: live_model.Human13LiveModelPlan | None = None,
 ) -> Human13LiveAssembly:
     causal_model = model or TinyCausalModel()
     live_tokenizer = tokenizer or TinyTokenizer()
-    plan = live_model.build_human13_live_model_plan(CONFIG_ROOT / "03_a1.yaml")
-    backend = TinyAssemblyBackend(causal_model, live_tokenizer)
+    effective_plan = plan or live_model.build_human13_all_hf_vertical_source_plan()
+    backend = TinyAssemblyBackend(causal_model, live_tokenizer, effective_plan)
     return live_model.assemble_human13_live_model(
-        plan,
+        effective_plan,
         pack_count=1,
         repo_root=Path.cwd(),
         backend=cast(live_model.Human13AssemblyBackend, backend),
@@ -681,9 +687,50 @@ def test_open_requires_exact_builder_issued_source_surface(mutation: str) -> Non
             "wrong-delta-result"
         )
 
-    with pytest.raises(RuntimeError, match="admitted|trainable|delta|validation"):
+    with pytest.raises(
+        RuntimeError, match="admitted|trainable|delta|validation|parameter"
+    ):
         open_hf_shared_surface(plan_image1584_k16(), assembly, TinySkeleton())
     assert assembly.model.forward_calls == []
+
+
+@pytest.mark.parametrize("parameter_name", ("weight", "shared_embed_delta"))
+def test_open_rejects_parameter_content_mutated_after_builder_seal(
+    parameter_name: str,
+) -> None:
+    from scripts.research.human13_hf_shared_surface_live import open_hf_shared_surface
+
+    assembly = _assembly()
+    parameter = dict(assembly.model.named_parameters())[parameter_name]
+    with torch.no_grad():
+        parameter.add_(1)
+
+    with pytest.raises(RuntimeError, match="builder|parameter|Source"):
+        open_hf_shared_surface(plan_image1584_k16(), assembly, TinySkeleton())
+    assert assembly.model.forward_calls == []
+
+
+def test_open_rejects_trainability_mutated_after_builder_seal() -> None:
+    from scripts.research.human13_hf_shared_surface_live import open_hf_shared_surface
+
+    assembly = _assembly()
+    assembly.model.weight.requires_grad_(False)
+
+    with pytest.raises(RuntimeError, match="builder|parameter|trainable"):
+        open_hf_shared_surface(plan_image1584_k16(), assembly, TinySkeleton())
+    assert assembly.model.forward_calls == []
+
+
+def test_open_rejects_predecessor_a1_instead_of_owning_vertical_plan() -> None:
+    from scripts.research.human13_hf_shared_surface_live import open_hf_shared_surface
+
+    predecessor = _assembly(
+        plan=live_model.build_human13_live_model_plan(CONFIG_ROOT / "03_a1.yaml")
+    )
+    with pytest.raises(RuntimeError, match="all-HF|vertical"):
+        open_hf_shared_surface(
+            plan_image1584_k16(), predecessor, TinySkeleton()
+        )
 
 
 def test_open_rejects_wrong_source_plan_and_nonbuilder_assembly() -> None:
@@ -718,6 +765,92 @@ def test_resource_receipt_rejects_outer_and_semantic_rehash_tamper() -> None:
     )
     with pytest.raises(RuntimeError, match="lifecycle values"):
         SharedSurfaceResourceReceipt.from_dict(semantic_tamper)
+
+
+def test_completed_receipt_serializes_nested_task1_lineage() -> None:
+    from scripts.research.human13_hf_shared_surface_live import (
+        SharedSurfaceResourceReceipt,
+    )
+
+    session, _assembly_value, _skeleton = _open()
+    _complete_k16(session)
+    receipt = session.close()
+
+    payload = receipt.to_dict()
+    assert len(payload["sampled_groups"]) == 4
+    assert len(payload["replay_groups"]) == 4
+    restored = SharedSurfaceResourceReceipt.from_dict(payload)
+    assert restored.to_dict() == payload
+
+
+def test_canonical_rehash_cannot_fabricate_completed_k16_without_nested_groups() -> None:
+    from scripts.research.human13_hf_shared_surface_live import (
+        SharedSurfaceResourceReceipt,
+    )
+
+    session, _assembly_value, _skeleton = _open()
+    with pytest.raises(RuntimeError):
+        session.close()
+    payload = session.resource_receipt.to_dict()
+    payload["sampled_seed_groups"] = [
+        list(group) for group in plan_image1584_k16().seed_groups
+    ]
+    payload["sampled_group_sha256s"] = [_digest(f"sample-{index}") for index in range(4)]
+    payload["replay_group_sha256s"] = [_digest(f"replay-{index}") for index in range(4)]
+    payload["sample_forward_count"] = 0
+    payload["replay_forward_count"] = 4
+    payload["total_forward_count"] = 4
+    payload["no_cache_forward_count"] = 4
+    payload["latest_replay_group_sha256"] = payload["replay_group_sha256s"][-1]
+    payload["cleanup_reason"] = "completed"
+    payload["content_sha256"] = json_sha256(
+        {key: value for key, value in payload.items() if key != "content_sha256"}
+    )
+
+    with pytest.raises(RuntimeError, match="nested|lineage|completed"):
+        SharedSurfaceResourceReceipt.from_dict(payload)
+
+
+def test_nested_task1_tamper_and_derived_hash_rehash_are_rejected() -> None:
+    from scripts.research.human13_hf_shared_surface_live import (
+        SharedSurfaceResourceReceipt,
+    )
+
+    session, _assembly_value, _skeleton = _open()
+    _complete_k16(session)
+    payload = session.close().to_dict()
+
+    nested_tamper = copy.deepcopy(payload)
+    first_group = nested_tamper["sampled_groups"][0]
+    first_group["group_index"] = 1
+    first_group["content_sha256"] = json_sha256(
+        {
+            key: value
+            for key, value in first_group.items()
+            if key != "content_sha256"
+        }
+    )
+    nested_tamper["content_sha256"] = json_sha256(
+        {
+            key: value
+            for key, value in nested_tamper.items()
+            if key != "content_sha256"
+        }
+    )
+    with pytest.raises((RuntimeError, ValueError), match="seed|group|lineage"):
+        SharedSurfaceResourceReceipt.from_dict(nested_tamper)
+
+    derived_tamper = copy.deepcopy(payload)
+    derived_tamper["sampled_group_sha256s"][0] = _digest("forged-derived-hash")
+    derived_tamper["content_sha256"] = json_sha256(
+        {
+            key: value
+            for key, value in derived_tamper.items()
+            if key != "content_sha256"
+        }
+    )
+    with pytest.raises(RuntimeError, match="derive|lineage"):
+        SharedSurfaceResourceReceipt.from_dict(derived_tamper)
 
 
 def test_close_rejects_one_group_missing_replay_and_wrong_order() -> None:

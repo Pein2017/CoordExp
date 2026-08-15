@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import torch
 
 from scripts.research import human13_live_model as live
 from scripts.research.human13_rp_crossover_matrix_contracts import (
@@ -100,6 +101,23 @@ def test_successor_r1_r2_reuse_the_exact_low_dose_live_surface() -> None:
         assert plan.arm_id == arm_id
         assert plan.milestones == (0, 1, 2)
         live.validate_human13_live_model_plan(plan)
+
+
+def test_all_hf_vertical_has_its_own_one_update_source_plan() -> None:
+    plan = live.build_human13_all_hf_vertical_source_plan()
+
+    assert plan.unit_id == (
+        "2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical"
+    )
+    assert plan.arm_id == "C-One-Image"
+    assert plan.learning_rate == 3.0e-6
+    assert plan.scheduler_horizon_updates == 1
+    assert plan.milestones == (0, 1)
+    assert plan.mixed_precision == "bf16"
+    assert plan.attn_implementation == "flash_attention_2"
+    assert plan.adapter_target_towers == ("language",)
+    assert plan.freeze_special_token_delta is True
+    live.validate_human13_live_model_plan(plan)
 
 
 def test_on_policy_arms_reuse_surface_with_eight_attempt_milestones() -> None:
@@ -352,8 +370,13 @@ def _surface_receipt(
     return SimpleNamespace(to_artifact_dict=lambda: artifact)
 
 
-class _FrozenDelta:
-    requires_grad = False
+class _FakeLiveModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.language_dora = torch.nn.Parameter(torch.zeros(2))
+        self.shared_embed_delta = torch.nn.Parameter(
+            torch.zeros(2), requires_grad=False
+        )
 
 
 class _Optimizer:
@@ -384,14 +407,15 @@ class FakeBackend:
             distributed_type=SimpleNamespace(name="NO"),
             device="cuda:0",
         )
+        self.model = _FakeLiveModel()
         self.components = SimpleNamespace(
-            model="base-model",
+            model=self.model,
             base_model_path=Path(live.SOURCE_BASE_MODEL_PATH),
             base_config_sha256=live.SOURCE_BASE_CONFIG_SHA256,
             tokenizer_sha256=live.SOURCE_TOKENIZER_SHA256,
         )
         self.adapter_result = SimpleNamespace(
-            model="dora-model",
+            model=self.model,
             receipt=SimpleNamespace(
                 adapter_name="default",
                 warm_start={
@@ -400,15 +424,20 @@ class FakeBackend:
             ),
         )
         self.special_result = SimpleNamespace(
-            model="dora-plus-frozen-delta",
-            shared_embed_delta=_FrozenDelta(),
+            model=self.model,
+            shared_embed_delta=self.model.shared_embed_delta,
             receipt="special-receipt",
             loaded_tensor_sha256=live.SOURCE_SPECIAL_EMBEDDING_SHA256,
         )
         self.optimizer = _Optimizer()
         self.scheduler = object()
         self.group_plan = object()
-        self.runtime = SimpleNamespace(world_size=world_size, model="runtime-model")
+        self.runtime = SimpleNamespace(
+            world_size=world_size,
+            model=self.model,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+        )
 
     def create_accelerator(self, plan: live.Human13LiveModelPlan) -> Any:
         self.calls.append(("accelerator", plan.mixed_precision))
@@ -434,7 +463,7 @@ class FakeBackend:
         *,
         repo_root: Path,
     ) -> Any:
-        assert model == "base-model"
+        assert model is self.model
         assert components is self.components
         self.calls.append(
             ("warm_start_dora", (plan.adapter_rank, plan.adapter_alpha, repo_root))
@@ -449,7 +478,7 @@ class FakeBackend:
         *,
         repo_root: Path,
     ) -> Any:
-        assert model == "dora-model"
+        assert model is self.model
         assert components is self.components
         self.calls.append(
             ("load_frozen_delta", (plan.freeze_special_token_delta, repo_root))
@@ -457,7 +486,7 @@ class FakeBackend:
         return self.special_result
 
     def enable_memory_savers(self, model: Any) -> object:
-        assert model == "dora-plus-frozen-delta"
+        assert model is self.model
         self.calls.append(("memory_savers", model))
         return {"enabled": True}
 
@@ -467,7 +496,7 @@ class FakeBackend:
         adapter_result: Any,
         plan: live.Human13LiveModelPlan,
     ) -> tuple[Any, Any, Any]:
-        assert model == "dora-plus-frozen-delta"
+        assert model is self.model
         assert adapter_result is self.adapter_result
         self.calls.append(
             ("optimizer", (plan.learning_rate, plan.scheduler_horizon_updates))
@@ -481,7 +510,7 @@ class FakeBackend:
         special_result: Any,
         optimizer_group_plan: Any,
     ) -> Any:
-        assert model == "dora-plus-frozen-delta"
+        assert model is self.model
         assert adapter_result is self.adapter_result
         assert special_result is self.special_result
         assert optimizer_group_plan is self.group_plan
@@ -498,7 +527,7 @@ class FakeBackend:
         plan: live.Human13LiveModelPlan,
         pack_count: int,
     ) -> Any:
-        assert model == "dora-plus-frozen-delta"
+        assert model is self.model
         assert optimizer is self.optimizer
         assert scheduler is self.scheduler
         assert accelerator is self.accelerator
@@ -725,12 +754,19 @@ def test_live_assembly_is_the_only_action_boundary_and_returns_world_one_runtime
         "runtime",
     ]
     assert assembly.validation is validation
-    assert assembly.model == "runtime-model"
+    assert assembly.model is backend.model
     assert assembly.optimizer is backend.optimizer
     assert assembly.runtime is backend.runtime
     assert assembly.trainable_surface_receipt.to_artifact_dict()[
         "trainable_towers"
     ] == ["adapter.language"]
+    parameter_receipt = assembly.parameter_state_receipt
+    assert tuple(item.name for item in parameter_receipt.parameters) == tuple(
+        name for name, _parameter in backend.model.named_parameters()
+    )
+    assert parameter_receipt.selected_delta_parameter_name == "shared_embed_delta"
+    assert parameter_receipt.selected_delta_requires_grad is False
+    assert len(parameter_receipt.selected_delta_tensor_sha256) == 64
 
 
 def test_live_assembly_fails_closed_on_world_size_or_surface_drift(
@@ -916,7 +952,7 @@ def test_live_assembly_rejects_trainable_source_delta_or_nonfresh_optimizer(
         lambda _: _validation(plan),
     )
     trainable_delta_backend = FakeBackend()
-    trainable_delta_backend.special_result.shared_embed_delta.requires_grad = True
+    trainable_delta_backend.special_result.shared_embed_delta.requires_grad_(True)
     with pytest.raises(live.Human13LiveModelError, match="must remain frozen"):
         live.assemble_human13_live_model(
             plan,

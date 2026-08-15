@@ -59,6 +59,8 @@ class SharedSurfaceResourceReceipt:
     tokenizer_object_id: int
     processor_order: tuple[str, str, str]
     observed_logits_dtype: Literal["float32"]
+    sampled_groups: tuple[SampledHFGroup, ...]
+    replay_groups: tuple[GradientReplayGroup, ...]
     sampled_seed_groups: tuple[tuple[int, int, int, int], ...]
     sampled_group_sha256s: tuple[str, ...]
     replay_group_sha256s: tuple[str, ...]
@@ -85,6 +87,8 @@ class SharedSurfaceResourceReceipt:
             "tokenizer_object_id": self.tokenizer_object_id,
             "processor_order": list(self.processor_order),
             "observed_logits_dtype": self.observed_logits_dtype,
+            "sampled_groups": [group.to_dict() for group in self.sampled_groups],
+            "replay_groups": [group.to_dict() for group in self.replay_groups],
             "sampled_seed_groups": [list(group) for group in self.sampled_seed_groups],
             "sampled_group_sha256s": list(self.sampled_group_sha256s),
             "replay_group_sha256s": list(self.replay_group_sha256s),
@@ -115,7 +119,17 @@ class SharedSurfaceResourceReceipt:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> SharedSurfaceResourceReceipt:
         expected = set(cls.__dataclass_fields__) | {"content_sha256"}
-        if set(value) != expected or not isinstance(value.get("identity"), Mapping):
+        if (
+            set(value) != expected
+            or not isinstance(value.get("identity"), Mapping)
+            or not isinstance(value.get("sampled_groups"), list)
+            or not isinstance(value.get("replay_groups"), list)
+            or not all(
+                isinstance(item, Mapping)
+                for item in value.get("sampled_groups", [])
+                + value.get("replay_groups", [])
+            )
+        ):
             raise HFSharedSurfaceLiveError(
                 "resource receipt fields differ from canonical schema"
             )
@@ -127,6 +141,13 @@ class SharedSurfaceResourceReceipt:
             tokenizer_object_id=value["tokenizer_object_id"],
             processor_order=tuple(value["processor_order"]),
             observed_logits_dtype=value["observed_logits_dtype"],
+            sampled_groups=tuple(
+                SampledHFGroup.from_dict(item) for item in value["sampled_groups"]
+            ),
+            replay_groups=tuple(
+                GradientReplayGroup.from_dict(item)
+                for item in value["replay_groups"]
+            ),
             sampled_seed_groups=tuple(
                 tuple(group) for group in value["sampled_seed_groups"]
             ),
@@ -165,6 +186,52 @@ def _digest(value: object, *, label: str) -> str:
 def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
     if type(receipt.identity) is not HFSharedSurfaceIdentity:
         raise HFSharedSurfaceLiveError("resource receipt identity is not exact")
+    sampled_seed_groups: list[tuple[int, int, int, int]] = []
+    sampled_hashes: list[str] = []
+    replay_hashes: list[str] = []
+    for index, group in enumerate(receipt.sampled_groups):
+        if (
+            type(group) is not SampledHFGroup
+            or index >= len(plan_image1584_k16().seed_groups)
+            or group.identity != receipt.identity
+            or group.plan != plan_image1584_k16()
+            or group.group_index != index
+        ):
+            raise HFSharedSurfaceLiveError(
+                "resource receipt nested sampled-group lineage differs"
+            )
+        seeds = tuple(request.seed for request in group.requests)
+        if seeds != plan_image1584_k16().seed_groups[index]:
+            raise HFSharedSurfaceLiveError(
+                "resource receipt nested sampled-group seed order differs"
+            )
+        sampled_seed_groups.append(
+            cast(tuple[int, int, int, int], seeds)
+        )
+        sampled_hashes.append(group.content_sha256)
+    for index, replay in enumerate(receipt.replay_groups):
+        if (
+            type(replay) is not GradientReplayGroup
+            or index >= len(receipt.sampled_groups)
+            or replay.sampled_group != receipt.sampled_groups[index]
+            or replay.sampled_group.content_sha256 != sampled_hashes[index]
+        ):
+            raise HFSharedSurfaceLiveError(
+                "resource receipt nested replay-group lineage differs"
+            )
+        replay_hashes.append(replay.content_sha256)
+    derived_sample_forward_count = sum(
+        len(group.active_batch_steps) for group in receipt.sampled_groups
+    )
+    derived_replay_forward_count = len(receipt.replay_groups)
+    if (
+        receipt.sampled_seed_groups != tuple(sampled_seed_groups)
+        or receipt.sampled_group_sha256s != tuple(sampled_hashes)
+        or receipt.replay_group_sha256s != tuple(replay_hashes)
+    ):
+        raise HFSharedSurfaceLiveError(
+            "resource receipt hashes must derive from nested admitted lineage"
+        )
     for label, values in (
         ("sampled group", receipt.sampled_group_sha256s),
         ("replay group", receipt.replay_group_sha256s),
@@ -218,6 +285,8 @@ def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
         or len(receipt.sampled_group_sha256s) != 4
         or len(receipt.replay_group_sha256s) != 4
         or receipt.replay_forward_count != 4
+        or receipt.sample_forward_count != derived_sample_forward_count
+        or receipt.replay_forward_count != derived_replay_forward_count
         or receipt.cleanup_failures
     ):
         raise HFSharedSurfaceLiveError(
@@ -255,7 +324,7 @@ def _require_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
         )
 
 
-def _tensor_sha256(tensor: torch.Tensor, *, label: str) -> str:
+def _tensor_sha256(tensor: object, *, label: str) -> str:
     if not isinstance(tensor, torch.Tensor):
         raise HFSharedSurfaceLiveError(f"{label} must be a tensor")
     value = tensor.detach().cpu().contiguous()
@@ -444,9 +513,9 @@ def _require_exact_source_assembly(assembly: Human13LiveAssembly) -> None:
         live_model.validate_human13_live_assembly_values(assembly)
     except live_model.Human13LiveModelError as exc:
         raise HFSharedSurfaceLiveError(str(exc)) from exc
-    if assembly.plan.unit_id != live_model.UNIT_ID or assembly.plan.arm_id != "A1":
+    if assembly.plan != live_model.build_human13_all_hf_vertical_source_plan():
         raise HFSharedSurfaceLiveError(
-            "shared-surface assembly must be the exact Human-13 Source A1 plan"
+            "shared-surface assembly must use the exact all-HF vertical Source plan"
         )
     validation = assembly.validation
     source = assembly.plan.source
@@ -580,6 +649,10 @@ class HFSharedSurfaceSession:
         self._parameters = _named_parameters(self._model)
         self._parameter_versions = _parameter_versions(self._parameters)
         self._parameter_layout, parameter_sha256 = _trainable_state(self._parameters)
+        self._selected_delta = assembly.special_token_result.shared_embed_delta
+        self._selected_delta_state_sha256 = _tensor_sha256(
+            self._selected_delta, label="selected-token delta"
+        )
         self._prompt = _prompt_tokens(skeleton)
         prompt_sha256 = json_sha256(list(self._prompt))
         image_sha256 = _image_sha256(skeleton)
@@ -609,10 +682,8 @@ class HFSharedSurfaceSession:
         self._sample_forward_count = 0
         self._replay_forward_count = 0
         self._no_cache_forward_count = 0
-        self._sampled_groups: list[
-            tuple[tuple[int, int, int, int], str]
-        ] = []
-        self._replayed_groups: list[tuple[str, str]] = []
+        self._sampled_groups: list[SampledHFGroup] = []
+        self._replayed_groups: list[GradientReplayGroup] = []
         self._live_replay_tensors: dict[str, torch.Tensor] = {}
         self._latest_replay_group_sha256: str | None = None
         self._closed = False
@@ -635,6 +706,19 @@ class HFSharedSurfaceSession:
         reason: Literal["completed", "failed"],
         cleanup_failures: tuple[str, ...],
     ) -> SharedSurfaceResourceReceipt:
+        admitted_sampled: list[SampledHFGroup] = []
+        for index, group in enumerate(self._sampled_groups):
+            if group.group_index != index:
+                break
+            admitted_sampled.append(group)
+        admitted_replays: list[GradientReplayGroup] = []
+        for index, replay in enumerate(self._replayed_groups):
+            if (
+                index >= len(admitted_sampled)
+                or replay.sampled_group != admitted_sampled[index]
+            ):
+                break
+            admitted_replays.append(replay)
         return _admit_resource_receipt(SharedSurfaceResourceReceipt(
             identity=self._identity,
             model_object_id=self._model_object_id,
@@ -643,14 +727,20 @@ class HFSharedSurfaceSession:
             tokenizer_object_id=self._tokenizer_object_id,
             processor_order=_PROCESSOR_ORDER,
             observed_logits_dtype="float32",
+            sampled_groups=tuple(admitted_sampled),
+            replay_groups=tuple(admitted_replays),
             sampled_seed_groups=tuple(
-                seeds for seeds, _sha256 in self._sampled_groups
+                cast(
+                    tuple[int, int, int, int],
+                    tuple(request.seed for request in group.requests),
+                )
+                for group in admitted_sampled
             ),
             sampled_group_sha256s=tuple(
-                sha256 for _seeds, sha256 in self._sampled_groups
+                group.content_sha256 for group in admitted_sampled
             ),
             replay_group_sha256s=tuple(
-                replay_sha256 for _sampled_sha256, replay_sha256 in self._replayed_groups
+                group.content_sha256 for group in admitted_replays
             ),
             sample_forward_count=self._sample_forward_count,
             replay_forward_count=self._replay_forward_count,
@@ -659,7 +749,11 @@ class HFSharedSurfaceSession:
             ),
             no_cache_forward_count=self._no_cache_forward_count,
             retained_graph_count=0,
-            latest_replay_group_sha256=self._latest_replay_group_sha256,
+            latest_replay_group_sha256=(
+                admitted_replays[-1].content_sha256
+                if admitted_replays
+                else None
+            ),
             session_held_reference_count=0,
             assembly_ownership="borrowed_external",
             caller_release_claim="not_claimed",
@@ -683,6 +777,7 @@ class HFSharedSurfaceSession:
             self._tokenizer,
             self._processor,
             self._parameters,
+            self._selected_delta,
         )
         return sum(value is not None and value != () for value in resources)
 
@@ -796,11 +891,17 @@ class HFSharedSurfaceSession:
             raise HFSharedSurfaceLiveError("shared-surface prompt identity drifted")
         if _image_sha256(skeleton) != self._identity.image_sha256:
             raise HFSharedSurfaceLiveError("shared-surface image identity drifted")
-        if verify_parameter_values:
-            try:
-                live_model.validate_human13_live_assembly_values(assembly)
-            except live_model.Human13LiveModelError as exc:
-                raise HFSharedSurfaceLiveError(str(exc)) from exc
+        selected_delta = getattr(
+            assembly.special_token_result, "shared_embed_delta", None
+        )
+        if (
+            selected_delta is not self._selected_delta
+            or _tensor_sha256(selected_delta, label="selected-token delta")
+            != self._selected_delta_state_sha256
+        ):
+            raise HFSharedSurfaceLiveError(
+                "shared-surface selected-token delta state changed"
+            )
 
     def _forward(
         self,
@@ -1019,9 +1120,7 @@ class HFSharedSurfaceSession:
                 active_batch_steps=tuple(steps),
             )
             self._require_invariants()
-            self._sampled_groups.append(
-                (cast(tuple[int, int, int, int], seeds), group.content_sha256)
-            )
+            self._sampled_groups.append(group)
             return group
         except Exception as exc:
             if not self._closed:
@@ -1047,7 +1146,7 @@ class HFSharedSurfaceSession:
             expected_replay_index = len(self._replayed_groups)
             if (
                 group.group_index != expected_replay_index
-                or self._sampled_groups[expected_replay_index][1]
+                or self._sampled_groups[expected_replay_index].content_sha256
                 != group.content_sha256
             ):
                 raise HFSharedSurfaceLiveError(
@@ -1155,9 +1254,7 @@ class HFSharedSurfaceSession:
             self._require_invariants()
             self._live_replay_tensors[replay.content_sha256] = chosen_logps
             self._latest_replay_group_sha256 = replay.content_sha256
-            self._replayed_groups.append(
-                (group.content_sha256, replay.content_sha256)
-            )
+            self._replayed_groups.append(replay)
             return replay
         except Exception as exc:
             if not self._closed:
@@ -1203,6 +1300,8 @@ class HFSharedSurfaceSession:
             self._parameters = ()
             self._parameter_layout = None
             self._prompt = ()
+            self._selected_delta = None
+            self._selected_delta_state_sha256 = None
             terminal_reason: Literal["completed", "failed"] = (
                 "failed" if cleanup_failures or reason == "failed" else "completed"
             )
@@ -1219,7 +1318,10 @@ class HFSharedSurfaceSession:
     def close(self) -> SharedSurfaceResourceReceipt:
         self._require_open()
         complete = (
-            tuple(seeds for seeds, _sha256 in self._sampled_groups)
+            tuple(
+                tuple(request.seed for request in group.requests)
+                for group in self._sampled_groups
+            )
             == self._plan.seed_groups
             and len(self._sampled_groups) == 4
             and len(self._replayed_groups) == 4
