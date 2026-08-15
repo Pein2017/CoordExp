@@ -84,7 +84,7 @@
 
 - [x] 6.1 Obtain explicit model/GPU execution authorization and freeze a new
   immutable vertical root; do not infer this authority from completed docs.
-- [ ] 6.2 Implement exact score-function replay and the score-function
+- [x] 6.2 Implement exact score-function replay and the score-function
   gradient forward on the existing HF fp32/SDPA exact-history batch-one
   surface with focused CPU tests on real frozen shapes; forbid BF16/FA2
   packed score-function evidence and admit packed materialization only for

@@ -25,9 +25,21 @@ Every row is closed by a CPU test in this file unless marked ``live``.
 | 18 | Fail closed on position gaps/duplicates/reorder | ``materialize_live_packs`` forward validation | forward omits, duplicates, or invents a compact position | ``test_forward_result_fails_closed`` |
 | 19 | Fail closed on nonfinite logits | ``materialize_live_packs`` forward validation | forward returns ``inf``/``nan`` rows | ``test_forward_result_fails_closed`` |
 | 20 | Fail closed on pack overflow | ``plan_live_packs`` preflight | a trajectory segment exceeds the configured pack limit | ``test_pack_overflow_fails_closed`` |
-| 21 | Real Qwen FA2/MRoPE compact-logit seam is used | ``default_live_packed_forward`` | a bespoke forward replaces ``build_qwen_forward_inputs``/``run_qwen_forward`` | ``test_default_forward_uses_the_qwen_compact_logit_seam`` |
+| 21 | (superseded by rows 24-26 under task 6.2) packed FA2/MRoPE seam retired | ``default_live_packed_forward`` | — | rows 24-26 |
 | 22 | Import stays runtime-free | module import | importing the module imports Torch or loads a model | ``test_module_import_is_runtime_free`` |
-| 23 | Live no-update parity, memory, and FA2 branch proof | production qualification vertical | CPU fixtures stand in for model-quality evidence | live (Task 6 vertical; not closed here) |
+| 23 | Live no-update parity and memory on the exact surface | v5 parity-only qualification | CPU fixtures stand in for model-quality evidence | live (Task 6 vertical; not closed here) |
+
+Task 6.2 execution-surface correction (frozen before implementation):
+
+| # | Invariant | Executable owner / choke point | Minimal counterexample | Closing evidence |
+|---|---|---|---|---|
+| 24 | Score-function rows come only from the exact fp32/SDPA history surface | ``default_exact_history_forward`` surface gate | a bf16-parameter or FA2-configured model is supplied | ``test_default_forward_fails_closed_off_the_exact_surface`` |
+| 25 | BF16/FA2 packed forward is retired for score-function evidence | ``default_live_packed_forward`` | the packed FA2 seam is called or injected after task 6.2 | ``test_fa2_packed_forward_is_retired_for_score_function_evidence`` |
+| 26 | Rows are batch-one per segment with census causal/history/MRoPE semantics | ``default_exact_history_forward`` | a multi-segment packed forward or wrong local rows produce the logits | ``test_default_forward_runs_batch_one_exact_history_per_segment`` |
+| 27 | Exact rows are invariant to pack partitioning | planner + default exact forward | a different ``global_max_length`` changes any row or policy log prob | ``test_exact_rows_are_invariant_to_pack_partitioning`` |
+| 28 | Autograd reaches real DoRA trainables through the exact surface | materialization + real peft wrapper | policy log probs detach or grads land on a copy | ``test_gradients_reach_dora_trainables_through_exact_forward`` |
+| 29 | MRoPE positions come from the real nested Qwen owner | ``_derive_qwen_position_ids`` chain walk | wrapper-depth resolution regresses to one hop | ``test_default_forward_runs_batch_one_exact_history_per_segment`` |
+| 30 | Denominator, lifecycle, order, and leakage rules unchanged by the swap | rows 6, 8-14 owners | surface swap alters gather order, release, ``N*K``, or diagnostics | rows 6, 8-14 tests re-run green |
 """
 
 from __future__ import annotations
@@ -978,49 +990,269 @@ def test_pack_overflow_fails_closed() -> None:
         _plan(global_max_length=6)
 
 
-def test_default_forward_uses_the_qwen_compact_logit_seam(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import src.qwen.forward as qwen_forward
+class _ExactRopeOwner:
+    """Qwen3VLModel-shaped nested owner of exact multimodal MRoPE positions."""
 
-    seen: dict[str, Any] = {}
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
 
-    def fake_build(pack, encoded_examples, position_inputs, **kwargs):
-        seen["build"] = (pack.pack_index, tuple(kwargs["logits_to_keep_positions"]))
-        return SimpleNamespace(
-            pack_index=pack.pack_index,
-            logits_position_ids=tuple(kwargs["logits_to_keep_positions"]),
+    def get_rope_index(
+        self,
+        input_ids: torch.Tensor,
+        image_grid_thw: torch.Tensor,
+        video_grid_thw: torch.Tensor | None,
+        *,
+        attention_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, None]:
+        self.calls.append(
+            {
+                "input_ids": input_ids,
+                "image_grid_thw": image_grid_thw,
+                "video_grid_thw": video_grid_thw,
+                "attention_mask": attention_mask,
+            }
         )
+        positions = torch.arange(input_ids.shape[1], device=input_ids.device)
+        return positions.view(1, 1, -1).expand(3, 1, -1), None
 
-    def fake_run(model, forward_inputs, **kwargs):
-        seen["run"] = kwargs
-        rows = torch.zeros(
-            (len(forward_inputs.logits_position_ids), VOCAB_SIZE), dtype=torch.float32
-        )
-        return SimpleNamespace(
-            logits=rows.unsqueeze(0),
-            logits_position_ids=forward_inputs.logits_position_ids,
-        )
 
-    monkeypatch.setattr(qwen_forward, "build_qwen_forward_inputs", fake_build)
-    monkeypatch.setattr(qwen_forward, "run_qwen_forward", fake_run)
+class _ExactSurfaceModel(torch.nn.Module):
+    """fp32/SDPA conditional-generation shape with the rope owner at .model."""
+
+    def __init__(
+        self,
+        *,
+        dtype: torch.dtype = torch.float32,
+        attn_implementation: str = "sdpa",
+    ) -> None:
+        super().__init__()
+        self.model = _ExactRopeOwner()
+        self.config = SimpleNamespace(_attn_implementation=attn_implementation)
+        self.scale = torch.nn.Parameter(torch.zeros(1, dtype=dtype))
+        self.forward_calls: list[dict[str, Any]] = []
+
+    def forward(self, **kwargs: Any) -> SimpleNamespace:
+        self.forward_calls.append(kwargs)
+        requested = kwargs["logits_to_keep"].tolist()
+        input_ids = kwargs["input_ids"][0].tolist()
+        rows = torch.zeros((1, len(requested), VOCAB_SIZE), dtype=torch.float32)
+        for row, local in enumerate(requested):
+            # split-invariant: only segment-local content decides the row
+            rows[0, row, 0] = float(local)
+            rows[0, row, 1] = float(input_ids[local])
+        return SimpleNamespace(logits=rows + self.scale.to(dtype=torch.float32))
+
+
+def _exact_runtime() -> SimpleNamespace:
+    return SimpleNamespace(accelerator=SimpleNamespace(device=torch.device("cpu")))
+
+
+class _VocabTokenizer:
+    def __len__(self) -> int:
+        return VOCAB_SIZE
+
+
+def test_default_forward_runs_batch_one_exact_history_per_segment() -> None:
+    model = _ExactSurfaceModel()
     plan = _plan()
-    runtime = SimpleNamespace(accelerator=SimpleNamespace(device=torch.device("cpu")))
+    materialized = packs.materialize_live_packs(
+        plan=plan,
+        expected_vocab_size=VOCAB_SIZE,
+        model=model,
+        runtime=_exact_runtime(),
+        tokenizer=_VocabTokenizer(),
+    )
 
-    class Tok:
-        def __len__(self) -> int:
-            return VOCAB_SIZE
+    segments_with_rows = {row.segment_id for row in plan.row_bindings}
+    assert len(model.forward_calls) == len(segments_with_rows)
+    rope = model.model
+    assert len(rope.calls) == len(model.forward_calls)
+    by_segment = {
+        segment.example_id: segment
+        for pack in plan.packed_plan.packs
+        for segment in pack.pack.segments
+    }
+    examples = {
+        example.example_id: example
+        for pack in plan.packed_plan.packs
+        for example in pack.encoded_examples
+    }
+    for call, rope_call in zip(model.forward_calls, rope.calls, strict=True):
+        # batch-one exact history: the forward sees one segment's own tokens
+        input_ids = call["input_ids"]
+        assert input_ids.shape[0] == 1
+        segment_tokens = tuple(input_ids[0].tolist())
+        owners = [
+            example
+            for example in examples.values()
+            if tuple(example.input_ids) == segment_tokens
+        ]
+        assert owners, "forward input_ids are not any segment's exact history"
+        assert torch.equal(
+            call["attention_mask"], torch.ones_like(input_ids)
+        )
+        expected_positions = (
+            torch.arange(input_ids.shape[1]).view(1, 1, -1).expand(3, 1, -1)
+        )
+        assert torch.equal(call["position_ids"], expected_positions)
+        assert call["use_cache"] is False
+        assert rope_call["input_ids"] is input_ids
+        segment = by_segment[owners[0].example_id]
+        for local in call["logits_to_keep"].tolist():
+            assert 0 <= local < segment.end - segment.start
+
+    # gathered rows land at their packed causal positions in sealed order
+    raw = materialized.packed_raw_logits
+    for row_binding, row in zip(
+        plan.row_bindings, raw.logits.unbind(0), strict=True
+    ):
+        assert row[0].item() == float(row_binding.local_causal_position)
+    materialized.release()
+
+
+@pytest.mark.parametrize(
+    ("dtype", "attn_implementation", "match"),
+    [
+        (torch.bfloat16, "sdpa", "fp32/SDPA"),
+        (torch.float32, "flash_attention_2", "fp32/SDPA"),
+    ],
+)
+def test_default_forward_fails_closed_off_the_exact_surface(
+    dtype: torch.dtype,
+    attn_implementation: str,
+    match: str,
+) -> None:
+    model = _ExactSurfaceModel(dtype=dtype, attn_implementation=attn_implementation)
+    plan = _plan()
+
+    with pytest.raises(packs.LivePackContractError, match=match):
+        packs.materialize_live_packs(
+            plan=plan,
+            expected_vocab_size=VOCAB_SIZE,
+            model=model,
+            runtime=_exact_runtime(),
+            tokenizer=_VocabTokenizer(),
+        )
+
+    assert model.forward_calls == []
+
+
+def test_fa2_packed_forward_is_retired_for_score_function_evidence() -> None:
+    plan = _plan()
+
+    with pytest.raises(packs.LivePackContractError, match="task 6.2"):
+        packs.default_live_packed_forward(
+            _ExactSurfaceModel(),
+            _exact_runtime(),
+            _VocabTokenizer(),
+            plan.packed_plan.packs[0],
+            plan.pack_requests[0].compact_positions,
+        )
+
+    with pytest.raises(packs.LivePackContractError, match="task 6.2"):
+        packs.materialize_live_packs(
+            plan=plan,
+            expected_vocab_size=VOCAB_SIZE,
+            model=_ExactSurfaceModel(),
+            runtime=_exact_runtime(),
+            tokenizer=_VocabTokenizer(),
+            packed_forward=packs.default_live_packed_forward,
+        )
+
+
+def test_exact_rows_are_invariant_to_pack_partitioning() -> None:
+    publication = _publication()
+    wide = packs.plan_live_packs(publication=publication, skeleton=_skeleton())
+    narrow = packs.plan_live_packs(
+        publication=publication,
+        skeleton=_skeleton(),
+        global_max_length=16,
+    )
+    assert len(narrow.pack_requests) > len(wide.pack_requests)
+
+    outputs = []
+    for plan in (wide, narrow):
+        materialized = packs.materialize_live_packs(
+            plan=plan,
+            expected_vocab_size=VOCAB_SIZE,
+            model=_ExactSurfaceModel(),
+            runtime=_exact_runtime(),
+            tokenizer=_VocabTokenizer(),
+        )
+        raw = materialized.packed_raw_logits
+        outputs.append(
+            (
+                raw.request_ids,
+                raw.token_indices,
+                raw.logits.detach().clone(),
+                {
+                    request_id: value.detach().clone()
+                    for request_id, value in materialized.policy_logprobs.items()
+                },
+            )
+        )
+        materialized.release()
+
+    assert outputs[0][0] == outputs[1][0]
+    assert outputs[0][1] == outputs[1][1]
+    assert torch.equal(outputs[0][2], outputs[1][2])
+    for request_id, values in outputs[0][3].items():
+        assert torch.equal(values, outputs[1][3][request_id])
+
+
+def test_gradients_reach_dora_trainables_through_exact_forward() -> None:
+    from peft import LoraConfig, get_peft_model
+
+    class _CondGen(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = _ExactRopeOwner()
+            self.language_head = torch.nn.Linear(4, 4)
+            self.config = SimpleNamespace(
+                _attn_implementation="sdpa",
+                to_dict=lambda: {"model_type": "qwen3_vl"},
+            )
+
+        def forward(self, **kwargs: Any) -> SimpleNamespace:
+            requested = kwargs["logits_to_keep"]
+            base = self.language_head(
+                torch.ones(4, dtype=torch.float32)
+            ).sum()
+            logits = base + torch.zeros(
+                (1, int(requested.numel()), VOCAB_SIZE), dtype=torch.float32
+            )
+            return SimpleNamespace(logits=logits)
+
+    wrapped = get_peft_model(
+        _CondGen(),  # type: ignore[arg-type]
+        LoraConfig(
+            r=2,
+            lora_alpha=4,
+            target_modules=["language_head"],
+            use_dora=True,
+        ),
+    )
+    plan = _plan()
 
     materialized = packs.materialize_live_packs(
         plan=plan,
         expected_vocab_size=VOCAB_SIZE,
-        model=object(),
-        runtime=runtime,
-        tokenizer=Tok(),
+        model=wrapped,
+        runtime=_exact_runtime(),
+        tokenizer=_VocabTokenizer(),
     )
-    assert seen["build"][1] == plan.pack_requests[0].compact_positions
-    assert seen["run"]["expected_vocab_size"] == VOCAB_SIZE
-    assert seen["run"]["require_fa2_branch_proof"] is True
+    total = torch.stack(
+        [value.sum() for value in materialized.policy_logprobs.values()]
+    ).sum()
+    total.backward()
+
+    trainable_grads = [
+        parameter.grad
+        for name, parameter in wrapped.named_parameters()
+        if parameter.requires_grad and "lora" in name.lower()
+    ]
+    assert trainable_grads
+    assert any(grad is not None for grad in trainable_grads)
     materialized.release()
 
 

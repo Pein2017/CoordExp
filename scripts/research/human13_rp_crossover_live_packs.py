@@ -2,10 +2,12 @@
 """Live packed materialization of admitted Human-13 RP-crossover trajectories.
 
 This module is the join between Task-2 admitted sampled trajectories and the
-existing no-padding Qwen FA2/MRoPE compact-logit forward.  It owns no model,
-optimizer, checkpoint, matcher, or trainer: it plans one isolated causal
-segment per sampled trajectory, reuses the experiment's pack planner, requests
-only the causal rows that precede each chosen token, and emits
+exact HF fp32/SDPA exact-history batch-one forward (task 6.2 execution-surface
+correction; the BF16/FA2 packed forward is retired for score-function
+evidence).  It owns no model, optimizer, checkpoint, matcher, or trainer: it
+plans one isolated causal segment per sampled trajectory, reuses the
+experiment's pack planner as bookkeeping, requests only the causal rows that
+precede each chosen token, and emits
 
 * the exact ephemeral ``PackedRawLogits`` consumed by
   ``collect_human13_rp_crossover.replay_acquisition_group``;
@@ -31,7 +33,6 @@ from typing import Any
 SCHEMA_VERSION = "human13_rp_crossover_live_packs.v1"
 SEGMENT_ROLE = "h1_independent"
 SEGMENT_PREFIX = "human13rp"
-FA2_BRANCH_PROOF_POLICY = "human13_rp_crossover_live_packs"
 PROCESSED_TRANSFORM_TOLERANCE_NATS = 1e-5
 
 
@@ -735,35 +736,179 @@ def default_live_packed_forward(
     packed: Any,
     positions: tuple[int, ...],
 ) -> Any:
-    """Run the existing Qwen no-padding FA2/MRoPE compact-logit forward.
+    """Fail closed: the BF16/FA2 packed seam carries no score-function rows."""
 
-    Unlike the no-update census forward this path keeps autograd enabled: the
-    same rows carry both the replay evidence and the score-function gradient.
+    del model, runtime, tokenizer, packed, positions
+    raise LivePackContractError(
+        "BF16/FA2 packed forwards were retired for score-function evidence by "
+        "task 6.2; score-function rows come from default_exact_history_forward "
+        "on the exact fp32/SDPA history surface"
+    )
+
+
+@dataclass(frozen=True)
+class ExactHistoryForwardResult:
+    """Compact rows assembled from batch-one exact-history forwards."""
+
+    logits: Any
+    logits_position_ids: tuple[int, ...]
+
+
+def _segment_pixel_values(encoding: Any, *, segment_id: str) -> Any:
+    import torch
+
+    from src.qwen.images import (
+        QwenImageEncoding,
+        materialize_qwen_image_encoding_batch,
+    )
+
+    if isinstance(encoding, QwenImageEncoding):
+        pixel_values, _ = materialize_qwen_image_encoding_batch([encoding])
+    else:
+        pixel_values = getattr(encoding, "pixel_values", None)
+    if not isinstance(pixel_values, torch.Tensor):
+        raise LivePackContractError(
+            f"segment {segment_id} has no materialized pixel values"
+        )
+    return pixel_values
+
+
+def default_exact_history_forward(
+    model: Any,
+    runtime: Any,
+    tokenizer: Any,
+    packed: Any,
+    positions: tuple[int, ...],
+) -> ExactHistoryForwardResult:
+    """Run one batch-one fp32/SDPA exact-history forward per packed segment.
+
+    Task 6.2 execution-surface correction: every score-function row comes from
+    the same exact-history surface the census/witness seam uses, so the pack
+    is bookkeeping only and rows cannot depend on the physical partitioning.
+    Autograd stays enabled: the same rows carry replay evidence and the
+    score-function gradient.
     """
 
-    import src.qwen.forward as qwen_forward
-    from src.qwen.fa2 import build_fa2_varlen_plan
+    import torch
 
+    from src.inference.hf_backend import (
+        _derive_qwen_position_ids,
+        _observed_attn_implementation,
+        _observed_model_dtype,
+    )
+
+    del tokenizer
     device = getattr(getattr(runtime, "accelerator", None), "device", None)
     if device is None:
         raise LivePackContractError(
             "live pack runtime does not expose accelerator.device"
         )
-    inputs = qwen_forward.build_qwen_forward_inputs(
-        packed.pack,
-        packed.encoded_examples,
-        packed.position_inputs,
-        fa2_varlen_plan=build_fa2_varlen_plan(packed.pack, device=device),
-        logits_to_keep_positions=positions,
-        device=device,
-        fa2_branch_proof_policy=FA2_BRANCH_PROOF_POLICY,
+    observed_dtype = _observed_model_dtype(model) or {}
+    dtype_names = observed_dtype.get("parameter_dtype_names")
+    observed_attention = _observed_attn_implementation(model)
+    if dtype_names != ["torch.float32"] or observed_attention != "sdpa":
+        raise LivePackContractError(
+            "score-function rows require the exact fp32/SDPA history surface; "
+            f"observed parameter dtypes {dtype_names} with "
+            f"attn_implementation {observed_attention}"
+        )
+    segments = tuple(packed.pack.segments)
+    examples_by_id = {
+        getattr(example, "example_id", None): example
+        for example in packed.encoded_examples
+    }
+    requested = tuple(int(position) for position in positions)
+    local_by_segment: dict[str, list[int]] = {}
+    for position in requested:
+        owners = [
+            segment
+            for segment in segments
+            if segment.start <= position < segment.end
+        ]
+        if len(owners) != 1:
+            raise LivePackContractError(
+                f"requested packed position {position} does not fall in exactly "
+                "one segment"
+            )
+        local_by_segment.setdefault(owners[0].example_id, []).append(
+            position - owners[0].start
+        )
+    rows_by_position: dict[int, Any] = {}
+    for segment in segments:
+        local_positions = local_by_segment.get(segment.example_id)
+        if not local_positions:
+            continue
+        example = examples_by_id.get(segment.example_id)
+        if example is None:
+            raise LivePackContractError(
+                f"segment {segment.example_id} has no encoded example"
+            )
+        segment_token_ids = tuple(int(token) for token in example.input_ids)
+        if segment_token_ids != tuple(
+            int(token)
+            for token in packed.pack.input_ids[segment.start : segment.end]
+        ):
+            raise LivePackContractError(
+                f"segment {segment.example_id} tokens differ from its own "
+                "exact history"
+            )
+        encoding = getattr(example, "image_encoding", None)
+        grid_value = getattr(encoding, "image_grid_thw", None)
+        if encoding is None or grid_value is None:
+            raise LivePackContractError(
+                f"segment {segment.example_id} has no image encoding grid"
+            )
+        input_ids = torch.tensor(
+            [segment_token_ids], dtype=torch.long, device=device
+        )
+        attention_mask = torch.ones_like(input_ids)
+        image_grid_thw = torch.tensor(
+            [tuple(int(value) for value in grid_value)],
+            dtype=torch.long,
+            device=device,
+        )
+        position_ids = _derive_qwen_position_ids(
+            model=model,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=None,
+        )
+        local = tuple(sorted(local_positions))
+        output = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            pixel_values=_segment_pixel_values(
+                encoding, segment_id=segment.example_id
+            ).to(device=device),
+            image_grid_thw=image_grid_thw,
+            use_cache=False,
+            return_dict=True,
+            logits_to_keep=torch.tensor(local, dtype=torch.long, device=device),
+        )
+        logits = getattr(output, "logits", None)
+        if (
+            not isinstance(logits, torch.Tensor)
+            or logits.ndim != 3
+            or tuple(logits.shape[:2]) != (1, len(local))
+        ):
+            raise LivePackContractError(
+                f"segment {segment.example_id} exact forward did not return "
+                "position-selective causal logits"
+            )
+        if logits.dtype != torch.float32:
+            raise LivePackContractError(
+                f"segment {segment.example_id} exact forward logits must be fp32"
+            )
+        for offset, local_position in enumerate(local):
+            rows_by_position[segment.start + local_position] = logits[:, offset, :]
+    stacked = torch.stack(
+        [rows_by_position[position] for position in requested], dim=1
     )
-    return qwen_forward.run_qwen_forward(
-        model,
-        inputs,
-        expected_vocab_size=_tokenizer_vocab_size(tokenizer),
-        capture_fa2_branch=True,
-        require_fa2_branch_proof=True,
+    return ExactHistoryForwardResult(
+        logits=stacked,
+        logits_position_ids=requested,
     )
 
 
@@ -881,7 +1026,7 @@ def materialize_live_packs(
         raise LivePackContractError(
             "expected_vocab_size must be a real vocabulary size"
         )
-    forward = packed_forward or default_live_packed_forward
+    forward = packed_forward or default_exact_history_forward
     packs_by_index = {
         int(pack.pack.pack_index): pack for pack in plan.packed_plan.packs
     }
@@ -1223,7 +1368,8 @@ def combine_trajectory_numerators(numerators: Sequence[Any], ledger: Any) -> Any
 __all__ = [
     "CompilerPackedRow",
     "CompilerSegmentRequest",
-    "FA2_BRANCH_PROOF_POLICY",
+    "ExactHistoryForwardResult",
+    "default_exact_history_forward",
     "LivePackContractError",
     "LivePackPlan",
     "LivePackReceipt",

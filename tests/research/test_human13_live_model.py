@@ -146,10 +146,63 @@ def test_rp_crossover_arms_accept_only_the_sealed_qualification_dose_ray() -> No
             assert plan.arm_id == arm_id
             assert plan.learning_rate == learning_rate
             assert plan.milestones == (0, 1)
+            # task 6.2 execution-surface correction: score-function forwards
+            # run on the exact fp32/SDPA history surface for this unit only
+            assert (plan.mixed_precision, plan.attn_implementation) == (
+                "fp32",
+                "sdpa",
+            )
             assert plan.source.checkpoint_path == live.SOURCE_CHECKPOINT_PATH
             assert plan.adapter_target_towers == ("language",)
             assert plan.world_size == 1
             live.validate_human13_live_model_plan(plan)
+
+
+def test_rp_crossover_fp32_plan_maps_accelerator_precision_to_no(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.research.materialize_human13_k_union_configs import load_arm_config
+
+    base = load_arm_config(CONFIG_ROOT / "05_a4.yaml")
+    assert base.optimizer is not None
+    crossover = replace(
+        base,
+        unit_id=live.RP_CROSSOVER_UNIT_ID,
+        arm_id="C",
+        milestones=live.RP_CROSSOVER_MILESTONES,
+    )
+    plan = live.build_human13_live_model_plan(crossover)
+    assert plan.mixed_precision == "fp32"
+    backend = live.DefaultHuman13AssemblyBackend()
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "accelerate.Accelerator",
+        lambda **kwargs: captured.update(accelerator_kwargs=kwargs) or "accelerator",
+    )
+    assert backend.create_accelerator(plan) == "accelerator"
+    # Accelerate has no "fp32" token: full precision is mixed_precision="no"
+    assert captured["accelerator_kwargs"]["mixed_precision"] == "no"
+
+    monkeypatch.setattr(
+        "src.runtime.validate_accelerator_runtime",
+        lambda accelerator, *, expected_mixed_precision: captured.update(
+            validated=expected_mixed_precision
+        ),
+    )
+    backend.validate_accelerator("accelerator", plan)
+    assert captured["validated"] == "no"
+
+    monkeypatch.setattr("src.runtime.TrainRuntime", lambda **kwargs: kwargs)
+    runtime = backend.build_runtime(
+        model="model",
+        optimizer="optimizer",
+        scheduler="scheduler",
+        accelerator="accelerator",
+        plan=plan,
+        pack_count=1,
+    )
+    assert runtime["expected_mixed_precision"] == "no"
 
 
 def test_rp_crossover_rejects_an_off_grid_learning_rate() -> None:

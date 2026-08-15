@@ -674,6 +674,22 @@ That exact path was confirmed absent during this planning-only revision.  v5
 is a parity-only qualification on one image — 1584, the same K16 group that
 quantified the v4 failure: K16 acquisition plus exact-surface replay at
 `rp=1.0` and then `rp=1.10`, each required to pass the unchanged sealed gate.
+
+Task 6.2 is implemented CPU-only.  The RP-crossover live-model plan is now
+typed and frozen to `fp32`/`sdpa` (legacy Human-13 units keep BF16/FA2), the
+Accelerate token maps `fp32 -> mixed_precision="no"`, and the default
+score-function forward in `human13_rp_crossover_live_packs` is
+`default_exact_history_forward`: one batch-one exact-history forward per
+packed segment through the same `_derive_qwen_position_ids`/causal-row
+conventions as the census seam, with the physical pack demoted to
+bookkeeping.  `default_live_packed_forward` now fails closed, so BF16/FA2
+packed rows can no longer carry score-function replay or gradient evidence.
+CPU proofs at the frozen matrix rows 24-30: surface identity fail-closed,
+batch-one exact-history semantics, exact row invariance across pack
+partitions (the mathematical-identity proof for packing-as-plumbing),
+autograd through a real warm-start-shaped PEFT DoRA wrapper, and unchanged
+`N*K` denominator, gather order, lifecycle, and leakage rules.  No model,
+GPU, vLLM, optimizer step, or output-root action occurred.
 No witness, dose, update, or owner analysis may run on v5, and parity always
 precedes expensive witness/dose work.  If either RP contract fails, the
 exact-on-policy trajectory-credit route is retired and the unit closes on

@@ -142,8 +142,8 @@ class Human13LiveModelPlan:
     unit_id: str
     arm_id: str
     source: Human13SourceContract
-    mixed_precision: Literal["bf16"]
-    attn_implementation: Literal["flash_attention_2"]
+    mixed_precision: Literal["bf16", "fp32"]
+    attn_implementation: Literal["flash_attention_2", "sdpa"]
     patch_embed_linearization: Literal["enabled"]
     adapter_seed_mode: Literal["warm_start_expand_dora"]
     adapter_target_towers: tuple[Literal["language"], ...]
@@ -308,6 +308,11 @@ class Human13AssemblyBackend(Protocol):
     ) -> Any: ...
 
 
+def _accelerator_mixed_precision(plan: Human13LiveModelPlan) -> str:
+    # Accelerate has no "fp32" token: full precision is mixed_precision="no".
+    return "no" if plan.mixed_precision == "fp32" else plan.mixed_precision
+
+
 class DefaultHuman13AssemblyBackend:
     """Thin adapter over the accepted CoordExp-Swift assembly primitives."""
 
@@ -316,7 +321,7 @@ class DefaultHuman13AssemblyBackend:
 
         return Accelerator(
             gradient_accumulation_steps=1,
-            mixed_precision=plan.mixed_precision,
+            mixed_precision=_accelerator_mixed_precision(plan),
         )
 
     def validate_accelerator(
@@ -326,7 +331,7 @@ class DefaultHuman13AssemblyBackend:
 
         validate_accelerator_runtime(
             accelerator,
-            expected_mixed_precision=plan.mixed_precision,
+            expected_mixed_precision=_accelerator_mixed_precision(plan),
         )
 
     def load_qwen(self, plan: Human13LiveModelPlan) -> Any:
@@ -535,7 +540,7 @@ class DefaultHuman13AssemblyBackend:
             model=model,
             optimizer=optimizer,
             scheduler=scheduler,
-            expected_mixed_precision=plan.mixed_precision,
+            expected_mixed_precision=_accelerator_mixed_precision(plan),
             max_grad_norm=plan.max_grad_norm,
             accelerator=accelerator,
             rank_report_gatherer=None,
@@ -593,6 +598,14 @@ def build_human13_live_model_plan(
     ) != (True, False, False, False, False):
         raise Human13LiveModelError("updated arm must declare language-only DoRA")
     unit_id = str(config.unit_id)
+    # Task 6.2 execution-surface correction: RP-crossover score-function
+    # forwards run on the exact fp32/SDPA history surface; legacy units keep
+    # their sealed BF16/FA2 surface.
+    mixed_precision, attn_implementation = (
+        ("fp32", "sdpa")
+        if unit_id == RP_CROSSOVER_UNIT_ID
+        else ("bf16", "flash_attention_2")
+    )
     decision_sha256 = None
     selected_learning_rate = float(optimizer.learning_rate)
     resolution = "not_applicable"
@@ -627,8 +640,8 @@ def build_human13_live_model_plan(
             adapter_sha256=str(source.adapter_sha256),
             special_embedding_sha256=str(source.special_embedding_sha256),
         ),
-        mixed_precision="bf16",
-        attn_implementation="flash_attention_2",
+        mixed_precision=mixed_precision,
+        attn_implementation=attn_implementation,
         patch_embed_linearization="enabled",
         adapter_seed_mode="warm_start_expand_dora",
         adapter_target_towers=("language",),
@@ -1322,8 +1335,12 @@ def _require_frozen_plan(plan: Human13LiveModelPlan) -> None:
             adapter_sha256=SOURCE_ADAPTER_SHA256,
             special_embedding_sha256=SOURCE_SPECIAL_EMBEDDING_SHA256,
         ),
-        "mixed_precision": "bf16",
-        "attn_implementation": "flash_attention_2",
+        "mixed_precision": (
+            "fp32" if plan.unit_id == RP_CROSSOVER_UNIT_ID else "bf16"
+        ),
+        "attn_implementation": (
+            "sdpa" if plan.unit_id == RP_CROSSOVER_UNIT_ID else "flash_attention_2"
+        ),
         "patch_embed_linearization": "enabled",
         "adapter_seed_mode": "warm_start_expand_dora",
         "adapter_target_towers": ("language",),
