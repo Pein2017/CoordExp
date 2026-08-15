@@ -225,3 +225,68 @@ No legacy runtime or owner objective/projection math changed. Execution remained
 CPU/injected only, with no real HF model action, GPU/CUDA, network,
 checkpoint/output action, accepted checkpoint, retry, or fallback. OpenSpec
 Task 3.6 remains unchecked pending fresh committed-target rereview.
+
+## Fix round 4 — callback ownership and version-exact rollback
+
+Two independent follow-up findings were combined into this authorized repair:
+
+1. a valid realized-margin callback could replace an AdamW param-group entry
+   with an equal-valued foreign parameter after the existing ownership check;
+   the proposal could seal, then rollback could become non-terminal with the
+   transaction inactive, optimizer still foreign, and a live gradient;
+2. value/eval restoration used `copy_`, so tensor version counters advanced
+   while the rollback receipt claimed exact full Source restoration but carried
+   no version evidence.
+
+Before production correction, focused tests were added for callback optimizer
+substitution, exact normal-rollback versions, and exact callback-failure
+versions. The RED was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 22 passed, 3 failed
+```
+
+The callback is now wrapped by the vertical owner. It snapshots the exact
+AdamW group keys/options and original parameter references plus the existing
+transaction's named parameters, optimizer/scheduler/counter/runtime owners,
+CUDA-capture setting, active transaction identity, update count, runtime
+counters, defaults, and empty state. After the callback it requires all of
+those owners unchanged. Any callback mutation is restored before a typed
+`ProjectedApplyError` is raised, allowing the existing projected-apply revert
+and outer transaction rejection to complete. The same ownership check runs
+again after apply with the expected one update and before proposal sealing.
+
+`_reject` now restores source optimizer/transaction ownership before calling
+the existing transaction rejection. Public rollback is exception-safe and
+terminal: if ordinary rejection fails, a narrow fallback restores optimizer,
+scheduler/runtime counters, update count, RNG, full model values/mode/versions,
+and clears gradients, then the owner enters `rolled_back` and raises typed
+`AllHFVerticalError`. A second rollback is deterministic. The fallback is
+tested with an injected transaction-reject failure.
+
+Full Source and applied/restored version tuples are now sealed in proposal and
+rollback receipts. On the pinned `ms` runtime (`torch 2.9.1`), the narrow
+version restore helper uses the supported
+`torch._C._autograd._unsafe_set_version_counter` entrypoint via guarded
+attribute lookup, verifies availability, applies it only after Source values
+are restored, and rechecks every version. If the entrypoint is unavailable or
+does not restore exactly, rollback fails explicitly rather than claiming exact
+Source restoration.
+
+## Fix round 4 gates
+
+```text
+focused: 26 passed
+focused + adjacent Human-13 suites: 257 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No objective/projection math or legacy runtime file changed. Execution remained
+CPU/injected only with no real HF model action, GPU/CUDA execution, network,
+checkpoint/output action, accepted checkpoint, retry, or fallback objective.
+OpenSpec Task 3.6 remains unchecked pending fresh committed-target rereview.

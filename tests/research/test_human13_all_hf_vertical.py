@@ -812,6 +812,9 @@ def test_post_backward_exception_restores_parameter_optimizer_counter_and_rng() 
     before_parameters = tuple(parameter.detach().clone() for _, parameter in fixture.named)
     before_digest = fixture.transaction.state_digest()
     before_rng = torch.get_rng_state().clone()
+    before_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
 
     def fail_probe() -> dict[str, float]:
         torch.manual_seed(999)
@@ -824,6 +827,8 @@ def test_post_backward_exception_restores_parameter_optimizer_counter_and_rng() 
     rollback = error.value.rollback_receipt
     assert rollback is not None
     assert rollback.before_state_digest == rollback.after_state_digest == before_digest
+    assert rollback.full_model_source_versions == before_versions
+    assert rollback.full_model_restored_versions == before_versions
     assert fixture.counter.value == 0
     assert fixture.optimizer.state == {}
     assert torch.equal(torch.get_rng_state(), before_rng)
@@ -834,6 +839,9 @@ def test_post_backward_exception_restores_parameter_optimizer_counter_and_rng() 
             fixture.named, before_parameters, strict=True
         )
     )
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == before_versions
     with pytest.raises(RuntimeError, match="already rolled back"):
         prepared.rollback()
 
@@ -884,6 +892,103 @@ def test_realized_margin_probe_cannot_mutate_the_receipted_model_surface(
     assert fixture.counter.value == 0
     assert fixture.optimizer.state == {}
     assert all(parameter.grad is None for _, parameter in fixture.named)
+
+
+def test_probe_optimizer_substitution_is_restored_and_terminally_rejected() -> None:
+    fixture = _fixture()
+    source_optimizer_parameters = tuple(
+        parameter
+        for group in fixture.optimizer.param_groups
+        for parameter in group["params"]
+    )
+
+    def substituting_probe() -> dict[str, float]:
+        fixture.optimizer.param_groups[0]["params"][0] = torch.nn.Parameter(
+            fixture.model.weight.detach().clone()
+        )
+        return {
+            witness.canonical_key: witness.margin_value
+            for witness in fixture.witness_bank.constraints
+        }
+
+    prepared = _prepare(fixture, realized_margin_probe=substituting_probe)
+    with pytest.raises(AllHFVerticalError, match="post-probe optimizer") as error:
+        prepared.backward_and_propose()
+
+    assert error.value.rollback_receipt is not None
+    assert prepared._proposal_receipt is None
+    assert prepared._state == "rolled_back"
+    assert tuple(
+        parameter
+        for group in fixture.optimizer.param_groups
+        for parameter in group["params"]
+    ) == source_optimizer_parameters
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert all(parameter.grad is None for _, parameter in fixture.named)
+    with pytest.raises(RuntimeError, match="already rolled back"):
+        prepared.rollback()
+
+
+def test_normal_rollback_restores_exact_source_tensor_versions() -> None:
+    fixture = _fixture()
+    source_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+    prepared = _prepare(fixture)
+    proposal = prepared.backward_and_propose()
+
+    assert proposal.full_model_source_versions == source_versions
+    assert proposal.full_model_applied_versions == tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+    rollback = prepared.rollback()
+
+    assert rollback.full_model_source_versions == source_versions
+    assert rollback.full_model_restored_versions == source_versions
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == source_versions
+
+
+def test_public_rollback_failure_is_typed_terminal_and_source_restored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _fixture()
+    source_digest = fixture.transaction.state_digest()
+    source_versions = tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    )
+    source_parameters = tuple(
+        parameter.detach().clone() for _, parameter in fixture.model.named_parameters()
+    )
+    prepared = _prepare(fixture)
+    prepared.backward_and_propose()
+
+    def reject_failure(_snapshot: object) -> None:
+        raise RuntimeError("injected transaction reject failure")
+
+    monkeypatch.setattr(fixture.transaction, "reject", reject_failure)
+    with pytest.raises(AllHFVerticalError, match="rollback failed"):
+        prepared.rollback()
+
+    assert prepared._state == "rolled_back"
+    assert fixture.model.training is False
+    assert fixture.transaction.state_digest() == source_digest
+    assert tuple(
+        parameter._version for _, parameter in fixture.model.named_parameters()
+    ) == source_versions
+    assert all(
+        torch.equal(parameter, source)
+        for (_, parameter), source in zip(
+            fixture.model.named_parameters(), source_parameters, strict=True
+        )
+    )
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert all(parameter.grad is None for _, parameter in fixture.named)
+    with pytest.raises(RuntimeError, match="already rolled back"):
+        prepared.rollback()
 
 
 def test_proposal_is_one_shot_and_receipt_seals_reject_mutation() -> None:

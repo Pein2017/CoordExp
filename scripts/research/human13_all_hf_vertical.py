@@ -10,6 +10,7 @@ boundary; live autograd tensors remain private to ``PreparedAllHFVertical``.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import copy
 from dataclasses import dataclass
 import hashlib
 import math
@@ -29,6 +30,7 @@ from scripts.research.human13_adamw_proposal_preservation import (
     FrozenWitnessBank,
     ParameterLayout,
     ProposalBinding,
+    ProjectedApplyError,
     apply_projected_delta,
     capture_exact_adamw_proposal,
     parameter_state_sha256,
@@ -217,6 +219,85 @@ def _model_mode_fingerprint(
     return tuple((name, id(module), module.training) for name, module in modules)
 
 
+def _parameter_versions(
+    full_named: Sequence[tuple[str, torch.nn.Parameter]],
+) -> tuple[int, ...]:
+    return tuple(parameter._version for _, parameter in full_named)
+
+
+def _restore_parameter_versions(
+    full_named: Sequence[tuple[str, torch.nn.Parameter]],
+    versions: Sequence[int],
+) -> None:
+    parameters = tuple(parameter for _, parameter in full_named)
+    exact_versions = tuple(versions)
+    if len(parameters) != len(exact_versions) or any(
+        not isinstance(version, int) or isinstance(version, bool) or version < 0
+        for version in exact_versions
+    ):
+        raise RuntimeError("full model Source versions are invalid")
+    autograd_c = getattr(torch._C, "_autograd", None)
+    setter = getattr(autograd_c, "_unsafe_set_version_counter", None)
+    if not callable(setter):
+        raise RuntimeError("torch cannot restore exact tensor version counters")
+    setter(parameters, exact_versions)
+    if _parameter_versions(full_named) != exact_versions:
+        raise RuntimeError("full model tensor version restore differs")
+
+
+def _capture_optimizer_param_groups(
+    optimizer: torch.optim.Optimizer,
+) -> tuple[tuple[tuple[str, ...], tuple[torch.nn.Parameter, ...], dict[str, object]], ...]:
+    snapshots = []
+    for group in optimizer.param_groups:
+        keys = tuple(group)
+        parameters = tuple(group["params"])
+        options = {
+            key: copy.deepcopy(value) for key, value in group.items() if key != "params"
+        }
+        snapshots.append((keys, parameters, options))
+    return tuple(snapshots)
+
+
+def _optimizer_param_groups_match(
+    optimizer: torch.optim.Optimizer,
+    snapshots: tuple[
+        tuple[tuple[str, ...], tuple[torch.nn.Parameter, ...], dict[str, object]], ...
+    ],
+) -> bool:
+    if len(optimizer.param_groups) != len(snapshots):
+        return False
+    for group, (keys, parameters, options) in zip(
+        optimizer.param_groups, snapshots, strict=True
+    ):
+        if set(group) != set(keys) or tuple(
+            id(value) for value in group["params"]
+        ) != tuple(id(value) for value in parameters):
+            return False
+        if any(group.get(key) != expected for key, expected in options.items()):
+            return False
+    return True
+
+
+def _restore_optimizer_param_groups(
+    optimizer: torch.optim.Optimizer,
+    snapshots: tuple[
+        tuple[tuple[str, ...], tuple[torch.nn.Parameter, ...], dict[str, object]], ...
+    ],
+) -> None:
+    restored: list[dict[str, object]] = []
+    for keys, parameters, options in snapshots:
+        group: dict[str, object] = {}
+        for key in keys:
+            group[key] = (
+                list(parameters) if key == "params" else copy.deepcopy(options[key])
+            )
+        restored.append(group)
+    optimizer.param_groups = restored  # type: ignore[assignment]
+    if not _optimizer_param_groups_match(optimizer, snapshots):
+        raise RuntimeError("optimizer parameter-group ownership restore differs")
+
+
 def _surface_fingerprint(
     model: torch.nn.Module,
     full_named: tuple[tuple[str, torch.nn.Parameter], ...],
@@ -285,6 +366,8 @@ class PrivateProposalReceipt(_SealedReceipt):
     full_model_parameter_sha256: str
     source_model_mode: Literal["eval"]
     applied_model_mode: Literal["eval"]
+    full_model_source_versions: tuple[int, ...]
+    full_model_applied_versions: tuple[int, ...]
     sampled_group_sha256s: tuple[str, ...]
     replay_group_sha256s: tuple[str, ...]
     request_ids: tuple[str, ...]
@@ -367,6 +450,18 @@ class PrivateProposalReceipt(_SealedReceipt):
             or len(self.request_ids) != 16
             or len(set(self.request_ids)) != 16
             or self.component_names != COMPONENT_NAMES
+            or not self.full_model_source_versions
+            or len(self.full_model_source_versions)
+            != len(self.full_model_applied_versions)
+            or any(
+                not isinstance(version, int)
+                or isinstance(version, bool)
+                or version < 0
+                for version in (
+                    self.full_model_source_versions
+                    + self.full_model_applied_versions
+                )
+            )
         ):
             raise ValueError("proposal receipt does not bind exact K16 components")
         if (
@@ -435,6 +530,8 @@ class PrivateProposalReceipt(_SealedReceipt):
             "request_ids",
             "component_names",
             "active_constraints",
+            "full_model_source_versions",
+            "full_model_applied_versions",
             "cuda_rng_before_sha256s",
             "cuda_rng_applied_sha256s",
         ):
@@ -458,6 +555,8 @@ class RollbackReceipt(_SealedReceipt):
     full_model_restored_sha256: str
     source_model_mode: Literal["eval"]
     restored_model_mode: Literal["eval"]
+    full_model_source_versions: tuple[int, ...]
+    full_model_restored_versions: tuple[int, ...]
     cpu_rng_before_sha256: str
     cpu_rng_after_sha256: str
     cuda_rng_before_sha256s: tuple[str, ...]
@@ -492,6 +591,14 @@ class RollbackReceipt(_SealedReceipt):
             or self.full_model_source_sha256 != self.full_model_restored_sha256
             or self.source_model_mode != "eval"
             or self.restored_model_mode != self.source_model_mode
+            or not self.full_model_source_versions
+            or self.full_model_restored_versions != self.full_model_source_versions
+            or any(
+                not isinstance(version, int)
+                or isinstance(version, bool)
+                or version < 0
+                for version in self.full_model_source_versions
+            )
             or self.cpu_rng_before_sha256 != self.cpu_rng_after_sha256
             or self.cuda_rng_before_sha256s != self.cuda_rng_after_sha256s
             or self.update_count_after != self.update_count_before
@@ -524,6 +631,12 @@ class RollbackReceipt(_SealedReceipt):
         ) != "human13_all_hf_rollback.v1":
             raise ValueError("rollback receipt fields differ")
         payload = {field: value[field] for field in fields}
+        payload["full_model_source_versions"] = tuple(
+            payload["full_model_source_versions"]
+        )
+        payload["full_model_restored_versions"] = tuple(
+            payload["full_model_restored_versions"]
+        )
         payload["cuda_rng_before_sha256s"] = tuple(payload["cuda_rng_before_sha256s"])
         payload["cuda_rng_after_sha256s"] = tuple(payload["cuda_rng_after_sha256s"])
         loaded = _seal_receipt(cls(**payload))
@@ -943,6 +1056,7 @@ class PreparedAllHFVertical:
         self._surface_identity_sha256 = surface_identity_sha256
         self._surface_fingerprint = _surface_fingerprint(model, full_named)
         self._source_model_mode_fingerprint = source_model_mode_fingerprint
+        self._source_full_model_versions = _parameter_versions(full_named)
         self._full_model_parameter_sha256 = full_model_parameter_sha256
         self._full_model_source_values = tuple(
             (name, parameter, parameter.detach().clone())
@@ -953,6 +1067,25 @@ class PreparedAllHFVertical:
         self._request_ids = tuple(request_ids)
         self._source_parameter_sha256 = source_parameter_sha256
         self._source_state_digest = transaction.state_digest()
+        self._source_optimizer_param_groups = _capture_optimizer_param_groups(optimizer)
+        self._source_optimizer_defaults = copy.deepcopy(optimizer.defaults)
+        self._source_transaction_ownership = (
+            tuple(transaction._named_parameters),
+            transaction._optimizer,
+            transaction._scheduler,
+            transaction._update_counter,
+            transaction._runtime,
+            transaction._capture_cuda,
+        )
+        self._source_runtime_counts = (
+            None
+            if transaction._runtime is None
+            else (
+                int(transaction._runtime.optimizer_step_count),
+                int(transaction._runtime.scheduler_step_count),
+            )
+        )
+        self._attempt_transaction_id: str | None = None
         self._compiler_evidence_sha256 = compiler_evidence_sha256
         self._objective_ledger_sha256 = objective_ledger_sha256
         self._state: Literal["prepared", "applied", "rolled_back"] = "prepared"
@@ -1091,6 +1224,120 @@ class PreparedAllHFVertical:
             ) != self._compiler_component_graph_fingerprint:
                 raise ValueError("compiler component graph drifted before projected apply")
 
+    def _require_attempt_ownership(self, *, expected_update_count: int) -> None:
+        transaction = self._transaction
+        (
+            source_named,
+            source_optimizer,
+            source_scheduler,
+            source_counter,
+            source_runtime,
+            source_capture_cuda,
+        ) = self._source_transaction_ownership
+        groups_match = _optimizer_param_groups_match(
+            self._optimizer, self._source_optimizer_param_groups
+        )
+        defaults_match = self._optimizer.defaults == self._source_optimizer_defaults
+        state_empty = not self._optimizer.state
+        if not groups_match or not defaults_match or not state_empty:
+            raise ValueError(
+                "post-probe optimizer ownership/state drifted: "
+                f"groups={groups_match}, defaults={defaults_match}, "
+                f"state_empty={state_empty}"
+            )
+        if (
+            tuple((name, id(parameter)) for name, parameter in transaction._named_parameters)
+            != tuple((name, id(parameter)) for name, parameter in source_named)
+            or transaction._optimizer is not source_optimizer
+            or transaction._scheduler is not source_scheduler
+            or transaction._update_counter is not source_counter
+            or transaction._runtime is not source_runtime
+            or transaction._capture_cuda != source_capture_cuda
+            or transaction._active_transaction_id != self._attempt_transaction_id
+            or transaction._released
+            or self._update_counter.value != expected_update_count
+        ):
+            raise ValueError("post-probe optimizer transaction ownership drifted")
+        if source_runtime is not None and self._source_runtime_counts is not None:
+            current_counts = (
+                int(source_runtime.optimizer_step_count),
+                int(source_runtime.scheduler_step_count),
+            )
+            if current_counts != self._source_runtime_counts:
+                raise ValueError("post-probe optimizer runtime counters drifted")
+
+    def _restore_attempt_ownership(
+        self,
+        *,
+        expected_update_count: int | None,
+        active_transaction_id: str | None,
+    ) -> None:
+        _restore_optimizer_param_groups(
+            self._optimizer, self._source_optimizer_param_groups
+        )
+        self._optimizer.defaults.clear()
+        self._optimizer.defaults.update(copy.deepcopy(self._source_optimizer_defaults))
+        (
+            source_named,
+            source_optimizer,
+            source_scheduler,
+            source_counter,
+            source_runtime,
+            source_capture_cuda,
+        ) = self._source_transaction_ownership
+        transaction = self._transaction
+        transaction._named_parameters = source_named
+        transaction._optimizer = source_optimizer
+        transaction._scheduler = source_scheduler
+        transaction._update_counter = source_counter
+        transaction._runtime = source_runtime
+        transaction._capture_cuda = source_capture_cuda
+        transaction._active_transaction_id = active_transaction_id
+        transaction._released = False
+        if expected_update_count is not None:
+            self._update_counter.value = expected_update_count
+        if source_runtime is not None and self._source_runtime_counts is not None:
+            (
+                source_runtime.optimizer_step_count,
+                source_runtime.scheduler_step_count,
+            ) = self._source_runtime_counts
+
+    def _guarded_realized_margin_probe(self) -> Mapping[str, float]:
+        try:
+            result = self._realized_margin_probe()
+        except Exception as primary_error:
+            try:
+                self._restore_attempt_ownership(
+                    expected_update_count=0,
+                    active_transaction_id=self._attempt_transaction_id,
+                )
+            except Exception as restore_error:
+                raise ProjectedApplyError(
+                    "realized margin probe failed and post-probe optimizer restore "
+                    f"also failed: primary={primary_error}; restore={restore_error}",
+                    disposition="post_probe_restore_failed",
+                ) from primary_error
+            raise
+        try:
+            self._require_attempt_ownership(expected_update_count=0)
+        except Exception as ownership_error:
+            try:
+                self._restore_attempt_ownership(
+                    expected_update_count=0,
+                    active_transaction_id=self._attempt_transaction_id,
+                )
+            except Exception as restore_error:
+                raise ProjectedApplyError(
+                    "post-probe optimizer ownership drift and restore failed: "
+                    f"drift={ownership_error}; restore={restore_error}",
+                    disposition="post_probe_restore_failed",
+                ) from ownership_error
+            raise ProjectedApplyError(
+                "post-probe optimizer/transaction ownership drifted",
+                disposition="post_probe_ownership_drift",
+            ) from ownership_error
+        return result
+
     def _revalidate_after_realized_probe(
         self,
         *,
@@ -1099,6 +1346,10 @@ class PreparedAllHFVertical:
         ],
         applied_post_parameter_sha256: str,
     ) -> None:
+        try:
+            self._require_attempt_ownership(expected_update_count=1)
+        except ValueError as error:
+            raise ValueError("post-probe optimizer/transaction ownership drifted") from error
         try:
             current = _surface_fingerprint(self._model, self._full_named)
         except ValueError as error:
@@ -1154,6 +1405,7 @@ class PreparedAllHFVertical:
                 update_counter=self._update_counter,
             )
             snapshot = self._transaction.begin()
+            self._attempt_transaction_id = snapshot.transaction_id
             self._revalidate()
             objective = cast(torch.Tensor, self._objective)
             trajectory_numerator = cast(torch.Tensor, self._trajectory_numerator)
@@ -1192,7 +1444,7 @@ class PreparedAllHFVertical:
                 optimizer=self._optimizer,
                 transaction=self._transaction,
                 update_counter=self._update_counter,
-                realized_margin_probe=self._realized_margin_probe,
+                realized_margin_probe=self._guarded_realized_margin_probe,
             )
             if (
                 self._update_counter.value != 1
@@ -1222,6 +1474,8 @@ class PreparedAllHFVertical:
                     full_model_parameter_sha256=self._full_model_parameter_sha256,
                     source_model_mode="eval",
                     applied_model_mode="eval",
+                    full_model_source_versions=self._source_full_model_versions,
+                    full_model_applied_versions=_parameter_versions(self._full_named),
                     sampled_group_sha256s=self._sampled_hashes,
                     replay_group_sha256s=self._replay_hashes,
                     request_ids=self._request_ids,
@@ -1286,9 +1540,22 @@ class PreparedAllHFVertical:
                 try:
                     rollback = self._reject(snapshot, applied_state_digest=None)
                 except Exception as rollback_error:
+                    terminal_error: Exception | None = None
+                    try:
+                        self._terminal_restore(snapshot)
+                    except Exception as fallback_error:
+                        terminal_error = fallback_error
                     self._state = "rolled_back"
+                    self._snapshot = None
+                    self._release_live_graphs()
+                    suffix = (
+                        ""
+                        if terminal_error is None
+                        else f"; terminal restore failed: {terminal_error}"
+                    )
                     raise AllHFVerticalError(
-                        f"rollback failed after {type(error).__name__}: {error}: {rollback_error}"
+                        "rollback failed after "
+                        f"{type(error).__name__}: {error}: {rollback_error}{suffix}"
                     ) from rollback_error
             self._state = "rolled_back"
             self._release_live_graphs()
@@ -1304,6 +1571,10 @@ class PreparedAllHFVertical:
             self._transaction.state_digest()
             if applied_state_digest is None
             else applied_state_digest
+        )
+        self._restore_attempt_ownership(
+            expected_update_count=None,
+            active_transaction_id=snapshot.transaction_id,
         )
         transaction_receipt: TransactionReceipt = self._transaction.reject(snapshot)
         self._optimizer.zero_grad(set_to_none=True)
@@ -1330,6 +1601,8 @@ class PreparedAllHFVertical:
                 ),
                 source_model_mode="eval",
                 restored_model_mode="eval",
+                full_model_source_versions=self._source_full_model_versions,
+                full_model_restored_versions=_parameter_versions(self._full_named),
                 cpu_rng_before_sha256=_rng_sha256(snapshot.cpu_rng_state),
                 cpu_rng_after_sha256=_rng_sha256(torch.get_rng_state()),
                 cuda_rng_before_sha256s=_cuda_rng_sha256s(snapshot.cuda_rng_states),
@@ -1350,6 +1623,55 @@ class PreparedAllHFVertical:
         return receipt
 
     @torch.no_grad()
+    def _terminal_restore(self, snapshot: TrainingStateSnapshot) -> None:
+        """Best-effort exact Source restore after the ordinary reject path fails."""
+
+        self._restore_attempt_ownership(
+            expected_update_count=snapshot.update_count,
+            active_transaction_id=None,
+        )
+        self._optimizer.load_state_dict(copy.deepcopy(snapshot.optimizer_state))
+        if self._transaction._scheduler is not None:
+            if snapshot.scheduler_state is None:
+                raise RuntimeError("terminal restore is missing scheduler Source state")
+            self._transaction._scheduler.load_state_dict(
+                copy.deepcopy(snapshot.scheduler_state)
+            )
+        elif snapshot.scheduler_state is not None:
+            raise RuntimeError("terminal restore has unexpected scheduler state")
+        self._update_counter.value = snapshot.update_count
+        if self._transaction._runtime is not None:
+            if (
+                snapshot.runtime_optimizer_step_count is None
+                or snapshot.runtime_scheduler_step_count is None
+            ):
+                raise RuntimeError("terminal restore is missing runtime Source counters")
+            self._transaction._runtime.optimizer_step_count = (
+                snapshot.runtime_optimizer_step_count
+            )
+            self._transaction._runtime.scheduler_step_count = (
+                snapshot.runtime_scheduler_step_count
+            )
+        torch.set_rng_state(snapshot.cpu_rng_state.clone())
+        if snapshot.cuda_rng_states is not None:
+            if not torch.cuda.is_available():
+                raise RuntimeError("terminal restore cannot restore captured CUDA RNG")
+            torch.cuda.set_rng_state_all(
+                [state.clone() for state in snapshot.cuda_rng_states]
+            )
+        self._restore_full_model_source()
+        self._optimizer.zero_grad(set_to_none=True)
+        self._transaction._active_transaction_id = None
+        if (
+            self._transaction.state_digest() != self._source_state_digest
+            or not _optimizer_param_groups_match(
+                self._optimizer, self._source_optimizer_param_groups
+            )
+            or any(parameter.grad is not None for _, parameter in self._named)
+        ):
+            raise RuntimeError("terminal rollback did not restore exact Source state")
+
+    @torch.no_grad()
     def _restore_full_model_source(self) -> None:
         current = _full_model_parameters(self._model)
         if tuple((name, id(parameter)) for name, parameter in current) != tuple(
@@ -1363,6 +1685,9 @@ class PreparedAllHFVertical:
         self._model.eval()
         if _model_mode_fingerprint(self._model) != self._source_model_mode_fingerprint:
             raise RuntimeError("full model Source mode restore differs")
+        _restore_parameter_versions(
+            self._full_named, self._source_full_model_versions
+        )
         if (
             _full_model_state_sha256(self._model, self._full_named)
             != self._full_model_parameter_sha256
@@ -1376,14 +1701,32 @@ class PreparedAllHFVertical:
         self._replay_tensors = {}
         self._compiler_compact_logits = None
         self._full_model_source_values = ()
+        self._attempt_transaction_id = None
 
     def rollback(self) -> RollbackReceipt:
         if self._state == "rolled_back":
             raise RuntimeError("vertical proposal was already rolled back")
         if self._state != "applied" or self._snapshot is None:
             raise RuntimeError("vertical proposal has not been applied")
-        applied_digest = self._transaction.state_digest()
-        receipt = self._reject(self._snapshot, applied_state_digest=applied_digest)
+        snapshot = self._snapshot
+        try:
+            applied_digest = self._transaction.state_digest()
+            receipt = self._reject(snapshot, applied_state_digest=applied_digest)
+        except Exception as error:
+            terminal_error: Exception | None = None
+            try:
+                self._terminal_restore(snapshot)
+            except Exception as fallback_error:
+                terminal_error = fallback_error
+            self._state = "rolled_back"
+            self._snapshot = None
+            self._release_live_graphs()
+            suffix = (
+                ""
+                if terminal_error is None
+                else f"; terminal restore failed: {terminal_error}"
+            )
+            raise AllHFVerticalError(f"rollback failed: {error}{suffix}") from error
         self._state = "rolled_back"
         self._snapshot = None
         self._release_live_graphs()
