@@ -167,3 +167,61 @@ No legacy runtime file changed. Execution remained CPU-only with injected toy
 tensors and no real HF load/forward/backward/optimizer action, GPU/CUDA,
 network, checkpoint/output action, accepted checkpoint, retry, or fallback.
 OpenSpec Task 3.6 remains unchecked pending another committed-target rereview.
+
+## Fix round 3 — post-probe surface certification
+
+A subsequent bounded review found one additional P1 at the external realized
+margin callback seam: the last full-surface check ran before
+`realized_margin_probe`, while that callback runs inside the existing projected
+apply owner. A successful callback could switch the model to train mode or
+mutate frozen/trainable parameters after the preservation owner measured its
+physical delta, and the vertical could then seal a proposal receipt. Rollback
+restored parameter values but did not restore `model.training`.
+
+The finding was accepted as a vertical receipt/rollback contract gap. Before
+production correction, three parameterized adversarial cases were added for a
+probe that returns valid margins after calling `model.train()`, mutating a
+frozen parameter, or mutating a trainable parameter. The exact RED was:
+
+```text
+conda run -n ms python -m pytest -q tests/research/test_human13_all_hf_vertical.py
+Pytest: 20 passed, 3 failed
+Failed: DID NOT RAISE AllHFVerticalError
+```
+
+The correction now:
+
+- requires the complete Source module tree to be in eval mode and includes its
+  module-mode entries in the full-model Source content address;
+- immediately before sealing a private proposal receipt, rechecks eval mode,
+  the exact full parameter registry/metadata, the expected single version
+  increment for each trainable projected apply, unchanged frozen versions and
+  values, and the existing apply owner's pre-probe trainable post-state hash;
+- rejects any post-probe drift before a proposal receipt exists, then uses the
+  existing transaction plus the private full-model snapshot to restore all
+  values and Source eval mode;
+- adds explicit Source/applied and Source/restored eval-mode evidence to the
+  sealed proposal and rollback receipts. The original post-probe validation
+  error remains the primary `AllHFVerticalError`; any restore failure is
+  reported explicitly as rollback failure with the primary error retained in
+  its message.
+
+The successful probe path remains unchanged and now asserts eval-mode evidence
+in both proposal and rollback receipts.
+
+## Fix round 3 gates
+
+```text
+focused: 23 passed
+focused + adjacent Human-13 suites: 254 passed
+Ruff: clean
+compileall: clean
+Serena diagnostics (production and test): {}
+strict OpenSpec: valid
+diff check: clean
+```
+
+No legacy runtime or owner objective/projection math changed. Execution remained
+CPU/injected only, with no real HF model action, GPU/CUDA, network,
+checkpoint/output action, accepted checkpoint, retry, or fallback. OpenSpec
+Task 3.6 remains unchecked pending fresh committed-target rereview.

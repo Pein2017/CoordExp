@@ -470,6 +470,7 @@ def test_complete_vertical_uses_one_global_k16_objective_and_exact_rollback() ->
     assert proposal.compiler_kappa == 1.0
     assert proposal.compiler_margin == 1e-4
     assert proposal.learning_rate == 3e-6
+    assert proposal.source_model_mode == proposal.applied_model_mode == "eval"
     assert proposal.backward_count == 1
     assert proposal.proposal_attempt_count == 1
     assert proposal.projected_apply_attempt_count == 1
@@ -501,6 +502,7 @@ def test_complete_vertical_uses_one_global_k16_objective_and_exact_rollback() ->
     assert rollback.before_state_digest == before_digest
     assert rollback.after_state_digest == before_digest
     assert rollback.rollback_count == 1
+    assert rollback.source_model_mode == rollback.restored_model_mode == "eval"
     assert rollback.update_count_after == 0
     assert rollback.promoted_checkpoint is False
     assert rollback.cpu_rng_before_sha256 == rollback.cpu_rng_after_sha256
@@ -834,6 +836,54 @@ def test_post_backward_exception_restores_parameter_optimizer_counter_and_rng() 
     )
     with pytest.raises(RuntimeError, match="already rolled back"):
         prepared.rollback()
+
+
+@pytest.mark.parametrize("mutation", ("train_mode", "frozen", "trainable"))
+def test_realized_margin_probe_cannot_mutate_the_receipted_model_surface(
+    mutation: str,
+) -> None:
+    # The probe is external code executed after the preservation owner measures
+    # the projected delta. Its return cannot authorize unreceipted model drift.
+    fixture = _fixture()
+    source_values = tuple(
+        parameter.detach().clone() for _, parameter in fixture.model.named_parameters()
+    )
+    source_digest = fixture.transaction.state_digest()
+
+    def mutating_probe() -> dict[str, float]:
+        if mutation == "train_mode":
+            fixture.model.train()
+        elif mutation == "frozen":
+            with torch.no_grad():
+                fixture.model.frozen_base.add_(1.0)
+        else:
+            with torch.no_grad():
+                fixture.model.weight.add_(1.0)
+        return {
+            witness.canonical_key: witness.margin_value
+            for witness in fixture.witness_bank.constraints
+        }
+
+    prepared = _prepare(fixture, realized_margin_probe=mutating_probe)
+    with pytest.raises(AllHFVerticalError, match="post-probe model surface") as error:
+        prepared.backward_and_propose()
+
+    rollback = error.value.rollback_receipt
+    assert rollback is not None
+    assert rollback.source_model_mode == rollback.restored_model_mode == "eval"
+    assert rollback.full_model_source_sha256 == rollback.full_model_restored_sha256
+    assert prepared._proposal_receipt is None
+    assert fixture.model.training is False
+    assert fixture.transaction.state_digest() == source_digest
+    assert all(
+        torch.equal(parameter, saved)
+        for (_, parameter), saved in zip(
+            fixture.model.named_parameters(), source_values, strict=True
+        )
+    )
+    assert fixture.counter.value == 0
+    assert fixture.optimizer.state == {}
+    assert all(parameter.grad is None for _, parameter in fixture.named)
 
 
 def test_proposal_is_one_shot_and_receipt_seals_reject_mutation() -> None:
