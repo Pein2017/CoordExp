@@ -19,18 +19,18 @@
 
 ## 2. All-HF sampling and replay integration
 
-- [ ] 2.1 Implement an experiment-local `HFSharedSurfaceSession` that loads one
+- [x] 2.1 Implement an experiment-local `HFSharedSurfaceSession` that loads one
   Source BF16/FA2 language-only DoRA model, keeps it in eval mode, owns the
   tokenizer/processor and parameter layout, and closes all model/session/cache
   state on every exit.
-- [ ] 2.2 Implement no-cache, full-history, stepwise HF sampling for four active
+- [x] 2.2 Implement no-cache, full-history, stepwise HF sampling for four active
   requests with exact histories, processed chosen log probabilities, RNG and
   shape receipts; execute four groups for K16 without vLLM or prefix-cache use.
-- [ ] 2.3 Implement grad-enabled vectorized teacher-forced replay for one
+- [x] 2.3 Implement grad-enabled vectorized teacher-forced replay for one
   completed group, map every sampled action to its causal logit, apply the same
   policy processor, and retain the live replay tensors only after parity
   admission.
-- [ ] 2.4 Prove through injected production-shaped tests that sampling and replay
+- [x] 2.4 Prove through injected production-shaped tests that sampling and replay
   use the same model-object identity, unchanged parameters, adapter/delta,
   BF16/FA2 surface, model mode, prompt/image/tokenizer, and RP order, and fail
   before backward on any substitution.
