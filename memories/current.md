@@ -1,13 +1,15 @@
 # Current Project Memory
 
-Last verified for the dense-enumeration route: 2026-08-13.
+Last verified for the dense-enumeration route: 2026-08-15.
 
 ## Authority boundary
 
 This file is continuity, not evidence. The current evidence owners are:
 
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md` and its `review.md` for the active plan and review closure
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md` and its `review.md` for the completed static substrate and review closure
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md` for the latest executed native consolidation result
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-14-human13-k-trajectory-rp-crossover-screen/results.md` for the latest executed admission result
+- `openspec/changes/add-human13-k-trajectory-rp-crossover-screen/` for the implemented but gate-retired experiment contract
 - `openspec/changes/add-human13-k-union-greedy-overfit-probe/` for conditional implementation scope; it is not current executed behavior
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-07-s-k10-h20-natural-crossover/results.md` and its `review.md`
 - `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/results.md` and its `review.md`
@@ -16,6 +18,32 @@ This file is continuity, not evidence. The current evidence owners are:
 The completed static-dynamic unit and bundle remain immutable bounded lineage.
 The compass owns program routing; the transport handoff, worker reports,
 aggregate bundle, and this memory do not independently own scientific claims.
+
+## Latest successor disposition (executed negative)
+
+The Human-13 K-trajectory RP-crossover unit is complete at its admission gate.
+Fresh `rp=1.0` K16 acquisition on image 1584 succeeded, but even fp32/SDPA
+batch-one exact-history replay failed the frozen sampler-parity contract:
+maximum error `0.1675825`, mean `0.0021683`, and `22/1573` tokens over the
+`0.02` token gate.  The first-failure rule stopped before `rp=1.10`, witness,
+dose, optimizer, owner analysis, or the eighteen-cell matrix.
+
+This retires the cross-engine **exact-on-policy** trajectory-credit route.  It
+does not show that trajectory credit, a greedy compiler, or Source preservation
+would fail; they were not executed.  Do not resume this unit by widening the
+tolerance, running the remaining RP, or launching matrix cells.
+
+The dominant prior mismatch was numerical surface: moving replay from
+BF16/FA2 packed execution to fp32/SDPA exact history reduced mean error about
+26x and over-limit tokens from `620` to `22`.  The residual vLLM-versus-HF
+kernel/materialization difference is still too large for the sealed exact
+claim.
+
+The next decision is a new-unit fork, not an implementation continuation:
+either use one genuinely shared sampler/gradient forward, or declare an
+approximate/off-policy objective and measure its bias and greedy transfer.
+Neither is currently authorized.  See
+`memories/notes/2026-08-15-k-trajectory-parity-closure.md`.
 
 ## Prior evidence disposition
 

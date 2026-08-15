@@ -92,13 +92,19 @@
   an execution-surface correction: keep A/B/C arms, both RP contracts, the
   sealed 0.02/0.002 gates, exact histories/processed semantics, estimand,
   optimizer, and owner gates unchanged.
-- [ ] 6.3 Run the reserved, confirmed-absent v5 root as a one-image (1584)
+- [x] 6.3 Run the reserved, confirmed-absent v5 root as a one-image (1584)
   K16 parity-only qualification: acquisition plus exact-surface replay at
   rp=1.0 and then rp=1.10, each against the unchanged sealed gate, before any
   witness, dose, update, or owner analysis.  If either contract fails, retire
   the exact-on-policy route on that recorded result without tolerance
   revision; if both pass, reserve a fresh full-panel successor root for the
   remaining vertical.
+
+  Executed-negative disposition: `rp=1.0` native acquisition passed, but exact
+  fp32/SDPA replay failed the unchanged gate (`max=0.1675825`,
+  `mean=0.0021683`, `22/1573` tokens over `0.02`).  The first-failure rule
+  retired the exact-on-policy route before `rp=1.10` or any update.  Tasks
+  6.4--7.4 remain intentionally unexecuted because no admitted vertical exists.
 - [ ] 6.4 On the passing successor root, run one real batch-four K16
   acquisition per RP on the disjoint qualification seed group and require
   exact request coverage plus sampler/replay numeric parity on both
@@ -130,9 +136,15 @@
 
 ## 8. Closure and continuity
 
-- [ ] 8.1 Write bounded results, disposition, exact artifact/config/checkpoint
+- [x] 8.1 Write bounded results, disposition, exact artifact/config/checkpoint
   links, negative findings, claim boundary, and the next user-owned decision.
-- [ ] 8.2 Update the research graph and repository-local project memory with the
+- [x] 8.2 Update the research graph and repository-local project memory with the
   accepted evidence and continuation point.
-- [ ] 8.3 Run strict OpenSpec verification and residue checks; archive only after
+- [x] 8.3 Run strict OpenSpec verification and residue checks; archive only after
   implementation, execution evidence, and both independent reviews agree.
+
+  Strict validation, the focused 105-test slice, canonical content-hash checks,
+  prohibited-artifact residue checks, process cleanup, and the independent
+  evidence review all pass for the bounded negative closure.  This change is
+  not archived: tasks 6.4--7.4 are intentionally unexecuted and retired rather
+  than falsely completed.

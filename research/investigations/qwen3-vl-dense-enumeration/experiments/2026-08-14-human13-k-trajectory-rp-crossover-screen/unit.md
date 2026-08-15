@@ -5,11 +5,11 @@ type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: in_progress
+implementation_status: completed_to_predeclared_stop_rule
 unit_id: 2026-08-14-human13-k-trajectory-rp-crossover-screen
 topic: qwen3-vl-dense-enumeration
-status: planned
-evidence_status: none
+status: complete
+evidence_status: verified
 updated: 2026-08-15
 ---
 
@@ -732,4 +732,50 @@ uses only fp32/SDPA Qwen loading, warm-start DoRA, the frozen Source embedding
 delta, one image-1584 processor skeleton, and a batch-one replay runtime; it
 constructs no optimizer, scheduler, `TrainRuntime`, full-panel skeleton, or
 owner rows.  Real-default-shape CPU spies close those prohibited call paths.
-No live action occurred and task 6.3 remains unchecked.
+At that implementation checkpoint no live action had occurred and task 6.3
+remained pending; the execution closure below supersedes that provisional
+state.
+
+## Execution closure
+
+The reserved `vertical-dose-qualification-v5` parity-only root executed on
+2026-08-15 and closed this unit at its predeclared admission gate.  Image 1584
+used qualification seeds `30001..30016` in four native batches of four at
+`rp=1.0`.  All 16 trajectories reached the natural stop and contributed 1,573
+generated tokens.  Native acquisition passed, then the HF fp32/SDPA batch-one
+exact-history replay failed the unchanged parity contract:
+
+- maximum absolute chosen-token log-probability error: `0.1675825119` nats,
+  versus the sealed `0.02` per-token limit;
+- mean absolute error: `0.0021682973` nats, versus the sealed `0.002` group
+  limit; and
+- `22/1573` tokens exceeded the per-token limit, with the maximum at seed
+  `30013`, token index `42`.
+
+The first-failure rule therefore stopped before `rp=1.10`.  No witness bank,
+Jacobian, dose ray, optimizer, compiler ledger, owner analysis, proposal audit,
+checkpoint, or matrix cell ran.  The terminal route disposition is
+`retire_exact_on_policy_route`; the sealed tolerances are not revised.
+
+The authoritative artifact root is:
+
+```text
+/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/
+  2026-08-14-human13-k-trajectory-rp-crossover-screen/
+  vertical-dose-qualification-v5/
+```
+
+Its terminal content SHA-256 is
+`711ad7119d172f34e9b745503afc904d851fbade55b217ed821579b222597a21`.
+The independent artifact audit recomputed the terminal, RP evidence, native
+acquisition, parity-error, Source checkpoint/config, and lineage hashes and
+found no staging residue or prohibited-phase artifact.  GPU resources were
+released.
+
+This is verified negative feasibility evidence for the sealed cross-engine
+exact-on-policy trajectory-credit route.  It is not evidence that trajectory
+credit, the compiler, preservation, `rp=1.10`, or greedy owner transfer would
+fail, because none of those decision surfaces executed.  Tasks 6.4--7.4 are
+intentionally unexecuted and retired because their passing-parity prerequisite
+was not met.  Read [results.md](results.md) for the bounded disposition and
+[review.md](review.md) for the independent artifact audit.
