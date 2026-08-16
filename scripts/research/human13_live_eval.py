@@ -585,7 +585,17 @@ def evaluate_hf_checkpoint(
     examples = tuple(load_raw_examples(config.data.input_jsonl))
     requests, _prompt_metadata = _build_requests(config, frontend, examples)
     images = {int(image.image_id): image for image in manifest.images}
-    if tuple(int(physical_image_id(item)) for item in examples) != tuple(images):
+    if not images:
+        raise ValueError("HF evaluation manifest must contain at least one image")
+    selected_examples_and_requests = tuple(
+        (example, request)
+        for example, request in zip(examples, requests, strict=True)
+        if int(physical_image_id(example)) in images
+    )
+    if tuple(
+        int(physical_image_id(example))
+        for example, _request in selected_examples_and_requests
+    ) != tuple(images):
         raise ValueError("HF evaluation input order differs from the frozen panel")
     policy = GenerationPolicy(
         max_new_tokens=3084,
@@ -602,7 +612,7 @@ def evaluate_hf_checkpoint(
             census_launch, session.receipt
         )
         backend_version = str(session.receipt.backend_version)
-        for example, base_request in zip(examples, requests, strict=True):
+        for example, base_request in selected_examples_and_requests:
             image_id = int(physical_image_id(example))
             request = replace(
                 base_request,

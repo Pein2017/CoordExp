@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 import hashlib
-from typing import Literal
+from typing import Literal, NoReturn
 import weakref
 
 import torch
@@ -48,6 +48,7 @@ from scripts.research.human13_hf_shared_surface import (
 )
 from scripts.research.human13_hf_shared_surface_live import _observed_attention_backends
 from scripts.research.human13_training_transaction import (
+    TrainingStateSnapshot,
     TrainingStateTransaction,
     UpdateCounter,
 )
@@ -542,6 +543,66 @@ class CudaAdapterReceipt:
         )
 
 
+@dataclass(frozen=True)
+class CudaPrivateProposalReceipt:
+    """Detached evidence for the one proposal while it remains privately applied."""
+
+    status: Literal["private_proposal_applied"]
+    device: str
+    objective_binding_sha256: str
+    source_parameter_sha256: str
+    applied_parameter_sha256: str
+    full_model_source_sha256: str
+    full_model_applied_sha256: str
+    source_state_digest: str
+    applied_state_digest: str
+    source_version_sha256: str
+    applied_version_sha256: str
+    source_cuda_rng_sha256: str | None
+    applied_cuda_rng_sha256: str | None
+    proposal_sha256: str
+    projection_sha256: str
+    projected_apply_sha256: str
+    update_count_before: int
+    update_count_after: int
+
+    @property
+    def content_sha256(self) -> str:
+        return json_sha256(
+            {
+                field: getattr(self, field)
+                for field in self.__dataclass_fields__
+            }
+        )
+
+
+@dataclass(frozen=True)
+class _CudaSourceState:
+    layout: ParameterLayout
+    source_parameter_sha256: str
+    source_version_counters: tuple[tuple[str, str, int], ...]
+    source_version_sha256: str
+    source_cuda_rng_sha256: str | None
+    source_state_digest: str
+    snapshot: TrainingStateSnapshot
+
+
+@dataclass(frozen=True)
+class _CudaPendingProposal:
+    source: _CudaSourceState
+    proposal_sha256: str
+    projection_sha256: str
+    projected_apply_sha256: str
+    applied_parameter_sha256: str
+    applied_version_counters: tuple[tuple[str, str, int], ...]
+    applied_version_sha256: str
+    applied_cuda_rng_sha256: str | None
+    applied_state_digest: str
+    full_model_applied_sha256: str
+    update_count_before: int
+    update_count_after: int
+
+
 _RECEIPT_ISSUER = object()
 _RECEIPT_ADMISSIONS: weakref.WeakValueDictionary[str, CudaAdapterReceipt] = (
     weakref.WeakValueDictionary()
@@ -600,6 +661,10 @@ class CudaHFVerticalAdapter:
             self._objective_binding_sha256 = expected_binding
         else:
             self._objective_binding_sha256 = surface.proposal_binding.objective_ledger_sha256
+        self._lifecycle_state: Literal["prepared", "applied", "rolled_back"] = (
+            "prepared"
+        )
+        self._pending_proposal: _CudaPendingProposal | None = None
 
     @property
     def device(self) -> torch.device:
@@ -1039,19 +1104,140 @@ class CudaHFVerticalAdapter:
                 current.requires_grad_(requires_grad)
         self._validate_task2_replay_source()
 
-    def apply_and_rollback(self) -> CudaAdapterReceipt:
+    def _source_state(self) -> _CudaSourceState:
         surface = self._surface
         transaction = surface.transaction
         layout = ParameterLayout.from_named_parameters(self._named)
-        source_parameter_sha256 = parameter_state_sha256(self._named, layout)
         source_version_counters = _model_version_counters(surface.model)
-        source_version_sha256 = _version_counters_sha256(source_version_counters)
-        source_cuda_rng_sha256 = _cuda_rng_sha256(self._device)
-        source_state_digest = transaction.state_digest()
-        snapshot = transaction.begin()
-        applied: ProjectedApplyReceipt | None = None
-        rollback_attempted = False
-        full_model_restore_attempted = False
+        return _CudaSourceState(
+            layout=layout,
+            source_parameter_sha256=parameter_state_sha256(self._named, layout),
+            source_version_counters=source_version_counters,
+            source_version_sha256=_version_counters_sha256(source_version_counters),
+            source_cuda_rng_sha256=_cuda_rng_sha256(self._device),
+            source_state_digest=transaction.state_digest(),
+            snapshot=transaction.begin(),
+        )
+
+    def _failure_receipt(
+        self,
+        *,
+        phase: str,
+        detail: Exception,
+        source: _CudaSourceState,
+    ) -> CudaRollbackFailureReceipt:
+        surface = self._surface
+        observed_versions = _model_version_counters(surface.model)
+        return CudaRollbackFailureReceipt(
+            phase=phase,
+            source_state_digest=source.source_state_digest,
+            observed_state_digest=surface.transaction.state_digest(),
+            source_parameter_sha256=source.source_parameter_sha256,
+            observed_parameter_sha256=_safe_parameter_state_sha256(
+                self._named, source.layout
+            ),
+            source_version_counters=source.source_version_counters,
+            observed_version_counters=observed_versions,
+            source_version_sha256=source.source_version_sha256,
+            observed_version_sha256=_version_counters_sha256(observed_versions),
+            source_cuda_rng_sha256=source.source_cuda_rng_sha256,
+            observed_cuda_rng_sha256=_cuda_rng_sha256(self._device),
+            error=f"{type(detail).__name__}: {detail}",
+        )
+
+    def _raise_after_failure(
+        self,
+        error: Exception,
+        *,
+        source: _CudaSourceState,
+        rollback_attempted: bool,
+        full_model_restore_attempted: bool,
+    ) -> NoReturn:
+        surface = self._surface
+        transaction = surface.transaction
+        snapshot = source.snapshot
+        rollback_error: Exception | None = None
+        restore_error: Exception | None = None
+        replay_restore_error: Exception | None = None
+        try:
+            self._restore_task2_replay_source()
+        except Exception as replay_exc:
+            replay_restore_error = replay_exc
+        storage_metadata_drifted = self._full_model_storage_metadata_drifted()
+        if not full_model_restore_attempted:
+            try:
+                self._restore_full_model_source()
+            except Exception as restore_exc:
+                restore_error = restore_exc
+            else:
+                if storage_metadata_drifted:
+                    restore_error = CudaAdapterError(
+                        "full model storage metadata drift was repaired after failure"
+                    )
+        elif isinstance(error, CudaAdapterError):
+            restore_error = error
+        if (
+            transaction._active_transaction_id == snapshot.transaction_id
+            and not rollback_attempted
+        ):
+            try:
+                transaction.reject(snapshot)
+            except Exception as rollback_exc:
+                rollback_error = rollback_exc
+        elif (
+            transaction._active_transaction_id == snapshot.transaction_id
+            and rollback_attempted
+        ):
+            rollback_error = error
+        try:
+            self._restore_full_model_source()
+        except Exception as restore_exc:
+            if restore_error is None:
+                restore_error = restore_exc
+        if transaction._active_transaction_id == snapshot.transaction_id:
+            transaction._active_transaction_id = None
+        surface.optimizer.zero_grad(set_to_none=True)
+        self._pending_proposal = None
+        self._lifecycle_state = "rolled_back"
+        if restore_error is not None:
+            receipt = self._failure_receipt(
+                phase="full_model_restore", detail=restore_error, source=source
+            )
+            raise CudaAdapterRollbackError(
+                f"full model rollback failed after {error}: {restore_error}",
+                receipt=receipt,
+            ) from restore_error
+        if replay_restore_error is not None:
+            receipt = self._failure_receipt(
+                phase="task2_replay_restore",
+                detail=replay_restore_error,
+                source=source,
+            )
+            raise CudaAdapterRollbackError(
+                f"Task2 replay rollback failed after {error}: {replay_restore_error}",
+                receipt=receipt,
+            ) from replay_restore_error
+        if rollback_error is not None:
+            receipt = self._failure_receipt(
+                phase="transaction_reject", detail=rollback_error, source=source
+            )
+            raise CudaAdapterRollbackError(
+                f"adapter rollback failed after {error}: {rollback_error}",
+                receipt=receipt,
+            ) from rollback_error
+        if isinstance(error, CudaAdapterError):
+            raise error
+        raise CudaAdapterError(str(error)) from error
+
+    def apply_private_proposal(self) -> CudaPrivateProposalReceipt:
+        """Apply exactly one proposal and retain it for private checkpoint/audit."""
+
+        if self._lifecycle_state == "applied":
+            raise CudaAdapterError("private proposal was already applied")
+        if self._lifecycle_state == "rolled_back":
+            raise CudaAdapterError("private proposal was already rolled back")
+        surface = self._surface
+        source = self._source_state()
         try:
             self._objective.backward()
             if any(parameter.grad is None for _, parameter in self._named):
@@ -1068,13 +1254,13 @@ class CudaHFVerticalAdapter:
                 witness_bank=surface.witness_bank,
                 device=self._device,
             )
-            applied = apply_projected_delta_on_device(
+            applied: ProjectedApplyReceipt = apply_projected_delta_on_device(
                 self._named,
                 proposal=proposal,
                 witness_bank=surface.witness_bank,
                 projection=projection,
                 optimizer=surface.optimizer,
-                transaction=transaction,
+                transaction=surface.transaction,
                 update_counter=surface.update_counter,
                 realized_margin_probe=surface.realized_margin_probe,
                 device=self._device,
@@ -1082,29 +1268,81 @@ class CudaHFVerticalAdapter:
             if applied.update_count_before != 0 or applied.update_count_after != 1:
                 raise CudaAdapterError("adapter did not apply exactly one update")
             self._validate_task2_replay_source()
-            applied_parameter_sha256 = parameter_state_sha256(self._named, layout)
-            applied_version_counters = _model_version_counters(surface.model)
-            applied_version_sha256 = _version_counters_sha256(applied_version_counters)
-            applied_cuda_rng_sha256 = _cuda_rng_sha256(self._device)
-            applied_state_digest = transaction.state_digest()
-            full_model_applied_sha256 = _full_model_fingerprint(surface.model)
-            rollback_attempted = True
-            rollback = transaction.reject(snapshot)
+            applied_versions = _model_version_counters(surface.model)
+            pending = _CudaPendingProposal(
+                source=source,
+                proposal_sha256=proposal.proposal_sha256,
+                projection_sha256=projection.receipt_sha256,
+                projected_apply_sha256=applied.receipt_sha256,
+                applied_parameter_sha256=parameter_state_sha256(
+                    self._named, source.layout
+                ),
+                applied_version_counters=applied_versions,
+                applied_version_sha256=_version_counters_sha256(applied_versions),
+                applied_cuda_rng_sha256=_cuda_rng_sha256(self._device),
+                applied_state_digest=surface.transaction.state_digest(),
+                full_model_applied_sha256=_full_model_fingerprint(surface.model),
+                update_count_before=applied.update_count_before,
+                update_count_after=applied.update_count_after,
+            )
+            self._pending_proposal = pending
+            self._lifecycle_state = "applied"
+            return CudaPrivateProposalReceipt(
+                status="private_proposal_applied",
+                device=str(self._device),
+                objective_binding_sha256=self._objective_binding_sha256,
+                source_parameter_sha256=source.source_parameter_sha256,
+                applied_parameter_sha256=pending.applied_parameter_sha256,
+                full_model_source_sha256=self._full_model_source_sha256,
+                full_model_applied_sha256=pending.full_model_applied_sha256,
+                source_state_digest=source.source_state_digest,
+                applied_state_digest=pending.applied_state_digest,
+                source_version_sha256=source.source_version_sha256,
+                applied_version_sha256=pending.applied_version_sha256,
+                source_cuda_rng_sha256=source.source_cuda_rng_sha256,
+                applied_cuda_rng_sha256=pending.applied_cuda_rng_sha256,
+                proposal_sha256=pending.proposal_sha256,
+                projection_sha256=pending.projection_sha256,
+                projected_apply_sha256=pending.projected_apply_sha256,
+                update_count_before=pending.update_count_before,
+                update_count_after=pending.update_count_after,
+            )
+        except Exception as error:
+            self._raise_after_failure(
+                error,
+                source=source,
+                rollback_attempted=False,
+                full_model_restore_attempted=False,
+            )
+
+    def rollback_private_proposal(self) -> CudaAdapterReceipt:
+        """Reject the one applied private proposal and certify exact Source."""
+
+        if self._lifecycle_state == "rolled_back":
+            raise CudaAdapterError("private proposal was already rolled back")
+        pending = self._pending_proposal
+        if self._lifecycle_state != "applied" or pending is None:
+            raise CudaAdapterError("private proposal has not been applied")
+        surface = self._surface
+        source = pending.source
+        try:
+            rollback = surface.transaction.reject(source.snapshot)
             surface.optimizer.zero_grad(set_to_none=True)
-            full_model_restore_attempted = True
             self._restore_full_model_source()
-            restored_parameter_sha256 = parameter_state_sha256(self._named, layout)
-            restored_version_counters = _model_version_counters(surface.model)
-            restored_version_sha256 = _version_counters_sha256(restored_version_counters)
+            restored_parameter_sha256 = parameter_state_sha256(
+                self._named, source.layout
+            )
+            restored_versions = _model_version_counters(surface.model)
+            restored_version_sha256 = _version_counters_sha256(restored_versions)
             restored_cuda_rng_sha256 = _cuda_rng_sha256(self._device)
-            restored_state_digest = transaction.state_digest()
+            restored_state_digest = surface.transaction.state_digest()
             full_model_restored_sha256 = _full_model_fingerprint(surface.model)
             if (
                 rollback.decision != "rejected_restored"
-                or restored_parameter_sha256 != source_parameter_sha256
-                or restored_state_digest != source_state_digest
-                or restored_version_counters != source_version_counters
-                or restored_cuda_rng_sha256 != source_cuda_rng_sha256
+                or restored_parameter_sha256 != source.source_parameter_sha256
+                or restored_state_digest != source.source_state_digest
+                or restored_versions != source.source_version_counters
+                or restored_cuda_rng_sha256 != source.source_cuda_rng_sha256
             ):
                 raise CudaAdapterError("adapter rollback did not restore Source exactly")
             receipt = CudaAdapterReceipt(
@@ -1112,133 +1350,53 @@ class CudaHFVerticalAdapter:
                 device=str(self._device),
                 model_object_id=id(surface.model),
                 optimizer_object_id=id(surface.optimizer),
-                transaction_object_id=id(transaction),
-                parameter_object_ids=tuple(id(parameter) for _, parameter in self._named),
-                source_parameter_sha256=source_parameter_sha256,
+                transaction_object_id=id(surface.transaction),
+                parameter_object_ids=tuple(
+                    id(parameter) for _, parameter in self._named
+                ),
+                source_parameter_sha256=source.source_parameter_sha256,
                 full_model_source_sha256=self._full_model_source_sha256,
-                full_model_applied_sha256=full_model_applied_sha256,
+                full_model_applied_sha256=pending.full_model_applied_sha256,
                 full_model_restored_sha256=full_model_restored_sha256,
-                applied_parameter_sha256=applied_parameter_sha256,
+                applied_parameter_sha256=pending.applied_parameter_sha256,
                 restored_parameter_sha256=restored_parameter_sha256,
-                source_version_counters=source_version_counters,
-                applied_version_counters=applied_version_counters,
-                restored_version_counters=restored_version_counters,
-                source_version_sha256=source_version_sha256,
-                applied_version_sha256=applied_version_sha256,
+                source_version_counters=source.source_version_counters,
+                applied_version_counters=pending.applied_version_counters,
+                restored_version_counters=restored_versions,
+                source_version_sha256=source.source_version_sha256,
+                applied_version_sha256=pending.applied_version_sha256,
                 restored_version_sha256=restored_version_sha256,
-                source_cuda_rng_sha256=source_cuda_rng_sha256,
-                applied_cuda_rng_sha256=applied_cuda_rng_sha256,
+                source_cuda_rng_sha256=source.source_cuda_rng_sha256,
+                applied_cuda_rng_sha256=pending.applied_cuda_rng_sha256,
                 restored_cuda_rng_sha256=restored_cuda_rng_sha256,
                 objective_binding_sha256=self._objective_binding_sha256,
-                source_state_digest=source_state_digest,
-                applied_state_digest=applied_state_digest,
+                source_state_digest=source.source_state_digest,
+                applied_state_digest=pending.applied_state_digest,
                 restored_state_digest=restored_state_digest,
-                proposal_sha256=proposal.proposal_sha256,
-                projection_sha256=projection.receipt_sha256,
-                projected_apply_sha256=applied.receipt_sha256,
+                proposal_sha256=pending.proposal_sha256,
+                projection_sha256=pending.projection_sha256,
+                projected_apply_sha256=pending.projected_apply_sha256,
                 rollback_decision="rejected_restored",
-                update_count_before=applied.update_count_before,
-                update_count_after=applied.update_count_after,
+                update_count_before=pending.update_count_before,
+                update_count_after=pending.update_count_after,
             )
             _seal_receipt(receipt, _RECEIPT_ISSUER)
+            self._pending_proposal = None
+            self._lifecycle_state = "rolled_back"
             return receipt
         except Exception as error:
-            rollback_error: Exception | None = None
-            restore_error: Exception | None = None
-            replay_restore_error: Exception | None = None
-            try:
-                self._restore_task2_replay_source()
-            except Exception as replay_exc:
-                replay_restore_error = replay_exc
-            storage_metadata_drifted = self._full_model_storage_metadata_drifted()
-            if not full_model_restore_attempted:
-                full_model_restore_attempted = True
-                try:
-                    self._restore_full_model_source()
-                except Exception as restore_exc:
-                    restore_error = restore_exc
-                else:
-                    if storage_metadata_drifted:
-                        restore_error = CudaAdapterError(
-                            "full model storage metadata drift was repaired after failure"
-                        )
-            elif isinstance(error, CudaAdapterError):
-                restore_error = error
-            if (
-                transaction._active_transaction_id == snapshot.transaction_id
-                and not rollback_attempted
-            ):
-                rollback_attempted = True
-                try:
-                    transaction.reject(snapshot)
-                except Exception as rollback_exc:
-                    rollback_error = rollback_exc
-            elif (
-                transaction._active_transaction_id == snapshot.transaction_id
-                and rollback_attempted
-            ):
-                # The primary rollback attempt already raised.  Never retry
-                # it in cleanup; expose typed evidence of the failed terminal
-                # boundary instead.
-                rollback_error = error
-            # ``TrainingStateTransaction.restore`` writes trainable tensors
-            # again and therefore advances their version counters.  Reapply
-            # the full-model Source snapshot after that one reject attempt so
-            # values, buffers, storage metadata, and counters are exact.
-            try:
-                self._restore_full_model_source()
-            except Exception as restore_exc:
-                if restore_error is None:
-                    restore_error = restore_exc
-            if transaction._active_transaction_id == snapshot.transaction_id:
-                # A failed reject may leave the owner active after its one
-                # attempt.  Close that terminal ownership without retrying;
-                # the typed receipt carries the unrepaired state evidence.
-                transaction._active_transaction_id = None
+            self._raise_after_failure(
+                error,
+                source=source,
+                rollback_attempted=True,
+                full_model_restore_attempted=False,
+            )
 
-            def failure_receipt(
-                phase: str, detail: Exception
-            ) -> CudaRollbackFailureReceipt:
-                observed_versions = _model_version_counters(surface.model)
-                return CudaRollbackFailureReceipt(
-                    phase=phase,
-                    source_state_digest=source_state_digest,
-                    observed_state_digest=transaction.state_digest(),
-                    source_parameter_sha256=source_parameter_sha256,
-                    observed_parameter_sha256=_safe_parameter_state_sha256(
-                        self._named, layout
-                    ),
-                    source_version_counters=source_version_counters,
-                    observed_version_counters=observed_versions,
-                    source_version_sha256=source_version_sha256,
-                    observed_version_sha256=_version_counters_sha256(observed_versions),
-                    source_cuda_rng_sha256=source_cuda_rng_sha256,
-                    observed_cuda_rng_sha256=_cuda_rng_sha256(self._device),
-                    error=f"{type(detail).__name__}: {detail}",
-                )
+    def apply_and_rollback(self) -> CudaAdapterReceipt:
+        """Backward-compatible one-call wrapper around the split lifecycle."""
 
-            surface.optimizer.zero_grad(set_to_none=True)
-            if restore_error is not None:
-                receipt = failure_receipt("full_model_restore", restore_error)
-                raise CudaAdapterRollbackError(
-                    f"full model rollback failed after {error}: {restore_error}",
-                    receipt=receipt,
-                ) from restore_error
-            if replay_restore_error is not None:
-                receipt = failure_receipt("task2_replay_restore", replay_restore_error)
-                raise CudaAdapterRollbackError(
-                    f"Task2 replay rollback failed after {error}: {replay_restore_error}",
-                    receipt=receipt,
-                ) from replay_restore_error
-            if rollback_error is not None:
-                receipt = failure_receipt("transaction_reject", rollback_error)
-                raise CudaAdapterRollbackError(
-                    f"adapter rollback failed after {error}: {rollback_error}",
-                    receipt=receipt,
-                ) from rollback_error
-            if isinstance(error, CudaAdapterError):
-                raise
-            raise CudaAdapterError(str(error)) from error
+        self.apply_private_proposal()
+        return self.rollback_private_proposal()
 
 
 __all__ = [
@@ -1246,6 +1404,7 @@ __all__ = [
     "CudaAdapterRollbackError",
     "CudaRollbackFailureReceipt",
     "CudaAdapterReceipt",
+    "CudaPrivateProposalReceipt",
     "CudaHFVerticalAdapter",
     "CudaProposalInput",
     "compute_cuda_objective_binding_sha256",

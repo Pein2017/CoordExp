@@ -202,6 +202,45 @@ def test_cuda_adapter_runs_one_update_and_exact_rollback_on_cpu_injected_surface
     assert not surface.optimizer.state
 
 
+def test_cuda_adapter_keeps_one_private_proposal_applied_until_explicit_rollback() -> None:
+    surface = _surface()
+    before = tuple(
+        parameter.detach().clone()
+        for _, parameter in surface.named_trainable_parameters
+    )
+    adapter = CudaHFVerticalAdapter(surface)
+
+    proposal = adapter.apply_private_proposal()
+
+    assert proposal.status == "private_proposal_applied"
+    assert proposal.update_count_before == 0
+    assert proposal.update_count_after == 1
+    assert surface.update_counter.value == 1
+    assert any(
+        not torch.equal(parameter.detach(), saved)
+        for (_, parameter), saved in zip(
+            surface.named_trainable_parameters, before, strict=True
+        )
+    )
+    with pytest.raises(CudaAdapterError, match="already applied"):
+        adapter.apply_private_proposal()
+
+    receipt = adapter.rollback_private_proposal()
+
+    assert receipt.status == "applied_and_rolled_back"
+    assert receipt.rollback_decision == "rejected_restored"
+    assert surface.update_counter.value == 0
+    assert not surface.optimizer.state
+    assert all(
+        torch.equal(parameter.detach(), saved)
+        for (_, parameter), saved in zip(
+            surface.named_trainable_parameters, before, strict=True
+        )
+    )
+    with pytest.raises(CudaAdapterError, match="already rolled back"):
+        adapter.rollback_private_proposal()
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
 def test_cuda_adapter_runs_one_update_and_exact_rollback_on_cuda_surface() -> None:
     surface = _surface(device="cuda")

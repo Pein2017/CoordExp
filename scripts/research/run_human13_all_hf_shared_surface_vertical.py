@@ -12,9 +12,10 @@ matching to ``analyze_human13_k_union``.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
+import importlib
 import json
 import math
 from pathlib import Path
@@ -28,6 +29,7 @@ ALL_HF_VERTICAL_UNIT_ID = (
 )
 CONFIG_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_config.v1"
 TERMINAL_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_terminal.v1"
+PHASE_LEDGER_SCHEMA_VERSION = "human13_all_hf_phase_ledger.v1"
 RESOURCE_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_resource.v1"
 SOURCE_ASSEMBLY_SCHEMA_VERSION = "human13_all_hf_source_assembly.v1"
 SEED_GROUPS = (
@@ -37,6 +39,9 @@ SEED_GROUPS = (
     (35013, 35014, 35015, 35016),
 )
 AUDIT_REPETITION_PENALTIES = (1.0, 1.10)
+MIN_PRODUCTION_GPU_TOTAL_BYTES = 75 << 30
+MIN_TRAINING_GPU_FREE_BYTES = 64 << 30
+MIN_AUDIT_GPU_FREE_BYTES = 24 << 30
 ZERO_MODEL_ACTIONS = MappingProxyType(
     {
         "model_loads": 0,
@@ -73,6 +78,16 @@ def _sha256(value: object) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _phase_ledger_sha256(values: Sequence[str]) -> str:
+    hashes = tuple(_digest(value, field="phase receipt SHA-256") for value in values)
+    return _sha256(
+        {
+            "schema_version": PHASE_LEDGER_SCHEMA_VERSION,
+            "phase_receipt_sha256s": list(hashes),
+        }
+    )
 
 
 def _digest(value: object, *, field: str) -> str:
@@ -212,11 +227,15 @@ class EntryConfig:
             or self.resource_retry_policy != "none"
             or self.resource_promotion is not False
         ):
-            raise ValueError("resource contract must remain GPU0/GPU1, no retry, no promotion")
+            raise ValueError(
+                "resource contract must remain GPU0/GPU1, no retry, no promotion"
+            )
         if not isinstance(self.output_root, str) or not self.output_root:
             raise ValueError("output_root must be nonempty")
         object.__setattr__(
-            self, "audit_repetition_penalties", _ordered_rps(self.audit_repetition_penalties)
+            self,
+            "audit_repetition_penalties",
+            _ordered_rps(self.audit_repetition_penalties),
         )
         for field in (
             "source_adapter_sha256",
@@ -227,7 +246,9 @@ class EntryConfig:
             if value is not None:
                 _digest(value, field=field)
         if self.matcher_algorithm != "cardinality_first_max_total_iou":
-            raise ValueError("entry matcher must remain cardinality-first max-total-IoU")
+            raise ValueError(
+                "entry matcher must remain cardinality-first max-total-IoU"
+            )
         if self.parser != "compact_object_box_closed_only":
             raise ValueError("entry parser differs from the canonical parser")
         for field in ("matcher_duplicate_iou", "matcher_owner_iou"):
@@ -300,7 +321,9 @@ class EntryConfig:
             image_id=image_id,
             seed_groups=groups,  # type: ignore[arg-type]
             training_repetition_penalty=float(
-                training.get("repetition_penalty", value.get("training_repetition_penalty", 1.0))
+                training.get(
+                    "repetition_penalty", value.get("training_repetition_penalty", 1.0)
+                )
             ),
             dtype=surface.get("dtype", "bfloat16"),  # type: ignore[arg-type]
             attention_backend=surface.get("attention_backend", "flash_attention_2"),  # type: ignore[arg-type]
@@ -392,7 +415,10 @@ class EntryConfig:
                 "duplicate_iou_threshold": self.matcher_duplicate_iou,
                 "owner_iou_threshold": self.matcher_owner_iou,
             },
-            "run": {"output_root": self.output_root, "collision_policy": self.collision_policy},
+            "run": {
+                "output_root": self.output_root,
+                "collision_policy": self.collision_policy,
+            },
             "resource": {
                 "training_gpu": self.resource_training_gpu,
                 "audit_gpu": self.resource_audit_gpu,
@@ -531,6 +557,51 @@ def validate_dual_gpu_resources(
         raise ValueError(str(error)) from error
 
 
+def observe_production_gpu_resources() -> tuple[GPUResource, GPUResource]:
+    """Read the two physical CUDA cards before any production model assembly."""
+
+    import torch
+
+    if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+        raise RuntimeError("production execution requires physical CUDA GPUs 0 and 1")
+    cards: list[GPUResource] = []
+    for index in (0, 1):
+        free, total = torch.cuda.mem_get_info(index)
+        cards.append(
+            GPUResource(
+                index=index,
+                total_memory_bytes=int(total),
+                free_memory_bytes=int(free),
+                suitable=True,
+            )
+        )
+    return cards[0], cards[1]
+
+
+def admit_production_gpu_resources(
+    cards: Sequence[GPUResource],
+) -> DualGPUResourceReceipt:
+    """Fail closed on role, availability, or the declared live memory floor."""
+
+    values = tuple(cards)
+    if tuple(card.index for card in values) != (0, 1):
+        raise RuntimeError("production resources must be exact physical GPUs 0 and 1")
+    receipt = validate_dual_gpu_resources(values)
+    by_index = {card.index: card for card in receipt.cards}
+    for index, minimum_free in (
+        (0, MIN_TRAINING_GPU_FREE_BYTES),
+        (1, MIN_AUDIT_GPU_FREE_BYTES),
+    ):
+        card = by_index[index]
+        if card.total_memory_bytes < MIN_PRODUCTION_GPU_TOTAL_BYTES:
+            raise RuntimeError(f"GPU {index} is not an 80-GB-class production card")
+        if card.free_memory_bytes < minimum_free:
+            raise RuntimeError(
+                f"GPU {index} has insufficient free memory for its production role"
+            )
+    return receipt
+
+
 @dataclass(frozen=True)
 class ExecutionAuthority:
     user_model_gpu_authority: bool
@@ -625,11 +696,15 @@ class SourceAssemblyReceipt:
     def __post_init__(self) -> None:
         _digest(self.source_plan_sha256, field="source_plan_sha256")
         if self.training_gpu != 0 or self.audit_gpu != 1:
-            raise ValueError("source assembly roles must bind GPU 0 training and GPU 1 audit")
+            raise ValueError(
+                "source assembly roles must bind GPU 0 training and GPU 1 audit"
+            )
         if self.training_surface != "bf16/flash_attention_2":
             raise ValueError("training assembly surface differs from BF16/FA2")
         if self.audit_surface != "fp32/sdpa/batch1":
-            raise ValueError("audit assembly surface differs from HF fp32/SDPA batch-one")
+            raise ValueError(
+                "audit assembly surface differs from HF fp32/SDPA batch-one"
+            )
         for field in (
             "adapter_sha256",
             "special_embedding_sha256",
@@ -731,7 +806,9 @@ def _split_manifest_context(
         if manifest_binding is not None and manifest_binding is not value.binding:
             raise ValueError("manifest image context and explicit binding differ")
         return value.image, value.binding
-    return value, manifest_binding if manifest_binding is not None else getattr(value, "binding", None)
+    return value, manifest_binding if manifest_binding is not None else getattr(
+        value, "binding", None
+    )
 
 
 @dataclass(frozen=True)
@@ -754,7 +831,11 @@ class ResourceReceipt:
         if not isinstance(self.resources, DualGPUResourceReceipt):
             raise ValueError("resource receipt requires dual-GPU evidence")
         _nonnegative_int(self.phase_count, field="phase_count")
-        if isinstance(self.retry_count, bool) or not isinstance(self.retry_count, int) or self.retry_count < 0:
+        if (
+            isinstance(self.retry_count, bool)
+            or not isinstance(self.retry_count, int)
+            or self.retry_count < 0
+        ):
             raise ValueError("retry_count must be a nonnegative integer")
         if self.promoted_checkpoint is not False:
             raise ValueError("proposal checkpoint promotion is forbidden")
@@ -773,7 +854,9 @@ class ResourceReceipt:
             or self.backward_count != 1
             or self.token_cap != 512
         ):
-            raise ValueError("resource receipt differs from frozen K16 one-update budget")
+            raise ValueError(
+                "resource receipt differs from frozen K16 one-update budget"
+            )
         for field in (
             "peak_host_rss_bytes",
             "cuda_peak_allocated_bytes",
@@ -799,7 +882,9 @@ class ResourceReceipt:
         return {
             "schema_version": RESOURCE_SCHEMA_VERSION,
             "resources": self.resources.to_dict(),
-            "output_root": None if self.output_root is None else self.output_root.to_dict(),
+            "output_root": None
+            if self.output_root is None
+            else self.output_root.to_dict(),
             "phase_count": self.phase_count,
             "retry_count": self.retry_count,
             "promoted_checkpoint": self.promoted_checkpoint,
@@ -875,7 +960,11 @@ class AuditAnalysis:
     token_count: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "repetition_penalty", _rp(self.repetition_penalty, field="repetition_penalty"))
+        object.__setattr__(
+            self,
+            "repetition_penalty",
+            _rp(self.repetition_penalty, field="repetition_penalty"),
+        )
         for field in (
             "source_owner_ids",
             "proposal_owner_ids",
@@ -996,7 +1085,9 @@ class AuditPairAnalysis:
     by_repetition_penalty: Mapping[float, AuditAnalysis]
 
     def __post_init__(self) -> None:
-        values = {float(key): value for key, value in self.by_repetition_penalty.items()}
+        values = {
+            float(key): value for key, value in self.by_repetition_penalty.items()
+        }
         if set(values) != set(AUDIT_REPETITION_PENALTIES):
             raise ValueError("audit analysis must cover RP 1.0 and RP 1.10 exactly")
         if any(not isinstance(value, AuditAnalysis) for value in values.values()):
@@ -1026,8 +1117,14 @@ class AuditPairAnalysis:
         }
 
 
-def _image_matcher(image: Any, manifest_binding: Any | None = None) -> tuple[float, float]:
-    binding = manifest_binding if manifest_binding is not None else getattr(image, "binding", None)
+def _image_matcher(
+    image: Any, manifest_binding: Any | None = None
+) -> tuple[float, float]:
+    binding = (
+        manifest_binding
+        if manifest_binding is not None
+        else getattr(image, "binding", None)
+    )
     matcher = getattr(binding, "matcher", None)
     if matcher is None:
         raise ValueError("manifest image context lacks the frozen matcher identity")
@@ -1038,18 +1135,26 @@ def _image_matcher(image: Any, manifest_binding: Any | None = None) -> tuple[flo
         or getattr(matcher, "target_row_rule", None)
         != "max_owner_iou_then_seed_then_row_index"
     ):
-        raise ValueError("manifest matcher identity differs from the frozen canonical matcher")
+        raise ValueError(
+            "manifest matcher identity differs from the frozen canonical matcher"
+        )
     duplicate = getattr(matcher, "duplicate_iou_threshold", 0.95)
     owner = getattr(matcher, "owner_iou_threshold", 0.50)
     if float(duplicate) != 0.95 or float(owner) != 0.50:
-        raise ValueError("manifest matcher thresholds differ from the frozen canonical matcher")
+        raise ValueError(
+            "manifest matcher thresholds differ from the frozen canonical matcher"
+        )
     return 0.95, 0.50
 
 
 def _manifest_surface_identity(
     image: Any, manifest_binding: Any | None = None
 ) -> dict[str, str]:
-    binding = manifest_binding if manifest_binding is not None else getattr(image, "binding", None)
+    binding = (
+        manifest_binding
+        if manifest_binding is not None
+        else getattr(image, "binding", None)
+    )
     panel = getattr(binding, "panel", None)
     surface = getattr(binding, "surface", None)
     binding_values = {
@@ -1088,9 +1193,15 @@ def _manifest_image_identity(
     config: EntryConfig, image: Any, manifest_binding: Any | None = None
 ) -> dict[str, Any]:
     if image is None:
-        raise ValueError("one-image live entry requires the admitted image manifest record")
+        raise ValueError(
+            "one-image live entry requires the admitted image manifest record"
+        )
     image_id = getattr(image, "image_id", None)
-    if isinstance(image_id, bool) or not isinstance(image_id, int) or image_id != config.image_id:
+    if (
+        isinstance(image_id, bool)
+        or not isinstance(image_id, int)
+        or image_id != config.image_id
+    ):
         raise ValueError("manifest image_id does not match the sealed entry config")
     if not config.manifest_sha256:
         raise ValueError("manifest_sha256 is required before live execution")
@@ -1120,7 +1231,9 @@ def _manifest_image_identity(
         if not isinstance(values, (list, tuple)):
             raise ValueError(f"manifest image {field} is required")
         if any(not isinstance(item, str) or not item for item in values):
-            raise ValueError(f"manifest image {field} owner IDs must be nonempty strings")
+            raise ValueError(
+                f"manifest image {field} owner IDs must be nonempty strings"
+            )
         normalized = tuple(values)
         if len(set(normalized)) != len(normalized):
             raise ValueError(f"manifest image {field} must be unique")
@@ -1133,8 +1246,10 @@ def _manifest_image_identity(
     if len(set().union(*strata)) != sum(len(values) for values in strata):
         raise ValueError("manifest image G/H/M owner strata must be disjoint")
     owners = getattr(image, "owners", ())
-    if isinstance(owners, (list, tuple)) and owners and all(
-        isinstance(getattr(owner, "stratum", None), str) for owner in owners
+    if (
+        isinstance(owners, (list, tuple))
+        and owners
+        and all(isinstance(getattr(owner, "stratum", None), str) for owner in owners)
     ):
         owner_strata: dict[str, set[str]] = {"G": set(), "H": set(), "M": set()}
         for owner in owners:
@@ -1145,7 +1260,11 @@ def _manifest_image_identity(
             if not owner_id:
                 raise ValueError("manifest owner_id must be nonempty")
             owner_strata[stratum].add(owner_id)
-        for stratum, field in (("G", "g_owner_ids"), ("H", "h_owner_ids"), ("M", "m_owner_ids")):
+        for stratum, field in (
+            ("G", "g_owner_ids"),
+            ("H", "h_owner_ids"),
+            ("M", "m_owner_ids"),
+        ):
             if owner_strata[stratum] != set(identity[field]):
                 raise ValueError(f"manifest owner strata do not match {field}")
     return identity
@@ -1237,7 +1356,11 @@ def _validate_audit_provenance(
         "do_sample",
     )
     for field in metadata_fields:
-        if field in output and field in provenance and output[field] != provenance[field]:
+        if (
+            field in output
+            and field in provenance
+            and output[field] != provenance[field]
+        ):
             raise ValueError(f"audit {field} differs between output and provenance")
     metadata = {
         field: output[field] if field in output else provenance.get(field)
@@ -1249,12 +1372,17 @@ def _validate_audit_provenance(
         "physical_batch_size": 1,
         "do_sample": False,
     }:
-        raise ValueError("audit surface must be original-prompt clean HF greedy batch-one")
+        raise ValueError(
+            "audit surface must be original-prompt clean HF greedy batch-one"
+        )
     if "repetition_penalty" in provenance:
         if _rp(
-            provenance["repetition_penalty"], field="audit provenance.repetition_penalty"
+            provenance["repetition_penalty"],
+            field="audit provenance.repetition_penalty",
         ) != _rp(output.get("repetition_penalty"), field="audit repetition penalty"):
-            raise ValueError("audit repetition penalty differs between output and provenance")
+            raise ValueError(
+                "audit repetition penalty differs between output and provenance"
+            )
     if (
         "checkpoint_payload_sha256" in output
         and "checkpoint_payload_sha256" in provenance
@@ -1271,7 +1399,9 @@ def _validate_audit_provenance(
     )
     if not isinstance(checkpoint_payload_sha256, str):
         raise ValueError("audit provenance.checkpoint_payload_sha256 is required")
-    _digest(checkpoint_payload_sha256, field="audit provenance.checkpoint_payload_sha256")
+    _digest(
+        checkpoint_payload_sha256, field="audit provenance.checkpoint_payload_sha256"
+    )
     if (
         expected_checkpoint_sha256 is not None
         and checkpoint_payload_sha256 != expected_checkpoint_sha256
@@ -1296,7 +1426,9 @@ def _validate_audit_provenance(
     if expected_source_identity is not None and dict(source_identity) != dict(
         expected_source_identity
     ):
-        raise ValueError("audit source checkpoint identity differs from the sealed source")
+        raise ValueError(
+            "audit source checkpoint identity differs from the sealed source"
+        )
     if "checkpoint_path" not in provenance:
         raise ValueError("audit provenance.checkpoint_path is required")
     checkpoint_paths = [
@@ -1328,14 +1460,19 @@ def _validate_audit_provenance(
         _digest(value, field=f"audit provenance.{field}")
         if field == "manifest_sha256" and expected_manifest_sha256 is not None:
             if value != expected_manifest_sha256:
-                raise ValueError("audit provenance.manifest_sha256 differs from the sealed manifest")
+                raise ValueError(
+                    "audit provenance.manifest_sha256 differs from the sealed manifest"
+                )
         expected = (
             _manifest_surface_identity(image, manifest_binding).get(field)
-            if field in {"panel_sha256", "tokenizer_sha256", "prompt_policy_fingerprint"}
+            if field
+            in {"panel_sha256", "tokenizer_sha256", "prompt_policy_fingerprint"}
             else getattr(image, field, None)
         )
         if field != "manifest_sha256" and value != expected:
-            raise ValueError(f"audit provenance.{field} differs from the manifest image")
+            raise ValueError(
+                f"audit provenance.{field} differs from the manifest image"
+            )
 
 
 def _validate_source_assembly(
@@ -1344,8 +1481,13 @@ def _validate_source_assembly(
     image_identity: Mapping[str, Any],
     source: SourceAssemblyReceipt,
 ) -> None:
-    if source.training_gpu != resources.training_gpu or source.audit_gpu != resources.audit_gpu:
-        raise ValueError("source assembly GPU roles differ from the admitted dual-GPU receipt")
+    if (
+        source.training_gpu != resources.training_gpu
+        or source.audit_gpu != resources.audit_gpu
+    ):
+        raise ValueError(
+            "source assembly GPU roles differ from the admitted dual-GPU receipt"
+        )
     if source.source_plan_sha256 != config.content_sha256:
         raise ValueError("source assembly plan differs from the sealed entry config")
     expected_paths = {
@@ -1370,7 +1512,9 @@ def _validate_source_assembly(
     for field, expected in expected_digests.items():
         actual = getattr(source, field)
         if not isinstance(actual, str) or actual != expected:
-            raise ValueError(f"source assembly {field} differs from the admitted provenance")
+            raise ValueError(
+                f"source assembly {field} differs from the admitted provenance"
+            )
         _digest(actual, field=f"source assembly.{field}")
     if source.checkpoint_sha256 is None:
         raise ValueError("source assembly checkpoint_sha256 is required")
@@ -1381,9 +1525,13 @@ def _validate_source_assembly(
             raise ValueError(f"source assembly {field} is required")
         _digest(value, field=f"source assembly.{field}")
     if source.source_validation_sha256 != source.source_validation_content_sha256:
-        raise ValueError("source assembly validation digest does not bind source identity")
+        raise ValueError(
+            "source assembly validation digest does not bind source identity"
+        )
     if source.assembly_receipt_sha256 != source.assembly_receipt_content_sha256:
-        raise ValueError("source assembly receipt digest does not bind the assembled roles")
+        raise ValueError(
+            "source assembly receipt digest does not bind the assembled roles"
+        )
 
 
 def _project_audit(
@@ -1399,7 +1547,10 @@ def _project_audit(
     expected_arm_id: str | None = None,
     expected_source_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from scripts.research.analyze_human13_k_union import _match_prefix, _ordered_predictions
+    from scripts.research.analyze_human13_k_union import (
+        _match_prefix,
+        _ordered_predictions,
+    )
 
     _validate_audit_provenance(
         image,
@@ -1414,9 +1565,11 @@ def _project_audit(
     )
     if expected_repetition_penalty is not None:
         observed_rp = output.get("repetition_penalty")
-        if observed_rp is None or _rp(
-            observed_rp, field="audit repetition penalty"
-        ) != expected_repetition_penalty:
+        if (
+            observed_rp is None
+            or _rp(observed_rp, field="audit repetition penalty")
+            != expected_repetition_penalty
+        ):
             raise ValueError("audit repetition_penalty differs from the requested RP")
     predictions = _ordered_predictions(output)
     duplicate_threshold, owner_threshold = _image_matcher(image, manifest_binding)
@@ -1447,7 +1600,8 @@ def _project_audit(
         "unmatched_rows": len(projected["unmatched_rows"]),
         "malformed_rows": effective_malformed,
         "cap_stops": int(stop_reason in _CAP_STOP_REASONS),
-        "row_count": len(predictions) + max(0, effective_malformed - canonical_malformed),
+        "row_count": len(predictions)
+        + max(0, effective_malformed - canonical_malformed),
         "token_count": len(raw_tokens),
     }
 
@@ -1472,9 +1626,10 @@ def analyze_audit_pair(
     """Project both clean-greedy surfaces through the canonical parser/matcher."""
 
     expected = set(AUDIT_REPETITION_PENALTIES)
-    if set(float(key) for key in source_outputs) != expected or set(
-        float(key) for key in proposal_outputs
-    ) != expected:
+    if (
+        set(float(key) for key in source_outputs) != expected
+        or set(float(key) for key in proposal_outputs) != expected
+    ):
         raise ValueError("source and proposal audits must cover both RPs exactly")
     if (
         expected_source_checkpoint_sha256 is None
@@ -1506,8 +1661,10 @@ def analyze_audit_pair(
     if len(set().union(*owner_groups)) != sum(len(group) for group in owner_groups):
         raise ValueError("manifest image G/H/M owner strata must be disjoint")
     owners = getattr(image, "owners", ())
-    if isinstance(owners, (list, tuple)) and owners and all(
-        isinstance(getattr(owner, "stratum", None), str) for owner in owners
+    if (
+        isinstance(owners, (list, tuple))
+        and owners
+        and all(isinstance(getattr(owner, "stratum", None), str) for owner in owners)
     ):
         owner_strata: dict[str, set[str]] = {"G": set(), "H": set(), "M": set()}
         for owner in owners:
@@ -1523,7 +1680,9 @@ def analyze_audit_pair(
         raise ValueError("acquired H owner IDs must be nonempty strings")
     h_ids = set(acquired_h_owner_ids)
     if not h_ids <= manifest_h_ids:
-        raise ValueError("acquired H owner IDs must be a subset of manifest image H owners")
+        raise ValueError(
+            "acquired H owner IDs must be a subset of manifest image H owners"
+        )
     m_ids = {str(item) for item in getattr(image, "m_owner_ids", ())}
     result: dict[float, AuditAnalysis] = {}
     identity_fingerprints: set[str] = set()
@@ -1662,21 +1821,37 @@ class OneImageServices(Protocol):
         self, config: EntryConfig, resources: DualGPUResourceReceipt
     ) -> SourceAssemblyReceipt: ...
 
-    def open_training(self, config: EntryConfig, resources: DualGPUResourceReceipt) -> object: ...
+    def open_training(
+        self, config: EntryConfig, resources: DualGPUResourceReceipt
+    ) -> object: ...
 
-    def open_audit(self, config: EntryConfig, resources: DualGPUResourceReceipt) -> object: ...
+    def open_audit(
+        self, config: EntryConfig, resources: DualGPUResourceReceipt
+    ) -> object: ...
 
-    def source_audit(self, audit_session: object, repetition_penalty: float) -> Mapping[str, Any]: ...
+    def source_audit(
+        self, audit_session: object, repetition_penalty: float
+    ) -> Mapping[str, Any]: ...
 
-    def acquire_and_replay(self, training_session: object, config: EntryConfig) -> object: ...
+    def acquire_and_replay(
+        self, training_session: object, config: EntryConfig
+    ) -> object: ...
 
-    def apply_private_update(self, training_session: object, acquisition: object, config: EntryConfig) -> object: ...
+    def apply_private_update(
+        self, training_session: object, acquisition: object, config: EntryConfig
+    ) -> object: ...
 
-    def write_private_proposal(self, training_session: object, proposal: object, output_root: Path) -> object: ...
+    def write_private_proposal(
+        self, training_session: object, proposal: object, output_root: Path
+    ) -> object: ...
 
-    def proposal_audit(self, audit_session: object, private: object, repetition_penalty: float) -> Mapping[str, Any]: ...
+    def proposal_audit(
+        self, audit_session: object, private: object, repetition_penalty: float
+    ) -> Mapping[str, Any]: ...
 
-    def rollback_and_reproduce_source(self, training_session: object, proposal: object) -> bool: ...
+    def rollback_and_reproduce_source(
+        self, training_session: object, proposal: object
+    ) -> bool: ...
 
     def cleanup_private_proposal(self, private: object) -> None: ...
 
@@ -1700,6 +1875,8 @@ class OneImageTerminalReceipt:
     source_assembly_sha256: str | None = None
     audit_pair_sha256: str | None = None
     continuation_gate_sha256: str | None = None
+    phase_receipt_sha256s: tuple[str, ...] = ()
+    phase_ledger_sha256: str | None = None
     private_proposal_cleaned: bool = False
     source_reproduced: bool = False
     failure_reason: str | None = None
@@ -1719,6 +1896,9 @@ class OneImageTerminalReceipt:
         }
         object.__setattr__(self, "model_actions", MappingProxyType(actions))
         object.__setattr__(self, "phase_receipts", tuple(self.phase_receipts))
+        object.__setattr__(
+            self, "phase_receipt_sha256s", tuple(self.phase_receipt_sha256s)
+        )
         if any(
             isinstance(value, bool) or not isinstance(value, int) or value < 0
             for value in self.model_actions.values()
@@ -1732,8 +1912,22 @@ class OneImageTerminalReceipt:
             value = getattr(self, field)
             if value is not None:
                 _digest(value, field=field)
+        for value in self.phase_receipt_sha256s:
+            _digest(value, field="phase_receipt_sha256s")
+        if self.phase_receipt_sha256s:
+            if self.phase_ledger_sha256 is None:
+                raise ValueError("terminal phase ledger digest is required")
+            _digest(self.phase_ledger_sha256, field="phase_ledger_sha256")
+            if self.phase_ledger_sha256 != _phase_ledger_sha256(
+                self.phase_receipt_sha256s
+            ):
+                raise ValueError("terminal phase ledger digest differs")
+        elif self.phase_ledger_sha256 is not None:
+            raise ValueError("empty terminal phase ledger must not carry a digest")
         if self.terminal_status == "dry_run" and any(self.model_actions.values()):
-            raise ValueError("dry-run terminal must contain zero model/GPU/output actions")
+            raise ValueError(
+                "dry-run terminal must contain zero model/GPU/output actions"
+            )
 
     @property
     def content_sha256(self) -> str:
@@ -1750,6 +1944,9 @@ class OneImageTerminalReceipt:
             "source_assembly_sha256": self.source_assembly_sha256,
             "audit_pair_sha256": self.audit_pair_sha256,
             "continuation_gate_sha256": self.continuation_gate_sha256,
+            "phase_receipt_sha256s": list(self.phase_receipt_sha256s),
+            "phase_receipt_count": len(self.phase_receipt_sha256s),
+            "phase_ledger_sha256": self.phase_ledger_sha256,
             "private_proposal_cleaned": self.private_proposal_cleaned,
             "source_reproduced": self.source_reproduced,
             "failure_reason": self.failure_reason,
@@ -1768,6 +1965,14 @@ class OneImageTerminalReceipt:
         resource = ResourceReceipt.from_dict(resource_value)
         if value.get("resource_receipt_sha256") != resource.content_sha256:
             raise ValueError("terminal resource lineage differs")
+        phase_hashes = tuple(value.get("phase_receipt_sha256s", ()))
+        serialized_count = value.get("phase_receipt_count")
+        if (
+            isinstance(serialized_count, bool)
+            or not isinstance(serialized_count, int)
+            or serialized_count != len(phase_hashes)
+        ):
+            raise ValueError("terminal phase receipt count differs")
         result = cls(
             terminal_status=value["terminal_status"],
             resource_receipt=resource,
@@ -1776,6 +1981,8 @@ class OneImageTerminalReceipt:
             source_assembly_sha256=value.get("source_assembly_sha256"),
             audit_pair_sha256=value.get("audit_pair_sha256"),
             continuation_gate_sha256=value.get("continuation_gate_sha256"),
+            phase_receipt_sha256s=phase_hashes,
+            phase_ledger_sha256=value.get("phase_ledger_sha256"),
             private_proposal_cleaned=value.get("private_proposal_cleaned", False),
             source_reproduced=value.get("source_reproduced", False),
             failure_reason=value.get("failure_reason"),
@@ -1802,11 +2009,7 @@ def _seal_terminal(
 
 def _require_terminal_seal(value: OneImageTerminalReceipt) -> None:
     entry = _TERMINAL_SEALS.get(id(value))
-    if (
-        entry is None
-        or entry[0]() is not value
-        or entry[1] != value.content_sha256
-    ):
+    if entry is None or entry[0]() is not value or entry[1] != value.content_sha256:
         raise PermissionError("one-image terminal is not an issued sealed receipt")
 
 
@@ -1831,17 +2034,20 @@ def dry_run(config: EntryConfig) -> OneImageTerminalReceipt:
 
     resources = DualGPUResourceReceipt(
         cards=(
-            GPUResource(0, 80 << 30, 1),
-            GPUResource(1, 80 << 30, 1),
+            GPUResource(0, 1, 1),
+            GPUResource(1, 1, 1),
         )
     )
     receipt = _resource_receipt(resources, None, 0)
-    return _seal_terminal(OneImageTerminalReceipt(
-        terminal_status="dry_run",
-        resource_receipt=receipt,
-        model_actions=ZERO_MODEL_ACTIONS,
-        phase_receipts=("dry_run_planned",),
-    ), issuer=_TERMINAL_ISSUER_TOKEN)
+    return _seal_terminal(
+        OneImageTerminalReceipt(
+            terminal_status="dry_run",
+            resource_receipt=receipt,
+            model_actions=ZERO_MODEL_ACTIONS,
+            phase_receipts=("dry_run_planned",),
+        ),
+        issuer=_TERMINAL_ISSUER_TOKEN,
+    )
 
 
 def _classify_failure(error: BaseException) -> str:
@@ -1922,9 +2128,7 @@ def _action_counters(
     result["model_loads"] = int(
         "gpu0_training_surface_open" in phases
         or "gpu1_hf_fp32_sdpa_audit_surface_open" in phases
-    ) + int(
-        "gpu1_hf_fp32_sdpa_audit_surface_open" in phases
-    )
+    ) + int("gpu1_hf_fp32_sdpa_audit_surface_open" in phases)
     result["gpu_allocations"] = int(result["model_loads"] > 0) * 2
     result["forwards"] = sum(
         phase.startswith("source_audit_rp_") or phase.startswith("proposal_audit_rp_")
@@ -1989,8 +2193,12 @@ def run_one_image(
         source_assembly = services.preflight_source_assembly(config, resource_receipt)
         phases.append("admission_source_assembly")
         if not isinstance(source_assembly, SourceAssemblyReceipt):
-            raise ValueError("source assembly adapter must return SourceAssemblyReceipt")
-        _validate_source_assembly(config, resource_receipt, image_identity, source_assembly)
+            raise ValueError(
+                "source assembly adapter must return SourceAssemblyReceipt"
+            )
+        _validate_source_assembly(
+            config, resource_receipt, image_identity, source_assembly
+        )
         source_identity = {
             "checkpoint_path": source_assembly.checkpoint_path,
             "base_model_path": source_assembly.base_model_path,
@@ -2041,7 +2249,9 @@ def run_one_image(
             raise ValueError("private proposal checkpoint path must differ from Source")
         phases.append("private_proposal_written")
         for rp in config.audit_repetition_penalties:
-            proposal_outputs[rp] = services.proposal_audit(audit_session, private_proposal, rp)
+            proposal_outputs[rp] = services.proposal_audit(
+                audit_session, private_proposal, rp
+            )
             phases.append(f"proposal_audit_rp_{rp:g}")
         raw_acquired_h = getattr(acquisition, "trusted_h_owner_ids", ())
         if not isinstance(raw_acquired_h, (list, tuple)):
@@ -2050,7 +2260,9 @@ def run_one_image(
             raise ValueError("acquired H owner IDs must be nonempty strings")
         acquired_h_set = set(raw_acquired_h)
         if not acquired_h_set <= set(image_identity["h_owner_ids"]):
-            raise ValueError("acquired H owner IDs include owners outside the manifest H set")
+            raise ValueError(
+                "acquired H owner IDs include owners outside the manifest H set"
+            )
         acquired_h = tuple(sorted(acquired_h_set))
         audit_pair = analyze_audit_pair(
             image=manifest_image,
@@ -2071,7 +2283,9 @@ def run_one_image(
         gate = evaluate_continuation_gate(audit_pair)
         phases.append("dual_rp_audit_analyzed")
         rollback_attempted = True
-        reproduced = bool(services.rollback_and_reproduce_source(training_session, proposal))
+        reproduced = bool(
+            services.rollback_and_reproduce_source(training_session, proposal)
+        )
         phases.append("rollback_source_reproduction")
         if not reproduced:
             raise RuntimeError("Source reproduction failed after private audits")
@@ -2079,7 +2293,12 @@ def run_one_image(
     except BaseException as error:  # cleanup and classification are terminal-owned
         failure = error
         status = cast(
-            Literal["parity_failure", "update_failure", "completed_null_or_unsafe", "passing_one_image"],
+            Literal[
+                "parity_failure",
+                "update_failure",
+                "completed_null_or_unsafe",
+                "passing_one_image",
+            ],
             _classify_failure(error),
         )
     finally:
@@ -2099,12 +2318,16 @@ def run_one_image(
             try:
                 rollback_attempted = True
                 reproduced = bool(
-                    services.rollback_and_reproduce_source(training_session, proposal_object)
+                    services.rollback_and_reproduce_source(
+                        training_session, proposal_object
+                    )
                 )
                 phases.append("rollback_source_reproduction")
                 if not reproduced:
                     if failure is None:
-                        failure = RuntimeError("Source reproduction failed after private update")
+                        failure = RuntimeError(
+                            "Source reproduction failed after private update"
+                        )
                     status = "update_failure"
             except BaseException as rollback_error:
                 if failure is None:
@@ -2131,25 +2354,40 @@ def run_one_image(
                 if failure is None:
                     failure = close_error
                 status = "update_failure"
-    return _seal_terminal(OneImageTerminalReceipt(
-        terminal_status=status,
-        resource_receipt=_resource_receipt(
-            resource_receipt,
-            root_receipt,
-            len(phases),
-            retry_count=retry_count,
+        if not reproduced and bool(getattr(services, "source_reproduced", False)):
+            reproduced = True
+            if "rollback_source_reproduction" not in phases:
+                phases.append("rollback_source_reproduction")
+    service_phase_hashes = tuple(getattr(services, "phase_receipt_sha256s", ()))
+    service_phase_ledger_sha256 = getattr(services, "phase_ledger_sha256", None)
+    terminal = _seal_terminal(
+        OneImageTerminalReceipt(
+            terminal_status=status,
+            resource_receipt=_resource_receipt(
+                resource_receipt,
+                root_receipt,
+                len(phases),
+                retry_count=retry_count,
+            ),
+            model_actions=_action_counters(services, phases=phases, status=status),
+            phase_receipts=tuple(phases),
+            source_assembly_sha256=None
+            if source_assembly is None
+            else source_assembly.content_sha256,
+            audit_pair_sha256=None if audit_pair is None else audit_pair.content_sha256,
+            continuation_gate_sha256=None if gate is None else gate.content_sha256,
+            phase_receipt_sha256s=service_phase_hashes,
+            phase_ledger_sha256=service_phase_ledger_sha256,
+            private_proposal_cleaned=cleaned,
+            source_reproduced=reproduced,
+            failure_reason=None if failure is None else _error_text(failure),
         ),
-        model_actions=_action_counters(services, phases=phases, status=status),
-        phase_receipts=tuple(phases),
-        source_assembly_sha256=None
-        if source_assembly is None
-        else source_assembly.content_sha256,
-        audit_pair_sha256=None if audit_pair is None else audit_pair.content_sha256,
-        continuation_gate_sha256=None if gate is None else gate.content_sha256,
-        private_proposal_cleaned=cleaned,
-        source_reproduced=reproduced,
-        failure_reason=None if failure is None else _error_text(failure),
-    ), issuer=_TERMINAL_ISSUER_TOKEN)
+        issuer=_TERMINAL_ISSUER_TOKEN,
+    )
+    persist_terminal = getattr(services, "persist_terminal", None)
+    if callable(persist_terminal):
+        persist_terminal(terminal)
+    return terminal
 
 
 @dataclass(frozen=True)
@@ -2188,12 +2426,18 @@ def run_full_panel(
     authority.require()
     _digest(expected_terminal_hash, field="expected_terminal_hash")
     if one_image_terminal_hash is None:
-        raise PermissionError("full-panel execution requires a passing one-image terminal hash")
+        raise PermissionError(
+            "full-panel execution requires a passing one-image terminal hash"
+        )
     _digest(one_image_terminal_hash, field="one_image_terminal_hash")
     if one_image_terminal_hash != expected_terminal_hash:
-        raise PermissionError("full-panel terminal hash differs from the exact passing one-image result")
+        raise PermissionError(
+            "full-panel terminal hash differs from the exact passing one-image result"
+        )
     if not isinstance(one_image_terminal, OneImageTerminalReceipt):
-        raise PermissionError("full-panel admission requires a sealed one-image terminal receipt")
+        raise PermissionError(
+            "full-panel admission requires a sealed one-image terminal receipt"
+        )
     _require_terminal_seal(one_image_terminal)
     if one_image_terminal.content_sha256 != one_image_terminal_hash:
         raise PermissionError("sealed one-image terminal content hash differs")
@@ -2209,7 +2453,9 @@ def run_full_panel(
         or one_image_terminal.audit_pair_sha256 is None
         or one_image_terminal.continuation_gate_sha256 is None
     ):
-        raise PermissionError("sealed one-image terminal lacks cleanup, rollback, or gate evidence")
+        raise PermissionError(
+            "sealed one-image terminal lacks cleanup, rollback, or gate evidence"
+        )
     validate_dual_gpu_resources(resources)
     confirm_absent_output_root(output_root)
     del config, services
@@ -2221,11 +2467,92 @@ def run_full_panel(
     )
 
 
-class _UnavailableLiveServices:
-    def __getattr__(self, name: str) -> Any:
-        raise RuntimeError(
-            "Task-4 public CLI has no live model adapter; execution belongs to the separately gated Task-5 owner"
-        )
+@dataclass(frozen=True)
+class ProductionExecution:
+    """Fully constructed explicit-execute arguments for the guarded runner."""
+
+    services: OneImageServices
+    resources: DualGPUResourceReceipt
+    output_root: Path
+    manifest_image: Any
+    manifest_binding: Any
+
+
+def load_task5_runtime_factory(spec: str) -> Any:
+    """Load the explicit existing-owner Task-5 semantic factory."""
+
+    module_name, separator, attribute = spec.partition(":")
+    if not separator or not module_name or not attribute:
+        raise ValueError("--runtime-factory must use module:function syntax")
+    factory = getattr(importlib.import_module(module_name), attribute)
+    if not callable(factory):
+        raise TypeError("Task-5 runtime factory must be callable")
+    return factory
+
+
+def build_production_execution(
+    *,
+    config: EntryConfig,
+    args: argparse.Namespace,
+    gpu_observer: Callable[[], Sequence[GPUResource]] | None = None,
+    manifest_loader: Callable[..., Any] | None = None,
+    backend_factory: Callable[..., Any] | None = None,
+    runtime_factory: Callable[..., Any] | None = None,
+) -> ProductionExecution:
+    """Construct the live owner only after explicit ``--execute`` admission."""
+
+    if args.manifest is None or args.attempt_id is None:
+        raise ValueError("one-image --execute requires --manifest and --attempt-id")
+    resources = admit_production_gpu_resources(
+        (gpu_observer or observe_production_gpu_resources)()
+    )
+    from scripts.research.build_human13_k_union_manifest import load_manifest
+    from scripts.research.human13_live_model import HUMAN13_SOURCE_INFER_CONFIG
+    from scripts.research.human13_one_image_services import (
+        ExistingOwnersProductionBackend,
+        ProductionOneImageServices,
+        default_task5_runtime_factory,
+    )
+
+    repo_root = Path(args.repo_root).expanduser().resolve()
+    manifest_path = Path(args.manifest).expanduser().resolve()
+    manifest = (manifest_loader or load_manifest)(
+        manifest_path, require_full_panel=True
+    )
+    selected = tuple(image for image in manifest.images if image.image_id == 1584)
+    if len(selected) != 1:
+        raise ValueError("loaded manifest must contain exactly one image-1584 record")
+    output_root = (args.output_root or Path(config.output_root)).expanduser().resolve()
+    source_config = (
+        Path(args.source_config).expanduser().resolve()
+        if args.source_config is not None
+        else (repo_root / HUMAN13_SOURCE_INFER_CONFIG).resolve()
+    )
+    stale = (
+        Path(args.stale_reservation).expanduser().resolve()
+        if args.stale_reservation is not None
+        else (Path(config.output_root).expanduser().resolve() / "run-reservation.json")
+    )
+    backend = (backend_factory or ExistingOwnersProductionBackend)(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        repo_root=repo_root,
+        source_config_path=source_config,
+        runtime_factory=runtime_factory or default_task5_runtime_factory,
+    )
+    services = ProductionOneImageServices(
+        backend=backend,
+        stale_reservation_path=stale,
+        successor_root=output_root,
+        attempt_id=args.attempt_id,
+    )
+    return ProductionExecution(
+        services=services,
+        resources=resources,
+        output_root=output_root,
+        manifest_image=selected[0],
+        manifest_binding=manifest.binding,
+    )
 
 
 def _default_config_path() -> Path:
@@ -2238,6 +2565,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=_default_config_path())
     parser.add_argument("--output-root", type=Path, default=None)
+    parser.add_argument("--manifest", type=Path, default=None)
+    parser.add_argument("--attempt-id", default=None)
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
+    parser.add_argument("--source-config", type=Path, default=None)
+    parser.add_argument("--stale-reservation", type=Path, default=None)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--user-model-gpu-authority", action="store_true")
     parser.add_argument("--full-panel", action="store_true")
@@ -2250,39 +2582,52 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = EntryConfig.from_yaml(args.config)
     if not args.execute:
-        print(json.dumps(dry_run(config).to_dict(), sort_keys=True, separators=(",", ":")))
+        print(
+            json.dumps(dry_run(config).to_dict(), sort_keys=True, separators=(",", ":"))
+        )
         return 0
     authority = ExecutionAuthority(args.user_model_gpu_authority)
     output_root = args.output_root or Path(config.output_root)
     if args.full_panel:
+        authority.require()
         expected = args.expected_terminal_sha256
         if expected is None:
-            raise PermissionError("--expected-terminal-sha256 is required for --full-panel")
+            raise PermissionError(
+                "--expected-terminal-sha256 is required for --full-panel"
+            )
         receipt = run_full_panel(
             config,
             one_image_terminal_hash=args.one_image_terminal_sha256,
             expected_terminal_hash=expected,
             authority=authority,
-            resources=(
-                GPUResource(0, 80 << 30, 80 << 30),
-                GPUResource(1, 80 << 30, 80 << 30),
+            resources=admit_production_gpu_resources(
+                observe_production_gpu_resources()
             ),
             output_root=output_root,
         )
-        print(json.dumps({"admitted": receipt.admitted, "model_actions": dict(receipt.model_actions)}, sort_keys=True))
-        return 0
-    if not args.user_model_gpu_authority:
-        authority.require()
-    validate_dual_gpu_resources(
-        (
-            GPUResource(0, 80 << 30, 80 << 30),
-            GPUResource(1, 80 << 30, 80 << 30),
+        print(
+            json.dumps(
+                {
+                    "admitted": receipt.admitted,
+                    "model_actions": dict(receipt.model_actions),
+                },
+                sort_keys=True,
+            )
         )
+        return 0
+    authority.require()
+    execution = build_production_execution(config=config, args=args)
+    terminal = run_one_image(
+        config,
+        authority=authority,
+        resources=execution.resources,
+        output_root=execution.output_root,
+        services=execution.services,
+        manifest_image=execution.manifest_image,
+        manifest_binding=execution.manifest_binding,
     )
-    confirm_absent_output_root(output_root)
-    raise RuntimeError(
-        "public live execution is intentionally unavailable in Task 4; inject the Task-5 owner after its live-state gate"
-    )
+    print(json.dumps(terminal.to_dict(), sort_keys=True, separators=(",", ":")))
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
@@ -2305,14 +2650,19 @@ __all__ = [
     "OneImageServices",
     "OneImageTerminalReceipt",
     "OutputRootReceipt",
+    "ProductionExecution",
     "ResourceReceipt",
     "SourceAssemblyReceipt",
+    "admit_production_gpu_resources",
     "analyze_audit_pair",
     "build_parser",
+    "build_production_execution",
     "confirm_absent_output_root",
     "dry_run",
     "evaluate_continuation_gate",
     "main",
+    "load_task5_runtime_factory",
+    "observe_production_gpu_resources",
     "run_full_panel",
     "run_one_image",
     "validate_dual_gpu_resources",

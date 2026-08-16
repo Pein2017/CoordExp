@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
+import json
 
 import pytest
+
+from src.artifacts.json_values import json_sha256
+from scripts.research.human13_one_image_services import (
+    ProductionOneImageServices,
+    Task5ProductionContextFailureReceipt,
+    Task5ProductionContextUnavailable,
+)
 
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     ALL_HF_VERTICAL_UNIT_ID,
@@ -15,6 +24,8 @@ from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     EntryConfig,
     ExecutionAuthority,
     GPUResource,
+    OneImageTerminalReceipt,
+    ResourceReceipt,
     SourceAssemblyReceipt,
     analyze_audit_pair,
     confirm_absent_output_root,
@@ -27,6 +38,7 @@ from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     _manifest_image_identity,
 )
 from scripts.research.build_human13_k_union_manifest import default_binding
+import scripts.research.run_human13_all_hf_shared_surface_vertical as entry_owner
 
 
 def _image() -> SimpleNamespace:
@@ -158,7 +170,12 @@ def _config(tmp_path: Path) -> EntryConfig:
     return EntryConfig(
         unit_id=ALL_HF_VERTICAL_UNIT_ID,
         image_id=1584,
-        seed_groups=((35001, 35002, 35003, 35004), (35005, 35006, 35007, 35008), (35009, 35010, 35011, 35012), (35013, 35014, 35015, 35016)),
+        seed_groups=(
+            (35001, 35002, 35003, 35004),
+            (35005, 35006, 35007, 35008),
+            (35009, 35010, 35011, 35012),
+            (35013, 35014, 35015, 35016),
+        ),
         training_repetition_penalty=1.0,
         dtype="bfloat16",
         attention_backend="flash_attention_2",
@@ -207,7 +224,9 @@ class _FakeServices:
         self.fail = fail
         self.private: object | None = None
 
-    def preflight_source_assembly(self, config: EntryConfig, resources: Any) -> SourceAssemblyReceipt:
+    def preflight_source_assembly(
+        self, config: EntryConfig, resources: Any
+    ) -> SourceAssemblyReceipt:
         self.events.append("preflight")
         base = SourceAssemblyReceipt(
             source_plan_sha256=config.content_sha256,
@@ -246,24 +265,32 @@ class _FakeServices:
         self.events.append("open_audit")
         return object()
 
-    def source_audit(self, audit_session: object, repetition_penalty: float) -> dict[str, Any]:
+    def source_audit(
+        self, audit_session: object, repetition_penalty: float
+    ) -> dict[str, Any]:
         del audit_session
         self.events.append(f"source_audit:{repetition_penalty}")
         return _row(repetition_penalty=repetition_penalty)
 
-    def acquire_and_replay(self, training_session: object, config: EntryConfig) -> object:
+    def acquire_and_replay(
+        self, training_session: object, config: EntryConfig
+    ) -> object:
         del training_session, config
         self.events.append("acquire_replay")
         return SimpleNamespace(trusted_h_owner_ids=("h-1",), parity_passed=True)
 
-    def apply_private_update(self, training_session: object, acquisition: object, config: EntryConfig) -> object:
+    def apply_private_update(
+        self, training_session: object, acquisition: object, config: EntryConfig
+    ) -> object:
         del training_session, acquisition, config
         self.events.append("private_update")
         if self.fail == "private_update":
             raise RuntimeError("update failure")
         return object()
 
-    def write_private_proposal(self, training_session: object, proposal: object, output_root: Path) -> object:
+    def write_private_proposal(
+        self, training_session: object, proposal: object, output_root: Path
+    ) -> object:
         del training_session, proposal, output_root
         self.events.append("write_private")
         self.private = SimpleNamespace(
@@ -272,12 +299,16 @@ class _FakeServices:
         )
         return self.private
 
-    def proposal_audit(self, audit_session: object, private: object, repetition_penalty: float) -> dict[str, Any]:
+    def proposal_audit(
+        self, audit_session: object, private: object, repetition_penalty: float
+    ) -> dict[str, Any]:
         del audit_session, private
         self.events.append(f"proposal_audit:{repetition_penalty}")
         return _proposal_row(owner="g-1", repetition_penalty=repetition_penalty)
 
-    def rollback_and_reproduce_source(self, training_session: object, proposal: object) -> bool:
+    def rollback_and_reproduce_source(
+        self, training_session: object, proposal: object
+    ) -> bool:
         del training_session, proposal
         self.events.append("rollback_reproduce")
         return True
@@ -291,7 +322,189 @@ class _FakeServices:
         self.events.append("close")
 
 
-def test_default_dry_run_has_zero_model_gpu_network_and_output_actions(tmp_path: Path) -> None:
+def test_typed_runtime_context_failure_terminal_binds_observed_shared_surface_counts(
+    tmp_path: Path,
+) -> None:
+    sampled_hashes = tuple(f"{index:x}" * 64 for index in range(1, 5))
+    replay_hashes = tuple(f"{index:x}" * 64 for index in range(5, 9))
+    context = Task5ProductionContextFailureReceipt(
+        reason_code="live_task2_owner_publications_unavailable",
+        config_sha256=_config(tmp_path).content_sha256,
+        manifest_sha256="c" * 64,
+        source_identity_sha256="9" * 64,
+        sampled_group_sha256s=sampled_hashes,
+        replay_group_sha256s=replay_hashes,
+        sampled_group_object_ids=(1, 2, 3, 4),
+        replay_group_object_ids=(5, 6, 7, 8),
+        replay_tensor_object_ids=(("live", 10),),
+        assembly_object_id=11,
+        session_object_id=12,
+        model_object_id=13,
+        optimizer_object_id=14,
+        manifest_object_id=15,
+        manifest_image_object_id=16,
+        process_id=17,
+    )
+    shared_payload = {
+        "sample_forward_count": 463,
+        "replay_forward_count": 463,
+        "total_forward_count": 926,
+        "no_cache_forward_count": 926,
+        "sampled_group_sha256s": list(sampled_hashes),
+        "replay_group_sha256s": list(replay_hashes),
+        "model_object_id": 13,
+        "retained_graph_count": 0,
+        "session_held_reference_count": 0,
+        "cleanup_state": "closed",
+        "cleanup_reason": "completed",
+        "cleanup_failures": [],
+        "cleanup_call_count": 1,
+    }
+    shared_receipt = SimpleNamespace(
+        **shared_payload,
+        content_sha256=json_sha256(shared_payload),
+        to_dict=lambda: shared_payload
+        | {"content_sha256": json_sha256(shared_payload)},
+    )
+
+    class Backend:
+        def __init__(self) -> None:
+            self.close_training_calls = 0
+            self.close_audit_calls = 0
+
+        def preflight_source_assembly(
+            self, config: EntryConfig, resources: Any
+        ) -> SourceAssemblyReceipt:
+            return _FakeServices().preflight_source_assembly(config, resources)
+
+        def open_training(self, config: EntryConfig, resources: Any) -> object:
+            del config, resources
+            return object()
+
+        def open_audit(self, config: EntryConfig, resources: Any) -> object:
+            del config, resources
+            return object()
+
+        def source_audit(
+            self, session: object, repetition_penalty: float
+        ) -> Mapping[str, Any]:
+            del session
+            return _row(repetition_penalty=repetition_penalty)
+
+        def acquire_and_replay(
+            self, session: object, config: EntryConfig
+        ) -> Any:
+            del session, config
+            raise Task5ProductionContextUnavailable(context)
+
+        def build_cuda_adapter(self, proposal_input: object) -> Any:
+            raise AssertionError(f"unexpected adapter build: {proposal_input!r}")
+
+        def write_private_checkpoint(
+            self, session: object, proposal: object, output_root: Path
+        ) -> object:
+            raise AssertionError((session, proposal, output_root))
+
+        def proposal_audit(
+            self,
+            session: object,
+            private: object,
+            repetition_penalty: float,
+        ) -> Mapping[str, Any]:
+            raise AssertionError((session, private, repetition_penalty))
+
+        def reproduce_source(
+            self, session: object, repetition_penalties: tuple[float, float]
+        ) -> Mapping[float, Mapping[str, Any]]:
+            raise AssertionError((session, repetition_penalties))
+
+        def cleanup_private_checkpoint(self, private: object) -> None:
+            raise AssertionError(private)
+
+        def close_training(self, session: object) -> object:
+            del session
+            self.close_training_calls += 1
+            return shared_receipt
+
+        def close_audit(self, session: object) -> None:
+            del session
+            self.close_audit_calls += 1
+
+    config = _config(tmp_path)
+    stale = tmp_path / "lost-one-image" / "run-reservation.json"
+    stale.parent.mkdir()
+    stale.write_text(
+        json.dumps(
+            {
+                "run_id": "lost",
+                "pid": 377949,
+                "model_actions": {
+                    "model_loads": 0,
+                    "forwards": 0,
+                    "backwards": 0,
+                    "optimizer_steps": 0,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    successor = tmp_path / "typed-failure-successor"
+    backend = Backend()
+    services = ProductionOneImageServices(
+        backend=backend,
+        stale_reservation_path=stale,
+        successor_root=successor,
+        attempt_id="typed-failure-attempt",
+        pid_is_alive=lambda _pid: False,
+    )
+
+    terminal = run_one_image(
+        config,
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=successor,
+        services=services,
+        manifest_image=_image(),
+    )
+
+    assert terminal.terminal_status == "update_failure"
+    assert terminal.model_actions["forwards"] == 928
+    assert terminal.model_actions["backwards"] == 0
+    assert terminal.model_actions["optimizer_steps"] == 0
+    assert backend.close_training_calls == 1
+    assert backend.close_audit_calls == 1
+    terminal_envelope = json.loads((successor / "terminal.json").read_text())
+    assert terminal_envelope["context_failure_receipt_sha256"] == (
+        context.content_sha256
+    )
+    assert terminal_envelope["shared_surface_resource_receipt_sha256"] == (
+        shared_receipt.content_sha256
+    )
+    close_phase = json.loads(
+        next((successor / "receipts").glob("*-training_session_closed.json")).read_text()
+    )
+    failure = close_phase["evidence"]["acquisition_failure_receipt"]
+    assert terminal_envelope["observed_acquisition_failure_receipt"] == failure
+    assert failure["sample_forward_count"] == 463
+    assert failure["replay_forward_count"] == 463
+    assert failure["no_cache_forward_count"] == 926
+    assert tuple(failure["sampled_group_sha256s"]) == sampled_hashes
+    assert tuple(failure["replay_group_sha256s"]) == replay_hashes
+    assert failure["config_sha256"] == config.content_sha256
+    assert failure["manifest_sha256"] == "c" * 64
+    assert failure["source_identity_sha256"] == "9" * 64
+    assert failure["cleanup_state"] == "closed"
+    assert failure["cleanup_call_count"] == 1
+    assert failure["context_failure_receipt_sha256"] == context.content_sha256
+    assert failure["content_sha256"] == json_sha256(
+        {key: value for key, value in failure.items() if key != "content_sha256"}
+    )
+
+
+def test_default_dry_run_has_zero_model_gpu_network_and_output_actions(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
     result = dry_run(config)
 
@@ -318,10 +531,14 @@ def test_dual_gpu_admission_requires_distinct_suitable_cards() -> None:
         validate_dual_gpu_resources((cards[0], GPUResource(0, 80 << 30, 70 << 30)))
 
     with pytest.raises(ValueError, match="suitable"):
-        validate_dual_gpu_resources((cards[0], GPUResource(1, 80 << 30, 70 << 30, suitable=False)))
+        validate_dual_gpu_resources(
+            (cards[0], GPUResource(1, 80 << 30, 70 << 30, suitable=False))
+        )
 
 
-def test_execute_requires_explicit_model_gpu_authority_and_absent_root(tmp_path: Path) -> None:
+def test_execute_requires_explicit_model_gpu_authority_and_absent_root(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
     with pytest.raises(PermissionError, match="authority"):
         run_one_image(
@@ -344,7 +561,9 @@ def test_execute_requires_explicit_model_gpu_authority_and_absent_root(tmp_path:
         )
 
 
-def test_phase_order_binds_gpu_roles_and_cleans_private_proposal(tmp_path: Path) -> None:
+def test_phase_order_binds_gpu_roles_and_cleans_private_proposal(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
     services = _FakeServices()
     result = run_one_image(
@@ -377,11 +596,307 @@ def test_phase_order_binds_gpu_roles_and_cleans_private_proposal(tmp_path: Path)
     assert result.private_proposal_cleaned is True
 
 
-def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(tmp_path: Path) -> None:
+def test_guarded_entry_hands_final_typed_terminal_to_durable_owner(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+
+    class DurableServices(_FakeServices):
+        terminal: OneImageTerminalReceipt | None = None
+
+        def persist_terminal(self, terminal: OneImageTerminalReceipt) -> None:
+            self.terminal = terminal
+
+    services = DurableServices()
+    result = run_one_image(
+        config,
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=Path(config.output_root),
+        services=services,
+        manifest_image=_image(),
+    )
+
+    assert services.terminal is result
+    assert services.terminal is not None
+    assert services.terminal.content_sha256 == result.content_sha256
+
+
+def test_post_apply_journal_failure_is_integrated_typed_terminal_with_one_rollback(
+    tmp_path: Path,
+) -> None:
+    from scripts.research.human13_one_image_services import (
+        ProductionAcquisition,
+        ProductionOneImageServices,
+    )
+
+    class Adapter:
+        rollback_calls = 0
+
+        def apply_private_proposal(self) -> object:
+            return SimpleNamespace(content_sha256="7" * 64)
+
+        def rollback_private_proposal(self) -> object:
+            self.rollback_calls += 1
+            return SimpleNamespace(
+                content_sha256="8" * 64,
+                rollback_decision="rejected_restored",
+            )
+
+    class Backend(_FakeServices):
+        adapter = Adapter()
+
+        def acquire_and_replay(
+            self, training_session: object, config: EntryConfig
+        ) -> ProductionAcquisition:
+            del training_session, config
+            self.events.append("acquire_replay")
+            return ProductionAcquisition(
+                parity_passed=True,
+                trusted_h_owner_ids=("h-1",),
+                cuda_proposal_input=SimpleNamespace(
+                    surface_identity=object(),
+                    sampled_groups=(1, 2, 3, 4),
+                    replay_groups=(1, 2, 3, 4),
+                    replay_logprob_tensors={"a": object()},
+                    trajectory_ledger=object(),
+                    compiler_ledger=object(),
+                ),
+                task2_resource_sha256="b" * 64,
+                trajectory_ledger_sha256="c" * 64,
+                compiler_ledger_sha256="d" * 64,
+            )
+
+        def build_cuda_adapter(self, proposal_input: object) -> Adapter:
+            del proposal_input
+            return self.adapter
+
+        def reproduce_source(
+            self, session: object, repetition_penalties: tuple[float, float]
+        ) -> dict[float, dict[str, Any]]:
+            del session
+            self.events.append("source_reproduction")
+            return {rp: _row(repetition_penalty=rp) for rp in repetition_penalties}
+
+        def write_private_checkpoint(
+            self, session: object, proposal: object, output_root: Path
+        ) -> object:
+            return self.write_private_proposal(session, proposal, output_root)
+
+        def cleanup_private_checkpoint(self, private: object) -> None:
+            self.cleanup_private_proposal(private)
+
+        def close_training(self, session: object) -> None:
+            del session
+            self.events.append("close_training")
+
+        def close_audit(self, session: object) -> None:
+            del session
+            self.events.append("close_audit")
+
+    stale = tmp_path / "one-image" / "run-reservation.json"
+    stale.parent.mkdir()
+    stale.write_text(
+        '{"run_id":"lost","pid":377949,"model_actions":{"model_loads":0}}\n',
+        encoding="utf-8",
+    )
+    successor = tmp_path / "one-image-recovery-attempt"
+
+    def phase_writer(path: Path, value: Mapping[str, Any]) -> None:
+        if path.name.endswith("private_update_applied.json"):
+            raise OSError("injected post-apply journal failure")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(__import__("json").dumps(value), encoding="utf-8")
+
+    backend = Backend()
+    services = ProductionOneImageServices(
+        backend=backend,
+        stale_reservation_path=stale,
+        successor_root=successor,
+        attempt_id="attempt",
+        pid_is_alive=lambda pid: False,
+        phase_writer=phase_writer,
+    )
+    result = run_one_image(
+        _config(tmp_path),
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=successor,
+        services=services,
+        manifest_image=_image(),
+    )
+
+    assert result.terminal_status == "update_failure"
+    assert result.source_reproduced is True
+    assert backend.adapter.rollback_calls == 1
+    assert "source_reproduction" in backend.events
+    assert backend.events[-2:] == ["close_audit", "close_training"]
+    terminal = __import__("json").loads((successor / "terminal.json").read_text())
+    assert terminal["phase_ledger_sha256"] == result.phase_ledger_sha256
+
+
+def test_public_execute_dispatches_constructed_production_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    output_root = tmp_path / "fresh-successor"
+    services = _FakeServices()
+    observed_resources = entry_owner.validate_dual_gpu_resources(_resources())
+    execution = entry_owner.ProductionExecution(
+        services=services,
+        resources=observed_resources,
+        output_root=output_root,
+        manifest_image=_image(),
+        manifest_binding=None,
+    )
+    monkeypatch.setattr(
+        entry_owner,
+        "build_production_execution",
+        lambda **kwargs: execution,
+    )
+
+    result = entry_owner.main(
+        [
+            "--execute",
+            "--user-model-gpu-authority",
+            "--output-root",
+            str(output_root),
+            "--manifest",
+            str(tmp_path / "manifest.json"),
+            "--attempt-id",
+            "attempt",
+        ]
+    )
+
+    assert result == 0
+    terminal_payload = __import__("json").loads(capsys.readouterr().out)
+    assert terminal_payload["terminal_status"] == "update_failure"
+    assert (
+        terminal_payload["resource_receipt"]["resources"]["content_sha256"]
+        == observed_resources.content_sha256
+    )
+    assert terminal_payload["resource_receipt"]["output_root"]["path"] == str(
+        output_root.resolve()
+    )
+    assert services.events
+
+
+def test_production_construction_rejects_gpu1_before_manifest_or_backend(
+    tmp_path: Path,
+) -> None:
+    args = entry_owner.build_parser().parse_args(
+        [
+            "--execute",
+            "--user-model-gpu-authority",
+            "--output-root",
+            str(tmp_path / "successor"),
+            "--manifest",
+            str(tmp_path / "manifest.json"),
+            "--attempt-id",
+            "attempt",
+        ]
+    )
+    construction_calls: list[str] = []
+
+    def forbidden_manifest(_path: Path, *, require_full_panel: bool) -> object:
+        del require_full_panel
+        construction_calls.append("manifest")
+        raise AssertionError("manifest load crossed failed GPU admission")
+
+    def forbidden_backend(**_kwargs: Any) -> object:
+        construction_calls.append("backend")
+        raise AssertionError("backend construction crossed failed GPU admission")
+
+    with pytest.raises(RuntimeError, match="GPU 1.*free memory"):
+        entry_owner.build_production_execution(
+            config=_config(tmp_path),
+            args=args,
+            gpu_observer=lambda: (
+                GPUResource(0, 80 << 30, 79 << 30),
+                GPUResource(1, 80 << 30, 1 << 30),
+            ),
+            manifest_loader=forbidden_manifest,
+            backend_factory=forbidden_backend,
+        )
+
+    assert construction_calls == []
+
+
+def test_production_gpu_observation_uses_live_cuda_memory_for_exact_roles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import torch
+
+    calls: list[int] = []
+    observed = {
+        0: (71 << 30, 80 << 30),
+        1: (31 << 30, 80 << 30),
+    }
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+
+    def mem_get_info(index: int) -> tuple[int, int]:
+        calls.append(index)
+        return observed[index]
+
+    monkeypatch.setattr(torch.cuda, "mem_get_info", mem_get_info)
+
+    cards = entry_owner.observe_production_gpu_resources()
+    receipt = entry_owner.admit_production_gpu_resources(cards)
+
+    assert calls == [0, 1]
+    assert tuple(card.index for card in receipt.cards) == (0, 1)
+    assert tuple(card.free_memory_bytes for card in receipt.cards) == (
+        71 << 30,
+        31 << 30,
+    )
+
+
+def test_public_parser_does_not_expose_arbitrary_runtime_factory() -> None:
+    with pytest.raises(SystemExit):
+        entry_owner.build_parser().parse_args(
+            ["--execute", "--runtime-factory", "tests.fake:factory"]
+        )
+
+
+def test_terminal_from_dict_rejects_tampered_phase_receipt_count() -> None:
+    terminal = OneImageTerminalReceipt(
+        terminal_status="parity_failure",
+        resource_receipt=ResourceReceipt(
+            entry_owner.validate_dual_gpu_resources(_resources()),
+            None,
+            phase_count=1,
+            retry_count=0,
+            promoted_checkpoint=False,
+        ),
+        model_actions={
+            "model_loads": 0,
+            "forwards": 0,
+            "backwards": 0,
+            "optimizer_steps": 0,
+            "gpu_allocations": 0,
+            "network_actions": 0,
+            "output_creations": 0,
+        },
+        phase_receipt_sha256s=("a" * 64,),
+        phase_ledger_sha256=entry_owner._phase_ledger_sha256(("a" * 64,)),
+        failure_reason="parity",
+    )
+    payload = terminal.to_dict()
+    payload["phase_receipt_count"] = 2
+
+    with pytest.raises(ValueError, match="phase receipt count"):
+        OneImageTerminalReceipt.from_dict(payload)
+
+
+def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
 
     class DistinctProposal(_FakeServices):
-        def write_private_proposal(self, training_session: object, proposal: object, output_root: Path) -> object:
+        def write_private_proposal(
+            self, training_session: object, proposal: object, output_root: Path
+        ) -> object:
             del training_session, proposal, output_root
             self.events.append("write_private")
             self.private = SimpleNamespace(
@@ -390,7 +905,9 @@ def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(tmp_pa
             )
             return self.private
 
-        def proposal_audit(self, audit_session: object, private: object, repetition_penalty: float) -> dict[str, Any]:
+        def proposal_audit(
+            self, audit_session: object, private: object, repetition_penalty: float
+        ) -> dict[str, Any]:
             del audit_session, private
             self.events.append(f"proposal_audit:{repetition_penalty}")
             return _proposal_row(owner="g-1", repetition_penalty=repetition_penalty)
@@ -406,7 +923,9 @@ def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(tmp_pa
     assert result.terminal_status == "completed_null_or_unsafe"
 
 
-def test_private_proposal_identity_must_differ_from_source_before_audit(tmp_path: Path) -> None:
+def test_private_proposal_identity_must_differ_from_source_before_audit(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
 
     class SameAsSource(_FakeServices):
@@ -434,7 +953,9 @@ def test_private_proposal_identity_must_differ_from_source_before_audit(tmp_path
     assert not any(event.startswith("proposal_audit:") for event in services.events)
 
 
-def test_prebuilt_resource_receipt_cannot_rebind_training_or_audit_roles(tmp_path: Path) -> None:
+def test_prebuilt_resource_receipt_cannot_rebind_training_or_audit_roles(
+    tmp_path: Path,
+) -> None:
     del tmp_path
     services = _FakeServices()
     with pytest.raises(ValueError, match="GPU roles"):
@@ -483,7 +1004,9 @@ def test_manifest_matcher_identity_is_checked_before_any_open(tmp_path: Path) ->
     assert services.events == []
 
 
-def test_parent_manifest_binding_is_authoritative_over_image_local_surface(tmp_path: Path) -> None:
+def test_parent_manifest_binding_is_authoritative_over_image_local_surface(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
     services = _FakeServices()
     with pytest.raises(ValueError, match="manifest binding"):
@@ -520,7 +1043,9 @@ def test_source_identity_provenance_is_required_before_open(tmp_path: Path) -> N
     config = _config(tmp_path)
 
     class MissingIdentity(_FakeServices):
-        def preflight_source_assembly(self, config: EntryConfig, resources: Any) -> SourceAssemblyReceipt:
+        def preflight_source_assembly(
+            self, config: EntryConfig, resources: Any
+        ) -> SourceAssemblyReceipt:
             del resources
             self.events.append("preflight")
             return SourceAssemblyReceipt(
@@ -562,7 +1087,9 @@ def test_production_shaped_image_uses_parent_manifest_binding_and_preserves_owne
     assert identity["g_owner_ids"] == ("g:1584:2", "g:1584:11")
 
 
-def test_partial_audit_open_is_closed_without_leaking_training_session(tmp_path: Path) -> None:
+def test_partial_audit_open_is_closed_without_leaking_training_session(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
 
     class OpenAuditFail(_FakeServices):
@@ -587,7 +1114,9 @@ def test_private_bytes_failure_cleans_partial_private_proposal(tmp_path: Path) -
     config = _config(tmp_path)
 
     class PrivateBytesFail(_FakeServices):
-        def write_private_proposal(self, training_session: object, proposal: object, output_root: Path) -> object:
+        def write_private_proposal(
+            self, training_session: object, proposal: object, output_root: Path
+        ) -> object:
             del training_session, proposal, output_root
             self.events.append("write_private")
             self.private = object()
@@ -629,21 +1158,35 @@ def test_audit_arithmetic_reuses_canonical_matcher_and_parser() -> None:
     assert result.by_repetition_penalty[1.0].token_count == 3
 
 
-def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_rows() -> None:
+def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_rows() -> (
+    None
+):
     image = _image()
     with pytest.raises(ValueError, match="image_id"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: _row(image_id=2299), 1.1: _row(image_id=2299, repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: _row(image_id=2299),
+                1.1: _row(image_id=2299, repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
     with pytest.raises(ValueError, match="provenance"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: _row(provenance=False), 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: _row(provenance=False),
+                1.1: _row(repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -653,16 +1196,28 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
     with pytest.raises(ValueError, match="provenance.image_id"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: bad_nested_identity, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: bad_nested_identity,
+                1.1: _row(repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
     with pytest.raises(ValueError, match="stop_reason"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: _row(stop="unknown"), 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: _row(stop="unknown"),
+                1.1: _row(repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -673,7 +1228,10 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: bad_surface, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -684,7 +1242,10 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: _row(), 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: bad_identity, 1.1: _proposal_row(repetition_penalty=1.1)},
+            proposal_outputs={
+                1.0: bad_identity,
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -705,7 +1266,10 @@ def test_audit_rejects_bad_image_provenance_stop_and_counts_canonical_malformed_
     projected = analyze_audit_pair(
         image=image,
         source_outputs={1.0: malformed_row, 1.1: _row(repetition_penalty=1.1)},
-        proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+        proposal_outputs={
+            1.0: _proposal_row(),
+            1.1: _proposal_row(repetition_penalty=1.1),
+        },
         acquired_h_owner_ids=("h-1",),
         **_audit_identity_kwargs(),
     )
@@ -724,8 +1288,14 @@ def test_audit_rejects_conflicting_nested_surface_and_unbound_checkpoint_path() 
     with pytest.raises(ValueError, match="differs between output and provenance"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: conflicting_surface, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: conflicting_surface,
+                1.1: _row(repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -736,8 +1306,14 @@ def test_audit_rejects_conflicting_nested_surface_and_unbound_checkpoint_path() 
     with pytest.raises(ValueError, match="checkpoint_payload_sha256"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: conflicting_payload, 1.1: _row(repetition_penalty=1.1)},
-        proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: conflicting_payload,
+                1.1: _row(repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -748,8 +1324,14 @@ def test_audit_rejects_conflicting_nested_surface_and_unbound_checkpoint_path() 
     with pytest.raises(ValueError, match="checkpoint_path"):
         analyze_audit_pair(
             image=image,
-            source_outputs={1.0: forged_checkpoint_path, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            source_outputs={
+                1.0: forged_checkpoint_path,
+                1.1: _row(repetition_penalty=1.1),
+            },
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -780,7 +1362,10 @@ def test_audit_requires_canonical_parser_and_lineage_fields() -> None:
         analyze_audit_pair(
             image=image,
             source_outputs={1.0: missing_parser, 1.1: _row(repetition_penalty=1.1)},
-            proposal_outputs={1.0: _proposal_row(), 1.1: _proposal_row(repetition_penalty=1.1)},
+            proposal_outputs={
+                1.0: _proposal_row(),
+                1.1: _proposal_row(repetition_penalty=1.1),
+            },
             acquired_h_owner_ids=("h-1",),
             **_audit_identity_kwargs(),
         )
@@ -808,7 +1393,9 @@ def test_acquired_h_ids_cannot_include_fabricated_g_owner(tmp_path: Path) -> Non
     config = _config(tmp_path)
 
     class FabricatedH(_FakeServices):
-        def acquire_and_replay(self, training_session: object, config: EntryConfig) -> object:
+        def acquire_and_replay(
+            self, training_session: object, config: EntryConfig
+        ) -> object:
             del training_session, config
             self.events.append("acquire_replay")
             return SimpleNamespace(trusted_h_owner_ids=("g-1",), parity_passed=True)
@@ -829,7 +1416,9 @@ def test_failed_proposal_audit_attempts_rollback_exactly_once(tmp_path: Path) ->
     config = _config(tmp_path)
 
     class ProposalAuditFail(_FakeServices):
-        def proposal_audit(self, audit_session: object, private: object, repetition_penalty: float) -> dict[str, Any]:
+        def proposal_audit(
+            self, audit_session: object, private: object, repetition_penalty: float
+        ) -> dict[str, Any]:
             del audit_session, private
             self.events.append(f"proposal_audit:{repetition_penalty}")
             raise RuntimeError("proposal audit failed")
@@ -847,8 +1436,9 @@ def test_failed_proposal_audit_attempts_rollback_exactly_once(tmp_path: Path) ->
     assert services.events.count("rollback_reproduce") == 1
 
 
-
-def test_continuation_gate_truth_table_requires_h_gain_positive_delta_and_no_burdens() -> None:
+def test_continuation_gate_truth_table_requires_h_gain_positive_delta_and_no_burdens() -> (
+    None
+):
     passing = AuditPairAnalysis(
         by_repetition_penalty={
             1.0: AuditAnalysis(
@@ -894,14 +1484,28 @@ def test_continuation_gate_truth_table_requires_h_gain_positive_delta_and_no_bur
     gate = evaluate_continuation_gate(passing)
     assert gate.admitted is True
 
-    for field in ("net_unique_delta", "proposal_duplicate_rows", "proposal_malformed_rows", "proposal_cap_stops"):
+    for field in (
+        "net_unique_delta",
+        "proposal_duplicate_rows",
+        "proposal_malformed_rows",
+        "proposal_cap_stops",
+    ):
         bad = dict(passing.by_repetition_penalty)
         first = bad[1.0]
-        bad[1.0] = AuditAnalysis(**{**first.__dict__, field: 0 if field == "net_unique_delta" else 1})
-        assert evaluate_continuation_gate(AuditPairAnalysis(by_repetition_penalty=bad)).admitted is False
+        bad[1.0] = AuditAnalysis(
+            **{**first.__dict__, field: 0 if field == "net_unique_delta" else 1}
+        )
+        assert (
+            evaluate_continuation_gate(
+                AuditPairAnalysis(by_repetition_penalty=bad)
+            ).admitted
+            is False
+        )
 
 
-def test_full_panel_requires_exact_passing_terminal_hash_without_model_actions(tmp_path: Path) -> None:
+def test_full_panel_requires_exact_passing_terminal_hash_without_model_actions(
+    tmp_path: Path,
+) -> None:
     config = _config(tmp_path)
     with pytest.raises(PermissionError, match="terminal"):
         run_full_panel(
