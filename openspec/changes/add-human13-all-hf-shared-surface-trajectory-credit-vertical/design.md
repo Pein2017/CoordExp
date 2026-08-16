@@ -12,9 +12,9 @@ policy.
 The selected panel is deliberately overfit-only.  Accuracy and reaching one
 real algorithm update take precedence over rollout throughput.  The design
 must still avoid a physically impossible per-token backward path: stochastic
-sampling may repeat prefixes stepwise, while gradient replay vectorizes each
-completed group and lets the parity gate own that remaining causal-shape
-difference.
+sampling may repeat prefixes stepwise, while gradient replay reconstructs the
+recorded active batch and causal history length for each sampler step, retaining
+one graph for the later single proposal backward.
 
 ## Goals / Non-Goals
 
@@ -72,7 +72,7 @@ gradient, and replay tensors and is unnecessary for the algorithm question.
 off-policy.  That is a legitimate future unit, but it does not answer whether
 the algorithm works once the avoidable cross-engine mismatch is removed.
 
-### 2. Spend sampling compute, but vectorize gradient replay
+### 2. Spend sampling compute, but retain one bounded replay graph
 
 Sampling runs four trajectories together, one token step at a time, with full
 prompt/image/history forwards and `use_cache=False`.  Stopped rows leave the
@@ -80,13 +80,17 @@ active batch; the receipt records every active request, padding/mask shape,
 history hash, raw chosen logit, processed chosen log probability, sampled
 token, and RNG state transition.  Four such groups yield K16.
 
-After trajectories finish, replay pads the four complete histories once and
-runs one grad-enabled causal forward for that group.  It gathers the causal
-logit positions corresponding to every sampled token, applies the identical
-RP-then-temperature policy transform, and compares them with generation-time
-evidence before using the existing trajectory ledger.  Thus sampling repeats
-prefix work while backward remains four vectorized forwards rather than about
-1,573 growing-prefix backwards.
+After trajectories finish, replay reconstructs every recorded sampler step for
+the group: the same active request IDs, the same causal history length, and one
+selected causal logit position per active request.  Each is a no-cache,
+grad-enabled BF16/FA2 forward with the identical RP-then-temperature policy
+transform.  Non-reentrant activation checkpointing retains only bounded inputs
+for the later single proposal backward; position-selective logits avoid keeping
+the full vocabulary sequence.  This exact step alignment is required because
+the production FA2 surface is batch-shape and sequence-length dependent;
+grouping steps by active membership or padding completed histories changes
+accepted log-probabilities.  The observed image-1584 K16 run used 463 sampling
+and 463 replay forwards, not four replay forwards.
 
 The unchanged `0.02` maximum and `0.002` mean gate is retained as a semantic
 admission limit, not as a claim of bitwise equality.  The receipt also reports
@@ -98,8 +102,8 @@ exact ambiguity this successor is intended to remove first.
 
 **Alternative rejected:** grad-enabled stepwise replay with backward at every
 generated token.  It best matches shape but multiplies full multimodal
-backward cost by generated-token count and is unlikely to reach the requested
-one-update result in a useful time.
+backward cost by generated-token count; the implementation instead records all
+checkpointed step graphs and performs the existing single proposal backward.
 
 ### 3. Keep the original sampled policy and owner ledger
 

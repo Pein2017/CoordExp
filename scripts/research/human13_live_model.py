@@ -353,6 +353,59 @@ def _loaded_special_embedding_tensor_sha256(special_result: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _normalize_bf16_shared_surface(model: Any) -> None:
+    """Normalize PEFT-created parameters before the shared-surface seal.
+
+    Transformers loads the base Qwen weights with the requested dtype, while
+    PEFT may materialize newly-created DoRA parameters in ``float32``. The
+    Human-13 shared-surface contract is stricter than that loader convention:
+    every floating named parameter must be BF16 and cache use must be an
+    explicit ``False``. Normalize only at this live assembly boundary, before
+    optimizer/runtime construction, so no optimizer or transaction can retain
+    pre-normalization state.
+    """
+
+    import torch
+
+    named_parameters = cast(
+        Callable[[], Iterable[tuple[object, object]]],
+        getattr(model, "named_parameters", None),
+    )
+    if not callable(named_parameters):
+        raise Human13LiveModelError("live assembly model lacks named parameters")
+    values = tuple(named_parameters())
+    if not values:
+        raise Human13LiveModelError("live assembly model has no parameters")
+    with torch.no_grad():
+        for item in values:
+            if (
+                not isinstance(item, tuple)
+                or len(item) != 2
+                or not isinstance(item[0], str)
+                or not isinstance(item[1], torch.Tensor)
+            ):
+                raise Human13LiveModelError(
+                    "live assembly named-parameter surface is malformed"
+                )
+            name = cast(str, item[0])
+            parameter = cast(torch.Tensor, item[1])
+            if not parameter.is_floating_point():
+                raise Human13LiveModelError(
+                    f"BF16 shared surface contains non-floating parameter {name}"
+                )
+            if parameter.dtype != torch.bfloat16:
+                parameter.data = parameter.data.to(dtype=torch.bfloat16)
+
+    config = getattr(model, "config", None)
+    if config is not None and hasattr(config, "use_cache"):
+        try:
+            setattr(config, "use_cache", False)
+        except Exception as exc:
+            raise Human13LiveModelError(
+                "BF16 shared surface cache configuration could not be disabled"
+            ) from exc
+
+
 def _tensor_value_sha256(value: Any) -> str:
     import torch
 
@@ -1165,6 +1218,8 @@ def assemble_human13_live_model(
             "loaded special-token receipt differs from the validated Source identity"
         )
     model = special_result.model
+    if plan.mixed_precision == "bf16":
+        _normalize_bf16_shared_surface(model)
     memory_saver_receipt = live_backend.enable_memory_savers(model)
     optimizer, scheduler, optimizer_group_plan = live_backend.build_optimizer(
         model,

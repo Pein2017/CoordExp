@@ -9,14 +9,16 @@ surface and reach a real one-update behavioral result.
 
 ## What Changes
 
-- Add an experiment-local all-HF stepwise sampler and vectorized replay that
+- Add an experiment-local all-HF stepwise sampler and sampler-step-aligned replay that
   use the same live Source model object, DoRA representation, BF16 dtype,
   FlashAttention-2 backend, model mode, repetition-penalty transform, and
   no-cache causal-forward implementation.  A parity gate owns the remaining
   stepwise-versus-teacher-forced shape difference.
 - Keep K=16 and four logical groups of four trajectories, but deliberately
   disable sampler KV/prefix reuse and accept repeated image/prompt computation.
-  Replay batches the four completed trajectories so backward remains feasible.
+  Replay reconstructs each recorded active-batch/history-length step with
+  position-selective logits and bounded activation checkpointing so one later
+  backward remains feasible on the live 80-GB-class surface.
 - Add a one-image image-1584 admission slice at training RP 1.0.  It first
   checks semantic lineage and the predecessor's unchanged `0.02` maximum and
   `0.002` mean chosen-token processed-logprob tolerances, then immediately

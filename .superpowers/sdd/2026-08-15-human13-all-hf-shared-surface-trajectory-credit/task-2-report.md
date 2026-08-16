@@ -2,17 +2,20 @@
 
 ## Status and scope
 
-Task 2.1--2.4 are implemented.  Task 2.5 and all later OpenSpec tasks remain
-unchecked.  The implementation creates only:
+Task 2.1--2.5 are implemented and the OpenSpec task is checked.  The final
+bounded live rereview is recorded against the durable no-update witness below;
+all later OpenSpec tasks remain unchecked.  The implementation owns:
 
 - `scripts/research/human13_hf_shared_surface_live.py`;
 - `tests/research/test_human13_hf_shared_surface_live.py`.
+- the BF16/cache normalization seam in `scripts/research/human13_live_model.py`
+  and its matching live-model tests.
 
-No `human13_live_model.py` change was needed: the exact seam consumes an
-existing `Human13LiveAssembly`, its BF16/FA2 plan/components, and the
-image-1584 processor skeleton.  No real model was loaded, no GPU/network/output
-action ran, and no vLLM, prefix cache, retry, fallback, update, or publication
-path was added.
+The exact seam consumes an existing `Human13LiveAssembly`, its BF16/FA2
+plan/components, and the image-1584 processor skeleton.  Earlier Task-2
+focused evidence was CPU/injected only; the production-shaped no-update
+witness below is recorded separately and still adds no vLLM, prefix cache,
+retry, fallback, update, or publication path.
 
 ## Delivered boundary
 
@@ -25,10 +28,13 @@ path was added.
   reordering survivors.  Task-1 values bind request identity, causal histories,
   chosen raw logits/log-probabilities, active shapes, and connected per-request
   RNG-state transitions.
-- Replay performs one padded teacher-forced group forward with gradients
-  enabled, vectorizes every `(row, causal_position)` gather, runs the same HF
-  repetition-penalty/temperature/top-p processors, and crosses Task-1 parity
-  admission before retaining any live chosen-log-probability graph.
+- Replay reconstructs every recorded sampler step with the same active request
+  membership and causal history length, selects only each chosen causal
+  position, runs the same HF repetition-penalty/temperature/top-p processors,
+  and crosses Task-1 parity admission before retaining any live
+  chosen-log-probability graph.  Non-reentrant activation checkpointing keeps
+  the later single backward bounded; full-sequence vocabulary logits are not
+  retained.
 - Surface checks fail terminally on model/parameter/checkpoint/adapter/delta,
   train/eval, dtype/backend, prompt/image/tokenizer/processor, cache, causal
   shape, non-finite, and history/padding drift.  Failure has no retry or
@@ -94,8 +100,9 @@ git diff --check
 (exit 0; no output)
 ```
 
-Serena diagnostics were unavailable in the active tool surface and were not
-retried.  This is one reason the broader Task 2.5 gate remains unchecked.
+At that historical checkpoint Serena diagnostics were unavailable in the active
+tool surface and were not retried.  The later exact-worktree Serena/Pyright
+diagnostics are recorded in the final gate below.
 
 The independent review initially returned HOLD on one P1: Accelerate native
 BF16 AMP keeps parameters/compute BF16 but converts prepared-model outputs to
@@ -107,11 +114,11 @@ admission/receipt accordingly.  The same reviewer then returned
 
 ## Claim boundary and concern
 
-This is injected CPU plumbing evidence only.  It does not establish a real
-Qwen BF16/FA2 forward, CUDA RNG behavior, FA2 padded replay compatibility,
-memory headroom, numerical parity, model quality, optimizer/backward behavior,
-or GPU readiness.  Those remain owned by later reviewed tasks; no live action
-was taken here.
+The focused and adjacent sections above are injected CPU plumbing evidence.
+The production-shaped no-update witness below establishes only real Qwen
+BF16/FA2 sampler/replay parity and resource headroom; it does not establish
+model quality, optimizer/backward behavior, checkpoint ownership, audit
+behavior, or GPU readiness for the full vertical.
 
 Commit: `3b814aba4cbd1badde04623ed18ec95b51042694`
 (`research: add live HF shared-surface session`).  The ignored report itself is
@@ -119,8 +126,8 @@ kept as local execution evidence and is not part of the commit.
 
 ## Fix round 1: Task-2 rereview correction bundle
 
-The bounded rereview in `task-2-rereview.md` found four systemic gaps.  This
-single correction bundle keeps OpenSpec 2.5 unchecked and changes only the
+The bounded rereview in `task-2-rereview.md` found four systemic gaps.  At that
+historical checkpoint OpenSpec 2.5 remained unchecked; the correction changed only the
 Task-2 live module/test plus the exact live-model builder provenance seam and
 its matching tests.
 
@@ -185,8 +192,8 @@ four touched source/test files.
 
 All tests used injected CPU causal fakes and value-only plans/receipts.  No real
 model load, CUDA/GPU action, network access, launch, output publication, vLLM,
-prefix cache, retry, fallback, backward, or optimizer update occurred.  This is
-still plumbing evidence only; Task 2.5 remains unchecked pending rereview.
+prefix cache, retry, fallback, backward, or optimizer update occurred in that
+historical correction gate; Task 2.5 was still unchecked at that point.
 
 ## Fix round 2: parameter provenance and nested lifecycle lineage
 
@@ -262,4 +269,60 @@ This remains injected CPU/value-contract evidence.  It does not prove a real
 Qwen load, CUDA RNG, BF16/FA2 forward/backward, GPU memory headroom, live
 numerical parity, optimizer update, or model quality.  No model, GPU, network,
 launch, output, cache, vLLM, retry, fallback, backward, or update action ran.
-Task 2.5 remains unchecked until the fresh bounded rereview is clean.
+Task 2.5 was still unchecked until the fresh bounded rereview below was clean.
+
+## Fix round 3: production-shaped no-update parity witness
+
+The original padded full-history replay was not viable on the real Qwen
+BF16/FA2 surface: it produced large survivor-logit drift, and retaining the
+full-vocabulary grad output exhausted GPU 0.  A bounded TDD correction therefore
+made replay reproduce every recorded sampler step, pass position-selective
+`logits_to_keep`, and use non-reentrant activation checkpointing.  The focused
+live suite now has 50 passing tests, including delayed-stop shape parity and
+checkpoint invocation regressions.
+
+On 2026-08-16, the real public assembly boundary loaded the frozen image-1584
+Source model/adapter/selected-token delta, encoded the real prompt skeleton,
+and ran all four K16 groups on GPU 0.  Every group passed Task-1 parity with
+`max_abs_error=0.0` and `mean_abs_error=0.0`.  The terminal resource receipt
+was:
+
+```text
+sample_forward_count=463
+replay_forward_count=463
+total_forward_count=926
+no_cache_forward_count=926
+cleanup_state=closed
+cleanup_call_count=1
+retained_graph_count=0
+session_held_reference_count=0
+```
+
+The run performed no backward, optimizer step, private checkpoint write,
+HF-fp32 audit load, network action, or output-root write.  The durable raw
+receipt is recorded at
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-16-human13-all-hf-shared-surface-trajectory-credit-vertical/no-update-k16-parity-witness.md`.
+The configured output root was not written by this run; a pre-existing stale
+`run-reservation.json` for PID 377949 remains separately documented there.
+Together with the final focused/static/reviewer gates, this closes Task 2.5 and
+the real Task-2 no-update parity/resource witness.  Task 4.6 and Task 5 remain
+open.
+
+## Final bounded rereview and durable evidence
+
+The follow-up review checked the durable witness above rather than relying on
+the earlier report-only line.  Current evidence is:
+
+```text
+focused live suite: 50 passed
+adjacent HF/shared/live-model suite: 124 passed
+Pyright --level error: 0 errors, 0 warnings, 0 informations
+Ruff, compileall, strict OpenSpec, and git diff --check: clean
+```
+
+The reviewer found no remaining Task-2 P0/P1.  Two non-decision-bearing
+hardening notes remain recorded for a later schema revision: failed receipts do
+not yet encode per-step partial-attempt counters, and the terminal value receipt
+retains the nested immutable lineage even after the session clears its own
+group lists.  Neither changes the completed K16 receipt or its exact 463/463
+counts.

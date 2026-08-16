@@ -377,6 +377,7 @@ class _FakeLiveModel(torch.nn.Module):
         self.shared_embed_delta = torch.nn.Parameter(
             torch.zeros(2), requires_grad=False
         )
+        self.config = SimpleNamespace(use_cache=None)
 
 
 class _Optimizer:
@@ -767,6 +768,10 @@ def test_live_assembly_is_the_only_action_boundary_and_returns_world_one_runtime
     assert parameter_receipt.selected_delta_parameter_name == "shared_embed_delta"
     assert parameter_receipt.selected_delta_requires_grad is False
     assert len(parameter_receipt.selected_delta_tensor_sha256) == 64
+    assert {str(parameter.dtype) for _name, parameter in backend.model.named_parameters()} == {
+        "torch.bfloat16"
+    }
+    assert backend.model.config.use_cache is False
 
 
 def test_live_assembly_fails_closed_on_world_size_or_surface_drift(

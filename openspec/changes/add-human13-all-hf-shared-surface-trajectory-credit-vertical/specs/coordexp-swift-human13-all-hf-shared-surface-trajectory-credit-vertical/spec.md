@@ -55,9 +55,15 @@ declared predecessor qualification and matrix group.
 ### Requirement: Shared-surface replay admission
 
 The probe SHALL replay each completed four-trajectory group through the same
-HF model object in one no-cache teacher-forced BF16/FA2 forward with gradients
-enabled and model parameters unchanged.  Replay SHALL reconstruct the sampled
-processed policy at every chosen token.  Admission requires exact history and
+HF model object by reconstructing every recorded sampler step as one no-cache
+teacher-forced BF16/FA2 forward with gradients enabled and model parameters
+unchanged.  Each replay forward SHALL use the sampler's exact active request
+membership, causal history length, and selected causal logit positions; it SHALL
+not right-pad completed histories or group steps merely because membership is
+unchanged.  Position-selective logits and bounded activation checkpointing (or
+an equivalent resource-bounded mechanism) SHALL preserve the live graph for the
+single later proposal backward without retaining full-sequence vocabulary
+logits.  Replay SHALL reconstruct the sampled processed policy at every chosen token.  Admission requires exact history and
 chosen-token identity, finite values, maximum absolute processed-logprob error
 no greater than `0.02` nats, and group-mean absolute error no greater than
 `0.002` nats.

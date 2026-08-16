@@ -223,7 +223,9 @@ def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
     derived_sample_forward_count = sum(
         len(group.active_batch_steps) for group in receipt.sampled_groups
     )
-    derived_replay_forward_count = len(receipt.replay_groups)
+    derived_replay_forward_count = sum(
+        len(group.active_batch_steps) for group in receipt.sampled_groups
+    )
     if (
         receipt.sampled_seed_groups != tuple(sampled_seed_groups)
         or receipt.sampled_group_sha256s != tuple(sampled_hashes)
@@ -255,7 +257,7 @@ def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
         != receipt.sample_forward_count + receipt.replay_forward_count
         or receipt.no_cache_forward_count != receipt.total_forward_count
         or receipt.replay_forward_count < len(receipt.replay_group_sha256s)
-        or receipt.replay_forward_count > len(receipt.replay_group_sha256s) + 1
+        or receipt.replay_forward_count > derived_replay_forward_count
         or len(receipt.sampled_seed_groups) != len(receipt.sampled_group_sha256s)
         or len(receipt.replay_group_sha256s) > len(receipt.sampled_group_sha256s)
         or receipt.retained_graph_count != 0
@@ -284,7 +286,7 @@ def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
         receipt.sampled_seed_groups != plan_image1584_k16().seed_groups
         or len(receipt.sampled_group_sha256s) != 4
         or len(receipt.replay_group_sha256s) != 4
-        or receipt.replay_forward_count != 4
+        or receipt.replay_forward_count != derived_replay_forward_count
         or receipt.sample_forward_count != derived_sample_forward_count
         or receipt.replay_forward_count != derived_replay_forward_count
         or receipt.cleanup_failures
@@ -909,6 +911,7 @@ class HFSharedSurfaceSession:
         attention_mask: torch.Tensor,
         *,
         retain_grad: bool,
+        logits_to_keep: torch.Tensor | int = 0,
     ) -> torch.Tensor:
         self._require_invariants(verify_parameter_values=False)
         model = self._model
@@ -922,6 +925,31 @@ class HFSharedSurfaceSession:
         device = first_parameter.device
         input_ids = input_ids.to(device=device, dtype=torch.long)
         attention_mask = attention_mask.to(device=device, dtype=torch.long)
+        if isinstance(logits_to_keep, torch.Tensor):
+            kept_positions = logits_to_keep.to(device=device, dtype=torch.long)
+            if (
+                kept_positions.ndim != 1
+                or kept_positions.numel() == 0
+                or bool((kept_positions < 0).any().item())
+                or bool((kept_positions >= input_ids.shape[1]).any().item())
+            ):
+                raise HFSharedSurfaceLiveError(
+                    "shared-surface logits_to_keep positions are invalid"
+                )
+            expected_logit_length = int(kept_positions.numel())
+        elif isinstance(logits_to_keep, int) and not isinstance(logits_to_keep, bool):
+            if logits_to_keep < 0 or logits_to_keep > input_ids.shape[1]:
+                raise HFSharedSurfaceLiveError(
+                    "shared-surface logits_to_keep count is invalid"
+                )
+            expected_logit_length = (
+                int(input_ids.shape[1]) if logits_to_keep == 0 else logits_to_keep
+            )
+            kept_positions = logits_to_keep
+        else:
+            raise HFSharedSurfaceLiveError(
+                "shared-surface logits_to_keep must be an integer or position tensor"
+            )
         pixels, grid = _materialized_image(skeleton)
         batch = int(input_ids.shape[0])
         pixel_values = pixels.repeat((batch, 1)).to(
@@ -942,27 +970,79 @@ class HFSharedSurfaceSession:
         else:
             self._sample_forward_count += 1
         self._no_cache_forward_count += 1
-        context = torch.enable_grad() if retain_grad else torch.inference_mode()
-        with context:
-            output = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                pixel_values=pixel_values,
-                image_grid_thw=image_grid_thw,
-                use_cache=False,
-                return_dict=True,
-                logits_to_keep=0,
+        if retain_grad:
+            import torch.utils.checkpoint as checkpoint_utils
+
+            def run_checkpointed_model(
+                checkpoint_input_ids: torch.Tensor,
+                checkpoint_attention_mask: torch.Tensor,
+                checkpoint_position_ids: torch.Tensor,
+                checkpoint_pixel_values: torch.Tensor,
+                checkpoint_image_grid_thw: torch.Tensor,
+                checkpoint_kept_positions: torch.Tensor | int,
+            ) -> torch.Tensor:
+                checkpoint_output = model(
+                    input_ids=checkpoint_input_ids,
+                    attention_mask=checkpoint_attention_mask,
+                    position_ids=checkpoint_position_ids,
+                    pixel_values=checkpoint_pixel_values,
+                    image_grid_thw=checkpoint_image_grid_thw,
+                    use_cache=False,
+                    return_dict=True,
+                    logits_to_keep=checkpoint_kept_positions,
+                )
+                if getattr(checkpoint_output, "past_key_values", None) is not None:
+                    raise HFSharedSurfaceLiveError(
+                        "shared-surface forward returned forbidden cache state"
+                    )
+                checkpoint_logits = getattr(checkpoint_output, "logits", None)
+                if not isinstance(checkpoint_logits, torch.Tensor):
+                    raise HFSharedSurfaceLiveError(
+                        "shared-surface checkpointed forward lacks logits"
+                    )
+                return checkpoint_logits
+
+            checkpoint_inputs: tuple[torch.Tensor | int, ...] = tuple(
+                value.clone()
+                if isinstance(value, torch.Tensor) and torch.is_inference(value)
+                else value
+                for value in (
+                    input_ids,
+                    attention_mask,
+                    position_ids,
+                    pixel_values,
+                    image_grid_thw,
+                    kept_positions,
+                )
             )
-        if getattr(output, "past_key_values", None) is not None:
-            raise HFSharedSurfaceLiveError(
-                "shared-surface forward returned forbidden cache state"
-            )
-        logits = getattr(output, "logits", None)
+            with torch.enable_grad():
+                logits = checkpoint_utils.checkpoint(
+                    run_checkpointed_model,
+                    *checkpoint_inputs,
+                    use_reentrant=False,
+                )
+        else:
+            with torch.inference_mode():
+                output = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    pixel_values=pixel_values,
+                    image_grid_thw=image_grid_thw,
+                    use_cache=False,
+                    return_dict=True,
+                    logits_to_keep=kept_positions,
+                )
+            if getattr(output, "past_key_values", None) is not None:
+                raise HFSharedSurfaceLiveError(
+                    "shared-surface forward returned forbidden cache state"
+                )
+            logits = getattr(output, "logits", None)
         if (
             not isinstance(logits, torch.Tensor)
             or logits.ndim != 3
-            or tuple(logits.shape[:2]) != tuple(input_ids.shape)
+            or tuple(logits.shape[:2])
+            != (int(input_ids.shape[0]), expected_logit_length)
             or int(logits.shape[2]) != len(tokenizer)
         ):
             raise HFSharedSurfaceLiveError(
@@ -1034,7 +1114,12 @@ class HFSharedSurfaceSession:
                 attention_mask = torch.ones_like(input_ids, dtype=torch.long)
                 rng_before = _rng_sha256(generators)
                 logits = self._forward(
-                    input_ids, attention_mask, retain_grad=False
+                    input_ids,
+                    attention_mask,
+                    retain_grad=False,
+                    logits_to_keep=torch.tensor(
+                        [int(input_ids.shape[1]) - 1], dtype=torch.long, device=device
+                    ),
                 )[:, -1, :]
                 processed = _apply_policy(input_ids, logits, self._plan)
                 logps = torch.log_softmax(processed, dim=-1)
@@ -1152,12 +1237,6 @@ class HFSharedSurfaceSession:
                 raise HFSharedSurfaceLiveError(
                     "replay groups must follow sampled K16 order exactly"
                 )
-            histories = tuple(
-                self._prompt
-                + tuple(token.chosen_token_id for token in request.tokens)
-                for request in group.requests
-            )
-            maximum = max(len(history) for history in histories)
             pad_token_id = getattr(self._tokenizer, "pad_token_id", None)
             if (
                 isinstance(pad_token_id, bool)
@@ -1167,72 +1246,169 @@ class HFSharedSurfaceSession:
                 raise HFSharedSurfaceLiveError(
                     "shared-surface tokenizer lacks a padding token"
                 )
-            input_ids = torch.full(
-                (len(histories), maximum), pad_token_id, dtype=torch.long
-            )
-            attention_mask = torch.zeros_like(input_ids)
-            for row, history in enumerate(histories):
-                input_ids[row, : len(history)] = torch.tensor(history, dtype=torch.long)
-                attention_mask[row, : len(history)] = 1
-            logits = self._forward(input_ids, attention_mask, retain_grad=True)
-            row_indexes: list[int] = []
-            positions: list[int] = []
-            chosen_ids: list[int] = []
-            processor_histories: list[tuple[int, ...]] = []
-            sampled_tokens: list[SampledHFToken] = []
-            for row, request in enumerate(group.requests):
-                for token in request.tokens:
-                    expected_position = len(self._prompt) - 1 + token.token_index
-                    if token.causal_logit_index != expected_position:
-                        raise HFSharedSurfaceLiveError(
-                            "sampled token has the wrong causal position"
-                        )
-                    row_indexes.append(row)
-                    positions.append(expected_position)
-                    chosen_ids.append(token.chosen_token_id)
-                    processor_histories.append(
-                        self._prompt
-                        + tuple(
-                            item.chosen_token_id
-                            for item in request.tokens[: token.token_index]
-                        )
-                    )
-                    sampled_tokens.append(token)
-            device = logits.device
-            row_tensor = torch.tensor(row_indexes, dtype=torch.long, device=device)
-            position_tensor = torch.tensor(positions, dtype=torch.long, device=device)
-            causal_logits = logits[row_tensor, position_tensor]
-            history_width = max(len(history) for history in processor_histories)
-            processor_input_ids = torch.full(
-                (len(processor_histories), history_width),
-                pad_token_id,
-                dtype=torch.long,
-                device=device,
-            )
-            for row, history in enumerate(processor_histories):
-                processor_input_ids[row, : len(history)] = torch.tensor(
-                    history, dtype=torch.long, device=device
+            request_index_by_id = {
+                request.request_id: index
+                for index, request in enumerate(group.requests)
+            }
+            if not group.active_batch_steps:
+                raise HFSharedSurfaceLiveError(
+                    "sampled group has no active-batch replay phases"
                 )
-            processed = _apply_policy(processor_input_ids, causal_logits, self._plan)
-            logps = torch.log_softmax(processed, dim=-1)
-            chosen_tensor = torch.tensor(chosen_ids, dtype=torch.long, device=device)
-            chosen_raw = causal_logits.gather(1, chosen_tensor[:, None]).squeeze(1)
-            chosen_logps = logps.gather(1, chosen_tensor[:, None]).squeeze(1)
+
+            # FA2 is numerically batch-shape dependent for this Qwen surface:
+            # both active-batch membership and causal sequence length must match
+            # the sampler. Reconstruct every sampler step as one equal-length,
+            # grad-enabled causal forward; grouping steps by membership would
+            # change the sequence length seen by earlier causal positions.
+            phases: list[tuple[int, tuple[int, ...], int]] = []
+            steps = group.active_batch_steps
+            for step in steps:
+                active_ids = step.active_request_ids
+                end_token_index = step.token_index + 1
+                active_indices = tuple(
+                    request_index_by_id.get(request_id, -1)
+                    for request_id in active_ids
+                )
+                if any(index < 0 for index in active_indices):
+                    raise HFSharedSurfaceLiveError(
+                        "sampled active-batch phase references an unknown request"
+                    )
+                phases.append((step.token_index, active_indices, end_token_index))
+
+            token_offsets: list[int] = []
+            token_count = 0
+            for request in group.requests:
+                token_offsets.append(token_count)
+                token_count += len(request.tokens)
+            replayed_by_index: list[SampledHFToken | None] = [None] * token_count
+            chosen_logps_by_index: list[torch.Tensor | None] = [None] * token_count
+
+            for phase_index, (start_token_index, active_indices, end_token_index) in enumerate(
+                phases
+            ):
+                phase_requests = tuple(group.requests[index] for index in active_indices)
+                if any(len(request.tokens) < end_token_index for request in phase_requests):
+                    raise HFSharedSurfaceLiveError(
+                        "sampled active-batch phase exceeds a request history"
+                    )
+                phase_histories = tuple(
+                    self._prompt
+                    + tuple(
+                        token.chosen_token_id
+                        for token in request.tokens[:start_token_index]
+                    )
+                    for request in phase_requests
+                )
+                if len({len(history) for history in phase_histories}) != 1:
+                    raise HFSharedSurfaceLiveError(
+                        "replay phase histories must have one causal length"
+                    )
+                input_ids = torch.tensor(phase_histories, dtype=torch.long)
+                attention_mask = torch.ones_like(input_ids)
+                keep_positions = torch.arange(
+                    len(self._prompt) - 1 + start_token_index,
+                    len(self._prompt) - 1 + end_token_index,
+                    dtype=torch.long,
+                )
+                logits = self._forward(
+                    input_ids,
+                    attention_mask,
+                    retain_grad=True,
+                    logits_to_keep=keep_positions,
+                )
+                row_indexes: list[int] = []
+                positions: list[int] = []
+                chosen_ids: list[int] = []
+                processor_histories: list[tuple[int, ...]] = []
+                sampled_tokens: list[SampledHFToken] = []
+                global_indices: list[int] = []
+                for row, (request_index, request) in enumerate(
+                    zip(active_indices, phase_requests, strict=True)
+                ):
+                    for token_index in range(start_token_index, end_token_index):
+                        token = request.tokens[token_index]
+                        expected_position = len(self._prompt) - 1 + token.token_index
+                        if token.causal_logit_index != expected_position:
+                            raise HFSharedSurfaceLiveError(
+                                "sampled token has the wrong causal position"
+                            )
+                        row_indexes.append(row)
+                        positions.append(token_index - start_token_index)
+                        chosen_ids.append(token.chosen_token_id)
+                        processor_histories.append(
+                            self._prompt
+                            + tuple(
+                                item.chosen_token_id
+                                for item in request.tokens[: token.token_index]
+                            )
+                        )
+                        sampled_tokens.append(token)
+                        global_indices.append(token_offsets[request_index] + token_index)
+                device = logits.device
+                row_tensor = torch.tensor(row_indexes, dtype=torch.long, device=device)
+                position_tensor = torch.tensor(positions, dtype=torch.long, device=device)
+                causal_logits = logits[row_tensor, position_tensor]
+                history_width = max(len(history) for history in processor_histories)
+                processor_input_ids = torch.full(
+                    (len(processor_histories), history_width),
+                    pad_token_id,
+                    dtype=torch.long,
+                    device=device,
+                )
+                for row, history in enumerate(processor_histories):
+                    processor_input_ids[row, : len(history)] = torch.tensor(
+                        history, dtype=torch.long, device=device
+                    )
+                processed = _apply_policy(
+                    processor_input_ids, causal_logits, self._plan
+                )
+                logps = torch.log_softmax(processed, dim=-1)
+                chosen_tensor = torch.tensor(
+                    chosen_ids, dtype=torch.long, device=device
+                )
+                chosen_raw = causal_logits.gather(1, chosen_tensor[:, None]).squeeze(1)
+                chosen_logps = logps.gather(1, chosen_tensor[:, None]).squeeze(1)
+                if not bool(torch.isfinite(chosen_logps).all().item()):
+                    raise HFSharedSurfaceLiveError(
+                        "replayed chosen log probabilities must be finite"
+                    )
+                for local_index, global_index in enumerate(global_indices):
+                    sampled = sampled_tokens[local_index]
+                    replayed_by_index[global_index] = SampledHFToken(
+                        request_id=sampled.request_id,
+                        token_index=sampled.token_index,
+                        history_sha256=sampled.history_sha256,
+                        chosen_token_id=sampled.chosen_token_id,
+                        raw_chosen_logit=float(
+                            chosen_raw[local_index].detach().float().item()
+                        ),
+                        processed_logp=float(
+                            chosen_logps[local_index].detach().float().item()
+                        ),
+                        causal_logit_index=sampled.causal_logit_index,
+                    )
+                    chosen_logps_by_index[global_index] = chosen_logps[local_index]
+
+            if any(item is None for item in replayed_by_index) or any(
+                item is None for item in chosen_logps_by_index
+            ):
+                raise HFSharedSurfaceLiveError(
+                    "replay phases did not cover every sampled action"
+                )
+            replayed = tuple(
+                cast(SampledHFToken, item) for item in replayed_by_index
+            )
+            chosen_logps = torch.stack(
+                tuple(cast(torch.Tensor, item) for item in chosen_logps_by_index)
+            )
             if not bool(torch.isfinite(chosen_logps).all().item()):
                 raise HFSharedSurfaceLiveError(
                     "replayed chosen log probabilities must be finite"
                 )
-            replayed = tuple(
-                SampledHFToken(
-                    request_id=sampled.request_id,
-                    token_index=sampled.token_index,
-                    history_sha256=sampled.history_sha256,
-                    chosen_token_id=sampled.chosen_token_id,
-                    raw_chosen_logit=float(chosen_raw[index].detach().float().item()),
-                    processed_logp=float(chosen_logps[index].detach().float().item()),
-                    causal_logit_index=sampled.causal_logit_index,
-                )
-                for index, sampled in enumerate(sampled_tokens)
+            replayed_sampled_tokens = tuple(
+                token
+                for request in group.requests
+                for token in request.tokens
             )
             gathers = tuple(
                 HFReplayCausalGather(
@@ -1242,7 +1418,7 @@ class HFSharedSurfaceSession:
                     chosen_token_id=sampled.chosen_token_id,
                     causal_logit_index=sampled.causal_logit_index,
                 )
-                for sampled in sampled_tokens
+                for sampled in replayed_sampled_tokens
             )
             replay = admit_gradient_replay(
                 sampled_group=group,
@@ -1309,6 +1485,11 @@ class HFSharedSurfaceSession:
                 reason=terminal_reason,
                 cleanup_failures=tuple(cleanup_failures),
             )
+            # The sealed terminal receipt owns the immutable value lineage;
+            # the session must not retain duplicate group references after
+            # terminal cleanup.
+            self._sampled_groups.clear()
+            self._replayed_groups.clear()
         if cleanup_failures and primary_exception is None:
             raise HFSharedSurfaceLiveError(
                 "shared-surface cleanup failed: " + "; ".join(cleanup_failures)

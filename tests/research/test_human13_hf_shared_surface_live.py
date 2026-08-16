@@ -44,7 +44,7 @@ class TinyTokenizer:
 class TinyCausalModel(torch.nn.Module):
     """CPU causal fake whose logits depend only on the causal position."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, stop_position: int = 3) -> None:
         super().__init__()
         self.weight = torch.nn.Parameter(torch.zeros(8, dtype=torch.bfloat16))
         self.visual = torch.nn.Module()
@@ -67,6 +67,7 @@ class TinyCausalModel(torch.nn.Module):
         self.config = SimpleNamespace(
             _attn_implementation="flash_attention_2", use_cache=False
         )
+        self.stop_position = stop_position
         self.forward_calls: list[dict[str, Any]] = []
         self.return_cache = False
         self.return_nonfinite = False
@@ -85,6 +86,7 @@ class TinyCausalModel(torch.nn.Module):
             "input_ids": kwargs["input_ids"].detach().cpu().clone(),
             "attention_mask": kwargs["attention_mask"].detach().cpu().clone(),
             "use_cache": kwargs.get("use_cache"),
+            "logits_to_keep": kwargs.get("logits_to_keep"),
             "grad_enabled": torch.is_grad_enabled(),
             "training": self.training,
             "model_object_id": id(self),
@@ -99,7 +101,7 @@ class TinyCausalModel(torch.nn.Module):
         rows = []
         for position in range(length):
             logits = self.weight.reshape(1, -1).expand(batch, -1)
-            if position >= 3:
+            if position >= self.stop_position:
                 stop_bias = torch.zeros_like(logits)
                 stop_bias[:, 3] = 40.0
                 logits = logits + stop_bias
@@ -107,6 +109,11 @@ class TinyCausalModel(torch.nn.Module):
         # Accelerate's native BF16 wrapper converts prepared-model outputs to
         # fp32 while parameters and autocast compute remain BF16.
         output = torch.stack(rows, dim=1).float()
+        kept = kwargs.get("logits_to_keep", 0)
+        if isinstance(kept, torch.Tensor):
+            output = output[:, kept.detach().cpu().tolist(), :]
+        elif isinstance(kept, int) and kept > 0:
+            output = output[:, -kept:, :]
         if self.return_nonfinite:
             output = output.clone()
             output[0, -1, 0] = float("nan")
@@ -308,12 +315,14 @@ def _assembly(
     )
 
 
-def _open() -> tuple[Any, Human13LiveAssembly, TinySkeleton]:
+def _open(
+    model: TinyCausalModel | None = None,
+) -> tuple[Any, Human13LiveAssembly, TinySkeleton]:
     from scripts.research.human13_hf_shared_surface_live import (
         open_hf_shared_surface,
     )
 
-    assembly = _assembly()
+    assembly = _assembly(model=model)
     skeleton = TinySkeleton()
     return (
         open_hf_shared_surface(plan_image1584_k16(), assembly, skeleton),
@@ -384,8 +393,8 @@ def test_all_four_groups_cover_the_frozen_k16_seed_plan() -> None:
     )
     receipt = session.close()
     assert receipt.sample_forward_count == 8
-    assert receipt.replay_forward_count == 4
-    assert receipt.no_cache_forward_count == receipt.total_forward_count == 12
+    assert receipt.replay_forward_count == 8
+    assert receipt.no_cache_forward_count == receipt.total_forward_count == 16
 
 
 def test_vectorized_replay_uses_same_eval_model_with_grad_and_causal_gathers() -> None:
@@ -397,12 +406,13 @@ def test_vectorized_replay_uses_same_eval_model_with_grad_and_causal_gathers() -
 
     assert type(replay) is GradientReplayGroup
     replay_call = model.forward_calls[-1]
-    assert replay_call["input_ids"].shape == torch.Size([4, 5])
+    assert replay_call["input_ids"].shape == torch.Size([3, 4])
+    assert isinstance(replay_call["logits_to_keep"], torch.Tensor)
+    assert replay_call["logits_to_keep"].tolist() == [3]
     assert replay_call["attention_mask"].tolist() == [
-        [1, 1, 1, 1, 0],
-        [1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1],
-        [1, 1, 1, 1, 1],
+        [1, 1, 1, 1],
+        [1, 1, 1, 1],
+        [1, 1, 1, 1],
     ]
     assert replay_call["use_cache"] is False
     assert replay_call["grad_enabled"] is True
@@ -423,6 +433,49 @@ def test_vectorized_replay_uses_same_eval_model_with_grad_and_causal_gathers() -
     assert all(isinstance(token.processed_logp, float) for token in replay.replayed_tokens)
 
 
+def test_replay_reconstructs_each_sampler_step_length_for_fa2_parity() -> None:
+    session, assembly, _skeleton = _open(model=TinyCausalModel(stop_position=6))
+    model = assembly.model
+
+    sampled = session.sample_group((35001, 35002, 35003, 35004))
+    session.replay_group(sampled)
+
+    sample_calls = model.forward_calls[: len(sampled.active_batch_steps)]
+    replay_calls = model.forward_calls[len(sampled.active_batch_steps) :]
+    assert len(sample_calls) == len(replay_calls) == len(sampled.active_batch_steps)
+    assert [call["input_ids"].shape for call in replay_calls] == [
+        call["input_ids"].shape for call in sample_calls
+    ]
+    assert [call["logits_to_keep"].tolist() for call in replay_calls] == [
+        call["logits_to_keep"].tolist() for call in sample_calls
+    ]
+
+
+def test_grad_replay_checkpoints_each_step_before_accumulating_graphs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered = 0
+    import torch.utils.checkpoint as checkpoint_utils
+
+    original = checkpoint_utils.checkpoint
+
+    def wrapped(function: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal entered
+        entered += 1
+        assert kwargs.get("use_reentrant") is False
+        return original(function, *args, **kwargs)
+
+    monkeypatch.setattr(
+        checkpoint_utils,
+        "checkpoint",
+        wrapped,
+    )
+    session, _assembly_value, _skeleton = _open()
+    sampled = session.sample_group((35001, 35002, 35003, 35004))
+    session.replay_group(sampled)
+    assert entered == len(sampled.active_batch_steps)
+
+
 def test_resource_receipt_binds_identity_processor_forwards_and_cleanup() -> None:
     session, assembly, _skeleton = _open()
     _sampled, replays = _complete_k16(session)
@@ -437,8 +490,8 @@ def test_resource_receipt_binds_identity_processor_forwards_and_cleanup() -> Non
         "top_p",
     )
     assert closed.sample_forward_count == 8
-    assert closed.replay_forward_count == 4
-    assert closed.no_cache_forward_count == closed.total_forward_count == 12
+    assert closed.replay_forward_count == 8
+    assert closed.no_cache_forward_count == closed.total_forward_count == 16
     assert closed.observed_logits_dtype == "float32"
     assert closed.latest_replay_group_sha256 == replay.content_sha256
 
@@ -898,6 +951,8 @@ def test_valid_k16_close_clears_only_session_references() -> None:
     assert receipt.caller_release_claim == "not_claimed"
     assert assembly.model is caller_model
     assert session._retained_live_resource_count() == 0  # noqa: SLF001
+    assert session._sampled_groups == []  # noqa: SLF001
+    assert session._replayed_groups == []  # noqa: SLF001
 
 
 @pytest.mark.parametrize("failure", ("zero_grad", "free_memory"))

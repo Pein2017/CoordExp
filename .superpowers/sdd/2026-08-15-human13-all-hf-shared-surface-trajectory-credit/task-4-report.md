@@ -66,6 +66,45 @@ consumer-side binding, distinct from Task 3's
 `ProposalBinding`/sealed receipt from the production service lineage before
 calling this seam.  No direct cross-schema reuse is claimed.
 
+## Production-shaped Task-2 no-update witness
+
+On 2026-08-16, the public assembly boundary was exercised with the frozen
+image-1584 Source checkpoint/adapter/selected-token delta and the real manifest
+prompt skeleton on GPU 0.  The assembly was BF16, FlashAttention-2, language-
+only DoRA, eval-mode shared surface, with explicit `use_cache=False`.  Four
+K16 groups sampled and then replayed through the same model object.  Replay
+reconstructed every recorded sampler step (same active request IDs and causal
+history length), selected only the needed causal logits, and used non-reentrant
+activation checkpointing; no padding-based batch replay was used.
+
+The no-update parity receipt was:
+
+```text
+sample_forward_count=463
+replay_forward_count=463
+total_forward_count=926
+no_cache_forward_count=926
+group parity: max_abs_error=0.0, mean_abs_error=0.0 for all four groups
+cleanup_state=closed, cleanup_call_count=1, retained_graph_count=0
+session_held_reference_count=0
+```
+
+The durable raw record is
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-16-human13-all-hf-shared-surface-trajectory-credit-vertical/no-update-k16-parity-witness.md`.
+It records the capture-time worktree/config/manifest hashes and lists all four
+sampled/replayed group hashes; its v2 recapture binds the receipt to the
+post-cleanup current source/test tree as well.
+
+The run performed no backward, optimizer step, private checkpoint write,
+audit-model load, network action, or output-root write.  The configured output
+root was not written by this run; it still contains a pre-existing stale
+`run-reservation.json` for PID 377949 with zero recorded model actions and no
+terminal/resource/parity fields.  This reservation is not claimed as the
+witness above and remains an unresolved Task-5 recovery/ownership issue.  This
+is a Task-2 no-update parity witness only; it does not close Task 4.6 or Task 5, because the production
+Task-5 service, dual-GPU audit, private proposal/checkpoint ownership, durable
+rollback receipt, and downstream consumer wiring remain unexercised.
+
 ## Verification evidence
 
 Focused Task-4 tests pass with CPU/value doubles:
@@ -115,7 +154,7 @@ The reviewer’s bounded Task-1/2/3/live-model/evaluator set (the focused suite
 plus seven adjacent files) passes 256 tests after the strict parser/lineage and
 distinct-proposal regressions.  A broader nine-file Task-1/2/3 and
 live-model/evaluator run passes 280 tests including the focused suite.  The
-exact 11-file smoke command below passes 328 tests:
+exact 11-file smoke command below passes 330 tests:
 
 ```text
 CUDA_VISIBLE_DEVICES='' PYTHONDONTWRITEBYTECODE=1 pytest -q \
@@ -130,14 +169,16 @@ CUDA_VISIBLE_DEVICES='' PYTHONDONTWRITEBYTECODE=1 pytest -q \
   tests/research/test_human13_live_model.py \
   tests/research/test_human13_live_eval.py \
   tests/research/test_analyze_human13_k_union.py
-Pytest: 328 passed, 2 warnings
+Pytest: 330 passed, 2 warnings
 ```
 
 The broad adjacent sets use CPU/value doubles; the adapter's CUDA case uses
 only a tiny injected CUDA surface, not a live HF model.  Compileall, Ruff,
 strict OpenSpec validation, Serena diagnostics, and Pyright (`0 errors, 0
 warnings, 0 informations`) are clean.  No live model, network, checkpoint, or
-output action was used for any diagnostic.
+output action was used for any diagnostic in the injected/static gates; the
+separate production-shaped Task-2 no-update witness above is the sole real
+model/GPU action and wrote no checkpoint, network artifact, or output.
 
 The Task-4 boundary remains explicit: real model assembly, GPU reservation,
 private checkpoint bytes, output-root reservation, and Task-5 live adapters are
