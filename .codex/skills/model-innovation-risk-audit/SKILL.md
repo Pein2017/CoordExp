@@ -23,6 +23,13 @@ risk, the execution shape, or the evidence claim. Do not run a full risk audit
 for every routine wave or after a localized fix whose owning risk and evidence
 did not change.
 
+Before implementation, freeze one **failure-mode matrix** for the scientific
+path: each conclusion-changing invariant, its executable owner, one minimal
+counterexample, and the evidence that will close it. Use
+[scientific-admission-checklist.md](references/scientific-admission-checklist.md)
+when the mechanism derives semantic labels, joins multiple artifacts, replays
+policy evidence, uses packing, or exposes public construction/load paths.
+
 Before tracing the full contract, name the smallest set of risks that could
 invalidate the architecture, the cheapest production-shaped discriminator for
 each, and the first irreversible boundary. If the primary predicate or execution
@@ -55,11 +62,19 @@ the system.
    - Complete when the suspected silent mismatch is proved, falsified, or
      localized.
 
+   If several findings are instances of one invariant (for example, direct
+   construction, deserialization, and reload bypassing the same admission
+   rule), repair and test the shared choke point once. Do not create a separate
+   review cycle for every equivalent bypass.
+
 4. **Return a launch decision.**
    - Report `promote`, `hold`, `rerun gate`, or `needs user decision` with the
      smallest evidence that would change it.
    - Do not inflate severity or harden exploratory infrastructure without a
      demonstrated conclusion-changing failure.
+   - Do not block a bounded pilot on arbitrary in-process object tampering
+     unless that path is reachable in the declared runtime, crosses a durable
+     evidence boundary, or can change the decision-owning result.
    - Complete when claim scope and runtime evidence support the verdict.
 
 ## Report
@@ -71,6 +86,9 @@ risk. Each finding needs an evidence handle and an explicit decision impact.
 Load only when needed:
 
 - [risk-taxonomy.md](references/risk-taxonomy.md) for failure classes;
+- [scientific-admission-checklist.md](references/scientific-admission-checklist.md)
+  for derived labels, policy replay, joined artifacts, packing, and review
+  budget;
 - [contract-diff.md](references/contract-diff.md) for a standalone contract
   table;
 - [report-template.md](references/report-template.md) for a durable report.

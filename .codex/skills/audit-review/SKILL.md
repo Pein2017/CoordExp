@@ -78,6 +78,14 @@ implementation path apply accepted changes. Re-audit only those findings and
 materially changed evidence; stop when no new accepted P0/P1 changes the
 decision. The audit verdict never grants implementation or launch authority.
 
+Freeze the target hash and finding ledger before the first independent review.
+Group findings by violated invariant rather than by individual exploit. After
+one correction bundle, recheck the accepted findings and changed evidence once.
+If another bypass of the same invariant appears, return one systemic choke-point
+finding to the implementation owner instead of opening an audit-of-audit loop.
+Do not elevate arbitrary copy, proxy, monkey-patch, or pickle tampering to P1
+without a reachable production or durable-evidence path.
+
 Finish as `ready for user approval`, `hold`, `reject`, `rerun gate`, `probe
 required`, `needs user decision`, or `narrowed/dropped`, with residual risk and
 the next owner explicit.
