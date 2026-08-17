@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Small source and test routing map for the current CoordExp-Swift implementation.
-updated: 2026-07-11
+updated: 2026-08-17
 ---
 
 # Implementation Map
@@ -37,6 +37,13 @@ reuse.
 | Inference artifacts | `src/inference/artifacts.py`, `src/inference/merge.py` | `tests/inference/` |
 | Forward-only eval | `src/eval/forward.py` | `tests/eval/test_forward_eval.py` |
 | Detection eval | `src/eval/detection_consumer.py` | `tests/eval/test_detection_consumer.py` |
+| Coordinate-token targets | `src/coordinate_targets.py` | `tests/templates/test_renderer.py`, `tests/losses/test_runner.py` |
+| Planned-step schedule | `src/training/schedule.py` | `tests/training/test_schedule.py` |
+| Runtime seeding | `src/runtime/seeding.py` | `tests/runtime/test_train_runtime.py` |
+| Detection category registry | `src/eval/detection_categories.py` | `tests/eval/test_detection_consumer.py` |
+| Config tracing CLI | `src/trace_config.py` | `tests/config/test_train_config.py` |
+| Qwen alias checks | `src/common/qwen_aliases.py` | `tests/qwen/test_token_identity.py` |
+| Visualization helpers | `src/vis/` | `tests/test_gt_vs_pred_visualization.py`, `scripts/visualize_detection.py` |
 
 Normative routes: [`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
 for run/checkpoint publication and

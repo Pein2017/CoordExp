@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-07-11
+updated: 2026-08-17
 
 entrypoints:
   human:
@@ -250,6 +250,22 @@ docs:
     - path: docs/history/cache-retirement/2026-08-12.md
       title: Obsolete Cache Retirement Receipt 2026-08-12
       type: historical-receipt
+      status: historical
+    - path: docs/history/2026-03-10-coco-test-benchmark-handoff.md
+      title: COCO Test Benchmark Handoff
+      type: historical-handoff
+      status: historical
+    - path: docs/history/2026-05-31-self-distillation-prompt.md
+      title: Self-Distillation Workflow Prompt
+      type: historical-prompt
+      status: historical
+    - path: docs/history/2026-06-02-dual-environment-sync-notes.md
+      title: Dual-Environment Sync Notes
+      type: historical-notes
+      status: historical
+    - path: docs/history/research-intake/2026-06-23-autoregressive-binding-template-study-synthesis-report.md
+      title: Autoregressive Binding Template Study Synthesis Report
+      type: historical-report
       status: historical
     - path: docs/history/architecture/README.md
       title: Architecture History

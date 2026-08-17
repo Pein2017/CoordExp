@@ -11,13 +11,14 @@ owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
 - Inference (canonical Swift): `python -m src.infer --config configs/coordexp_swift/infer/...`.
 - Offline CoordExp-Swift detection evaluation (direct artifact reducer):
   `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
+- Proxy-expanded COCO/LVIS eval views (one scored artifact, several GT views):
+  `scripts/evaluate_proxy_detection_bundle.py --config ...`.
 - Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
 
 ## Compatibility / debug wrappers
 
-- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`,
-  `scripts/postop_confidence.py`, and
-  `scripts/evaluate_proxy_detection_bundle.py`: legacy/mainline wrappers.
+- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`, and
+  `scripts/postop_confidence.py`: legacy/mainline wrappers.
   They are not the canonical Swift entrypoints and should be used only for
   explicit compatibility or historical reproduction.
 - `scripts/run_infer_eval.sh`: legacy/mainline environment-variable wrapper.

@@ -5,7 +5,7 @@ doc_type: workflow
 status: canonical
 domain: data
 summary: Offline preparation and intake workflow for dataset conversion and validation.
-updated: 2026-05-17
+updated: 2026-08-17
 ---
 
 # Data Preprocessing & Intake Pipeline
@@ -28,7 +28,7 @@ Raw annotations/images
   → coord tokens (public_data/scripts/convert_to_coord_tokens.py)
   → bbox-format branch (optional, public_data/run.sh <dataset> bbox-format)
   → (optional) image-level filter (public_data/scripts/filter_low_diversity_images.py)
-  → training (custom.train_jsonl / custom.val_jsonl)
+  → training (data.train.path / data.eval.path)
 ```
 
 For LVIS, the converter is `public_data/scripts/convert_lvis.py`. For other datasets, add a matching converter that outputs the same JSONL contract (see [`CONTRACT.md`](CONTRACT.md)).
@@ -115,9 +115,9 @@ PYTHONPATH=. python public_data/scripts/rescale_jsonl.py \
 - This intentionally upsamples low-resolution sources (including some native COCO-2017
   images) so evaluation/training can use the available visual budget instead of only
   treating `max_pixels` as a hard cap.
-- For stage-2 training configs, mirror this offline resize budget into
-  `custom.offline_max_pixels` so launcher prechecks and dataset runtime enforce the
-  same prepared-data contract without reusing the runtime `template.max_pixels` knob.
+- Training configs keep `model.processor.do_resize: false` so the vision
+  processor does not resize at runtime; the offline resize budget is reflected
+  in `model.processor.max_raw_pixels` and `max_merged_visual_tokens`.
 - Golden rule:
   - all training and evaluation must use these offline-prepared images,
   - the model's vision processor must not resize them at runtime,
@@ -144,12 +144,13 @@ PYTHONPATH=. python public_data/scripts/convert_to_coord_tokens.py \
 ```
 - Converts pixel coords into **norm1000 integer coords** (0..999) and/or `<|coord_k|>` tokens.
 - Pixel -> norm scaling clamps into range and ensures `bbox_2d` stays strictly valid after rounding (no collapse).
-- For coord-token training, use `train.coord.jsonl` / `val.coord.jsonl` with
-  `custom.coord_tokens.enabled: true`.
-- For raw-text norm1000 training, use `train.norm.jsonl` / `val.norm.jsonl`
-  with `custom.coord_tokens.enabled: false`.
-- In both modes keep `custom.emit_norm: none` and
-  `custom.coord_tokens.skip_bbox_norm: true`.
+- For coord-token training, point `data.train.path` / `data.eval.path` at
+  `train.coord.jsonl` / `val.coord.jsonl`.
+- For raw-text norm1000 training, point them at
+  `train.norm.jsonl` / `val.norm.jsonl`.
+- There is no runtime normalization switch: training assumes the JSONL is
+  already pre-normalized (norm1000 integers or coord tokens), and the vision
+  processor is configured with `do_resize: false`.
 
 ---
 
@@ -263,9 +264,9 @@ model-facing training surface such as `cxcy_logw_logh` or `cxcywh`.
   - `pipeline_manifest.json` records canonical source lineage plus
     prepared-bbox provenance
 - Training contract:
-  - `custom.train_jsonl` / `custom.val_jsonl` for non-canonical
-    `custom.bbox_format` values (`cxcy_logw_logh`, `cxcywh`) must point at
-    the derived preset artifacts
+  - point `data.train.path` / `data.eval.path` at the derived preset
+    artifacts for non-canonical surfaces (`cxcy_logw_logh`, `cxcywh`); there
+    is no runtime `bbox_format` knob
   - runtime dataset code must not convert canonical `xyxy` sources into
     another bbox chart on the fly
 
@@ -302,12 +303,12 @@ This exports both `bbox_only` and `poly_prefer_semantic` train/val JSONLs. See `
 
 ## Handoff to Training
 
-- Point `custom.train_jsonl` / `custom.val_jsonl` to the resized or coord-token JSONL.
-- For `custom.bbox_format: cxcy_logw_logh`, point them to the offline-prepared
-  derived preset root such as
+- Point `data.train.path` / `data.eval.path` to the resized or coord-token JSONL.
+- For non-canonical `cxcy_logw_logh` surfaces, point them to the
+  offline-prepared derived preset root such as
   `public_data/<dataset>/<preset>_cxcy_logw_logh/train.coord.jsonl`, not to
   the canonical preset root.
-- For `custom.bbox_format: cxcywh`, point them to the offline-prepared
+- For non-canonical `cxcywh` surfaces, point them to the offline-prepared
   derived preset root such as
   `public_data/<dataset>/<preset>_cxcywh/train.coord.jsonl`, not to the
   canonical preset root.

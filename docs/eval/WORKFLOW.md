@@ -6,7 +6,7 @@ status: canonical
 domain: eval
 summary: YAML-first runbook for inference, confidence post-processing, evaluation, and visualization.
 tags: [eval, infer, runbook]
-updated: 2026-07-11
+updated: 2026-08-17
 ---
 
 # Evaluation Workflow
@@ -223,23 +223,21 @@ After inference:
 
 - `gt_vs_pred.jsonl`
 - `summary.json`
-- `resolved_config.json` when using the YAML pipeline
-- `resolved_config.path` next to `gt_vs_pred.jsonl` when the YAML pipeline is
+- `configs/resolved.json` (and `configs/resolved.yaml`) when using the YAML pipeline
+- `configs/resolved.json` next to `gt_vs_pred.jsonl` when the YAML pipeline is
   responsible for artifact materialization
-- verify `infer.prompt_variant`, `infer.object_field_order`, and
-  `infer.object_ordering` in both `summary.json` and `resolved_config.json`
-  when comparing prompt/order ablations
-- use `resolved_config.path` when a downstream eval or visualization job is
+- verify `template.object_field_order` and `template.object_ordering` in both
+  `summary.json` and `configs/resolved.json` when comparing prompt/order
+  ablations
+- use `configs/resolved.json` when a downstream eval or visualization job is
   consuming `gt_vs_pred.jsonl` from outside the original run directory
 - if the checkpoint was trained with non-default dense prompt controls, keep
   those infer-time values aligned with training so evaluation does not measure
   prompt drift instead of model behavior
-- training-only bbox regression parameterizations such as
-  `bbox_geo.parameterization: center_size` do not change this infer/eval
-  artifact split: base predictions still write `gt_vs_pred.jsonl`, scored
-  predictions still write `gt_vs_pred_scored.jsonl`, and downstream jobs should
-  continue using `resolved_config.path` to recover the authoritative
-  `resolved_config.json`
+- this artifact split is unchanged by training-side settings: base predictions
+  still write `gt_vs_pred.jsonl`, scored predictions still write
+  `gt_vs_pred_scored.jsonl`, and downstream jobs should continue using
+  `configs/resolved.json` to recover the authoritative resolved config
 
 After confidence post-op:
 

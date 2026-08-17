@@ -6,7 +6,7 @@ status: historical-router
 domain: repo
 summary: Router for non-normative CoordExp documentation history kept outside current behavior docs.
 tags: [history, archive, docs]
-updated: 2026-06-15
+updated: 2026-08-17
 ---
 
 # Documentation History
@@ -33,3 +33,18 @@ Only use this archive when reconstructing history, reviewing why an implementati
   removed disposable cache payloads
 - [research-intake/](research-intake/): raw research-note intakes used as provenance for synthesized `research/` reading paths
 - [training/](training/): superseded training design notes moved out of the current training docs layer
+
+## Repo-root historical records moved here (2026-08-17)
+
+Unreferenced dated files previously left at the repository root, moved here for
+provenance without losing evidence:
+
+- `2026-03-10-coco-test-benchmark-handoff.md`: COCO test-dev submission working
+  brief, superseded by `docs/eval/COCO_TEST_SUBMISSION.md` routing;
+- `2026-05-31-self-distillation-prompt.md`: Codex self-distillation workflow
+  prompt, replaced by the packaged `workflow-self-distillation` skill;
+- `2026-06-02-dual-environment-sync-notes.md`: pein-train/test-train dual
+  environment SSH/container operational notes;
+- `research-intake/2026-06-23-autoregressive-binding-template-study-synthesis-report.md`:
+  binding-template study synthesis report whose raw evidence is ingested under
+  `research-intake/2026-07-01-autoregressive-binding-template-study/`.

@@ -1,15 +1,22 @@
 # CoordExp
 
-CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based continuous box decoding, and order-invariant matching to push open-vocabulary detection/grounding toward state of the art across public datasets.
+CoordExp extends Qwen3-VL with coordinate-specialized tokens to push open-vocabulary detection/grounding across public datasets. Boxes are emitted as quantized norm1000 coordinate tokens (`<|coord_0|>`..`<|coord_999|>`) and supervised at the token level, with no extra detection head.
 
 ## Why
-- **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
-- **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
+- **Coordinate tokens**: Specialized 0..999 coordinate tokens keep geometry on the language surface, so no extra detection head is needed.
+- **Token-level supervision**: Base cross-entropy with optional token-type gating and an optional coordinate Gaussian/CRPS-RPS term supervise coordinates without box-regression heads.
 - **Canonical infrastructure**: CoordExp-Swift owns the active training,
   inference, evaluation, packing, loss, and artifact paths on repository
   `main`. The old MS-Swift-centered implementation is preserved on the
   `ms-swift` archive branch.
-- **Dataset focus**: Defaults to single-source JSONL training; multi-dataset training uses offline-merged JSONL; runtime `custom.fusion_config` is dormant in the supported training surface.
+- **Dataset focus**: Defaults to single-source JSONL training; multi-dataset training uses offline-merged JSONL (runtime fusion config authoring is removed from the supported training surface).
+
+> Removed mechanisms: the earlier expectation-based continuous box decoding
+> (softmax-on-coordinate-subvocab with L1/GIoU box regression) and order-invariant
+> Hungarian/OT set matching were removed in the CoordExp-Swift rebuild. The
+> current Swift path supervises coordinate tokens directly with CE, token-type
+> gating, and optional Gaussian/RPS, as described in
+> [`docs/COORDEXP_SWIFT.md`](docs/COORDEXP_SWIFT.md).
 
 ## Repo layout
 - `src/` - importable CoordExp library code for config loading, datasets,
@@ -76,10 +83,12 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - Tunables via env: `FACTOR` (default 32), `MAX_BLOCKS` (pixel budget, default 768), `MIN_BLOCKS` (default 4), `POLY_MAX_POINTS` (default 20), `TINY` (default 256), `NUM_WORKERS`, `RAW_ROOT`, `OUTPUT_BASE`, `SPLITS`.
 
 4) **Key Swift config surfaces**
-- `custom.emit_norm`: must be `none` (runtime normalization is disabled; training assumes pre-normalized norm1000 coords)
-- `custom.coord_tokens.*`: required (`enabled`, `skip_bbox_norm`) to consume pre-quantized coords without double normalization
-- `custom.json_format`: required (currently only `standard`; typo-guard for deterministic parsing)
-- `custom.object_field_order`: required (`desc_first|geometry_first`); keep train/infer parity with `infer.object_field_order`
+- `template.object_field_order`: required (`desc_first|geometry_first`)
+- `template.object_ordering`: required (`source_order|geo_sorted|random`)
+- `data.train_order`: currently only `source_order` (authored order)
+- Training assumes the JSONL is already pre-normalized to norm1000
+  (`*.coord.jsonl` coord-token or `*.norm.jsonl` raw-text surfaces); there is
+  no runtime normalization switch and no `custom.*` config section.
 - `training.*`: CoordExp-Swift training settings; backend/runtime derivation is
   recorded in the resolved and effective runtime artifacts.
 

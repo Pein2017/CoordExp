@@ -5,7 +5,7 @@ doc_type: contract
 status: canonical
 domain: data
 summary: Authoritative JSONL, geometry, and runtime assumptions for dataset ingestion.
-updated: 2026-05-17
+updated: 2026-08-17
 ---
 
 # Data JSONL Contract (Global)
@@ -45,7 +45,8 @@ Note: only `bbox_2d` and `poly` are supported in CoordExp; `line` geometries are
   - Numeric coords may be bare integers in `0..999`, OR
   - coord tokens `<|coord_k|>` where `k ∈ [0, 999]`.
   Pixel-space floats are allowed only as intermediate artifacts before conversion; do not feed them directly into training.
-- Keep `custom.coord_tokens.skip_bbox_norm: true` in both geometry-expression modes to prevent double scaling.
+- Training assumes pre-normalized coords; there is no runtime normalization or
+  bbox-scaling switch (the vision processor is configured with `do_resize: false`).
 
 ### Raw JSONL vs assistant CoordJSON
 - Raw JSONL must stay strict JSON:
@@ -130,18 +131,24 @@ canonical views.
   declared image store.
 - Geometry is validated; records with multiple geometry fields per object are rejected.
 - Runtime payload emission is fail-fast: builders/preprocessors reject objects with missing geometry, multiple geometry fields, invalid bbox/poly arity, or empty `desc` instead of serializing partial objects.
-- Default ordering invariant: when `custom.object_ordering: sorted` (default), object sequences must already be sorted by `(minY, minX)` in the source JSONL.
-- `custom.object_ordering: random` is supported for ablation-style dataset-backed training/eval only and means a deterministic per-epoch reshuffle derived from sample identity plus epoch; it does not change per-object field order inside each object payload.
+- Ordering invariant: `template.object_ordering: source_order` preserves the
+  authored object order; `template.object_ordering: geo_sorted` asserts that
+  authored rows are already top-to-bottom then left-to-right (sorted by
+  `(minY, minX)`) and does not silently reorder them.
+- `template.object_ordering: random` is an ablation surface (deterministic
+  per-epoch reshuffle derived from sample identity plus a seed) and does not
+  change per-object field order inside each object payload.
 - Polygon vertices should be canonicalized offline for determinism (recommended; not enforced by the runtime loader/builder):
   - drop duplicated closing point if present
   - order vertices clockwise around the centroid (angle sort)
   - rotate so the top-most (then left-most) vertex is first
   This matches the public-data converters (e.g., `public_data/scripts/convert_to_coord_tokens.py`) and the prompt spec.
 - Optional fields (e.g., `summary`, `poly_points`, `metadata`) may be absent; templates and preprocessors must tolerate absence.
-- Geometry-expression modes:
-  - `custom.coord_tokens.enabled: true` => coord-token assistant targets backed by `*.coord.jsonl`
-  - `custom.coord_tokens.enabled: false` => raw-text norm1000 assistant targets backed by `*.norm.jsonl`
-  In both cases keep `custom.coord_tokens.skip_bbox_norm: true`.
+- Geometry-expression modes (selected by which JSONL surface the config points at):
+  - coord-token assistant targets are backed by `*.coord.jsonl`
+  - raw-text norm1000 assistant targets are backed by `*.norm.jsonl`
+  There is no runtime switch; training assumes the selected surface is already
+  pre-normalized.
 - Phase 1 canonical views are norm1000-integer `*.jsonl` views. Training code
   may render assistant geometry as Qwen coord tokens while keeping the stored
   JSONL coordinates as integers.
@@ -164,7 +171,7 @@ canonical views.
 - `public_data/*` converters produce LVIS/COCO/Objects365-style exports;
   polygons include `poly_points`; descriptions are English classes/phrases.
 - Generated LVIS bbox Stage-1 exports are expected under
-  `public_data/lvis/rescale_32_1024_bbox_max60/{train,val}.coord.jsonl` after
+  `public_data/lvis/rescale_32_768_bbox_max60/{train,val}.coord.jsonl` after
   `bash public_data/lvis/reproduce_max60_exports.sh`.
 - Before citing a generated export, verify sorted-order and contract validity on
   the actual files present in the checkout or artifact root.
