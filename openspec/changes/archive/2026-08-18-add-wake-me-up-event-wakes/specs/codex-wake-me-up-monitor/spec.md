@@ -118,7 +118,7 @@ or successful outcome. A witness that contains a successful receipt-success
 leaf may authorize continuation without the heuristic opt-in. The system
 MUST retain the witness evidence in the terminal receipt.
 
-#### Scenario: Heuristic witness lacks opt-in on a non-deferred monitor
+#### Scenario: Heuristic witness lacks opt-in
 - **WHEN** a non-deferred monitor's condition is satisfied by heuristic
   evidence, its witness contains no successful receipt, and the registration
   does not authorize that evidence for activation
@@ -131,6 +131,13 @@ MUST retain the witness evidence in the terminal receipt.
 - **THEN** the system performs the guarded wake with the
   `unauthorized_evidence` reason and the retained witness, making no success
   claim
+
+#### Scenario: A receipt-or-time condition is satisfied by time
+- **WHEN** a non-deferred monitor's `any(receipt-success, time)` condition is
+  satisfied by its time leaf while the receipt is not successful and heuristic
+  continuation is not authorized
+- **THEN** the system terminates without activating the target and records the
+  time-only witness
 
 #### Scenario: Combined receipt and liveness condition succeeds
 - **WHEN** a registration explicitly requires both a successful receipt and a
@@ -163,7 +170,7 @@ produce an uncertain terminal outcome rather than a second request.
 - **THEN** only the evaluation that obtains the durable trigger claim may
   make an activation attempt
 
-#### Scenario: Non-deferred monitor expires before a usable trigger
+#### Scenario: Monitor expires before a usable trigger
 - **WHEN** a non-deferred monitor's expiry is reached before it obtains a
   trigger claim
 - **THEN** the monitor becomes `expired` and never activates the target
