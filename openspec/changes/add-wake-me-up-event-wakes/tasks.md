@@ -91,10 +91,27 @@
   validation passes; `.codex-plugin/plugin.json` parses and its referenced
   `skills/`, `.mcp.json`, and icon assets all resolve. Cachebuster untouched
   (task 5.4).
-- [ ] 5.3 Disposable local app-server smoke on scratch threads only: one
+- [x] 5.3 Disposable local app-server smoke on scratch threads only: one
   `log_pattern` defer against a synthetic log (success and crash paths),
   one `thread_idle` defer on a scratch child, one forced expiry wake, one
-  daemon-restart-then-expiry-wake recovery; record receipts.
-- [ ] 5.4 Bump the plugin cachebuster and reinstall through the local
+  daemon-restart-then-expiry-wake recovery; record receipts. Closed 2026-08-18
+  as **recorded partial pass**: 11 live checks PASS (defer/pause/arm, guard
+  re-read fail-closing to `superseded`, both `thread_idle` arm-time
+  rejections, the full `rearm_of` matrix, journal elision, real file-identity
+  capture) plus two MCP receipts; the four deferred **wake** paths are BLOCKED
+  on the live control plane and recorded as such. See `verification.md`
+  sections "BLOCKED — the four wake paths of task 5.3", "Product observations
+  raised by real execution", and "Scope limitation recorded by ruling".
+- [x] 5.4 Bump the plugin cachebuster and reinstall through the local
   marketplace only after review of the state-machine diff; keep the
-  previous cachebuster as rollback.
+  previous cachebuster as rollback. Done 2026-08-18:
+  `0.1.0+codex.20260808174817` → `0.1.0+codex.20260818080356`; installed
+  source verified byte-identical to the working tree; the lock-holding daemon
+  was identity-checked via `/proc`, retired, and replaced by one spawned from
+  the installed copy (pid `45113`). Rollback path recorded in
+  `verification.md`, including that a cachebuster revert alone is not a code
+  rollback. Then stop any daemon still running from
+  the previous plugin cache (verify its cmdline and PYTHONPATH before
+  killing) and let the reinstalled code re-arm supervision: the 5.3 smoke
+  found a v0.1-cache daemon that had held the runtime lock for 9+ days and
+  would have serviced new monitors with pre-change stranding semantics.

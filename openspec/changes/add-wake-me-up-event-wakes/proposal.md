@@ -89,9 +89,13 @@ accordingly; the spec deltas in this change already encode these outcomes:
   strictly worse.
 
 Net contract: an armed deferred monitor carries one guarantee — the goal is
-woken at the latest at expiry, as long as the daemon lives and the guard
-holds. Guard violations, uncertain writes, and cancellation remain
-fail-closed.
+woken at the latest at expiry, as long as the daemon lives, the guard holds,
+and the target runtime is observed idle again. The third precondition is
+real, not theoretical: the 5.3 smoke observed a target stuck in
+`systemError` holding an expired monitor armed indefinitely. Waking a
+non-idle thread mid-turn is not a safe alternative, so the bound is honest
+documentation plus the armed-past-expiry state being visible in status.
+Guard violations, uncertain writes, and cancellation remain fail-closed.
 
 ## Impact
 

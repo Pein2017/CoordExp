@@ -67,7 +67,14 @@ Consequences that must hold and be tested:
   the wake consumes the single durable claim and the single activation.
 - The idle barrier and the pre-activation guard re-read apply unchanged to
   every reason. A deadline that passes while the target is still running its
-  turn waits for idle, exactly as a true condition does.
+  turn waits for idle, exactly as a true condition does. Consequence,
+  observed live in the 5.3 smoke: a target stuck in a non-idle runtime state
+  (e.g. `systemError`) holds an expired monitor armed indefinitely — the
+  wake-at-latest-by-expiry guarantee carries an "observed idle again"
+  precondition, and status showing `armed` past `expires_at` is the honest
+  signal. The app-server also exposes goal states beyond `active`/`paused`
+  (`blocked` was observed); every eligibility and guard check treats them as
+  ineligible, which fails closed.
 - For deferred monitors, `EXPIRED` and `SATISFIED_REQUIRES_AUTHORIZATION`
   stop being reachable terminal states from `ARMED`; they remain terminal for
   legacy monitors and for deferred monitors whose activation preflight fails
@@ -311,7 +318,10 @@ evidence.
    scratch child thread, one forced-expiry wake, one daemon-restart-then-
    expiry-wake recovery.
 6. Bump the plugin cachebuster and reinstall through the existing local
-   marketplace; roll back by reinstalling the previous cachebuster. Terminal
+   marketplace; roll back by reinstalling the previous cachebuster. Restart
+   the runtime-lock-holding daemon as part of any install or rollback — a
+   daemon keeps running the code it was launched from, so a stale-cache
+   daemon silently applies the old semantics to new monitors. Terminal
    records remain forensic evidence and are never replayed.
 
 ## Implementation Notes (for the executing worker)
