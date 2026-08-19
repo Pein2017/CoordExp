@@ -53,7 +53,13 @@ from src.packing.planner import PackedSegment
 from src.qwen import parity as parity_identity
 from src.supervision import TokenAtom, TokenSequence
 from src.supervision.tokens import TokenSpan
-from src.training import control_plane, execution_plan, pack_cache, pipeline
+from src.training import (
+    cache_workflow,
+    control_plane,
+    execution_plan,
+    pack_cache,
+    pipeline,
+)
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
@@ -64,6 +70,22 @@ from src.training.supervised_trainer import (
     CompletedStepObservation,
     SupervisedMicroStep,
 )
+
+def _patch_shared_cache_import(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: object
+) -> None:
+    """Replace one shared import on every module that now reads it.
+
+    Wave 3 of ``decompose-coordexp-swift-training-orchestration`` moved the
+    cache preparation/admission/hydration orchestration into
+    ``src/training/cache_workflow.py``.  Names both owners import must be
+    replaced on both, or a seam that used to be a single patch point would
+    silently reach production through the other owner.
+    """
+
+    for module in (pipeline, cache_workflow):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -480,7 +502,7 @@ def _characterization_worker(
 
     real_converged_phase = control_plane._run_rank_converged_phase
     real_gatherer_factory = control_plane._build_rank_report_gatherer
-    real_preflight_resolver = pipeline._resolve_model_free_training_preflight
+    real_preflight_resolver = cache_workflow._resolve_model_free_training_preflight
 
     def recording_converged_phase(phase: str, **kwargs: Any) -> Any:
         phase_order.append(phase)
@@ -575,21 +597,21 @@ def _characterization_worker(
             os.environ.pop(name, None)
 
         execution_plan.load_train_config = lambda path: resolved
-        pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-        pipeline.require_pinned_runtime_baseline = (
+        cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+        cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
             lambda **kwargs: _runtime_baseline_receipt()
         )
-        pipeline.load_qwen_components = lambda config, *, load_model: (
+        cache_workflow.load_qwen_components = pipeline.load_qwen_components = lambda config, *, load_model: (
             (_ for _ in ()).throw(
                 AssertionError("model load must stay outside CPU characterization")
             )
             if load_model
             else components
         )
-        pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-        pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
-        pipeline.build_packing_cache_fingerprint = lambda *args, **kwargs: fingerprint
-        pipeline.resolve_planned_step_schedule = (
+        cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+        cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+        cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: fingerprint
+        cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = (
             lambda *args, **kwargs: SimpleNamespace(
                 resolved_max_steps=1,
                 runtime_batch=SimpleNamespace(
@@ -601,7 +623,7 @@ def _characterization_worker(
         )
         control_plane._run_rank_converged_phase = recording_converged_phase
         control_plane._build_rank_report_gatherer = recording_gatherer_factory
-        pipeline._resolve_model_free_training_preflight = capturing_preflight
+        cache_workflow._resolve_model_free_training_preflight = capturing_preflight
         pipeline._build_accelerator = build_accelerator
         pipeline.validate_accelerator_runtime = lambda *args, **kwargs: None
         pipeline._run_initialized_training = run_initialized_training
@@ -1154,32 +1176,32 @@ def exercise_characterized_cache_preparation(
             "cache_admission": {"status": "completed", "duration_seconds": 0.4},
         },
     }
-    monkeypatch.setattr(pipeline, "load_train_config", lambda path: resolved)
-    monkeypatch.setattr(
-        pipeline,
+    monkeypatch.setattr(cache_workflow, "load_train_config", lambda path: resolved)
+    _patch_shared_cache_import(
+        monkeypatch,
         "collect_execution_provenance",
         lambda **kwargs: {"schema_version": 1},
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: _runtime_baseline_receipt(),
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "load_qwen_components",
         lambda config, *, load_model: components,
     )
-    monkeypatch.setattr(
-        pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    _patch_shared_cache_import(
+        monkeypatch, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_resolve_or_build_train_pack_cache",
         lambda *args, **kwargs: train_cache,
     )
     monkeypatch.setattr(
-        pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
+        cache_workflow, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
     )
     monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(root / "cache-root"))
 
@@ -1201,13 +1223,13 @@ def exercise_characterized_cache_preparation(
     return {
         "receipt": receipt,
         "aggregate_phase_cases": {
-            "all_hit": pipeline._aggregate_cache_phase(
+            "all_hit": cache_workflow._aggregate_cache_phase(
                 [eval_cache, eval_cache], "cache_preparation"
             ),
-            "mixed": pipeline._aggregate_cache_phase(
+            "mixed": cache_workflow._aggregate_cache_phase(
                 [train_cache, eval_cache], "cache_preparation"
             ),
-            "all_built": pipeline._aggregate_cache_phase(
+            "all_built": cache_workflow._aggregate_cache_phase(
                 [train_cache, train_cache], "cache_preparation"
             ),
         },

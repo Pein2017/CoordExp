@@ -90,8 +90,8 @@ EXPECTED_DETERMINANT_OWNERS = {
     "mrope_position_ids": "src/qwen/positions.py",
     "qwen_fa2_boundaries": "src/qwen/fa2.py",
     "qwen_forward_payload": "src/qwen/forward.py",
-    "micro_step_runtime_config": "src/training/pipeline.py",
-    "micro_step_schema": "src/training/supervised_trainer.py",
+    "micro_step_runtime_config": "src/training/cache_contract.py",
+    "micro_step_schema": "src/training/micro_steps.py",
     "cache_serializer": "src/training/pack_cache.py",
 }
 UNIQUE_OWNER_PATHS = tuple(sorted(set(EXPECTED_DETERMINANT_OWNERS.values())))
@@ -801,13 +801,13 @@ def test_fa2_proof_fields_serialized_by_micro_step_constructor_change_fingerprin
     )
 
 
-def test_pipeline_micro_step_constructor_owner_is_explicit_and_source_bound(
+def test_micro_step_runtime_config_owner_is_explicit_and_source_bound(
     cache_inputs: _CacheInputs,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    target = (Path.cwd() / "src/training/pipeline.py").resolve()
+    target = (Path.cwd() / "src/training/cache_contract.py").resolve()
     original_sha256 = pack_cache._file_sha256
-    source_bytes = b"pipeline-owner-revision-a"
+    source_bytes = b"cache-contract-owner-revision-a"
 
     def controlled_sha256(path: Path) -> str:
         if Path(path).resolve() == target:
@@ -821,11 +821,11 @@ def test_pipeline_micro_step_constructor_owner_is_explicit_and_source_bound(
         for item in baseline_determinants["determinants"]
         if item["name"] == "micro_step_runtime_config"
     )
-    assert entry["owner"] == "src/training/pipeline.py"
-    assert entry["owner_source_identity"]["path"] == "src/training/pipeline.py"
+    assert entry["owner"] == "src/training/cache_contract.py"
+    assert entry["owner_source_identity"]["path"] == "src/training/cache_contract.py"
     baseline = _fingerprint(cache_inputs)
 
-    source_bytes = b"pipeline-owner-revision-b"
+    source_bytes = b"cache-contract-owner-revision-b"
 
     assert _fingerprint(cache_inputs) != baseline
 
@@ -834,7 +834,7 @@ def test_supervised_micro_step_schema_owner_is_explicit_and_source_bound(
     cache_inputs: _CacheInputs,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    target = (Path.cwd() / "src/training/supervised_trainer.py").resolve()
+    target = (Path.cwd() / "src/training/micro_steps.py").resolve()
     original_sha256 = pack_cache._file_sha256
     source_bytes = b"supervised-schema-revision-a"
 
@@ -850,10 +850,8 @@ def test_supervised_micro_step_schema_owner_is_explicit_and_source_bound(
         for item in baseline_determinants["determinants"]
         if item["name"] == "micro_step_schema"
     )
-    assert entry["owner"] == "src/training/supervised_trainer.py"
-    assert entry["owner_source_identity"]["path"] == (
-        "src/training/supervised_trainer.py"
-    )
+    assert entry["owner"] == "src/training/micro_steps.py"
+    assert entry["owner_source_identity"]["path"] == ("src/training/micro_steps.py")
     assert [field["name"] for field in entry["content_identity"]["fields"]] == [
         "pack",
         "encoded_examples",
@@ -1246,8 +1244,11 @@ WAVE0_DETERMINANT_OWNERS = {
     "dataset_jsonl_loader": "src/data/jsonl.py",
     "encoding_runtime": "src/qwen/encoding.py",
     "image_loader": "src/qwen/images.py",
-    "micro_step_runtime_config": "src/training/pipeline.py",
-    "micro_step_schema": "src/training/supervised_trainer.py",
+    # Wave 3 rebound these two entries under the frozen manifest's declared
+    # flip for `test_wave0_determinant_owner_registry_is_frozen`.  Every other
+    # owner entry and the registry schema version stay equal to Wave 0.
+    "micro_step_runtime_config": "src/training/cache_contract.py",
+    "micro_step_schema": "src/training/micro_steps.py",
     "model_config_assets": "src/qwen/runtime_loading.py",
     "mrope_position_ids": "src/qwen/positions.py",
     "ordering_config": "src/data/examples.py",
@@ -1276,11 +1277,10 @@ WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES = (
     "supervision_tokens",
 )
 
-#: The two evidenced overbroad owners Wave 3 rebinds to narrow owners.
-WAVE0_OVERBROAD_DETERMINANT_OWNERS = {
-    "micro_step_runtime_config": "src/training/pipeline.py",
-    "micro_step_schema": "src/training/supervised_trainer.py",
-}
+#: The two owner paths Wave 3 retired; no determinant may bind them again.
+WAVE3_RETIRED_OVERBROAD_OWNER_PATHS = frozenset(
+    {"src/training/pipeline.py", "src/training/supervised_trainer.py"}
+)
 
 
 def test_wave0_determinant_owner_registry_is_frozen() -> None:
@@ -1291,14 +1291,16 @@ def test_wave0_determinant_owner_registry_is_frozen() -> None:
 
 
 def test_wave0_overbroad_owners_are_exactly_the_two_declared_entries() -> None:
+    # Wave-3 revision under the frozen manifest's declared flip: the node is
+    # inverted from "exactly these two overbroad bindings exist" to "no
+    # determinant is bound to either retired owner" (tasks.md 9.4 residue).
     observed = {
         name: owner
         for name, owner in pack_cache.PACKING_CACHE_DETERMINANT_OWNERS.items()
-        if owner
-        in {"src/training/pipeline.py", "src/training/supervised_trainer.py"}
+        if owner in WAVE3_RETIRED_OVERBROAD_OWNER_PATHS
     }
 
-    assert observed == WAVE0_OVERBROAD_DETERMINANT_OWNERS
+    assert observed == {}
 
 
 def test_wave0_declared_source_changes_are_current_registry_names() -> None:

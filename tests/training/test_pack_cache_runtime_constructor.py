@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-import src.training.pipeline as pipeline
+import src.training.cache_workflow as cache_workflow
 from src.augmentation.processor import AugmentationMaterializationResult
 from src.config.models import PackingConfig
 from src.losses.vocab import TokenVocabularyGroups
@@ -101,22 +101,22 @@ def test_production_micro_step_constructor_serializes_runtime_determinants(
     )
 
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_materialize_raw_examples_for_dataset",
         lambda *_args, **_kwargs: augmentation,
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_build_encoded_examples_for_dataset",
         lambda *_args, **_kwargs: (encoded_example,),
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "build_qwen_position_inputs",
         lambda pack, _examples, **_kwargs: {"pack_index": pack.pack_index},
     )
 
-    constructed = pipeline._build_micro_steps_for_dataset(
+    constructed = cache_workflow._build_micro_steps_for_dataset(
         _config(precision=precision, fa2_branch_proof=fa2_branch_proof),
         _components(),
         _vocab_groups(),

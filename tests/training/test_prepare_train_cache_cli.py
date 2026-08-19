@@ -11,7 +11,7 @@ import pytest
 
 import src.prepare_train_cache as prepare_cli
 from src.common.errors import RuntimeContractError
-from src.training import pipeline
+from src.training import cache_workflow
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,7 +40,9 @@ def test_prepare_cli_publishes_one_durable_completed_receipt(
         "eval": {"fingerprint": "eval"},
     }
     monkeypatch.setattr(
-        prepare_cli, "prepare_training_pack_caches", lambda path: result
+        prepare_cli,
+        "prepare_training_pack_caches",
+        lambda path, *, require_all_hit=False: result,
     )
     receipt_path = tmp_path / "receipt.json"
 
@@ -63,7 +65,7 @@ def test_prepare_cli_publishes_bounded_failed_receipt_without_error_message(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail(path: Path) -> dict[str, object]:
+    def fail(path: Path, *, require_all_hit: bool = False) -> dict[str, object]:
         raise RuntimeContractError(
             "secret-shaped diagnostic",
             code="training.prepare_failed",
@@ -96,7 +98,7 @@ def test_prepare_cli_rejects_existing_receipt_before_preparation(
     monkeypatch.setattr(
         prepare_cli,
         "prepare_training_pack_caches",
-        lambda path: calls.append(path) or {},
+        lambda path, *, require_all_hit=False: calls.append(path) or {},
     )
     receipt_path = tmp_path / "receipt.json"
     receipt_path.write_text("{}\n", encoding="utf-8")
@@ -113,14 +115,14 @@ def test_prepare_cli_rejects_existing_receipt_before_preparation(
 def test_production_cache_environment_crosses_real_strict_cpu_seam() -> None:
     child_environment = {
         **os.environ,
-        **pipeline._cache_preparation_environment(),
+        **cache_workflow._cache_preparation_environment(),
     }
     child_environment.pop("CUDA_VISIBLE_DEVICES", None)
     code = """
 import json
 from types import SimpleNamespace
 
-from src.training.pipeline import _establish_converged_runtime_determinism
+from src.training.cache_workflow import _establish_converged_runtime_determinism
 
 receipt = _establish_converged_runtime_determinism(
     SimpleNamespace(

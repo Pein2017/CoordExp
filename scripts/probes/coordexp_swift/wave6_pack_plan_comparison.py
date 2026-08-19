@@ -74,7 +74,7 @@ from src.qwen.parity import (  # noqa: E402
 import src.packing.supervision as packing_supervision  # noqa: E402
 import src.qwen.images as qwen_images  # noqa: E402
 from src.training import pack_cache  # noqa: E402
-import src.training.pipeline as training_pipeline  # noqa: E402
+import src.training.cache_workflow as training_cache_workflow  # noqa: E402
 
 
 PLAN_SCHEMA = "coordexp-swift-wave6-pack-plan-comparison-plan-v1"
@@ -399,12 +399,12 @@ def _symbol_identity(path: Path, symbol: Any) -> dict[str, str]:
 
 
 def _production_integration_contract() -> dict[str, Any]:
-    pipeline_path = REPO_ROOT / "src/training/pipeline.py"
+    pipeline_path = REPO_ROOT / "src/training/cache_workflow.py"
     supervision_path = REPO_ROOT / "src/packing/supervision.py"
     cache_path = REPO_ROOT / "src/training/pack_cache.py"
     qwen_images_path = REPO_ROOT / "src/qwen/images.py"
     pipeline_symbols = {
-        name: _symbol_identity(pipeline_path, getattr(training_pipeline, name))
+        name: _symbol_identity(pipeline_path, getattr(training_cache_workflow, name))
         for name in (
             "_materialize_raw_examples_for_dataset",
             "_build_encoded_examples_for_dataset",
@@ -1564,17 +1564,17 @@ def _fixture_materialization(
     config = SimpleNamespace()
     components = SimpleNamespace()
     _fixture_encoded_type(raw_examples[0])
-    original = training_pipeline._render_and_encode_example
-    training_pipeline._render_and_encode_example = _fixture_render_and_encode_example
+    original = training_cache_workflow._render_and_encode_example
+    training_cache_workflow._render_and_encode_example = _fixture_render_and_encode_example
     try:
-        encoded = training_pipeline._build_encoded_examples_for_dataset(
+        encoded = training_cache_workflow._build_encoded_examples_for_dataset(
             config,
             components,
             raw_examples,
             materialization_workers=worker_count,
         )
     finally:
-        training_pipeline._render_and_encode_example = original
+        training_cache_workflow._render_and_encode_example = original
     return (
         config,
         encoded,
@@ -1593,19 +1593,19 @@ def _real_materialization(
 ) -> tuple[Any, tuple[Any, ...], dict[str, Any], dict[str, Any]]:
     resolved = load_train_config(workload["real_config_path"])
     config = resolved.config
-    components = training_pipeline.load_qwen_components(config, load_model=False)
-    augmentation = training_pipeline._materialize_raw_examples_for_dataset(
+    components = training_cache_workflow.load_qwen_components(config, load_model=False)
+    augmentation = training_cache_workflow._materialize_raw_examples_for_dataset(
         config,
         config.data.train,
         split="train",
     )
-    encoded = training_pipeline._build_encoded_examples_for_dataset(
+    encoded = training_cache_workflow._build_encoded_examples_for_dataset(
         config,
         components,
         augmentation.examples,
         materialization_workers=worker_count,
     )
-    vocab_groups = training_pipeline.build_token_vocabulary_groups(
+    vocab_groups = training_cache_workflow.build_token_vocabulary_groups(
         components.token_identity,
         tokenizer=components.tokenizer,
     )
@@ -1757,7 +1757,7 @@ def _production_arm_observation(
     )
     started_at = time.perf_counter()
     packs, pipeline_receipt, fragment_by_pack = (
-        training_pipeline._materialize_pack_plan(config, encoded_examples)
+        training_cache_workflow._materialize_pack_plan(config, encoded_examples)
     )
     planner_wall = time.perf_counter() - started_at
     supervision = packing_supervision.build_packed_supervision(
@@ -2010,7 +2010,7 @@ def execute_materialization_observation(
         "arm_id": arm_id,
         "materialization": {
             "production_encoder_seam": (
-                "src.training.pipeline._build_encoded_examples_for_dataset"
+                "src.training.cache_workflow._build_encoded_examples_for_dataset"
             ),
             "worker_counts": list(WORKER_COUNTS),
             "encoded_materialization_exact": True,
@@ -2732,7 +2732,7 @@ def validate_observation(
     )
     if (
         materialization.get("production_encoder_seam")
-        != "src.training.pipeline._build_encoded_examples_for_dataset"
+        != "src.training.cache_workflow._build_encoded_examples_for_dataset"
         or materialization.get("worker_counts") != [1, 8]
         or materialization.get("encoded_materialization_exact") is not True
         or materialization.get("encoded_stream") != plan["w0_cpu_encoded_stream"]

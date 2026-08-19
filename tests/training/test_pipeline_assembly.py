@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+import src.training.cache_workflow as cache_workflow
 import src.training.control_plane as control_plane
 import src.training.execution_plan as execution_plan
 import src.training.pipeline as pipeline
@@ -24,6 +25,22 @@ from src.training.supervised_trainer import (
 )
 from src.training.forward_input_provider import build_forward_input_provider
 from src.runtime.seeding import seed_training_runtime
+
+def _patch_shared_cache_import(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: object
+) -> None:
+    """Replace one shared import on every module that now reads it.
+
+    Wave 3 of ``decompose-coordexp-swift-training-orchestration`` moved the
+    cache preparation/admission/hydration orchestration into
+    ``src/training/cache_workflow.py``.  Names both owners import must be
+    replaced on both, or a seam that used to be a single patch point would
+    silently reach production through the other owner.
+    """
+
+    for module in (pipeline, cache_workflow):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
 
 
 class _Accelerator:
@@ -112,7 +129,7 @@ def test_runtime_determinism_policy_must_converge_across_model_free_ranks(
         return rank_zero, rank_one
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._establish_converged_runtime_determinism(
+        cache_workflow._establish_converged_runtime_determinism(
             SimpleNamespace(
                 seed=17,
                 determinism=SimpleNamespace(mode="legacy"),
@@ -132,7 +149,7 @@ def test_runtime_determinism_consensus_binds_launcher_mapping_and_baseline(
     monkeypatch.setenv("LOCAL_RANK", "0")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-a,GPU-b")
 
-    converged = pipeline._establish_converged_runtime_determinism(
+    converged = cache_workflow._establish_converged_runtime_determinism(
         SimpleNamespace(
             seed=17,
             determinism=SimpleNamespace(mode="legacy"),
@@ -142,7 +159,7 @@ def test_runtime_determinism_consensus_binds_launcher_mapping_and_baseline(
         rank_report_gatherer=None,
         phase="pipeline_entry",
     )
-    policy = pipeline._runtime_determinism_run_policy(
+    policy = cache_workflow._runtime_determinism_run_policy(
         converged,
         pinned_runtime_baseline={"baseline_sha256": "a" * 64},
     )
@@ -185,7 +202,7 @@ def test_runtime_determinism_is_established_before_model_free_owner_setup(
         lambda _world_size: None,
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_establish_converged_runtime_determinism",
         lambda *args, **kwargs: order.append("determinism") or object(),
     )
@@ -991,12 +1008,12 @@ def test_pack_cache_root_selector_records_resolved_root_and_allowlisted_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", raising=False)
-    root, receipt = pipeline._resolve_pack_cache_root(tmp_path)
+    root, receipt = cache_workflow._resolve_pack_cache_root(tmp_path)
     assert root == tmp_path / ".cache" / "coordexp_swift" / "packing"
     assert receipt == {"resolved_root": str(root.resolve()), "source": "default"}
 
     monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", "relative-cache")
-    root, receipt = pipeline._resolve_pack_cache_root(tmp_path)
+    root, receipt = cache_workflow._resolve_pack_cache_root(tmp_path)
     assert root == Path("relative-cache")
     assert receipt == {
         "resolved_root": str(Path("relative-cache").resolve()),
@@ -1042,7 +1059,7 @@ def _encoded_pack_examples() -> tuple[SimpleNamespace, ...]:
 def test_production_source_order_pack_plan_replays_legacy_membership_exactly() -> None:
     examples = _encoded_pack_examples()
 
-    packs, receipt, fragment_by_pack = pipeline._materialize_pack_plan(
+    packs, receipt, fragment_by_pack = cache_workflow._materialize_pack_plan(
         _packing_config("source_order_next_fit"),
         examples,
     )
@@ -1074,7 +1091,7 @@ def test_production_pack_plan_policies_preserve_every_atomic_example_once(
 ) -> None:
     examples = _encoded_pack_examples()
 
-    packs, receipt, fragment_by_pack = pipeline._materialize_pack_plan(
+    packs, receipt, fragment_by_pack = cache_workflow._materialize_pack_plan(
         config,
         examples,
     )
@@ -1100,12 +1117,12 @@ def test_policy_selector_source_records_only_default_or_allowlisted_name(
     name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv(name, raising=False)
-    assert pipeline._environment_selector_source(name) == "default"
+    assert cache_workflow._environment_selector_source(name) == "default"
     monkeypatch.setenv(name, "arbitrary-value-not-recorded")
-    assert pipeline._environment_selector_source(name) == name
+    assert cache_workflow._environment_selector_source(name) == name
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._environment_selector_source("SECRET_TOKEN")
+        cache_workflow._environment_selector_source("SECRET_TOKEN")
     assert exc_info.value.code == "runtime.environment_selector_unsupported"
 
 
@@ -1222,13 +1239,13 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
     gatherer_closed: list[bool] = []
     gatherer = SimpleNamespace(close=lambda: gatherer_closed.append(True))
     monkeypatch.setattr(execution_plan, "load_train_config", lambda path: resolved)
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "collect_execution_provenance",
         lambda **kwargs: {"schema_version": 1},
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: {
             "schema_version": 3,
@@ -1267,7 +1284,7 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
 
     monkeypatch.setattr(pipeline, "_initialize_artifact_owner", initialize)
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_resolve_model_free_training_preflight",
         lambda **kwargs: {"duration_seconds": 0.1},
     )
@@ -1397,15 +1414,15 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
         "micro_step_count": 3,
     }
 
-    monkeypatch.setattr(pipeline, "load_train_config", lambda path: resolved)
-    monkeypatch.setattr(
-        pipeline,
+    monkeypatch.setattr(cache_workflow, "load_train_config", lambda path: resolved)
+    _patch_shared_cache_import(
+        monkeypatch,
         "collect_execution_provenance",
         lambda **kwargs: preparation_order.append("provenance")
         or {"schema_version": 1},
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: preparation_order.append("baseline")
         or {
@@ -1426,7 +1443,7 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
         raising=False,
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "seed_training_runtime",
         lambda seed, determinism_mode, phase: (
             seed_phases.append(phase),
@@ -1444,9 +1461,9 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
         preparation_order.append("components")
         return components
 
-    monkeypatch.setattr(pipeline, "load_qwen_components", load_components)
-    monkeypatch.setattr(
-        pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    _patch_shared_cache_import(monkeypatch, "load_qwen_components", load_components)
+    _patch_shared_cache_import(
+        monkeypatch, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
     )
 
     def resolve_train_cache(*args: object, **kwargs: object) -> dict[str, object]:
@@ -1454,10 +1471,10 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
         return train_cache
 
     monkeypatch.setattr(
-        pipeline, "_resolve_or_build_train_pack_cache", resolve_train_cache
+        cache_workflow, "_resolve_or_build_train_pack_cache", resolve_train_cache
     )
     monkeypatch.setattr(
-        pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
+        cache_workflow, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
     )
 
     result = pipeline.prepare_training_pack_caches(tmp_path / "config.yaml")
@@ -1496,10 +1513,10 @@ def test_resolve_eval_pack_cache_hardcodes_payloads_verification_level(
         return {"status": "complete", "fingerprint": "eval-fingerprint"}
 
     monkeypatch.setattr(
-        pipeline, "_resolve_or_build_pack_cache", fake_resolve_or_build_pack_cache
+        cache_workflow, "_resolve_or_build_pack_cache", fake_resolve_or_build_pack_cache
     )
 
-    result = pipeline._resolve_eval_pack_cache(
+    result = cache_workflow._resolve_eval_pack_cache(
         config,
         components=object(),
         vocab_groups=object(),
@@ -1550,14 +1567,14 @@ def test_prepare_training_pack_caches_marks_all_hit_aggregate_phases_not_run(
             "cache_admission": {"status": "completed", "duration_seconds": 0.1},
         },
     }
-    monkeypatch.setattr(pipeline, "load_train_config", lambda path: resolved)
-    monkeypatch.setattr(
-        pipeline,
+    monkeypatch.setattr(cache_workflow, "load_train_config", lambda path: resolved)
+    _patch_shared_cache_import(
+        monkeypatch,
         "collect_execution_provenance",
         lambda **kwargs: {"schema_version": 1},
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: {
             "schema_version": 3,
@@ -1568,24 +1585,24 @@ def test_prepare_training_pack_caches_marks_all_hit_aggregate_phases_not_run(
             "reference_only": {},
         },
     )
-    monkeypatch.setattr(pipeline, "seed_training_runtime", seed_training_runtime)
-    monkeypatch.setattr(
-        pipeline,
+    monkeypatch.setattr(cache_workflow, "seed_training_runtime", seed_training_runtime)
+    _patch_shared_cache_import(
+        monkeypatch,
         "load_qwen_components",
         lambda *args, **kwargs: SimpleNamespace(
             token_identity=object(), tokenizer=object()
         ),
     )
-    monkeypatch.setattr(
-        pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    _patch_shared_cache_import(
+        monkeypatch, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_resolve_or_build_train_pack_cache",
         lambda *args, **kwargs: hit_cache,
     )
     monkeypatch.setattr(
-        pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: hit_cache
+        cache_workflow, "_resolve_eval_pack_cache", lambda *args, **kwargs: hit_cache
     )
 
     result = pipeline.prepare_training_pack_caches(tmp_path / "config.yaml")
@@ -1622,7 +1639,7 @@ def test_cache_phase_aggregate_marks_partial_hit_as_completed_mixed() -> None:
         },
     )
 
-    assert pipeline._aggregate_cache_phase(caches, "cache_preparation") == {
+    assert cache_workflow._aggregate_cache_phase(caches, "cache_preparation") == {
         "status": "completed",
         "reason": "mixed_cache_hits_and_builds",
         "duration_seconds": 1.25,
@@ -1664,10 +1681,10 @@ def test_eval_hydration_fewer_packs_uses_exact_replicated_ordinals(
         return tuple({**dict(report), "rank": rank} for rank in range(4))  # type: ignore[arg-type]
 
     monkeypatch.setattr(
-        pipeline, "load_rank_eval_micro_steps_from_cache", load_rank_eval
+        cache_workflow, "load_rank_eval_micro_steps_from_cache", load_rank_eval
     )
     micro_steps, reduction_mode, pack_count = (
-        pipeline._hydrate_eval_micro_steps_from_cache(
+        cache_workflow._hydrate_eval_micro_steps_from_cache(
             {
                 "cache_dir": tmp_path / "eval-cache",
                 "fingerprint": "eval-fp",
@@ -1710,7 +1727,7 @@ def test_eval_hydration_reuses_the_model_free_reduction_receipt(
     monkeypatch.setenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", "replicated")
     selective_loads: list[tuple[int, int]] = []
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "load_rank_eval_micro_steps_from_cache",
         lambda *args, **kwargs: (
             selective_loads.append((kwargs["rank"], kwargs["world_size"]))
@@ -1722,7 +1739,7 @@ def test_eval_hydration_reuses_the_model_free_reduction_receipt(
         ),
     )
 
-    _, reduction_mode, pack_count = pipeline._hydrate_eval_micro_steps_from_cache(
+    _, reduction_mode, pack_count = cache_workflow._hydrate_eval_micro_steps_from_cache(
         {
             "cache_dir": tmp_path / "eval-cache",
             "fingerprint": "eval-fp",
@@ -1754,7 +1771,7 @@ def test_eval_hydration_rejects_noncanonical_selective_ordinals(
 ) -> None:
     monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "load_rank_eval_micro_steps_from_cache",
         lambda *args, **kwargs: SimpleNamespace(
             micro_steps=(SimpleNamespace(),),
@@ -1764,7 +1781,7 @@ def test_eval_hydration_rejects_noncanonical_selective_ordinals(
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._hydrate_eval_micro_steps_from_cache(
+        cache_workflow._hydrate_eval_micro_steps_from_cache(
             {
                 "cache_dir": tmp_path / "eval-cache",
                 "fingerprint": "eval-fp",
@@ -1786,7 +1803,7 @@ def test_eval_hydration_selective_failure_has_no_full_loader_fallback(
     full_loads: list[object] = []
 
     def fail_selective(*args: object, **kwargs: object) -> object:
-        raise pipeline.PackingCacheInvalidError("corrupt assigned eval shard")
+        raise cache_workflow.PackingCacheInvalidError("corrupt assigned eval shard")
 
     def gather(report: object) -> tuple[object, object]:
         peer = {
@@ -1799,17 +1816,17 @@ def test_eval_hydration_selective_failure_has_no_full_loader_fallback(
         return report, peer
 
     monkeypatch.setattr(
-        pipeline, "load_rank_eval_micro_steps_from_cache", fail_selective
+        cache_workflow, "load_rank_eval_micro_steps_from_cache", fail_selective
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "load_all_micro_steps_from_cache",
         lambda *args, **kwargs: full_loads.append(args),
         raising=False,
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._hydrate_eval_micro_steps_from_cache(
+        cache_workflow._hydrate_eval_micro_steps_from_cache(
             {
                 "cache_dir": tmp_path / "eval-cache",
                 "fingerprint": "eval-fp",
@@ -2095,12 +2112,12 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         device="cuda:0",
     )
 
-    monkeypatch.setattr(pipeline, "seed_training_runtime", lambda *args, **kwargs: None)
-    monkeypatch.setattr(
-        pipeline, "load_qwen_components", lambda *args, **kwargs: components
+    monkeypatch.setattr(cache_workflow, "seed_training_runtime", lambda *args, **kwargs: None)
+    _patch_shared_cache_import(
+        monkeypatch, "load_qwen_components", lambda *args, **kwargs: components
     )
-    monkeypatch.setattr(
-        pipeline, "resolve_qwen_runtime_controls", lambda *args, **kwargs: None
+    _patch_shared_cache_import(
+        monkeypatch, "resolve_qwen_runtime_controls", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
         pipeline, "load_default_adapter_source_gate_evidence", lambda root: object()
@@ -2140,8 +2157,8 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         or _mapped_native_receipt(),
         raising=False,
     )
-    monkeypatch.setattr(
-        pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    _patch_shared_cache_import(
+        monkeypatch, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
     )
 
     def resolve_train_cache(*args: object, **kwargs: object) -> dict[str, object]:
@@ -2149,23 +2166,23 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         return cache
 
     monkeypatch.setattr(
-        pipeline, "_resolve_or_build_train_pack_cache", resolve_train_cache
+        cache_workflow, "_resolve_or_build_train_pack_cache", resolve_train_cache
     )
-    monkeypatch.setattr(
-        pipeline, "resolve_planned_step_schedule", lambda *args, **kwargs: schedule
+    _patch_shared_cache_import(
+        monkeypatch, "resolve_planned_step_schedule", lambda *args, **kwargs: schedule
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "load_rank_micro_steps_from_cache",
         lambda *args, **kwargs: train_shard,
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_attach_image_processors_to_micro_steps",
         lambda steps, **kwargs: tuple(steps),
     )
     monkeypatch.setattr(
-        pipeline, "_apply_fa2_branch_proof_policy", lambda steps, config: tuple(steps)
+        cache_workflow, "_apply_fa2_branch_proof_policy", lambda steps, config: tuple(steps)
     )
     monkeypatch.setattr(pipeline.LossRunner, "from_config", lambda config: object())
     monkeypatch.setattr(
@@ -2211,7 +2228,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
 
     monkeypatch.setattr(pipeline, "TrainRuntime", build_runtime)
     monkeypatch.setattr(
-        pipeline, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
+        cache_workflow, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
     )
 
     def load_rank_eval(
@@ -2238,16 +2255,16 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         )
 
     monkeypatch.setattr(
-        pipeline, "load_rank_eval_micro_steps_from_cache", load_rank_eval
+        cache_workflow, "load_rank_eval_micro_steps_from_cache", load_rank_eval
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "load_all_micro_steps_from_cache",
         lambda *args, **kwargs: pytest.fail("production used the full eval loader"),
         raising=False,
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "partition_eval_micro_steps_for_rank",
         lambda *args, **kwargs: pytest.fail("selective eval was partitioned twice"),
         raising=False,
@@ -2471,7 +2488,7 @@ def test_fa2_branch_proof_policy_first_micro_step_captures_only_first_step() -> 
     steps = (_fake_micro_step(), _fake_micro_step(), _fake_micro_step())
     config = SimpleNamespace(model=SimpleNamespace(fa2_branch_proof="first_micro_step"))
 
-    configured = pipeline._apply_fa2_branch_proof_policy(steps, config)
+    configured = cache_workflow._apply_fa2_branch_proof_policy(steps, config)
 
     assert [step.capture_fa2_branch for step in configured] == [True, False, False]
     assert [step.require_fa2_branch_proof for step in configured] == [
@@ -2489,7 +2506,7 @@ def test_fa2_branch_proof_policy_every_forward_captures_every_step() -> None:
     steps = (_fake_micro_step(), _fake_micro_step())
     config = SimpleNamespace(model=SimpleNamespace(fa2_branch_proof="every_forward"))
 
-    configured = pipeline._apply_fa2_branch_proof_policy(steps, config)
+    configured = cache_workflow._apply_fa2_branch_proof_policy(steps, config)
 
     assert [step.capture_fa2_branch for step in configured] == [True, True]
     assert [step.require_fa2_branch_proof for step in configured] == [True, True]
@@ -2723,14 +2740,14 @@ WAVE0_PIPELINE_OWNED_HELPERS: dict[str, tuple[int, object | None]] = {
     "_normalize_bounded_phase_details": (2, control_plane),
     "_all_gather_cpu_bytes": (2, control_plane),
     "_resolve_model_free_launch_identity": (2, execution_plan),
-    "_admit_model_free_pack_cache": (3, None),
-    "_resolve_model_free_training_preflight": (3, None),
-    "_resolve_or_build_pack_cache": (3, None),
-    "_resolve_or_build_train_pack_cache": (3, None),
-    "_resolve_eval_pack_cache": (3, None),
-    "_hydrate_eval_micro_steps_from_cache": (3, None),
-    "_pack_cache_preparation_receipt": (3, None),
-    "_aggregate_cache_phase": (3, None),
+    "_admit_model_free_pack_cache": (3, cache_workflow),
+    "_resolve_model_free_training_preflight": (3, cache_workflow),
+    "_resolve_or_build_pack_cache": (3, cache_workflow),
+    "_resolve_or_build_train_pack_cache": (3, cache_workflow),
+    "_resolve_eval_pack_cache": (3, cache_workflow),
+    "_hydrate_eval_micro_steps_from_cache": (3, cache_workflow),
+    "_pack_cache_preparation_receipt": (3, cache_workflow),
+    "_aggregate_cache_phase": (3, cache_workflow),
     "_train_logging_handler": (4, None),
     "_append_logging_row_shared": (4, None),
     "_run_initialized_training": (5, None),

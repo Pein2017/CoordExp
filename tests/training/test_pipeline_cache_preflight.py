@@ -15,7 +15,13 @@ import pytest
 import torch.distributed as dist
 
 from src.common.errors import RuntimeContractError
-from src.training import control_plane, execution_plan, pack_cache, pipeline
+from src.training import (
+    cache_workflow,
+    control_plane,
+    execution_plan,
+    pack_cache,
+    pipeline,
+)
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
@@ -23,6 +29,22 @@ from src.training.pack_cache import (
     write_micro_step_cache,
 )
 from src.training.supervised_trainer import SupervisedMicroStep
+
+def _patch_shared_cache_import(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: object
+) -> None:
+    """Replace one shared import on every module that now reads it.
+
+    Wave 3 of ``decompose-coordexp-swift-training-orchestration`` moved the
+    cache preparation/admission/hydration orchestration into
+    ``src/training/cache_workflow.py``.  Names both owners import must be
+    replaced on both, or a seam that used to be a single patch point would
+    silently reach production through the other owner.
+    """
+
+    for module in (pipeline, cache_workflow):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
 
 
 MATERIALIZATION = {
@@ -338,13 +360,13 @@ def _install_pipeline_fakes(
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
     monkeypatch.setattr(execution_plan, "load_train_config", lambda path: resolved)
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "collect_execution_provenance",
         lambda **kwargs: {"schema_version": 1},
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: _runtime_baseline_receipt(),
     )
@@ -355,20 +377,20 @@ def _install_pipeline_fakes(
             raise AssertionError("model loader must not run before cache admission")
         return components
 
-    monkeypatch.setattr(pipeline, "load_qwen_components", load_components)
-    monkeypatch.setattr(
-        pipeline, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    _patch_shared_cache_import(monkeypatch, "load_qwen_components", load_components)
+    _patch_shared_cache_import(
+        monkeypatch, "build_token_vocabulary_groups", lambda *args, **kwargs: object()
+    )
+    _patch_shared_cache_import(
+        monkeypatch, "resolve_qwen_runtime_controls", lambda *args, **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline, "resolve_qwen_runtime_controls", lambda *args, **kwargs: object()
-    )
-    monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "build_packing_cache_fingerprint",
         lambda *args, **kwargs: FINGERPRINT,
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "resolve_planned_step_schedule",
         lambda *args, **kwargs: SimpleNamespace(
             resolved_max_steps=1,
@@ -440,7 +462,7 @@ def test_partial_or_malformed_launcher_identity_fails_before_any_preflight_surfa
         lambda **kwargs: construction_calls.append("writer"),
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_resolve_model_free_training_preflight",
         lambda **kwargs: construction_calls.append("cache"),
     )
@@ -480,8 +502,8 @@ def test_pinned_runtime_baseline_admission_broadcasts_rank_zero_receipt(
         },
     }
     calls: list[dict[str, object]] = []
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: calls.append(dict(kwargs)) or receipt,
     )
@@ -509,8 +531,8 @@ def test_pinned_runtime_baseline_admission_broadcasts_rank_zero_receipt(
 def test_pinned_runtime_baseline_admission_rejects_a_drifted_peer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: _runtime_baseline_receipt(),
     )
@@ -554,13 +576,13 @@ def test_pinned_runtime_baseline_failure_precedes_cache_model_and_accelerator(
         model_load_calls=model_load_calls,
         accelerator_calls=accelerator_calls,
     )
-    monkeypatch.setattr(
-        pipeline,
+    _patch_shared_cache_import(
+        monkeypatch,
         "require_pinned_runtime_baseline",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("baseline drift")),
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_resolve_model_free_training_preflight",
         lambda **kwargs: (_ for _ in ()).throw(
             AssertionError("cache preflight must not run after baseline rejection")
@@ -598,7 +620,7 @@ def test_exact_resume_lineage_is_admitted_and_converged_before_run_creation(
         aggregate_digest="a" * 64,
     )
     monkeypatch.setattr(pipeline, "load_training_state_manifest", lambda path: manifest)
-    monkeypatch.setattr(pipeline, "_file_sha256", lambda path: "b" * 64)
+    monkeypatch.setattr(cache_workflow, "_file_sha256", lambda path: "b" * 64)
 
     def gather(report: object) -> tuple[object, object]:
         return report, {**dict(report), "rank": 1}  # type: ignore[arg-type]
@@ -729,7 +751,7 @@ def test_eval_reduction_rejects_default_vs_explicit_same_effective_receipt(
         return report, peer
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._resolve_converged_eval_reduction_receipt(
+        cache_workflow._resolve_converged_eval_reduction_receipt(
             pack_count=1,
             rank=0,
             world_size=2,
@@ -908,7 +930,7 @@ def test_cache_rank_report_projects_only_bounded_allowlisted_context_into_artifa
         )
 
     monkeypatch.setattr(
-        pipeline, "_resolve_model_free_training_preflight", fail_cache_preflight
+        cache_workflow, "_resolve_model_free_training_preflight", fail_cache_preflight
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
@@ -1194,7 +1216,7 @@ def test_direct_and_distributed_cache_failure_errors_are_identical(
         world_size: int,
         rank_report_gatherer: object | None = None,
     ) -> object:
-        return pipeline._resolve_model_free_training_preflight(
+        return cache_workflow._resolve_model_free_training_preflight(
             config=config,
             config_path=config_path,
             repo_root=tmp_path,
@@ -1252,8 +1274,8 @@ def _distributed_preflight_failure_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     execution_plan.load_train_config = lambda path: resolved
-    pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
 
@@ -1263,11 +1285,11 @@ def _distributed_preflight_failure_worker(
             raise AssertionError("model loader must not run before cache admission")
         return components
 
-    pipeline.load_qwen_components = load_components
-    pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
-    pipeline.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.load_qwen_components = pipeline.load_qwen_components = load_components
+    cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
+    cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1331,11 +1353,11 @@ def _distributed_provider_resolution_mismatch_worker(
         to_artifact_dict=lambda: {"test": True},
     )
     execution_plan.load_train_config = lambda path: resolved
-    pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
-    pipeline._resolve_model_free_training_preflight = lambda **kwargs: (
+    cache_workflow._resolve_model_free_training_preflight = lambda **kwargs: (
         (_ for _ in ()).throw(
             AssertionError("cache admission must not run after provider mismatch")
         )
@@ -1401,19 +1423,19 @@ def _distributed_preflight_success_worker(
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     observations: dict[str, object] = {}
     execution_plan.load_train_config = lambda path: resolved
-    pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
-    pipeline.load_qwen_components = lambda config, *, load_model: (
+    cache_workflow.load_qwen_components = pipeline.load_qwen_components = lambda config, *, load_model: (
         (_ for _ in ()).throw(AssertionError("model load must remain stubbed"))
         if load_model
         else components
     )
-    pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
-    pipeline.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
+    cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1510,8 +1532,8 @@ def _distributed_accelerator_identity_mismatch_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     execution_plan.load_train_config = lambda path: resolved
-    pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
 
@@ -1521,11 +1543,11 @@ def _distributed_accelerator_identity_mismatch_worker(
             raise AssertionError("model loader must not run on identity mismatch")
         return components
 
-    pipeline.load_qwen_components = load_components
-    pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
-    pipeline.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.load_qwen_components = pipeline.load_qwen_components = load_components
+    cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
+    cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,

@@ -30,6 +30,7 @@ from src.packing.planner import (
     PACK_PLAN_SCHEMA_VERSION,
     build_pack_plan_policy_identity,
 )
+from src.training.cache_contract import micro_step_runtime_config_identity
 from src.training.micro_steps import (
     SupervisedMicroStep,
     supervised_micro_step_schema_identity as _supervised_micro_step_schema_identity,
@@ -90,8 +91,8 @@ PACKING_CACHE_DETERMINANT_OWNERS = {
     "mrope_position_ids": "src/qwen/positions.py",
     "qwen_fa2_boundaries": "src/qwen/fa2.py",
     "qwen_forward_payload": "src/qwen/forward.py",
-    "micro_step_runtime_config": "src/training/pipeline.py",
-    "micro_step_schema": "src/training/supervised_trainer.py",
+    "micro_step_runtime_config": "src/training/cache_contract.py",
+    "micro_step_schema": "src/training/micro_steps.py",
     "cache_serializer": "src/training/pack_cache.py",
 }
 
@@ -323,13 +324,7 @@ def build_packing_cache_determinants(
             "tokenizer_assets": frontend_assets,
         },
         "realized_vocab_groups": _realized_vocab_group_identity(vocab_groups),
-        "micro_step_runtime_config": {
-            "fa2_model_dtype": config.training.precision,
-            "capture_fa2_branch": config.model.fa2_branch_proof == "every_forward",
-            "require_fa2_branch_proof": (
-                config.model.fa2_branch_proof == "every_forward"
-            ),
-        },
+        "micro_step_runtime_config": micro_step_runtime_config_identity(config),
         "micro_step_schema": _supervised_micro_step_schema_identity(),
     }
     entries = _build_determinant_entries(semantic_payload)

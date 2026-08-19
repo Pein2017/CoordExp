@@ -12,10 +12,11 @@ from src.artifacts.identity import (
     assert_absent_artifact_target,
     write_strict_json_atomic,
 )
-from src.training.pipeline import prepare_training_pack_caches
+from src.training.cache_workflow import prepare_training_pack_caches
 
 
 _RECEIPT_SCHEMA = "coordexp-swift-pack-cache-preparation-receipt-v1"
+_VERIFICATION_RECEIPT_SCHEMA = "coordexp-swift-pack-cache-verification-receipt-v1"
 
 
 def _receipt_payload(
@@ -24,9 +25,12 @@ def _receipt_payload(
     terminal_status: str,
     result: dict[str, Any] | None,
     failure: BaseException | None,
+    require_all_hit: bool = False,
 ) -> dict[str, Any]:
     body = {
-        "schema": _RECEIPT_SCHEMA,
+        "schema": (
+            _VERIFICATION_RECEIPT_SCHEMA if require_all_hit else _RECEIPT_SCHEMA
+        ),
         "terminal_status": terminal_status,
         "config_path": str(config_path.resolve()),
         "result": result,
@@ -58,15 +62,29 @@ def main(argv: list[str] | None = None) -> int:
         "--receipt",
         help="Optional absent strict-JSON target for the terminal preparation receipt.",
     )
+    parser.add_argument(
+        "--require-all-hit",
+        action="store_true",
+        help=(
+            "Verify that both published split targets already exist and "
+            "validate. This mode has no cache-materialization authority: it "
+            "fails before any render, tokenize, pack, build, or publication "
+            "path when either target is missing or invalid."
+        ),
+    )
     args = parser.parse_args(argv)
     config_path = Path(args.config)
+    require_all_hit = bool(args.require_all_hit)
     receipt_target = (
         None
         if args.receipt is None
         else assert_absent_artifact_target(Path(args.receipt))
     )
     try:
-        result = prepare_training_pack_caches(config_path)
+        result = prepare_training_pack_caches(
+            config_path,
+            require_all_hit=require_all_hit,
+        )
     except BaseException as exc:
         if receipt_target is not None:
             write_strict_json_atomic(
@@ -76,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                     terminal_status="failed",
                     result=None,
                     failure=exc,
+                    require_all_hit=require_all_hit,
                 ),
             )
         raise
@@ -87,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
                 terminal_status="completed",
                 result=result,
                 failure=None,
+                require_all_hit=require_all_hit,
             ),
         )
     print(json.dumps(result, allow_nan=False, indent=2, sort_keys=True))

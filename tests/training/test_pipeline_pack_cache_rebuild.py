@@ -10,7 +10,7 @@ import pytest
 
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
-from src.training import pack_cache, pipeline
+from src.training import cache_workflow, pack_cache
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
@@ -127,10 +127,10 @@ def _install_resolver_identity(
 ) -> None:
     monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
     monkeypatch.setattr(
-        pipeline, "build_packing_cache_fingerprint", lambda *args, **kwargs: FINGERPRINT
+        cache_workflow, "build_packing_cache_fingerprint", lambda *args, **kwargs: FINGERPRINT
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "build_packing_cache_determinants",
         lambda *args, **kwargs: dict(DETERMINANTS),
     )
@@ -143,7 +143,7 @@ def _resolve(
     build_micro_steps: object,
     accelerator: object | None = None,
 ) -> dict[str, object]:
-    return pipeline._resolve_or_build_pack_cache(
+    return cache_workflow._resolve_or_build_pack_cache(
         SimpleNamespace(),
         SimpleNamespace(),
         SimpleNamespace(),
@@ -256,7 +256,7 @@ def test_preparation_revalidates_determinants_after_build_before_publication(
     def determinants(*args: object, **kwargs: object) -> dict[str, object]:
         return _synthetic_registry_determinants(determinant_state["purpose"])
 
-    monkeypatch.setattr(pipeline, "build_packing_cache_determinants", determinants)
+    monkeypatch.setattr(cache_workflow, "build_packing_cache_determinants", determinants)
     initial_determinants = determinants()
     initial_fingerprint = str(initial_determinants["aggregate_fingerprint"])
     canonical_target = cache_dir_for_fingerprint(cache_root, initial_fingerprint)
@@ -354,7 +354,7 @@ def test_rank_zero_cache_hit_reuses_its_single_strict_manifest_read(
         determinant_revalidator=lambda: DETERMINANTS,
         augmentation=AUGMENTATION_RECEIPT,
     )
-    real_load = pipeline.load_cache_manifest
+    real_load = cache_workflow.load_cache_manifest
     successful_reads: list[Path] = []
 
     def counting_load(
@@ -373,7 +373,7 @@ def test_rank_zero_cache_hit_reuses_its_single_strict_manifest_read(
         successful_reads.append(Path(cache_dir))
         return manifest
 
-    monkeypatch.setattr(pipeline, "load_cache_manifest", counting_load)
+    monkeypatch.setattr(cache_workflow, "load_cache_manifest", counting_load)
     result = _resolve(
         tmp_path,
         rank=0,
@@ -408,7 +408,7 @@ def test_resolver_binding_is_self_contained_after_physical_cache_deletion(
         world_size=1,
     )
 
-    pipeline._bind_cache_materialization(writer, "train", resolved_cache)
+    cache_workflow._bind_cache_materialization(writer, "train", resolved_cache)
     expected_binding = {
         "cache_format_version": PACKING_CACHE_VERSION,
         "semantic_fingerprint": FINGERPRINT,
@@ -439,7 +439,7 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
         fingerprints[split] = str(payload["aggregate_fingerprint"])
         return payload
 
-    monkeypatch.setattr(pipeline, "build_packing_cache_determinants", determinants)
+    monkeypatch.setattr(cache_workflow, "build_packing_cache_determinants", determinants)
     train_receipt = {
         **AUGMENTATION_RECEIPT,
         "mode": "static_stochastic_view",
@@ -464,12 +464,12 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
         )
 
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "build_base_micro_steps",
         lambda *args, **kwargs: (step_with_receipt(50, train_receipt),),
     )
     monkeypatch.setattr(
-        pipeline,
+        cache_workflow,
         "_build_micro_steps_for_dataset",
         lambda *args, **kwargs: (step_with_receipt(60, eval_receipt),),
     )
@@ -479,7 +479,7 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
     )
     accelerator = _SingleAccelerator()
 
-    train = pipeline._resolve_or_build_train_pack_cache(
+    train = cache_workflow._resolve_or_build_train_pack_cache(
         config,
         SimpleNamespace(),
         SimpleNamespace(),
@@ -487,7 +487,7 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
         accelerator=accelerator,
         verification_level="payloads",
     )
-    evaluated = pipeline._resolve_eval_pack_cache(
+    evaluated = cache_workflow._resolve_eval_pack_cache(
         config,
         SimpleNamespace(),
         SimpleNamespace(),

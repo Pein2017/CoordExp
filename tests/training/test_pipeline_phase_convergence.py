@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 import torch.distributed as dist
 
+import src.training.cache_workflow as cache_workflow
 import src.training.control_plane as control_plane
 import src.training.pipeline as pipeline
 from src.artifacts.run_writer import RunWriter
@@ -171,7 +172,7 @@ def _eval_hydration_failure_worker(
             nonlocal loader_identity
             loader_identity = (rank, world_size)
             if rank == 1:
-                raise pipeline.PackingCacheInvalidError(
+                raise cache_workflow.PackingCacheInvalidError(
                     "corrupt payload assigned only to rank one"
                 )
             return SimpleNamespace(
@@ -180,9 +181,9 @@ def _eval_hydration_failure_worker(
                 total_ordinal_count=2,
             )
 
-        pipeline.load_rank_eval_micro_steps_from_cache = load_rank_eval
+        cache_workflow.load_rank_eval_micro_steps_from_cache = load_rank_eval
         try:
-            pipeline._hydrate_eval_micro_steps_from_cache(
+            cache_workflow._hydrate_eval_micro_steps_from_cache(
                 {
                     "cache_dir": Path("/synthetic/eval-cache"),
                     "fingerprint": "eval-fp",

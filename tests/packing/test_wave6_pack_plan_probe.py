@@ -181,7 +181,7 @@ def test_plan_binds_production_integration_private_v3_and_source_quiescence(
 
     integration = checked["production_integration"]
     assert integration["pipeline_symbols"]["_materialize_pack_plan"]["path"].endswith(
-        "src/training/pipeline.py"
+        "src/training/cache_workflow.py"
     )
     assert integration["pipeline_symbols"]["_build_encoded_examples_for_dataset"][
         "sha256"
@@ -302,7 +302,7 @@ def test_fixture_controller_uses_three_fresh_process_pairs_and_real_encoder_seam
     assert len({item["process"]["pid"] for item in persisted["observations"]}) == 24
     for observation in persisted["observations"]:
         assert observation["materialization"]["production_encoder_seam"] == (
-            "src.training.pipeline._build_encoded_examples_for_dataset"
+            "src.training.cache_workflow._build_encoded_examples_for_dataset"
         )
         assert observation["materialization"]["worker_counts"] == [1, 8]
         assert observation["materialization"]["encoded_materialization_exact"] is True
