@@ -45,6 +45,75 @@
   boundaries, prefer a fresh task with a compact handoff when inherited
   conversation state is no longer required.
 
+## Multi-agent orchestration
+
+Spawn contract:
+
+- Every spawn sets `fork_turns`, `model`, and `reasoning_effort` explicitly.
+  Builders and reviewers use `fork_turns: "none"`; `"all"` is forbidden once
+  session context is non-trivial (>~50k tokens); design advisors fork at most
+  the last 5 turns.
+- One task = one fresh, narrow spawn. No cross-task follow-up chains on a
+  worker thread. Hierarchy depth 2 (lead → workers) by default; add a third
+  cheap layer only for genuinely parallel bounded subtasks.
+- Every brief states: frozen goal + non-goals, authoritative constants, exact
+  acceptance commands, output contract, known failure modes, budget (max
+  spawns, max review rounds, token/time), and tier (`probe` | `production`).
+
+Progress gating (checkpoint, not poll):
+
+- Workers end their turn at defined checkpoints (plan, first diff, RED test,
+  GREEN) and hand back a deliverable; the lead reviews and corrects course
+  there. Never poll a running worker for status.
+- The lead never accepts a worker's self-report. Acceptance requires
+  independently verifiable receipts: command replay, regression-count diff,
+  file mtimes, artifact paths.
+- Waiting: one `wait_agent` sized to the expected duration (config allows
+  3600s); batch multiple targets into one wait; no narration between waits.
+
+Review cadence:
+
+- Task-level review sol/high; milestone/mechanism review xhigh; the strongest
+  adviser only at claim/launch/irreversible gates.
+- One bundled correction round per task. A third same-class finding = stop
+  and fix the shared invariant, or escalate — never a fourth review round.
+- Probe-tier work: single review round, no anti-forgery hardening.
+
+Decision authority (standing):
+
+- Ask the user: research meaning or direction, claim scope, stop rules,
+  material cost (GPU launches, paid models), irreversible or outward-facing
+  actions, architecture changes, publication.
+- Decide autonomously and log: implementation details, reversible refactors,
+  test/tooling choices, worker routing, retries.
+- If blocked >30 min on a decision not on the ask-user list, take the
+  reversible option, record it, continue. Never idle-wait on the user.
+
+Durability:
+
+- Frozen decisions (grill-me outcomes, contracts, recommendations) live in
+  files, not conversation context; compaction has flipped an in-context
+  recommendation before.
+
+Model routing priors (verify live availability; effort is search depth, not a
+fix for role mismatch — on semantic or architectural uncertainty change model
+family, do not escalate effort):
+
+- Read-only scout: luna/medium (haiku is a provider-diverse peer; neither owns
+  writes, review, or conclusions).
+- Bounded builder: terra/high or sonnet/high; sonnet/medium for small explicit
+  work with a deterministic verifier.
+- Semantic builder (math, autograd, research semantics, silent correctness):
+  sol/high; opus/medium-high as peer.
+- Lifecycle builder (compatibility, serialization, source archaeology):
+  opus/high.
+- Semantic review: sol/xhigh; lifecycle review: opus/xhigh. Review requires a
+  frozen target; target drift invalidates findings.
+- Major decisions: sol/max, opus or fable xhigh/max advise only; lead/user
+  retain authority. Never run two writers on one semantic surface.
+- Optimize time to final acceptance = builder latency + correction + review +
+  runtime wait + lead intervention; spend is a tie-breaker.
+
 ## Runtime
 
 - Run Python through the default `ms` Conda environment:
@@ -58,8 +127,10 @@
   when intermediate output is unnecessary.
 - Do not use a short poll merely to report that work is still running. In
   `functions.exec`, set outer `@exec yield_time_ms` at least 30000 ms longer
-  than its longest nested wait. Completion returns early; exempt non-empty
-  interactive `write_stdin` calls and `wait_agent` from this rule.
+  than its longest nested wait. Completion returns early; exempt only
+  non-empty interactive `write_stdin` calls from this rule. `wait_agent` is
+  NOT exempt: it follows the orchestration waiting rule — one wait sized to
+  the expected duration, batched targets, no narration between waits.
 
 ## Records
 
