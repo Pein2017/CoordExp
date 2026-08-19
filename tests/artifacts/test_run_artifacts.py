@@ -502,7 +502,7 @@ def test_schedule_can_be_bound_once_after_early_initialization(tmp_path: Path) -
     assert exc_info.value.code == "run_writer.schedule_already_bound"
 
 
-@pytest.mark.parametrize("mode", ["legacy_fused", "overlapped", "synchronous"])
+@pytest.mark.parametrize("mode", ["overlapped", "synchronous"])
 def test_forward_input_provider_mode_can_be_bound_once_per_mode(
     tmp_path: Path, mode: str
 ) -> None:
@@ -540,7 +540,7 @@ def test_forward_input_provider_resolution_must_match_bound_mode(
             resolution={
                 "configured_mode": "synchronous",
                 "resolved_mode": "overlapped",
-                "source": "deprecated_environment_override",
+                "source": "strict_config",
             },
         )
     assert exc_info.value.code == (

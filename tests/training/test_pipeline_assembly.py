@@ -18,7 +18,6 @@ from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
 from src.losses import LossContext, LossRunner, TokenVocabularyGroups
 from src.packing.planner import PackedSegment, plan_packed_sequences
-from src.qwen.forward import build_qwen_forward_inputs
 from src.qwen.positions import build_qwen_position_inputs
 from src.supervision import TokenAtom, TokenSequence
 from src.training.supervised_trainer import (
@@ -1111,8 +1110,8 @@ def test_production_pack_plan_policies_preserve_every_atomic_example_once(
 @pytest.mark.parametrize(
     "name",
     [
-        "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
         "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+        "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
     ],
 )
 def test_policy_selector_source_records_only_default_or_allowlisted_name(
@@ -1125,6 +1124,14 @@ def test_policy_selector_source_records_only_default_or_allowlisted_name(
 
     with pytest.raises(RuntimeContractError) as exc_info:
         cache_workflow._environment_selector_source("SECRET_TOKEN")
+    assert exc_info.value.code == "runtime.environment_selector_unsupported"
+
+    # The retired forward-input-provider override is no longer allowlisted:
+    # strict config is the only selector, so no receipt may name it.
+    with pytest.raises(RuntimeContractError) as exc_info:
+        cache_workflow._environment_selector_source(
+            "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE"
+        )
     assert exc_info.value.code == "runtime.environment_selector_unsupported"
 
 
@@ -1985,14 +1992,13 @@ def test_mapped_native_attestation_requires_exact_rank_identity(
     assert exc_info.value.code == "runtime.mapped_native_execution_rank_mismatch"
 
 
-@pytest.mark.parametrize("provider_mode", ("legacy_fused", "synchronous", "overlapped"))
+@pytest.mark.parametrize("provider_mode", ("synchronous", "overlapped"))
 def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     provider_mode: str,
 ) -> None:
     monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
-    monkeypatch.delenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", raising=False)
     resolved_provider = session.resolve_forward_input_provider_mode(provider_mode)
     monkeypatch.setattr(
         session,
@@ -2414,18 +2420,9 @@ def test_three_provider_modes_have_exact_cpu_autograd_and_adam_state_equivalence
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
         provider = build_forward_input_provider(mode)
         try:
-            if provider is not None:
-                provider.begin_planned_step(1, tuple(micro_steps))
+            provider.begin_planned_step(1, tuple(micro_steps))
             for ordinal, micro_step in enumerate(micro_steps):
-                forward_inputs = (
-                    build_qwen_forward_inputs(
-                        micro_step.pack,
-                        micro_step.encoded_examples,
-                        micro_step.position_inputs,
-                    )
-                    if provider is None
-                    else provider.take(ordinal, micro_step)
-                )
+                forward_inputs = provider.take(ordinal, micro_step)
                 features = torch.stack(
                     (
                         forward_inputs.input_ids.float().sum(),
@@ -2446,15 +2443,12 @@ def test_three_provider_modes_have_exact_cpu_autograd_and_adam_state_equivalence
                 optimizer_state,
             )
         finally:
-            if provider is not None:
-                provider.end_planned_step()
-                provider.close()
+            provider.end_planned_step()
+            provider.close()
 
-    results = {
-        mode: run_mode(mode) for mode in ("legacy_fused", "synchronous", "overlapped")
-    }
-    reference_parameters, reference_optimizer = results["legacy_fused"]
-    for mode in ("synchronous", "overlapped"):
+    results = {mode: run_mode(mode) for mode in ("synchronous", "overlapped")}
+    reference_parameters, reference_optimizer = results["synchronous"]
+    for mode in ("overlapped",):
         parameters, optimizer_state = results[mode]
         assert parameters.keys() == reference_parameters.keys()
         for name in parameters:

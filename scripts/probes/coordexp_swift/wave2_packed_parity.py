@@ -125,6 +125,8 @@ from src.runtime import validate_accelerator_runtime  # noqa: E402
 
 SOURCE_OWNERS = (
     "src/qwen/parity.py",
+    # Canonical owner of the generic identity machinery `parity.py` re-exports.
+    "src/artifacts/identity.py",
     "scripts/probes/coordexp_swift/wave2_packed_parity.py",
     "src/config/loader.py",
     "src/artifacts/provenance.py",
@@ -144,6 +146,14 @@ SOURCE_OWNERS = (
     "src/adapters/dora.py",
     "src/qwen/special_token_embeddings.py",
     "src/training/pipeline.py",
+    # The facade kept its name but no longer owns the behavior it is
+    # fingerprinted for: these are its post-decomposition owners.
+    "src/training/execution_plan.py",
+    "src/training/control_plane.py",
+    "src/training/session.py",
+    "src/training/cache_workflow.py",
+    "src/training/cache_contract.py",
+    "src/training/reporting.py",
     "src/runtime/__init__.py",
     "src/runtime/train_runtime.py",
 )

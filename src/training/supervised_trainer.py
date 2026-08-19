@@ -166,6 +166,13 @@ class SupervisedTrainer:
                 "ignore the custom qwen_forward callable",
                 code="trainer.forward_input_provider_conflicts_with_custom_qwen_forward",
             )
+        if forward_input_provider is None and qwen_forward is None:
+            raise RuntimeContractError(
+                "SupervisedTrainer requires exactly one forward-input source: a "
+                "forward_input_provider (production assembly) or an explicit "
+                "qwen_forward callable; there is no implicit device-direct default",
+                code="trainer.forward_input_source_required",
+            )
         if (
             isinstance(start_planned_step_id, bool)
             or not isinstance(start_planned_step_id, int)
@@ -184,7 +191,7 @@ class SupervisedTrainer:
         self.schedule = schedule
         self.start_planned_step_id = start_planned_step_id
         self.pack_stream = iter(pack_stream)
-        self.qwen_forward = qwen_forward or _default_qwen_forward
+        self.qwen_forward = qwen_forward
         self.loss_context_factory = loss_context_factory or _default_loss_context
         self.loss_runner = loss_runner
         self.runtime = runtime
@@ -295,7 +302,15 @@ class SupervisedTrainer:
                             ),
                         )
                     else:
-                        forward_result = self.qwen_forward(
+                        custom_qwen_forward = self.qwen_forward
+                        if custom_qwen_forward is None:
+                            raise RuntimeContractError(
+                                "trainer has no forward-input source: construction "
+                                "requires a forward_input_provider or an explicit "
+                                "qwen_forward callable",
+                                code="trainer.forward_input_source_required",
+                            )
+                        forward_result = custom_qwen_forward(
                             _runtime_model(self.runtime, self.model),
                             effective_micro_step,
                         )

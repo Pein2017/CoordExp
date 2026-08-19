@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 CONFIG_LOADER_VERSION = "coordexp-swift-config-v1"
 
-ForwardInputProviderMode = Literal["synchronous", "overlapped", "legacy_fused"]
+ForwardInputProviderMode = Literal["synchronous", "overlapped"]
 PackingPolicy = Literal[
     "source_order_next_fit",
     "window_binpack",

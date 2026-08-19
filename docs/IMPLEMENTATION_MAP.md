@@ -20,7 +20,14 @@ reuse.
 | Question | Current owner | First verification surface |
 | --- | --- | --- |
 | Training entry | `src/train.py` | `tests/training/` |
-| Training assembly | `src/training/pipeline.py` | `tests/training/test_pipeline_assembly.py` |
+| Training facade | `src/training/pipeline.py` | `tests/training/test_pipeline_assembly.py` |
+| Model-free execution plan | `src/training/execution_plan.py` | `tests/training/test_pipeline_assembly.py` |
+| Pre-model rank convergence | `src/training/control_plane.py` | `tests/runtime/test_rank_report_collective.py` |
+| Initialized-run lifetime | `src/training/session.py` | `tests/training/test_training_session.py` |
+| Cache admission and hydration | `src/training/cache_workflow.py`, `src/training/cache_contract.py` | `tests/training/test_pipeline_cache_preflight.py` |
+| Completed-step reporting | `src/training/reporting.py` | `tests/training/test_pipeline_assembly.py` |
+| Cached micro-step schema | `src/training/micro_steps.py` | `tests/training/test_pack_cache_determinant_registry.py` |
+| Forward-input preparation | `src/training/forward_input_provider.py` | `tests/training/test_forward_input_provider.py` |
 | Planned-step loop | `src/training/supervised_trainer.py` | `tests/training/test_supervised_trainer.py` |
 | Config schema and resolution | `src/config/loader.py`, `src/config/models.py`, `src/config/resolve.py` | `tests/config/` and strict-config tests |
 | Raw JSONL and geometry | `src/data/` | `docs/data/CONTRACT.md`, `tests/data/` |
@@ -30,7 +37,8 @@ reuse.
 | Token supervision | `src/supervision/` | `tests/supervision/` |
 | Loss assembly | `src/losses/` | `tests/losses/` |
 | Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | `tests/runtime/`, `tests/optim/`, `tests/adapters/` |
-| Training run files | `src/artifacts/run_writer.py` | `tests/artifacts/test_run_artifacts.py` |
+| Training run files | `src/artifacts/run_writer.py` (facade), `src/artifacts/run_schema.py`, `src/artifacts/run_state.py` | `tests/artifacts/test_run_artifacts.py`, `tests/artifacts/test_run_schema.py`, `tests/artifacts/test_run_state.py` |
+| Generic content/weight/repository identity | `src/artifacts/identity.py` | `tests/artifacts/test_identity_compatibility.py` |
 | Training checkpoints | `src/artifacts/checkpoints.py` | `tests/artifacts/test_checkpoint_writer.py` |
 | Inference payload manifest | `src/artifacts/checkpoint_payload.py` | `tests/artifacts/test_checkpoint_payload_identity.py` |
 | Exact training state | `src/artifacts/training_state.py` | `tests/artifacts/test_training_state.py` |
@@ -75,6 +83,19 @@ schema from an archived YAML file or an old plan.
 - `src/losses/runner.py` owns configured loss assembly and normalization.
 - `src/runtime/train_runtime.py` owns the Accelerate-only replicated-DDP
   execution boundary, finite gates, optimizer, and scheduler behavior.
+- `src/training/pipeline.py` is the training facade only: it builds the
+  immutable model-free plan (`execution_plan.py`), opens the pre-model rank
+  control plane (`control_plane.py`), admits the cache workflow
+  (`cache_workflow.py`/`cache_contract.py`), and runs exactly one
+  `TrainingSession` (`session.py`), which owns model/runtime assembly,
+  exact-resume, eval/checkpoint/finalization, and the forward-input provider
+  lifetime. `src/training/reporting.py` owns completed-step rows.
+- `src/training/forward_input_provider.py` owns forward-input preparation.
+  The strict config field `training.forward_input_provider_mode` is the only
+  selector; no environment variable may replace it. `synchronous` is the
+  default reference implementation, and `overlapped` is an explicit
+  experimental selection with depth-one, CPU-only producer semantics. Every
+  supported mode builds a provider; assembly never omits one.
 - `src/artifacts/run_writer.py` owns rank-zero `run.json`,
   `resolved_config.json`, and `logging.jsonl`; `src/artifacts/checkpoints.py`
   owns synchronized staged PEFT adapter and optional selected-token delta

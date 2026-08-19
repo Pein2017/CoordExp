@@ -498,6 +498,7 @@ def test_default_qwen_forward_uses_runtime_selected_forward_device(monkeypatch) 
         model=object(),
         schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
         pack_stream=_micro_steps(1, log),
+        qwen_forward=trainer_module._default_qwen_forward,
         loss_context_factory=_loss_context(log),
         loss_runner=StreamingFakeLossRunner(log),
         runtime=FakeRuntime(log, forward_device="cuda:7"),
@@ -539,6 +540,7 @@ def test_default_qwen_forward_keeps_exactly_the_token_sequence_positions(
         model=object(),
         schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
         pack_stream=iter((micro_step,)),
+        qwen_forward=trainer_module._default_qwen_forward,
         loss_context_factory=_loss_context([]),
         loss_runner=StreamingFakeLossRunner([]),
         runtime=FakeRuntime([]),
@@ -1261,11 +1263,15 @@ def test_default_and_provider_paths_receive_same_effective_fa2_controls(
     )
     monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
 
-    for provider in (None, FakeForwardInputProvider()):
+    for provider, qwen_forward in (
+        (None, trainer_module._default_qwen_forward),
+        (FakeForwardInputProvider(), None),
+    ):
         trainer = SupervisedTrainer(
             model=object(),
             schedule=_schedule(resolved_max_steps=2, grad_accum_steps=1),
             pack_stream=(step, step),
+            qwen_forward=qwen_forward,
             loss_context_factory=_loss_context([]),
             loss_runner=StreamingFakeLossRunner([]),
             runtime=FakeRuntime([]),
@@ -1369,6 +1375,23 @@ def test_forward_input_provider_rejects_combination_with_custom_qwen_forward() -
     )
     # No lifecycle calls happened at all: the trainer never got constructed.
     assert provider.calls == []
+
+
+def test_supervised_trainer_requires_one_explicit_forward_input_source() -> None:
+    # The retired `legacy_fused` mode was the only production route that left
+    # both seams unset and silently fell back to a trainer-owned device-direct
+    # build.  Construction now fails closed instead of choosing a default.
+    with pytest.raises(RuntimeContractError) as exc_info:
+        SupervisedTrainer(
+            model=object(),
+            schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+            pack_stream=_micro_steps(1),
+            loss_context_factory=_loss_context([]),
+            loss_runner=StreamingFakeLossRunner([]),
+            runtime=FakeRuntime([]),
+        )
+
+    assert exc_info.value.code == "trainer.forward_input_source_required"
 
 
 def test_supervised_trainer_rejects_non_streaming_loss_runner() -> None:

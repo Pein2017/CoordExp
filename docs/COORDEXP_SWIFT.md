@@ -131,20 +131,23 @@ without resuming, which is the publish-only control or parent form.
   `input_build_seconds` describes CPU-only input construction under every
   provider mode and excludes the device transfer, so it is not a substitute
   for `step_duration_seconds` and is not comparable across changes to how
-  input construction is split into phases. A bounded, depth-one-ahead CPU
-  forward-input provider exists and is proven semantically equivalent to the
-  inline construction path, but ships disabled by default (`synchronous`);
-  single-GPU measurement has not shown a wall-clock win for the overlapped
-  mode, so it is not the shipped default.
+  input construction is split into phases. Forward-input preparation supports
+  exactly two modes. `synchronous` is the shipped default and the reference
+  implementation; `overlapped` is an explicit experimental selection that adds
+  a bounded, depth-one-ahead CPU producer and is proven to prepare
+  byte-identical inputs. Single-GPU measurement has not shown a wall-clock win
+  for the overlapped mode, so it is not the shipped default.
 - Rank-sharded eval reduction (disjoint pack sharding with exact cross-rank
   aggregation) is the shipped multi-rank default after row-exact fixture
   coverage and an exact 8-rank wall-clock/checkpoint-selector replay. Eval
   still falls back to replicated execution when there are fewer packs than
   ranks or only one rank.
-  Both the forward-input-provider mode and the eval reduction mode are
-  selectable only through internal, debug/measurement-only environment
-  variables, not public YAML/CLI configuration surface — no new public knob
-  was added by these changes.
+  The forward-input-provider mode is selected only by the strict config field
+  `training.forward_input_provider_mode`; no environment variable can replace
+  it, and an unsupported value fails strict config validation rather than
+  falling back. The eval reduction mode remains selectable only through an
+  internal, debug/measurement-only environment variable, not public YAML/CLI
+  configuration surface — no new public knob was added by these changes.
 
 Stable semantics are owned by these specs:
 

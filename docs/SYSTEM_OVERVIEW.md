@@ -67,12 +67,18 @@ Swift V1 ownership.
 
 ## Training assembly and runtime
 
-`src/train.py` requires a config and delegates to
-`src/training/pipeline.py`. The pipeline resolves the typed config, initializes
-the rank-zero `RunWriter`, loads Qwen, installs adapters and selected-token
-embedding deltas, builds the pack cache and schedule, assembles losses and
-optimizer/scheduler, creates the Accelerate runtime, registers eval/checkpoint
-handlers, and runs `SupervisedTrainer`.
+`src/train.py` requires a config and delegates to the training facade
+`src/training/pipeline.py`. The facade builds an immutable model-free
+execution plan (`src/training/execution_plan.py`), opens the pre-model rank
+control plane (`src/training/control_plane.py`), initializes the rank-zero
+`RunWriter`, admits cache preparation and hydration
+(`src/training/cache_workflow.py` with `src/training/cache_contract.py`), and
+constructs exactly one `TrainingSession` (`src/training/session.py`). The
+session loads Qwen, installs adapters and selected-token embedding deltas,
+assembles losses and optimizer/scheduler, creates the Accelerate runtime,
+owns exact-resume choreography and the forward-input provider lifetime,
+registers eval/checkpoint handlers, and runs `SupervisedTrainer`.
+`src/training/reporting.py` owns completed-step rows.
 
 `src/training/supervised_trainer.py` owns planned-step and micro-step iteration
 through explicit runtime and loss interfaces. The only training backend is
@@ -80,6 +86,13 @@ Accelerate replicated DDP with one process per rank; there are no separate
 single-process or DeepSpeed modes. `src/runtime/train_runtime.py` owns device
 movement, accumulation, distributed operations, finite gates,
 gradient clipping, optimizer/scheduler stepping, and safe artifact writes.
+
+Forward-input preparation is owned by
+`src/training/forward_input_provider.py` and selected only by the strict
+config field `training.forward_input_provider_mode`. `synchronous` is the
+default reference path; `overlapped` is an explicit experimental selection
+with depth-one, CPU-only producer semantics and identical prepared inputs.
+No environment variable may replace the authored mode.
 
 ## Inference and evaluation
 

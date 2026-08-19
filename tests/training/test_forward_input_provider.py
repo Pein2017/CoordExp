@@ -22,7 +22,6 @@ from src.supervision import TokenAtom, TokenSequence
 from src.training.forward_input_provider import (
     DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES,
     DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES,
-    LEGACY_FUSED_MODE,
     OverlappedForwardInputProvider,
     SynchronousForwardInputProvider,
     build_forward_input_provider,
@@ -615,34 +614,57 @@ def test_resolve_forward_input_provider_mode_defaults_and_validates(
         "lookahead_depth": 0,
     }
 
-    monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", "overlapped")
     resolved = forward_input_provider_module.resolve_forward_input_provider_mode(
-        "legacy_fused"
+        "overlapped"
     )
-    assert resolved.resolved_mode == "overlapped"
     assert resolved.to_receipt_dict() == {
-        "configured_mode": "legacy_fused",
+        "configured_mode": "overlapped",
         "resolved_mode": "overlapped",
-        "source": "deprecated_environment_override",
-        "environment_variable": "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
-        "is_semantic_override": True,
+        "source": "strict_config",
+        "environment_variable": None,
+        "is_semantic_override": False,
         "provider_disposition": "overlapped",
         "input_build_owner": "provider_producer_cpu",
         "device_transfer_owner": "provider_consumer",
         "lookahead_depth": 1,
     }
 
-    monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", "bogus")
-    with pytest.raises(RuntimeContractError) as exc_info:
-        forward_input_provider_module.resolve_forward_input_provider_mode("synchronous")
-    assert exc_info.value.code == "training.forward_input_provider_mode_invalid"
-    assert exc_info.value.context["source"] == "deprecated_environment_override"
-
-    monkeypatch.delenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", raising=False)
     with pytest.raises(RuntimeContractError) as exc_info:
         forward_input_provider_module.resolve_forward_input_provider_mode("async")  # type: ignore[arg-type]
     assert exc_info.value.code == "training.forward_input_provider_mode_invalid"
     assert exc_info.value.context["source"] == "strict_config"
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        forward_input_provider_module.resolve_forward_input_provider_mode(
+            "legacy_fused"  # type: ignore[arg-type]
+        )
+    assert exc_info.value.code == "training.forward_input_provider_mode_invalid"
+    assert exc_info.value.context["source"] == "strict_config"
+    assert exc_info.value.context["environment_variable"] is None
+
+
+@pytest.mark.parametrize("configured_mode", ("synchronous", "overlapped"))
+@pytest.mark.parametrize(
+    "environment_value", ("overlapped", "synchronous", "legacy_fused", "bogus")
+)
+def test_environment_cannot_replace_strict_provider_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_mode: str,
+    environment_value: str,
+) -> None:
+    """The retired override is ignored: strict config is the only selector."""
+
+    monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", environment_value)
+
+    resolved = forward_input_provider_module.resolve_forward_input_provider_mode(
+        configured_mode  # type: ignore[arg-type]
+    )
+
+    assert resolved.configured_mode == configured_mode
+    assert resolved.resolved_mode == configured_mode
+    assert resolved.source == "strict_config"
+    assert resolved.environment_variable is None
+    assert resolved.is_semantic_override is False
 
 
 # --- M3 loss-stream equivalence: a fixed multi-step run through the real
@@ -864,24 +886,17 @@ def test_loss_stream_and_gate_decisions_are_identical_between_provider_modes_on_
     overlapped_observations = _run_echo_stream(
         "overlapped", micro_steps, grad_accum_steps=2
     )
-    legacy_observations = _run_echo_stream(
-        "legacy_fused", micro_steps, grad_accum_steps=2
-    )
 
-    assert (
-        len(sync_observations)
-        == len(overlapped_observations)
-        == len(legacy_observations)
-        == 2
-    )
-    for sync_obs, overlapped_obs, legacy_obs in zip(
-        sync_observations, overlapped_observations, legacy_observations, strict=True
+    assert len(sync_observations) == len(overlapped_observations) == 2
+    for sync_obs, overlapped_obs in zip(
+        sync_observations, overlapped_observations, strict=True
     ):
-        for candidate in (overlapped_obs, legacy_obs):
-            assert sync_obs.loss_bundle_artifact == candidate.loss_bundle_artifact
-            assert sync_obs.optimizer_update_status == candidate.optimizer_update_status
-            assert sync_obs.finite_status == candidate.finite_status
-            assert sync_obs.micro_step_count == candidate.micro_step_count
+        assert sync_obs.loss_bundle_artifact == overlapped_obs.loss_bundle_artifact
+        assert (
+            sync_obs.optimizer_update_status == overlapped_obs.optimizer_update_status
+        )
+        assert sync_obs.finite_status == overlapped_obs.finite_status
+        assert sync_obs.micro_step_count == overlapped_obs.micro_step_count
 
 
 def test_all_modes_emit_identical_checkpoint_handler_inputs() -> None:
@@ -904,7 +919,7 @@ def test_all_modes_emit_identical_checkpoint_handler_inputs() -> None:
     )
 
     handler_inputs_by_mode: dict[str, list[dict[str, Any]]] = {}
-    for mode in ("synchronous", "overlapped", "legacy_fused"):
+    for mode in ("synchronous", "overlapped"):
         provider = build_forward_input_provider(mode)
         handler_inputs: list[dict[str, Any]] = []
 
@@ -942,9 +957,6 @@ def test_all_modes_emit_identical_checkpoint_handler_inputs() -> None:
         handler_inputs_by_mode[mode] = handler_inputs
 
     assert handler_inputs_by_mode["synchronous"] == handler_inputs_by_mode["overlapped"]
-    assert (
-        handler_inputs_by_mode["synchronous"] == handler_inputs_by_mode["legacy_fused"]
-    )
 
 
 def test_loss_stream_and_gate_decisions_are_identical_between_provider_modes_on_a_synthetic_early_break() -> (
@@ -985,10 +997,6 @@ def test_loss_stream_and_gate_decisions_are_identical_between_provider_modes_on_
 
 
 def test_build_forward_input_provider_selects_implementation_by_mode() -> None:
-    assert (
-        forward_input_provider_module.build_forward_input_provider(LEGACY_FUSED_MODE)
-        is None
-    )
     assert isinstance(
         forward_input_provider_module.build_forward_input_provider("synchronous"),
         SynchronousForwardInputProvider,
@@ -1002,27 +1010,23 @@ def test_build_forward_input_provider_selects_implementation_by_mode() -> None:
     assert exc_info.value.code == "training.forward_input_provider_mode_invalid"
 
 
-def test_legacy_fused_builder_never_instantiates_a_provider(
-    monkeypatch: pytest.MonkeyPatch,
+def test_build_forward_input_provider_never_returns_none_for_a_supported_mode() -> None:
+    for mode in ("synchronous", "overlapped"):
+        provider = build_forward_input_provider(mode)  # type: ignore[arg-type]
+        assert provider is not None
+        provider.close()
+
+
+@pytest.mark.parametrize("mode", ("legacy_fused", "none", "fused"))
+def test_build_forward_input_provider_rejects_retired_and_unknown_modes(
+    mode: str,
 ) -> None:
-    def unexpected_provider() -> None:
-        raise AssertionError("legacy_fused must not instantiate a provider")
-
-    monkeypatch.setattr(
-        forward_input_provider_module,
-        "SynchronousForwardInputProvider",
-        unexpected_provider,
-    )
-    monkeypatch.setattr(
-        forward_input_provider_module,
-        "OverlappedForwardInputProvider",
-        unexpected_provider,
-    )
-
-    assert build_forward_input_provider("legacy_fused") is None
+    with pytest.raises(RuntimeContractError) as exc_info:
+        build_forward_input_provider(mode)  # type: ignore[arg-type]
+    assert exc_info.value.code == "training.forward_input_provider_mode_invalid"
 
 
-def test_legacy_fused_disposition_leaves_build_and_device_move_with_trainer(
+def test_default_qwen_forward_builds_device_direct_inputs_for_its_caller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     micro_step = _make_micro_step(0, forward_device="meta")

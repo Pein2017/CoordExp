@@ -334,7 +334,7 @@ def test_forward_input_provider_mode_defaults_to_synchronous_and_is_persisted(
 
 @pytest.mark.parametrize(
     "mode",
-    ("synchronous", "overlapped", "legacy_fused"),
+    ("synchronous", "overlapped"),
 )
 def test_forward_input_provider_mode_accepts_exact_strict_values(
     tmp_path: Path,
@@ -351,7 +351,9 @@ def test_forward_input_provider_mode_accepts_exact_strict_values(
     assert resolved.config_dict["training"]["forward_input_provider_mode"] == mode
 
 
-@pytest.mark.parametrize("mode", ("legacy", "fused", "async", "OVERLAPPED", ""))
+@pytest.mark.parametrize(
+    "mode", ("legacy_fused", "legacy", "fused", "async", "OVERLAPPED", "")
+)
 def test_forward_input_provider_mode_rejects_unknown_or_renamed_values(
     tmp_path: Path,
     mode: str,

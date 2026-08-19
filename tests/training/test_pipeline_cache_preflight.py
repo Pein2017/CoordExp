@@ -23,6 +23,7 @@ from src.training import (
     pipeline,
     session,
 )
+from src.training.forward_input_provider import ResolvedForwardInputProviderMode
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
@@ -678,11 +679,7 @@ def test_exact_resume_lineage_rejects_wrong_world_before_run_creation(
     assert exc_info.value.code == "training.resume_world_size_mismatch"
 
 
-def test_provider_resolution_requires_one_exact_receipt_across_launcher_ranks(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", raising=False)
-
+def test_provider_resolution_requires_one_exact_receipt_across_launcher_ranks() -> None:
     def gather(report: object) -> tuple[object, object]:
         peer = {**dict(report), "rank": 1}  # type: ignore[arg-type]
         peer_details = dict(peer["rank_details"])
@@ -711,9 +708,11 @@ def test_provider_resolution_requires_one_exact_receipt_across_launcher_ranks(
     assert sorted(exc_info.value.context["rank_resolutions"]) == ["0", "1"]
 
 
-def test_provider_resolution_accepts_exact_same_mode_source_and_receipt(
+def test_provider_resolution_ignores_the_retired_environment_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The override is set on purpose: strict config must remain the resolved
+    # policy on every launcher rank, with no environment source in the receipt.
     monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", "overlapped")
     captured: list[dict[str, object]] = []
 
@@ -728,8 +727,10 @@ def test_provider_resolution_accepts_exact_same_mode_source_and_receipt(
         receipt_sink=lambda receipt: captured.append(dict(receipt)),
     )
 
-    assert resolved.resolved_mode == "overlapped"
-    assert resolved.source == "deprecated_environment_override"
+    assert resolved.configured_mode == "synchronous"
+    assert resolved.resolved_mode == "synchronous"
+    assert resolved.source == "strict_config"
+    assert resolved.environment_variable is None
     assert captured[0]["rank_details"]["0"] == captured[0]["rank_details"]["1"]
 
 
@@ -762,7 +763,7 @@ def test_eval_reduction_rejects_default_vs_explicit_same_effective_receipt(
     assert exc_info.value.code == "training.eval_reduction_resolution_mismatch"
 
 
-def test_invalid_provider_override_fails_shared_artifact_before_cache_or_model(
+def test_invalid_provider_mode_fails_shared_artifact_before_cache_or_model(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -774,7 +775,11 @@ def test_invalid_provider_override_fails_shared_artifact_before_cache_or_model(
         model_load_calls=model_load_calls,
         accelerator_calls=accelerator_calls,
     )
-    monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", "invalid-provider")
+    # A mode that escaped strict config validation must still be rejected at
+    # the provenance phase, before any cache or model work.
+    execution_plan.load_train_config(
+        config_path
+    ).config.training.forward_input_provider_mode = "invalid-provider"
 
     with pytest.raises(RuntimeContractError) as exc_info:
         pipeline.run_training_pipeline(config_path)
@@ -1381,11 +1386,17 @@ def _distributed_provider_resolution_mismatch_worker(
                 "COORDEXP_SWIFT_PACK_CACHE_ROOT": str(task_root / "cache-root"),
             }
         )
-        os.environ.pop("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", None)
         if rank == 1:
-            # Same resolved mode, different source: exact receipt convergence
-            # must reject even a semantically no-op rank-local override.
-            os.environ["COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE"] = "synchronous"
+            # Strict config is the only selector, so divergence can only come
+            # from a differently authored rank-local config.  Exact receipt
+            # convergence must still reject it before any model or cache work.
+            session.resolve_forward_input_provider_mode = (
+                lambda mode: ResolvedForwardInputProviderMode(
+                    configured_mode="overlapped",
+                    resolved_mode="overlapped",
+                    source="strict_config",
+                )
+            )
         try:
             pipeline.run_training_pipeline(config_path)
         except RuntimeContractError as exc:
@@ -1752,9 +1763,9 @@ def test_two_rank_provider_env_source_mismatch_fails_before_cache_and_model(
     phase = run_state["measurement"]["phases"]["config_provenance_resolution"]
     assert phase["status"] == "failed"
     assert phase["rank_details"]["0"]["resolution"]["source"] == "strict_config"
-    assert phase["rank_details"]["1"]["resolution"]["source"] == (
-        "deprecated_environment_override"
-    )
+    assert phase["rank_details"]["1"]["resolution"]["source"] == "strict_config"
+    assert phase["rank_details"]["0"]["resolution"]["resolved_mode"] == "synchronous"
+    assert phase["rank_details"]["1"]["resolution"]["resolved_mode"] == "overlapped"
 
 
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")

@@ -159,8 +159,19 @@ EXPECTED_PHASES = (
 EXECUTION_OWNER_PATHS = {
     "provider": REPO_ROOT / "src/training/forward_input_provider.py",
     "pipeline": REPO_ROOT / "src/training/pipeline.py",
+    # The training facade kept its name but no longer owns the behavior it is
+    # fingerprinted for: these are its post-decomposition owners.
+    "execution_plan": REPO_ROOT / "src/training/execution_plan.py",
+    "control_plane": REPO_ROOT / "src/training/control_plane.py",
+    "session": REPO_ROOT / "src/training/session.py",
+    "cache_workflow": REPO_ROOT / "src/training/cache_workflow.py",
+    "cache_contract": REPO_ROOT / "src/training/cache_contract.py",
+    "reporting": REPO_ROOT / "src/training/reporting.py",
     "trainer": REPO_ROOT / "src/training/supervised_trainer.py",
+    "micro_steps": REPO_ROOT / "src/training/micro_steps.py",
     "artifact_writer": REPO_ROOT / "src/artifacts/run_writer.py",
+    "run_schema": REPO_ROOT / "src/artifacts/run_schema.py",
+    "run_state": REPO_ROOT / "src/artifacts/run_state.py",
     "checkpoint_writer": REPO_ROOT / "src/artifacts/checkpoints.py",
     "provenance": REPO_ROOT / "src/artifacts/provenance.py",
     "config_loader": REPO_ROOT / "src/config/loader.py",

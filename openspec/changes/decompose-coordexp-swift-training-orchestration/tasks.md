@@ -482,13 +482,90 @@
 
 ## 7. Wave 6 - Retire Legacy Provider Selection
 
-- [ ] 7.1 Add failing strict-config and provider tests requiring `legacy_fused`, `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE`, unknown aliases, and environment-driven replacement of strict config to be rejected or ignored exactly as established by the prerequisite contract, while `synchronous` and explicit `overlapped` remain accepted.
-- [ ] 7.2 Narrow `ForwardInputProviderMode` to `synchronous|overlapped`; remove the deprecated environment resolver/source receipt, selector allowlist, convergence branch, and all legacy config fixtures or compatibility defaults.
-- [ ] 7.3 Delete the `legacy_fused` provider disposition and trainer-owned device-direct build branch; make the provider interface non-optional and preserve synchronous/overlapped causal positions, CPU-build/device-transfer split, depth bound, validation, error timing, cancellation, and close behavior.
-- [ ] 7.4 Update RunWriter/provider policy validation and exact-resume policy construction for the supported modes without changing unrelated run/checkpoint schemas or current supported-mode bytes.
-- [ ] 7.5 Update canonical operator docs and implementation maps to name strict config as the sole selector, `synchronous` as reference, `overlapped` as experimental, and the new code owners; route any needed legacy explanation to history rather than retaining live aliases.
-- [ ] 7.6 Run a repository residue search for `legacy_fused`, `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE`, deprecated provider-source receipts, production `src.qwen.parity` imports, pipeline-private causal helpers, and forbidden reverse imports; allow only explicitly labeled historical evidence.
-- [ ] 7.7 Gate Wave 6 with its frozen config/provider/trainer/pipeline/resume/artifact/historical-reader manifest IDs and strict OpenSpec validation. Commit one scoped independently revertible wave, prove revert restores Wave 5 without cache mutation, then obtain the single pre-cost standards/overdesign/intent audit; no cache/GPU action may be authorized with an unresolved P0/P1.
+- [x] 7.1 Add failing strict-config and provider tests requiring `legacy_fused`, `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE`, unknown aliases, and environment-driven replacement of strict config to be rejected or ignored exactly as established by the prerequisite contract, while `synchronous` and explicit `overlapped` remain accepted.
+- [x] 7.2 Narrow `ForwardInputProviderMode` to `synchronous|overlapped`; remove the deprecated environment resolver/source receipt, selector allowlist, convergence branch, and all legacy config fixtures or compatibility defaults.
+- [x] 7.3 Delete the `legacy_fused` provider disposition and trainer-owned device-direct build branch; make the provider interface non-optional and preserve synchronous/overlapped causal positions, CPU-build/device-transfer split, depth bound, validation, error timing, cancellation, and close behavior.
+- [x] 7.4 Update RunWriter/provider policy validation and exact-resume policy construction for the supported modes without changing unrelated run/checkpoint schemas or current supported-mode bytes.
+- [x] 7.5 Update canonical operator docs and implementation maps to name strict config as the sole selector, `synchronous` as reference, `overlapped` as experimental, and the new code owners; route any needed legacy explanation to history rather than retaining live aliases.
+- [x] 7.6 Run a repository residue search for `legacy_fused`, `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE`, deprecated provider-source receipts, production `src.qwen.parity` imports, pipeline-private causal helpers, and forbidden reverse imports; allow only explicitly labeled historical evidence.
+- [x] 7.7 Gate Wave 6 with its frozen config/provider/trainer/pipeline/resume/artifact/historical-reader manifest IDs and strict OpenSpec validation. Commit one scoped independently revertible wave, prove revert restores Wave 5 without cache mutation, then obtain the single pre-cost standards/overdesign/intent audit; no cache/GPU action may be authorized with an unresolved P0/P1.
+
+> **Wave 6 closed (2026-08-19, parent `6760a6a8c`; produced under an explicit
+> no-commit instruction):** `legacy_fused` and
+> `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE` are deleted.
+> `ForwardInputProviderMode` is `Literal["synchronous", "overlapped"]`,
+> `resolve_forward_input_provider_mode` reads only strict config,
+> `ForwardInputProviderModeSource` is `Literal["strict_config"]`,
+> `build_forward_input_provider` returns a non-optional provider, the session's
+> disposition-agreement check is gone, `run_writer.bind_forward_input_provider_mode`
+> accepts two modes, and `cache_workflow._RECEIPT_ENVIRONMENT_SELECTORS` no longer
+> allowlists the retired variable (no caller passed it, so no receipt byte moved).
+> Gate: the manifest `wave6-legacy-selector-gate` argv ran verbatim at 547 passed,
+> 0 failed, 0 skipped (all 24 declared flips green, `expected_red_nodes` empty);
+> the wave-0 baseline argv replayed fully green at 283 passed; `openspec validate
+> --strict` valid; ruff clean on every touched file with no new format debt;
+> `tests/fixtures/**` untouched and the characterization fixtures replayed
+> unchanged. The RED step recorded 12 failed / 179 passed before any source edit.
+> Collected-node accounting: 8 nodes removed from the gate argv and 18 added, each
+> removal a legacy-mode parametrize case or a renamed/rewritten legacy test; the
+> wave-0 argv moved 285 -> 283 by the same accounting.
+> (a) `to_receipt_dict()` keeps all nine keys, including the now-always-`None`
+> `environment_variable` and the now-always-`False` `is_semantic_override`.
+> Dropping either would have changed supported-mode run.json and exact-resume
+> policy bytes, which this wave is not allowed to do.
+> (b) The `config_provenance_resolution` rank-convergence phase is retained per
+> design decision 11 ("the direct config value may still be rank-converged");
+> only the environment branch inside the resolver was deleted. Its two-rank
+> divergence test now diverges by patching the resolver on rank 1 instead of by
+> setting the retired variable, and every other assertion replays unchanged.
+> (c) "Trainer-owned device-direct build branch" was read as the *default
+> wiring*, not the function: `self.qwen_forward = qwen_forward or
+> _default_qwen_forward` becomes `self.qwen_forward = qwen_forward`, and
+> construction now fails closed with `trainer.forward_input_source_required`
+> unless exactly one of `forward_input_provider` / `qwen_forward` is supplied.
+> `_default_qwen_forward` itself is retained because `src/eval/forward.py`
+> imports it as its own production default; it is now trainer-dead and
+> eval-only, so moving its ownership is a later-wave residual. The alternative
+> reading -- requiring the provider and deleting the `qwen_forward` seam --
+> would have rewritten 28 trainer-suite call sites and changed what that suite
+> asserts, colliding with "supported-mode tests keep passing unchanged".
+> (d) Wave-4 disclosure (d) is discharged: `wave2_packed_parity.py`
+> `SOURCE_OWNERS` gains `src/artifacts/identity.py` plus the six post-decomposition
+> owners of `pipeline.py`, and `wave5_provider_benchmark.py`
+> `EXECUTION_OWNER_PATHS` gains `execution_plan`, `control_plane`, `session`,
+> `cache_workflow`, `cache_contract`, `reporting`, `micro_steps`, `run_schema`,
+> and `run_state`. Both lists hash live, so this changes receipts only at the next
+> run; `tests/qwen/test_packed_parity.py` (287 passed) and
+> `tests/training/test_wave5_provider_benchmark.py` stay green.
+> (e) **STOP AND REPORT, unresolved by design:**
+> `scripts/probes/coordexp_swift/wave5_provider_benchmark.py` still declares arm
+> `"D"` (`legacy_fused`) and is the only live legacy reference outside strict
+> rejection tests and this change's own authority artifacts. Removing it is not
+> separable with bounded effort: `TRIAD_ORDERS` is a 3-arm Latin square and
+> `CANDIDATE_ARMS`/`MIN_PAIRED_OBSERVATIONS = 3`/`expected_arm_executions = 9`
+> would all need new values, which is a user-owned measurement-design decision.
+> The frozen r2 evidence does not block removal -- `load_historical_r2_plan`
+> authenticates by file SHA256, schema string, and `plan_sha256` only, never by
+> arms, and that run terminated `resource-stop` / `complete_non_promoting` with
+> zero observations. Arm `"D"` is now unrunnable (`_write_arm_config` strict-loads
+> the config it writes, which fails validation), but no test exercises that path,
+> so the suite is green at 111 passed.
+> (f) Task 7.7's commit, revert proof, and pre-cost standards/overdesign/intent
+> audit are unexecuted: this wave was produced under an explicit no-commit
+> instruction. Gate evidence is recorded in
+> `openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-6-gate.json`.
+
+
+> Lead disposition (2026-08-19), benchmark arm D: retained as an
+> unrunnable, fail-closed historical probe. The three-arm Latin-square
+> measurement contract (TRIAD_ORDERS, MIN_PAIRED_OBSERVATIONS=3,
+> expected_arm_executions=9) is frozen research design owned by the user;
+> re-choosing it for two arms is a new design decision, and no promoted
+> claim depends on the r2 run (terminated unmeasurable/non-promoting).
+> Any attempt to execute arm D now fails closed at strict config, which
+> is the correct behavior for a deleted mode. The wave-6-gate.json
+> receipt the builder drafted was dropped per the waves-0..5 precedent
+> (gate records live in these notes).
 
 ## 8. Wave 7 - Freeze Owners and Perform the Single Cache Transition
 

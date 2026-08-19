@@ -275,9 +275,9 @@ class RunWriter:
         resolution: Mapping[str, Any] | None = None,
     ) -> None:
         """Record the resolved forward-input provider mode exactly once."""
-        if mode not in {"legacy_fused", "overlapped", "synchronous"}:
+        if mode not in {"overlapped", "synchronous"}:
             raise ArtifactContractError(
-                "forward input provider mode must be 'legacy_fused', 'overlapped', or 'synchronous'",
+                "forward input provider mode must be 'overlapped' or 'synchronous'",
                 code="run_writer.invalid_forward_input_provider_mode",
                 context={"mode": mode},
             )

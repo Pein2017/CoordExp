@@ -592,7 +592,6 @@ def _characterization_worker(
             }
         )
         for name in (
-            "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
             "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
             "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
         ):

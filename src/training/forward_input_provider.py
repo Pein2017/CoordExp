@@ -12,9 +12,8 @@ shows up inside the caller's `step_duration_seconds`, never inside
 `input_build_seconds` or `input_wait_seconds` (queue-wait only). The
 provider owns preparation; the trainer owns step boundaries by calling
 `begin_planned_step` / `take` / `end_planned_step` / `close` explicitly.
-The third strict mode, `legacy_fused`, deliberately builds no provider: a
-`None` disposition leaves the existing trainer-owned fused device-direct
-construction path active.
+Strict config is the only selector and admits exactly these two modes, so
+assembly always yields a provider; there is no mode that builds none.
 
 The build slot enforces the true depth-one bound: the producer must acquire
 it before starting a build and it is released by the consumer immediately
@@ -33,7 +32,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-import os
 import queue
 import threading
 import time
@@ -52,17 +50,11 @@ _JOIN_TIMEOUT_SECONDS = 30.0
 DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES = 64 * 1024**3
 DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES = 64 * 1024**3
 
-_FORWARD_INPUT_PROVIDER_MODE_ENV = "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE"
-LEGACY_FUSED_MODE = "legacy_fused"
 OVERLAPPED_MODE = "overlapped"
 SYNCHRONOUS_MODE = "synchronous"
-_FORWARD_INPUT_PROVIDER_MODES = frozenset(
-    {LEGACY_FUSED_MODE, OVERLAPPED_MODE, SYNCHRONOUS_MODE}
-)
+_FORWARD_INPUT_PROVIDER_MODES = frozenset({OVERLAPPED_MODE, SYNCHRONOUS_MODE})
 
-ForwardInputProviderModeSource = Literal[
-    "strict_config", "deprecated_environment_override"
-]
+ForwardInputProviderModeSource = Literal["strict_config"]
 
 
 @dataclass(frozen=True)
@@ -79,31 +71,19 @@ class ResolvedForwardInputProviderMode:
         return self.resolved_mode != self.configured_mode
 
     @property
-    def provider_disposition(self) -> Literal["none", "synchronous", "overlapped"]:
-        if self.resolved_mode == LEGACY_FUSED_MODE:
-            return "none"
+    def provider_disposition(self) -> Literal["synchronous", "overlapped"]:
         return self.resolved_mode
 
     @property
     def input_build_owner(
         self,
-    ) -> Literal[
-        "trainer_fused_device_direct",
-        "provider_consumer_cpu",
-        "provider_producer_cpu",
-    ]:
-        if self.resolved_mode == LEGACY_FUSED_MODE:
-            return "trainer_fused_device_direct"
+    ) -> Literal["provider_consumer_cpu", "provider_producer_cpu"]:
         if self.resolved_mode == SYNCHRONOUS_MODE:
             return "provider_consumer_cpu"
         return "provider_producer_cpu"
 
     @property
-    def device_transfer_owner(
-        self,
-    ) -> Literal["trainer_fused_build", "provider_consumer"]:
-        if self.resolved_mode == LEGACY_FUSED_MODE:
-            return "trainer_fused_build"
+    def device_transfer_owner(self) -> Literal["provider_consumer"]:
         return "provider_consumer"
 
     @property
@@ -143,31 +123,18 @@ class ForwardInputProvider(Protocol):
 def resolve_forward_input_provider_mode(
     configured_mode: ForwardInputProviderMode,
 ) -> ResolvedForwardInputProviderMode:
-    """Resolve strict config plus the one bounded deprecated environment source.
+    """Resolve the strict config value, which is the only selector.
 
     Callers must persist ``to_receipt_dict()`` rather than only the resolved
-    string.  This makes a diagnostic environment override visible and prevents
-    production assembly from silently treating it as authored strict config.
+    string, so the run receipt keeps stating the complete resolved policy.  No
+    environment value may replace the authored mode.
     """
 
     configured_mode = _validate_mode(configured_mode, source="strict_config")
-    raw = os.environ.get(_FORWARD_INPUT_PROVIDER_MODE_ENV)
-    if raw is None:
-        return ResolvedForwardInputProviderMode(
-            configured_mode=configured_mode,
-            resolved_mode=configured_mode,
-            source="strict_config",
-        )
-    resolved_mode = _validate_mode(
-        raw,
-        source="deprecated_environment_override",
-        environment_variable=_FORWARD_INPUT_PROVIDER_MODE_ENV,
-    )
     return ResolvedForwardInputProviderMode(
         configured_mode=configured_mode,
-        resolved_mode=resolved_mode,
-        source="deprecated_environment_override",
-        environment_variable=_FORWARD_INPUT_PROVIDER_MODE_ENV,
+        resolved_mode=configured_mode,
+        source="strict_config",
     )
 
 
@@ -179,8 +146,7 @@ def _validate_mode(
 ) -> ForwardInputProviderMode:
     if mode not in _FORWARD_INPUT_PROVIDER_MODES:
         raise RuntimeContractError(
-            "forward input provider mode must be 'legacy_fused', 'overlapped', or "
-            "'synchronous'",
+            "forward input provider mode must be 'overlapped' or 'synchronous'",
             code="training.forward_input_provider_mode_invalid",
             context={
                 "value": mode,
@@ -193,10 +159,8 @@ def _validate_mode(
 
 def build_forward_input_provider(
     mode: ForwardInputProviderMode,
-) -> ForwardInputProvider | None:
+) -> ForwardInputProvider:
     mode = _validate_mode(mode, source="strict_config")
-    if mode == LEGACY_FUSED_MODE:
-        return None
     if mode == SYNCHRONOUS_MODE:
         return SynchronousForwardInputProvider()
     if mode == OVERLAPPED_MODE:
@@ -780,7 +744,6 @@ __all__ = [
     "DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES",
     "DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES",
     "ForwardInputProvider",
-    "LEGACY_FUSED_MODE",
     "OVERLAPPED_MODE",
     "OverlappedForwardInputProvider",
     "ResolvedForwardInputProviderMode",

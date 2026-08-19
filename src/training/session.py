@@ -641,9 +641,9 @@ def _resolve_converged_forward_input_provider_mode(
 ) -> ResolvedForwardInputProviderMode:
     """Resolve one identical provider policy on every launcher rank.
 
-    This boundary deliberately runs on the temporary CPU control plane.  The
-    deprecated environment selector is rank-local, so accepting only the local
-    result would allow different trainer/provider behavior across ranks.
+    This boundary deliberately runs on the temporary CPU control plane.  Strict
+    config is the only selector, and this phase proves every launcher rank
+    resolved the same policy receipt before any trainer or provider is built.
     """
 
     local_detail: dict[str, Any] = {
@@ -2306,14 +2306,6 @@ def _run_initialized_training(
 
         exact_training_state_callback_factory = publish_exact_training_state
     forward_input_provider = build_forward_input_provider(forward_input_provider_mode)
-    if (forward_input_provider is None) != (
-        forward_input_provider_mode == "legacy_fused"
-    ):
-        raise RuntimeContractError(
-            "forward input provider disposition disagrees with the resolved mode",
-            code="training.forward_input_provider_disposition_invalid",
-            context={"resolved_mode": forward_input_provider_mode},
-        )
     checkpoint_writer = CheckpointWriter(run_directory.run_dir)
     eval_by_step: dict[int, dict[str, Any]] = {}
     committed_checkpoint_steps: set[int] = set()
