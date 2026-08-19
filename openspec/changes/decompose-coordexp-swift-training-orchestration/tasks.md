@@ -137,14 +137,153 @@
 
 ## 4. Wave 3 - Cache Contract and Workflow
 
-- [ ] 4.1 Add failing tests for `micro_step_runtime_config_identity(config)` and determinant-owner mutation. Require the final determinant diff to contain at least the four declared source changes—`supervision_tokens`, `micro_step_runtime_config`, `micro_step_schema`, and `cache_serializer`—while reporting/session/facade edits add no determinant; any missing declared change or unexplained additional change blocks the wave.
-- [ ] 4.2 Implement `src/training/cache_contract.py`; update `PACKING_CACHE_DETERMINANT_OWNERS` to bind `micro_step_runtime_config` and `micro_step_schema` to the two narrow owners and prove the semantic content projections remain exact.
-- [ ] 4.3 Add failing cache-workflow and CLI tests for one-process preparation, worker resolution, train/eval split aggregation, absent-target publication, model-free fingerprint/admission, rank-local hydration, image-processor attachment, and bounded actionable failures. The tests MUST require `src.prepare_train_cache --require-all-hit` to validate existing train/eval targets, succeed on two valid hits, and fail on any miss/invalid target before any render/tokenize/pack/build/temporary-publication/immutable-publication call.
-- [ ] 4.4 Move `prepare_training_pack_caches(...)`, multi-worker render/tokenize/pack orchestration, and its receipt projection into `src/training/cache_workflow.py`; keep the ordinary CLI behavior and `src.training.pipeline` compatibility re-export exact. Add `--require-all-hit` as an in-workflow fail-before-build mode with no fallback construction path; it may only fingerprint, admit, validate both existing targets, and publish its named verification receipt.
-- [ ] 4.5 Move model-free fingerprint/admission and rank/eval hydration orchestration into `cache_workflow.py` using only the bounded `CachePreflight`/`HydratedTrainingInputs` records from the design; keep low-level identity, serialization, immutable publication, safe load, and manifest validation in `pack_cache.py`.
-- [ ] 4.6 Switch pipeline callers to the cache workflow, delete replaced cache helpers and worker globals from `pipeline.py`, and enforce that `cache_workflow.py` imports neither `session.py` nor model-loading with `load_model=True`.
-- [ ] 4.7 Prove determinant semantic projections match the baseline except for the four declared source entries and resulting aggregate/fingerprint. Prove old immutable pickle bytes still restricted-load, new serialization names `src.training.micro_steps`, decoded micro-steps are equal, and no other protected bytes differ; do not invoke production cache materialization in this wave.
-- [ ] 4.8 Gate Wave 3 with its frozen cache/preflight/rebuild/CLI/input-attestation/packing manifest IDs, import/residue checks, and strict OpenSpec validation; commit one scoped independently revertible wave and prove revert restores Wave 2 without publishing or mutating a cache.
+- [x] 4.1 Add failing tests for `micro_step_runtime_config_identity(config)` and determinant-owner mutation. Require the final determinant diff to contain at least the four declared source changes—`supervision_tokens`, `micro_step_runtime_config`, `micro_step_schema`, and `cache_serializer`—while reporting/session/facade edits add no determinant; any missing declared change or unexplained additional change blocks the wave.
+- [x] 4.2 Implement `src/training/cache_contract.py`; update `PACKING_CACHE_DETERMINANT_OWNERS` to bind `micro_step_runtime_config` and `micro_step_schema` to the two narrow owners and prove the semantic content projections remain exact.
+- [x] 4.3 Add failing cache-workflow and CLI tests for one-process preparation, worker resolution, train/eval split aggregation, absent-target publication, model-free fingerprint/admission, rank-local hydration, image-processor attachment, and bounded actionable failures. The tests MUST require `src.prepare_train_cache --require-all-hit` to validate existing train/eval targets, succeed on two valid hits, and fail on any miss/invalid target before any render/tokenize/pack/build/temporary-publication/immutable-publication call.
+- [x] 4.4 Move `prepare_training_pack_caches(...)`, multi-worker render/tokenize/pack orchestration, and its receipt projection into `src/training/cache_workflow.py`; keep the ordinary CLI behavior and `src.training.pipeline` compatibility re-export exact. Add `--require-all-hit` as an in-workflow fail-before-build mode with no fallback construction path; it may only fingerprint, admit, validate both existing targets, and publish its named verification receipt.
+- [x] 4.5 Move model-free fingerprint/admission and rank/eval hydration orchestration into `cache_workflow.py` using only the bounded `CachePreflight`/`HydratedTrainingInputs` records from the design; keep low-level identity, serialization, immutable publication, safe load, and manifest validation in `pack_cache.py`.
+- [x] 4.6 Switch pipeline callers to the cache workflow, delete replaced cache helpers and worker globals from `pipeline.py`, and enforce that `cache_workflow.py` imports neither `session.py` nor model-loading with `load_model=True`.
+- [x] 4.7 Prove determinant semantic projections match the baseline except for the four declared source entries and resulting aggregate/fingerprint. Prove old immutable pickle bytes still restricted-load, new serialization names `src.training.micro_steps`, decoded micro-steps are equal, and no other protected bytes differ; do not invoke production cache materialization in this wave.
+- [x] 4.8 Gate Wave 3 with its frozen cache/preflight/rebuild/CLI/input-attestation/packing manifest IDs, import/residue checks, and strict OpenSpec validation; commit one scoped independently revertible wave and prove revert restores Wave 2 without publishing or mutating a cache.
+
+> **Wave 3 closed (2026-08-19, commit `ca669017c`, parent `d44b691b5`;
+> per an explicit no-commit instruction):** `src/training/cache_contract.py`
+> owns `micro_step_runtime_config_identity(config)` at design decision 4's exact
+> three-field projection and imports neither the facade, the workflow, nor
+> `pack_cache.py`. `PACKING_CACHE_DETERMINANT_OWNERS` rebinds
+> `micro_step_runtime_config -> src/training/cache_contract.py` and
+> `micro_step_schema -> src/training/micro_steps.py`; every other owner entry
+> and `registry_schema_version` are unchanged.
+> `src/training/cache_workflow.py` owns `prepare_training_pack_caches(...)`,
+> the absent-target build orchestration, the multi-worker
+> render/tokenize/pack materialization, split aggregation, model-free
+> fingerprint/admission, rank/eval hydration, image-processor attachment, and
+> the bounded actionable failures; `pack_cache.py` keeps determinant
+> construction, fingerprinting, immutable publication, restricted
+> deserialization, manifest validation, and payload loading.
+> `src.prepare_train_cache --require-all-hit` is an in-workflow
+> fail-before-build mode with its own verification receipt schema.
+>
+> Determinant diff (4.1/4.7 proof, `build_packing_cache_determinants` over
+> `tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml` with a fixed
+> scratch root, before vs after this wave): the semantic payload is
+> byte-identical for all 31 determinants (empty diff, including both rebound
+> entries); exactly three registry entries changed —
+> `micro_step_runtime_config` and `micro_step_schema` (`owner` +
+> `owner_source_identity` only, `content_identity` equal) and
+> `cache_serializer` (`owner_source_identity` only) — plus `code_identity` for
+> those same three and the aggregate fingerprint. The declared fourth source,
+> `supervision_tokens`, already turned over in Wave 1
+> (`src/supervision/tokens.py` is unmodified by this wave); measured against
+> the Wave-0 baseline `eb2dc97ab`, the determinant-owner source files that
+> differ are exactly `src/supervision/tokens.py`, `src/training/pack_cache.py`
+> and the two rebound owners' old and new paths — no fifth owner. A dedicated
+> node also proves that synthesizing new hashes for both narrow owners changes
+> no `content_identity`.
+>
+> Evidence: wave-3 gate (manifest argv verbatim) = exactly its 6 expected RED
+> nodes, 556 passed, zero skips, zero unexpected passes; wave-0 baseline
+> replay 6 RED / 280 passed, wave-1 gate replay 6 RED / 567 passed, wave-2
+> gate replay 6 RED / 255 passed — each failing exactly the same wave-3
+> 6-node subset; all 20 declared flips at or below wave 3 green under
+> manifest-rule revisions; `git status -- tests/fixtures/` empty and the
+> fixture tree hash unchanged at `2fe137ccf`; `.cache/coordexp_swift/packing`
+> byte-for-byte unchanged (snapshot diff before/after the whole wave, empty);
+> `openspec validate ... --strict` valid; `ruff check` clean on every touched
+> file.
+>
+> Disclosures: (a) the one sanctioned compatibility surface is implemented as
+> a delegating `def pipeline.prepare_training_pack_caches(config_path, *,
+> require_all_hit=False)`, not the plan document's
+> `from src.training.cache_workflow import ...` re-export, because two
+> undeclared Wave-0 nodes
+> (`test_prepare_training_pack_caches_remains_importable_from_the_facade`,
+> `test_wave0_facade_signature_and_compatibility_reexport_are_frozen`) freeze
+> `__module__ == "src.training.pipeline"`; an import re-export would break two
+> preserved surfaces, and tasks.md 4.4 ("keep the ... compatibility re-export
+> exact") is controlling over the plan snippet. (b) Every other moved name is
+> referenced from `pipeline.py` module-qualified as `cache_workflow.<name>`,
+> never re-imported, so each symbol keeps exactly one patch point; this drags
+> non-cache helpers the moved code needs (`_utc_now`, `_file_sha256`,
+> `_sha256_json`, `_environment_selector_source` and the receipt env-selector
+> constants, `TRAIN_SPLIT`, `_launcher_device_mapping`,
+> `_establish_converged_runtime_determinism`,
+> `_runtime_determinism_run_policy`, `_resolve_eval_reduction_receipt`,
+> `_resolve_converged_eval_reduction_receipt`, `_resolve_pack_cache_root`,
+> `_packing_policy_receipt`) into the workflow owner, because
+> `cache_workflow.py` may not import the facade and duplicating them would
+> create a second owner. This mirrors Wave-2 disclosure (b). (c)
+> `HydratedTrainingInputs` is deliberately NOT introduced this wave: design
+> decision 5 permits the frozen records "only for the exact bundles currently
+> returned as untyped mappings", and no current bundle carries its four fields
+> without loss (train and eval hydration happen in different phases and
+> `total_ordinal_count` has no field). Its natural consumer is task 6.1's
+> "cache hydration inputs" session surface, so the record should land with the
+> wave that creates it; changing its fields first requires a design update,
+> which is user-owned. `CachePreflight` IS implemented and used, and its five
+> plan-declared fields fit the `--require-all-hit` bundle exactly. (d) The
+> Wave-6 pack-plan probe pinned pipeline ownership of the production encoder
+> seam. `scripts/probes/coordexp_swift/wave6_pack_plan_comparison.py` and
+> `tests/packing/test_wave6_pack_plan_probe.py` were repointed to
+> `src.training.cache_workflow` under the manifest's `harness_seam_repoints`
+> rule: an import-only re-export would have left the probe's fixture
+> `_render_and_encode_example` monkeypatch inert (Python resolves the moved
+> function's globals in its new module), silently running the real encoder.
+> The recorded `production_encoder_seam` string and the
+> `pipeline_symbols[...]["path"]` assertion now name the new owner; the probe
+> has no frozen self-hash pin (`_source_owners`/quiescence are computed live
+> per run) and the published `outputs/probes/.../2026-08-10-r2/plan.json`
+> artifact is historical evidence replayed by no test. `tests/packing` is
+> green (34 probe nodes) after the repoint. (e) Two parametrized node IDs in
+> `test_pack_cache_determinant_registry.py` are renamed as a pure consequence
+> of the declared rebinding —
+> `test_every_unique_declared_owner_source_edit_changes_fingerprint[pipeline]`
+> and `[supervised_trainer]` become `[cache_contract]` and `[micro_steps]` —
+> and `test_pipeline_micro_step_constructor_owner_is_explicit_and_source_bound`
+> is renamed to `test_micro_step_runtime_config_owner_is_explicit_and_source_bound`;
+> the obligation count is unchanged (one node per unique owner path) and all
+> were passing before and after. (f) Test files outside the plan's Task-4 list
+> were repointed under the same seam rule:
+> `test_orchestration_compatibility.py`, `test_pipeline_assembly.py`,
+> `test_pipeline_cache_preflight.py`, `test_pipeline_pack_cache_rebuild.py`,
+> `test_pipeline_phase_convergence.py`, and
+> `test_pack_cache_runtime_constructor.py` (the last two are wave-8-matrix
+> files; Wave-2 disclosure (c) is the precedent). Names that BOTH owners still
+> import (`load_qwen_components`, `build_token_vocabulary_groups`,
+> `resolve_qwen_runtime_controls`, `resolve_planned_step_schedule`,
+> `load_rank_micro_steps_from_cache`, `collect_execution_provenance`,
+> `require_pinned_runtime_baseline`) are now replaced on both modules through
+> a local `_patch_shared_cache_import` helper (or chained assignment in the
+> gloo worker bodies) so no seam silently reaches production through the other
+> owner; no expected value was changed anywhere. (g) `--require-all-hit` is
+> fail-closed when the config declares no evaluation split: it raises
+> `training.pack_cache_verification_split_undeclared` before admitting the
+> train target rather than verifying one split and reporting success. Nothing
+> in the design, tasks, plan, or manifest pins this case; the choice is
+> derived from 4.3's "succeed on two valid hits", D5's "validate both existing
+> targets", and D13's two-target cache packet, and it keeps `CachePreflight`'s
+> non-optional `eval_*` fields honest. It is a user-reviewable semantic choice,
+> not a discovered fact. (h) Consumers of `pipeline.py` outside the wave-3
+> gate argv were executed once to prove the 1,995-line trim broke no unlisted
+> importer: `test_pipeline_exact_resume.py`,
+> `test_checkpoint_handler_identity.py`, `tests/eval/test_forward_eval.py`,
+> `test_reconcile_exact_resume_probe.py`, and
+> `tests/losses/test_wave3_zero_weight_probe_contract.py` — 267 passed. The
+> remaining pipeline-referencing files were AST-checked for stale moved
+> symbols (`wave2_packed_parity.py`, `wave3_zero_weight_gpu.py`,
+> `wave5_provider_benchmark.py`, `wave6_pack_plan_comparison.py`,
+> `src/train.py`, `tests/helpers/training_architecture_fixture_builder.py` —
+> all clean). `tests/test_objective_profile_resolution.py` and
+> `tests/test_training_pipeline_registry.py` still fail collection on
+> `src.training.pipeline_registry` and `ConfigLoader`, both absent at the
+> wave-0 baseline and untouched by this wave: pre-existing, not a regression.
+> (i) Task 4.8's commit and revert proof are unexecuted: this wave was
+> produced under an explicit no-commit instruction.
+
+> Close-out: the lead independently re-ran the wave-3 gate (6 FAILED, all
+> in the boundary file, byte-equal to the expected wave-3 RED set, zero
+> skips) and proved revertibility -- a staged revert of `ca669017c` is
+> zero lines different from `d44b691b5`.
 
 ## 5. Wave 4 - Existing-Schema Reporting and RunWriter Internals
 
