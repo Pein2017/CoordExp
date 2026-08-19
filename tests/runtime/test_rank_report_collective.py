@@ -17,8 +17,8 @@ from src.training.exact_resume import (
     DistributedExactResumeRestoreStatus,
     DistributedExactResumeStatus,
 )
-import src.training.pipeline as training_pipeline
-from src.training.pipeline import (
+import src.training.control_plane as training_control_plane
+from src.training.control_plane import (
     _RANK_REPORT_FRAME_BYTES,
     _RANK_REPORT_MAX_PAYLOAD_BYTES,
     _build_rank_report_gatherer,
@@ -86,19 +86,19 @@ def test_non_gloo_runtime_uses_and_closes_dedicated_gloo_group(
         assert width == _RANK_REPORT_FRAME_BYTES
         assert world_size == 2
         assert group is control_group
-        local_header = training_pipeline._unpack_rank_report_header(
-            payload[: training_pipeline._RANK_REPORT_HEADER.size]
+        local_header = training_control_plane._unpack_rank_report_header(
+            payload[: training_control_plane._RANK_REPORT_HEADER.size]
         )
         local_payload_size = int(local_header["payload_size"])
         local_report = pickle.loads(
             payload[
-                training_pipeline._RANK_REPORT_HEADER.size : training_pipeline._RANK_REPORT_HEADER.size
+                training_control_plane._RANK_REPORT_HEADER.size : training_control_plane._RANK_REPORT_HEADER.size
                 + local_payload_size
             ]
         )
         peer_report = {**local_report, "rank": 1}
         peer_payload = pickle.dumps(peer_report, protocol=pickle.HIGHEST_PROTOCOL)
-        peer_header = training_pipeline._rank_report_header(
+        peer_header = training_control_plane._rank_report_header(
             peer_report,
             sequence=int(local_header["sequence"]),
             payload=peer_payload,
@@ -113,7 +113,7 @@ def test_non_gloo_runtime_uses_and_closes_dedicated_gloo_group(
     monkeypatch.setattr(dist, "new_group", new_group)
     monkeypatch.setattr(dist, "destroy_process_group", destroy_process_group)
     monkeypatch.setattr(
-        training_pipeline,
+        training_control_plane,
         "_all_gather_cpu_bytes",
         gather_peer_frame,
     )
@@ -134,7 +134,7 @@ def test_non_gloo_runtime_uses_and_closes_dedicated_gloo_group(
             "ranks": [0, 1],
             "backend": "gloo",
             "timeout": timedelta(
-                seconds=training_pipeline._RANK_REPORT_CONTROL_TIMEOUT_SECONDS
+                seconds=training_control_plane._RANK_REPORT_CONTROL_TIMEOUT_SECONDS
             ),
         }
     ]
@@ -153,7 +153,7 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
     )
     original_all_gather_object = dist.all_gather_object
     original_all_gather = dist.all_gather
-    original_rank_report_header = training_pipeline._rank_report_header
+    original_rank_report_header = training_control_plane._rank_report_header
     all_gather_calls = 0
     gather: Any | None = None
 
@@ -323,7 +323,7 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
             )
 
         if rank == _WORLD_SIZE - 1:
-            training_pipeline._rank_report_header = out_of_sequence_header
+            training_control_plane._rank_report_header = out_of_sequence_header
         try:
             with pytest.raises(RuntimeContractError) as exc_info:
                 gather(
@@ -336,7 +336,7 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
                 )
             assert exc_info.value.code == "runtime.report_gather_sequence"
         finally:
-            training_pipeline._rank_report_header = original_rank_report_header
+            training_control_plane._rank_report_header = original_rank_report_header
 
         assert all_gather_calls == 10
         output.put((rank, "ok:10"))
@@ -349,7 +349,7 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
             close()
         dist.all_gather_object = original_all_gather_object  # type: ignore[assignment]
         dist.all_gather = original_all_gather  # type: ignore[assignment]
-        training_pipeline._rank_report_header = original_rank_report_header
+        training_control_plane._rank_report_header = original_rank_report_header
         _destroy_process_group_best_effort()
 
 

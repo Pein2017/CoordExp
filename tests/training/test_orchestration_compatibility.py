@@ -53,7 +53,7 @@ from src.packing.planner import PackedSegment
 from src.qwen import parity as parity_identity
 from src.supervision import TokenAtom, TokenSequence
 from src.supervision.tokens import TokenSpan
-from src.training import pack_cache, pipeline
+from src.training import control_plane, execution_plan, pack_cache, pipeline
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
@@ -478,8 +478,8 @@ def _characterization_worker(
     captured_preflight: dict[str, Any] = {}
     gatherer_serial = {"count": 0}
 
-    real_converged_phase = pipeline._run_rank_converged_phase
-    real_gatherer_factory = pipeline._build_rank_report_gatherer
+    real_converged_phase = control_plane._run_rank_converged_phase
+    real_gatherer_factory = control_plane._build_rank_report_gatherer
     real_preflight_resolver = pipeline._resolve_model_free_training_preflight
 
     def recording_converged_phase(phase: str, **kwargs: Any) -> Any:
@@ -574,7 +574,7 @@ def _characterization_worker(
         ):
             os.environ.pop(name, None)
 
-        pipeline.load_train_config = lambda path: resolved
+        execution_plan.load_train_config = lambda path: resolved
         pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
         pipeline.require_pinned_runtime_baseline = (
             lambda **kwargs: _runtime_baseline_receipt()
@@ -599,8 +599,8 @@ def _characterization_worker(
                 ),
             )
         )
-        pipeline._run_rank_converged_phase = recording_converged_phase
-        pipeline._build_rank_report_gatherer = recording_gatherer_factory
+        control_plane._run_rank_converged_phase = recording_converged_phase
+        control_plane._build_rank_report_gatherer = recording_gatherer_factory
         pipeline._resolve_model_free_training_preflight = capturing_preflight
         pipeline._build_accelerator = build_accelerator
         pipeline.validate_accelerator_runtime = lambda *args, **kwargs: None

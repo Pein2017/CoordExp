@@ -15,7 +15,7 @@ import pytest
 import torch.distributed as dist
 
 from src.common.errors import RuntimeContractError
-from src.training import pack_cache, pipeline
+from src.training import control_plane, execution_plan, pack_cache, pipeline
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
     PACKING_CACHE_VERSION,
@@ -337,7 +337,7 @@ def _install_pipeline_fakes(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
-    monkeypatch.setattr(pipeline, "load_train_config", lambda path: resolved)
+    monkeypatch.setattr(execution_plan, "load_train_config", lambda path: resolved)
     monkeypatch.setattr(
         pipeline,
         "collect_execution_provenance",
@@ -430,7 +430,7 @@ def test_partial_or_malformed_launcher_identity_fails_before_any_preflight_surfa
         monkeypatch.setenv("WORLD_SIZE", world_size)
     construction_calls: list[str] = []
     monkeypatch.setattr(
-        pipeline,
+        control_plane,
         "_build_model_free_preflight_gatherer",
         lambda world: construction_calls.append("control-plane"),
     )
@@ -460,7 +460,7 @@ def test_direct_launch_defaults_only_when_both_identity_fields_are_absent(
 ) -> None:
     monkeypatch.delenv("RANK", raising=False)
     monkeypatch.delenv("WORLD_SIZE", raising=False)
-    assert pipeline._resolve_model_free_launch_identity() == (0, 1)
+    assert execution_plan._resolve_model_free_launch_identity() == (0, 1)
 
 
 def test_pinned_runtime_baseline_admission_broadcasts_rank_zero_receipt(
@@ -807,7 +807,7 @@ def test_post_writer_handshake_failure_finalizes_one_artifact_and_closes_gathere
 
     gatherer = _HandshakeGatherer()
     monkeypatch.setattr(
-        pipeline,
+        control_plane,
         "_build_model_free_preflight_gatherer",
         lambda world_size: gatherer,
     )
@@ -870,7 +870,7 @@ def test_cache_rank_report_projects_only_bounded_allowlisted_context_into_artifa
 
     gatherer = _Gatherer()
     monkeypatch.setattr(
-        pipeline,
+        control_plane,
         "_build_model_free_preflight_gatherer",
         lambda world_size: gatherer,
     )
@@ -1002,7 +1002,7 @@ def test_pre_writer_failure_closes_preflight_gatherer_exactly_once(
     close_calls: list[str] = []
     gatherer = SimpleNamespace(close=lambda: close_calls.append("closed"))
     monkeypatch.setattr(
-        pipeline,
+        control_plane,
         "_build_model_free_preflight_gatherer",
         lambda world_size: gatherer,
     )
@@ -1052,10 +1052,10 @@ def test_preflight_gatherer_construction_failure_destroys_owned_group(
             self.initialized = False
 
     distributed = _Distributed()
-    monkeypatch.setattr(pipeline.torch, "distributed", distributed)
+    monkeypatch.setattr(control_plane.torch, "distributed", distributed)
     if builder_outcome == "raises":
         monkeypatch.setattr(
-            pipeline,
+            control_plane,
             "_build_rank_report_gatherer",
             lambda world_size: (_ for _ in ()).throw(
                 RuntimeError("rank-report gatherer construction failed")
@@ -1064,12 +1064,12 @@ def test_preflight_gatherer_construction_failure_destroys_owned_group(
         expected_exception: type[BaseException] = RuntimeError
     else:
         monkeypatch.setattr(
-            pipeline, "_build_rank_report_gatherer", lambda world_size: None
+            control_plane, "_build_rank_report_gatherer", lambda world_size: None
         )
         expected_exception = RuntimeContractError
 
     with pytest.raises(expected_exception):
-        pipeline._build_model_free_preflight_gatherer(2)
+        control_plane._build_model_free_preflight_gatherer(2)
 
     assert distributed.init_calls == 1
     assert distributed.destroy_calls == 1
@@ -1204,7 +1204,7 @@ def test_direct_and_distributed_cache_failure_errors_are_identical(
         )
 
     with pytest.raises(RuntimeContractError) as direct_info:
-        pipeline._run_rank_converged_phase(
+        control_plane._run_rank_converged_phase(
             "cache_preflight",
             rank=0,
             world_size=1,
@@ -1217,7 +1217,7 @@ def test_direct_and_distributed_cache_failure_errors_are_identical(
         return report, peer
 
     with pytest.raises(RuntimeContractError) as distributed_info:
-        pipeline._run_rank_converged_phase(
+        control_plane._run_rank_converged_phase(
             "cache_preflight",
             rank=0,
             world_size=2,
@@ -1251,7 +1251,7 @@ def _distributed_preflight_failure_worker(
     accelerator_calls: list[str] = []
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
-    pipeline.load_train_config = lambda path: resolved
+    execution_plan.load_train_config = lambda path: resolved
     pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
     pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
@@ -1330,7 +1330,7 @@ def _distributed_provider_resolution_mismatch_worker(
         entry_config_path=config_path,
         to_artifact_dict=lambda: {"test": True},
     )
-    pipeline.load_train_config = lambda path: resolved
+    execution_plan.load_train_config = lambda path: resolved
     pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
     pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
@@ -1400,7 +1400,7 @@ def _distributed_preflight_success_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     observations: dict[str, object] = {}
-    pipeline.load_train_config = lambda path: resolved
+    execution_plan.load_train_config = lambda path: resolved
     pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
     pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
@@ -1509,7 +1509,7 @@ def _distributed_accelerator_identity_mismatch_worker(
     gatherer_close_world_sizes: list[int] = []
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
-    pipeline.load_train_config = lambda path: resolved
+    execution_plan.load_train_config = lambda path: resolved
     pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
     pipeline.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
@@ -1533,7 +1533,7 @@ def _distributed_accelerator_identity_mismatch_worker(
             effective_batch_size=_WORLD_SIZE,
         ),
     )
-    real_build_rank_report_gatherer = pipeline._build_rank_report_gatherer
+    real_build_rank_report_gatherer = control_plane._build_rank_report_gatherer
 
     def build_rank_report_gatherer(world_size: int) -> object:
         gatherer_build_world_sizes.append(world_size)
@@ -1549,7 +1549,7 @@ def _distributed_accelerator_identity_mismatch_worker(
         gatherer.close = close
         return gatherer
 
-    pipeline._build_rank_report_gatherer = build_rank_report_gatherer
+    control_plane._build_rank_report_gatherer = build_rank_report_gatherer
 
     def build_accelerator(precision: str) -> object:
         if dist.is_initialized():
@@ -1899,7 +1899,7 @@ def test_rank_converged_phase_preserves_primary_failure_when_receipt_sink_fails(
         )
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._run_rank_converged_phase(
+        control_plane._run_rank_converged_phase(
             "cache_preflight",
             rank=0,
             world_size=1,

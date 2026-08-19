@@ -13,14 +13,17 @@ from typing import Any
 import pytest
 import torch.distributed as dist
 
+import src.training.control_plane as control_plane
 import src.training.pipeline as pipeline
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
+from src.training.control_plane import (
+    _build_rank_report_gatherer,
+    _run_rank_converged_phase,
+)
 from src.training.pipeline import (
     _begin_run_phase,
-    _build_rank_report_gatherer,
     _fail_active_run_phase,
-    _run_rank_converged_phase,
 )
 
 
@@ -403,7 +406,7 @@ _WAVE0_SINGLE_RANK_CONVERGED_RECEIPT = {
 
 def test_wave0_single_rank_convergence_builds_no_collective_transport() -> None:
     assert _build_rank_report_gatherer(1) is None
-    assert pipeline._build_model_free_preflight_gatherer(1) is None
+    assert control_plane._build_model_free_preflight_gatherer(1) is None
 
 
 def test_wave0_single_rank_phase_returns_body_result_and_exact_receipt() -> None:

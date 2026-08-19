@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+import src.training.control_plane as control_plane
+import src.training.execution_plan as execution_plan
 import src.training.pipeline as pipeline
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
@@ -171,14 +173,14 @@ def test_runtime_determinism_is_established_before_model_free_owner_setup(
         ),
     )
     resolved = SimpleNamespace(config=config)
-    monkeypatch.setattr(pipeline, "load_train_config", lambda _path: resolved)
+    monkeypatch.setattr(execution_plan, "load_train_config", lambda _path: resolved)
     monkeypatch.setattr(
-        pipeline,
+        execution_plan,
         "_resolve_model_free_launch_identity",
         lambda: (0, 1),
     )
     monkeypatch.setattr(
-        pipeline,
+        control_plane,
         "_build_model_free_preflight_gatherer",
         lambda _world_size: None,
     )
@@ -1219,7 +1221,7 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
     holder: dict[str, RunWriter] = {}
     gatherer_closed: list[bool] = []
     gatherer = SimpleNamespace(close=lambda: gatherer_closed.append(True))
-    monkeypatch.setattr(pipeline, "load_train_config", lambda path: resolved)
+    monkeypatch.setattr(execution_plan, "load_train_config", lambda path: resolved)
     monkeypatch.setattr(
         pipeline,
         "collect_execution_provenance",
@@ -1270,7 +1272,7 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
         lambda **kwargs: {"duration_seconds": 0.1},
     )
     monkeypatch.setattr(
-        pipeline, "_build_rank_report_gatherer", lambda world_size: gatherer
+        control_plane, "_build_rank_report_gatherer", lambda world_size: gatherer
     )
 
     def fail_provider_assembly(mode: str) -> object:
@@ -2708,29 +2710,33 @@ WAVE0_TRAIN_ROW_KEYS = (
     "step_duration_seconds",
 )
 
-#: Private helpers `pipeline.py` owns today, with the wave that takes each away.
-WAVE0_PIPELINE_OWNED_HELPERS = {
-    "_build_model_free_preflight_gatherer": 2,
-    "_build_rank_report_gatherer": 2,
-    "_run_rank_converged_phase": 2,
-    "_validate_phase_status_reports": 2,
-    "_normalize_bounded_phase_details": 2,
-    "_all_gather_cpu_bytes": 2,
-    "_resolve_model_free_launch_identity": 2,
-    "_admit_model_free_pack_cache": 3,
-    "_resolve_model_free_training_preflight": 3,
-    "_resolve_or_build_pack_cache": 3,
-    "_resolve_or_build_train_pack_cache": 3,
-    "_resolve_eval_pack_cache": 3,
-    "_hydrate_eval_micro_steps_from_cache": 3,
-    "_pack_cache_preparation_receipt": 3,
-    "_aggregate_cache_phase": 3,
-    "_train_logging_handler": 4,
-    "_append_logging_row_shared": 4,
-    "_run_initialized_training": 5,
-    "_checkpoint_handler": 5,
-    "_eval_forward_handler": 5,
-    "_final_handler": 5,
+#: Private helpers `pipeline.py` owned at Wave 0, with the wave that takes each
+#: away and the module that owns it once that wave has landed.  ``None`` means
+#: the helper is still owned by ``pipeline.py``; a module means the declared
+#: wave moved it and ``pipeline.py`` must no longer expose it, because a
+#: forwarding layer would keep the historical owner alive by another name.
+WAVE0_PIPELINE_OWNED_HELPERS: dict[str, tuple[int, object | None]] = {
+    "_build_model_free_preflight_gatherer": (2, control_plane),
+    "_build_rank_report_gatherer": (2, control_plane),
+    "_run_rank_converged_phase": (2, control_plane),
+    "_validate_phase_status_reports": (2, control_plane),
+    "_normalize_bounded_phase_details": (2, control_plane),
+    "_all_gather_cpu_bytes": (2, control_plane),
+    "_resolve_model_free_launch_identity": (2, execution_plan),
+    "_admit_model_free_pack_cache": (3, None),
+    "_resolve_model_free_training_preflight": (3, None),
+    "_resolve_or_build_pack_cache": (3, None),
+    "_resolve_or_build_train_pack_cache": (3, None),
+    "_resolve_eval_pack_cache": (3, None),
+    "_hydrate_eval_micro_steps_from_cache": (3, None),
+    "_pack_cache_preparation_receipt": (3, None),
+    "_aggregate_cache_phase": (3, None),
+    "_train_logging_handler": (4, None),
+    "_append_logging_row_shared": (4, None),
+    "_run_initialized_training": (5, None),
+    "_checkpoint_handler": (5, None),
+    "_eval_forward_handler": (5, None),
+    "_final_handler": (5, None),
 }
 
 
@@ -2761,17 +2767,28 @@ def test_wave0_facade_result_key_set_matches_the_frozen_fixture() -> None:
 
 
 @pytest.mark.parametrize(
-    ("helper", "clears_at_wave"),
+    ("helper", "ownership"),
     sorted(WAVE0_PIPELINE_OWNED_HELPERS.items()),
     ids=sorted(WAVE0_PIPELINE_OWNED_HELPERS),
 )
 def test_wave0_pipeline_still_owns_helper_until_its_declared_wave(
-    helper: str, clears_at_wave: int
+    helper: str, ownership: tuple[int, object | None]
 ) -> None:
-    assert hasattr(pipeline, helper), (
-        f"pipeline.{helper} is owned by src/training/pipeline.py until wave "
-        f"{clears_at_wave} moves it; a wave that moves it must delete it here "
-        "and revise this node under the frozen manifest's revision rule"
+    clears_at_wave, new_owner = ownership
+    if new_owner is None:
+        assert hasattr(pipeline, helper), (
+            f"pipeline.{helper} is owned by src/training/pipeline.py until wave "
+            f"{clears_at_wave} moves it; a wave that moves it must delete it here "
+            "and revise this node under the frozen manifest's revision rule"
+        )
+        return
+    owner_name = getattr(new_owner, "__name__", str(new_owner))
+    assert hasattr(new_owner, helper), (
+        f"wave {clears_at_wave} moved {helper} to {owner_name}, which must own it"
+    )
+    assert not hasattr(pipeline, helper), (
+        f"wave {clears_at_wave} moved {helper} to {owner_name}; "
+        "src/training/pipeline.py must delete it rather than forward through it"
     )
 
 

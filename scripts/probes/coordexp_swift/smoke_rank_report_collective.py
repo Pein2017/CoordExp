@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.training.pipeline import _build_rank_report_gatherer  # noqa: E402
+from src.training.control_plane import _build_rank_report_gatherer  # noqa: E402
 
 
 def _parse_args() -> argparse.Namespace:
