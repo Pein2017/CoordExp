@@ -1,0 +1,11 @@
+{
+  "completed_steps": 1,
+  "consumed_micro_steps": 2,
+  "resolved_config_fingerprint": "config-fingerprint",
+  "run_dir": "<root>/artifacts/run",
+  "run_id": "characterization-run-config-finge",
+  "scheduled_event_counts": {
+    "checkpoint": 0,
+    "eval": 0
+  }
+}

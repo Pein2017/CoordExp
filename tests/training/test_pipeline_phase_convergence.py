@@ -364,3 +364,107 @@ def test_direct_phase_rejects_unbounded_rank_details_without_exposing_value() ->
 
     assert exc_info.value.code == "runtime.phase_status_invalid"
     assert "secret-shaped" not in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Wave-0 pre-move characterization for
+# `decompose-coordexp-swift-training-orchestration`.
+#
+# These additions freeze the single-rank companion to the two-rank ordered trace
+# owned by `tests/training/test_orchestration_compatibility.py`.  They use the
+# same seam as the tests above: the real `_run_rank_converged_phase` boundary and
+# the real gatherer factories, with no transport substitution.
+# ---------------------------------------------------------------------------
+
+
+_WAVE0_SINGLE_RANK_CONVERGED_RECEIPT = {
+    "rank_details": {"0": {"characterization": True}},
+    "rank_resources": {
+        "global_maxima": {
+            "io_read_bytes": 10,
+            "io_write_bytes": 20,
+            "max_rss_bytes": 100,
+            "scope": "all_rank_deterministic_maximum",
+        },
+        "per_rank": {
+            "0": {
+                "io_read_bytes": 10,
+                "io_write_bytes": 20,
+                "max_rss_bytes": 100,
+                "scope": "current_process",
+            }
+        },
+        "schema_version": 1,
+        "scope": "current_process_lifetime_high_water_at_phase_observation",
+        "world_size": 1,
+    },
+}
+
+
+def test_wave0_single_rank_convergence_builds_no_collective_transport() -> None:
+    assert _build_rank_report_gatherer(1) is None
+    assert pipeline._build_model_free_preflight_gatherer(1) is None
+
+
+def test_wave0_single_rank_phase_returns_body_result_and_exact_receipt() -> None:
+    receipts: list[dict[str, object]] = []
+
+    result = _run_rank_converged_phase(
+        "model_loading",
+        rank=0,
+        world_size=1,
+        rank_report_gatherer=None,
+        body=lambda: "characterized-body-result",
+        local_details=lambda: {"characterization": True},
+        receipt_sink=receipts.append,
+        resource_collector=lambda: _rank_resource_snapshot(0),
+    )
+
+    assert result == "characterized-body-result"
+    assert receipts == [_WAVE0_SINGLE_RANK_CONVERGED_RECEIPT]
+
+
+def test_wave0_single_rank_phase_raises_the_local_error_itself() -> None:
+    original = RuntimeContractError(
+        "characterized local failure",
+        code="training.characterized_failure",
+    )
+    receipts: list[dict[str, object]] = []
+
+    def failing_body() -> None:
+        raise original
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        _run_rank_converged_phase(
+            "model_loading",
+            rank=0,
+            world_size=1,
+            rank_report_gatherer=None,
+            body=failing_body,
+            receipt_sink=receipts.append,
+            resource_collector=lambda: _rank_resource_snapshot(0),
+        )
+
+    assert exc_info.value is original
+    assert receipts == [
+        {"rank_resources": _WAVE0_SINGLE_RANK_CONVERGED_RECEIPT["rank_resources"]}
+    ]
+
+
+def test_wave0_multi_rank_phase_without_gatherer_fails_before_any_collective() -> None:
+    with pytest.raises(RuntimeContractError) as exc_info:
+        _run_rank_converged_phase(
+            "model_loading",
+            rank=0,
+            world_size=2,
+            rank_report_gatherer=None,
+            body=lambda: "unreachable",
+            resource_collector=lambda: _rank_resource_snapshot(0),
+        )
+
+    assert exc_info.value.code == "runtime.report_gather_unavailable"
+    assert exc_info.value.context == {
+        "rank": 0,
+        "world_size": 2,
+        "phase": "model_loading",
+    }

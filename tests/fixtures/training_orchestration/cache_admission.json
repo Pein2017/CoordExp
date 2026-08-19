@@ -1,0 +1,241 @@
+{
+  "per_rank": {
+    "0": {
+      "cache_root_receipt": {
+        "resolved_root": "<root>/cache-root",
+        "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+      },
+      "eval_cache": null,
+      "eval_reduction": {
+        "control": "auto",
+        "effective_mode": "replicated",
+        "pack_count": null,
+        "source": "default",
+        "world_size": 2
+      },
+      "phase_trace": {
+        "cache_identity_resolution": {
+          "details": {
+            "eval_identity_resolved": false,
+            "train_identity_resolved": true
+          },
+          "resource_snapshot_keys": [
+            "cpu",
+            "gpu",
+            "schema_version"
+          ],
+          "status": "completed"
+        },
+        "cache_publication_admission": {
+          "details": {
+            "eval_manifest_micro_step_count": 0,
+            "eval_reduction": {
+              "control": "auto",
+              "effective_mode": "replicated",
+              "pack_count": null,
+              "source": "default",
+              "world_size": 2
+            },
+            "eval_verification_level": "not_applicable",
+            "immutable_publication_admitted": true,
+            "train_manifest_micro_step_count": 2,
+            "train_verification_level": "manifest"
+          },
+          "resource_snapshot_keys": [
+            "cpu",
+            "gpu",
+            "schema_version"
+          ],
+          "status": "completed"
+        },
+        "train_rank_hydration": {
+          "details": {
+            "rank": 0,
+            "retained_micro_step_count": 1,
+            "world_size": 2
+          },
+          "resource_snapshot_keys": [
+            "cpu",
+            "gpu",
+            "schema_version"
+          ],
+          "status": "completed"
+        }
+      },
+      "rank": 0,
+      "train_cache": {
+        "augmentation": {
+          "enabled": false,
+          "input_example_count": 1,
+          "mode": "disabled",
+          "object_ordering": "source_order",
+          "output_example_count": 1,
+          "policy": "geometry_flips",
+          "presentation_count": 1,
+          "seed": 7,
+          "split": "train"
+        },
+        "build_status": "hit",
+        "chunk_count": 2,
+        "chunk_size": 1,
+        "format_version": "coordexp-swift-pack-cache-v3",
+        "key_set": [
+          "augmentation",
+          "build_status",
+          "cache_dir",
+          "chunk_count",
+          "chunk_sha256s",
+          "chunk_size",
+          "determinants_sha256",
+          "fingerprint",
+          "format_version",
+          "manifest_path",
+          "manifest_sha256",
+          "materialization",
+          "micro_step_count",
+          "phase_receipt",
+          "status"
+        ],
+        "materialization": {
+          "strategy": "fork_process_pool",
+          "workers": 1
+        },
+        "micro_step_count": 2,
+        "phase_receipt": {
+          "cache_admission": {
+            "status": "completed",
+            "verification_level": "manifest"
+          },
+          "cache_preparation": {
+            "status": "not_run_cache_hit"
+          },
+          "cache_publication": {
+            "status": "not_run_cache_hit"
+          }
+        },
+        "status": "complete"
+      },
+      "train_micro_step_count": 1,
+      "world_size": 2
+    },
+    "1": {
+      "cache_root_receipt": {
+        "resolved_root": "<root>/cache-root",
+        "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+      },
+      "eval_cache": null,
+      "eval_reduction": {
+        "control": "auto",
+        "effective_mode": "replicated",
+        "pack_count": null,
+        "source": "default",
+        "world_size": 2
+      },
+      "phase_trace": {
+        "cache_identity_resolution": {
+          "details": {
+            "eval_identity_resolved": false,
+            "train_identity_resolved": true
+          },
+          "resource_snapshot_keys": [
+            "cpu",
+            "gpu",
+            "schema_version"
+          ],
+          "status": "completed"
+        },
+        "cache_publication_admission": {
+          "details": {
+            "eval_manifest_micro_step_count": 0,
+            "eval_reduction": {
+              "control": "auto",
+              "effective_mode": "replicated",
+              "pack_count": null,
+              "source": "default",
+              "world_size": 2
+            },
+            "eval_verification_level": "not_applicable",
+            "immutable_publication_admitted": true,
+            "train_manifest_micro_step_count": 2,
+            "train_verification_level": "manifest"
+          },
+          "resource_snapshot_keys": [
+            "cpu",
+            "gpu",
+            "schema_version"
+          ],
+          "status": "completed"
+        },
+        "train_rank_hydration": {
+          "details": {
+            "rank": 1,
+            "retained_micro_step_count": 1,
+            "world_size": 2
+          },
+          "resource_snapshot_keys": [
+            "cpu",
+            "gpu",
+            "schema_version"
+          ],
+          "status": "completed"
+        }
+      },
+      "rank": 1,
+      "train_cache": {
+        "augmentation": {
+          "enabled": false,
+          "input_example_count": 1,
+          "mode": "disabled",
+          "object_ordering": "source_order",
+          "output_example_count": 1,
+          "policy": "geometry_flips",
+          "presentation_count": 1,
+          "seed": 7,
+          "split": "train"
+        },
+        "build_status": "hit",
+        "chunk_count": 2,
+        "chunk_size": 1,
+        "format_version": "coordexp-swift-pack-cache-v3",
+        "key_set": [
+          "augmentation",
+          "build_status",
+          "cache_dir",
+          "chunk_count",
+          "chunk_sha256s",
+          "chunk_size",
+          "determinants_sha256",
+          "fingerprint",
+          "format_version",
+          "manifest_path",
+          "manifest_sha256",
+          "materialization",
+          "micro_step_count",
+          "phase_receipt",
+          "status"
+        ],
+        "materialization": {
+          "strategy": "fork_process_pool",
+          "workers": 1
+        },
+        "micro_step_count": 2,
+        "phase_receipt": {
+          "cache_admission": {
+            "status": "completed",
+            "verification_level": "manifest"
+          },
+          "cache_preparation": {
+            "status": "not_run_cache_hit"
+          },
+          "cache_publication": {
+            "status": "not_run_cache_hit"
+          }
+        },
+        "status": "complete"
+      },
+      "train_micro_step_count": 1,
+      "world_size": 2
+    }
+  },
+  "run_state_materializations": {}
+}

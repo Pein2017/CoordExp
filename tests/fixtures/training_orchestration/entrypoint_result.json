@@ -1,0 +1,19 @@
+{
+  "exit_code": 0,
+  "runner_config_paths": [
+    "configs/characterization.yaml"
+  ],
+  "stdout": "{\n  \"completed_steps\": 1,\n  \"consumed_micro_steps\": 2,\n  \"entry_config_path\": \"configs/characterization.yaml\",\n  \"resolved_config_fingerprint\": \"config-fingerprint\",\n  \"run_dir\": \"/artifacts/run\",\n  \"run_id\": \"characterized-run-000000000000\",\n  \"scheduled_event_counts\": {\n    \"checkpoint\": 0,\n    \"eval\": 0\n  }\n}\n",
+  "summary": {
+    "completed_steps": 1,
+    "consumed_micro_steps": 2,
+    "entry_config_path": "configs/characterization.yaml",
+    "resolved_config_fingerprint": "config-fingerprint",
+    "run_dir": "/artifacts/run",
+    "run_id": "characterized-run-000000000000",
+    "scheduled_event_counts": {
+      "checkpoint": 0,
+      "eval": 0
+    }
+  }
+}

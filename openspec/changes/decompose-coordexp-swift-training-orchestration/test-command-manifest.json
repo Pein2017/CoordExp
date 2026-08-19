@@ -1,0 +1,1425 @@
+{
+  "boundary_edge_clearing_waves": {
+    "aggregate_node": "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges",
+    "owner_modules": {
+      "owner-module-src-artifacts-identity": 1,
+      "owner-module-src-artifacts-run-schema": 4,
+      "owner-module-src-artifacts-run-state": 4,
+      "owner-module-src-training-cache-contract": 3,
+      "owner-module-src-training-cache-workflow": 3,
+      "owner-module-src-training-control-plane": 2,
+      "owner-module-src-training-execution-plan": 2,
+      "owner-module-src-training-micro-steps": 1,
+      "owner-module-src-training-reporting": 4,
+      "owner-module-src-training-session": 5
+    },
+    "production_parity_imports": {
+      "parity-import-src-prepare-train-cache": 1,
+      "parity-import-src-training-input-attestation": 1,
+      "parity-import-src-training-pipeline": 5
+    },
+    "source": "tests/training/test_training_module_boundaries.py BOUNDARY_INVENTORY"
+  },
+  "change": "decompose-coordexp-swift-training-orchestration",
+  "commands": [
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/reconcile-baseline.json",
+      "expected_red_nodes": [
+        "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-identity]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-micro-steps]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-execution-plan]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-control-plane]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-contract]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-workflow]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-reporting]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-schema]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-state]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-session]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-prepare-train-cache]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-input-attestation]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-pipeline]"
+      ],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave0-baseline-red",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Wave-0 baseline. Every characterization node must PASS against untouched production code; only the intended-owner and import-boundary nodes listed in expected_red_nodes may FAIL.",
+      "plan_line": 89,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_training_module_boundaries.py tests/training/test_orchestration_compatibility.py tests/training/test_pipeline_assembly.py tests/training/test_pipeline_phase_convergence.py tests/artifacts/test_run_artifacts.py tests/training/test_pack_cache_determinant_registry.py -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 900,
+      "wave": 0
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/artifacts/test_identity_compatibility.py",
+        "tests/qwen/test_packed_parity.py",
+        "tests/supervision/test_tokens.py",
+        "tests/training/test_supervised_trainer.py",
+        "tests/training/test_forward_input_provider.py",
+        "tests/training/test_pack_cache.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 2.7 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          },
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-1-gate.json",
+      "expected_red_nodes": [
+        "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-execution-plan]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-control-plane]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-contract]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-workflow]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-reporting]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-schema]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-state]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-session]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-pipeline]"
+      ],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave1-leaf-owner-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/artifacts/test_identity_compatibility.py",
+        "tests/qwen/test_packed_parity.py",
+        "tests/supervision/test_tokens.py",
+        "tests/training/test_supervised_trainer.py",
+        "tests/training/test_forward_input_provider.py",
+        "tests/training/test_pack_cache.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Leaf semantic and identity owners.",
+      "plan_line": 271,
+      "plan_line_argv": "conda run -n ms pytest tests/artifacts/test_identity_compatibility.py tests/qwen/test_packed_parity.py tests/supervision/test_tokens.py tests/training/test_supervised_trainer.py tests/training/test_forward_input_provider.py tests/training/test_pack_cache.py tests/training/test_training_module_boundaries.py -q",
+      "spawns_local_gloo_ranks": false,
+      "timeout_seconds": 1800,
+      "wave": 1
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_execution_plan.py",
+        "tests/training/test_control_plane.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_wave7_determinism_preflight.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 3.6 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          },
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-2-gate.json",
+      "expected_red_nodes": [
+        "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-contract]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-workflow]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-reporting]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-schema]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-state]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-session]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-pipeline]"
+      ],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave2-plan-control-plane-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_execution_plan.py",
+        "tests/training/test_control_plane.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_wave7_determinism_preflight.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Model-free plan and rank control plane.",
+      "plan_line": 432,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_execution_plan.py tests/training/test_control_plane.py tests/training/test_pipeline_cache_preflight.py tests/training/test_pipeline_phase_convergence.py tests/training/test_pipeline_assembly.py tests/training/test_training_module_boundaries.py tests/training/test_wave7_determinism_preflight.py -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 1800,
+      "wave": 2
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_cache_contract.py",
+        "tests/training/test_cache_workflow.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/training/test_pack_cache.py",
+        "tests/training/test_pipeline_pack_cache_rebuild.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_prepare_train_cache_cli.py",
+        "tests/training/test_input_attestation.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/packing",
+        "tests/supervision",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 4.7 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          },
+          {
+            "authority": "tasks.md 4.1 and 4.6 (delete replaced cache helpers from pipeline.py)",
+            "path": "tests/training/test_pipeline_assembly.py",
+            "reason": "Eight of this wave's declared_flips nodes are the per-helper pipeline-ownership assertions in this file; without it the wave that deletes those helpers has no gate that observes the flip."
+          },
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_determinant_owner_registry_is_frozen",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_overbroad_owners_are_exactly_the_two_declared_entries",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_admit_model_free_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_aggregate_cache_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_hydrate_eval_micro_steps_from_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_pack_cache_preparation_receipt]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_eval_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_training_preflight]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_train_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-3-gate.json",
+      "expected_red_nodes": [
+        "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-reporting]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-schema]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-state]",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-session]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-pipeline]"
+      ],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave3-cache-owner-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_cache_contract.py",
+        "tests/training/test_cache_workflow.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/training/test_pack_cache.py",
+        "tests/training/test_pipeline_pack_cache_rebuild.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_prepare_train_cache_cli.py",
+        "tests/training/test_input_attestation.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/packing",
+        "tests/supervision",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Cache contract and workflow. No production cache target may be created outside pytest temporary directories.",
+      "plan_line": 580,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_cache_contract.py tests/training/test_cache_workflow.py tests/training/test_pack_cache_determinant_registry.py tests/training/test_pack_cache.py tests/training/test_pipeline_pack_cache_rebuild.py tests/training/test_pipeline_cache_preflight.py tests/training/test_prepare_train_cache_cli.py tests/training/test_input_attestation.py tests/training/test_training_module_boundaries.py tests/packing tests/supervision -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 3600,
+      "wave": 3
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_reporting.py",
+        "tests/artifacts/test_run_schema.py",
+        "tests/artifacts/test_run_state.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/artifacts/test_checkpoint_writer.py",
+        "tests/artifacts/test_checkpoint_payload_identity.py",
+        "tests/artifacts/test_resources.py",
+        "tests/artifacts/test_training_state.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_exact_resume.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 5.6 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          },
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_admit_model_free_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_aggregate_cache_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_append_logging_row_shared]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_hydrate_eval_micro_steps_from_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_pack_cache_preparation_receipt]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_eval_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_training_preflight]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_train_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_train_logging_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-4-gate.json",
+      "expected_red_nodes": [
+        "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges",
+        "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-session]",
+        "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-pipeline]"
+      ],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration"
+      ],
+      "id": "wave4-reporting-artifact-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_reporting.py",
+        "tests/artifacts/test_run_schema.py",
+        "tests/artifacts/test_run_state.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/artifacts/test_checkpoint_writer.py",
+        "tests/artifacts/test_checkpoint_payload_identity.py",
+        "tests/artifacts/test_resources.py",
+        "tests/artifacts/test_training_state.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_exact_resume.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Existing-schema reporting and RunWriter internals.",
+      "plan_line": 688,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_reporting.py tests/artifacts/test_run_schema.py tests/artifacts/test_run_state.py tests/artifacts/test_run_artifacts.py tests/artifacts/test_checkpoint_writer.py tests/artifacts/test_checkpoint_payload_identity.py tests/artifacts/test_resources.py tests/artifacts/test_training_state.py tests/training/test_pipeline_assembly.py tests/training/test_pipeline_exact_resume.py tests/training/test_training_module_boundaries.py -q",
+      "spawns_local_gloo_ranks": false,
+      "timeout_seconds": 1800,
+      "wave": 4
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_training_session.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/training/test_pipeline_exact_resume.py",
+        "tests/training/test_checkpoint_handler_identity.py",
+        "tests/training/test_supervised_trainer.py",
+        "tests/runtime",
+        "tests/artifacts",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 6.6 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_admit_model_free_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_aggregate_cache_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_append_logging_row_shared]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_checkpoint_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_eval_forward_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_final_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_hydrate_eval_micro_steps_from_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_pack_cache_preparation_receipt]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_eval_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_training_preflight]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_train_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_initialized_training]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_train_logging_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-5-gate.json",
+      "expected_red_nodes": [],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave5-session-facade-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_training_session.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/training/test_pipeline_exact_resume.py",
+        "tests/training/test_checkpoint_handler_identity.py",
+        "tests/training/test_supervised_trainer.py",
+        "tests/runtime",
+        "tests/artifacts",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py"
+      ],
+      "notes": "Training session and thin facade. This is the wave after which the whole import-boundary file must be GREEN.",
+      "plan_line": 832,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_training_session.py tests/training/test_pipeline_assembly.py tests/training/test_pipeline_cache_preflight.py tests/training/test_pipeline_phase_convergence.py tests/training/test_pipeline_exact_resume.py tests/training/test_checkpoint_handler_identity.py tests/training/test_supervised_trainer.py tests/runtime tests/artifacts tests/training/test_training_module_boundaries.py -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 3600,
+      "wave": 5
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/config/test_train_config.py",
+        "tests/training/test_forward_input_provider.py",
+        "tests/training/test_supervised_trainer.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_pipeline_exact_resume.py",
+        "tests/training/test_wave5_provider_benchmark.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 7.7 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          },
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_admit_model_free_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_aggregate_cache_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_append_logging_row_shared]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_checkpoint_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_eval_forward_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_final_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_hydrate_eval_micro_steps_from_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_pack_cache_preparation_receipt]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_eval_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_training_preflight]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_train_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_initialized_training]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_train_logging_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-6-gate.json",
+      "expected_red_nodes": [],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave6-legacy-selector-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/config/test_train_config.py",
+        "tests/training/test_forward_input_provider.py",
+        "tests/training/test_supervised_trainer.py",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_cache_preflight.py",
+        "tests/training/test_pipeline_exact_resume.py",
+        "tests/training/test_wave5_provider_benchmark.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Retire legacy provider selection.",
+      "plan_line": 922,
+      "plan_line_argv": "conda run -n ms pytest tests/config/test_train_config.py tests/training/test_forward_input_provider.py tests/training/test_supervised_trainer.py tests/training/test_pipeline_assembly.py tests/training/test_pipeline_cache_preflight.py tests/training/test_pipeline_exact_resume.py tests/training/test_wave5_provider_benchmark.py tests/artifacts/test_run_artifacts.py tests/training/test_training_module_boundaries.py -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 3600,
+      "wave": 6
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_cache_contract.py",
+        "tests/training/test_cache_workflow.py",
+        "tests/training/test_pack_cache.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/training/test_pipeline_pack_cache_rebuild.py",
+        "tests/training/test_prepare_train_cache_cli.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "tasks.md 8.5 (exact-compare the Wave-0 compatibility ledger surfaces in this wave) plus design decision 12",
+            "path": "tests/training/test_orchestration_compatibility.py",
+            "reason": "Without this file the manifest's own harness_seam_repoints promise - 'the frozen fixtures MUST replay unchanged' - is never executed between wave 0 and wave 8, so a moved owner could silently change a protected result mapping, phase order, collective order, cache admission receipt, logging row, identity contract, or pickle surface for six consecutive waves."
+          },
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_determinant_owner_registry_is_frozen",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_overbroad_owners_are_exactly_the_two_declared_entries"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-7-gate.json",
+      "expected_red_nodes": [],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave7-cache-transition-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_cache_contract.py",
+        "tests/training/test_cache_workflow.py",
+        "tests/training/test_pack_cache.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/training/test_pipeline_pack_cache_rebuild.py",
+        "tests/training/test_prepare_train_cache_cli.py",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Runs after the single authorized cache transition. `git status --short` must contain no cache output and no task-owned source change.",
+      "plan_line": 1003,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_cache_contract.py tests/training/test_cache_workflow.py tests/training/test_pack_cache.py tests/training/test_pack_cache_determinant_registry.py tests/training/test_pipeline_pack_cache_rebuild.py tests/training/test_prepare_train_cache_cli.py -q",
+      "spawns_local_gloo_ranks": false,
+      "timeout_seconds": 3600,
+      "wave": 7
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/config",
+        "tests/data",
+        "tests/templates",
+        "tests/qwen",
+        "tests/packing",
+        "tests/supervision",
+        "tests/losses",
+        "tests/runtime",
+        "tests/training",
+        "tests/artifacts",
+        "tests/eval",
+        "-q"
+      ],
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_determinant_owner_registry_is_frozen",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_overbroad_owners_are_exactly_the_two_declared_entries",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_admit_model_free_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_aggregate_cache_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_append_logging_row_shared]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_checkpoint_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_eval_forward_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_final_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_hydrate_eval_micro_steps_from_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_pack_cache_preparation_receipt]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_eval_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_training_preflight]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_train_pack_cache]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_initialized_training]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_train_logging_handler]",
+        "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-8-cpu-matrix.json",
+      "expected_red_nodes": [],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave8-full-cpu-matrix",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/config",
+        "tests/data",
+        "tests/templates",
+        "tests/qwen",
+        "tests/packing",
+        "tests/supervision",
+        "tests/losses",
+        "tests/runtime",
+        "tests/training",
+        "tests/artifacts",
+        "tests/eval"
+      ],
+      "notes": "Full relevant CPU matrix. Record exact commit, pass/fail/skip counts, duration, and every skipped node; a skip is reported, never counted as executed coverage.",
+      "plan_line": 1028,
+      "plan_line_argv": "conda run -n ms pytest tests/config tests/data tests/templates tests/qwen tests/packing tests/supervision tests/losses tests/runtime tests/training tests/artifacts tests/eval -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 10800,
+      "wave": 8
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/artifacts/test_identity_compatibility.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/runtime/test_rank_report_collective.py",
+        "-q"
+      ],
+      "argv_extends_plan_line": {
+        "added_paths": [
+          {
+            "authority": "design ledger row 'rank phase order, report frames, resource receipts, error convergence, collective calls'; design decision 3",
+            "path": "tests/runtime/test_rank_report_collective.py",
+            "reason": "This is the only suite asserting the rank-report frame width, magic, payload bound, control timeout, and eight-rank collective ordering. It from-imports _RANK_REPORT_FRAME_BYTES, _RANK_REPORT_MAX_PAYLOAD_BYTES, and _build_rank_report_gatherer from src.training.pipeline, which wave 2 deletes; ungated it would become a silent collection error for waves 2-4."
+          }
+        ],
+        "note": "tasks.md is controlling over the plan document's literal gate line. plan_line_argv records the plan's verbatim command; argv is the frozen command this gate actually invokes."
+      },
+      "classification": "cpu_only",
+      "conda_env": "ms",
+      "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+      "declared_flips_in_scope": [
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_determinant_owner_registry_is_frozen",
+        "tests/training/test_pack_cache_determinant_registry.py::test_wave0_overbroad_owners_are_exactly_the_two_declared_entries"
+      ],
+      "environment_selectors": {
+        "required_absent": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ],
+        "set_by_tests_only": [
+          "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+          "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+          "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+          "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+          "GLOO_SOCKET_IFNAME",
+          "RANK",
+          "LOCAL_RANK",
+          "WORLD_SIZE",
+          "MASTER_ADDR",
+          "MASTER_PORT"
+        ]
+      },
+      "expected_receipt_path": "openspec/changes/decompose-coordexp-swift-training-orchestration/receipts/wave-8-compatibility.json",
+      "expected_red_nodes": [],
+      "fixture_roots": [
+        "tests/fixtures/training_orchestration",
+        "tests/fixtures/smoke/qwen3_vl_single_image_pack"
+      ],
+      "id": "wave8-final-compatibility-gate",
+      "node_list_order": "pytest collection order for the argv above; no ordering plugin is installed",
+      "node_paths_in_order": [
+        "tests/training/test_orchestration_compatibility.py",
+        "tests/training/test_training_module_boundaries.py",
+        "tests/artifacts/test_identity_compatibility.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "tests/runtime/test_rank_report_collective.py"
+      ],
+      "notes": "Final protected-surface comparison against the Wave-0 ledger fixtures.",
+      "plan_line": 1044,
+      "plan_line_argv": "conda run -n ms pytest tests/training/test_orchestration_compatibility.py tests/training/test_training_module_boundaries.py tests/artifacts/test_identity_compatibility.py tests/artifacts/test_run_artifacts.py tests/training/test_pack_cache_determinant_registry.py -q",
+      "spawns_local_gloo_ranks": true,
+      "timeout_seconds": 1800,
+      "wave": 8
+    }
+  ],
+  "declared_flips": {
+    "nodes": [
+      {
+        "declared_authority": "design ledger row `SupervisedMicroStep ...`; tasks.md 2.5-2.7",
+        "flips_at_wave": 1,
+        "node": "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler",
+        "reason": "The node asserts the decoded class object reports __module__ == 'src.training.supervised_trainer'. After the canonical owner move the re-exported class reports 'src.training.micro_steps' while the frozen old bytes still name the historical module.",
+        "required_revision": "Wave 1 revises the decoded-module assertion to the canonical module and keeps the frozen-byte module-path assertion unchanged."
+      },
+      {
+        "declared_authority": "design ledger row `SupervisedMicroStep ...`; tasks.md 2.6",
+        "flips_at_wave": 1,
+        "node": "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen",
+        "reason": "Two fixture entries flip: `decoded[].type_module` (canonical owner move) and `restricted_pickle_allowlist` (task 2.6 adds the canonical module/class pair to the restricted unpickler allowlist). Everything else in legacy_micro_step.json - sha256, byte_length, pickle_module_paths of the frozen bytes, micro_step_count, every decoded field value, and schema_identity - MUST remain exactly equal.",
+        "required_revision": "Wave 1 revises only those two fixture entries under the manifest revision rule and proves decoded-value equality through both import paths."
+      },
+      {
+        "declared_authority": "proposal 'new pickle module-path bytes'; design ledger row; tasks.md 2.7",
+        "flips_at_wave": 1,
+        "node": "tests/training/test_orchestration_compatibility.py::test_legacy_micro_step_pickle_is_the_real_writer_output",
+        "reason": "This node proves the frozen fixture is byte-identical to a fresh production writer run. After the canonical owner move the live writer intentionally emits 'src.training.micro_steps' bytes, so regenerated bytes no longer equal the frozen legacy bytes.",
+        "required_revision": "Wave 1 replaces the equality with the declared pair: old frozen bytes still restricted-load, new writer bytes name the canonical module, and decoded values are equal. The frozen legacy .pkl is never regenerated."
+      },
+      {
+        "declared_authority": "proposal 'four declared determinant-source changes'; tasks.md 4.1-4.2",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pack_cache_determinant_registry.py::test_wave0_determinant_owner_registry_is_frozen",
+        "reason": "Wave 3 rebinds `micro_step_runtime_config` and `micro_step_schema` to the two narrow owners; the frozen registry mapping is the pre-rebinding one.",
+        "required_revision": "Wave 3 revises the two rebound entries only; every other owner entry and the registry schema version MUST stay equal."
+      },
+      {
+        "declared_authority": "tasks.md 4.2; design decision 4",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pack_cache_determinant_registry.py::test_wave0_overbroad_owners_are_exactly_the_two_declared_entries",
+        "reason": "The node asserts exactly two determinants are still bound to src/training/pipeline.py and src/training/supervised_trainer.py. Wave 3 removes both bindings by design.",
+        "required_revision": "Wave 3 inverts this node to require that no determinant is bound to pipeline.py or supervised_trainer.py (residue check of tasks.md 9.4)."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_admit_model_free_pack_cache]",
+        "reason": "pipeline._admit_model_free_pack_cache is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_aggregate_cache_phase]",
+        "reason": "pipeline._aggregate_cache_phase is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_all_gather_cpu_bytes]",
+        "reason": "pipeline._all_gather_cpu_bytes is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 4,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_append_logging_row_shared]",
+        "reason": "pipeline._append_logging_row_shared is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 4 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_model_free_preflight_gatherer]",
+        "reason": "pipeline._build_model_free_preflight_gatherer is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_build_rank_report_gatherer]",
+        "reason": "pipeline._build_rank_report_gatherer is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 5,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_checkpoint_handler]",
+        "reason": "pipeline._checkpoint_handler is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 5 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 5,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_eval_forward_handler]",
+        "reason": "pipeline._eval_forward_handler is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 5 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 5,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_final_handler]",
+        "reason": "pipeline._final_handler is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 5 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_hydrate_eval_micro_steps_from_cache]",
+        "reason": "pipeline._hydrate_eval_micro_steps_from_cache is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_normalize_bounded_phase_details]",
+        "reason": "pipeline._normalize_bounded_phase_details is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_pack_cache_preparation_receipt]",
+        "reason": "pipeline._pack_cache_preparation_receipt is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_eval_pack_cache]",
+        "reason": "pipeline._resolve_eval_pack_cache is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_launch_identity]",
+        "reason": "pipeline._resolve_model_free_launch_identity is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_model_free_training_preflight]",
+        "reason": "pipeline._resolve_model_free_training_preflight is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_pack_cache]",
+        "reason": "pipeline._resolve_or_build_pack_cache is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 3,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_resolve_or_build_train_pack_cache]",
+        "reason": "pipeline._resolve_or_build_train_pack_cache is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 3 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 5,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_initialized_training]",
+        "reason": "pipeline._run_initialized_training is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 5 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_run_rank_converged_phase]",
+        "reason": "pipeline._run_rank_converged_phase is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 4,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_train_logging_handler]",
+        "reason": "pipeline._train_logging_handler is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 4 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      },
+      {
+        "declared_authority": "design decision 1 owner graph; tasks.md wave that owns the move",
+        "flips_at_wave": 2,
+        "node": "tests/training/test_pipeline_assembly.py::test_wave0_pipeline_still_owns_helper_until_its_declared_wave[_validate_phase_status_reports]",
+        "reason": "pipeline._validate_phase_status_reports is deleted from src/training/pipeline.py when its wave moves it to the new owner; the wave must delete it rather than leave a forwarding layer.",
+        "required_revision": "Wave 2 removes this helper from the inventory and proves the new owner holds it, in the same commit that deletes the pipeline body."
+      }
+    ],
+    "note": "These Wave-0 nodes freeze facts the change DECLARES will change. They are correct Wave-0 truth and must not be weakened now; the wave named below owns the revision, under revision_rule, with a recorded baseline rerun. Any Wave-0 node NOT listed here encodes a preserved surface: an unexplained difference stops the wave."
+  },
+  "frozen_against_commit": "eb2dc97ab15e76aa75f9751f2b1fe463e271fa90",
+  "harness_seam_repoints": {
+    "helpers": [
+      {
+        "fixtures": [
+          "pipeline_result.json",
+          "phase_order.json",
+          "collective_order.json",
+          "cache_admission.json"
+        ],
+        "helper": "tests/training/test_orchestration_compatibility.py::exercise_characterized_pipeline",
+        "rule": "When a wave moves one of these owners the harness re-points its spy/stub to the new owner module. The fixtures MUST replay unchanged. Regenerating a trace fixture because a spy target moved destroys the only pre-move ordered evidence and is prohibited.",
+        "spied_or_stubbed_attributes": {
+          "src.training.pipeline._build_accelerator": 5,
+          "src.training.pipeline._build_rank_report_gatherer": 2,
+          "src.training.pipeline._resolve_model_free_training_preflight": 3,
+          "src.training.pipeline._run_initialized_training": 5,
+          "src.training.pipeline._run_rank_converged_phase": 2,
+          "src.training.pipeline.validate_accelerator_runtime": 5
+        }
+      },
+      {
+        "fixtures": [
+          "cache_preparation.json"
+        ],
+        "helper": "tests/training/test_orchestration_compatibility.py::exercise_characterized_cache_preparation",
+        "rule": "Wave 3 moves the canonical owner to cache_workflow.py and keeps the pipeline re-export exact; re-point the patches, keep the receipt bytes equal.",
+        "spied_or_stubbed_attributes": {
+          "src.training.pipeline._resolve_eval_pack_cache": 3,
+          "src.training.pipeline._resolve_or_build_train_pack_cache": 3,
+          "src.training.pipeline.prepare_training_pack_caches": 3
+        }
+      },
+      {
+        "fixtures": [
+          "completed_step_rows.json"
+        ],
+        "helper": "tests/training/test_orchestration_compatibility.py::exercise_characterized_completed_step_rows and tests/training/test_pipeline_assembly.py::test_wave0_completed_step_row_key_set_matches_the_frozen_fixture",
+        "rule": "Wave 4 replaces the handler with src.training.reporting.CompletedStepReporter; re-point the call site, keep every row byte and lifecycle counter equal.",
+        "spied_or_stubbed_attributes": {
+          "src.training.pipeline._train_logging_handler": 4
+        }
+      },
+      {
+        "fixtures": [
+          "causal_logits.json"
+        ],
+        "helper": "tests/training/test_orchestration_compatibility.py::exercise_characterized_causal_logits",
+        "rule": "Wave 1 deletes the private helper in favour of TokenSequence.causal_logits_positions(); re-point the call, keep the selected positions and the empty/absent-atom results equal.",
+        "spied_or_stubbed_attributes": {
+          "src.training.supervised_trainer._logits_positions_to_keep": 1
+        }
+      },
+      {
+        "fixtures": [
+          "legacy_micro_step.json"
+        ],
+        "helper": "tests/training/test_orchestration_compatibility.py::exercise_characterized_legacy_micro_step and tests/training/test_pack_cache_determinant_registry.py::test_wave0_supervised_micro_step_schema_identity_is_frozen",
+        "rule": "Wave 1 gives the schema identity its canonical owner (src.training.micro_steps.supervised_micro_step_schema_identity) and Wave 3 moves the determinant projection to cache_contract.py. The identity payload itself is pure field data - class name, frozen flag, field names/annotations/defaults - and MUST stay exactly equal across every wave.",
+        "spied_or_stubbed_attributes": {
+          "src.training.pack_cache._ALLOWED_PICKLE_GLOBALS": 1,
+          "src.training.pack_cache._supervised_micro_step_schema_identity": 1
+        }
+      },
+      {
+        "fixtures": [],
+        "helper": "tests/runtime/test_rank_report_collective.py (module-level from-import)",
+        "rule": "Wave 2 moves the bounded rank-report transport to src/training/control_plane.py. This suite must re-point its imports to the new owner in the same commit; every assertion - frame width, magic, payload bound, control timeout, eight-rank ordering, and error convergence - MUST replay unchanged. A repoint is never grounds to change an expected value, and an unresolved import here is a collection error, not a skip.",
+        "spied_or_stubbed_attributes": {
+          "src.training.pipeline._RANK_REPORT_FRAME_BYTES": 2,
+          "src.training.pipeline._RANK_REPORT_MAX_PAYLOAD_BYTES": 2,
+          "src.training.pipeline._build_rank_report_gatherer": 2
+        }
+      }
+    ],
+    "note": "These characterization helpers spy on or stub module attributes of src.training.pipeline (and one private trainer helper). When a wave moves an owner, the harness re-points to the new owner and the frozen fixture must replay UNCHANGED. A moved spy target is never a reason to regenerate a fixture."
+  },
+  "launch_bearing_actions": {
+    "note": "These are NOT test commands and are deliberately absent from this manifest. Each requires a fresh user authorization packet bound to the exact wave commit, full argv, absent targets, and numeric resource bounds; planning or implementation approval is not launch authority.",
+    "wave_7_cache_materialization": {
+      "packet_freezes": [
+        "one build-capable `conda run -n ms python -m src.prepare_train_cache ...` argv and its absent receipt path",
+        "one `--require-all-hit` argv with a distinct absent receipt path and no materialization authority"
+      ],
+      "task": "8.2 / 8.3 / 8.4"
+    },
+    "wave_8_gpu_vertical_smoke": {
+      "packet_freezes": [
+        "world_size=2, at most two GPUs, one planned/applied optimizer step",
+        "config-derived ceilings for forwards, collectives, wall time, CPU RSS, GPU high-water, artifact bytes, free disk"
+      ],
+      "task": "9.2 / 9.3"
+    }
+  },
+  "pass_rule": "A gate PASSES when the observed failure node set equals that command's expected_red_nodes union the declared_flips entries whose flips_at_wave is less than or equal to the gate's wave and whose revision has not yet landed. Any other failure, any expected-RED node that unexpectedly passes, and any SKIPPED characterization node block the wave: a skip is reported, never counted as executed coverage.",
+  "plan": "docs/superpowers/plans/2026-08-12-decompose-coordexp-swift-training-orchestration.md",
+  "reconcile_commit": "eb2dc97ab15e76aa75f9751f2b1fe463e271fa90",
+  "revision_rule": "Any added or changed command, node path, environment selector, or expected-RED entry requires an explicit manifest revision plus a recorded baseline rerun. Wave gates invoke IDs; they never expand the suite ad hoc.",
+  "runtime": {
+    "conda_env": "ms",
+    "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+    "note": "No pytest-randomly / pytest-xdist / pytest-timeout plugin is installed, so collection order is deterministic and timeout_seconds is a wall-clock stop bound for the invoking operator, not a pytest option.",
+    "ordering_plugins_installed": [],
+    "pytest_ini": "pytest.ini",
+    "python": "3.12"
+  },
+  "schema": "coordexp-swift-orchestration-decomposition-test-command-manifest-v1",
+  "wave0_observed_red_nodes": [
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-identity]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-schema]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-artifacts-run-state]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-contract]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-cache-workflow]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-control-plane]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-execution-plan]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-micro-steps]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-reporting]",
+    "tests/training/test_training_module_boundaries.py::test_intended_owner_module_exists[owner-module-src-training-session]",
+    "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-prepare-train-cache]",
+    "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-input-attestation]",
+    "tests/training/test_training_module_boundaries.py::test_production_parity_import_is_cleared[parity-import-src-training-pipeline]",
+    "tests/training/test_training_module_boundaries.py::test_training_import_graph_has_no_reverse_edges"
+  ],
+  "wave0_observed_totals": {
+    "collected": 286,
+    "failed": 14,
+    "passed": 272,
+    "pre_addition_baseline": {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "pytest",
+        "tests/training/test_pipeline_assembly.py",
+        "tests/training/test_pipeline_phase_convergence.py",
+        "tests/artifacts/test_run_artifacts.py",
+        "tests/training/test_pack_cache_determinant_registry.py",
+        "-q"
+      ],
+      "collected": 212,
+      "failed": 0,
+      "passed": 212
+    },
+    "pre_existing_failures_in_modified_files": 0,
+    "rerun_reason": "Recorded baseline rerun required by revision_rule after the 1.6 gate corrections: wave-0 argv now also runs tests/runtime/test_rank_report_collective.py, and tests/training/test_training_module_boundaries.py gained one node pinning relative-import resolution inside a package __init__.py. The failure set is unchanged at exactly the 14 intended-owner/import-boundary nodes.",
+    "skipped": 0
+  }
+}

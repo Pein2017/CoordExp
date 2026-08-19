@@ -2656,3 +2656,135 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
         assert baseline_row[key] == timed_row[key]
     assert baseline_row["accuracy_stats"] == artifact["accuracy_stats"]
     assert timed_row["accuracy_stats"] == artifact["accuracy_stats"]
+
+
+# ---------------------------------------------------------------------------
+# Wave-0 pre-move characterization for
+# `decompose-coordexp-swift-training-orchestration`.
+#
+# `src/training/pipeline.py` is the facade Waves 2-5 reduce.  These additions
+# freeze its public contract and record which private helpers it still owns at
+# the baseline, so a later wave that moves one of them must delete it here rather
+# than leave a forwarding layer behind.
+# ---------------------------------------------------------------------------
+
+
+WAVE0_ORCHESTRATION_FIXTURE_ROOT = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "training_orchestration"
+)
+
+WAVE0_FACADE_RESULT_KEYS = (
+    "completed_steps",
+    "consumed_micro_steps",
+    "resolved_config_fingerprint",
+    "run_dir",
+    "run_id",
+    "scheduled_event_counts",
+)
+
+WAVE0_TRAIN_ROW_KEYS = (
+    "acc_top1",
+    "acc_top5",
+    "accuracy_stats",
+    "finite_status",
+    "input_build_seconds",
+    "input_wait_seconds",
+    "loss/total",
+    "lr/group_0",
+    "micro_step_count",
+    "non_finite_fields",
+    "optimizer_update_status",
+    "split",
+    "step",
+    "step_duration_seconds",
+)
+
+#: Private helpers `pipeline.py` owns today, with the wave that takes each away.
+WAVE0_PIPELINE_OWNED_HELPERS = {
+    "_build_model_free_preflight_gatherer": 2,
+    "_build_rank_report_gatherer": 2,
+    "_run_rank_converged_phase": 2,
+    "_validate_phase_status_reports": 2,
+    "_normalize_bounded_phase_details": 2,
+    "_all_gather_cpu_bytes": 2,
+    "_resolve_model_free_launch_identity": 2,
+    "_admit_model_free_pack_cache": 3,
+    "_resolve_model_free_training_preflight": 3,
+    "_resolve_or_build_pack_cache": 3,
+    "_resolve_or_build_train_pack_cache": 3,
+    "_resolve_eval_pack_cache": 3,
+    "_hydrate_eval_micro_steps_from_cache": 3,
+    "_pack_cache_preparation_receipt": 3,
+    "_aggregate_cache_phase": 3,
+    "_train_logging_handler": 4,
+    "_append_logging_row_shared": 4,
+    "_run_initialized_training": 5,
+    "_checkpoint_handler": 5,
+    "_eval_forward_handler": 5,
+    "_final_handler": 5,
+}
+
+
+def test_wave0_facade_signature_and_compatibility_reexport_are_frozen() -> None:
+    import inspect
+
+    signature = inspect.signature(pipeline.run_training_pipeline)
+
+    assert list(signature.parameters) == ["config_path", "measurement_context"]
+    assert (
+        signature.parameters["measurement_context"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
+    assert signature.parameters["measurement_context"].default is None
+    assert callable(pipeline.prepare_training_pack_caches)
+    assert pipeline.prepare_training_pack_caches.__module__ == "src.training.pipeline"
+
+
+def test_wave0_facade_result_key_set_matches_the_frozen_fixture() -> None:
+    frozen = json.loads(
+        WAVE0_ORCHESTRATION_FIXTURE_ROOT.joinpath("pipeline_result.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert tuple(sorted(frozen)) == WAVE0_FACADE_RESULT_KEYS
+    assert frozen["scheduled_event_counts"] == {"checkpoint": 0, "eval": 0}
+
+
+@pytest.mark.parametrize(
+    ("helper", "clears_at_wave"),
+    sorted(WAVE0_PIPELINE_OWNED_HELPERS.items()),
+    ids=sorted(WAVE0_PIPELINE_OWNED_HELPERS),
+)
+def test_wave0_pipeline_still_owns_helper_until_its_declared_wave(
+    helper: str, clears_at_wave: int
+) -> None:
+    assert hasattr(pipeline, helper), (
+        f"pipeline.{helper} is owned by src/training/pipeline.py until wave "
+        f"{clears_at_wave} moves it; a wave that moves it must delete it here "
+        "and revise this node under the frozen manifest's revision rule"
+    )
+
+
+def test_wave0_completed_step_row_key_set_matches_the_frozen_fixture(
+    tmp_path: Path,
+) -> None:
+    frozen = json.loads(
+        WAVE0_ORCHESTRATION_FIXTURE_ROOT.joinpath(
+            "completed_step_rows.json"
+        ).read_text(encoding="utf-8")
+    )
+    writer = _writer(tmp_path)
+    lifecycle: dict[str, object] = {"consumed_packs": 0}
+    handle = pipeline._train_logging_handler(writer, lifecycle, _Runtime())
+
+    handle(_observation(1))
+
+    rows = [
+        json.loads(line)
+        for line in writer.logging_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert tuple(sorted(frozen["rows"][0])) == WAVE0_TRAIN_ROW_KEYS
+    assert set(rows[0]).issubset(set(WAVE0_TRAIN_ROW_KEYS))
+    assert rows[0]["split"] == "train"
+    assert rows[0]["non_finite_fields"] == []

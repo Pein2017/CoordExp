@@ -1,0 +1,219 @@
+{
+  "aggregate_phase_cases": {
+    "all_built": {
+      "duration_seconds": 0.2,
+      "status": "completed"
+    },
+    "all_hit": {
+      "duration_seconds": 0.0,
+      "reason": "all_cache_hits",
+      "status": "not_run"
+    },
+    "mixed": {
+      "duration_seconds": 0.1,
+      "reason": "mixed_cache_hits_and_builds",
+      "status": "completed"
+    }
+  },
+  "receipt": {
+    "entry_config_path": "<root>/config.yaml",
+    "eval": {
+      "build_status": "built",
+      "cache_dir": "<root>/eval-cache",
+      "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "format_version": "coordexp-swift-pack-cache-v3",
+      "manifest_path": "<root>/eval-cache/manifest.json",
+      "manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "micro_step_count": 3,
+      "phase_receipt": {
+        "cache_admission": {
+          "duration_seconds": 0.4,
+          "status": "completed"
+        },
+        "cache_preparation": {
+          "duration_seconds": 0.0,
+          "status": "not_run_cache_hit"
+        },
+        "cache_publication": {
+          "duration_seconds": 0.0,
+          "status": "not_run_cache_hit"
+        }
+      },
+      "status": "complete"
+    },
+    "measurement": {
+      "completed_at": "<volatile:str>",
+      "context": {
+        "comparison_arm": "compatibility_reference",
+        "wall_clock_scope": "prepare_training_pack_caches_entry_to_return",
+        "workload_identity": "config-fingerprint",
+        "world_size": 1
+      },
+      "duration_seconds": "<volatile:float>",
+      "phases": {
+        "cache_admission": {
+          "duration_seconds": 0.7,
+          "status": "completed"
+        },
+        "cache_preparation": {
+          "duration_seconds": 0.1,
+          "reason": "mixed_cache_hits_and_builds",
+          "status": "completed"
+        },
+        "cache_publication": {
+          "duration_seconds": 0.2,
+          "reason": "mixed_cache_hits_and_builds",
+          "status": "completed"
+        },
+        "config_provenance_resolution": {
+          "duration_seconds": "<volatile:float>",
+          "status": "completed"
+        }
+      },
+      "resource_high_water": {
+        "cpu": {
+          "io_read_bytes": "<volatile:int>",
+          "io_write_bytes": "<volatile:int>",
+          "max_rss_bytes": "<volatile:int>",
+          "scope": "current_process"
+        },
+        "gpu": {
+          "initialized": false,
+          "scope": "current_process_current_device",
+          "unavailable_reason": "cuda_not_initialized"
+        },
+        "schema_version": 1
+      },
+      "schema_version": 1,
+      "started_at": "<volatile:str>"
+    },
+    "model_loaded": false,
+    "policy_identities": {
+      "cache": {
+        "eval_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "root": {
+          "resolved_root": "<root>/cache-root",
+          "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+        },
+        "schema_version": 1,
+        "train_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "packing": {
+        "fragment_pack_budget": null,
+        "global_max_length": 8,
+        "intra_image_object_order": "geo_sorted",
+        "planner": {
+          "algorithm_version": "coordexp-swift-source-order-next-fit-v2",
+          "cursor_byte_budget": 65536,
+          "fragment_byte_budget": 4194304,
+          "fragment_item_budget": 1024,
+          "lookahead": null,
+          "policy": "source_order_next_fit",
+          "requested_worker_count": 1,
+          "seed": 17,
+          "tie_breaker": "source_ordinal_v1",
+          "window_size": null,
+          "worker_count_disposition": "semantic_pending_upstream_materialization_equality",
+          "worker_count_integration_requirement": "canonical_concurrent_encoded_materialization_and_complete_plan_equality"
+        },
+        "schema_version": 2,
+        "train_order": "source_order"
+      },
+      "runtime_determinism": {
+        "application_receipt": {
+          "applied_before": [],
+          "cuda_initialized": false,
+          "cudnn": {
+            "benchmark": null,
+            "deterministic": null,
+            "managed": false
+          },
+          "deterministic_algorithms": {
+            "enabled": false,
+            "managed": false,
+            "warn_only": null
+          },
+          "environment": {},
+          "helper": "transformers.trainer_utils.set_seed",
+          "mode": "legacy",
+          "observed_environment": {},
+          "phase": "pack_cache_preparation",
+          "required_environment": {},
+          "schema_version": 1,
+          "seed": 17,
+          "surfaces": [
+            "python.random",
+            "numpy",
+            "torch.cpu",
+            "torch.cuda_all",
+            "torch.other_supported_devices"
+          ]
+        },
+        "cudnn": {
+          "benchmark": null,
+          "deterministic": null,
+          "managed": false
+        },
+        "deterministic_algorithms": {
+          "enabled": false,
+          "managed": false,
+          "warn_only": null
+        },
+        "environment": {},
+        "launcher_attestations": [
+          {
+            "cuda_visible_devices": null,
+            "local_rank": 0,
+            "logical_cuda_device": 0,
+            "rank": 0,
+            "world_size": 1
+          }
+        ],
+        "mode": "legacy",
+        "pinned_runtime_baseline_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pre_apply_cuda_initialized": false,
+        "pre_apply_cuda_initialized_by_rank": {
+          "0": false
+        },
+        "schema_version": 1,
+        "seed": 17
+      },
+      "upstream_runtime_baseline": {
+        "admitted": true,
+        "attention_backend": "flash_attention_2",
+        "baseline_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mismatches": [],
+        "reference_only": {},
+        "schema_version": 3
+      }
+    },
+    "provenance": {
+      "schema_version": 1
+    },
+    "resolved_config_fingerprint": "config-fingerprint",
+    "train": {
+      "build_status": "built",
+      "cache_dir": "<root>/train-cache",
+      "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "format_version": "coordexp-swift-pack-cache-v3",
+      "manifest_path": "<root>/train-cache/manifest.json",
+      "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "micro_step_count": 11,
+      "phase_receipt": {
+        "cache_admission": {
+          "duration_seconds": 0.3,
+          "status": "completed"
+        },
+        "cache_preparation": {
+          "duration_seconds": 0.1,
+          "status": "completed"
+        },
+        "cache_publication": {
+          "duration_seconds": 0.2,
+          "status": "completed"
+        }
+      },
+      "status": "complete"
+    }
+  }
+}

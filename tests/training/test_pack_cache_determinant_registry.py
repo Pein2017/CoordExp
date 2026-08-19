@@ -1222,3 +1222,114 @@ def _micro_step() -> SupervisedMicroStep:
             "augmentation_receipt": dict(DISABLED_AUGMENTATION),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Wave-0 pre-move characterization for
+# `decompose-coordexp-swift-training-orchestration`.
+#
+# The determinant-owner registry is the surface Wave 3 narrows.  These additions
+# freeze the exact current inventory, the two evidenced overbroad owners, and the
+# four declared determinant sources whose identity is allowed to turn over.
+# ---------------------------------------------------------------------------
+
+
+WAVE0_DETERMINANT_OWNERS = {
+    "augmentation_config": "src/augmentation/geometry.py",
+    "augmentation_factory": "src/augmentation/factory.py",
+    "augmentation_processor": "src/augmentation/processor.py",
+    "cache_serializer": "src/training/pack_cache.py",
+    "coordinate_targets": "src/coordinate_targets.py",
+    "dataset_content": "src/data/examples.py",
+    "dataset_geometry": "src/data/geometry.py",
+    "dataset_image_resolver": "src/data/images.py",
+    "dataset_jsonl_loader": "src/data/jsonl.py",
+    "encoding_runtime": "src/qwen/encoding.py",
+    "image_loader": "src/qwen/images.py",
+    "micro_step_runtime_config": "src/training/pipeline.py",
+    "micro_step_schema": "src/training/supervised_trainer.py",
+    "model_config_assets": "src/qwen/runtime_loading.py",
+    "mrope_position_ids": "src/qwen/positions.py",
+    "ordering_config": "src/data/examples.py",
+    "pack_planner": "src/packing/planner.py",
+    "packing_config": "src/packing/planner.py",
+    "parser": "src/data/examples.py",
+    "processor_assets": "src/qwen/runtime_loading.py",
+    "processor_config": "src/qwen/runtime_loading.py",
+    "qwen_fa2_boundaries": "src/qwen/fa2.py",
+    "qwen_forward_payload": "src/qwen/forward.py",
+    "realized_vocab_groups": "src/losses/vocab.py",
+    "renderer": "src/templates/renderer.py",
+    "supervision_mapper": "src/packing/supervision.py",
+    "supervision_tokens": "src/supervision/tokens.py",
+    "template_config": "src/templates/renderer.py",
+    "template_spans": "src/templates/spans.py",
+    "token_identity": "src/qwen/tokens.py",
+    "tokenizer_assets": "src/qwen/runtime_loading.py",
+}
+
+#: The four determinant sources the change declares may change identity.
+WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES = (
+    "cache_serializer",
+    "micro_step_runtime_config",
+    "micro_step_schema",
+    "supervision_tokens",
+)
+
+#: The two evidenced overbroad owners Wave 3 rebinds to narrow owners.
+WAVE0_OVERBROAD_DETERMINANT_OWNERS = {
+    "micro_step_runtime_config": "src/training/pipeline.py",
+    "micro_step_schema": "src/training/supervised_trainer.py",
+}
+
+
+def test_wave0_determinant_owner_registry_is_frozen() -> None:
+    assert dict(pack_cache.PACKING_CACHE_DETERMINANT_OWNERS) == (
+        WAVE0_DETERMINANT_OWNERS
+    )
+    assert pack_cache.PACKING_CACHE_DETERMINANT_REGISTRY_VERSION == 1
+
+
+def test_wave0_overbroad_owners_are_exactly_the_two_declared_entries() -> None:
+    observed = {
+        name: owner
+        for name, owner in pack_cache.PACKING_CACHE_DETERMINANT_OWNERS.items()
+        if owner
+        in {"src/training/pipeline.py", "src/training/supervised_trainer.py"}
+    }
+
+    assert observed == WAVE0_OVERBROAD_DETERMINANT_OWNERS
+
+
+def test_wave0_declared_source_changes_are_current_registry_names() -> None:
+    assert set(WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES) <= set(
+        pack_cache.PACKING_CACHE_DETERMINANT_OWNERS
+    )
+    assert sorted(WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES) == list(
+        WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES
+    )
+
+
+def test_wave0_determinant_owner_reasons_cover_every_owner_exactly() -> None:
+    assert set(pack_cache._DETERMINANT_REASONS) == set(
+        pack_cache.PACKING_CACHE_DETERMINANT_OWNERS
+    )
+
+
+def test_wave0_declared_owner_source_files_exist_at_the_baseline() -> None:
+    missing = sorted(
+        {
+            owner
+            for owner in pack_cache.PACKING_CACHE_DETERMINANT_OWNERS.values()
+            if not Path(owner).is_file()
+        }
+    )
+
+    assert missing == []
+
+
+def test_wave0_supervised_micro_step_schema_identity_is_frozen() -> None:
+    fixture = Path("tests/fixtures/training_orchestration/legacy_micro_step.json")
+    frozen = json.loads(fixture.read_text(encoding="utf-8"))["schema_identity"]
+
+    assert pack_cache._supervised_micro_step_schema_identity() == frozen

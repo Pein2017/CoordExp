@@ -1,0 +1,20 @@
+{
+  "atom_causal_logits_positions": [
+    1,
+    2,
+    5
+  ],
+  "atom_target_positions": [
+    2,
+    3,
+    6
+  ],
+  "duplicate_free_sorted": true,
+  "empty_atoms": null,
+  "missing_atoms_attribute": null,
+  "populated": [
+    1,
+    2,
+    5
+  ]
+}

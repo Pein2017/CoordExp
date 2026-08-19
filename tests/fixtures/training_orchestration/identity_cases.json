@@ -1,0 +1,123 @@
+{
+  "assert_absent_artifact_target_success": "<root>/new-target.json",
+  "canonical_json_bytes": "{\"a\":[1,{\"y\":true,\"z\":null}],\"b\":2,\"unicode\":\"\u00e9\"}",
+  "failures": {
+    "assert_absent_artifact_target_missing_parent": {
+      "code": "qwen.parity.artifact_parent",
+      "context_keys": [
+        "path"
+      ],
+      "type": "ParityContractError"
+    },
+    "assert_absent_artifact_target_occupied": {
+      "code": "qwen.parity.artifact_collision",
+      "context_keys": [
+        "path"
+      ],
+      "type": "ParityContractError"
+    },
+    "assert_model_weight_identity_equal_corrupt_fingerprint": {
+      "code": "qwen.parity.weight_fingerprint",
+      "context_keys": [
+        "expected",
+        "observed"
+      ],
+      "type": "ParityContractError"
+    },
+    "assert_model_weight_identity_equal_drift": {
+      "code": "qwen.parity.weight_identity_drift",
+      "context_keys": [
+        "expected_aggregate_sha256",
+        "observed_aggregate_sha256"
+      ],
+      "type": "ParityContractError"
+    },
+    "canonical_json_bytes_non_finite": {
+      "code": "qwen.parity.strict_json",
+      "context_keys": [
+        "error",
+        "value_type"
+      ],
+      "type": "ParityContractError"
+    },
+    "canonical_json_bytes_non_json": {
+      "code": "qwen.parity.strict_json",
+      "context_keys": [
+        "error",
+        "value_type"
+      ],
+      "type": "ParityContractError"
+    },
+    "sha256_file_missing": {
+      "code": "qwen.parity.identity_file",
+      "context_keys": [
+        "error",
+        "path"
+      ],
+      "type": "ParityContractError"
+    },
+    "source_owner_identity_escape": {
+      "code": "qwen.parity.source_owner_path",
+      "context_keys": [
+        "path"
+      ],
+      "type": "ParityContractError"
+    },
+    "validate_model_weight_identity_incomplete": {
+      "code": "qwen.parity.fields",
+      "context_keys": [
+        "missing",
+        "owner",
+        "unknown"
+      ],
+      "type": "ParityContractError"
+    },
+    "write_strict_json_atomic_collision": {
+      "code": "qwen.parity.artifact_collision",
+      "context_keys": [
+        "path"
+      ],
+      "type": "ParityContractError"
+    }
+  },
+  "repo_identity_key_set": [
+    "dirty",
+    "head",
+    "root",
+    "status_sha256",
+    "tracked_diff_sha256"
+  ],
+  "sha256_file": "282f2cff8463b5b08c312ac491fa66c6de309c43b0176d9ee53177936f676940",
+  "sha256_json": "a332b42cab721f243a3cc2d003c37ca387b88491cf8ac018264b0c2f84e39756",
+  "source_owner_identity": [
+    {
+      "path": "owned/source.txt",
+      "sha256": "282f2cff8463b5b08c312ac491fa66c6de309c43b0176d9ee53177936f676940"
+    }
+  ],
+  "validate_model_weight_identity": {
+    "aggregate_sha256": "964171bc1ac1c795890dd1ab66385eb00b953f5729d977093efb2acd9b57b5ba",
+    "bounds": {
+      "max_declarations": 100000,
+      "max_index_bytes": 16777216,
+      "max_shard_bytes": 17179869184,
+      "max_shards": 256,
+      "max_total_bytes": 68719476736
+    },
+    "declaration_count": null,
+    "index": null,
+    "mode": "standalone_safetensors",
+    "root": "/models/characterized-base",
+    "schema": "coordexp-swift-base-model-weights-v1",
+    "shard_count": 1,
+    "shards": [
+      {
+        "path": "model.safetensors",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "size_bytes": 4
+      }
+    ],
+    "total_bytes": 4
+  },
+  "write_strict_json_atomic_bytes": "{\"published\":true}\n"
+}

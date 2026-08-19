@@ -1,0 +1,317 @@
+{
+  "byte_length": 1576,
+  "decoded": [
+    {
+      "capture_fa2_branch": false,
+      "encoded_examples": [
+        "example-0"
+      ],
+      "expected_vocab_size": null,
+      "extra_model_kwargs": null,
+      "fa2_branch_evidence": null,
+      "fa2_branch_proof_policy": null,
+      "fa2_model_dtype": "bf16",
+      "forward_device": null,
+      "metadata": {
+        "augmentation_receipt": {
+          "enabled": false,
+          "input_example_count": 1,
+          "mode": "disabled",
+          "object_ordering": "source_order",
+          "output_example_count": 1,
+          "policy": "geometry_flips",
+          "presentation_count": 1,
+          "seed": 7,
+          "split": "train"
+        },
+        "pack_id": 0
+      },
+      "pack": "pack-0",
+      "position_inputs": "positions-0",
+      "require_fa2_branch_proof": false,
+      "token_sequence": {
+        "atom_count": 3,
+        "atoms": [
+          {
+            "causal_logits_position": 1,
+            "example_id": "ex-0",
+            "example_index": 0,
+            "field": null,
+            "logical_base_token_end": null,
+            "logical_base_token_start": null,
+            "logical_target_end": null,
+            "logical_target_position": 2,
+            "object_id": null,
+            "pack_index": 0,
+            "segment_index": 0,
+            "source": null,
+            "target_end": 3,
+            "target_position": 2,
+            "text": "a",
+            "token_id": 11,
+            "token_type": "desc_text"
+          },
+          {
+            "causal_logits_position": 2,
+            "example_id": "ex-0",
+            "example_index": 0,
+            "field": null,
+            "logical_base_token_end": null,
+            "logical_base_token_start": null,
+            "logical_target_end": null,
+            "logical_target_position": 3,
+            "object_id": null,
+            "pack_index": 0,
+            "segment_index": 0,
+            "source": null,
+            "target_end": 4,
+            "target_position": 3,
+            "text": "a",
+            "token_id": 12,
+            "token_type": "desc_text"
+          },
+          {
+            "causal_logits_position": 5,
+            "example_id": "ex-1",
+            "example_index": 1,
+            "field": null,
+            "logical_base_token_end": null,
+            "logical_base_token_start": null,
+            "logical_target_end": null,
+            "logical_target_position": 6,
+            "object_id": null,
+            "pack_index": 0,
+            "segment_index": 1,
+            "source": null,
+            "target_end": 7,
+            "target_position": 6,
+            "text": "b",
+            "token_id": 13,
+            "token_type": "schema"
+          }
+        ],
+        "pack_index": 0,
+        "pack_length": 8,
+        "segment_count": 2,
+        "segments": [
+          {
+            "end": 4,
+            "example_id": "ex-0",
+            "example_index": 0,
+            "length": 4,
+            "pack_index": 0,
+            "segment_index": 0,
+            "start": 0
+          },
+          {
+            "end": 8,
+            "example_id": "ex-1",
+            "example_index": 1,
+            "length": 4,
+            "pack_index": 0,
+            "segment_index": 1,
+            "start": 4
+          }
+        ],
+        "span_count": 1,
+        "spans": [
+          {
+            "atoms": [
+              {
+                "causal_logits_position": 1,
+                "example_id": "ex-0",
+                "example_index": 0,
+                "field": null,
+                "logical_base_token_end": null,
+                "logical_base_token_start": null,
+                "logical_target_end": null,
+                "logical_target_position": 2,
+                "object_id": null,
+                "pack_index": 0,
+                "segment_index": 0,
+                "source": null,
+                "target_end": 3,
+                "target_position": 2,
+                "text": "a",
+                "token_id": 11,
+                "token_type": "desc_text"
+              },
+              {
+                "causal_logits_position": 2,
+                "example_id": "ex-0",
+                "example_index": 0,
+                "field": null,
+                "logical_base_token_end": null,
+                "logical_base_token_start": null,
+                "logical_target_end": null,
+                "logical_target_position": 3,
+                "object_id": null,
+                "pack_index": 0,
+                "segment_index": 0,
+                "source": null,
+                "target_end": 4,
+                "target_position": 3,
+                "text": "a",
+                "token_id": 12,
+                "token_type": "desc_text"
+              }
+            ],
+            "example_id": "ex-0",
+            "example_index": 0,
+            "field": null,
+            "logical_base_token_end": null,
+            "logical_base_token_start": null,
+            "object_id": null,
+            "pack_index": 0,
+            "segment_index": 0,
+            "source": null,
+            "target_end": 4,
+            "target_start": 2,
+            "text": "a",
+            "token_count": 2,
+            "token_type": "desc_text"
+          }
+        ]
+      },
+      "type_module": "src.training.supervised_trainer",
+      "type_name": "SupervisedMicroStep",
+      "vocab_groups": {
+        "blocked": [
+          0
+        ],
+        "coordinate": [
+          14
+        ],
+        "desc_text": [
+          11,
+          12
+        ],
+        "eos": [
+          15
+        ],
+        "schema": [
+          13
+        ],
+        "vocab_size": 16
+      }
+    }
+  ],
+  "micro_step_count": 1,
+  "pickle_module_paths": [
+    "src.losses.vocab",
+    "src.packing.planner",
+    "src.supervision.tokens",
+    "src.training.supervised_trainer"
+  ],
+  "restricted_pickle_allowlist": [
+    "collections:OrderedDict",
+    "pathlib:PosixPath",
+    "src.coordinate_targets:CoordinateLossTarget",
+    "src.losses.vocab:TokenVocabularyGroups",
+    "src.packing.planner:PackedSegment",
+    "src.packing.planner:PackedSequence",
+    "src.qwen.encoding:EncodedExample",
+    "src.qwen.encoding:EncodedTokenSpan",
+    "src.qwen.images:QwenImageEncoding",
+    "src.qwen.images:QwenNoResizeImagePlan",
+    "src.qwen.positions:QwenPositionBoundaryValidation",
+    "src.qwen.positions:QwenPositionInputs",
+    "src.qwen.positions:QwenPositionSegmentSummary",
+    "src.supervision.tokens:TokenAtom",
+    "src.supervision.tokens:TokenSequence",
+    "src.supervision.tokens:TokenSpan",
+    "src.training.supervised_trainer:SupervisedMicroStep",
+    "torch._utils:_rebuild_tensor_v2"
+  ],
+  "schema_identity": {
+    "class": "SupervisedMicroStep",
+    "fields": [
+      {
+        "annotation": "Any",
+        "default": null,
+        "has_default": false,
+        "name": "pack"
+      },
+      {
+        "annotation": "Sequence[Any]",
+        "default": null,
+        "has_default": false,
+        "name": "encoded_examples"
+      },
+      {
+        "annotation": "Any",
+        "default": null,
+        "has_default": false,
+        "name": "position_inputs"
+      },
+      {
+        "annotation": "TokenSequence | Any",
+        "default": null,
+        "has_default": false,
+        "name": "token_sequence"
+      },
+      {
+        "annotation": "TokenVocabularyGroups | Any",
+        "default": null,
+        "has_default": false,
+        "name": "vocab_groups"
+      },
+      {
+        "annotation": "Mapping[str, Any] | None",
+        "default": null,
+        "has_default": true,
+        "name": "metadata"
+      },
+      {
+        "annotation": "torch.device | str | None",
+        "default": null,
+        "has_default": true,
+        "name": "forward_device"
+      },
+      {
+        "annotation": "int | None",
+        "default": null,
+        "has_default": true,
+        "name": "expected_vocab_size"
+      },
+      {
+        "annotation": "Mapping[str, Any] | None",
+        "default": null,
+        "has_default": true,
+        "name": "extra_model_kwargs"
+      },
+      {
+        "annotation": "Mapping[str, Any] | None",
+        "default": null,
+        "has_default": true,
+        "name": "fa2_branch_evidence"
+      },
+      {
+        "annotation": "str | None",
+        "default": null,
+        "has_default": true,
+        "name": "fa2_model_dtype"
+      },
+      {
+        "annotation": "bool",
+        "default": false,
+        "has_default": true,
+        "name": "capture_fa2_branch"
+      },
+      {
+        "annotation": "bool",
+        "default": false,
+        "has_default": true,
+        "name": "require_fa2_branch_proof"
+      },
+      {
+        "annotation": "str | None",
+        "default": null,
+        "has_default": true,
+        "name": "fa2_branch_proof_policy"
+      }
+    ],
+    "frozen": true
+  },
+  "sha256": "8cf7da98086c6828442236f11f08f2b739ed824d768fed799d8cda89f582566e"
+}

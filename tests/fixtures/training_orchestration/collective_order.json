@@ -1,0 +1,135 @@
+{
+  "per_rank": {
+    "0": [
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "config_provenance_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "model_free_control_broadcast",
+        "split": "model_free_control_broadcast"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "model_free_control_broadcast",
+        "split": "model_free_control_broadcast"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "upstream_runtime_baseline_admission"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "profile_sync_timing_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "config_provenance_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "eval_reduction_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "cache_preflight"
+      },
+      {
+        "event": "close",
+        "gatherer_index": 1
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 2,
+        "kind": "phase_status",
+        "split": "accelerator_runtime_preflight"
+      },
+      {
+        "event": "close",
+        "gatherer_index": 2
+      }
+    ],
+    "1": [
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "config_provenance_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "model_free_control_broadcast",
+        "split": "model_free_control_broadcast"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "model_free_control_broadcast",
+        "split": "model_free_control_broadcast"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "upstream_runtime_baseline_admission"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "profile_sync_timing_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "config_provenance_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "eval_reduction_resolution"
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 1,
+        "kind": "phase_status",
+        "split": "cache_preflight"
+      },
+      {
+        "event": "close",
+        "gatherer_index": 1
+      },
+      {
+        "event": "all_gather",
+        "gatherer_index": 2,
+        "kind": "phase_status",
+        "split": "accelerator_runtime_preflight"
+      },
+      {
+        "event": "close",
+        "gatherer_index": 2
+      }
+    ]
+  },
+  "scope": "pipeline_entry_through_accelerator_runtime_preflight; initialized training is stubbed because it loads model weights",
+  "transport": "src.training.pipeline._build_rank_report_gatherer over gloo",
+  "world_size": 2
+}

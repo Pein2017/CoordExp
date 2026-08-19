@@ -1,0 +1,72 @@
+{
+  "lifecycle": {
+    "accepted_measured_steps": 2,
+    "completed_steps": 3,
+    "consumed_packs": 6,
+    "finite_status": "finite",
+    "optimizer_update_status": "applied",
+    "steady_state_duration_seconds": 0.5
+  },
+  "rows": [
+    {
+      "acc_top1": 0.5,
+      "acc_top5": 1.0,
+      "accuracy_stats": {
+        "atom_count": 2,
+        "top1_correct": 1,
+        "top5_correct": 2
+      },
+      "finite_status": "finite",
+      "input_build_seconds": 0.05,
+      "input_wait_seconds": 0.01,
+      "loss/total": 2.0,
+      "lr/group_0": 1e-05,
+      "micro_step_count": 2,
+      "non_finite_fields": [],
+      "optimizer_update_status": "applied",
+      "split": "train",
+      "step": 1,
+      "step_duration_seconds": 0.25
+    },
+    {
+      "acc_top1": 0.5,
+      "acc_top5": 1.0,
+      "accuracy_stats": {
+        "atom_count": 2,
+        "top1_correct": 1,
+        "top5_correct": 2
+      },
+      "finite_status": "finite",
+      "input_build_seconds": 0.05,
+      "input_wait_seconds": 0.01,
+      "loss/total": 3.0,
+      "lr/group_0": 1e-05,
+      "micro_step_count": 2,
+      "non_finite_fields": [],
+      "optimizer_update_status": "applied",
+      "split": "train",
+      "step": 2,
+      "step_duration_seconds": 0.25
+    },
+    {
+      "acc_top1": 0.5,
+      "acc_top5": 1.0,
+      "accuracy_stats": {
+        "atom_count": 2,
+        "top1_correct": 1,
+        "top5_correct": 2
+      },
+      "finite_status": "finite",
+      "input_build_seconds": 0.05,
+      "input_wait_seconds": 0.01,
+      "loss/total": 4.0,
+      "lr/group_0": 1e-05,
+      "micro_step_count": 2,
+      "non_finite_fields": [],
+      "optimizer_update_status": "applied",
+      "split": "train",
+      "step": 3,
+      "step_duration_seconds": 0.25
+    }
+  ]
+}

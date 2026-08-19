@@ -1,0 +1,2 @@
+{"acc_top1":0.5,"accuracy_stats":{"atom_count":2,"top1_correct":1,"top5_correct":2},"finite_status":"finite","loss/total":1.5,"micro_step_count":2,"non_finite_fields":[],"optimizer_update_status":"applied","split":"train","step":1}
+{"acc_top1":0.6,"example_count":2,"non_finite_fields":[],"pack_count":1,"split":"eval","step":1,"trigger_reasons":["scheduled"]}

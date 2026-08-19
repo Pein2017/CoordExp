@@ -1,0 +1,8 @@
+{
+  "characterization_status": "passing",
+  "decompose_baseline_commit": "eb2dc97ab15e76aa75f9751f2b1fe463e271fa90",
+  "intended_import_boundary_status": "expected_red",
+  "prerequisite_status": "verified_committed",
+  "reconcile_commit": "eb2dc97ab15e76aa75f9751f2b1fe463e271fa90",
+  "schema": "coordexp-swift-orchestration-decomposition-baseline-v1"
+}

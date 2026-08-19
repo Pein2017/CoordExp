@@ -1320,3 +1320,155 @@ def _writer(tmp_path: Path) -> RunWriter:
         world_size=2,
         resolved_max_steps=5,
     )
+
+
+# ---------------------------------------------------------------------------
+# Wave-0 pre-move characterization for
+# `decompose-coordexp-swift-training-orchestration`.
+#
+# `tests/training/test_orchestration_compatibility.py` derives the frozen byte
+# tree below from one representative RunWriter lifetime.  These additions bind
+# the artifact suite to that same tree so Wave 4 cannot split RunWriter internals
+# without an exact-byte comparison, and they re-derive the run-file inventory
+# live so a schema drift fails here as well as there.
+# ---------------------------------------------------------------------------
+
+
+WAVE0_RUN_WRITER_FIXTURE_ROOT = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "training_orchestration"
+    / "run_writer"
+)
+
+WAVE0_RUN_FILE_INVENTORY = (
+    "checkpoints/best.json",
+    "checkpoints/final.json",
+    "logging.jsonl",
+    "resolved_config.json",
+    "run.json",
+)
+
+WAVE0_RUN_STATE_KEYS = (
+    "artifact_root",
+    "checkpoint_event_count",
+    "collision_outcome",
+    "completed_at",
+    "completed_steps",
+    "config_fingerprint",
+    "consumed_packs",
+    "continuation",
+    "created_at",
+    "final_finite_status",
+    "final_optimizer_update_status",
+    "forward_input_provider_mode",
+    "forward_input_provider_resolution",
+    "materializations",
+    "measurement",
+    "policy_identities",
+    "provenance",
+    "resolved_config_path",
+    "resolved_max_steps",
+    "run_dir",
+    "run_id",
+    "run_name",
+    "runtime",
+    "status",
+    "terminal_error",
+    "updated_at",
+    "warning_counts",
+)
+
+WAVE0_MEASUREMENT_KEYS = (
+    "accepted_measured_steps",
+    "active_phase",
+    "checkpoint_publication_events",
+    "context",
+    "entry_to_terminal",
+    "expected_measured_steps",
+    "failure_phase",
+    "last_completed_phase",
+    "phase_order",
+    "phases",
+    "resource_high_water",
+    "schema_version",
+    "steady_state_eligible",
+    "terminal_phase",
+    "terminal_phase_status",
+)
+
+WAVE0_RUN_PHASE_ORDER = (
+    "config_provenance_resolution",
+    "cache_identity_resolution",
+    "cache_preparation",
+    "cache_publication",
+    "cache_admission",
+    "first_optimizer_step",
+    "steady_state",
+    "evaluation_execution",
+)
+
+
+def _wave0_fixture_bytes() -> dict[str, bytes]:
+    root = WAVE0_RUN_WRITER_FIXTURE_ROOT
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def test_wave0_run_writer_fixture_tree_has_the_frozen_file_inventory() -> None:
+    assert tuple(sorted(_wave0_fixture_bytes())) == WAVE0_RUN_FILE_INVENTORY
+
+
+def test_wave0_run_writer_fixture_run_state_schema_is_frozen() -> None:
+    state = json.loads(
+        (WAVE0_RUN_WRITER_FIXTURE_ROOT / "run.json").read_text(encoding="utf-8")
+    )
+
+    assert tuple(sorted(state)) == WAVE0_RUN_STATE_KEYS
+    assert tuple(sorted(state["measurement"])) == WAVE0_MEASUREMENT_KEYS
+    assert tuple(state["measurement"]["phase_order"]) == WAVE0_RUN_PHASE_ORDER
+    assert state["status"] == "completed"
+    assert state["warning_counts"] == {"characterized_warning": 2}
+
+
+def test_wave0_run_writer_fixture_checkpoint_alias_bytes_are_frozen() -> None:
+    tree = _wave0_fixture_bytes()
+
+    assert tree["checkpoints/final.json"] == (
+        b'{"checkpoint_path": "checkpoints/step-1", "step": 1}\n'
+    )
+    assert tree["checkpoints/best.json"] == (
+        b'{"checkpoint_path": "checkpoints/step-1", "selector": "acc_top1", '
+        b'"step": 1, "value": 0.5}\n'
+    )
+
+
+def test_wave0_run_writer_fixture_logging_rows_are_strict_compact_json() -> None:
+    text = (WAVE0_RUN_WRITER_FIXTURE_ROOT / "logging.jsonl").read_text(
+        encoding="utf-8"
+    )
+    lines = text.splitlines()
+
+    assert text.endswith("\n")
+    assert len(lines) == 2
+    rows = [json.loads(line) for line in lines]
+    assert [row["split"] for row in rows] == ["train", "eval"]
+    assert all(row["non_finite_fields"] == [] for row in rows)
+    assert all(", " not in line and ": " not in line for line in lines)
+
+
+def test_wave0_initialized_run_file_inventory_matches_the_fixture_prefix(
+    tmp_path: Path,
+) -> None:
+    writer = _writer(tmp_path)
+
+    assert writer.file_inventory() == (
+        "logging.jsonl",
+        "resolved_config.json",
+        "run.json",
+    )
+    assert set(writer.file_inventory()) <= set(WAVE0_RUN_FILE_INVENTORY)
+    assert tuple(sorted(writer.read_run())) == WAVE0_RUN_STATE_KEYS
