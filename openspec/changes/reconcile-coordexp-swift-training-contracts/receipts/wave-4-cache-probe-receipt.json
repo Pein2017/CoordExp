@@ -1,0 +1,2906 @@
+{
+  "schema": "coordexp-swift-reconcile-wave4-cache-probe-receipt-v1",
+  "executed_at": "2026-08-19T03:51:12Z",
+  "head_at_probe": "582a19ff36843bacb611ad6325839d110e0322b1",
+  "tracked_dirty_at_probe": false,
+  "dirty_note": null,
+  "entrypoint": "python -m src.prepare_train_cache --config <probe_config> --receipt <arm receipt>",
+  "private_cache_root": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root",
+  "production_cache_untouched": true,
+  "probe_config_sha256": "c599cbe96867dbf4980fd7658848e6fc7f6667e9a95b9bbcf1ccf1320524c4e5",
+  "probe_config_bytes": "schema_version: 1\nextends: /data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml\nrun:\n  name: wave4_cache_probe\n  artifact_root: /data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/runs\n  collision_policy: fail\n",
+  "resolved_config_fingerprint": "3b47d16cf2f9efcf3eb8a0ddca1e7b32091f94a27a803e276d519c1e753fce8e",
+  "environment": {
+    "COORDEXP_SWIFT_PACK_CACHE_ROOT": "private scratch",
+    "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+    "FLASH_ATTENTION_DETERMINISTIC": "1",
+    "CUDA_VISIBLE_DEVICES": "unset"
+  },
+  "invalid_arm_corruption": {
+    "chunk": "coordexp-swift-pack-cache-v3/ec5baadb.../chunks/chunk-00000.pkl (train split)",
+    "pre_corrupt_sha256": "ee8ebf598be4b30e6686eabd95fc00c5490e095b4a92fdc493a9330a5cc75903",
+    "post_corrupt_sha256": "3550b6452d3f71a18a0d1ade46da9210f11e68428f5e1b539a5a3abe8abd2e79",
+    "final_sha256_after_failed_run": "3550b6452d3f71a18a0d1ade46da9210f11e68428f5e1b539a5a3abe8abd2e79",
+    "bytes_untouched_by_failed_run": true
+  },
+  "no_model_proof": {
+    "a": false,
+    "b": false,
+    "c": "failed_before_result_no_model_phase_ran"
+  },
+  "arms": {
+    "a": {
+      "outcome": "absent_target_built",
+      "receipt_sha256": "186829370247cf8dd8a8c9c06eae7ac7296357c43261a3d65fac8ba423492b79",
+      "receipt": {
+        "config_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/probe_config.yaml",
+        "failure": null,
+        "receipt_sha256": "414134fa6d84d05e8306b0bbfac93ea131ea9897342b4eebecb785ae4f7dbbbc",
+        "result": {
+          "entry_config_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/probe_config.yaml",
+          "eval": {
+            "build_status": "built",
+            "cache_dir": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+            "fingerprint": "76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+            "format_version": "coordexp-swift-pack-cache-v3",
+            "manifest_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6/manifest.json",
+            "manifest_sha256": "4bffb69eb9b5bc339c105497c94d8c83c0efa5dd147a6ccc08048fe997f5d08b",
+            "micro_step_count": 1,
+            "phase_receipt": {
+              "cache_admission": {
+                "duration_seconds": 0.017346858978271484,
+                "status": "completed",
+                "verification_level": "payloads"
+              },
+              "cache_preparation": {
+                "duration_seconds": 0.28211643919348717,
+                "status": "completed"
+              },
+              "cache_publication": {
+                "duration_seconds": 0.15658744797110558,
+                "status": "completed"
+              }
+            },
+            "status": "complete"
+          },
+          "measurement": {
+            "completed_at": "2026-08-19T03:48:11.061393+00:00",
+            "context": {
+              "comparison_arm": "compatibility_reference",
+              "wall_clock_scope": "prepare_training_pack_caches_entry_to_return",
+              "workload_identity": "3b47d16cf2f9efcf3eb8a0ddca1e7b32091f94a27a803e276d519c1e753fce8e",
+              "world_size": 1
+            },
+            "duration_seconds": 5.971730284392834,
+            "phases": {
+              "cache_admission": {
+                "duration_seconds": 0.0438099168241024,
+                "status": "completed"
+              },
+              "cache_preparation": {
+                "duration_seconds": 0.6913838163018227,
+                "status": "completed"
+              },
+              "cache_publication": {
+                "duration_seconds": 0.46946654096245766,
+                "status": "completed"
+              },
+              "config_provenance_resolution": {
+                "duration_seconds": 4.401764366775751,
+                "status": "completed"
+              }
+            },
+            "resource_high_water": {
+              "cpu": {
+                "io_read_bytes": 0,
+                "io_write_bytes": 4276224,
+                "max_rss_bytes": 1097179136,
+                "scope": "current_process"
+              },
+              "gpu": {
+                "initialized": false,
+                "scope": "current_process_current_device",
+                "unavailable_reason": "cuda_not_initialized"
+              },
+              "schema_version": 1
+            },
+            "schema_version": 1,
+            "started_at": "2026-08-19T03:48:05.089660+00:00"
+          },
+          "model_loaded": false,
+          "policy_identities": {
+            "cache": {
+              "eval_fingerprint": "76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+              "root": {
+                "resolved_root": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root",
+                "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+              },
+              "schema_version": 1,
+              "train_fingerprint": "ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f"
+            },
+            "packing": {
+              "fragment_pack_budget": null,
+              "global_max_length": 12000,
+              "intra_image_object_order": "geo_sorted",
+              "planner": {
+                "algorithm_version": "coordexp-swift-source-order-next-fit-v2",
+                "cursor_byte_budget": 65536,
+                "fragment_byte_budget": 4194304,
+                "fragment_item_budget": 1024,
+                "lookahead": null,
+                "policy": "source_order_next_fit",
+                "requested_worker_count": 1,
+                "seed": 0,
+                "tie_breaker": "source_ordinal_v1",
+                "window_size": null,
+                "worker_count_disposition": "semantic_pending_upstream_materialization_equality",
+                "worker_count_integration_requirement": "canonical_concurrent_encoded_materialization_and_complete_plan_equality"
+              },
+              "schema_version": 2,
+              "train_order": "source_order"
+            },
+            "runtime_determinism": {
+              "application_receipt": {
+                "applied_before": [],
+                "cuda_initialized": false,
+                "cudnn": {
+                  "benchmark": null,
+                  "deterministic": null,
+                  "managed": false
+                },
+                "deterministic_algorithms": {
+                  "enabled": false,
+                  "managed": false,
+                  "warn_only": null
+                },
+                "environment": {},
+                "helper": "transformers.trainer_utils.set_seed",
+                "mode": "legacy",
+                "observed_environment": {},
+                "phase": "pack_cache_preparation",
+                "required_environment": {},
+                "schema_version": 1,
+                "seed": 17,
+                "surfaces": [
+                  "python.random",
+                  "numpy",
+                  "torch.cpu",
+                  "torch.cuda_all",
+                  "torch.other_supported_devices"
+                ]
+              },
+              "cudnn": {
+                "benchmark": null,
+                "deterministic": null,
+                "managed": false
+              },
+              "deterministic_algorithms": {
+                "enabled": false,
+                "managed": false,
+                "warn_only": null
+              },
+              "environment": {},
+              "launcher_attestations": [
+                {
+                  "cuda_visible_devices": null,
+                  "local_rank": 0,
+                  "logical_cuda_device": 0,
+                  "rank": 0,
+                  "world_size": 1
+                }
+              ],
+              "mode": "legacy",
+              "pinned_runtime_baseline_sha256": "cc486f03edb88e4fa1c9d41dc6fa98c97f25a633400e6baf98077e8beaf2b784",
+              "pre_apply_cuda_initialized": false,
+              "pre_apply_cuda_initialized_by_rank": {
+                "0": false
+              },
+              "schema_version": 1,
+              "seed": 17
+            },
+            "upstream_runtime_baseline": {
+              "admitted": true,
+              "attention_backend": "flash_attention_2",
+              "baseline_sha256": "cc486f03edb88e4fa1c9d41dc6fa98c97f25a633400e6baf98077e8beaf2b784",
+              "mismatches": [],
+              "reference_only": {
+                "ms-swift": {
+                  "matches_recorded_reference": true,
+                  "mismatches": []
+                }
+              },
+              "schema_version": 3
+            }
+          },
+          "provenance": {
+            "dependencies": {
+              "accelerate": {
+                "distribution": "accelerate",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "8c84d01d529cd3d9745936fd74933835e9838e7119a96832a27123e5170500f8",
+                    "size_bytes": 13939
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "1.10.1"
+                },
+                "import_name": "accelerate",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "68f56baac9b078db4735567649441ef28932a946b400bf8d8c2519b0a5b94b89"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 1555
+                },
+                "source_identities": {
+                  "accelerator": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/accelerator.py"
+                    },
+                    "module": "accelerate.accelerator",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "9005e9a74cd819701578ea9a86e8cd71c16152f0e2308ed1b6f447c0797837f9"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 190652
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  },
+                  "modeling": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/utils/modeling.py"
+                    },
+                    "module": "accelerate.utils.modeling",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "35cbf0f316b086f599bf54babf4d7691ca66fd675ef1dfcfb10821bd5e983a02"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 95815
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  },
+                  "operations": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/utils/operations.py"
+                    },
+                    "module": "accelerate.utils.operations",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "f384a95f02ac6cd1c778f6e82fd814a8ae9b039be8d24c87fe02c07709f313fb"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 31266
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  },
+                  "state": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/state.py"
+                    },
+                    "module": "accelerate.state",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "dfa76df4d4205babb1f8c1ce87206d359168f28d551b8851b64f159a4911537a"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 57976
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "cuda-runtime": {
+                "distribution": "nvidia-cuda-runtime-cu12",
+                "distribution_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12"
+                },
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "bef69015da09064656ac31d35fc73d6436712380c602ff38fb5fc16c30512bdf",
+                    "size_bytes": 11369
+                  }
+                },
+                "distribution_relative_path": "nvidia/cuda_runtime/lib/libcudart.so.12",
+                "distribution_version": {
+                  "status": "available",
+                  "value": "12.8.90"
+                },
+                "elf_build_id": {
+                  "status": "available",
+                  "value": "7b1714ea2d766ca35afe1e3dd34a75b41b78999f"
+                },
+                "import_name": null,
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12"
+                },
+                "loaded_origin_matches_distribution": true,
+                "loaded_soname": "libcudart.so.12",
+                "native_identities": {},
+                "origin_kind": "binary",
+                "origin_resolution": "loaded_shared_object",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "c3a75b33af334a3486d197dbd1584a2985183ba4688d237a2be5f2f679329920"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 728800
+                },
+                "source_identities": {},
+                "source_repository": {
+                  "reason": "not_source_origin",
+                  "status": "unavailable"
+                }
+              },
+              "flash-attn": {
+                "distribution": "flash-attn",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "fee009739702fa997fa85c07f134ad54636d042475235515b90afdcfffd299a5",
+                    "size_bytes": 15390
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "2.8.3"
+                },
+                "import_name": "flash_attn",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "f1833af940ac1124e09dc05dd922308871411035e75b90bf4dbe3a831dc03b50"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 285
+                },
+                "source_identities": {
+                  "flash_attn_interface": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py"
+                    },
+                    "module": "flash_attn.flash_attn_interface",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "e8da8127f7ebf5c5aeb7f35b316ff96394a70553378f125717ea174af912db13"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 60677
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "flash_attn_2_cuda": {
+                "distribution": "flash-attn",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "fee009739702fa997fa85c07f134ad54636d042475235515b90afdcfffd299a5",
+                    "size_bytes": 15390
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "2.8.3"
+                },
+                "import_name": "flash_attn_2_cuda",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.so"
+                },
+                "native_identities": {},
+                "origin_kind": "binary",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "8ca052bf2d3f53baa629e22749b9622a95273c5bffb5f06cd24768ef63f65807"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 997961816
+                },
+                "source_identities": {},
+                "source_repository": {
+                  "reason": "not_source_origin",
+                  "status": "unavailable"
+                }
+              },
+              "ms-swift": {
+                "distribution": "ms-swift",
+                "distribution_record": {
+                  "reason": "distribution_record_absent",
+                  "status": "unavailable"
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "4.2.2"
+                },
+                "import_name": "swift",
+                "imported_origin": {
+                  "reason": "reference_only_not_imported",
+                  "status": "unavailable"
+                },
+                "origin_kind": "source",
+                "origin_resolution": "import_spec_without_import",
+                "role": "reference_only_not_imported_by_training_route",
+                "selected_module_origin": {
+                  "status": "available",
+                  "value": "/data/ms-swift/swift/__init__.py"
+                },
+                "sha256": {
+                  "status": "available",
+                  "value": "d345fd8f68077d11730ffe56747a52b1858550e8c21067ed55a1db2f79ab5caf"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 3529
+                },
+                "source_repository": {
+                  "status": "available",
+                  "value": {
+                    "commit": "f2797138dba0e224cfff735cd89a528a08d8732a",
+                    "state": "clean"
+                  }
+                }
+              },
+              "peft": {
+                "distribution": "peft",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "258749eb655ec7ee9b6d4f6040b2a34c9207cafc9f3efc35d96559e63460a38c",
+                    "size_bytes": 22735
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "0.17.1"
+                },
+                "import_name": "peft",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "efabc3b44d7326eee59c07910e426fa38ee0c6419b773e8f75af87ae61d3fa32"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 5523
+                },
+                "source_identities": {
+                  "dora_implementation": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/dora.py"
+                    },
+                    "module": "peft.tuners.lora.dora",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "07d514fd057d8aa9ec7b89bec3f3fbd04862951c1a8ff73153e833096481ecf5"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 8480
+                    },
+                    "symbols": [
+                      "DoraLinearLayer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "dora_layer": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/layer.py"
+                    },
+                    "module": "peft.tuners.lora.layer",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "39e2f6908c9f3faf4d2de2b6ecfdf44c96d2cae67b8155ed1b51bc67fb25b734"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 97115
+                    },
+                    "symbols": [
+                      "LoraLayer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "lora_config": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/config.py"
+                    },
+                    "module": "peft.tuners.lora.config",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "85a478bcdfd42f9398d232d5e0ddb49650bd1199148503f864834fdbeca3aebb"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 42385
+                    },
+                    "symbols": [
+                      "LoraConfig"
+                    ],
+                    "symbols_available": true
+                  },
+                  "lora_model": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/model.py"
+                    },
+                    "module": "peft.tuners.lora.model",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "9eec396e506134e50afa41ff21b2608a3307f8f07207f460506d2da33d7bc2f7"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 45130
+                    },
+                    "symbols": [
+                      "LoraModel"
+                    ],
+                    "symbols_available": true
+                  },
+                  "mapping_func": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/mapping_func.py"
+                    },
+                    "module": "peft.mapping_func",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "c30533cb009ea60e45a35d564285be65c9778c0c41e0c281dc2dfacd69c2315d"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 6064
+                    },
+                    "symbols": [
+                      "get_peft_model"
+                    ],
+                    "symbols_available": true
+                  },
+                  "peft_model": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/peft_model.py"
+                    },
+                    "module": "peft.peft_model",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "2307ebeb101baff53b19ce5a0f109885d99b64ab147d67cba19719b6097c3e10"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 156704
+                    },
+                    "symbols": [
+                      "PeftModel",
+                      "get_model_status"
+                    ],
+                    "symbols_available": true
+                  },
+                  "tuners_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/tuners_utils.py"
+                    },
+                    "module": "peft.tuners.tuners_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "d5b6a92d8f0b5325951519e81d2ed9debcba6ace1028e887958dd5e5188be66a"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 67995
+                    },
+                    "symbols": [
+                      "BaseTuner",
+                      "BaseTunerLayer"
+                    ],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "tokenizers": {
+                "distribution": "tokenizers",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "2df0edacccd5e83cc9fde45cc5199701bc97731a676787ada63d02b8ff0f4bf0",
+                    "size_bytes": 3650
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "0.22.0"
+                },
+                "import_name": "tokenizers",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/tokenizers/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "644e596a052fa1b05272b1c141d1286e1c78c2a3346ecabd17d68b62404d8d84"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 2615
+                },
+                "source_identities": {
+                  "tokenizers_extension": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/tokenizers/tokenizers.abi3.so"
+                    },
+                    "module": "tokenizers.tokenizers",
+                    "origin_kind": "binary",
+                    "sha256": {
+                      "status": "available",
+                      "value": "1e1a657d75b22975395c66f0ce1b341fe9eec4b4c17a9e0da3c93a2ffddbd6db"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 10028880
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "torch": {
+                "distribution": "torch",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "a8a2b13b3ba6e31a168babb44dcbdda35d3f56583ae1ba9e98ad51ae809cb0e7",
+                    "size_bytes": 1364780
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "2.9.1"
+                },
+                "import_name": "torch",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/__init__.py"
+                },
+                "native_identities": {
+                  "cudnn": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "989afd40d5f56a848608b792eda320d3c4067d4c"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "3b68ea689be647bce63cb3c2d9edb589add415405a7e9f296d69ca029cae0b8b"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 125136
+                    }
+                  },
+                  "cudnn_adv": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "40dad754fc3521e5a5531381d3aecc1e0ba31455"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_adv.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_adv.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "9814d64e04fce1f6cbd16d02ccefd6611541b3c61736fb450e334b482635ca07"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 285226600
+                    }
+                  },
+                  "cudnn_cnn": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "4d8c00415c2e0f9b967a6614588acad6bc5b3164"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_cnn.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_cnn.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "655c2d2649466c73b6b4c19705fb6906fd95e331a1f8218314b49f37dd7cafed"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 6301096
+                    }
+                  },
+                  "cudnn_engines_precompiled": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "0e111592d57f71d0ccc36621f67c89d9197ec74d"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "f504745d346542609f975de51227080647d3675eac576ead82c396b8124f8f28"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 547383096
+                    }
+                  },
+                  "cudnn_engines_runtime_compiled": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "f8099f58a92ca1e2671c13927faef534fa9beab7"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_engines_runtime_compiled.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_engines_runtime_compiled.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "8222672743c4f2e39feb1c365d6f6b6c40f56023471506f49944910847f1ee0a"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 23094328
+                    }
+                  },
+                  "cudnn_graph": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "429aed8e6a0dcc9974a1371b071b8b4d590d0545"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_graph.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_graph.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "787c955dce49091ead850e4536666594095ea9f92a8a08879d8ddad466674657"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 4439912
+                    }
+                  },
+                  "cudnn_heuristic": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "11532cd128025c2c19cfceea30702b0176035ea9"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_heuristic.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_heuristic.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "2804eee5f6fc11d0299ba07687eda0a974d3b2436357c639706c4e282cc2cc05"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 58726712
+                    }
+                  },
+                  "cudnn_ops": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "8ca23749d0fd44f406607efb7f09986da436204c"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_ops.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_ops.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "34f56d67f3df108949d1e5e03543064e055e217d0f5e53dc6d4f7c9454d852f8"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 127936080
+                    }
+                  },
+                  "libc10_cuda": {
+                    "distribution": "torch",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "d9bfdd5a168655341fb2595f9dd763c9be969281"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/lib/libc10_cuda.so"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "torch/lib/libc10_cuda.so",
+                    "sha256": {
+                      "status": "available",
+                      "value": "2f6027b42aee93b5db3f814b92dfbe179074cc928eebad85804b6a266214d5f7"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 697169
+                    }
+                  },
+                  "libtorch_cuda": {
+                    "distribution": "torch",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "bf4c31d86c74fe1e5d5c67caea2d1a006785ce95"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "torch/lib/libtorch_cuda.so",
+                    "sha256": {
+                      "status": "available",
+                      "value": "02250527966ae122ccfc89d0306736874f9c619ba04431871ef76175e7253b66"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 1022776209
+                    }
+                  }
+                },
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "3caf7f40140ede2465bde40b9003af10cbbc8f7bcf436fa1de026471daa1b288"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 102969
+                },
+                "source_identities": {
+                  "torch_c_extension": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/_C.cpython-312-x86_64-linux-gnu.so"
+                    },
+                    "module": "torch._C",
+                    "origin_kind": "binary",
+                    "sha256": {
+                      "status": "available",
+                      "value": "90fc84350d2de15ca167734eb63b20b3a1a4ea2721d498b66e3e65174c0cff9f"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 25521
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "transformers": {
+                "distribution": "transformers",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "025b8186b05df7f173dff14013042262c7dacdb556e98ee5c56a182c02e42728",
+                    "size_bytes": 411910
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "4.57.1"
+                },
+                "import_name": "transformers",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "4ef5187b5f66c564aa575ddab9ce94342630d40fe874d0464d790c6f6b748647"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 47000
+                },
+                "source_identities": {
+                  "auto_configuration": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/configuration_auto.py"
+                    },
+                    "module": "transformers.models.auto.configuration_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "120b62cd4e13dd155762acd14cf64fc8bca17a068f5dd004ddfd30fbcb2ef4ab"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 55606
+                    },
+                    "symbols": [
+                      "AutoConfig"
+                    ],
+                    "symbols_available": true
+                  },
+                  "auto_image_processing": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/image_processing_auto.py"
+                    },
+                    "module": "transformers.models.auto.image_processing_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "34e04aa2fc7e5bab3f6e918d8e144760af5eb7c9e0b910641e09bbecf228c27b"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 39079
+                    },
+                    "symbols": [
+                      "AutoImageProcessor"
+                    ],
+                    "symbols_available": true
+                  },
+                  "auto_processing": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/processing_auto.py"
+                    },
+                    "module": "transformers.models.auto.processing_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "e97580de189cd7e5ea3378a96e01279939f305c68a0245a9160b80cb1a938961"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 20853
+                    },
+                    "symbols": [
+                      "AutoProcessor"
+                    ],
+                    "symbols_available": true
+                  },
+                  "auto_tokenization": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/tokenization_auto.py"
+                    },
+                    "module": "transformers.models.auto.tokenization_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "bd040dfb212fb20f1bef1f8fedfc3b4c100fe3b57e603c738552aebf2521c51d"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 57863
+                    },
+                    "symbols": [
+                      "AutoTokenizer",
+                      "tokenizer_class_from_name"
+                    ],
+                    "symbols_available": true
+                  },
+                  "flash_attention_integration": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/integrations/flash_attention.py"
+                    },
+                    "module": "transformers.integrations.flash_attention",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "850aa63f9473391188c357454cfb6a89339394d26f6024ccbe246f00f6344144"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 3125
+                    },
+                    "symbols": [
+                      "flash_attention_forward"
+                    ],
+                    "symbols_available": true
+                  },
+                  "flash_attention_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_flash_attention_utils.py"
+                    },
+                    "module": "transformers.modeling_flash_attention_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "293fe81c6bd38aac8a3bc6ae086ff21b9695b349e97c9650b1fe61e42a36d710"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 30112
+                    },
+                    "symbols": [
+                      "FlashAttentionKwargs",
+                      "_flash_attention_forward",
+                      "lazy_import_flash_attention",
+                      "prepare_fa_kwargs_from_position_ids"
+                    ],
+                    "symbols_available": true
+                  },
+                  "modeling_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_utils.py"
+                    },
+                    "module": "transformers.modeling_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "bf1c6b2a43cf7c36fb79f37c981424dd6ae78eb863fcaa5d2a37e76c9828611d"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 308964
+                    },
+                    "symbols": [
+                      "ALL_ATTENTION_FUNCTIONS"
+                    ],
+                    "symbols_available": true
+                  },
+                  "optimization": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/optimization.py"
+                    },
+                    "module": "transformers.optimization",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "41b08ffb29c2691626b225ed389a694cc8e61480818214a35f215b5c39167bfb"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 39971
+                    },
+                    "symbols": [
+                      "get_cosine_schedule_with_warmup"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen2_tokenization": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen2/tokenization_qwen2.py"
+                    },
+                    "module": "transformers.models.qwen2.tokenization_qwen2",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "23f05697fcaf26fe5e328abaf524f010510a2b9f4ba2e2edc9dca0a4015a09a2"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 13935
+                    },
+                    "symbols": [
+                      "Qwen2Tokenizer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen2_tokenization_fast": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen2/tokenization_qwen2_fast.py"
+                    },
+                    "module": "transformers.models.qwen2.tokenization_qwen2_fast",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "1025a3b86526283bd86a447f0fe2d991d09775b32d3fdcc233c9e447b0611049"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 5210
+                    },
+                    "symbols": [
+                      "Qwen2TokenizerFast"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen2_vl_image_processing_fast": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py"
+                    },
+                    "module": "transformers.models.qwen2_vl.image_processing_qwen2_vl_fast",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "09bfa9b17df7c3f0c6159bc34008ee50f21d2472cd5bae7e5c21ba1ca13a423c"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 12723
+                    },
+                    "symbols": [
+                      "Qwen2VLImageProcessorFast"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen3_vl_configuration": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/configuration_qwen3_vl.py"
+                    },
+                    "module": "transformers.models.qwen3_vl.configuration_qwen3_vl",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "177fd0a4dc1b08307c08ca72cf26b8d7dc028ab6ab5975bf650fc14ab8132a83"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 14827
+                    },
+                    "symbols": [
+                      "Qwen3VLConfig",
+                      "Qwen3VLTextConfig"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen3_vl_modeling": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py"
+                    },
+                    "module": "transformers.models.qwen3_vl.modeling_qwen3_vl",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "dd63ed3b124232735b3dca1bfa28f9d6b0d3f7182afcb75dde8f3e724b2b22da"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 70877
+                    },
+                    "symbols": [
+                      "Qwen3VLForConditionalGeneration",
+                      "Qwen3VLTextAttention",
+                      "Qwen3VLTextModel",
+                      "Qwen3VLVisionAttention"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen3_vl_processing": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/processing_qwen3_vl.py"
+                    },
+                    "module": "transformers.models.qwen3_vl.processing_qwen3_vl",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "efd8d64aaf608aad1ffb3e6d503d6a99e5227d007df95c1d9fa905d998cda4a9"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 17149
+                    },
+                    "symbols": [
+                      "Qwen3VLProcessor"
+                    ],
+                    "symbols_available": true
+                  },
+                  "tokenization_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/tokenization_utils.py"
+                    },
+                    "module": "transformers.tokenization_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "dfcc42414037d865d22568259eec12dd10caa7375b2d7a27707b7a502a08ef80"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 47780
+                    },
+                    "symbols": [
+                      "PreTrainedTokenizer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "tokenization_utils_fast": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/tokenization_utils_fast.py"
+                    },
+                    "module": "transformers.tokenization_utils_fast",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "558e454ee6850e90e8bc5d1782e35878dfda1da9bfdf997ae113fa7ff771a0f3"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 41383
+                    },
+                    "symbols": [
+                      "PreTrainedTokenizerFast"
+                    ],
+                    "symbols_available": true
+                  },
+                  "trainer_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/trainer_utils.py"
+                    },
+                    "module": "transformers.trainer_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "20e32d05ef22f366ab9ce91c6dbec2290b2e46f8da749d52eeebaf6a4349bd8e"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 34254
+                    },
+                    "symbols": [
+                      "set_seed"
+                    ],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              }
+            },
+            "repository": {
+              "commit": {
+                "status": "available",
+                "value": "582a19ff36843bacb611ad6325839d110e0322b1"
+              },
+              "execution_relevant_changes": {
+                "count": 0,
+                "path_classes": {},
+                "truncated": false
+              },
+              "execution_relevant_digest": {
+                "status": "available",
+                "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "state": "clean",
+              "tracked_changes_present": false,
+              "untracked_changes_present": false
+            },
+            "runtime": {
+              "python": {
+                "implementation": "CPython",
+                "version": "3.12.11"
+              },
+              "torch_cuda": {
+                "cuda_available": true,
+                "cuda_compiled_version": "12.8",
+                "cuda_device_count": 8,
+                "cuda_driver_runtime_applicable": true,
+                "cudnn_version": 91002,
+                "hip_compiled_version": null,
+                "nvidia_driver_version": {
+                  "status": "available",
+                  "value": "550.54.15"
+                },
+                "torch_git_version": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+                "torch_version": "2.9.1+cu128"
+              }
+            },
+            "schema_version": 1
+          },
+          "resolved_config_fingerprint": "3b47d16cf2f9efcf3eb8a0ddca1e7b32091f94a27a803e276d519c1e753fce8e",
+          "train": {
+            "build_status": "built",
+            "cache_dir": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f",
+            "fingerprint": "ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f",
+            "format_version": "coordexp-swift-pack-cache-v3",
+            "manifest_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f/manifest.json",
+            "manifest_sha256": "1697df0691b4495e2a06509f922c2675bbae3ceb5a9b5d2c35312733b58630da",
+            "micro_step_count": 2,
+            "phase_receipt": {
+              "cache_admission": {
+                "duration_seconds": 0.026463057845830917,
+                "status": "completed",
+                "verification_level": "payloads"
+              },
+              "cache_preparation": {
+                "duration_seconds": 0.4092673771083355,
+                "status": "completed"
+              },
+              "cache_publication": {
+                "duration_seconds": 0.3128790929913521,
+                "status": "completed"
+              }
+            },
+            "status": "complete"
+          }
+        },
+        "schema": "coordexp-swift-pack-cache-preparation-receipt-v1",
+        "terminal_status": "completed"
+      }
+    },
+    "b": {
+      "outcome": "valid_existing_target_hit",
+      "receipt_sha256": "8938b3a86e38bf69d3b377fcc1e38da3f99696a96d30285c2f0bbfbc1643cff6",
+      "receipt": {
+        "config_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/probe_config.yaml",
+        "failure": null,
+        "receipt_sha256": "e169bb60421a9eb48c7912a9b4467b5c07608e7955600e0fdbccc0257c8f5dc2",
+        "result": {
+          "entry_config_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/probe_config.yaml",
+          "eval": {
+            "build_status": "hit",
+            "cache_dir": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+            "fingerprint": "76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+            "format_version": "coordexp-swift-pack-cache-v3",
+            "manifest_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6/manifest.json",
+            "manifest_sha256": "4bffb69eb9b5bc339c105497c94d8c83c0efa5dd147a6ccc08048fe997f5d08b",
+            "micro_step_count": 1,
+            "phase_receipt": {
+              "cache_admission": {
+                "duration_seconds": 0.01824343204498291,
+                "status": "completed",
+                "verification_level": "payloads"
+              },
+              "cache_preparation": {
+                "duration_seconds": 0.0,
+                "status": "not_run_cache_hit"
+              },
+              "cache_publication": {
+                "duration_seconds": 0.0,
+                "status": "not_run_cache_hit"
+              }
+            },
+            "status": "complete"
+          },
+          "measurement": {
+            "completed_at": "2026-08-19T03:48:23.841810+00:00",
+            "context": {
+              "comparison_arm": "compatibility_reference",
+              "wall_clock_scope": "prepare_training_pack_caches_entry_to_return",
+              "workload_identity": "3b47d16cf2f9efcf3eb8a0ddca1e7b32091f94a27a803e276d519c1e753fce8e",
+              "world_size": 1
+            },
+            "duration_seconds": 4.489739954471588,
+            "phases": {
+              "cache_admission": {
+                "duration_seconds": 0.04982605576515198,
+                "status": "completed"
+              },
+              "cache_preparation": {
+                "duration_seconds": 0.0,
+                "reason": "all_cache_hits",
+                "status": "not_run"
+              },
+              "cache_publication": {
+                "duration_seconds": 0.0,
+                "reason": "all_cache_hits",
+                "status": "not_run"
+              },
+              "config_provenance_resolution": {
+                "duration_seconds": 4.079225484281778,
+                "status": "completed"
+              }
+            },
+            "resource_high_water": {
+              "cpu": {
+                "io_read_bytes": 0,
+                "io_write_bytes": 12288,
+                "max_rss_bytes": 1088847872,
+                "scope": "current_process"
+              },
+              "gpu": {
+                "initialized": false,
+                "scope": "current_process_current_device",
+                "unavailable_reason": "cuda_not_initialized"
+              },
+              "schema_version": 1
+            },
+            "schema_version": 1,
+            "started_at": "2026-08-19T03:48:19.352073+00:00"
+          },
+          "model_loaded": false,
+          "policy_identities": {
+            "cache": {
+              "eval_fingerprint": "76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+              "root": {
+                "resolved_root": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root",
+                "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+              },
+              "schema_version": 1,
+              "train_fingerprint": "ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f"
+            },
+            "packing": {
+              "fragment_pack_budget": null,
+              "global_max_length": 12000,
+              "intra_image_object_order": "geo_sorted",
+              "planner": {
+                "algorithm_version": "coordexp-swift-source-order-next-fit-v2",
+                "cursor_byte_budget": 65536,
+                "fragment_byte_budget": 4194304,
+                "fragment_item_budget": 1024,
+                "lookahead": null,
+                "policy": "source_order_next_fit",
+                "requested_worker_count": 1,
+                "seed": 0,
+                "tie_breaker": "source_ordinal_v1",
+                "window_size": null,
+                "worker_count_disposition": "semantic_pending_upstream_materialization_equality",
+                "worker_count_integration_requirement": "canonical_concurrent_encoded_materialization_and_complete_plan_equality"
+              },
+              "schema_version": 2,
+              "train_order": "source_order"
+            },
+            "runtime_determinism": {
+              "application_receipt": {
+                "applied_before": [],
+                "cuda_initialized": false,
+                "cudnn": {
+                  "benchmark": null,
+                  "deterministic": null,
+                  "managed": false
+                },
+                "deterministic_algorithms": {
+                  "enabled": false,
+                  "managed": false,
+                  "warn_only": null
+                },
+                "environment": {},
+                "helper": "transformers.trainer_utils.set_seed",
+                "mode": "legacy",
+                "observed_environment": {},
+                "phase": "pack_cache_preparation",
+                "required_environment": {},
+                "schema_version": 1,
+                "seed": 17,
+                "surfaces": [
+                  "python.random",
+                  "numpy",
+                  "torch.cpu",
+                  "torch.cuda_all",
+                  "torch.other_supported_devices"
+                ]
+              },
+              "cudnn": {
+                "benchmark": null,
+                "deterministic": null,
+                "managed": false
+              },
+              "deterministic_algorithms": {
+                "enabled": false,
+                "managed": false,
+                "warn_only": null
+              },
+              "environment": {},
+              "launcher_attestations": [
+                {
+                  "cuda_visible_devices": null,
+                  "local_rank": 0,
+                  "logical_cuda_device": 0,
+                  "rank": 0,
+                  "world_size": 1
+                }
+              ],
+              "mode": "legacy",
+              "pinned_runtime_baseline_sha256": "cc486f03edb88e4fa1c9d41dc6fa98c97f25a633400e6baf98077e8beaf2b784",
+              "pre_apply_cuda_initialized": false,
+              "pre_apply_cuda_initialized_by_rank": {
+                "0": false
+              },
+              "schema_version": 1,
+              "seed": 17
+            },
+            "upstream_runtime_baseline": {
+              "admitted": true,
+              "attention_backend": "flash_attention_2",
+              "baseline_sha256": "cc486f03edb88e4fa1c9d41dc6fa98c97f25a633400e6baf98077e8beaf2b784",
+              "mismatches": [],
+              "reference_only": {
+                "ms-swift": {
+                  "matches_recorded_reference": true,
+                  "mismatches": []
+                }
+              },
+              "schema_version": 3
+            }
+          },
+          "provenance": {
+            "dependencies": {
+              "accelerate": {
+                "distribution": "accelerate",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "8c84d01d529cd3d9745936fd74933835e9838e7119a96832a27123e5170500f8",
+                    "size_bytes": 13939
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "1.10.1"
+                },
+                "import_name": "accelerate",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "68f56baac9b078db4735567649441ef28932a946b400bf8d8c2519b0a5b94b89"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 1555
+                },
+                "source_identities": {
+                  "accelerator": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/accelerator.py"
+                    },
+                    "module": "accelerate.accelerator",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "9005e9a74cd819701578ea9a86e8cd71c16152f0e2308ed1b6f447c0797837f9"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 190652
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  },
+                  "modeling": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/utils/modeling.py"
+                    },
+                    "module": "accelerate.utils.modeling",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "35cbf0f316b086f599bf54babf4d7691ca66fd675ef1dfcfb10821bd5e983a02"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 95815
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  },
+                  "operations": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/utils/operations.py"
+                    },
+                    "module": "accelerate.utils.operations",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "f384a95f02ac6cd1c778f6e82fd814a8ae9b039be8d24c87fe02c07709f313fb"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 31266
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  },
+                  "state": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/accelerate/state.py"
+                    },
+                    "module": "accelerate.state",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "dfa76df4d4205babb1f8c1ce87206d359168f28d551b8851b64f159a4911537a"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 57976
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "cuda-runtime": {
+                "distribution": "nvidia-cuda-runtime-cu12",
+                "distribution_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12"
+                },
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "bef69015da09064656ac31d35fc73d6436712380c602ff38fb5fc16c30512bdf",
+                    "size_bytes": 11369
+                  }
+                },
+                "distribution_relative_path": "nvidia/cuda_runtime/lib/libcudart.so.12",
+                "distribution_version": {
+                  "status": "available",
+                  "value": "12.8.90"
+                },
+                "elf_build_id": {
+                  "status": "available",
+                  "value": "7b1714ea2d766ca35afe1e3dd34a75b41b78999f"
+                },
+                "import_name": null,
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12"
+                },
+                "loaded_origin_matches_distribution": true,
+                "loaded_soname": "libcudart.so.12",
+                "native_identities": {},
+                "origin_kind": "binary",
+                "origin_resolution": "loaded_shared_object",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "c3a75b33af334a3486d197dbd1584a2985183ba4688d237a2be5f2f679329920"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 728800
+                },
+                "source_identities": {},
+                "source_repository": {
+                  "reason": "not_source_origin",
+                  "status": "unavailable"
+                }
+              },
+              "flash-attn": {
+                "distribution": "flash-attn",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "fee009739702fa997fa85c07f134ad54636d042475235515b90afdcfffd299a5",
+                    "size_bytes": 15390
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "2.8.3"
+                },
+                "import_name": "flash_attn",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "f1833af940ac1124e09dc05dd922308871411035e75b90bf4dbe3a831dc03b50"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 285
+                },
+                "source_identities": {
+                  "flash_attn_interface": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn/flash_attn_interface.py"
+                    },
+                    "module": "flash_attn.flash_attn_interface",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "e8da8127f7ebf5c5aeb7f35b316ff96394a70553378f125717ea174af912db13"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 60677
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "flash_attn_2_cuda": {
+                "distribution": "flash-attn",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "fee009739702fa997fa85c07f134ad54636d042475235515b90afdcfffd299a5",
+                    "size_bytes": 15390
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "2.8.3"
+                },
+                "import_name": "flash_attn_2_cuda",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/flash_attn_2_cuda.cpython-312-x86_64-linux-gnu.so"
+                },
+                "native_identities": {},
+                "origin_kind": "binary",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "8ca052bf2d3f53baa629e22749b9622a95273c5bffb5f06cd24768ef63f65807"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 997961816
+                },
+                "source_identities": {},
+                "source_repository": {
+                  "reason": "not_source_origin",
+                  "status": "unavailable"
+                }
+              },
+              "ms-swift": {
+                "distribution": "ms-swift",
+                "distribution_record": {
+                  "reason": "distribution_record_absent",
+                  "status": "unavailable"
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "4.2.2"
+                },
+                "import_name": "swift",
+                "imported_origin": {
+                  "reason": "reference_only_not_imported",
+                  "status": "unavailable"
+                },
+                "origin_kind": "source",
+                "origin_resolution": "import_spec_without_import",
+                "role": "reference_only_not_imported_by_training_route",
+                "selected_module_origin": {
+                  "status": "available",
+                  "value": "/data/ms-swift/swift/__init__.py"
+                },
+                "sha256": {
+                  "status": "available",
+                  "value": "d345fd8f68077d11730ffe56747a52b1858550e8c21067ed55a1db2f79ab5caf"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 3529
+                },
+                "source_repository": {
+                  "status": "available",
+                  "value": {
+                    "commit": "f2797138dba0e224cfff735cd89a528a08d8732a",
+                    "state": "clean"
+                  }
+                }
+              },
+              "peft": {
+                "distribution": "peft",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "258749eb655ec7ee9b6d4f6040b2a34c9207cafc9f3efc35d96559e63460a38c",
+                    "size_bytes": 22735
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "0.17.1"
+                },
+                "import_name": "peft",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "efabc3b44d7326eee59c07910e426fa38ee0c6419b773e8f75af87ae61d3fa32"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 5523
+                },
+                "source_identities": {
+                  "dora_implementation": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/dora.py"
+                    },
+                    "module": "peft.tuners.lora.dora",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "07d514fd057d8aa9ec7b89bec3f3fbd04862951c1a8ff73153e833096481ecf5"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 8480
+                    },
+                    "symbols": [
+                      "DoraLinearLayer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "dora_layer": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/layer.py"
+                    },
+                    "module": "peft.tuners.lora.layer",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "39e2f6908c9f3faf4d2de2b6ecfdf44c96d2cae67b8155ed1b51bc67fb25b734"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 97115
+                    },
+                    "symbols": [
+                      "LoraLayer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "lora_config": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/config.py"
+                    },
+                    "module": "peft.tuners.lora.config",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "85a478bcdfd42f9398d232d5e0ddb49650bd1199148503f864834fdbeca3aebb"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 42385
+                    },
+                    "symbols": [
+                      "LoraConfig"
+                    ],
+                    "symbols_available": true
+                  },
+                  "lora_model": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/lora/model.py"
+                    },
+                    "module": "peft.tuners.lora.model",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "9eec396e506134e50afa41ff21b2608a3307f8f07207f460506d2da33d7bc2f7"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 45130
+                    },
+                    "symbols": [
+                      "LoraModel"
+                    ],
+                    "symbols_available": true
+                  },
+                  "mapping_func": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/mapping_func.py"
+                    },
+                    "module": "peft.mapping_func",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "c30533cb009ea60e45a35d564285be65c9778c0c41e0c281dc2dfacd69c2315d"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 6064
+                    },
+                    "symbols": [
+                      "get_peft_model"
+                    ],
+                    "symbols_available": true
+                  },
+                  "peft_model": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/peft_model.py"
+                    },
+                    "module": "peft.peft_model",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "2307ebeb101baff53b19ce5a0f109885d99b64ab147d67cba19719b6097c3e10"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 156704
+                    },
+                    "symbols": [
+                      "PeftModel",
+                      "get_model_status"
+                    ],
+                    "symbols_available": true
+                  },
+                  "tuners_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/peft/tuners/tuners_utils.py"
+                    },
+                    "module": "peft.tuners.tuners_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "d5b6a92d8f0b5325951519e81d2ed9debcba6ace1028e887958dd5e5188be66a"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 67995
+                    },
+                    "symbols": [
+                      "BaseTuner",
+                      "BaseTunerLayer"
+                    ],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "tokenizers": {
+                "distribution": "tokenizers",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "2df0edacccd5e83cc9fde45cc5199701bc97731a676787ada63d02b8ff0f4bf0",
+                    "size_bytes": 3650
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "0.22.0"
+                },
+                "import_name": "tokenizers",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/tokenizers/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "644e596a052fa1b05272b1c141d1286e1c78c2a3346ecabd17d68b62404d8d84"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 2615
+                },
+                "source_identities": {
+                  "tokenizers_extension": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/tokenizers/tokenizers.abi3.so"
+                    },
+                    "module": "tokenizers.tokenizers",
+                    "origin_kind": "binary",
+                    "sha256": {
+                      "status": "available",
+                      "value": "1e1a657d75b22975395c66f0ce1b341fe9eec4b4c17a9e0da3c93a2ffddbd6db"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 10028880
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "torch": {
+                "distribution": "torch",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "a8a2b13b3ba6e31a168babb44dcbdda35d3f56583ae1ba9e98ad51ae809cb0e7",
+                    "size_bytes": 1364780
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "2.9.1"
+                },
+                "import_name": "torch",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/__init__.py"
+                },
+                "native_identities": {
+                  "cudnn": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "989afd40d5f56a848608b792eda320d3c4067d4c"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "3b68ea689be647bce63cb3c2d9edb589add415405a7e9f296d69ca029cae0b8b"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 125136
+                    }
+                  },
+                  "cudnn_adv": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "40dad754fc3521e5a5531381d3aecc1e0ba31455"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_adv.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_adv.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "9814d64e04fce1f6cbd16d02ccefd6611541b3c61736fb450e334b482635ca07"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 285226600
+                    }
+                  },
+                  "cudnn_cnn": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "4d8c00415c2e0f9b967a6614588acad6bc5b3164"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_cnn.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_cnn.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "655c2d2649466c73b6b4c19705fb6906fd95e331a1f8218314b49f37dd7cafed"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 6301096
+                    }
+                  },
+                  "cudnn_engines_precompiled": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "0e111592d57f71d0ccc36621f67c89d9197ec74d"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_engines_precompiled.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "f504745d346542609f975de51227080647d3675eac576ead82c396b8124f8f28"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 547383096
+                    }
+                  },
+                  "cudnn_engines_runtime_compiled": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "f8099f58a92ca1e2671c13927faef534fa9beab7"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_engines_runtime_compiled.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_engines_runtime_compiled.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "8222672743c4f2e39feb1c365d6f6b6c40f56023471506f49944910847f1ee0a"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 23094328
+                    }
+                  },
+                  "cudnn_graph": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "429aed8e6a0dcc9974a1371b071b8b4d590d0545"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_graph.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_graph.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "787c955dce49091ead850e4536666594095ea9f92a8a08879d8ddad466674657"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 4439912
+                    }
+                  },
+                  "cudnn_heuristic": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "11532cd128025c2c19cfceea30702b0176035ea9"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_heuristic.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_heuristic.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "2804eee5f6fc11d0299ba07687eda0a974d3b2436357c639706c4e282cc2cc05"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 58726712
+                    }
+                  },
+                  "cudnn_ops": {
+                    "distribution": "nvidia-cudnn-cu12",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "8ca23749d0fd44f406607efb7f09986da436204c"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/nvidia/cudnn/lib/libcudnn_ops.so.9"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "nvidia/cudnn/lib/libcudnn_ops.so.9",
+                    "sha256": {
+                      "status": "available",
+                      "value": "34f56d67f3df108949d1e5e03543064e055e217d0f5e53dc6d4f7c9454d852f8"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 127936080
+                    }
+                  },
+                  "libc10_cuda": {
+                    "distribution": "torch",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "d9bfdd5a168655341fb2595f9dd763c9be969281"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/lib/libc10_cuda.so"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "torch/lib/libc10_cuda.so",
+                    "sha256": {
+                      "status": "available",
+                      "value": "2f6027b42aee93b5db3f814b92dfbe179074cc928eebad85804b6a266214d5f7"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 697169
+                    }
+                  },
+                  "libtorch_cuda": {
+                    "distribution": "torch",
+                    "elf_build_id": {
+                      "status": "available",
+                      "value": "bf4c31d86c74fe1e5d5c67caea2d1a006785ce95"
+                    },
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so"
+                    },
+                    "origin_kind": "binary",
+                    "relative_path": "torch/lib/libtorch_cuda.so",
+                    "sha256": {
+                      "status": "available",
+                      "value": "02250527966ae122ccfc89d0306736874f9c619ba04431871ef76175e7253b66"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 1022776209
+                    }
+                  }
+                },
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "3caf7f40140ede2465bde40b9003af10cbbc8f7bcf436fa1de026471daa1b288"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 102969
+                },
+                "source_identities": {
+                  "torch_c_extension": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/torch/_C.cpython-312-x86_64-linux-gnu.so"
+                    },
+                    "module": "torch._C",
+                    "origin_kind": "binary",
+                    "sha256": {
+                      "status": "available",
+                      "value": "90fc84350d2de15ca167734eb63b20b3a1a4ea2721d498b66e3e65174c0cff9f"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 25521
+                    },
+                    "symbols": [],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              },
+              "transformers": {
+                "distribution": "transformers",
+                "distribution_record": {
+                  "status": "available",
+                  "value": {
+                    "sha256": "025b8186b05df7f173dff14013042262c7dacdb556e98ee5c56a182c02e42728",
+                    "size_bytes": 411910
+                  }
+                },
+                "distribution_version": {
+                  "status": "available",
+                  "value": "4.57.1"
+                },
+                "import_name": "transformers",
+                "imported_origin": {
+                  "status": "available",
+                  "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/__init__.py"
+                },
+                "native_identities": {},
+                "origin_kind": "source",
+                "origin_resolution": "imported_module",
+                "role": "runtime_dependency",
+                "sha256": {
+                  "status": "available",
+                  "value": "4ef5187b5f66c564aa575ddab9ce94342630d40fe874d0464d790c6f6b748647"
+                },
+                "size_bytes": {
+                  "status": "available",
+                  "value": 47000
+                },
+                "source_identities": {
+                  "auto_configuration": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/configuration_auto.py"
+                    },
+                    "module": "transformers.models.auto.configuration_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "120b62cd4e13dd155762acd14cf64fc8bca17a068f5dd004ddfd30fbcb2ef4ab"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 55606
+                    },
+                    "symbols": [
+                      "AutoConfig"
+                    ],
+                    "symbols_available": true
+                  },
+                  "auto_image_processing": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/image_processing_auto.py"
+                    },
+                    "module": "transformers.models.auto.image_processing_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "34e04aa2fc7e5bab3f6e918d8e144760af5eb7c9e0b910641e09bbecf228c27b"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 39079
+                    },
+                    "symbols": [
+                      "AutoImageProcessor"
+                    ],
+                    "symbols_available": true
+                  },
+                  "auto_processing": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/processing_auto.py"
+                    },
+                    "module": "transformers.models.auto.processing_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "e97580de189cd7e5ea3378a96e01279939f305c68a0245a9160b80cb1a938961"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 20853
+                    },
+                    "symbols": [
+                      "AutoProcessor"
+                    ],
+                    "symbols_available": true
+                  },
+                  "auto_tokenization": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/auto/tokenization_auto.py"
+                    },
+                    "module": "transformers.models.auto.tokenization_auto",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "bd040dfb212fb20f1bef1f8fedfc3b4c100fe3b57e603c738552aebf2521c51d"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 57863
+                    },
+                    "symbols": [
+                      "AutoTokenizer",
+                      "tokenizer_class_from_name"
+                    ],
+                    "symbols_available": true
+                  },
+                  "flash_attention_integration": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/integrations/flash_attention.py"
+                    },
+                    "module": "transformers.integrations.flash_attention",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "850aa63f9473391188c357454cfb6a89339394d26f6024ccbe246f00f6344144"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 3125
+                    },
+                    "symbols": [
+                      "flash_attention_forward"
+                    ],
+                    "symbols_available": true
+                  },
+                  "flash_attention_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_flash_attention_utils.py"
+                    },
+                    "module": "transformers.modeling_flash_attention_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "293fe81c6bd38aac8a3bc6ae086ff21b9695b349e97c9650b1fe61e42a36d710"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 30112
+                    },
+                    "symbols": [
+                      "FlashAttentionKwargs",
+                      "_flash_attention_forward",
+                      "lazy_import_flash_attention",
+                      "prepare_fa_kwargs_from_position_ids"
+                    ],
+                    "symbols_available": true
+                  },
+                  "modeling_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/modeling_utils.py"
+                    },
+                    "module": "transformers.modeling_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "bf1c6b2a43cf7c36fb79f37c981424dd6ae78eb863fcaa5d2a37e76c9828611d"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 308964
+                    },
+                    "symbols": [
+                      "ALL_ATTENTION_FUNCTIONS"
+                    ],
+                    "symbols_available": true
+                  },
+                  "optimization": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/optimization.py"
+                    },
+                    "module": "transformers.optimization",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "41b08ffb29c2691626b225ed389a694cc8e61480818214a35f215b5c39167bfb"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 39971
+                    },
+                    "symbols": [
+                      "get_cosine_schedule_with_warmup"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen2_tokenization": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen2/tokenization_qwen2.py"
+                    },
+                    "module": "transformers.models.qwen2.tokenization_qwen2",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "23f05697fcaf26fe5e328abaf524f010510a2b9f4ba2e2edc9dca0a4015a09a2"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 13935
+                    },
+                    "symbols": [
+                      "Qwen2Tokenizer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen2_tokenization_fast": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen2/tokenization_qwen2_fast.py"
+                    },
+                    "module": "transformers.models.qwen2.tokenization_qwen2_fast",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "1025a3b86526283bd86a447f0fe2d991d09775b32d3fdcc233c9e447b0611049"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 5210
+                    },
+                    "symbols": [
+                      "Qwen2TokenizerFast"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen2_vl_image_processing_fast": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen2_vl/image_processing_qwen2_vl_fast.py"
+                    },
+                    "module": "transformers.models.qwen2_vl.image_processing_qwen2_vl_fast",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "09bfa9b17df7c3f0c6159bc34008ee50f21d2472cd5bae7e5c21ba1ca13a423c"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 12723
+                    },
+                    "symbols": [
+                      "Qwen2VLImageProcessorFast"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen3_vl_configuration": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/configuration_qwen3_vl.py"
+                    },
+                    "module": "transformers.models.qwen3_vl.configuration_qwen3_vl",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "177fd0a4dc1b08307c08ca72cf26b8d7dc028ab6ab5975bf650fc14ab8132a83"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 14827
+                    },
+                    "symbols": [
+                      "Qwen3VLConfig",
+                      "Qwen3VLTextConfig"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen3_vl_modeling": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/modeling_qwen3_vl.py"
+                    },
+                    "module": "transformers.models.qwen3_vl.modeling_qwen3_vl",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "dd63ed3b124232735b3dca1bfa28f9d6b0d3f7182afcb75dde8f3e724b2b22da"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 70877
+                    },
+                    "symbols": [
+                      "Qwen3VLForConditionalGeneration",
+                      "Qwen3VLTextAttention",
+                      "Qwen3VLTextModel",
+                      "Qwen3VLVisionAttention"
+                    ],
+                    "symbols_available": true
+                  },
+                  "qwen3_vl_processing": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/models/qwen3_vl/processing_qwen3_vl.py"
+                    },
+                    "module": "transformers.models.qwen3_vl.processing_qwen3_vl",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "efd8d64aaf608aad1ffb3e6d503d6a99e5227d007df95c1d9fa905d998cda4a9"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 17149
+                    },
+                    "symbols": [
+                      "Qwen3VLProcessor"
+                    ],
+                    "symbols_available": true
+                  },
+                  "tokenization_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/tokenization_utils.py"
+                    },
+                    "module": "transformers.tokenization_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "dfcc42414037d865d22568259eec12dd10caa7375b2d7a27707b7a502a08ef80"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 47780
+                    },
+                    "symbols": [
+                      "PreTrainedTokenizer"
+                    ],
+                    "symbols_available": true
+                  },
+                  "tokenization_utils_fast": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/tokenization_utils_fast.py"
+                    },
+                    "module": "transformers.tokenization_utils_fast",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "558e454ee6850e90e8bc5d1782e35878dfda1da9bfdf997ae113fa7ff771a0f3"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 41383
+                    },
+                    "symbols": [
+                      "PreTrainedTokenizerFast"
+                    ],
+                    "symbols_available": true
+                  },
+                  "trainer_utils": {
+                    "imported_origin": {
+                      "status": "available",
+                      "value": "/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/trainer_utils.py"
+                    },
+                    "module": "transformers.trainer_utils",
+                    "origin_kind": "source",
+                    "sha256": {
+                      "status": "available",
+                      "value": "20e32d05ef22f366ab9ce91c6dbec2290b2e46f8da749d52eeebaf6a4349bd8e"
+                    },
+                    "size_bytes": {
+                      "status": "available",
+                      "value": 34254
+                    },
+                    "symbols": [
+                      "set_seed"
+                    ],
+                    "symbols_available": true
+                  }
+                },
+                "source_repository": {
+                  "reason": "source_repository_unavailable",
+                  "status": "unavailable"
+                }
+              }
+            },
+            "repository": {
+              "commit": {
+                "status": "available",
+                "value": "582a19ff36843bacb611ad6325839d110e0322b1"
+              },
+              "execution_relevant_changes": {
+                "count": 0,
+                "path_classes": {},
+                "truncated": false
+              },
+              "execution_relevant_digest": {
+                "status": "available",
+                "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "state": "clean",
+              "tracked_changes_present": false,
+              "untracked_changes_present": false
+            },
+            "runtime": {
+              "python": {
+                "implementation": "CPython",
+                "version": "3.12.11"
+              },
+              "torch_cuda": {
+                "cuda_available": true,
+                "cuda_compiled_version": "12.8",
+                "cuda_device_count": 8,
+                "cuda_driver_runtime_applicable": true,
+                "cudnn_version": 91002,
+                "hip_compiled_version": null,
+                "nvidia_driver_version": {
+                  "status": "available",
+                  "value": "550.54.15"
+                },
+                "torch_git_version": "5811a8d7da873dd699ff6687092c225caffcf1bb",
+                "torch_version": "2.9.1+cu128"
+              }
+            },
+            "schema_version": 1
+          },
+          "resolved_config_fingerprint": "3b47d16cf2f9efcf3eb8a0ddca1e7b32091f94a27a803e276d519c1e753fce8e",
+          "train": {
+            "build_status": "hit",
+            "cache_dir": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f",
+            "fingerprint": "ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f",
+            "format_version": "coordexp-swift-pack-cache-v3",
+            "manifest_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/cache-root/coordexp-swift-pack-cache-v3/ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f/manifest.json",
+            "manifest_sha256": "1697df0691b4495e2a06509f922c2675bbae3ceb5a9b5d2c35312733b58630da",
+            "micro_step_count": 2,
+            "phase_receipt": {
+              "cache_admission": {
+                "duration_seconds": 0.03158262372016907,
+                "status": "completed",
+                "verification_level": "payloads"
+              },
+              "cache_preparation": {
+                "duration_seconds": 0.0,
+                "status": "not_run_cache_hit"
+              },
+              "cache_publication": {
+                "duration_seconds": 0.0,
+                "status": "not_run_cache_hit"
+              }
+            },
+            "status": "complete"
+          }
+        },
+        "schema": "coordexp-swift-pack-cache-preparation-receipt-v1",
+        "terminal_status": "completed"
+      }
+    },
+    "c": {
+      "outcome": "invalid_target_fail_closed",
+      "receipt_sha256": "a44646919c7b22fe26f1c999e04c3eaef5e8511a5246c8518e9f042e45144d9b",
+      "receipt": {
+        "config_path": "/data/CoordExp/.claude/jobs/c9895ff9/tmp/wave4-cache-probe/probe_config.yaml",
+        "failure": {
+          "error_code": "training.pack_cache_immutable_collision",
+          "error_type": "RuntimeContractError"
+        },
+        "receipt_sha256": "b1ff371ce4018e2fa93e41fb8f5a7ce9ec065d50cf64fa81b6202fef6d156483",
+        "result": null,
+        "schema": "coordexp-swift-pack-cache-preparation-receipt-v1",
+        "terminal_status": "failed"
+      }
+    }
+  },
+  "claim_boundary": "model-free preparation/admission probe only; no production cache published; no efficiency claim",
+  "receipt_payload_sha256": "3919816dadede288217fe30970676dec403df88b4a24347bb564fa796cfdbbf9"
+}

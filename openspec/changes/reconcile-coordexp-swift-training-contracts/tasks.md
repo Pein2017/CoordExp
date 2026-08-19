@@ -217,12 +217,28 @@
 
 ## 4. Reconcile Cache And Provenance Dependencies
 
-- [ ] 4.1 Trace the live cached-payload determinant registry, its independent completeness test, post-build determinant revalidation, immutable absent-target publication, and pre-model train/eval admission; remove any cache delta claim not supported by current source and focused tests.
-- [ ] 4.2 Add or tighten focused tests only for demonstrated gaps in content/producer invalidation, immutable-current-target collision, full preparation validation, rank-required eager validation, and the guarantee that cache failure occurs before model/optimizer/runtime construction.
-- [ ] 4.3 Execute a model-free cache preparation/admission probe that records fingerprints, manifest identities, verification levels, absent/valid/invalid target outcomes, and proof that no model weights were loaded; do not publish a production cache or make an efficiency claim.
-- [ ] 4.4 Verify execution-provenance behavior for clean/dirty repository state and safely unavailable dependency identity, including stable non-secret local-state identity and explicit unavailable reasons; test that credentials and raw secret environment values cannot enter the artifact.
-- [ ] 4.5 Publish a bounded provenance receipt from the current worktree/runtime and verify that exact-resume compatibility consumes only the declared identity projection rather than undocumented environment state.
-- [ ] 4.6 Gate Wave 4 with focused executable cache-contract and provenance/privacy checks; remove unsupported normative language instead of adding another independent audit layer or inheriting unfinished archive scope.
+- [x] 4.1 Trace the live cached-payload determinant registry, its independent completeness test, post-build determinant revalidation, immutable absent-target publication, and pre-model train/eval admission; remove any cache delta claim not supported by current source and focused tests.
+- [x] 4.2 Add or tighten focused tests only for demonstrated gaps in content/producer invalidation, immutable-current-target collision, full preparation validation, rank-required eager validation, and the guarantee that cache failure occurs before model/optimizer/runtime construction.
+- [x] 4.3 Execute a model-free cache preparation/admission probe that records fingerprints, manifest identities, verification levels, absent/valid/invalid target outcomes, and proof that no model weights were loaded; do not publish a production cache or make an efficiency claim.
+- [x] 4.4 Verify execution-provenance behavior for clean/dirty repository state and safely unavailable dependency identity, including stable non-secret local-state identity and explicit unavailable reasons; test that credentials and raw secret environment values cannot enter the artifact.
+- [x] 4.5 Publish a bounded provenance receipt from the current worktree/runtime and verify that exact-resume compatibility consumes only the declared identity projection rather than undocumented environment state.
+- [x] 4.6 Gate Wave 4 with focused executable cache-contract and provenance/privacy checks; remove unsupported normative language instead of adding another independent audit layer or inheriting unfinished archive scope.
+
+> **Wave 4 closed (2026-08-19, receipt `receipts/wave-4-cache-provenance-receipt.md`):**
+> the determinant-registry/admission/publication trace found no unsupported
+> cache delta claim, so nothing was removed. Three demonstrated coverage gaps
+> were closed test-first in commit `4e4c5f5d7` (eval preparation `payloads`
+> level, hash-matching forbidden-global payload at publication, environment
+> secrets excluded from provenance). The model-free three-arm probe receipt is
+> `receipts/wave-4-cache-probe-receipt.json` (absent->built, valid->hit,
+> invalid->fail-closed with untouched bytes); the bounded provenance receipt is
+> `receipts/wave-4-provenance-receipt.json` with the exact-resume identity
+> projection verified to consume only the declared resolved-config projection.
+> Gate: 489 + 3 + 15 focused nodes green on clean bytecode. Dispositions
+> logged for 6.5: pre-publish payload-validation error taxonomy (plain
+> `ValueError` vs categorized `PackingCacheInvalidError`, P3) and the
+> transitive optimizer/scheduler ordering argument. A poisoned-pyc incident
+> during verification was diagnosed, purged, and the gate fully re-run.
 
 ## 5. Historical Reading And Canonical Documentation
 
