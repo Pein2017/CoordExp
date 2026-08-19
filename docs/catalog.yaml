@@ -1,5 +1,5 @@
 schema_version: 1
-updated: 2026-08-17
+updated: 2026-08-19
 
 entrypoints:
   human:
@@ -41,7 +41,13 @@ config_surfaces:
       distributed_backend: accelerate_replicated_ddp
       artifact_writer: src/artifacts/run_writer.py
       checkpoint_writer: src/artifacts/checkpoints.py
-      notes: "Canonical Accelerate-only supervised-training route with one process per rank and rank-zero shared run artifacts."
+      inference_payload_manifest_writer: src/artifacts/checkpoint_payload.py
+      exact_training_state_writer: src/artifacts/training_state.py
+      exact_resume: src/training/exact_resume.py
+      exact_resume_config: resume.mode
+      exact_resume_default: disabled
+      exact_resume_supported_mode: exact_same_world_size
+      notes: "Canonical Accelerate-only supervised-training route with one process per rank and rank-zero shared run artifacts. Checkpoints always publish the minimal inference payload; the exact training-state sibling is opt-in, disabled by default, and admitted only at an optimizer-step boundary at the same world size under fail-closed admission."
     - id: coordexp_swift_rebuilt_inference_eval
       status: active
       config_root: configs/coordexp_swift/infer/

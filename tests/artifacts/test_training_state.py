@@ -961,6 +961,22 @@ def test_schema_v1_manifest_is_explicitly_unsupported() -> None:
     _assert_code(exc_info, "training_state.unsupported_schema")
 
 
+def test_unknown_schema_value_is_rejected() -> None:
+    manifest, _ = build_training_state_manifest(_publication())
+
+    unknown_schema_family = manifest.to_dict()
+    unknown_schema_family["schema"] = "coordexp-swift-training-state-v99"
+    with pytest.raises(ArtifactContractError) as exc_info:
+        TrainingStateManifest.from_dict(unknown_schema_family)
+    _assert_code(exc_info, "training_state.unsupported_schema")
+
+    unknown_schema_version = manifest.to_dict()
+    unknown_schema_version["schema_version"] = 99
+    with pytest.raises(ArtifactContractError) as exc_info:
+        TrainingStateManifest.from_dict(unknown_schema_version)
+    _assert_code(exc_info, "training_state.unsupported_schema")
+
+
 def _real_runtime_state() -> tuple[
     torch.nn.Module,
     torch.optim.Optimizer,

@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Agent-first retrieval guide for current CoordExp documentation and historical evidence.
 tags: [agents, retrieval, docs]
-updated: 2026-07-11
+updated: 2026-08-19
 ---
 
 # Agent Index
@@ -69,7 +69,9 @@ Current config roots are:
 - `configs/coordexp_swift/infer/`
 
 Training is Accelerate-only replicated DDP. Route training artifacts through
-`src/artifacts/run_writer.py` and `src/artifacts/checkpoints.py`; removed
+`src/artifacts/run_writer.py` and `src/artifacts/checkpoints.py`, the inference
+payload manifest through `src/artifacts/checkpoint_payload.py`, and the opt-in
+exact training-state sibling through `src/artifacts/training_state.py`; removed
 manager, metric-stream, and checkpoint-handoff modules are not current routes.
 
 Do not route current work through `src/sft.py`, `src/trainers/`,

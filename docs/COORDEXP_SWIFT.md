@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Current routing guide for the CoordExp-Swift training, inference, evaluation, and artifact infrastructure.
 tags: [coordexp-swift, training, inference, eval, routing]
-updated: 2026-08-04
+updated: 2026-08-19
 ---
 
 # CoordExp-Swift Canonical Infrastructure
@@ -53,7 +53,7 @@ framework. Current ownership is:
 | Packing and supervision | `src/packing/`, `src/supervision/` | Concatenate no-padding segments and map logical token atoms to physical positions |
 | Losses | `src/losses/` | Assemble CE, token-type gating, optional coordinate Gaussian/RPS, normalization, and diagnostics |
 | Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | Accelerate replicated-DDP operations, finite gates, optimizer/scheduler steps, adapter and selected-token trainable surfaces |
-| Training artifacts | `src/artifacts/run_writer.py`, `src/artifacts/checkpoints.py` | Rank-zero run/config/log ownership and synchronized staged adapter-plus-delta checkpoints |
+| Training artifacts | `src/artifacts/run_writer.py`, `src/artifacts/checkpoints.py`, `src/artifacts/checkpoint_payload.py`, `src/artifacts/training_state.py`, `src/training/exact_resume.py` | Rank-zero run/config/log ownership, synchronized staged adapter-plus-delta inference payloads, and the opt-in exact training-state sibling and its resume admission |
 | Inference | `src/infer.py`, `src/inference/` | Resolve infer config, compose the model, decode, parse, score, shard, merge, and write provenance-bearing artifacts |
 | Detection evaluation | `src/eval/detection_consumer.py` | Validate raw/scored binding, normalize geometry units, write COCO artifacts, and emit mAP/mRecall metrics |
 
@@ -79,6 +79,12 @@ config fingerprint are part of the runtime evidence. The training runtime is
 Accelerate-only: one process per rank, replicated DDP, with no separate
 single-process or DeepSpeed backend mode.
 
+`resume.mode` selects exact training-state behavior: `disabled` (the default)
+or `exact_same_world_size`, which additionally requires
+`runtime.determinism.mode: strict_cuda_replay_v1`. A null
+`resume.checkpoint_dir` under `exact_same_world_size` publishes exact state
+without resuming, which is the publish-only control or parent form.
+
 ## Semantic boundaries that docs must preserve
 
 - `source_order` preserves authored object order. `geo_sorted` validates the
@@ -96,10 +102,18 @@ single-process or DeepSpeed backend mode.
 - Swift GT boxes are inline norm1000 `xyxy`; scored predictions are parser-
   normalized pixel `xyxy`. The evaluator converts the GT side and rejects
   mixed-unit COCO sidecars.
-- Checkpoints contain a standard PEFT adapter and, when configured, a separate
-  selected-token embedding delta. Inference loads both through explicit paths.
-  No exact optimizer, scheduler, scaler, dataloader, iterator, or RNG training
-  continuation is provided.
+- Checkpoints always publish the minimal inference payload: a standard PEFT
+  adapter and, when configured, a separate selected-token embedding delta,
+  loaded through explicit paths. Exact training continuation is a bounded
+  opt-in `training_state/` sibling, disabled by default; when enabled it
+  restores step, pack cursor, optimizer, scheduler, scaler, and RNG state, but
+  only at an optimizer-step save boundary with the same world size and rank
+  map. Admission is fail-closed on any world-size, accumulation-position,
+  identity, or inference-only-payload mismatch before mutable restore;
+  inference never reads the sibling; and aliases update only after every
+  required publication commits. Cross-world-size and mid-accumulation resume
+  are unsupported, and this is neither a performance claim nor a
+  production-launch claim.
 - Pack cache v3 is an immutable internal cache outside the run tree. `Rebuild`
   means publishing only to a previously absent version/fingerprint target; the
   normal path never repairs, replaces, deletes, or garbage-collects an existing

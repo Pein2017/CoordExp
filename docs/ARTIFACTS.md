@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Current CoordExp-Swift training, inference, evaluation, checkpoint, and provenance artifacts.
-updated: 2026-07-11
+updated: 2026-08-19
 ---
 
 # Artifacts And Provenance
@@ -20,6 +20,8 @@ linked OpenSpecs.
 | --- | --- |
 | Training run, resolved config, and logging | `src/artifacts/run_writer.py` (rank zero) |
 | Checkpoint payloads and aliases | `src/artifacts/checkpoints.py` (all-rank synchronization; rank-zero publication) |
+| Inference payload manifest | `src/artifacts/checkpoint_payload.py` |
+| Opt-in exact training-state sibling | `src/artifacts/training_state.py` |
 | Inference rows, traces, manifests, and merge | `src/inference/artifacts.py`, `src/inference/merge.py` |
 | Detection evaluation artifacts | `src/eval/detection_consumer.py` |
 
@@ -40,23 +42,46 @@ include:
 - `checkpoints/step-<step>/adapter/`: standard staged PEFT adapter payload;
 - `checkpoints/step-<step>/special_token_embeddings/`: optional selected-token
   embedding-delta metadata and safetensor payload;
+- `checkpoints/step-<step>/inference_payload_manifest.json`: the
+  self-authenticating manifest binding those learned inference files;
+- `checkpoints/step-<step>/training_state/` with its `manifest.json`: the
+  opt-in exact training-state sibling, written only when exact state is
+  enabled;
 - `checkpoints/final.json` and `checkpoints/best.json`: checkpoint selectors.
 
 The training run does not emit `run_manifest.json`, per-split metric streams,
 per-step receipts, `checkpoint_handoff.json`, or `checkpoint-final` aliases.
-It also does not save these exact-resume surfaces:
 
-- optimizer;
-- scheduler;
-- scaler;
-- dataloader;
-- iterator;
-- RNG.
+A checkpoint carries two independent payload surfaces:
 
-Therefore checkpoints support explicit adapter-plus-delta model composition;
-they do not claim exact training-state resume. Immutable pack cache v3 lives
-outside the run tree, publishes only to an absent semantic fingerprint target,
-and contributes only compact bindings to `run.json`.
+- The minimal inference payload is always published. It holds the adapter,
+  the optional selected-token embedding delta, and their manifest, and it never
+  contains or requires base-model weights or optimizer, scheduler, scaler, RNG,
+  dataloader, iterator, or sampler state to be loadable. Inference consumes
+  only these explicit paths and ignores the training-state sibling.
+- The exact training-state sibling is opt-in and disabled by default; with it
+  disabled no `training_state/` directory or exact-state identity is written
+  and checkpoint behavior is unchanged. When enabled, it is published under
+  `training_state/` after the inference payload commits, and it supports
+  continuation only from an optimizer-step save boundary at the same world size
+  and rank map, restoring step, pack cursor, optimizer, scheduler, scaler, and
+  RNG state.
+
+Failure semantics are fail-closed. Resume admission authenticates the sibling,
+its rank contributions, and the declared compatibility identities before any
+mutable state is restored, and rejects world-size drift, an unsupported
+accumulation position, an identity mismatch, or an inference-only payload
+rather than degrading to partial restore or weights-only loading. A failed or
+interrupted exact-state publication leaves no alias or completed event
+advertising that step as resumable, while its separately committed inference
+payload remains inference-only. `final.json` and `best.json` update only after
+every publication required by the selected checkpoint mode has committed.
+Cross-world-size and mid-accumulation resume are unsupported, and none of this
+is a performance claim or a production-launch claim.
+
+Immutable pack cache v3 lives outside the run tree, publishes only to an absent
+semantic fingerprint target, and contributes only compact bindings to
+`run.json`.
 
 ## Inference artifacts
 

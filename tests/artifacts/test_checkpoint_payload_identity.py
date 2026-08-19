@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import json
+import random
 import shutil
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from safetensors.torch import save_file
 
+from src.artifacts import training_state
 from src.artifacts.checkpoint_payload import (
     admit_inference_checkpoint_payload_identity,
     build_inference_checkpoint_payload_identity,
     load_inference_checkpoint_payload_manifest,
     write_inference_checkpoint_payload_manifest,
+)
+from src.artifacts.training_state import (
+    RankTrainingStatePayload,
+    TrainingStateExpectations,
+    TrainingStatePublication,
+    admit_training_state,
+    publish_training_state,
 )
 from src.adapters.dora import inspect_dora_adapter_payload
 from src.artifacts.run_writer import RunWriter
@@ -293,6 +304,195 @@ def test_payload_reading_ignores_exact_sibling_and_extra_historical_metadata(
     }
     assert "training_state" not in json.dumps(manifest_before)
     assert (training_state / "rank-00000" / "model.pt").is_file()
+
+
+def test_inference_reader_ignores_real_committed_training_state_without_opening_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A checkpoint with a REAL committed ``training_state/`` (built via the real
+    ``publish_training_state``) must produce an inference-payload manifest and
+    identity byte/dict-identical to a sibling-free control, and the inference
+    reader must never open a ``training_state`` file while doing so. Exact
+    admission of that same directory's ``training_state/`` must independently
+    succeed, outside the interception window."""
+
+    control = _write_checkpoint_payload(tmp_path / "control")
+    write_inference_checkpoint_payload_manifest(control)
+    control_manifest = load_inference_checkpoint_payload_manifest(control)
+    control_identity = build_inference_checkpoint_payload_identity(control)
+
+    paired = _write_checkpoint_payload(tmp_path / "paired")
+    write_inference_checkpoint_payload_manifest(paired)
+    publication = _real_training_state_publication()
+    publish_training_state(paired, publication)
+    assert (paired / "training_state" / "manifest.json").is_file()
+
+    opened_paths: list[str] = []
+    original_open = Path.open
+
+    def _tracking_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+        opened_paths.append(str(self))
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _tracking_open)
+    try:
+        # (a) load/build/admit identity for the inference reader only.
+        paired_manifest = load_inference_checkpoint_payload_manifest(paired)
+        paired_identity = build_inference_checkpoint_payload_identity(paired)
+        admitted_identity = admit_inference_checkpoint_payload_identity(
+            paired, control_identity
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert paired_manifest == control_manifest
+    assert paired_identity == control_identity
+    assert admitted_identity == control_identity
+
+    # (c) file-access proof: real payload files were opened (non-vacuous), and no
+    # opened path ever touched the training_state sibling.
+    assert opened_paths
+    assert any(path.endswith("inference_payload_manifest.json") for path in opened_paths)
+    assert any(path.endswith("adapter_config.json") for path in opened_paths)
+    assert any(path.endswith("adapter_model.safetensors") for path in opened_paths)
+    assert any(
+        path.endswith("special_token_embeddings.json") for path in opened_paths
+    )
+    assert any(
+        path.endswith("special_token_embeddings.safetensors") for path in opened_paths
+    )
+    assert not any("training_state" in path for path in opened_paths)
+
+    # (b) exact admission of the same directory's training_state/, outside the
+    # interception window above.
+    admitted_state = admit_training_state(
+        paired,
+        _real_training_state_expectations(publication),
+        current_rank=0,
+    )
+    assert admitted_state.manifest.parent_run_id == publication.parent_run_id
+    assert admitted_state.manifest.parent_segment_id == publication.parent_segment_id
+    assert admitted_state.manifest.checkpoint_step == publication.checkpoint_step
+
+
+def _real_training_state_identities() -> dict[str, str]:
+    return {
+        name: f"{index + 1:x}" * 64
+        for index, name in enumerate(training_state.REQUIRED_IDENTITY_KINDS)
+    }
+
+
+def _real_training_state_resolved_config() -> dict[str, Any]:
+    return {
+        "config": {
+            "adapter": {"rank": 16},
+            "checkpoint": {"save_final": True, "steps": [17]},
+            "data": {"train": {"path": "/data/train.jsonl"}},
+            "eval": {"forward": {"steps": [17]}},
+            "losses": {"coordinate": {"weight": 1.0}},
+            "model": {"dtype": "float32"},
+            "optimizer": {
+                "lr": 0.0002,
+                "scheduler": {"name": "cosine", "warmup_ratio": 0.1},
+            },
+            "packing": {"policy": "source_order_next_fit"},
+            "resume": {"checkpoint_dir": None, "mode": "disabled"},
+            "run": {
+                "artifact_root": "/outputs/parent",
+                "name": "parent",
+                "output_dir": None,
+            },
+            "runtime": {"world_size": 1},
+            "training": {
+                "forward_input_provider_mode": "synchronous",
+                "precision": "bf16",
+                "seed": 17,
+            },
+        },
+        "resolution": {
+            "entry_config_path": "/configs/parent.yaml",
+            "fingerprint": "parent-fingerprint",
+            "loader_version": "coordexp-swift-config-v1",
+            "path_origins": {},
+            "schema_version": 1,
+            "sources": [{"path": "/configs/parent.yaml", "sha256": "a" * 64}],
+        },
+    }
+
+
+def _real_training_state_rank_payload(rank: int) -> RankTrainingStatePayload:
+    torch.manual_seed(41)
+    model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.Linear(4, 2))
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
+    values = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+    loss = model(values).square().sum()
+    loss.backward()
+    optimizer.step()
+    scheduler.step()
+    optimizer.zero_grad(set_to_none=True)
+    return training_state.serialize_rank_training_state(
+        rank=rank,
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        scaler=None,
+        python_rng_state=random.getstate(),
+        numpy_rng_state=np.random.get_state(),
+        torch_cpu_rng_state=torch.get_rng_state(),
+        torch_cuda_rng_states=(torch.arange(32, dtype=torch.uint8),),
+        cursor={
+            "data": {"epoch": 2, "ordinal": 20 + rank},
+            "pack": {"ordinal": 10 + rank, "pending": []},
+        },
+        next_rank_local_micro_step=30 + rank,
+    )
+
+
+def _real_training_state_publication() -> TrainingStatePublication:
+    resolved_config = _real_training_state_resolved_config()
+    resume_compatibility = training_state.build_resume_compatibility_projection(
+        resolved_config
+    )
+    identities = _real_training_state_identities()
+    identities["resolved_config"] = training_state._sha256(
+        training_state._canonical_json_bytes(resolved_config) + b"\n"
+    )
+    identities["resume_compatibility"] = training_state._sha256(
+        training_state._canonical_json_bytes(resume_compatibility) + b"\n"
+    )
+    return TrainingStatePublication(
+        parent_run_id="run-parent",
+        parent_segment_id="segment-1",
+        checkpoint_step=17,
+        continuation_index=1,
+        world_size=1,
+        identities=identities,
+        scheduler_applicable=True,
+        scaler_applicable=False,
+        rank_payloads=[_real_training_state_rank_payload(0)],
+        resolved_config=resolved_config,
+        resume_compatibility=resume_compatibility,
+    )
+
+
+def _real_training_state_expectations(
+    publication: TrainingStatePublication,
+) -> TrainingStateExpectations:
+    decoded = training_state._decode_rank_payload(publication.rank_payloads[0])
+    return TrainingStateExpectations(
+        checkpoint_step=publication.checkpoint_step,
+        world_size=publication.world_size,
+        identities=publication.identities,
+        scheduler_applicable=publication.scheduler_applicable,
+        scaler_applicable=publication.scaler_applicable,
+        resolved_config=publication.resolved_config,
+        resume_compatibility=publication.resume_compatibility,
+        runtime_state=training_state.RuntimeStateExpectations(
+            structure=decoded.structure,
+            signature=decoded.signature,
+        ),
+    )
 
 
 def test_historical_payload_without_a_current_manifest_stays_inference_loadable(

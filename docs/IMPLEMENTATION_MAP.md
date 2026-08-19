@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Small source and test routing map for the current CoordExp-Swift implementation.
-updated: 2026-08-17
+updated: 2026-08-19
 ---
 
 # Implementation Map
@@ -32,6 +32,9 @@ reuse.
 | Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | `tests/runtime/`, `tests/optim/`, `tests/adapters/` |
 | Training run files | `src/artifacts/run_writer.py` | `tests/artifacts/test_run_artifacts.py` |
 | Training checkpoints | `src/artifacts/checkpoints.py` | `tests/artifacts/test_checkpoint_writer.py` |
+| Inference payload manifest | `src/artifacts/checkpoint_payload.py` | `tests/artifacts/test_checkpoint_payload_identity.py` |
+| Exact training state | `src/artifacts/training_state.py` | `tests/artifacts/test_training_state.py` |
+| Exact resume admission and restore | `src/training/exact_resume.py` | `tests/training/test_exact_resume.py`, `tests/training/test_pipeline_exact_resume.py` |
 | Inference entry and pipeline | `src/infer.py`, `src/inference/pipeline.py` | `tests/inference/test_pipeline.py` |
 | Inference composition/backend | `src/inference/runtime.py`, `src/inference/backend.py` | `tests/inference/test_config_runtime.py`, `tests/inference/test_scoring.py` |
 | Inference artifacts | `src/inference/artifacts.py`, `src/inference/merge.py` | `tests/inference/` |
@@ -75,7 +78,10 @@ schema from an archived YAML file or an old plan.
 - `src/artifacts/run_writer.py` owns rank-zero `run.json`,
   `resolved_config.json`, and `logging.jsonl`; `src/artifacts/checkpoints.py`
   owns synchronized staged PEFT adapter and optional selected-token delta
-  payloads plus `final.json` and `best.json`.
+  payloads plus `final.json` and `best.json`. Its
+  `_run_exact_training_state_callback` seam is where the opt-in exact
+  training-state sibling is published, after the inference payload commits and
+  before either alias updates.
 - `src/training/pack_cache.py` owns immutable cache v3 outside the run tree;
   `rebuild` publishes only to a previously absent semantic fingerprint target,
   while the run retains compact materialization bindings.
@@ -102,7 +108,9 @@ Use the exact relevant spec, not a proposal copy:
 - `openspec/specs/coordexp-swift-data-template-encoding/spec.md`
 - `openspec/specs/coordexp-swift-packing-forward/spec.md`
 - `openspec/specs/coordexp-swift-supervision-losses/spec.md`
+- `openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md`
 - `openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md`
+- `openspec/specs/coordexp-swift-training-artifacts/spec.md`
 - `openspec/specs/coordexp-swift-infer-pipeline/spec.md`
 - `openspec/specs/coordexp-swift-infer-backend-trace/spec.md`
 - `openspec/specs/coordexp-swift-infer-execution-model/spec.md`

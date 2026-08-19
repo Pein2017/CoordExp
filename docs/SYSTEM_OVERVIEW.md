@@ -5,7 +5,7 @@ doc_type: overview
 status: canonical
 domain: repo
 summary: End-to-end current flow from data intake to CoordExp-Swift training, inference, evaluation, and artifacts.
-updated: 2026-07-11
+updated: 2026-08-19
 ---
 
 # System Overview
@@ -24,7 +24,7 @@ validated coord JSONL + images
   -> src/packing/ + src/supervision/
   -> src/losses/ + Accelerate replicated DDP + src/runtime/
   -> src/training/supervised_trainer.py
-  -> rank-zero RunWriter + synchronized CheckpointWriter
+  -> rank-zero RunWriter + synchronized CheckpointWriter (+ opt-in exact state)
 
 inference config + checkpoint composition
   -> src/infer.py -> src/inference/
@@ -115,14 +115,29 @@ mAP/mRecall metrics.
 Training artifacts are initialized and finalized on rank zero by
 `src/artifacts/run_writer.py`; every rank participates in the synchronized
 `CheckpointWriter` choreography in `src/artifacts/checkpoints.py`, while rank
-zero stages and publishes the payload. Inference artifacts are written by
+zero stages and publishes the payload. `src/artifacts/checkpoint_payload.py`
+binds that inference payload, and `src/artifacts/training_state.py` publishes
+the opt-in exact training-state sibling through the checkpoint callback seam.
+Inference artifacts are written by
 `src/inference/artifacts.py`; evaluation artifacts are written by
 `src/eval/detection_consumer.py`. The canonical inventory is
 [`ARTIFACTS.md`](ARTIFACTS.md).
 
-The checkpoint payload is a standard PEFT adapter plus an optional separate
-selected-token embedding delta, both loaded by explicit inference paths. It is
-not an exact optimizer/scheduler/scaler/dataloader/iterator/RNG resume contract.
+The minimal inference payload is a standard PEFT adapter plus an optional
+separate selected-token embedding delta, both loaded by explicit inference
+paths and bound by an inference payload manifest; it is always published.
+Exact training continuation is a separate opt-in `training_state/` sibling,
+disabled by default and byte-identical to the previous behavior when disabled.
+When enabled, the inference payload commits first, the sibling is published
+next, and `final.json`/`best.json` update only after every publication required
+by the selected checkpoint mode has committed. Continuation is supported only
+at an optimizer-step save boundary with the same world size and rank map, where
+it restores step, pack cursor, optimizer, scheduler, scaler, and RNG state;
+admission is fail-closed before any mutable restore and inference readers
+ignore the sibling. Cross-world-size and mid-accumulation resume are
+unsupported, and this is neither a performance claim nor a production-launch
+claim.
+
 Pack cache v3 remains outside the run tree. Preparation publishes only to a
 previously absent version/fingerprint target; it does not repair, replace,
 delete, or garbage-collect an existing cache. Only compact train/eval cache

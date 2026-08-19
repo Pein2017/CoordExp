@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
 tags: [precedence, docs, agents]
-updated: 2026-07-11
+updated: 2026-08-19
 ---
 
 # Project Context & Documentation Authority
@@ -131,9 +131,10 @@ directly. Offline vLLM loads a content-addressed execution model in which DoRA
 and the embedding delta have been deterministically materialized. FP32 is the
 cross-backend parity mode; BF16 vLLM is a throughput mode and must not claim
 strict HF parity. Checkpoint handoff remains through explicit adapter and
-optional selected-token embedding-delta paths; the training artifacts do not
-provide exact optimizer, scheduler, scaler, dataloader, iterator, or RNG
-training-state resume.
+optional selected-token embedding-delta paths; exact training continuation is a
+bounded opt-in `training_state/` sibling that is disabled by default and, when
+enabled, is admitted only at an optimizer-step save boundary at the same world
+size and rank map under fail-closed admission.
 
 The accepted two-rank BF16 production-mimic smoke completed one finite applied
 step and emitted one train plus one eval logging row in one shared ten-file run

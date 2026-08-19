@@ -242,12 +242,25 @@
 
 ## 5. Historical Reading And Canonical Documentation
 
-- [ ] 5.1 Build a historical-reader fixture matrix covering a current committed exact checkpoint, current inference-only checkpoint, older adapter-plus-delta payload with extra metadata, incomplete current publication, and unknown resume-like historical files.
-- [ ] 5.2 Prove inference accepts compatible explicit inference payloads without reading `training_state/`, while exact admission accepts only the current committed typed schema and never upgrades historical artifacts from names, extra files, or archived claims.
-- [ ] 5.3 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, and `docs/ARTIFACTS.md` to describe the minimal inference payload and opt-in exact-state sibling separately, including disabled-mode behavior, supported boundary, failure semantics, and non-goals; preserve concurrent unrelated user edits.
-- [ ] 5.4 Update any smaller canonical router or artifact inventory that still denies the accepted bounded capability, but keep schema detail in stable specs and keep receipts/historical explanation out of evergreen docs.
-- [ ] 5.5 Run a repository-wide stable-vs-delta, docs-vs-source, and terminology conflict scan; resolve every live contradiction around `resume`, `training_state`, inference payloads, selectors/events, cache mutability, and exactness boundaries without rewriting historical evidence.
-- [ ] 5.6 Gate Wave 5 with the focused executable documentation/authority conflict scan confirming that archived changes are provenance only and no canonical page promotes unfinished packing, efficiency, logging, loss, RL, or architecture work; do not add another independent audit layer.
+- [x] 5.1 Build a historical-reader fixture matrix covering a current committed exact checkpoint, current inference-only checkpoint, older adapter-plus-delta payload with extra metadata, incomplete current publication, and unknown resume-like historical files.
+- [x] 5.2 Prove inference accepts compatible explicit inference payloads without reading `training_state/`, while exact admission accepts only the current committed typed schema and never upgrades historical artifacts from names, extra files, or archived claims.
+- [x] 5.3 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, and `docs/ARTIFACTS.md` to describe the minimal inference payload and opt-in exact-state sibling separately, including disabled-mode behavior, supported boundary, failure semantics, and non-goals; preserve concurrent unrelated user edits.
+- [x] 5.4 Update any smaller canonical router or artifact inventory that still denies the accepted bounded capability, but keep schema detail in stable specs and keep receipts/historical explanation out of evergreen docs.
+- [x] 5.5 Run a repository-wide stable-vs-delta, docs-vs-source, and terminology conflict scan; resolve every live contradiction around `resume`, `training_state`, inference payloads, selectors/events, cache mutability, and exactness boundaries without rewriting historical evidence.
+- [x] 5.6 Gate Wave 5 with the focused executable documentation/authority conflict scan confirming that archived changes are provenance only and no canonical page promotes unfinished packing, efficiency, logging, loss, RL, or architecture work; do not add another independent audit layer.
+
+> **Wave 5 closed (2026-08-19, receipt `receipts/wave-5-historical-docs-receipt.md`):**
+> the five-class historical-reader fixture matrix is executable; the one
+> load-bearing gap (a real committed inference payload paired with a real
+> committed `training_state/` in one checkpoint) is closed with a
+> file-access-level proof that the inference readers open zero
+> `training_state` paths (45 real opens captured, all payload files), and
+> unknown schema family/version values are rejected before digest
+> validation. Seven canonical surfaces were reconciled with the bounded
+> contract; the stable-spec denial block resolves at archive sync by the
+> owning delta, and the vertical-smoke non-goal is scope-bounded and
+> untouched. Gate: doc-authority scan CLEAN across 14 surfaces, catalog.yaml
+> parses, and the focused reader/admission suites pass 179 nodes.
 
 ## 6. Final Verification And Disposition
 
