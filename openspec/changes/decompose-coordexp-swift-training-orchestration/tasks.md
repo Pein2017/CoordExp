@@ -1,12 +1,35 @@
 ## 1. Wave 0 - Prerequisite and Compatibility Baseline
 
-- [ ] 1.1 Verify `reconcile-coordexp-swift-training-contracts` is fully verified, synchronized, archived, and committed. Record and checkout that exact predecessor SHA; confirm its authority record says stable `coordexp-swift-packing-forward` supports only `synchronous|overlapped` and classifies `legacy_fused` plus `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE` as unsupported residue. Stop on an incomplete archive, moving branch tip, dirty predecessor ownership, or contrary stable contract.
-- [ ] 1.2 Freeze a change-local exact test-command manifest against that SHA. Give each command an ID and record full argv, cwd, `conda` environment, bounded environment selectors, node list/order, fixture roots, timeout, CPU-only/launch-bearing classification, and expected receipt path; later gates invoke IDs, and any revision requires a recorded baseline rerun.
-- [ ] 1.3 Add pre-move characterization tests for the compatibility-ledger surfaces: facade result mapping, ordered pipeline phases/collectives, cache preparation and admission receipts, old `SupervisedMicroStep` pickle bytes/module path and decoded values, causal logits selection, generic identity success/failure cases, completed-step rows, and complete representative RunWriter bytes.
-- [ ] 1.4 Add `tests/training/test_training_module_boundaries.py` with the intended one-way import graph and a production-import inventory that will fail while `src/prepare_train_cache.py`, `src/training/input_attestation.py`, or training assembly still depends on `src.qwen.parity`.
-- [ ] 1.5 Run the frozen baseline manifest against the untouched implementation and retain only expectations derived from stable specs or exact current bytes; do not normalize away an unexplained field, error, phase, collective, pickle module path, or byte difference.
-- [ ] 1.6 Gate Wave 0 with the frozen entry manifest, strict OpenSpec validation, residue checks, and separate read-only standards and intent-contract audits; do not start Wave 1 with an unresolved P0/P1.
-- [ ] 1.7 Commit the Wave-0 fixtures/manifest as one scoped baseline commit and prove reverting that commit returns exactly to the predecessor without touching caches or unrelated files.
+- [x] 1.1 Verify `reconcile-coordexp-swift-training-contracts` is fully verified, synchronized, archived, and committed. Record and checkout that exact predecessor SHA; confirm its authority record says stable `coordexp-swift-packing-forward` supports only `synchronous|overlapped` and classifies `legacy_fused` plus `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE` as unsupported residue. Stop on an incomplete archive, moving branch tip, dirty predecessor ownership, or contrary stable contract.
+- [x] 1.2 Freeze a change-local exact test-command manifest against that SHA. Give each command an ID and record full argv, cwd, `conda` environment, bounded environment selectors, node list/order, fixture roots, timeout, CPU-only/launch-bearing classification, and expected receipt path; later gates invoke IDs, and any revision requires a recorded baseline rerun.
+- [x] 1.3 Add pre-move characterization tests for the compatibility-ledger surfaces: facade result mapping, ordered pipeline phases/collectives, cache preparation and admission receipts, old `SupervisedMicroStep` pickle bytes/module path and decoded values, causal logits selection, generic identity success/failure cases, completed-step rows, and complete representative RunWriter bytes.
+- [x] 1.4 Add `tests/training/test_training_module_boundaries.py` with the intended one-way import graph and a production-import inventory that will fail while `src/prepare_train_cache.py`, `src/training/input_attestation.py`, or training assembly still depends on `src.qwen.parity`.
+- [x] 1.5 Run the frozen baseline manifest against the untouched implementation and retain only expectations derived from stable specs or exact current bytes; do not normalize away an unexplained field, error, phase, collective, pickle module path, or byte difference.
+- [x] 1.6 Gate Wave 0 with the frozen entry manifest, strict OpenSpec validation, residue checks, and separate read-only standards and intent-contract audits; do not start Wave 1 with an unresolved P0/P1.
+- [x] 1.7 Commit the Wave-0 fixtures/manifest as one scoped baseline commit and prove reverting that commit returns exactly to the predecessor without touching caches or unrelated files.
+
+> **Wave 0 closed (2026-08-19, baseline commit `2ee6c4959`):** predecessor
+> pinned at `eb2dc97ab` (reconcile archive commit == decompose baseline,
+> legitimately equal); 16 production-derived fixtures under
+> `tests/fixtures/training_orchestration/`; characterization 272 passed with
+> the intended 14-node RED boundary set; frozen test-command manifest with
+> per-wave gates, declared flips (26), harness seam repoints (6), and
+> per-command plan-line provenance. Both 1.6 read-only audits initially
+> found six P1s (gate-scheduling: characterization module and
+> `tests/runtime/test_rank_report_collective.py` unwired from wave gates,
+> wave-3 assembly file missing; infra: `_reap` exception-path process leak,
+> package-`__init__` relative-import resolution); all were fixed in one
+> bundled correction round and the baseline was re-recorded. Revert proof:
+> reverting `2ee6c4959` restores the predecessor tree exactly, caches
+> untouched. Recorded dispositions (below P1, not fixed by design):
+> TYPE_CHECKING imports not distinguished by the boundary scanner (loud
+> failure mode), no SIGKILL escalation in `_reap`, no `_reap` unit seam,
+> `_free_port` TOCTOU (inherited convention), `pipeline_result.json`
+> initialized-training fields are declared-scope stub values, no pre-move
+> ordered trace for the initialized-training region (CPU-infeasible;
+> mitigated by Wave-5-authored tests plus the Wave-8 GPU smoke), and the
+> 21-helper ownership inventory has no completeness guard (parity inventory
+> does).
 
 ## 2. Wave 1 - Leaf Semantic and Identity Owners
 
