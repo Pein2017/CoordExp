@@ -468,6 +468,18 @@
 > (h) Task 6.6's commit and revert proof are unexecuted: this wave was produced
 > under an explicit no-commit instruction.
 
+> Lead close-out (2026-08-19): wave commit is `32867ef18`; a staged
+> revert of it is zero lines different from `8239be128`. The blocking
+> scripts/ residue was resolved by the lead with one-symbol repoints to
+> the session owner (`wave2_packed_parity.py`, `wave3_zero_weight_gpu.py`,
+> `reconcile_exact_resume_probe.py` held-parent seam split into
+> session/facade aliases so `_checkpoint_handler` patches land on the
+> owner while `run_training_pipeline` stays on the facade, mirrored in
+> its test); all affected suites re-verified green at 710 passed, zero
+> skips, fixtures untouched. git itself detected `session.py` as an 89%
+> copy of the pre-wave `pipeline.py` -- independent confirmation of
+> verbatim movement.
+
 ## 7. Wave 6 - Retire Legacy Provider Selection
 
 - [ ] 7.1 Add failing strict-config and provider tests requiring `legacy_fused`, `COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE`, unknown aliases, and environment-driven replacement of strict config to be rejected or ignored exactly as established by the prerequisite contract, while `synchronous` and explicit `overlapped` remain accepted.
