@@ -68,12 +68,72 @@
 
 ## 3. Wave 2 - Model-Free Plan and Rank Control Plane
 
-- [ ] 3.1 Add failing tests for frozen `TrainingExecutionPlan` construction: exact resolved config/fingerprint, copied measurement context, launcher identity and entry evidence, plus assertions that plan construction performs no collective, filesystem publication, cache materialization, Accelerator construction, tokenizer/model load, or callback registration.
-- [ ] 3.2 Implement `src/training/execution_plan.py` with the exact design interface and migrate only facade-owned static resolution into it; reject a mutable service-locator or live model/runtime/cache field.
-- [ ] 3.3 Add failing `RankControlPlane` contract tests that replay the characterized single-/multi-rank success and failure reports, fixed frame limits, rank ordering, resource convergence, receipt sinks, pre/post-Accelerator identity binding, close idempotence, and ordered collective calls.
-- [ ] 3.4 Implement `src/training/control_plane.py` by moving the bounded rank-report transport, validation, normalization, phase convergence, and cleanup without changing phase names, report bytes, timeout/size bounds, error choice, or collective order.
-- [ ] 3.5 Switch `run_training_pipeline(...)` model-free preflight and post-Accelerator binding to `TrainingExecutionPlan` and `RankControlPlane`, keep initialized training in its current owner, then delete the replaced pipeline transport/validation helpers rather than forwarding through them.
-- [ ] 3.6 Gate Wave 2 with its frozen execution-plan, phase-convergence, cache-preflight, determinism, pipeline-entry, and mocked-transport manifest IDs plus import/residue and strict OpenSpec checks; commit one scoped independently revertible wave and prove revert restores Wave 1 without cache mutation.
+- [x] 3.1 Add failing tests for frozen `TrainingExecutionPlan` construction: exact resolved config/fingerprint, copied measurement context, launcher identity and entry evidence, plus assertions that plan construction performs no collective, filesystem publication, cache materialization, Accelerator construction, tokenizer/model load, or callback registration.
+- [x] 3.2 Implement `src/training/execution_plan.py` with the exact design interface and migrate only facade-owned static resolution into it; reject a mutable service-locator or live model/runtime/cache field.
+- [x] 3.3 Add failing `RankControlPlane` contract tests that replay the characterized single-/multi-rank success and failure reports, fixed frame limits, rank ordering, resource convergence, receipt sinks, pre/post-Accelerator identity binding, close idempotence, and ordered collective calls.
+- [x] 3.4 Implement `src/training/control_plane.py` by moving the bounded rank-report transport, validation, normalization, phase convergence, and cleanup without changing phase names, report bytes, timeout/size bounds, error choice, or collective order.
+- [x] 3.5 Switch `run_training_pipeline(...)` model-free preflight and post-Accelerator binding to `TrainingExecutionPlan` and `RankControlPlane`, keep initialized training in its current owner, then delete the replaced pipeline transport/validation helpers rather than forwarding through them.
+- [x] 3.6 Gate Wave 2 with its frozen execution-plan, phase-convergence, cache-preflight, determinism, pipeline-entry, and mocked-transport manifest IDs plus import/residue and strict OpenSpec checks; commit one scoped independently revertible wave and prove revert restores Wave 1 without cache mutation.
+
+> **Wave 2 closed (2026-08-19, commit `505a14b36`, parent `912a57219`):** `src/training/execution_plan.py` owns the frozen
+> `TrainingExecutionPlan` and `build_training_execution_plan(...)` at design
+> decision 2's exact interface; `src/training/control_plane.py` owns the moved
+> rank-report transport, frame/header helpers, report validation and
+> normalization, phase convergence, resource convergence, and cleanup behind
+> `RankControlPlane.open/converge/bind_accelerator/close`.  Helper bodies were
+> moved verbatim; `run_training_pipeline(...)` now builds the plan and drives
+> the plane, initialized training stays in `pipeline.py` until wave 5, and every
+> replaced pipeline helper is deleted with no forwarding wrapper.
+>
+> Evidence: wave-2 gate = exactly its 8 expected RED nodes, 253 passed, 0 skips;
+> all 10 declared flips at or below wave 2 green under manifest-rule revisions;
+> wave-0 baseline replay and wave-1 gate replay each fail exactly that same
+> 8-node wave-2 subset (278 / 565 passed); `phase_order.json`,
+> `collective_order.json`, `pipeline_result.json`, and `cache_admission.json`
+> replay byte-unchanged through the repointed two-rank gloo characterization;
+> `git status -- tests/fixtures/` empty; `openspec validate ... --strict` valid;
+> `ruff check` clean on every touched file.
+>
+> Disclosures: (a) moved helpers keep their private Wave-0 names in the new
+> owner modules, so the harness repoints are pure module swaps -- tasks.md 3.4
+> ("moving ... without changing") is controlling over the plan document's
+> optional de-underscoring suggestion; (a2) `RankControlPlane.bind_accelerator`
+> replaces the transport only -- the Accelerate rank/world-size identity check
+> stays inside the facade's converged body, because the characterized two-rank
+> contract requires a mismatch to converge as
+> `runtime.distributed_phase_failed` on every live rank rather than raise
+> locally on the mismatching rank; (b) the cache-preflight rank-diagnostic
+> projection/normalization/reconstruction helpers and their bounded constants
+> moved with `_run_rank_converged_phase`, which needs them and may not import
+> the facade -- they carry no declared flip and no test referenced them;
+> (c) three harness seams were repointed under the manifest's
+> `harness_seam_repoints` rule with every expected value unchanged:
+> `tests/runtime/test_rank_report_collective.py` imports,
+> `tests/training/test_orchestration_compatibility.py` phase/collective spies,
+> and `tests/training/test_pipeline_phase_convergence.py` /
+> `test_pipeline_cache_preflight.py` / `test_pipeline_assembly.py` patch
+> targets; the frozen `collective_order.json` transport provenance string is
+> deliberately left naming the pre-move owner; (d) `load_train_config` patch
+> sites split by entry point -- `run_training_pipeline` callers repoint to
+> `execution_plan`, `prepare_training_pack_caches` callers keep patching
+> `pipeline` until wave 3 moves that owner; (e)
+> `scripts/probes/coordexp_swift/smoke_rank_report_collective.py` still imports
+> `_build_rank_report_gatherer` from `src.training.pipeline` and is now broken;
+> it is outside this agent's write scope and is referenced by no test, doc, or
+> other script.  Task 3.6's commit and revert proof are unexecuted: this wave
+> was produced under an explicit no-commit instruction.
+
+> Close-out: the lead independently re-ran the wave-2 gate (8 failed /
+> 253 passed, failure set byte-equal to the expected wave-2 RED nodes,
+> zero skips) and proved revertibility -- a staged revert of `505a14b36`
+> is zero lines different from `912a57219`. Additional disclosure: the
+> orphan `scripts/probes/coordexp_swift/smoke_rank_report_collective.py`
+> (referenced by no test, doc, or script; no frozen hash pin) had its one
+> import repointed to the control-plane owner in the wave commit.
+> Convention note: the manifest's `expected_receipt_path` entries remain
+> declarative; per the wave-1 precedent, gate records live in these
+> tasks.md notes, and revising the manifest just to register receipt
+> files would trigger its revision rule for no evidentiary gain.
 
 ## 4. Wave 3 - Cache Contract and Workflow
 
