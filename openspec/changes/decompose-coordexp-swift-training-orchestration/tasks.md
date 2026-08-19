@@ -33,13 +33,38 @@
 
 ## 2. Wave 1 - Leaf Semantic and Identity Owners
 
-- [ ] 2.1 Add failing tests for `src.artifacts.identity` that require byte/digest/schema/bound/error equivalence with the characterized strict JSON, absent-target publication, base-model weight, repository, and source-owner identity behavior, including historical `src.qwen.parity` imports.
-- [ ] 2.2 Move the production identity implementation into `src/artifacts/identity.py`; switch `src/prepare_train_cache.py` and `src/training/input_attestation.py` to it, retain import-only re-exports from `src/qwen/parity.py`, and delete the moved duplicate implementation from parity.
-- [ ] 2.3 Add failing `TokenSequence.causal_logits_positions()` tests for sorted uniqueness, causal shift, empty atoms, and exact Qwen `logits_to_keep` inputs.
-- [ ] 2.4 Implement `TokenSequence.causal_logits_positions()`, migrate trainer and provider callers, and delete `_logits_positions_to_keep` plus the private cross-module import from `forward_input_provider.py`.
-- [ ] 2.5 Add failing canonical-owner tests for `src.training.micro_steps.SupervisedMicroStep`, requiring exact fields/order/annotations/defaults/frozen status and readable compatibility imports from `src.training` and `src.training.supervised_trainer`.
-- [ ] 2.6 Move `SupervisedMicroStep` and `supervised_micro_step_schema_identity()` into `src/training/micro_steps.py`; update current production imports and restricted cache allowlists while keeping import-only compatibility re-exports for historical readers.
-- [ ] 2.7 Gate Wave 1 with its frozen manifest IDs, import/residue checks, strict OpenSpec validation, exact old-byte load plus new canonical pickle-module assertions, and decoded-value equality; resolve every unexplained ledger difference, commit the wave as one scoped independently revertible unit, and prove its revert restores the Wave-0 commit without cache mutation.
+- [x] 2.1 Add failing tests for `src.artifacts.identity` that require byte/digest/schema/bound/error equivalence with the characterized strict JSON, absent-target publication, base-model weight, repository, and source-owner identity behavior, including historical `src.qwen.parity` imports.
+- [x] 2.2 Move the production identity implementation into `src/artifacts/identity.py`; switch `src/prepare_train_cache.py` and `src/training/input_attestation.py` to it, retain import-only re-exports from `src/qwen/parity.py`, and delete the moved duplicate implementation from parity.
+- [x] 2.3 Add failing `TokenSequence.causal_logits_positions()` tests for sorted uniqueness, causal shift, empty atoms, and exact Qwen `logits_to_keep` inputs.
+- [x] 2.4 Implement `TokenSequence.causal_logits_positions()`, migrate trainer and provider callers, and delete `_logits_positions_to_keep` plus the private cross-module import from `forward_input_provider.py`.
+- [x] 2.5 Add failing canonical-owner tests for `src.training.micro_steps.SupervisedMicroStep`, requiring exact fields/order/annotations/defaults/frozen status and readable compatibility imports from `src.training` and `src.training.supervised_trainer`.
+- [x] 2.6 Move `SupervisedMicroStep` and `supervised_micro_step_schema_identity()` into `src/training/micro_steps.py`; update current production imports and restricted cache allowlists while keeping import-only compatibility re-exports for historical readers.
+- [x] 2.7 Gate Wave 1 with its frozen manifest IDs, import/residue checks, strict OpenSpec validation, exact old-byte load plus new canonical pickle-module assertions, and decoded-value equality; resolve every unexplained ledger difference, commit the wave as one scoped independently revertible unit, and prove its revert restores the Wave-0 commit without cache mutation.
+
+> **Wave 1 closed (2026-08-19, commit `0583938cb`, parent `3279d14bc`):**
+> gate exact (10 intended RED, 563 passed; zero unexpected fails/passes/
+> skips); wave-0 baseline replay 10 RED / 276 passed with the four wave-1
+> obligations cleared and no fixture byte modified; the three declared
+> flips green under manifest-rule revisions; `ParityContractError` and all
+> `qwen.parity.*` codes preserved through same-object re-exports (AST test
+> forbids leftover bodies); dual-path restricted pickle allowlist proven
+> against the frozen legacy chunk. Revert of `0583938cb` restores its
+> parent byte-exactly. Disclosures: (a) docs-only commit `3279d14bc`
+> (AGENTS.md calibration) interleaved between the wave-0 and wave-1
+> commits — no owner-surface overlap, ordering noise only; (b) the D7 move
+> broke the wave-7 probe frozen source pins
+> (`wave7_exact_resume_request.py` owner pin, its own producer pin in the
+> sequence controller, the parallel identity-owner and input-attestation
+> pins, and one test path expectation) — refreshed to observed post-move
+> hashes per the reconcile-era precedent at `71dab9772`, strict check
+> mechanisms untouched, 237 nodes green; (c) three test files outside the
+> plan's Task-2 list repointed under the manifest's harness_seam_repoints
+> rule with fixtures replaying unchanged; (d)
+> `causal_logits_positions()` keeps the deleted helper's
+> `getattr(self, "atoms", None)` tolerance because the frozen
+> `missing_atoms_attribute` characterization requires it — tasks.md/D6 fix
+> only signature and return contract and are controlling over the plan's
+> literal body.
 
 ## 3. Wave 2 - Model-Free Plan and Rank Control Plane
 
