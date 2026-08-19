@@ -59,8 +59,9 @@ representative case:
   operation is at most once.
 
 An implementation is not scale-ready when these quantities are unknown or
-unbounded. For an irreversible or at-most-once action, **REQUIRED SUB-SKILL:**
-Use agent-routing for executor and recovery authority.
+unbounded. For an irreversible or at-most-once action, follow the
+"Multi-agent orchestration" section of AGENTS.md (decision authority and
+model routing priors) for executor and recovery authority.
 
 ## Required Path Through The System
 

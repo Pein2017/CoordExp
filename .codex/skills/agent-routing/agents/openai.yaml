@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agent Routing"
-  short_description: "Compose and adapt bounded agent teams"
-  default_prompt: "Use $agent-routing to choose a bounded Codex and Claude Code team and update its fixed-capacity routing state only from lead-accepted receipts."
