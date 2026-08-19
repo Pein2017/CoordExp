@@ -17,7 +17,7 @@ from src.artifacts.checkpoints import CheckpointWriteResult
 from src.artifacts.run_writer import RunWriter
 from src.artifacts.training_state import TrainingStatePublicationPlan
 from src.common.errors import RuntimeContractError
-from src.training import pipeline
+from src.training import pipeline, reporting
 from src.training.exact_resume import RankCudaDeviceBinding
 from src.training.pipeline import (
     _apply_exact_resume_cursor_state,
@@ -228,7 +228,9 @@ def test_train_logging_persists_validated_global_integer_accuracy_stats(
         finite_status="finite",
     )
 
-    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(
+        observation
+    )
 
     row = json.loads(writer.logging_path.read_text())
     assert row["accuracy_stats"] == global_accuracy_stats

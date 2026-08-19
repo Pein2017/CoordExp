@@ -11,6 +11,7 @@ import src.training.cache_workflow as cache_workflow
 import src.training.control_plane as control_plane
 import src.training.execution_plan as execution_plan
 import src.training.pipeline as pipeline
+import src.training.reporting as reporting
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
@@ -352,7 +353,7 @@ def test_five_train_and_two_eval_callbacks_write_exact_wide_rows(
     writer = _writer(tmp_path)
     lifecycle: dict[str, object] = {}
     runtime = _Runtime()
-    train = pipeline._train_logging_handler(writer, lifecycle, runtime)
+    train = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=runtime)
 
     class FakeEvalRunner:
         def __init__(self, **kwargs: object) -> None:
@@ -478,7 +479,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
         )
     )
     runtime = Runtime()
-    train_handler = pipeline._train_logging_handler(writer, lifecycle, runtime)
+    train_handler = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=runtime)
     eval_handler = pipeline._eval_forward_handler(
         model=object(),
         runtime=runtime,
@@ -732,7 +733,7 @@ def test_failed_lifecycle_state_keeps_progress_before_original_error(
 ) -> None:
     writer = _writer(tmp_path)
     lifecycle: dict[str, object] = {"checkpoint_event_count": 1}
-    callback = pipeline._train_logging_handler(writer, lifecycle, _Runtime())
+    callback = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=_Runtime())
     callback(_observation(1))
     callback(_observation(2))
     original = RuntimeError("injected after two steps")
@@ -777,7 +778,7 @@ def test_train_logging_uses_all_rank_reduced_scalars_and_preserves_nonfinite(
                 },
             }
 
-    pipeline._train_logging_handler(writer, {}, Runtime())(_observation(1))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(_observation(1))
     row = json.loads(writer.logging_path.read_text())
     # _observation() does not measure timing (production-dead batch-path
     # shape): the timing fields must be entirely absent, not fabricated 0.0.
@@ -822,7 +823,7 @@ def test_train_row_carries_timing_fields_additively(tmp_path: Path) -> None:
                 "accuracy_stats": dict(kwargs["accuracy_stats"]),
             }  # type: ignore[arg-type]
 
-    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
     row = json.loads(writer.logging_path.read_text())
 
     # Presence: the three new timing scalars appear in the row.
@@ -864,7 +865,7 @@ def test_train_row_normalizes_non_finite_timing_fields(tmp_path: Path) -> None:
                 "accuracy_stats": dict(kwargs["accuracy_stats"]),
             }  # type: ignore[arg-type]
 
-    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
     row = json.loads(writer.logging_path.read_text())
 
     assert row["step_duration_seconds"] is None
@@ -911,10 +912,10 @@ def test_train_row_records_resources_without_rewriting_run_high_water_per_step(
                 "per_rank_metrics": {"0": values},
             }
 
-    pipeline._train_logging_handler(
-        writer,
-        {},
-        Runtime(),
+    reporting.CompletedStepReporter(
+        writer=writer,
+        lifecycle={},
+        runtime=Runtime(),
         resource_collector=lambda: snapshot,
     )(observation)
 
@@ -1161,7 +1162,7 @@ def test_rank_zero_logging_failure_is_broadcast_as_shared_named_error(
     )
     for runtime, writer in ((main_runtime, failing_writer), (peer_runtime, None)):
         with pytest.raises(RuntimeContractError) as exc_info:
-            pipeline._append_logging_row_shared(
+            reporting._append_logging_row_shared(
                 writer=writer, row={"step": 1, "split": "train"}, runtime=runtime
             )
         assert exc_info.value.code == "runtime.logging_append_failed"
@@ -2605,7 +2606,7 @@ def test_train_logging_persists_real_loss_runner_accuracy_stats(
         optimizer_update_status="applied",
         finite_status="finite",
     )
-    pipeline._train_logging_handler(writer, {}, Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
 
     assert calls[0]["accuracy_stats"] == artifact["accuracy_stats"]
     row = json.loads(writer.logging_path.read_text())
@@ -2658,9 +2659,9 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
         # at their default (unmeasured, `None`) -- the pre-timing-fields
         # baseline shape this row producer already wrote.
     )
-    pipeline._train_logging_handler(baseline_writer, {}, Runtime())(
-        baseline_observation
-    )
+    reporting.CompletedStepReporter(
+        writer=baseline_writer, lifecycle={}, runtime=Runtime()
+    )(baseline_observation)
     baseline_row = json.loads(baseline_writer.logging_path.read_text())
 
     timed_writer = _writer(tmp_path / "timed")
@@ -2674,7 +2675,9 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
         input_build_seconds=0.11,
         input_wait_seconds=0.03,
     )
-    pipeline._train_logging_handler(timed_writer, {}, Runtime())(timed_observation)
+    reporting.CompletedStepReporter(writer=timed_writer, lifecycle={}, runtime=Runtime())(
+        timed_observation
+    )
     timed_row = json.loads(timed_writer.logging_path.read_text())
 
     timing_keys = {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
@@ -2732,6 +2735,16 @@ WAVE0_TRAIN_ROW_KEYS = (
 #: the helper is still owned by ``pipeline.py``; a module means the declared
 #: wave moved it and ``pipeline.py`` must no longer expose it, because a
 #: forwarding layer would keep the historical owner alive by another name.
+#:
+#: Wave 4 declares two flips (manifest wave-4 ``declared_flips_in_scope``):
+#: ``_append_logging_row_shared`` moves to ``reporting`` under its historical
+#: name (both the train and eval callbacks call it, so it survives as a
+#: shared module-level function). ``_train_logging_handler`` has no entry
+#: here any more: design decision 9 replaces the factory function with
+#: ``reporting.CompletedStepReporter``, an architecturally different symbol,
+#: so there is no same-named successor to assert against; the parametrized
+#: node for that historical key no longer collects, which is the declared
+#: flip landing rather than a boundary regression.
 WAVE0_PIPELINE_OWNED_HELPERS: dict[str, tuple[int, object | None]] = {
     "_build_model_free_preflight_gatherer": (2, control_plane),
     "_build_rank_report_gatherer": (2, control_plane),
@@ -2748,8 +2761,7 @@ WAVE0_PIPELINE_OWNED_HELPERS: dict[str, tuple[int, object | None]] = {
     "_hydrate_eval_micro_steps_from_cache": (3, cache_workflow),
     "_pack_cache_preparation_receipt": (3, cache_workflow),
     "_aggregate_cache_phase": (3, cache_workflow),
-    "_train_logging_handler": (4, None),
-    "_append_logging_row_shared": (4, None),
+    "_append_logging_row_shared": (4, reporting),
     "_run_initialized_training": (5, None),
     "_checkpoint_handler": (5, None),
     "_eval_forward_handler": (5, None),
@@ -2819,7 +2831,7 @@ def test_wave0_completed_step_row_key_set_matches_the_frozen_fixture(
     )
     writer = _writer(tmp_path)
     lifecycle: dict[str, object] = {"consumed_packs": 0}
-    handle = pipeline._train_logging_handler(writer, lifecycle, _Runtime())
+    handle = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=_Runtime())
 
     handle(_observation(1))
 

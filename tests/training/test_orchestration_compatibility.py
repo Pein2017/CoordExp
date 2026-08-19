@@ -59,6 +59,7 @@ from src.training import (
     execution_plan,
     pack_cache,
     pipeline,
+    reporting,
 )
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
@@ -1080,10 +1081,10 @@ def exercise_characterized_completed_step_rows(tmp_path: Path) -> dict[str, Any]
         "steady_state_duration_seconds": 0.0,
         "steady_state_rank_resources": None,
     }
-    handle = pipeline._train_logging_handler(
-        writer,
-        lifecycle,
-        _CharacterizationRuntime(),
+    handle = reporting.CompletedStepReporter(
+        writer=writer,
+        lifecycle=lifecycle,
+        runtime=_CharacterizationRuntime(),
     )
     for step in (1, 2, 3):
         handle(_characterized_observation(step))
