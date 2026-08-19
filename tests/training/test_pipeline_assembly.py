@@ -1481,6 +1481,34 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
     }
 
 
+def test_resolve_eval_pack_cache_hardcodes_payloads_verification_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = SimpleNamespace(data=SimpleNamespace(eval=object()))
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_resolve_or_build_pack_cache(
+        *args: object, **kwargs: object
+    ) -> dict[str, object]:
+        captured_kwargs.update(kwargs)
+        return {"status": "complete", "fingerprint": "eval-fingerprint"}
+
+    monkeypatch.setattr(
+        pipeline, "_resolve_or_build_pack_cache", fake_resolve_or_build_pack_cache
+    )
+
+    result = pipeline._resolve_eval_pack_cache(
+        config,
+        components=object(),
+        vocab_groups=object(),
+        repo_root=tmp_path,
+        accelerator=None,
+    )
+
+    assert captured_kwargs["verification_level"] == "payloads"
+    assert result == {"status": "complete", "fingerprint": "eval-fingerprint"}
+
+
 def test_prepare_training_pack_caches_marks_all_hit_aggregate_phases_not_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

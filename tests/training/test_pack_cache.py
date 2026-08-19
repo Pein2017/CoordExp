@@ -2161,6 +2161,41 @@ def test_publication_revalidates_determinants_immediately_before_install(
     assert not list(cache_dir.parent.glob(f".{cache_dir.name}.stage-*"))
 
 
+def test_publication_fails_closed_on_hash_matching_forbidden_global_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_dir = _cache_dir(tmp_path)
+
+    class _ForbiddenGlobalPayload:
+        def __reduce__(self) -> Any:
+            return os.system, ("true",)
+
+    real_dump = pickle.dump
+
+    def stage_chunk_as_forbidden_global(
+        _obj: Any, handle: Any, *args: Any, **kwargs: Any
+    ) -> None:
+        real_dump((_ForbiddenGlobalPayload(),), handle, *args, **kwargs)
+
+    monkeypatch.setattr(pickle, "dump", stage_chunk_as_forbidden_global)
+
+    with pytest.raises(ValueError, match="unreadable"):
+        _write_micro_step_cache(
+            cache_dir,
+            (_micro_step(0),),
+            cache_root=tmp_path,
+            fingerprint=UNIT_FINGERPRINT,
+            determinants=UNIT_DETERMINANTS,
+            chunk_size=1,
+            materialization=build_packing_cache_materialization(workers=1),
+            determinant_revalidator=lambda: UNIT_DETERMINANTS,
+            augmentation=DISABLED_AUGMENTATION,
+        )
+
+    assert not cache_dir.exists()
+    assert not list(cache_dir.parent.glob(f".{cache_dir.name}.stage-*"))
+
+
 @pytest.mark.parametrize("failure", ("unavailable", errno.ENOSYS, errno.EOPNOTSUPP))
 def test_no_replace_unavailable_cleans_stage_and_leaves_target_absent(
     tmp_path: Path,

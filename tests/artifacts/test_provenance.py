@@ -601,6 +601,43 @@ def test_full_provenance_is_deterministic_strict_json_and_non_secret(
     assert set(first) == {"schema_version", "repository", "dependencies", "runtime"}
 
 
+def test_environment_secrets_never_enter_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _committed_repo(tmp_path)
+    secrets = {
+        "AWS_SECRET_ACCESS_KEY": "SECRET-SENTINEL-AWS",
+        "HF_TOKEN": "SECRET-SENTINEL-HF",
+        "WANDB_API_KEY": "SECRET-SENTINEL-WANDB",
+        "COORDEXP_TEST_PASSWORD": "SECRET-SENTINEL-PASSWORD",
+    }
+    for name, value in secrets.items():
+        monkeypatch.setenv(name, value)
+
+    receipt = provenance.collect_execution_provenance(repository_root=repo)
+    receipt_json = json.dumps(
+        receipt, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+
+    for value in secrets.values():
+        assert value not in receipt_json
+    assert set(receipt) == {"schema_version", "repository", "dependencies", "runtime"}
+
+    def _collect_lowercase_keys(node: object, keys: set[str]) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                keys.add(str(key).lower())
+                _collect_lowercase_keys(value, keys)
+        elif isinstance(node, list):
+            for item in node:
+                _collect_lowercase_keys(item, keys)
+
+    all_keys: set[str] = set()
+    _collect_lowercase_keys(receipt, all_keys)
+    assert "environment" not in all_keys
+    assert "env" not in all_keys
+
+
 def _available_identity(value: object) -> dict[str, object]:
     return {"status": "available", "value": value}
 
