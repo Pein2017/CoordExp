@@ -287,13 +287,43 @@
 
 ## 5. Wave 4 - Existing-Schema Reporting and RunWriter Internals
 
-- [ ] 5.1 Add failing `CompletedStepReporter` tests that exact-compare lifecycle mutation, loss/LR/timing/resource extraction, reduction requests, accuracy validation, rank-resource accounting, every-completed-step row bytes, append outcome broadcast, warmup accounting, and first-step phase behavior with the baseline handler.
-- [ ] 5.2 Implement `src/training/reporting.py`, switch the initialized trainer callback to `CompletedStepReporter`, and delete `_train_logging_handler` plus its moved pipeline-only helpers without adding cadence, sinks, fields, ETA, TensorBoard, or a metric registry.
-- [ ] 5.3 Expand pre-move RunWriter fixtures to cover initialization, strict `logging.jsonl`, policy/materialization/schedule binding, phase success/failure/not-run, checkpoint publication, best/final files, continuation, warning bounds, failed finalization, and successful finalization as exact bytes and errors.
-- [ ] 5.4 Move pure normalization/serialization and bounded field validation into `src/artifacts/run_schema.py`; leave every read, append, fsync, link/replace, collision, and atomic-write operation in the `RunWriter` facade.
-- [ ] 5.5 Move pure run-state transitions and exact-resume checkpoint-publication admission into `src/artifacts/run_state.py`; keep `RunWriter` and `admit_exact_resume_checkpoint_publication` import paths, signatures, return values, and I/O sequencing unchanged.
-- [ ] 5.6 Delete replaced helpers from `run_writer.py`, prohibit a new store/repository interface, and exact-compare the full fixture tree and failure outcomes against Wave 0.
-- [ ] 5.7 Gate Wave 4 with its frozen reporting/RunWriter/checkpoint/resource/training-state/logging manifest IDs, artifact-byte diff, import/residue checks, and strict OpenSpec validation; commit one scoped independently revertible wave and prove revert restores Wave 3 without cache mutation.
+- [x] 5.1 Add failing `CompletedStepReporter` tests that exact-compare lifecycle mutation, loss/LR/timing/resource extraction, reduction requests, accuracy validation, rank-resource accounting, every-completed-step row bytes, append outcome broadcast, warmup accounting, and first-step phase behavior with the baseline handler.
+- [x] 5.2 Implement `src/training/reporting.py`, switch the initialized trainer callback to `CompletedStepReporter`, and delete `_train_logging_handler` plus its moved pipeline-only helpers without adding cadence, sinks, fields, ETA, TensorBoard, or a metric registry.
+- [x] 5.3 Expand pre-move RunWriter fixtures to cover initialization, strict `logging.jsonl`, policy/materialization/schedule binding, phase success/failure/not-run, checkpoint publication, best/final files, continuation, warning bounds, failed finalization, and successful finalization as exact bytes and errors.
+- [x] 5.4 Move pure normalization/serialization and bounded field validation into `src/artifacts/run_schema.py`; leave every read, append, fsync, link/replace, collision, and atomic-write operation in the `RunWriter` facade.
+- [x] 5.5 Move pure run-state transitions and exact-resume checkpoint-publication admission into `src/artifacts/run_state.py`; keep `RunWriter` and `admit_exact_resume_checkpoint_publication` import paths, signatures, return values, and I/O sequencing unchanged.
+- [x] 5.6 Delete replaced helpers from `run_writer.py`, prohibit a new store/repository interface, and exact-compare the full fixture tree and failure outcomes against Wave 0.
+- [x] 5.7 Gate Wave 4 with its frozen reporting/RunWriter/checkpoint/resource/training-state/logging manifest IDs, artifact-byte diff, import/residue checks, and strict OpenSpec validation; commit one scoped independently revertible wave and prove revert restores Wave 3 without cache mutation.
+
+> **Wave 4 closed (2026-08-19, commit `4986836b0`, parent `5e4e3e4bb`):**
+> `CompletedStepReporter` plus the step-row helpers own reporting in
+> `src/training/reporting.py`; pure normalization/validation and pure
+> run-state/admission logic split into `src/artifacts/run_schema.py` and
+> `run_state.py` with all I/O and the single mockable payload-identity
+> binding retained in `run_writer.py`. Central proof: the frozen
+> `run_writer/` byte tree, `completed_step_rows.json`, and the full
+> two-rank pipeline characterization replay byte-unchanged; gate exactly
+> its 3 expected RED nodes with 412 passed and zero skips; wave-0
+> baseline replay 3/282; frozen exact-resume verifiers 115 green; lead
+> independently re-ran the gate and proved a staged revert of
+> `4986836b0` is zero lines different from `5e4e3e4bb`. Disclosures:
+> (a) a first-draft split created a second import binding of
+> `admit_inference_checkpoint_payload_identity` and broke two exact-resume
+> monkeypatch tests -- restructured into two pure `run_state` functions
+> bookending the one `run_writer` I/O call, which also made `run_state.py`
+> genuinely I/O-free; (b) `_train_logging_handler`'s
+> `WAVE0_PIPELINE_OWNED_HELPERS` entry was deleted rather than flipped
+> because design decision 9 replaces the factory with the differently
+> named `CompletedStepReporter` class -- a collected-node-set diff proves
+> exactly that one parametrized node was removed and nothing else; (c)
+> `reporting.py` carries a private byte-faithful duplicate of the
+> first-optimizer-step phase-finish (importing the facade back would be a
+> forbidden reverse edge), proven by the unchanged pipeline
+> characterization; (d) provenance blind spot recorded for the Wave-6
+> residue sweep: `wave2_packed_parity.py` SOURCE_OWNERS and
+> `wave5_provider_benchmark.py` EXECUTION_OWNER_PATHS fingerprint
+> `pipeline.py`/`run_writer.py` as complete behavior owners but do not
+> yet list `reporting.py`/`run_schema.py`/`run_state.py`.
 
 ## 6. Wave 5 - Training Session and Thin Facade
 
