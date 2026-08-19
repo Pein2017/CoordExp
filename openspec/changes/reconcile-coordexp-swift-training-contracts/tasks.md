@@ -264,9 +264,35 @@
 
 ## 6. Final Verification And Disposition
 
-- [ ] 6.1 Run all focused suites named by the evidence matrix plus the relevant config, artifact, training, cache, inference, and distributed test directories through the repository runtime; record exact pass/fail/skip counts and investigate every unexpected skip.
-- [ ] 6.2 Re-run only the already-reviewed frozen verifier against the target-bound matched success branch pair and one distributed failure/interruption path from the final implementation state; verify next input/pack identity, declared pre-forward state, first-update objective/loss fields and resulting trainable parameters, manifest/event/selector identity, and historical-reader outcomes from durable artifacts, not console text alone. If implementation or execution inputs changed, do not relaunch: re-freeze and obtain `READY` pre-cost review, after which the lead-only executor proceeds under current goal authority without another prompt.
-- [ ] 6.3 Run `openspec validate reconcile-coordexp-swift-training-contracts --strict` and a stable-spec/delta merge-conflict scan; verify every modified requirement copies the full owning stable block and every new requirement has executable scenarios.
-- [ ] 6.4 Run residue scans proving the change introduced no changed-order packing promotion, speculative efficiency claim, production cache campaign, logging enhancement, loss-objective/RL behavior, dependency upgrade, orchestration refactor, historical migration shim, cross-world-size resume, or mid-accumulation promise.
-- [ ] 6.5 Obtain one independent final audit against the exact implementation commit and receipts, reporting both standards/code-quality and intent/contract verdicts; resolve all P0/P1 findings and record lower-priority dispositions explicitly.
+- [x] 6.1 Run all focused suites named by the evidence matrix plus the relevant config, artifact, training, cache, inference, and distributed test directories through the repository runtime; record exact pass/fail/skip counts and investigate every unexpected skip.
+- [x] 6.2 Re-run only the already-reviewed frozen verifier against the target-bound matched success branch pair and one distributed failure/interruption path from the final implementation state; verify next input/pack identity, declared pre-forward state, first-update objective/loss fields and resulting trainable parameters, manifest/event/selector identity, and historical-reader outcomes from durable artifacts, not console text alone. If implementation or execution inputs changed, do not relaunch: re-freeze and obtain `READY` pre-cost review, after which the lead-only executor proceeds under current goal authority without another prompt.
+- [x] 6.3 Run `openspec validate reconcile-coordexp-swift-training-contracts --strict` and a stable-spec/delta merge-conflict scan; verify every modified requirement copies the full owning stable block and every new requirement has executable scenarios.
+- [x] 6.4 Run residue scans proving the change introduced no changed-order packing promotion, speculative efficiency claim, production cache campaign, logging enhancement, loss-objective/RL behavior, dependency upgrade, orchestration refactor, historical migration shim, cross-world-size resume, or mid-accumulation promise.
+- [x] 6.5 Obtain one independent final audit against the exact implementation commit and receipts, reporting both standards/code-quality and intent/contract verdicts; resolve all P0/P1 findings and record lower-priority dispositions explicitly.
 - [ ] 6.6 Reconcile the evidence matrix to final source/tests/receipts, mark tasks complete only from executed evidence, and sync/archive only when every gate passes; otherwise keep the change active or archive it explicitly incomplete without changing stable specs or claiming exact-resume support.
+
+> **Wave 6 verification and audit (2026-08-19, receipts
+> `receipts/wave-6-final-verification-receipt.md` and
+> `receipts/wave-6-independent-audit.md`):** 6.1 directory sweep 2088
+> passed with zero failures and zero skips; 6.2 satisfied by the
+> input-identity proof (production `src/scripts/configs` byte-identical
+> from Attempt-8's bound commit through the final state) plus read-only
+> re-authentication of all eight signed receipts, with the independent
+> audit confirming the argument sound and noting `verify_artifacts` is
+> additionally commit-bound; 6.3 strict validation and zero conflict
+> markers with scenarios on every delta requirement; 6.4 residue scans
+> clean. 6.5 independent audit at `6ede480b0`: standards and
+> intent/contract verdicts both PASS-WITH-DISPOSITIONS, zero P0/P1;
+> attempts 3-8 receipt digests recomputed 16/16 immutable; objective
+> equality re-derived 26/26 under the probe's own policy. Recorded
+> dispositions: (P2) the file-access interception is `pathlib.Path.open`-
+> scoped and would not observe a native `safe_open`/`torch.load` reader —
+> bounded by zero `training_state` references under `src/inference/`,
+> `src/adapters/`, `src/qwen/` and by the matrix row's explicit mechanism
+> wording; (P2->resolved) two matrix rows now cite their real clause
+> owners (`run_writer.py:1278-1283` sibling-identity authentication with
+> pipeline admission-before-restore ordering; Attempt-8 publish-only
+> runtime execution); (P3) pre-publish payload-validation error taxonomy;
+> (P3) executor "Attempt-6 input" error string; (P3) the Wave-6 receipt's
+> "21/21" objective count is the numeric-scalar subset of the probe's
+> 26-comparison policy.
