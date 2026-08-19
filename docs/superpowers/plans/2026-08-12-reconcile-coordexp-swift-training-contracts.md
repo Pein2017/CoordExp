@@ -754,7 +754,7 @@ the existing
 probe and exact-resume files pass without packet, cache, GPU, or model
 execution.
 
-- [ ] **Step 5: Freeze Attempt 8 and pass pre-cost review**
+- [x] **Step 5: Freeze Attempt 8 and pass pre-cost review**
 
 Note (2026-08-19): Attempt 7 executed this step faithfully — fresh `-r7`
 render, correct bindings, full independent review — but was invalidated
@@ -827,7 +827,7 @@ self-`READY` never authorizes. Any implementation, manifest, packet, review
 path, config, command, target, map, tree, or bound mutation invalidates `READY` and
 returns to re-freeze/re-review; it does not create a repeated prompt.
 
-- [ ] **Step 6: Execute Attempt 8 exactly once through the packet executor**
+- [x] **Step 6: Execute Attempt 8 exactly once through the packet executor**
 
 After Step 5 records the exact hashes, invoke only this frozen Attempt-8 CLI,
 substituting the two recorded full SHA-256 values without changing any other
@@ -881,7 +881,7 @@ reached. The inner evidence compares the required boundary/first-update state
 and exactly verifies the schema-v2 rank-failure/interruption semantic fields.
 Exit zero or an inner receipt without the outer receipt is insufficient.
 
-- [ ] **Step 7: Verify durable Attempt-8 artifacts and commit bounded evidence**
+- [x] **Step 7: Verify durable Attempt-8 artifacts and commit bounded evidence**
 
 Use the Attempt-8 outer receipt and bound inner verifier receipt, not console
 status, to prove exact six-command order, valid external review authorization, every

@@ -1,0 +1,321 @@
+{
+  "schema": "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1",
+  "status": "READY",
+  "implementation_commit": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+  "manifest_sha256": "22d10b3956888e0fc5aeb77f88332114750a4196e08a49d23d0445233309c0f6",
+  "packet_sha256": "0833860a79603e898a93d2565f928bb23e5f052e9033daa4b874e253b01aa2bf",
+  "reviewer_identity": "claude-opus5-attempt8-precost-reviewer-20260819",
+  "reviewed_at": "2026-08-19T03:12:17Z",
+  "review_scope": "Independent NARROW pre-cost freeze re-review of Wave-3 Attempt 8 of OpenSpec change reconcile-coordexp-swift-training-contracts. Attempt 8 is the mechanical successor to Attempt 7, which passed every packet-shape check but was retired unexecuted when concurrent docs-only commit 0b0f554e42421333a31497ebf766bee0d49c91b4 moved tracked HEAD during its independent review. This review independently recomputed every identity from primary sources; no author-supplied number was trusted. No command, marker, cache, model, torchrun, GPU allocation, or artifact-target mutation was executed. The only repository file this review created is this receipt; role configs were re-rendered in a private scratch directory outside the repository and Python bytecode writing was disabled. A post-review scan confirmed no *.pyc or __pycache__ artifact was written into the worktree and that the only files created under the repository by this review are this receipt.",
+  "narrow_review_basis": {
+    "cited_review_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-pre-cost-review.json",
+    "cited_review_sha256": "74c843afa218d8da27cff9c9feda0b4e704b46667d34244402a5f06fbe26651e",
+    "cited_review_sha256_recomputed_by_this_reviewer": "74c843afa218d8da27cff9c9feda0b4e704b46667d34244402a5f06fbe26651e",
+    "cited_review_status": "HOLD",
+    "cited_review_reviewer_identity": "claude-opus5-attempt7-precost-reviewer-20260819",
+    "cited_review_payload_digest_verified": true,
+    "rationale": "Attempt 7 received a full a-g pre-cost review that passed checks b through g on packet content and failed only check a (tracked-HEAD drift). Attempt 8 differs from Attempt 7 by a whitelisted mechanical substitution set that this reviewer verified leaf-by-leaf to be exactly: -r7 to -r8 target/path substitution, wave-3-attempt-7 to wave-3-attempt-8 receipt-name substitution, implementation commit 4525a0f73dedc1f31bb88c59ed18f95d22930531 to f492f36874f036ad4145a45c7b03cd2e0b2fd049, the six re-rendered role-config digests and fingerprints, packet_sha256, and packet_author_identity. Zero keys were added or removed and zero leaves changed outside that set.",
+    "shape_checks_inherited_not_repeated": [
+      "six-command order and per-command argv shape beyond the r8/commit substitution and the --commit binding re-verified here",
+      "comparison_policy semantics for boundary, post_update, objective, rank_failure, and interruption arms",
+      "resource_bounds, total_bounds, CPU measurement modes, and required CPU/GPU rank sets",
+      "resumed_parent durable status 'initialized' with null completed_at semantics in the executor and probe",
+      "gpu_measurement_source torch_allocator_high_water and required outer/inner receipt binding lists",
+      "absence of any world_size YAML key in the base config and rendered role configs"
+    ],
+    "checks_fully_repeated_here": [
+      "manifest, packet, base-config, and cited-review SHA-256 recomputation",
+      "git HEAD, HEAD^{tree}, and tracked-clean status at review start and again immediately before signing",
+      "recursive leaf-level manifest whitelist diff against the immutable Attempt-7 manifest",
+      "deterministic production re-render of all three role configs against the -r8 root with digest, fingerprint, EBS, and grad-accum verification",
+      "disjointness of all six Attempt-8 config identities from Attempts 4, 5, 6, and 7",
+      "executor _validate_contract acceptance and targets.must_be_absent absence",
+      "--commit argv binding on both success commands and its absence on the four model-free commands",
+      "stale-substring byte scan of the manifest and packet",
+      "live nvidia-smi physical-index-to-UUID map",
+      "receipt signing canonicalization validated against the four prior signed reviews"
+    ]
+  },
+  "verified_bindings": {
+    "packet_author_identity": "coordexp-attempt8-packet-author",
+    "reviewer_independent_of_author": true,
+    "reviewer_identity_distinct_from_all_prior_reviewers": true,
+    "git": {
+      "packet_bound_implementation_commit": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+      "packet_bound_tree": "83d8901bf096eb76bf0b5e2adf131480131a5839",
+      "head_at_review_start": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+      "tree_at_review_start": "83d8901bf096eb76bf0b5e2adf131480131a5839",
+      "head_at_receipt_write": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+      "tree_at_receipt_write": "83d8901bf096eb76bf0b5e2adf131480131a5839",
+      "tracked_status_at_receipt_write": "",
+      "head_moved_during_review": false,
+      "binding_valid_at_receipt_write": true,
+      "untracked_at_receipt_write": [
+        "?? openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-command-manifest.json",
+        "?? openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-launch-packet.md",
+        "?? openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-pre-cost-review.json"
+      ],
+      "untracked_expected_only": true
+    },
+    "frozen_files": {
+      "manifest_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-command-manifest.json",
+      "manifest_sha256": "22d10b3956888e0fc5aeb77f88332114750a4196e08a49d23d0445233309c0f6",
+      "packet_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-launch-packet.md",
+      "packet_sha256": "0833860a79603e898a93d2565f928bb23e5f052e9033daa4b874e253b01aa2bf",
+      "author_claimed_digests_matched": true
+    },
+    "base_config": {
+      "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+      "sha256": "44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f",
+      "matches_executor_constant_BASE_CONFIG_SHA256": true
+    },
+    "artifact_root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+    "manifest_whitelist_diff_vs_attempt_7": {
+      "compared_manifest_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-command-manifest.json",
+      "compared_manifest_sha256": "c04545163857f227db5652d19b8d6955538e10d2f62181ca2f136b1ced43990f",
+      "leaf_count_attempt_7": 306,
+      "leaf_count_attempt_8": 306,
+      "keys_added": 0,
+      "keys_removed": 0,
+      "leaves_changed": 47,
+      "changed_leaves_by_category": {
+        "r7_to_r8_path_substitution": 27,
+        "attempt7_to_attempt8_receipt_name_substitution": 6,
+        "implementation_commit_substitution": 3,
+        "role_config_sha256_substitution": 6,
+        "resolved_config_fingerprint_substitution": 3,
+        "packet_sha256_substitution": 1,
+        "packet_author_identity_substitution": 1
+      },
+      "changed_leaves_outside_whitelist": 0,
+      "byte_identical_blocks": [
+        "cwd",
+        "world_size",
+        "arms",
+        "comparison_policy",
+        "execution_contract.resource_bounds",
+        "execution_contract.total_bounds",
+        "execution_contract.preflight",
+        "execution_contract.command_order",
+        "execution_contract.required_resource_observations",
+        "execution_contract.required_outer_receipt_bindings",
+        "execution_contract.required_inner_receipt_bindings",
+        "execution_contract.accumulation.base_config",
+        "execution_contract.accumulation.expected_consumed_packs_by_step"
+      ],
+      "category_tally_method": "Mechanically tallied from the reviewer's recursive leaf-diff classifier: 27 leaves whose only difference is the -r7 to -r8 target-path substitution, 6 leaves whose only difference is the wave-3-attempt-7 to wave-3-attempt-8 receipt-filename substitution, 3 implementation-commit substitutions, 10 digest substitutions (6 role-config SHA-256 across config_files and accumulation.roles, 3 resolved_config_fingerprint, 1 packet_sha256), and 1 packet_author_identity substitution (coordexp-attempt7-packet-author to coordexp-attempt8-packet-author). 27+6+3+10+1 = 47."
+    },
+    "role_configs_independently_rerendered": {
+      "method": "reconcile_exact_resume_probe._write_role_config(stage_dir, role, base_config=<frozen base>, artifact_root=<r8 root>) executed by the reviewer under /root/miniconda3/envs/ms/bin/python with the worktree on sys.path and PYTHONDONTWRITEBYTECODE=1, in a private scratch directory outside the repository. Digests were recomputed from the rendered bytes and each fingerprint reproduced by an independent load_train_config() on the rendered file, then resolve_effective_batch_runtime(config, world_size=2). The -r8 artifact root, pack-cache root, and pack-cache receipt were confirmed still absent after the render.",
+      "uninterrupted_control": {
+        "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/uninterrupted_control.yaml",
+        "config_sha256": "8dd5fbe13bc90dc6cd1615fad9e5377d14c57b944db68b6a8fe340e8f6c07f72",
+        "resolved_config_fingerprint": "7aa2f96c25aad0eb990bb43a02358a242be2418a7902b5d78c36df38cbed7a86",
+        "effective_batch_size": 2,
+        "resolved_grad_accum_steps": 1,
+        "runtime_world_size": 2,
+        "matches_manifest_config_files": true,
+        "matches_manifest_accumulation_roles": true
+      },
+      "resumed_parent": {
+        "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_parent.yaml",
+        "config_sha256": "e5803d8da54256bcb9b4152a805d51cdd64cf5f8e1b2588e88b825de43b5d570",
+        "resolved_config_fingerprint": "3e0f1c089c602b231cd690a2904f8386a31ead639e9e95cc4fa566e39773b5de",
+        "effective_batch_size": 2,
+        "resolved_grad_accum_steps": 1,
+        "runtime_world_size": 2,
+        "matches_manifest_config_files": true,
+        "matches_manifest_accumulation_roles": true
+      },
+      "resumed_child": {
+        "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_child.yaml",
+        "config_sha256": "99b0671bcfea3d034a77a81bd8d4e7e4c8779678c15973aa2900cbb273eb6e4b",
+        "resolved_config_fingerprint": "39c1d751aa7e9a081e51751cbe3cf6777dd9ce864f1212665053cf39fb91f479",
+        "effective_batch_size": 2,
+        "resolved_grad_accum_steps": 1,
+        "runtime_world_size": 2,
+        "matches_manifest_config_files": true,
+        "matches_manifest_accumulation_roles": true
+      }
+    },
+    "no_copied_config_identity": {
+      "attempt_8_identities": [
+        "39c1d751aa7e9a081e51751cbe3cf6777dd9ce864f1212665053cf39fb91f479",
+        "3e0f1c089c602b231cd690a2904f8386a31ead639e9e95cc4fa566e39773b5de",
+        "7aa2f96c25aad0eb990bb43a02358a242be2418a7902b5d78c36df38cbed7a86",
+        "8dd5fbe13bc90dc6cd1615fad9e5377d14c57b944db68b6a8fe340e8f6c07f72",
+        "99b0671bcfea3d034a77a81bd8d4e7e4c8779678c15973aa2900cbb273eb6e4b",
+        "e5803d8da54256bcb9b4152a805d51cdd64cf5f8e1b2588e88b825de43b5d570"
+      ],
+      "overlap_with_attempt_4": [],
+      "overlap_with_attempt_5": [],
+      "overlap_with_attempt_6": [],
+      "overlap_with_attempt_7": [],
+      "disjoint": true,
+      "note": "Prior identity sets were extracted from the immutable Attempt-4/5/6/7 manifests by collecting every expected_sha256, config_sha256, and resolved_config_fingerprint leaf. Attempts 4 and 5 contribute the same three config_files digests (no accumulation block); Attempts 6 and 7 contribute six each. The reviewer-recomputed Attempt-7 set is byte-identical to the set recorded in the cited Attempt-7 review. The intersection with the Attempt-8 set is empty for every prior attempt."
+    },
+    "executor_validate_contract": {
+      "outcome": "accepted",
+      "module": "/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py",
+      "interpreter": "/root/miniconda3/envs/ms/bin/python",
+      "returned_review_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-pre-cost-review.json",
+      "returned_packet_author_identity": "coordexp-attempt8-packet-author",
+      "command_order_matches_COMMAND_ORDER": true,
+      "review_schema_matches_REVIEW_RECEIPT_SCHEMA": true
+    },
+    "argv_commit_binding": {
+      "success.uninterrupted_control_carries_commit": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+      "success.resumed_child_carries_commit": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+      "model_free_commands_carry_no_commit": [
+        "setup",
+        "rank_failure",
+        "interruption",
+        "verification"
+      ]
+    },
+    "stale_substring_scan": {
+      "scanned_files": [
+        "wave-3-attempt-8-command-manifest.json",
+        "wave-3-attempt-8-launch-packet.md"
+      ],
+      "manifest_occurrences": {
+        "-r1": 0,
+        "-r2": 0,
+        "-r3": 0,
+        "-r4": 0,
+        "-r5": 0,
+        "-r6": 0,
+        "-r7": 0,
+        "attempt-5": 0,
+        "attempt-6": 0,
+        "attempt6": 0,
+        "attempt-7": 0,
+        "attempt7": 0,
+        "037ab6683": 0,
+        "5d68a4108": 0,
+        "9ef726085": 0,
+        "1fbd9d68b": 0,
+        "4525a0f73": 0,
+        "0b0f554e4": 0
+      },
+      "packet_occurrences": {
+        "-r5": 0,
+        "-r6": 0,
+        "-r7": 0,
+        "attempt7": 0,
+        "4525a0f73": 0
+      },
+      "note": "The packet prose intentionally names retired attempts and the two drift commits in abbreviated form (27abc8087e..., 0b0f554e4...) as immutable-evidence references; those are narrative citations, not bindings. No -r1..-r7 target path and no stale full commit binding appears in either file."
+    },
+    "gpu_map_live_verification": {
+      "source": "nvidia-smi --query-gpu=index,uuid,memory.used",
+      "physical_6_uuid_live": "GPU-3d113ebf-fcac-c7d9-d5a6-a6abefeb32ff",
+      "physical_7_uuid_live": "GPU-4e5382fb-e2a6-1057-32bc-12697f2b09fd",
+      "manifest_gpu_devices_match_live": true,
+      "device_order_is_6_then_7": true,
+      "uuids_identical_to_attempt_6_and_7_binding": true,
+      "live_memory_used_mib_at_review": {
+        "6": 28167,
+        "7": 34755
+      },
+      "max_gpu_occupancy_bytes_bound": 21474836480,
+      "occupancy_disposition": "Both bound devices currently exceed the per-device occupancy bound (see OBS-1). This is a live scheduling condition gated by the executor's own preflight before marker creation and again before the first GPU command, plus the lead's independent pre-invocation observation. It is not a freeze defect and does not affect the correctness of the frozen binding."
+    },
+    "disk_preflight": {
+      "filesystem_path": "/data",
+      "required_free_disk_bytes": 21474836480,
+      "live_free_bytes_at_review": 1717268226048,
+      "satisfied": true
+    },
+    "targets_absent": {
+      "all_must_be_absent_paths_absent": true,
+      "paths": [
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache-receipt.json",
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-attempt-marker.json",
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-outer-terminal-receipt.json"
+      ]
+    },
+    "prior_attempt_immutability": {
+      "attempt_5_review_sha256": "9014a6712f6511d0dce0017c0af2eeeb54fd29036ad84a0e27597864bdef0e2e",
+      "attempt_5_review_status": "HOLD",
+      "attempt_6_review_sha256": "8b23ae8838ad453ea5fb430f17e244759c67f382e67473810e2a0f680dd76a43",
+      "attempt_6_review_payload_sha256": "1f8705c595bc5771cb34e791fb6859483dd8ddbc1a344c169d61f8567d06c78f",
+      "attempt_6_review_status": "READY",
+      "attempt_7_manifest_sha256": "c04545163857f227db5652d19b8d6955538e10d2f62181ca2f136b1ced43990f",
+      "attempt_7_packet_sha256": "c1b592f2485f8d97a31835970387da825e1fb7635076b59b1421110551d03d0d",
+      "attempt_7_review_sha256": "74c843afa218d8da27cff9c9feda0b4e704b46667d34244402a5f06fbe26651e",
+      "attempt_7_review_payload_sha256": "5c57ac097833d608e53878329abb3927635ececb69d5b4f8585c8ebac47a2b6f",
+      "attempt_7_review_status": "HOLD",
+      "all_pins_match_tasks_md_3_4": true,
+      "prior_receipts_tracked_and_unmodified": true,
+      "all_prior_signed_reviews_reverified": "The reviewer re-opened the Attempt-4, -5, -6, and -7 signed reviews through the executor's own _open_immutable_review and _verify_signed; all four verified, which also validates this receipt's signing canonicalization.",
+      "attempt_3_manifest_sha256": "c3e4e93d997c87ad26379b0246f5536aec4f96afbc9a59be16985572a718cf42",
+      "attempt_3_packet_sha256": "70b4f4cc7b235db0f21dcf5e3ade68d06b5db923a4876ceee6ba92ceed07ca02",
+      "attempt_4_manifest_sha256": "b3538fb6167186cd5063f343a447ef1ed8f3024dc07f96284c7628c1ab08d3a9",
+      "attempt_4_packet_sha256": "45afe6475e2aa3cae6e106bc446725de4b60197b77ba3d0a3a8ff45263242a87",
+      "attempt_5_manifest_sha256": "ee9227fdb310f7e9a2d629000df137ac5dbc2b472461a83f729df56909d58c24",
+      "attempt_5_packet_sha256": "48b7bb924f960bb5f65a87dfa4be4b9f5289b79b9e02b5375b253dd7b4caf897",
+      "attempt_6_manifest_sha256": "4dff3f0bc81ca0e55cf614f3ef676430bddb1a236f24b36d97e948d5eafbe1ae",
+      "attempt_6_packet_sha256": "28e79a1d850a2308980e172089b4f03823703be0c004bb25e373527818afb0b2",
+      "pins_recomputation_note": "Every Attempt-3 through Attempt-7 manifest, packet, and signed-review digest pinned in tasks.md 3.4 was recomputed from the live tracked bytes by this reviewer and matched. The tracked worktree is clean, so these bytes equal HEAD's tree."
+    }
+  },
+  "checks": {
+    "1_identity_and_tracked_clean": {
+      "outcome": "pass",
+      "detail": "Reviewer-computed SHA-256: manifest 22d10b3956888e0fc5aeb77f88332114750a4196e08a49d23d0445233309c0f6, packet 0833860a79603e898a93d2565f928bb23e5f052e9033daa4b874e253b01aa2bf, base config 44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f. All three equal the author's claims. `git rev-parse HEAD` = f492f36874f036ad4145a45c7b03cd2e0b2fd049 and `git rev-parse HEAD^{tree}` = 83d8901bf096eb76bf0b5e2adf131480131a5839, both equal to the packet's frozen bindings, re-read immediately before this receipt was written. `git status --porcelain --untracked-files=no` was empty at review start and at receipt write. The only untracked paths are the two expected Attempt-8 frozen files."
+    },
+    "2_whitelist_diff_vs_attempt_7": {
+      "outcome": "pass",
+      "detail": "A recursive leaf-level diff of the immutable Attempt-7 manifest against the Attempt-8 manifest yields 306 leaves on both sides, zero added keys, zero removed keys, and 47 changed leaves. Every changed leaf is in the allowed substitution set: 27 -r7-to-r8 target/path substitutions, 6 wave-3-attempt-7-to-attempt-8 receipt-name substitutions, 3 implementation-commit substitutions (top-level implementation_commit and both success --commit argv values), 6 role-config SHA-256 substitutions (3 in config_files.expected_sha256 and 3 in accumulation.roles.config_sha256), 3 resolved_config_fingerprint substitutions, 1 packet_sha256, and 1 packet_author_identity. Zero leaves changed outside the whitelist. comparison_policy, resource_bounds, total_bounds, preflight (including both GPU UUIDs), arms, world_size, cwd, and the accumulation base_config block are byte-identical."
+    },
+    "3_deterministic_role_config_rerender": {
+      "outcome": "pass",
+      "detail": "THE ATTEMPT-5 KILLER CHECK PASSES. All three role configs were re-rendered by the reviewer through the production _write_role_config path against the -r8 artifact root in a private scratch staging directory; the -r8 target itself was never created and was re-confirmed absent afterwards. Each rendered file's SHA-256 and each resolved_config_fingerprint reproduce the manifest's config_files values AND the execution_contract.accumulation.roles values exactly, and the fingerprint reproduces again through an independent load_train_config() on the rendered bytes. resolve_effective_batch_runtime(config, world_size=2) yields effective_batch_size == 2 and resolved_grad_accum_steps == 1 with runtime world_size == 2 for all three roles; config.training.effective_batch_size is also 2. All six Attempt-8 identities are disjoint from every Attempt-4, -5, -6, and -7 identity. The Attempt-5 P0-1 copied-digest failure mode is closed."
+    },
+    "4_executor_validate_contract_and_absence": {
+      "outcome": "pass",
+      "detail": "The manifest was passed to the frozen executor's own _validate_contract() (module loaded from scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py with the worktree on sys.path under /root/miniconda3/envs/ms/bin/python, so _expected_role_launch_argv's sys.executable binding resolves correctly). It returned a normalized contract with no exception, including the correct review path, review schema, required status READY, and packet author identity coordexp-attempt8-packet-author. Every path in targets.must_be_absent was confirmed absent by the executor's own _assert_absent and by an independent lstat. Both success argvs carry `--commit f492f36874f036ad4145a45c7b03cd2e0b2fd049`; none of setup, rank_failure, interruption, or verification carries --commit. A byte scan found zero occurrences of any -r1..-r7 target substring, of 'attempt-5'/'attempt-6'/'attempt-7' receipt names, or of any prior implementation commit in the manifest, and zero -r5/-r6/-r7 or 4525a0f73 occurrences in the packet."
+    },
+    "5_gpu_map_live": {
+      "outcome": "pass",
+      "detail": "Live nvidia-smi UUIDs for physical indices 6 and 7 equal the manifest's execution_contract.preflight.gpu_devices entries exactly and in the same order (6 -> GPU-3d113ebf-fcac-c7d9-d5a6-a6abefeb32ff, 7 -> GPU-4e5382fb-e2a6-1057-32bc-12697f2b09fd). Current occupancy on both devices exceeds the 20 GiB bound and is recorded as an execution-time observation (OBS-1), not a freeze finding, per the disclosed gating contract. Free space on /data satisfies the 20 GiB requirement."
+    }
+  },
+  "findings": [
+    {
+      "id": "OBS-1",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Both bound physical GPUs are occupied above the declared per-device bound at review time",
+      "detail": "Live nvidia-smi at review shows physical GPU 6 at 28167 MiB and physical GPU 7 at 34755 MiB, both above the manifest's max_gpu_occupancy_bytes of 21474836480 (20 GiB). The packet disclosed GPU 7 at 23,491 MiB and GPU 6 drained (3 MiB) at freeze; GPU 6 has since acquired external shared-host load. The UUID-to-physical-index binding is unchanged and correct. Occupancy is an execution-time gate, not a freeze defect: the executor revalidates the map, per-device occupancy, and disk before marker creation and again before the first GPU command, and the packet declares itself not executable until both devices are within the bound. The lead MUST independently confirm both devices are within the bound immediately before invoking execute; this READY verdict does not assert that they are."
+    },
+    {
+      "id": "OBS-2",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Stale Attempt-6 prose in an executor error string (carried forward, cosmetic)",
+      "detail": "reconcile_exact_resume_packet_executor.py still raises 'base config identity is not the fixed Attempt-6 input' when the manifest base-config path or digest mismatches. The module constants BASE_CONFIG_PATH and BASE_CONFIG_SHA256 were independently confirmed correct at this HEAD (44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f matches the live base-config bytes). Cosmetic only; unchanged from the Attempt-7 review's OBS-2; no packet change required."
+    },
+    {
+      "id": "OBS-3",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Freeze-to-execute window remains the dominant failure mode",
+      "detail": "Attempt 6 was invalidated pre-marker by concurrent commit 27abc8087 and Attempt 7 by 0b0f554e4, both during the freeze/review window. This review re-read `git rev-parse HEAD`, `HEAD^{tree}`, and `git status --porcelain --untracked-files=no` immediately before writing this receipt and signed only what was true at that instant (recorded below as head_at_receipt_write). The binding can still be broken by any commit landing between this signature and executor invocation; the executor's _pre_marker_validate fails closed at packet_executor.head_drift in that case. Execute inside an uninterrupted no-commit window."
+    }
+  ],
+  "p0_count": 0,
+  "p1_count": 0,
+  "authorization": "READY. Attempt 8 is authorized for execution through reconcile_exact_resume_packet_executor.py, subject to the executor's own preflight and to the lead independently confirming that physical GPUs 6 and 7 are both within the 20 GiB per-device occupancy bound immediately before invoking execute. Every identity in this receipt was recomputed by the reviewer from primary sources: the manifest, packet, and base-config digests match the author's claims; HEAD and HEAD^{tree} equal the frozen bindings with a clean tracked worktree at the instant of signing; the manifest differs from the immutable Attempt-7 manifest only by the whitelisted r7-to-r8, commit, six-digest, packet-digest, and author substitutions with zero keys added or removed; all three role configs were deterministically re-rendered through the production path and reproduce the manifest's digests and fingerprints exactly with effective_batch_size 2 and resolved_grad_accum_steps 1; no config identity is copied from any earlier attempt; the executor's own _validate_contract accepts the manifest; and every targets.must_be_absent path is absent. This authorization is void if tracked HEAD moves off f492f36874f036ad4145a45c7b03cd2e0b2fd049 or the tracked worktree becomes dirty before marker creation; the executor fails closed at packet_executor.head_drift in that case and a fresh successor freeze and review are required.",
+  "superseded_receipt": {
+    "withdrawn_status": "READY",
+    "withdrawn_file_sha256": "aa5ecf4f261ec24e84f8de9df319fce365f80d35b5040088619a9d207f790329",
+    "withdrawn_receipt_payload_sha256": "69ff537ad44b4dd66a220b61a9de75f6c4e6ac449d55e1b61769be15e2a3f142",
+    "withdrawn_at": "2026-08-19T03:06:09Z",
+    "reason": "The withdrawn receipt reached the same READY verdict on the same recomputed evidence, but its verified_bindings.manifest_whitelist_diff_vs_attempt_7.changed_leaves_by_category split was hand-tallied and wrong: it recorded 26 r7-to-r8 path substitutions and 7 attempt-7-to-attempt-8 receipt-name substitutions where the mechanical tally is 27 and 6 (the packet_author_identity leaf was double-counted into the receipt-name bucket). The load-bearing claims were correct and unchanged in both receipts: 306 leaves on both sides, zero keys added or removed, 47 changed leaves, and zero changed leaves outside the whitelist. The withdrawn receipt also asserted all_pins_match_tasks_md_3_4 without having individually recomputed the Attempt-3/4/5/6 manifest and packet pins; those eight digests have now been recomputed and all match. A signed receipt must not carry an unverified or incorrect stated fact at any status, so it was replaced in place by the same reviewer before any consumer read it: the executor's _pre_marker_validate is the only consumer and it was never invoked, and the only other open was this reviewer's own self-test. Exactly one immutable receipt exists at the authorized path."
+  },
+  "receipt_payload_sha256": "6ec080d04fcbe58f9557af40b9ca97528079cfc59d929d9c55c9c2e1f574cf8c"
+}

@@ -1,0 +1,446 @@
+{
+  "schema": "coordexp-swift-reconcile-resume-probe-command-manifest-v2",
+  "implementation_commit": "f492f36874f036ad4145a45c7b03cd2e0b2fd049",
+  "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+  "world_size": 2,
+  "arms": [
+    "success",
+    "rank_failure",
+    "interruption"
+  ],
+  "setup_command": [
+    "/usr/bin/timeout",
+    "--signal=TERM",
+    "--kill-after=30s",
+    "600s",
+    "/usr/bin/env",
+    "-u",
+    "CUDA_VISIBLE_DEVICES",
+    "/root/miniconda3/bin/conda",
+    "run",
+    "-n",
+    "ms",
+    "/root/miniconda3/envs/ms/bin/python",
+    "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+    "prepare",
+    "--artifact-root",
+    "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+    "--base-config",
+    "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+    "--world-size",
+    "2"
+  ],
+  "commands": {
+    "success": {
+      "uninterrupted_control": [
+        "/usr/bin/timeout",
+        "--signal=TERM",
+        "--kill-after=30s",
+        "600s",
+        "/usr/bin/env",
+        "CUDA_VISIBLE_DEVICES=6,7",
+        "/root/miniconda3/bin/conda",
+        "run",
+        "-n",
+        "ms",
+        "/root/miniconda3/envs/ms/bin/python",
+        "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+        "success-control",
+        "--artifact-root",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+        "--commit",
+        "f492f36874f036ad4145a45c7b03cd2e0b2fd049"
+      ],
+      "resumed_child": [
+        "/usr/bin/timeout",
+        "--signal=TERM",
+        "--kill-after=30s",
+        "1200s",
+        "/usr/bin/env",
+        "CUDA_VISIBLE_DEVICES=6,7",
+        "/root/miniconda3/bin/conda",
+        "run",
+        "-n",
+        "ms",
+        "/root/miniconda3/envs/ms/bin/python",
+        "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+        "success-resumed",
+        "--artifact-root",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+        "--commit",
+        "f492f36874f036ad4145a45c7b03cd2e0b2fd049"
+      ]
+    },
+    "rank_failure": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=30s",
+      "120s",
+      "/usr/bin/env",
+      "CUDA_VISIBLE_DEVICES=",
+      "/root/miniconda3/bin/conda",
+      "run",
+      "-n",
+      "ms",
+      "/root/miniconda3/envs/ms/bin/python",
+      "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+      "rank-failure",
+      "--artifact-root",
+      "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/arms/rank_failure",
+      "--inject",
+      "{\"rank\":1,\"kind\":\"missing\"}",
+      "--world-size",
+      "2"
+    ],
+    "interruption": [
+      "/usr/bin/timeout",
+      "--signal=TERM",
+      "--kill-after=30s",
+      "120s",
+      "/usr/bin/env",
+      "CUDA_VISIBLE_DEVICES=",
+      "/root/miniconda3/bin/conda",
+      "run",
+      "-n",
+      "ms",
+      "/root/miniconda3/envs/ms/bin/python",
+      "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+      "interruption",
+      "--artifact-root",
+      "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/arms/interruption",
+      "--stop-after",
+      "1",
+      "--world-size",
+      "2"
+    ]
+  },
+  "config_files": {
+    "success": {
+      "uninterrupted_control": {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/uninterrupted_control.yaml",
+        "expected_sha256": "8dd5fbe13bc90dc6cd1615fad9e5377d14c57b944db68b6a8fe340e8f6c07f72"
+      },
+      "resumed_child": {
+        "setup_parent": {
+          "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_parent.yaml",
+          "expected_sha256": "e5803d8da54256bcb9b4152a805d51cdd64cf5f8e1b2588e88b825de43b5d570"
+        },
+        "resumed_child": {
+          "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_child.yaml",
+          "expected_sha256": "99b0671bcfea3d034a77a81bd8d4e7e4c8779678c15973aa2900cbb273eb6e4b"
+        }
+      }
+    },
+    "rank_failure": null,
+    "interruption": null
+  },
+  "artifact_root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+  "comparison_policy": {
+    "boundary": {
+      "left": "uninterrupted_control/checkpoints/step-1",
+      "right": "resumed_parent/checkpoints/step-1",
+      "rule": "admit both exact-state manifests and require exact equality for every production-strict identity except the intentionally role-specific resolved_config identity, plus cursor including next pack ordinal and pending state, trainable model, optimizer, scheduler, scaler, every rank's python/numpy/torch_cpu/torch_cuda RNG, CUDA topology, and structure signature"
+    },
+    "post_update": {
+      "left": "uninterrupted_control/checkpoints/step-2",
+      "right": "resumed_child/checkpoints/step-2",
+      "rule": "same admitted-state exact comparison after each branch's one corresponding next forward and optimizer update; tensor and scalar state equality is exact"
+    },
+    "objective": {
+      "source": "exactly one split=train,step=2 row from each logging.jsonl",
+      "rule": "exact equality for all objective, loss, finite, update, LR, count, and accuracy fields; exclude only per_rank_measurement, input_build_seconds, input_wait_seconds, and keys containing duration/resource/wall/timing"
+    },
+    "rank_failure": {
+      "representative": "rank=1,kind=missing",
+      "receipt_schema": "coordexp-swift-reconcile-resume-probe-rank-failure-receipt-v2",
+      "expected_ranks": [
+        0,
+        1
+      ],
+      "serialized_ranks": [
+        0,
+        1
+      ],
+      "published_ranks": [
+        0
+      ],
+      "error_code": "training_state.incomplete_rank_set",
+      "rule": "signed converged_failure receipt with exact semantic rank fields and error code, no admitted manifest, stage residue, selector, or event claim"
+    },
+    "interruption": {
+      "representative": "stop_after=1",
+      "receipt_schema": "coordexp-swift-reconcile-resume-probe-interruption-receipt-v2",
+      "expected_ranks": [
+        0,
+        1
+      ],
+      "serialized_ranks": [],
+      "published_ranks": [],
+      "rank_state_boundary_reached": false,
+      "rule": "signed converged_partial_state receipt proving only the non-production inference stub survives; no exact state or event; it does not qualify production inference writing"
+    },
+    "fail_closed": true
+  },
+  "verification_command": [
+    "/usr/bin/timeout",
+    "--signal=TERM",
+    "--kill-after=30s",
+    "600s",
+    "/usr/bin/env",
+    "CUDA_VISIBLE_DEVICES=",
+    "/root/miniconda3/bin/conda",
+    "run",
+    "-n",
+    "ms",
+    "/root/miniconda3/envs/ms/bin/python",
+    "scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py",
+    "verify",
+    "--artifact-root",
+    "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8"
+  ],
+  "authorization_status": "pending_external_review",
+  "execution_contract": {
+    "command_order": [
+      "setup",
+      "success.uninterrupted_control",
+      "success.resumed_child",
+      "rank_failure",
+      "interruption",
+      "verification"
+    ],
+    "gpu_measurement_source": "torch_allocator_high_water",
+    "marker_creation": "O_EXCL",
+    "stop_on_first_failure": true,
+    "retry_count": 0,
+    "required_resource_observations": [
+      "wall_time",
+      "cpu_rss_per_rank",
+      "gpu_memory_per_rank",
+      "artifact_bytes"
+    ],
+    "required_outer_receipt_bindings": [
+      "implementation_commit",
+      "manifest_sha256",
+      "packet_sha256",
+      "marker_sha256",
+      "argv_observations",
+      "resource_maxima",
+      "pre_cost_review",
+      "launcher_identity",
+      "runtime_identity",
+      "command_process_groups",
+      "artifact_tree_summaries",
+      "cleanup_outcomes",
+      "stop_outcome"
+    ],
+    "required_inner_receipt_bindings": [
+      "schema",
+      "status",
+      "commit",
+      "artifact_root",
+      "world_size",
+      "receipt_payload_sha256"
+    ],
+    "accumulation": {
+      "base_config": {
+        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+        "sha256": "44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f"
+      },
+      "world_size": 2,
+      "expected_consumed_packs_by_step": {
+        "1": 1,
+        "2": 2
+      },
+      "roles": {
+        "uninterrupted_control": {
+          "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/uninterrupted_control.yaml",
+          "config_sha256": "8dd5fbe13bc90dc6cd1615fad9e5377d14c57b944db68b6a8fe340e8f6c07f72",
+          "resolved_config_fingerprint": "7aa2f96c25aad0eb990bb43a02358a242be2418a7902b5d78c36df38cbed7a86",
+          "effective_batch_size": 2,
+          "resolved_grad_accum_steps": 1,
+          "launch_argv": [
+            "/root/miniconda3/envs/ms/bin/python",
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node",
+            "2",
+            "-m",
+            "src.train",
+            "--config",
+            "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/uninterrupted_control.yaml"
+          ]
+        },
+        "resumed_parent": {
+          "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_parent.yaml",
+          "config_sha256": "e5803d8da54256bcb9b4152a805d51cdd64cf5f8e1b2588e88b825de43b5d570",
+          "resolved_config_fingerprint": "3e0f1c089c602b231cd690a2904f8386a31ead639e9e95cc4fa566e39773b5de",
+          "effective_batch_size": 2,
+          "resolved_grad_accum_steps": 1,
+          "launch_argv": [
+            "/root/miniconda3/envs/ms/bin/python",
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node",
+            "2",
+            "-m",
+            "scripts.probes.coordexp_swift.reconcile_exact_resume_probe",
+            "held-parent",
+            "--config",
+            "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_parent.yaml"
+          ]
+        },
+        "resumed_child": {
+          "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_child.yaml",
+          "config_sha256": "99b0671bcfea3d034a77a81bd8d4e7e4c8779678c15973aa2900cbb273eb6e4b",
+          "resolved_config_fingerprint": "39c1d751aa7e9a081e51751cbe3cf6777dd9ce864f1212665053cf39fb91f479",
+          "effective_batch_size": 2,
+          "resolved_grad_accum_steps": 1,
+          "launch_argv": [
+            "/root/miniconda3/envs/ms/bin/python",
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc_per_node",
+            "2",
+            "-m",
+            "src.train",
+            "--config",
+            "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/configs/resumed_child.yaml"
+          ]
+        }
+      }
+    },
+    "bindings": {
+      "packet_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-launch-packet.md",
+      "packet_sha256": "0833860a79603e898a93d2565f928bb23e5f052e9033daa4b874e253b01aa2bf"
+    },
+    "pre_cost_review": {
+      "path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-pre-cost-review.json",
+      "schema": "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1",
+      "required_status": "READY",
+      "packet_author_identity": "coordexp-attempt8-packet-author"
+    },
+    "targets": {
+      "artifact_root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+      "attempt_marker_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-attempt-marker.json",
+      "terminal_receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-outer-terminal-receipt.json",
+      "must_be_absent": [
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache-receipt.json",
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-attempt-marker.json",
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-8-outer-terminal-receipt.json"
+      ]
+    },
+    "preflight": {
+      "filesystem_path": "/data",
+      "required_free_disk_bytes": 21474836480,
+      "gpu_devices": [
+        {
+          "physical_index": "6",
+          "uuid": "GPU-3d113ebf-fcac-c7d9-d5a6-a6abefeb32ff"
+        },
+        {
+          "physical_index": "7",
+          "uuid": "GPU-4e5382fb-e2a6-1057-32bc-12697f2b09fd"
+        }
+      ],
+      "max_gpu_occupancy_bytes": 21474836480
+    },
+    "resource_bounds": {
+      "setup": {
+        "wall_time_seconds": 600,
+        "cpu_measurement_mode": "command_tree_aggregate",
+        "max_cpu_rss_command_tree_bytes": 17179869184,
+        "max_gpu_memory_bytes_per_rank": 0,
+        "max_new_artifact_bytes": 2147483648,
+        "required_cpu_ranks": [],
+        "required_gpu_ranks": []
+      },
+      "success.uninterrupted_control": {
+        "wall_time_seconds": 600,
+        "cpu_measurement_mode": "per_rank",
+        "max_cpu_rss_bytes_per_rank": 17179869184,
+        "max_gpu_memory_bytes_per_rank": 34359738368,
+        "max_new_artifact_bytes": 2684354560,
+        "required_cpu_ranks": [
+          0,
+          1
+        ],
+        "required_gpu_ranks": [
+          0,
+          1
+        ]
+      },
+      "success.resumed_child": {
+        "wall_time_seconds": 1200,
+        "cpu_measurement_mode": "per_rank",
+        "max_cpu_rss_bytes_per_rank": 17179869184,
+        "max_gpu_memory_bytes_per_rank": 34359738368,
+        "max_new_artifact_bytes": 3758096384,
+        "required_cpu_ranks": [
+          0,
+          1
+        ],
+        "required_gpu_ranks": [
+          0,
+          1
+        ]
+      },
+      "rank_failure": {
+        "wall_time_seconds": 120,
+        "cpu_measurement_mode": "command_tree_aggregate",
+        "max_cpu_rss_command_tree_bytes": 4294967296,
+        "max_gpu_memory_bytes_per_rank": 0,
+        "max_new_artifact_bytes": 67108864,
+        "required_cpu_ranks": [],
+        "required_gpu_ranks": []
+      },
+      "interruption": {
+        "wall_time_seconds": 120,
+        "cpu_measurement_mode": "command_tree_aggregate",
+        "max_cpu_rss_command_tree_bytes": 4294967296,
+        "max_gpu_memory_bytes_per_rank": 0,
+        "max_new_artifact_bytes": 67108864,
+        "required_cpu_ranks": [],
+        "required_gpu_ranks": []
+      },
+      "verification": {
+        "wall_time_seconds": 600,
+        "cpu_measurement_mode": "command_tree_aggregate",
+        "max_cpu_rss_command_tree_bytes": 17179869184,
+        "max_gpu_memory_bytes_per_rank": 0,
+        "max_new_artifact_bytes": 67108864,
+        "required_cpu_ranks": [],
+        "required_gpu_ranks": []
+      }
+    },
+    "total_bounds": {
+      "wall_time_seconds": 3240,
+      "max_new_artifact_bytes": 10737418240
+    },
+    "setup_validation": {
+      "prepare_receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/prepare-receipt.json",
+      "pack_cache_root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache",
+      "pack_cache_receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache-receipt.json"
+    },
+    "inner_receipt": {
+      "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8/terminal-receipt.json",
+      "schema": "coordexp-swift-reconcile-resume-probe-terminal-receipt-v1",
+      "required_status": "verified"
+    },
+    "artifact_tree_summary": {
+      "roots": [
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r8.pack-cache-receipt.json"
+      ],
+      "max_entries": 100000,
+      "max_depth": 16,
+      "max_path_bytes": 4096,
+      "max_total_bytes": 10737418240
+    }
+  }
+}
