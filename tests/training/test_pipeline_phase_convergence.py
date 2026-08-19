@@ -15,14 +15,14 @@ import torch.distributed as dist
 
 import src.training.cache_workflow as cache_workflow
 import src.training.control_plane as control_plane
-import src.training.pipeline as pipeline
+import src.training.session as session
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.training.control_plane import (
     _build_rank_report_gatherer,
     _run_rank_converged_phase,
 )
-from src.training.pipeline import (
+from src.training.session import (
     _begin_run_phase,
     _fail_active_run_phase,
 )
@@ -105,7 +105,7 @@ def _phase_failure_worker(
                 world_size=_WORLD_SIZE,
                 rank_report_gatherer=gatherer,
                 body=local_model_surface,
-                receipt_sink=pipeline._phase_receipt_sink(lifecycle, "model_loading"),
+                receipt_sink=session._phase_receipt_sink(lifecycle, "model_loading"),
                 resource_collector=lambda: _rank_resource_snapshot(rank),
             )
         assert exc_info.value.code == "runtime.distributed_phase_failed"

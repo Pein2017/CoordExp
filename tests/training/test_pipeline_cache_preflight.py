@@ -21,6 +21,7 @@ from src.training import (
     execution_plan,
     pack_cache,
     pipeline,
+    session,
 )
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
@@ -42,7 +43,7 @@ def _patch_shared_cache_import(
     silently reach production through the other owner.
     """
 
-    for module in (pipeline, cache_workflow):
+    for module in (session, cache_workflow):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
 
@@ -406,7 +407,7 @@ def _install_pipeline_fakes(
         accelerator_calls.append(precision)
         raise AssertionError("Accelerator must not be constructed before admission")
 
-    monkeypatch.setattr(pipeline, "_build_accelerator", build_accelerator)
+    monkeypatch.setattr(session, "_build_accelerator", build_accelerator)
     return config_path
 
 
@@ -457,7 +458,7 @@ def test_partial_or_malformed_launcher_identity_fails_before_any_preflight_surfa
         lambda world: construction_calls.append("control-plane"),
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_initialize_model_free_run_owner",
         lambda **kwargs: construction_calls.append("writer"),
     )
@@ -511,7 +512,7 @@ def test_pinned_runtime_baseline_admission_broadcasts_rank_zero_receipt(
     def gather(report: object) -> tuple[object, object]:
         return report, {**dict(report), "rank": 1}  # type: ignore[arg-type]
 
-    observed = pipeline._resolve_shared_pinned_runtime_baseline(
+    observed = session._resolve_shared_pinned_runtime_baseline(
         {"schema_version": 1},
         attention_backend="flash_attention_2",
         rank=0,
@@ -552,7 +553,7 @@ def test_pinned_runtime_baseline_admission_rejects_a_drifted_peer(
         return report, peer
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._resolve_shared_pinned_runtime_baseline(
+        session._resolve_shared_pinned_runtime_baseline(
             {"schema_version": 1},
             attention_backend="flash_attention_2",
             rank=0,
@@ -619,13 +620,13 @@ def test_exact_resume_lineage_is_admitted_and_converged_before_run_creation(
         world_size=2,
         aggregate_digest="a" * 64,
     )
-    monkeypatch.setattr(pipeline, "load_training_state_manifest", lambda path: manifest)
+    monkeypatch.setattr(session, "load_training_state_manifest", lambda path: manifest)
     monkeypatch.setattr(cache_workflow, "_file_sha256", lambda path: "b" * 64)
 
     def gather(report: object) -> tuple[object, object]:
         return report, {**dict(report), "rank": 1}  # type: ignore[arg-type]
 
-    lineage = pipeline._resolve_resume_continuation_lineage(
+    lineage = session._resolve_resume_continuation_lineage(
         SimpleNamespace(
             resume=SimpleNamespace(
                 mode="exact_same_world_size",
@@ -656,13 +657,13 @@ def test_exact_resume_lineage_rejects_wrong_world_before_run_creation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        pipeline,
+        session,
         "load_training_state_manifest",
         lambda path: SimpleNamespace(world_size=2),
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._resolve_resume_continuation_lineage(
+        session._resolve_resume_continuation_lineage(
             SimpleNamespace(
                 resume=SimpleNamespace(
                     mode="exact_same_world_size",
@@ -697,7 +698,7 @@ def test_provider_resolution_requires_one_exact_receipt_across_launcher_ranks(
         return report, peer
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._resolve_converged_forward_input_provider_mode(
+        session._resolve_converged_forward_input_provider_mode(
             "synchronous",
             rank=0,
             world_size=2,
@@ -719,7 +720,7 @@ def test_provider_resolution_accepts_exact_same_mode_source_and_receipt(
     def gather(report: object) -> tuple[object, object]:
         return report, {**dict(report), "rank": 1}  # type: ignore[arg-type]
 
-    resolved = pipeline._resolve_converged_forward_input_provider_mode(
+    resolved = session._resolve_converged_forward_input_provider_mode(
         "synchronous",
         rank=0,
         world_size=2,
@@ -1029,7 +1030,7 @@ def test_pre_writer_failure_closes_preflight_gatherer_exactly_once(
         lambda world_size: gatherer,
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_resolve_shared_run_directory",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             RuntimeError("run-directory failure before writer initialization")
@@ -1274,8 +1275,8 @@ def _distributed_preflight_failure_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
 
@@ -1285,11 +1286,11 @@ def _distributed_preflight_failure_worker(
             raise AssertionError("model loader must not run before cache admission")
         return components
 
-    cache_workflow.load_qwen_components = pipeline.load_qwen_components = load_components
-    cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.load_qwen_components = session.load_qwen_components = load_components
+    cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
     cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1302,7 +1303,7 @@ def _distributed_preflight_failure_worker(
         accelerator_calls.append(precision)
         raise AssertionError("Accelerator must not be constructed before admission")
 
-    pipeline._build_accelerator = build_accelerator
+    session._build_accelerator = build_accelerator
     try:
         import os
 
@@ -1353,8 +1354,8 @@ def _distributed_provider_resolution_mismatch_worker(
         to_artifact_dict=lambda: {"test": True},
     )
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
     cache_workflow._resolve_model_free_training_preflight = lambda **kwargs: (
@@ -1362,7 +1363,7 @@ def _distributed_provider_resolution_mismatch_worker(
             AssertionError("cache admission must not run after provider mismatch")
         )
     )
-    pipeline._build_accelerator = lambda precision: (
+    session._build_accelerator = lambda precision: (
         (_ for _ in ()).throw(
             AssertionError("Accelerator must not run after provider mismatch")
         )
@@ -1423,19 +1424,19 @@ def _distributed_preflight_success_worker(
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     observations: dict[str, object] = {}
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
-    cache_workflow.load_qwen_components = pipeline.load_qwen_components = lambda config, *, load_model: (
+    cache_workflow.load_qwen_components = session.load_qwen_components = lambda config, *, load_model: (
         (_ for _ in ()).throw(AssertionError("model load must remain stubbed"))
         if load_model
         else components
     )
-    cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
     cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1477,9 +1478,9 @@ def _distributed_preflight_success_worker(
             )
         return {"rank": rank, "transition": "completed"}
 
-    pipeline._build_accelerator = build_accelerator
-    pipeline.validate_accelerator_runtime = lambda *args, **kwargs: None
-    pipeline._run_initialized_training = run_initialized_training
+    session._build_accelerator = build_accelerator
+    session.validate_accelerator_runtime = lambda *args, **kwargs: None
+    session._run_initialized_training = run_initialized_training
     try:
         import os
 
@@ -1532,8 +1533,8 @@ def _distributed_accelerator_identity_mismatch_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
+    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
         lambda **kwargs: _runtime_baseline_receipt()
     )
 
@@ -1543,11 +1544,11 @@ def _distributed_accelerator_identity_mismatch_worker(
             raise AssertionError("model loader must not run on identity mismatch")
         return components
 
-    cache_workflow.load_qwen_components = pipeline.load_qwen_components = load_components
-    cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.load_qwen_components = session.load_qwen_components = load_components
+    cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
     cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1592,8 +1593,8 @@ def _distributed_accelerator_identity_mismatch_worker(
             gradient_accumulation_steps=1,
         )
 
-    pipeline._build_accelerator = build_accelerator
-    pipeline._run_initialized_training = lambda **kwargs: (_ for _ in ()).throw(
+    session._build_accelerator = build_accelerator
+    session._run_initialized_training = lambda **kwargs: (_ for _ in ()).throw(
         AssertionError("training assembly must not run on identity mismatch")
     )
     try:

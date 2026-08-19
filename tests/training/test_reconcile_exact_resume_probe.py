@@ -636,6 +636,7 @@ def test_resumed_parent_uses_held_parent_route_while_control_and_child_use_src_t
 def test_held_parent_calls_real_handler_then_blocks_before_step_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.training import session as training_session
     from src.training import pipeline as training_pipeline
 
     order: list[str] = []
@@ -651,7 +652,7 @@ def test_held_parent_calls_real_handler_then_blocks_before_step_two(
         return real_handler
 
     def fake_pipeline(config_path):
-        handler = training_pipeline._checkpoint_handler()
+        handler = training_session._checkpoint_handler()
         handler(SimpleNamespace(planned_step_id=1), object())
         order.append("step_two")
         return {"status": "completed"}
@@ -661,7 +662,7 @@ def test_held_parent_calls_real_handler_then_blocks_before_step_two(
         hold_entered.set()
         assert release_hold.wait(timeout=2.0)
 
-    monkeypatch.setattr(training_pipeline, "_checkpoint_handler", real_factory)
+    monkeypatch.setattr(training_session, "_checkpoint_handler", real_factory)
     monkeypatch.setattr(training_pipeline, "run_training_pipeline", fake_pipeline)
     worker = threading.Thread(
         target=probe._run_held_parent,
@@ -673,18 +674,19 @@ def test_held_parent_calls_real_handler_then_blocks_before_step_two(
     assert hold_entered.wait(timeout=2.0)
     assert order == ["real_factory", "real_handler", "hold"]
     assert worker.is_alive()
-    assert training_pipeline._checkpoint_handler is not real_factory
+    assert training_session._checkpoint_handler is not real_factory
 
     release_hold.set()
     worker.join(timeout=2.0)
     assert not worker.is_alive()
     assert order == ["real_factory", "real_handler", "hold", "step_two"]
-    assert training_pipeline._checkpoint_handler is real_factory
+    assert training_session._checkpoint_handler is real_factory
 
 
 def test_held_parent_does_not_hold_when_step_one_publication_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.training import session as training_session
     from src.training import pipeline as training_pipeline
 
     publication_error = RuntimeError("step-one publication failed")
@@ -697,11 +699,11 @@ def test_held_parent_does_not_hold_when_step_one_publication_fails(
         return real_handler
 
     def fake_pipeline(config_path):
-        handler = training_pipeline._checkpoint_handler()
+        handler = training_session._checkpoint_handler()
         handler(SimpleNamespace(planned_step_id=1), object())
         raise AssertionError("unreachable after publication failure")
 
-    monkeypatch.setattr(training_pipeline, "_checkpoint_handler", real_factory)
+    monkeypatch.setattr(training_session, "_checkpoint_handler", real_factory)
     monkeypatch.setattr(training_pipeline, "run_training_pipeline", fake_pipeline)
     with pytest.raises(RuntimeError) as exc_info:
         probe._run_held_parent(
@@ -709,7 +711,7 @@ def test_held_parent_does_not_hold_when_step_one_publication_fails(
         )
     assert exc_info.value is publication_error
     assert hold_calls == []
-    assert training_pipeline._checkpoint_handler is real_factory
+    assert training_session._checkpoint_handler is real_factory
 
 
 def test_success_control_rejects_launch_without_prepare(tmp_path: Path) -> None:

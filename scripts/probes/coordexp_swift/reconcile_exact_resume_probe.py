@@ -1172,17 +1172,18 @@ def _run_held_parent(
 ) -> Mapping[str, Any]:
     """Run the real pipeline with only its step-1 checkpoint return held."""
 
+    from src.training import session as training_session
     from src.training import pipeline as training_pipeline
 
-    real_factory = training_pipeline._checkpoint_handler
-    training_pipeline._checkpoint_handler = _held_parent_checkpoint_handler_factory(
+    real_factory = training_session._checkpoint_handler
+    training_session._checkpoint_handler = _held_parent_checkpoint_handler_factory(
         real_factory,
         hold=hold,
     )
     try:
         return training_pipeline.run_training_pipeline(config_path)
     finally:
-        training_pipeline._checkpoint_handler = real_factory
+        training_session._checkpoint_handler = real_factory
 
 
 def _launch_argv(config_path: str, *, held_parent: bool = False) -> list[str]:

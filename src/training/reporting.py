@@ -12,9 +12,9 @@ byte.
 
 ``_append_logging_row_shared``, ``_resource_scalar_metrics``, and
 ``_per_rank_measurement`` are also called directly by
-``src.training.pipeline._eval_forward_handler`` (still pipeline-owned until wave
-5), which imports this module rather than pipeline.py forwarding them under their
-historical names.
+``src.training.session._eval_forward_handler`` (moved to the session owner in
+wave 5), which imports this module rather than the facade forwarding them under
+their historical names.
 """
 
 from __future__ import annotations
@@ -167,9 +167,9 @@ def _finish_first_optimizer_step_phase(
     status: str = "completed",
     rank_resources: Mapping[str, Any] | None,
 ) -> None:
-    """Duplicate of ``pipeline._finish_run_phase`` bound to one phase name.
+    """Duplicate of ``session._finish_run_phase`` bound to one phase name.
 
-    ``_finish_run_phase`` is a general phase-lifecycle utility pipeline.py uses
+    ``_finish_run_phase`` is a general phase-lifecycle utility session.py uses
     across many unrelated phases and keeps for the eventual session owner; this
     reporter cannot import it back (``src.training.pipeline`` is a forbidden
     reverse edge from a leaf/domain owner). The "first_optimizer_step" call

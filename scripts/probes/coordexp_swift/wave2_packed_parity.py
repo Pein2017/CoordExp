@@ -116,7 +116,7 @@ from src.supervision import (  # noqa: E402
     build_token_sequence_from_packed_supervision,
 )
 from src.templates import render_example  # noqa: E402
-from src.training.pipeline import (  # noqa: E402
+from src.training.session import (  # noqa: E402
     _build_accelerator,
     enable_training_memory_savers,
 )

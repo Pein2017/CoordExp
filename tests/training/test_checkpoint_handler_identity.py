@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from src.training.pipeline import _checkpoint_handler, _final_handler
+from src.training.session import _checkpoint_handler, _final_handler
 from src.training.supervised_trainer import CompletedStepObservation
 
 

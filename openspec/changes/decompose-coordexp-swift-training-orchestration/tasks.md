@@ -327,12 +327,146 @@
 
 ## 6. Wave 5 - Training Session and Thin Facade
 
-- [ ] 6.1 Add failing `TrainingSession` tests for the fixed phase order, owned lifecycle/resource close behavior, model/runtime assembly boundary, cache hydration inputs, trainer handler wiring, primary-exception preservation, best-effort failure publication, success finalization, exact facade result mapping, and idempotent close.
-- [ ] 6.2 Implement the `TrainingSession` constructor and move the model/adapter/selected-token/loss/optimizer/runtime assembly plus lifecycle state into `src/training/session.py` without introducing phase subclasses, registries, or alternate backends.
-- [ ] 6.3 Move exact-resume admission/restoration/publication wiring, eval/checkpoint/final handlers, forward-input-provider lifetime, profile-sync reset, and success/failure finalization into the session while preserving their literal collective and event order.
-- [ ] 6.4 Reduce `run_training_pipeline(...)` to build the immutable plan, open/bind the control plane, initialize the current run owner, admit the cache workflow, construct exactly one session, return its result, and close resources in `finally`.
-- [ ] 6.5 Delete all replaced initialized-training, handler, lifecycle, cache, control-plane, and identity code from `pipeline.py`; retain only the public facade and documented compatibility re-export, then enforce the one-way import graph and absence of pass-through helper layers.
-- [ ] 6.6 Gate Wave 5 with its frozen pipeline/preflight/convergence/trainer/runtime/eval/checkpoint/resume/cache/entrypoint manifest IDs, protected row/artifact/ordered-call comparisons, residue checks, and strict OpenSpec validation; commit one scoped independently revertible wave and prove revert restores Wave 4 without cache mutation.
+- [x] 6.1 Add failing `TrainingSession` tests for the fixed phase order, owned lifecycle/resource close behavior, model/runtime assembly boundary, cache hydration inputs, trainer handler wiring, primary-exception preservation, best-effort failure publication, success finalization, exact facade result mapping, and idempotent close.
+- [x] 6.2 Implement the `TrainingSession` constructor and move the model/adapter/selected-token/loss/optimizer/runtime assembly plus lifecycle state into `src/training/session.py` without introducing phase subclasses, registries, or alternate backends.
+- [x] 6.3 Move exact-resume admission/restoration/publication wiring, eval/checkpoint/final handlers, forward-input-provider lifetime, profile-sync reset, and success/failure finalization into the session while preserving their literal collective and event order.
+- [x] 6.4 Reduce `run_training_pipeline(...)` to build the immutable plan, open/bind the control plane, initialize the current run owner, admit the cache workflow, construct exactly one session, return its result, and close resources in `finally`.
+- [x] 6.5 Delete all replaced initialized-training, handler, lifecycle, cache, control-plane, and identity code from `pipeline.py`; retain only the public facade and documented compatibility re-export, then enforce the one-way import graph and absence of pass-through helper layers.
+- [x] 6.6 Gate Wave 5 with its frozen pipeline/preflight/convergence/trainer/runtime/eval/checkpoint/resume/cache/entrypoint manifest IDs, protected row/artifact/ordered-call comparisons, residue checks, and strict OpenSpec validation; commit one scoped independently revertible wave and prove revert restores Wave 4 without cache mutation.
+
+> **Wave 5 closed (2026-08-19, parent `8239be128`; produced under an explicit
+> no-commit instruction):** `src/training/session.py` owns the model-bearing
+> lifetime -- `TrainingSession.__init__/run/fail/close`, `RunIdentity`,
+> `_run_initialized_training`, `_checkpoint_handler`, `_eval_forward_handler`,
+> `_final_handler`, `_build_accelerator`, the phase-lifecycle helpers, the
+> pre-model policy admission, exact-resume admission/restoration/publication,
+> the forward-input-provider lifetime, and the profile-sync reset.
+> `src/training/pipeline.py` is 156 lines: `run_training_pipeline(...)` plus the
+> documented `prepare_training_pack_caches` compatibility surface, and nothing
+> else (an AST node asserts the module defines exactly those two names and
+> carries no re-export assignment). The whole import-boundary suite is GREEN for
+> the first time (20 passed): `src/training/session.py` exists, and the wave-5
+> parity edge cleared by repointing `base_model_weight_identity` to the Wave-1
+> owner `src/artifacts/identity.py`, so **no** production module imports
+> `src.qwen.parity` any more.
+>
+> Evidence: wave-5 gate (manifest argv verbatim, `expected_red_nodes: []`) =
+> **696 passed, 0 failed, 0 skipped**; wave-0 baseline replay 285 passed / 0
+> failed (all 14 original RED nodes converged); wave-2 gate replay 260 passed;
+> wave-3 gate replay 561 passed; wave-4 gate replay 415 passed; frozen
+> exact-resume verifiers (`tests/artifacts/test_training_state.py`,
+> `tests/training/test_exact_resume.py`,
+> `tests/training/test_pipeline_exact_resume.py`) 144 passed; 23 of the 24
+> `declared_flips_in_scope` node IDs run green as one invocation and the 24th
+> (`[_train_logging_handler]`) is legitimately absent under wave-4 disclosure
+> (b)'s recorded revision. The wave-1 gate replay is the sole red one -- 199
+> failed / 374 passed -- and its failure set is exactly
+> `tests/qwen/test_packed_parity.py`'s 199 failures (that file alone reports
+> 199 failed / 88 passed), i.e. entirely the disclosure (g) script residue and
+> nothing in this wave's owner surfaces. The frozen two-rank characterization
+> replays `pipeline_result.json`, `phase_order.json`, `collective_order.json`,
+> and `cache_admission.json` byte-unchanged; `git status -- tests/fixtures/`
+> empty; `openspec validate ... --strict` valid; `ruff check` clean on every
+> touched file; Serena `get_diagnostics_for_file` reports zero findings on
+> `pipeline.py` and on `tests/training/test_training_session.py`, and the eight
+> Pyright findings on `session.py` all sit inside verbatim-moved bodies
+> (`_initialize_artifact_owner`, `_run_initialized_training`,
+> `_checkpoint_handler`, `_eval_forward_handler`,
+> `_resolve_shared_run_directory`) and are pre-existing. A `difflib` proof over
+> the moved region reports **3007 of 3023 moved lines verbatim with zero
+> deletions** -- the only changed lines are
+> `_initialize_model_free_run_owner`'s return annotation and return statement,
+> which now build `RunIdentity`.
+>
+> Disclosures:
+> (a) `TrainingSession.__init__` takes design decision 8's six keywords plus a
+> seventh, `lifecycle`. D8's prose says "the session owns the current lifecycle
+> counters", but the counters must exist before the session: the facade's
+> pre-model `config_provenance_resolution` and `cache_admission` phases already
+> record into them, and D8 places session construction *after* the cache
+> preflight. Threading the mutable mapping through the frozen `RunIdentity` or
+> through `admitted_policies` would have hidden mutable state inside a record
+> whose whole point is that it is frozen, so the parameter is explicit.
+> (b) `cache_preflight` is annotated `Mapping[str, Any] | None`, not
+> `CachePreflight`. The `CachePreflight` record implemented in Wave 3 carries the
+> `--require-all-hit` bundle (two fingerprints, two targets, one receipt);
+> `_run_initialized_training` consumes the model-free *training* preflight
+> mapping (`rank`, `world_size`, `cache_root`, `cache_root_receipt`,
+> `components`, `vocab_groups`, `schedule`, `train_cache`, `eval_cache`,
+> `train_micro_steps`, `eval_reduction`, `phase_trace`). These are different
+> bundles; reusing the name would require changing D5's record, which is
+> user-owned.
+> (c) `HydratedTrainingInputs` is still NOT introduced, and Wave 3's deferral to
+> this task resolves as "cannot land without semantic loss". D5 permits the
+> record "only for the exact bundles currently returned as untyped mappings", and
+> the session has no such bundle: `cache_workflow._hydrate_eval_micro_steps_from_cache`
+> returns `tuple[tuple[SupervisedMicroStep, ...], str, int]`, whose third value
+> (`eval_pack_count_for_consensus`) has no field in the plan's four-field record
+> and is consumed by `runtime.validate_eval_reduction_consensus`; dropping it
+> would break a live collective. `train_micro_steps` is hydrated in a different
+> phase, is rebound twice (`_attach_image_processors_to_micro_steps`,
+> `_apply_fa2_branch_proof_policy`) and split into
+> `full_train_micro_steps`/`trainer_micro_steps` before eval hydration starts, so
+> the two sequences never coexist as one returned bundle; and the eval
+> hydration `receipt` is published through
+> `_phase_receipt_sink(lifecycle, "evaluation_hydration")` rather than returned,
+> while train hydration has no hydration receipt at all. Adding a fifth field or
+> reordering the phases would change the design or the frozen event order.
+> (d) The facade retains Accelerator construction and binding
+> (D8: "binds Accelerator through the control plane, then constructs exactly one
+> session"; tasks 6.4 "open/bind the control plane"), while `_build_accelerator`
+> and the `validate_accelerator_runtime` import move to the session owner per the
+> manifest's wave-5 `harness_seam_repoints`. The session reads the live
+> Accelerator back from `RankControlPlane.accelerator`, which
+> `bind_accelerator` already stores, so no seventh resource slot was added.
+> (e) The three declared wave-5 harness repoints landed as pure module swaps:
+> `pipeline._build_accelerator`, `pipeline.validate_accelerator_runtime`, and
+> `pipeline._run_initialized_training` become `session.*`; the
+> `_run_initialized_training` stub keeps its `**kwargs` shape and its
+> `writer`/`run_directory`/`run_id`/`resolved_config` reads because the session
+> calls the moved function with its Wave-0 keyword names. Six test files were
+> repointed under the same rule (`test_pipeline_assembly.py`,
+> `test_pipeline_cache_preflight.py`, `test_pipeline_phase_convergence.py`,
+> `test_pipeline_exact_resume.py`, `test_checkpoint_handler_identity.py`,
+> `test_orchestration_compatibility.py`), and `_patch_shared_cache_import` now
+> replaces shared imports on `(session, cache_workflow)`. A normalized diff proves
+> every removed line has an identical added counterpart differing only by the
+> module name: **no expected value changed anywhere**.
+> (f) `WAVE0_PIPELINE_OWNED_HELPERS` flips its four wave-5 entries
+> (`_run_initialized_training`, `_checkpoint_handler`, `_eval_forward_handler`,
+> `_final_handler`) from `(5, None)` to `(5, session)`; the node then proves the
+> session owns each helper and the facade deleted it.
+> (g) **Blocking residue, not fixed here (scripts/ is outside this wave's write
+> scope):** three probe scripts still reach into the pre-move owner and now fail
+> at import/attribute time, taking their contract tests with them ---
+> `scripts/probes/coordexp_swift/wave2_packed_parity.py:119`
+> (`from src.training.pipeline import _build_accelerator, enable_training_memory_savers`),
+> `scripts/probes/coordexp_swift/wave3_zero_weight_gpu.py:83`
+> (`from src.training.pipeline import enable_training_memory_savers`), and
+> `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py:1177-1185`
+> (reads/writes `training_pipeline._checkpoint_handler`). Each is a one-symbol
+> repoint to `src.training.session`; no `SOURCE_OWNERS`/`EXECUTION_OWNER_PATHS`
+> entry needs to change, because `src/training/pipeline.py` still exists and those
+> lists are hashed live (stale, not failing). Wave-4 disclosure (d) already
+> recorded a Wave-6 disposition for two of these owner lists.
+> Measured fallout (the first three files were measured green at parent
+> `8239be128` -- 417 passed in one invocation; the fourth's two failures are
+> `AttributeError` on the moved `_checkpoint_handler`, so they are caused by
+> this wave):
+> `tests/qwen/test_packed_parity.py` 199 failed / 88 passed,
+> `tests/qwen/test_wave2_v3_probe.py` 15 failed / 1 passed,
+> `tests/losses/test_wave3_zero_weight_probe_contract.py` 113 failed / 1 passed,
+> `tests/training/test_reconcile_exact_resume_probe.py` 2 failed / 94 passed --
+> 329 nodes total. `scripts/probes/coordexp_swift/wave5_provider_benchmark.py`
+> is unaffected (it imports only `run_training_pipeline`, which the facade
+> keeps): its `EXECUTION_OWNER_PATHS` fingerprint of `pipeline.py` is stale, not
+> failing. `tests/training/test_reconcile_exact_resume_probe.py:639-712` carries
+> the mirror-image `training_pipeline._checkpoint_handler` seam and needs the
+> same repoint, but fixing it alone would not turn those two nodes green while
+> the script it exercises still patches the facade, so it was left with its
+> script.
+> (h) Task 6.6's commit and revert proof are unexecuted: this wave was produced
+> under an explicit no-commit instruction.
 
 ## 7. Wave 6 - Retire Legacy Provider Selection
 

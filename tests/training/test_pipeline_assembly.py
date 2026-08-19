@@ -12,6 +12,7 @@ import src.training.control_plane as control_plane
 import src.training.execution_plan as execution_plan
 import src.training.pipeline as pipeline
 import src.training.reporting as reporting
+import src.training.session as session
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
@@ -39,7 +40,7 @@ def _patch_shared_cache_import(
     silently reach production through the other owner.
     """
 
-    for module in (pipeline, cache_workflow):
+    for module in (session, cache_workflow):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
 
@@ -208,7 +209,7 @@ def test_runtime_determinism_is_established_before_model_free_owner_setup(
         lambda *args, **kwargs: order.append("determinism") or object(),
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_initialize_model_free_run_owner",
         lambda **kwargs: (_ for _ in ()).throw(
             RuntimeError("owner setup reached after determinism")
@@ -234,7 +235,7 @@ def test_checkpoint_handler_binds_exact_state_callback_to_scheduled_step(
             assert callable(callback)
             callback(tmp_path / "checkpoints" / "step-3")
 
-    handler = pipeline._checkpoint_handler(
+    handler = session._checkpoint_handler(
         CheckpointWriter(),
         model=object(),
         runtime=_Runtime(),
@@ -283,7 +284,7 @@ def test_exact_resume_cursor_round_trips_next_rank_local_pack() -> None:
         runtime_batch=SimpleNamespace(resolved_grad_accum_steps=2),
     )
 
-    cursor, next_index = pipeline._build_exact_resume_cursor(
+    cursor, next_index = session._build_exact_resume_cursor(
         checkpoint_step=2,
         consumed_micro_steps=4,
         train_micro_steps=micro_steps,
@@ -307,7 +308,7 @@ def test_exact_resume_cursor_round_trips_next_rank_local_pack() -> None:
         "sequence_length": 6,
     }
 
-    position = pipeline._validate_exact_resume_cursor(
+    position = session._validate_exact_resume_cursor(
         cursor,
         next_rank_local_micro_step=next_index,
         checkpoint_step=2,
@@ -326,7 +327,7 @@ def test_exact_resume_cursor_round_trips_next_rank_local_pack() -> None:
 
 def test_exact_resume_cursor_rejects_consumption_drift() -> None:
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._build_exact_resume_cursor(
+        session._build_exact_resume_cursor(
             checkpoint_step=2,
             consumed_micro_steps=3,
             train_micro_steps=(object(),) * 6,
@@ -371,8 +372,8 @@ def test_five_train_and_two_eval_callbacks_write_exact_wide_rows(
                 }
             )
 
-    monkeypatch.setattr(pipeline, "ForwardEvalRunner", FakeEvalRunner)
-    eval_handler = pipeline._eval_forward_handler(
+    monkeypatch.setattr(session, "ForwardEvalRunner", FakeEvalRunner)
+    eval_handler = session._eval_forward_handler(
         model=object(),
         runtime=runtime,
         eval_micro_steps=(),
@@ -440,8 +441,8 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
             )
 
     monotonic_values = iter((10.0, 11.5, 20.0, 22.0, 100.0, 200.0))
-    monkeypatch.setattr(pipeline.time, "monotonic", lambda: next(monotonic_values))
-    monkeypatch.setattr(pipeline, "ForwardEvalRunner", FakeEvalRunner)
+    monkeypatch.setattr(session.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(session, "ForwardEvalRunner", FakeEvalRunner)
     payload_identity = {
         "schema": "coordexp-swift-inference-checkpoint-payload-publication",
         "schema_version": 2,
@@ -450,7 +451,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
         "aggregate_digest": "b" * 64,
     }
     monkeypatch.setattr(
-        pipeline,
+        session,
         "build_inference_checkpoint_payload_identity",
         lambda checkpoint_dir: payload_identity,
     )
@@ -480,7 +481,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
     )
     runtime = Runtime()
     train_handler = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=runtime)
-    eval_handler = pipeline._eval_forward_handler(
+    eval_handler = session._eval_forward_handler(
         model=object(),
         runtime=runtime,
         eval_micro_steps=(),
@@ -492,7 +493,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
         resource_collector=lambda: next(resource_values),
     )
     checkpoint_calls: list[int] = []
-    checkpoint_handler = pipeline._checkpoint_handler(
+    checkpoint_handler = session._checkpoint_handler(
         SimpleNamespace(
             write_checkpoint=lambda **kwargs: checkpoint_calls.append(
                 int(kwargs["step"])
@@ -539,7 +540,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
                 observation,
             )
 
-    pipeline._record_terminal_measurement_summaries(writer, lifecycle)
+    session._record_terminal_measurement_summaries(writer, lifecycle)
     measurement = writer.read_run()["measurement"]
     steady = measurement["phases"]["steady_state"]
     assert steady["duration_scope"] == ("sum_of_accepted_all_rank_max_step_durations")
@@ -601,9 +602,9 @@ def test_eval_exception_persists_failed_terminal_phase_and_ineligibility(
     gather_calls: list[object] = []
     runtime.gather_metrics = lambda *args, **kwargs: gather_calls.append(kwargs)  # type: ignore[method-assign]
     monotonic_values = iter((30.0, 31.25))
-    monkeypatch.setattr(pipeline.time, "monotonic", lambda: next(monotonic_values))
-    monkeypatch.setattr(pipeline, "ForwardEvalRunner", FailingEvalRunner)
-    handler = pipeline._eval_forward_handler(
+    monkeypatch.setattr(session.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(session, "ForwardEvalRunner", FailingEvalRunner)
+    handler = session._eval_forward_handler(
         model=object(),
         runtime=runtime,
         eval_micro_steps=(),
@@ -635,7 +636,7 @@ def test_eval_exception_persists_failed_terminal_phase_and_ineligibility(
 
 def test_success_without_eval_records_explicit_not_run_summary(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
-    pipeline._record_terminal_measurement_summaries(
+    session._record_terminal_measurement_summaries(
         writer,
         {
             "expected_measured_steps": 0,
@@ -659,12 +660,12 @@ def test_peer_artifact_initialization_returns_no_writer(
 ) -> None:
     accelerator = SimpleNamespace(is_main_process=False, num_processes=2)
     monkeypatch.setattr(
-        pipeline,
+        session,
         "broadcast_object_list",
         lambda values, from_process=0: values.__setitem__(0, {"ok": True}),
     )
     resolved = SimpleNamespace(fingerprint="fp", to_artifact_dict=lambda: {})
-    result = pipeline._initialize_artifact_owner(
+    result = session._initialize_artifact_owner(
         accelerator=accelerator,
         run_directory=RunDirectory("run", tmp_path, tmp_path / "run", "created"),
         run_id="run",
@@ -684,7 +685,7 @@ def test_rank_zero_writer_initialization_failure_is_shared_and_preserves_collisi
     existing.write_text("keep")
     resolved = SimpleNamespace(fingerprint="fp", to_artifact_dict=lambda: {})
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._initialize_artifact_owner(
+        session._initialize_artifact_owner(
             accelerator=_Accelerator(),
             run_directory=RunDirectory("run", tmp_path, run_dir, "fail"),
             run_id="run",
@@ -707,7 +708,7 @@ def test_rank_zero_invalid_post_init_handshake_finalizes_initialized_writer(
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._initialize_artifact_owner(
+        session._initialize_artifact_owner(
             accelerator=accelerator,
             run_directory=RunDirectory("run", tmp_path, run_dir, "created"),
             run_id="run",
@@ -956,7 +957,7 @@ def test_profile_sync_selector_records_only_resolved_boolean_and_source(
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
 
-    assert pipeline._resolve_profile_sync_timing_selector() == {
+    assert session._resolve_profile_sync_timing_selector() == {
         "enabled": expected_enabled,
         "source": expected_source,
     }
@@ -978,7 +979,7 @@ def test_profile_sync_selector_requires_one_exact_receipt_across_ranks(
         return report, peer
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._resolve_converged_profile_sync_timing_selector(
+        session._resolve_converged_profile_sync_timing_selector(
             rank=0,
             world_size=2,
             rank_report_gatherer=gather,
@@ -995,7 +996,7 @@ def test_profile_sync_selector_accepts_one_exact_environment_receipt_across_rank
     def gather(report: object) -> tuple[object, object]:
         return report, {**dict(report), "rank": 1}  # type: ignore[arg-type]
 
-    assert pipeline._resolve_converged_profile_sync_timing_selector(
+    assert session._resolve_converged_profile_sync_timing_selector(
         rank=0,
         world_size=2,
         rank_report_gatherer=gather,
@@ -1174,7 +1175,7 @@ def test_final_handler_respects_save_final(
     save_final: bool, expected_calls: int
 ) -> None:
     calls: list[int] = []
-    handler = pipeline._final_handler(
+    handler = session._final_handler(
         checkpoint_handler=lambda event, observation: calls.append(
             event.planned_step_id
         ),
@@ -1187,7 +1188,7 @@ def test_final_handler_respects_save_final(
 
 def test_final_handler_deduplicates_same_step_explicit_checkpoint() -> None:
     calls: list[int] = []
-    handler = pipeline._final_handler(
+    handler = session._final_handler(
         checkpoint_handler=lambda event, observation: calls.append(
             event.planned_step_id
         ),
@@ -1257,12 +1258,12 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
             "reference_only": {},
         },
     )
-    monkeypatch.setattr(pipeline, "_build_accelerator", lambda precision: accelerator)
+    monkeypatch.setattr(session, "_build_accelerator", lambda precision: accelerator)
     monkeypatch.setattr(
-        pipeline, "validate_accelerator_runtime", lambda *args, **kwargs: None
+        session, "validate_accelerator_runtime", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_resolve_shared_run_directory",
         lambda *args, **kwargs: RunDirectory("run", tmp_path, run_dir, "created"),
     )
@@ -1283,7 +1284,7 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
         holder["writer"] = writer
         return writer
 
-    monkeypatch.setattr(pipeline, "_initialize_artifact_owner", initialize)
+    monkeypatch.setattr(session, "_initialize_artifact_owner", initialize)
     monkeypatch.setattr(
         cache_workflow,
         "_resolve_model_free_training_preflight",
@@ -1298,44 +1299,44 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
 
     if failure_location == "provider_checkpoint_trainer_assembly_gap":
         monkeypatch.setattr(
-            pipeline,
+            session,
             "build_forward_input_provider",
             fail_provider_assembly,
         )
 
     def fail_before_trainer(**kwargs: object) -> object:
         assert kwargs["rank_report_gatherer"] is gatherer
-        pipeline._begin_run_phase(
+        session._begin_run_phase(
             kwargs["writer"],  # type: ignore[arg-type]
             kwargs["lifecycle"],  # type: ignore[arg-type]
             "model_loading",
         )
-        pipeline._finish_run_phase(
+        session._finish_run_phase(
             kwargs["writer"],  # type: ignore[arg-type]
             kwargs["lifecycle"],  # type: ignore[arg-type]
             "model_loading",
         )
         if failure_location == "optimizer_runtime_assembly":
-            pipeline._begin_run_phase(
+            session._begin_run_phase(
                 kwargs["writer"],  # type: ignore[arg-type]
                 kwargs["lifecycle"],  # type: ignore[arg-type]
                 "optimizer_runtime_assembly",
             )
             raise ValueError(f"{failure_location} failure")
         for phase in ("optimizer_runtime_assembly", "evaluation_hydration"):
-            pipeline._begin_run_phase(
+            session._begin_run_phase(
                 kwargs["writer"],  # type: ignore[arg-type]
                 kwargs["lifecycle"],  # type: ignore[arg-type]
                 phase,
             )
-            pipeline._finish_run_phase(
+            session._finish_run_phase(
                 kwargs["writer"],  # type: ignore[arg-type]
                 kwargs["lifecycle"],  # type: ignore[arg-type]
                 phase,
             )
-        return pipeline.build_forward_input_provider("synchronous")
+        return session.build_forward_input_provider("synchronous")
 
-    monkeypatch.setattr(pipeline, "_run_initialized_training", fail_before_trainer)
+    monkeypatch.setattr(session, "_run_initialized_training", fail_before_trainer)
     with pytest.raises(ValueError, match=rf"{failure_location} failure"):
         pipeline.run_training_pipeline(tmp_path / "config.yaml")
     state = holder["writer"].read_run()
@@ -1436,7 +1437,7 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
         },
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "require_mapped_native_execution_attestation",
         lambda **kwargs: pytest.fail(
             "model-free cache preparation attempted mapped-native attestation"
@@ -1881,13 +1882,13 @@ def test_mapped_native_attestation_runs_after_model_cuda_use_and_persists_receip
         return _mapped_native_receipt()
 
     monkeypatch.setattr(
-        pipeline,
+        session,
         "require_mapped_native_execution_attestation",
         attest,
         raising=False,
     )
 
-    observed = pipeline._move_model_and_resolve_mapped_native_execution(
+    observed = session._move_model_and_resolve_mapped_native_execution(
         model=Model(),
         accelerator=SimpleNamespace(device="cuda:0"),
         provenance={"schema_version": 3},
@@ -1923,14 +1924,14 @@ def test_mapped_native_attestation_failure_is_persisted_before_optimizer_admissi
             self.result = rejected
 
     monkeypatch.setattr(
-        pipeline,
+        session,
         "require_mapped_native_execution_attestation",
         lambda **kwargs: (_ for _ in ()).throw(Rejected()),
         raising=False,
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._move_model_and_resolve_mapped_native_execution(
+        session._move_model_and_resolve_mapped_native_execution(
             model=SimpleNamespace(to=lambda device: None),
             accelerator=SimpleNamespace(device="cuda:0"),
             provenance={"schema_version": 3},
@@ -1955,7 +1956,7 @@ def test_mapped_native_attestation_requires_exact_rank_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        pipeline,
+        session,
         "require_mapped_native_execution_attestation",
         lambda **kwargs: _mapped_native_receipt(),
         raising=False,
@@ -1971,7 +1972,7 @@ def test_mapped_native_attestation_requires_exact_rank_identity(
         return report, peer
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        pipeline._move_model_and_resolve_mapped_native_execution(
+        session._move_model_and_resolve_mapped_native_execution(
             model=SimpleNamespace(to=lambda device: None),
             accelerator=SimpleNamespace(device="cuda:0"),
             provenance={"schema_version": 3},
@@ -1992,9 +1993,9 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
 ) -> None:
     monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
     monkeypatch.delenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", raising=False)
-    resolved_provider = pipeline.resolve_forward_input_provider_mode(provider_mode)
+    resolved_provider = session.resolve_forward_input_provider_mode(provider_mode)
     monkeypatch.setattr(
-        pipeline,
+        session,
         "resolve_forward_input_provider_mode",
         lambda mode: pytest.fail("initialized training resolved provider mode late"),
     )
@@ -2121,38 +2122,38 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         monkeypatch, "resolve_qwen_runtime_controls", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(
-        pipeline, "load_default_adapter_source_gate_evidence", lambda root: object()
+        session, "load_default_adapter_source_gate_evidence", lambda root: object()
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "build_adapter_setup_plan",
         lambda *args, **kwargs: SimpleNamespace(mode="fresh"),
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "setup_dora_adapter",
         lambda model, plan: SimpleNamespace(
             model=model, receipt=SimpleNamespace(adapter_name="default")
         ),
     )
     monkeypatch.setattr(
-        pipeline, "build_default_special_token_selection", lambda *args: object()
+        session, "build_default_special_token_selection", lambda *args: object()
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "load_default_special_token_embedding_source_gate_evidence",
         lambda root: object(),
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "install_special_token_embedding_deltas",
         lambda model, selection, source_gate: SimpleNamespace(
             model=model, receipt=object()
         ),
     )
-    monkeypatch.setattr(pipeline, "enable_training_memory_savers", lambda model: None)
+    monkeypatch.setattr(session, "enable_training_memory_savers", lambda model: None)
     monkeypatch.setattr(
-        pipeline,
+        session,
         "require_mapped_native_execution_attestation",
         lambda **kwargs: admission_order.append("mapped_native_attestation")
         or _mapped_native_receipt(),
@@ -2185,23 +2186,23 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
     monkeypatch.setattr(
         cache_workflow, "_apply_fa2_branch_proof_policy", lambda steps, config: tuple(steps)
     )
-    monkeypatch.setattr(pipeline.LossRunner, "from_config", lambda config: object())
+    monkeypatch.setattr(session.LossRunner, "from_config", lambda config: object())
     monkeypatch.setattr(
-        pipeline,
+        session,
         "build_optimizer_group_plan",
         lambda *args, **kwargs: admission_order.append("optimizer_admission")
         or object(),
     )
     monkeypatch.setattr(
-        pipeline, "build_scheduler_plan", lambda *args, **kwargs: object()
+        session, "build_scheduler_plan", lambda *args, **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "build_optimizer_and_scheduler",
         lambda *args, **kwargs: (object(), object()),
     )
     monkeypatch.setattr(
-        pipeline, "build_trainable_surface_receipt", lambda *args, **kwargs: object()
+        session, "build_trainable_surface_receipt", lambda *args, **kwargs: object()
     )
     closed: list[str] = []
     runtime_kwargs: list[dict[str, object]] = []
@@ -2227,7 +2228,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         runtime.rank_report_gatherer = kwargs["rank_report_gatherer"]
         return runtime
 
-    monkeypatch.setattr(pipeline, "TrainRuntime", build_runtime)
+    monkeypatch.setattr(session, "TrainRuntime", build_runtime)
     monkeypatch.setattr(
         cache_workflow, "_resolve_eval_pack_cache", lambda *args, **kwargs: eval_cache
     )
@@ -2270,7 +2271,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         lambda *args, **kwargs: pytest.fail("selective eval was partitioned twice"),
         raising=False,
     )
-    monkeypatch.setattr(pipeline, "CheckpointWriter", lambda run_dir: object())
+    monkeypatch.setattr(session, "CheckpointWriter", lambda run_dir: object())
     result = SimpleNamespace(
         completed_steps=1,
         consumed_micro_steps=1,
@@ -2278,7 +2279,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         latest_observation=None,
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "SupervisedTrainer",
         lambda **kwargs: SimpleNamespace(run=lambda: result),
     )
@@ -2290,7 +2291,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         "optimizer_update_status": None,
         "finite_status": None,
     }
-    pipeline._run_initialized_training(
+    session._run_initialized_training(
         repo_root=tmp_path,
         resolved_config=SimpleNamespace(
             entry_config_path=tmp_path / "config.yaml", fingerprint="config-fp"
@@ -2762,10 +2763,10 @@ WAVE0_PIPELINE_OWNED_HELPERS: dict[str, tuple[int, object | None]] = {
     "_pack_cache_preparation_receipt": (3, cache_workflow),
     "_aggregate_cache_phase": (3, cache_workflow),
     "_append_logging_row_shared": (4, reporting),
-    "_run_initialized_training": (5, None),
-    "_checkpoint_handler": (5, None),
-    "_eval_forward_handler": (5, None),
-    "_final_handler": (5, None),
+    "_run_initialized_training": (5, session),
+    "_checkpoint_handler": (5, session),
+    "_eval_forward_handler": (5, session),
+    "_final_handler": (5, session),
 }
 
 

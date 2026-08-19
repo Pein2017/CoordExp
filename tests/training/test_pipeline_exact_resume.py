@@ -17,9 +17,9 @@ from src.artifacts.checkpoints import CheckpointWriteResult
 from src.artifacts.run_writer import RunWriter
 from src.artifacts.training_state import TrainingStatePublicationPlan
 from src.common.errors import RuntimeContractError
-from src.training import pipeline, reporting
+from src.training import reporting, session
 from src.training.exact_resume import RankCudaDeviceBinding
-from src.training.pipeline import (
+from src.training.session import (
     _apply_exact_resume_cursor_state,
     _build_exact_resume_publication_plan,
     _build_pipeline_exact_resume_identities,
@@ -294,14 +294,14 @@ def test_checkpoint_handler_persists_step3_and_final_exact_publication_events(
         (state_dir / "manifest.json").write_bytes(manifest_bytes_by_step[step])
 
     monkeypatch.setattr(
-        pipeline,
+        session,
         "load_training_state_manifest",
         lambda checkpoint_dir: SimpleNamespace(
             aggregate_digest=aggregate_by_step[int(Path(checkpoint_dir).name[5:])]
         ),
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "build_inference_checkpoint_payload_identity",
         lambda checkpoint_dir: payload_identity_by_step[
             int(Path(checkpoint_dir).name[5:])
@@ -318,7 +318,7 @@ def test_checkpoint_handler_persists_step3_and_final_exact_publication_events(
         "phase_rank_receipts": {},
         "phase_started_monotonic": None,
     }
-    handler = pipeline._checkpoint_handler(
+    handler = session._checkpoint_handler(
         CheckpointWriter(),
         model=object(),
         runtime=SimpleNamespace(accelerator=SimpleNamespace()),
@@ -411,7 +411,7 @@ def test_checkpoint_handler_records_failed_publication_without_complete_identity
                 code="test.checkpoint_publication_failed",
             )
 
-    handler = pipeline._checkpoint_handler(
+    handler = session._checkpoint_handler(
         FailingCheckpointWriter(),
         model=object(),
         runtime=SimpleNamespace(accelerator=SimpleNamespace()),
@@ -490,12 +490,12 @@ def test_event_sink_failure_leaves_durable_checkpoint_unadmitted_before_restore(
         (state_dir / "manifest.json").write_bytes(manifest_bytes)
 
     monkeypatch.setattr(
-        pipeline,
+        session,
         "build_inference_checkpoint_payload_identity",
         lambda checkpoint_dir: {"uncommitted": str(checkpoint_dir)},
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "load_training_state_manifest",
         lambda checkpoint_dir: SimpleNamespace(aggregate_digest="a" * 64),
     )
@@ -514,7 +514,7 @@ def test_event_sink_failure_leaves_durable_checkpoint_unadmitted_before_restore(
         "record_checkpoint_publication_event",
         inject_completed_event_failure,
     )
-    handler = pipeline._checkpoint_handler(
+    handler = session._checkpoint_handler(
         CheckpointWriter(),
         model=object(),
         runtime=SimpleNamespace(accelerator=SimpleNamespace()),
@@ -557,13 +557,13 @@ def test_event_sink_failure_leaves_durable_checkpoint_unadmitted_before_restore(
         decoded_rank=_decoded_rank({"data": {}, "pack": {}}),
     )
     monkeypatch.setattr(
-        pipeline, "admit_training_state", lambda *args, **kwargs: admitted
+        session, "admit_training_state", lambda *args, **kwargs: admitted
     )
     monkeypatch.setattr(
-        pipeline, "capture_runtime_state_expectations", lambda **kwargs: object()
+        session, "capture_runtime_state_expectations", lambda **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
+        session, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
     )
     model = torch.nn.Linear(2, 1)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -626,7 +626,7 @@ def test_restored_cursor_seeds_absolute_counters_and_slices_only_trainer_input()
         "scheduler_step_count": 2,
         "zero_grad_count": 2,
     }
-    from src.training.pipeline import _exact_resume_cursor_from_counters
+    from src.training.session import _exact_resume_cursor_from_counters
 
     cursor = _exact_resume_cursor_from_counters(
         checkpoint_step=2,
@@ -673,7 +673,7 @@ def test_terminal_cursor_rejected_before_any_counter_mutation() -> None:
     train_micro_steps = _micro_steps(8)
     schedule = _schedule()
     train_cache = {"fingerprint": "a" * 64, "format_version": "v3"}
-    from src.training.pipeline import _exact_resume_cursor_from_counters
+    from src.training.session import _exact_resume_cursor_from_counters
 
     cursor = _exact_resume_cursor_from_counters(
         checkpoint_step=4,
@@ -757,7 +757,7 @@ def test_pipeline_identities_bind_physical_topology_but_project_resume_metadata(
     tmp_path: Any,
 ) -> None:
     monkeypatch.setattr(
-        pipeline,
+        session,
         "base_model_weight_identity",
         lambda path: {"aggregate_sha256": "1" * 64},
     )
@@ -925,14 +925,14 @@ def test_wrong_cursor_is_rejected_by_read_only_admission_before_state_mutation(
         decoded_rank=_decoded_rank(wrong_cursor),
     )
     monkeypatch.setattr(
-        pipeline, "admit_training_state", lambda *args, **kwargs: admitted
+        session, "admit_training_state", lambda *args, **kwargs: admitted
     )
     monkeypatch.setattr(
-        pipeline, "capture_runtime_state_expectations", lambda **kwargs: object()
+        session, "capture_runtime_state_expectations", lambda **kwargs: object()
     )
     manifest_snapshot = SimpleNamespace(file_sha256="e" * 64)
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_snapshot_training_state_manifest",
         lambda checkpoint_dir: manifest_snapshot,
     )
@@ -1069,13 +1069,13 @@ def test_read_only_admission_rejects_uncommitted_parent_run_state_before_mutatio
         decoded_rank=_decoded_rank({"data": {}, "pack": {}}),
     )
     monkeypatch.setattr(
-        pipeline, "admit_training_state", lambda *args, **kwargs: admitted
+        session, "admit_training_state", lambda *args, **kwargs: admitted
     )
     monkeypatch.setattr(
-        pipeline, "capture_runtime_state_expectations", lambda **kwargs: object()
+        session, "capture_runtime_state_expectations", lambda **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
+        session, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
     )
     model = torch.nn.Linear(2, 1)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -1297,13 +1297,13 @@ def test_read_only_admission_builds_lineage_from_the_authenticated_manifest(
         decoded_rank=_decoded_rank({"data": {}, "pack": {}}),
     )
     monkeypatch.setattr(
-        pipeline, "admit_training_state", lambda *args, **kwargs: admitted
+        session, "admit_training_state", lambda *args, **kwargs: admitted
     )
     monkeypatch.setattr(
-        pipeline, "capture_runtime_state_expectations", lambda **kwargs: object()
+        session, "capture_runtime_state_expectations", lambda **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
+        session, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
     )
     model = torch.nn.Linear(2, 1)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -1376,19 +1376,19 @@ def test_read_only_admission_rejects_invalid_canonical_cursor_position(
         ),
     )
     monkeypatch.setattr(
-        pipeline, "admit_training_state", lambda *args, **kwargs: admitted
+        session, "admit_training_state", lambda *args, **kwargs: admitted
     )
     monkeypatch.setattr(
-        pipeline, "capture_runtime_state_expectations", lambda **kwargs: object()
+        session, "capture_runtime_state_expectations", lambda **kwargs: object()
     )
     manifest_snapshot = SimpleNamespace(file_sha256="e" * 64)
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_snapshot_training_state_manifest",
         lambda checkpoint_dir: manifest_snapshot,
     )
     monkeypatch.setattr(
-        pipeline,
+        session,
         "_restored_exact_resume_cursor_state",
         lambda cursor: pytest.fail("cursor state restored before position validation"),
     )
@@ -1461,12 +1461,12 @@ def test_read_only_admission_rejects_manifest_path_replacement_before_mutation(
             decoded_rank=_decoded_rank({"data": {}, "pack": {}}),
         )
 
-    monkeypatch.setattr(pipeline, "admit_training_state", replace_manifest)
+    monkeypatch.setattr(session, "admit_training_state", replace_manifest)
     monkeypatch.setattr(
-        pipeline, "capture_runtime_state_expectations", lambda **kwargs: object()
+        session, "capture_runtime_state_expectations", lambda **kwargs: object()
     )
     monkeypatch.setattr(
-        pipeline, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
+        session, "_validate_exact_resume_cursor", lambda *args, **kwargs: {}
     )
 
     with pytest.raises(Exception) as error:

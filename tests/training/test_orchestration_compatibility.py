@@ -60,6 +60,7 @@ from src.training import (
     pack_cache,
     pipeline,
     reporting,
+    session,
 )
 from src.training.pack_cache import (
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
@@ -84,7 +85,7 @@ def _patch_shared_cache_import(
     silently reach production through the other owner.
     """
 
-    for module in (pipeline, cache_workflow):
+    for module in (session, cache_workflow):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
 
@@ -598,21 +599,21 @@ def _characterization_worker(
             os.environ.pop(name, None)
 
         execution_plan.load_train_config = lambda path: resolved
-        cache_workflow.collect_execution_provenance = pipeline.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-        cache_workflow.require_pinned_runtime_baseline = pipeline.require_pinned_runtime_baseline = (
+        cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
+        cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
             lambda **kwargs: _runtime_baseline_receipt()
         )
-        cache_workflow.load_qwen_components = pipeline.load_qwen_components = lambda config, *, load_model: (
+        cache_workflow.load_qwen_components = session.load_qwen_components = lambda config, *, load_model: (
             (_ for _ in ()).throw(
                 AssertionError("model load must stay outside CPU characterization")
             )
             if load_model
             else components
         )
-        cache_workflow.build_token_vocabulary_groups = pipeline.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-        cache_workflow.resolve_qwen_runtime_controls = pipeline.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+        cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
+        cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
         cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: fingerprint
-        cache_workflow.resolve_planned_step_schedule = pipeline.resolve_planned_step_schedule = (
+        cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = (
             lambda *args, **kwargs: SimpleNamespace(
                 resolved_max_steps=1,
                 runtime_batch=SimpleNamespace(
@@ -625,9 +626,9 @@ def _characterization_worker(
         control_plane._run_rank_converged_phase = recording_converged_phase
         control_plane._build_rank_report_gatherer = recording_gatherer_factory
         cache_workflow._resolve_model_free_training_preflight = capturing_preflight
-        pipeline._build_accelerator = build_accelerator
-        pipeline.validate_accelerator_runtime = lambda *args, **kwargs: None
-        pipeline._run_initialized_training = run_initialized_training
+        session._build_accelerator = build_accelerator
+        session.validate_accelerator_runtime = lambda *args, **kwargs: None
+        session._run_initialized_training = run_initialized_training
 
         result = pipeline.run_training_pipeline(config_path)
         run_state = json.loads(

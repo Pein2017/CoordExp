@@ -80,7 +80,7 @@ from src.qwen.special_token_embeddings import (  # noqa: E402
     load_special_token_embedding_deltas,
 )
 from src.training import pack_cache as pack_cache_module  # noqa: E402
-from src.training.pipeline import enable_training_memory_savers  # noqa: E402
+from src.training.session import enable_training_memory_savers  # noqa: E402
 
 
 PLAN_SCHEMA = "coordexp-swift-wave3-zero-weight-plan-v4"
