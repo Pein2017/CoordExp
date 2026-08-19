@@ -240,23 +240,34 @@ depended. Consequently Attempt 6 MUST NOT be launched, edited, re-signed, or
 reused. Its manifest, packet, and signed review are the durable record of an
 honest pre-launch invalidation, not authority for a later tree.
 
-A successor Attempt 7 is authorized only after this planning/evidence commit
+Attempt 7 (2026-08-19) repeated that shape with a different concurrent
+writer: it froze fresh `-r7` identities against implementation
+`4525a0f73dedc1f31bb88c59ed18f95d22930531` (manifest `c04545163857...`,
+packet `c1b592f2485f...`) and passed every packet-shape check in
+independent review, but concurrent docs-only commit
+`0b0f554e42421333a31497ebf766bee0d49c91b4` changed tracked HEAD during that review.
+The reviewer signed an immutable `HOLD` and Attempt 7 was retired
+unexecuted: no marker, command, cache, model, `torchrun`, GPU allocation,
+or artifact-target mutation. Attempt 7 MUST NOT be launched, edited,
+re-signed, or reused, and its three receipts are durable evidence.
+
+A successor Attempt 8 is authorized only after this planning/evidence commit
 is created and the tracked worktree is clean. It MUST freeze the exact then-
 current `git rev-parse HEAD` and `git rev-parse HEAD^{tree}`; any later tracked
 change invalidates that freeze. It MUST use the new absent target root
-`outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7`, with new
+`outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8`, with new
 change-local paths
-`receipts/wave-3-attempt-7-command-manifest.json`,
-`receipts/wave-3-attempt-7-launch-packet.md`,
-`receipts/wave-3-attempt-7-pre-cost-review.json`,
-`receipts/wave-3-attempt-7-attempt-marker.json`, and
-`receipts/wave-3-attempt-7-outer-terminal-receipt.json`. The packet and
+`receipts/wave-3-attempt-8-command-manifest.json`,
+`receipts/wave-3-attempt-8-launch-packet.md`,
+`receipts/wave-3-attempt-8-pre-cost-review.json`,
+`receipts/wave-3-attempt-8-attempt-marker.json`, and
+`receipts/wave-3-attempt-8-outer-terminal-receipt.json`. The packet and
 manifest MUST bind their exact bytes and SHA-256 identities, the clean HEAD and
 tree, configs, commands, target, private cache, review path, map, and bounds.
-Attempt 7 MUST deterministically render all three role configs against the
-`-r7` root and compare the rendered bytes and SHA-256 against the new manifest
+Attempt 8 MUST deterministically render all three role configs against the
+`-r8` root and compare the rendered bytes and SHA-256 against the new manifest
 before freezing. No role-config digest or resolved fingerprint may be copied
-forward from any earlier attempt. Attempt 7 MUST retain the complete Attempt-6
+forward from any earlier attempt. Attempt 8 MUST retain the complete Attempt-6
 contract, including the accumulation invariant that the artifact-progress
 contract assumes. The executor requires top-level `consumed_packs` of 1 and 2
 and every checkpoint
@@ -266,7 +277,7 @@ Production computes it in
 `src/config/resolve.py:resolve_effective_batch_runtime` as
 `resolved_grad_accum_steps = effective_batch_size // world_size`, where
 `effective_batch_size` is a resolved config value and `world_size` is a
-launch-time property passed in by the caller. Attempt 7 therefore binds three
+launch-time property passed in by the caller. Attempt 8 therefore binds three
 distinct authorities and verifies each with its own owner.
 
 First, config identity: the manifest and packet bind the absolute base-config
@@ -292,14 +303,14 @@ manifest and packet.
 
 The executor revalidates all three bindings before marker creation and in setup
 validation, and a new independent signed `READY` review bound to the exact
-Attempt-7 commit/tree/manifest/packet MUST verify each of them against its own
+Attempt-8 commit/tree/manifest/packet MUST verify each of them against its own
 authority; any drift stops the attempt and requires re-freeze and re-review.
 Only the lead executor may launch the reviewed packet, exactly once, with zero
 automatic retries and no repeated authorization prompt. This round keeps
 the experiment-local packet fixed at one pack per step and does not generalize
 the executor to arbitrary accumulation. Attempts 1-6 and every one of
 their receipts remain readable evidence and MUST NOT be edited or deleted to
-make room for Attempt 7.
+make room for Attempt 8.
 
 The only authorized parent repair is probe-local and test-first in
 `scripts/probes/coordexp_swift/reconcile_exact_resume_probe.py`: the resumed

@@ -1,0 +1,247 @@
+{
+  "schema": "coordexp-swift-reconcile-resume-probe-pre-cost-review-v1",
+  "status": "HOLD",
+  "implementation_commit": "4525a0f73dedc1f31bb88c59ed18f95d22930531",
+  "manifest_sha256": "c04545163857f227db5652d19b8d6955538e10d2f62181ca2f136b1ced43990f",
+  "packet_sha256": "c1b592f2485f8d97a31835970387da825e1fb7635076b59b1421110551d03d0d",
+  "reviewer_identity": "claude-opus5-attempt7-precost-reviewer-20260819",
+  "reviewed_at": "2026-08-19T02:49:32Z",
+  "review_scope": "Independent pre-cost freeze review of Wave-3 Attempt 7 of OpenSpec change reconcile-coordexp-swift-training-contracts. Every identity below was recomputed from primary sources by the reviewer; no author-supplied number was trusted. No command, marker, cache, model, torchrun, GPU allocation, or artifact-target mutation was executed by this review, and no repository file other than this receipt was created, edited, or deleted. The packet's own frozen content passed every structural, config, argv, GPU-map, diff, and conformance check; the HOLD is caused solely by concurrent tracked-HEAD movement during the review window, which broke the exact-commit binding that tasks.md 3.6 and 3.7 require.",
+  "verified_bindings": {
+    "packet_author_identity": "coordexp-attempt7-packet-author",
+    "reviewer_independent_of_author": true,
+    "git": {
+      "packet_bound_implementation_commit": "4525a0f73dedc1f31bb88c59ed18f95d22930531",
+      "packet_bound_tree": "cbe7925a64804f259c52108cccc879683f312fee",
+      "head_at_review_start": "4525a0f73dedc1f31bb88c59ed18f95d22930531",
+      "tree_at_review_start": "cbe7925a64804f259c52108cccc879683f312fee",
+      "head_at_review_start_matched_packet": true,
+      "tracked_status_at_review_start": "",
+      "head_at_receipt_write": "0b0f554e42421333a31497ebf766bee0d49c91b4",
+      "tree_at_receipt_write": "f546c4476b74f5ecf35badb88d0b804f6aca0918",
+      "tracked_status_at_receipt_write": "",
+      "head_moved_during_review": true,
+      "binding_valid_at_receipt_write": false,
+      "untracked_expected_only": [
+        "openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-command-manifest.json",
+        "openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-launch-packet.md"
+      ]
+    },
+    "frozen_files": {
+      "manifest_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-command-manifest.json",
+      "manifest_sha256": "c04545163857f227db5652d19b8d6955538e10d2f62181ca2f136b1ced43990f",
+      "packet_path": "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-launch-packet.md",
+      "packet_sha256": "c1b592f2485f8d97a31835970387da825e1fb7635076b59b1421110551d03d0d",
+      "author_claimed_digests_matched": true
+    },
+    "base_config": {
+      "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+      "sha256": "44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f",
+      "matches_executor_constant_BASE_CONFIG_SHA256": true
+    },
+    "artifact_root": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7",
+    "role_configs_independently_rerendered": {
+      "method": "reconcile_exact_resume_probe._write_role_config(stage_dir, role, base_config=<frozen base>, artifact_root=<r7 root>) executed by the reviewer in a private scratch directory outside the repository; digests and fingerprints recomputed from the rendered bytes and from an independent load_train_config()/resolve_effective_batch_runtime(config, world_size=2) call.",
+      "uninterrupted_control": {
+        "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7/configs/uninterrupted_control.yaml",
+        "config_sha256": "87d9ef6fe6dc13992985a9fedcf95ba06ca8b06be3c046e41be9a897fc838dad",
+        "resolved_config_fingerprint": "6ab0dc8f290c67fb7425622434b20f1d5463bd153d7bdcff7d27f62250a6b89c",
+        "effective_batch_size": 2,
+        "resolved_grad_accum_steps": 1,
+        "runtime_world_size": 2,
+        "matches_manifest_config_files": true,
+        "matches_manifest_accumulation_roles": true
+      },
+      "resumed_parent": {
+        "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7/configs/resumed_parent.yaml",
+        "config_sha256": "c4814ceb2a63b5c0b24e756570d2bdd080f429d310b14f1bf0a875d2193ab5e1",
+        "resolved_config_fingerprint": "89fb89e3e49a84322b3ad0351af9e81507323b5f91fc956bd9d0691d4b907451",
+        "effective_batch_size": 2,
+        "resolved_grad_accum_steps": 1,
+        "runtime_world_size": 2,
+        "matches_manifest_config_files": true,
+        "matches_manifest_accumulation_roles": true
+      },
+      "resumed_child": {
+        "config_path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7/configs/resumed_child.yaml",
+        "config_sha256": "bac865616132b54e4498605df6ba22eb3df8af946945d07ee478fafac641b349",
+        "resolved_config_fingerprint": "cd42089fa92a2154db8d8953de3079df28598206789c3a753b72bb6bc055e4e2",
+        "effective_batch_size": 2,
+        "resolved_grad_accum_steps": 1,
+        "runtime_world_size": 2,
+        "matches_manifest_config_files": true,
+        "matches_manifest_accumulation_roles": true
+      }
+    },
+    "no_copied_config_identity": {
+      "attempt_5_identities_compared": [
+        "08eae66e9e7476addf747dcb40cba759a02e3c05051cf3aa156eac2dc30b6fa8",
+        "2daf76ee7b9aab49cd561c026ccbb1ce4dbd58036857455bdaefaad0c30b1393",
+        "7e24e6bf427575fd18c22a6a4d506d02cbe6bcbbc9f9f0da5104778582f5f838"
+      ],
+      "attempt_6_identities_compared": [
+        "0ae0b4c75bfb8bb56f105d228d4e350ce10abaaa277f400acbc0dadef5c18cdf",
+        "17eb444c434f9d22b508d2e5c29e87ccf2ba5d375cb50a7bf6f2e99e2e630494",
+        "2df798c29880b7d9ffa1054578cf20635812d8b2d18ea88eb3e57de05715c7eb",
+        "7c4fc68b06fc0a4be95b8fb520993d23b4598e73554f0b06345c61859a7da5e1",
+        "be3bb2fc3c127b32a0c32e5599f60f8474f3d0cb8e3c1ea89845949507443ea4",
+        "dcf9b57bd28ae0484e252efb09d791ba922cf1953c3e58bbcd8b837368fc858e"
+      ],
+      "attempt_7_identities": [
+        "6ab0dc8f290c67fb7425622434b20f1d5463bd153d7bdcff7d27f62250a6b89c",
+        "87d9ef6fe6dc13992985a9fedcf95ba06ca8b06be3c046e41be9a897fc838dad",
+        "89fb89e3e49a84322b3ad0351af9e81507323b5f91fc956bd9d0691d4b907451",
+        "bac865616132b54e4498605df6ba22eb3df8af946945d07ee478fafac641b349",
+        "c4814ceb2a63b5c0b24e756570d2bdd080f429d310b14f1bf0a875d2193ab5e1",
+        "cd42089fa92a2154db8d8953de3079df28598206789c3a753b72bb6bc055e4e2"
+      ],
+      "note": "The attempt-5 manifest carries no execution_contract.accumulation block, so its three config_files expected_sha256 values were the comparison set; they match the three digest prefixes recorded in tasks.md 3.4 for the Attempt-5 P0-1 finding. The attempt-6 manifest contributed six identities (three config digests plus three resolved fingerprints). The intersection of the attempt-7 identity set with each prior set is empty.",
+      "overlap_with_attempt_5": [],
+      "overlap_with_attempt_6": [],
+      "disjoint": true
+    },
+    "gpu_map_live_verification": {
+      "source": "nvidia-smi --query-gpu=index,uuid,memory.used",
+      "physical_6_uuid_live": "GPU-3d113ebf-fcac-c7d9-d5a6-a6abefeb32ff",
+      "physical_7_uuid_live": "GPU-4e5382fb-e2a6-1057-32bc-12697f2b09fd",
+      "manifest_gpu_devices_match_live": true,
+      "device_order_is_6_then_7": true,
+      "uuids_identical_to_attempt_6_binding": true,
+      "live_memory_used_mib_at_review": {
+        "6": 50637,
+        "7": 0
+      },
+      "max_gpu_occupancy_bytes_bound": 21474836480,
+      "occupancy_disposition": "Physical GPU 6 currently carries ~50,637 MiB of transient external shared-host load, above the 20 GiB per-device occupancy bound; physical GPU 7 has drained to 0 MiB since the freeze-time disclosure of 15,827 MiB. The packet discloses this honestly and declares itself not executable until both devices drain. Execution is gated by the executor's own pre-marker and pre-GPU-command occupancy preflight plus the lead's independent pre-invocation observation. This is a live scheduling condition, not a freeze defect, and does not affect the correctness of the frozen binding."
+    },
+    "disk_preflight": {
+      "filesystem_path": "/data",
+      "required_free_disk_bytes": 21474836480,
+      "live_free_bytes_at_review": 1717311328256,
+      "satisfied": true
+    },
+    "targets_absent": {
+      "all_must_be_absent_paths_absent": true,
+      "paths": [
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r7",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r7.pack-cache",
+        "/data/CoordExp/.worktrees/CoordExp-swift/outputs/probes/coordexp_swift/.reconcile_exact_resume_2026-08-13-r7.pack-cache-receipt.json",
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-attempt-marker.json",
+        "/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/reconcile-coordexp-swift-training-contracts/receipts/wave-3-attempt-7-outer-terminal-receipt.json"
+      ]
+    },
+    "prior_attempt_immutability": {
+      "attempt_5_manifest_sha256": "ee9227fdb310f7e9a2d629000df137ac5dbc2b472461a83f729df56909d58c24",
+      "attempt_5_packet_sha256": "48b7bb924f960bb5f65a87dfa4be4b9f5289b79b9e02b5375b253dd7b4caf897",
+      "attempt_5_review_sha256": "9014a6712f6511d0dce0017c0af2eeeb54fd29036ad84a0e27597864bdef0e2e",
+      "attempt_5_review_status": "HOLD",
+      "attempt_5_reviewer_identity": "cc-opus5-xhigh-attempt5-20260813",
+      "attempt_6_manifest_sha256": "4dff3f0bc81ca0e55cf614f3ef676430bddb1a236f24b36d97e948d5eafbe1ae",
+      "attempt_6_packet_sha256": "28e79a1d850a2308980e172089b4f03823703be0c004bb25e373527818afb0b2",
+      "attempt_6_review_sha256": "8b23ae8838ad453ea5fb430f17e244759c67f382e67473810e2a0f680dd76a43",
+      "attempt_6_review_payload_sha256": "1f8705c595bc5771cb34e791fb6859483dd8ddbc1a344c169d61f8567d06c78f",
+      "attempt_6_review_status": "READY",
+      "attempt_6_reviewer_identity": "cc-opus5-xhigh-attempt6-20260813",
+      "all_pins_match_tasks_md_3_4": true,
+      "prior_receipts_tracked_and_unmodified": true,
+      "reviewer_identity_distinct_from_all_prior_reviewers": true
+    },
+    "head_drift": {
+      "drifting_commit": "0b0f554e42421333a31497ebf766bee0d49c91b4",
+      "author": "Codex Acceptance Bot <codex-acceptance@example.com>",
+      "committed_at": "2026-08-19T02:36:07+00:00",
+      "subject": "docs: sync canonical AGENTS.md (multi-agent orchestration contract)",
+      "files_changed": [
+        "AGENTS.md"
+      ],
+      "review_critical_paths_changed": [],
+      "frozen_inputs_byte_identical_after_drift": true,
+      "timeline_utc": {
+        "drift_commit_committed": "2026-08-19T02:36:07+00:00",
+        "reviewer_checks_bcd_completed": "2026-08-19T02:40:18Z",
+        "reviewer_checks_fg_completed": "2026-08-19T02:41:22Z",
+        "withdrawn_ready_receipt_written": "2026-08-19T02:44:51Z",
+        "drift_detected_by_executor_pre_marker_validate": "2026-08-19T02:45Z"
+      },
+      "assessment": "The drifting commit is documentation-only: it modifies AGENTS.md and nothing else. It touches no file under scripts/probes/coordexp_swift/, src/, configs/coordexp_swift/, or this change's receipts directory, and the manifest, packet, base config, probe, and executor bytes are unchanged on disk. Every substantive check a-g therefore remains true of the frozen packet content. What is broken is the identity binding itself: the executor's _pre_marker_validate compares `git rev-parse HEAD` against the manifest's implementation_commit and fails closed with packet_executor.head_drift, which the reviewer confirmed by running that function. Content-irrelevance does not rescue the binding; tasks.md 3.4 already ruled exactly this way for Attempt 6, which was invalidated by the tests-only commit 27abc8087e6c8591257463b19c8a83a63fd554e1."
+    }
+  },
+  "checks": {
+    "a_identity_and_tracked_clean": {
+      "outcome": "fail",
+      "detail": "FAILS AT REVIEW COMPLETION. At review start `git rev-parse HEAD` was 4525a0f73dedc1f31bb88c59ed18f95d22930531 and `HEAD^{tree}` was cbe7925a64804f259c52108cccc879683f312fee, both equal to the manifest and packet claims, with an empty `git status --porcelain --untracked-files=no`. The reviewer-computed SHA-256 of the manifest (c04545163857f227db5652d19b8d6955538e10d2f62181ca2f136b1ced43990f), the packet (c1b592f2485f8d97a31835970387da825e1fb7635076b59b1421110551d03d0d), and the base config (44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f) each equal the author's claim, and those three files remain byte-identical now. However HEAD is no longer the bound commit: commit 0b0f554e42421333a31497ebf766bee0d49c91b4 was committed during the review window and is now HEAD. The tracked tree is clean against the NEW head, not against the frozen one. The exact clean-HEAD binding required by tasks.md 3.6 and re-checked by the executor in 3.7 is therefore broken, and the executor fails closed at packet_executor.head_drift."
+    },
+    "b_executor_validate_contract": {
+      "outcome": "pass",
+      "detail": "The manifest was passed to the frozen executor's own _validate_contract() (module loaded from scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py with the worktree on sys.path under the `ms` conda python, so _expected_role_launch_argv's sys.executable binding resolves to /root/miniconda3/envs/ms/bin/python). It returned a normalized contract with no exception: schema v2, world_size 2, three arms, exact command order, O_EXCL marker creation, stop_on_first_failure, retry_count 0, the four required resource observations, the thirteen required outer-receipt bindings, the six required inner-receipt bindings, gpu_measurement_source torch_allocator_high_water, base config identity and live byte check, setup argv --base-config and --world-size bindings, expected consumed packs {1:1, 2:2}, all three accumulation roles with matching launch argv, packet path/digest binding, review schema/status/author binding, target and must_be_absent binding, GPU device order 6 then 7 with unique UUIDs, per-command resource bounds with correct CPU measurement modes and rank sets, total bounds, setup validation paths, inner receipt path and status, and artifact-tree summary roots. Every path in targets.must_be_absent was independently confirmed absent by lstat."
+    },
+    "c_deterministic_role_config_rerender": {
+      "outcome": "pass",
+      "detail": "THE ATTEMPT-5 KILLER CHECK PASSES. All three role configs were re-rendered by the reviewer through the production probe path _write_role_config against the r7 artifact root in a private scratch staging directory (the r7 target itself was never created). Each rendered file's SHA-256 and each resolved_config_fingerprint reproduce the manifest's config_files values and the execution_contract.accumulation.roles values exactly, and reproduce again through an independent load_train_config() on the rendered bytes. resolve_effective_batch_runtime(config, world_size=2) yields effective_batch_size == 2 and resolved_grad_accum_steps == 1 for all three roles, with runtime.world_size == 2; config.training.effective_batch_size is also 2. No attempt-7 config digest or fingerprint equals any attempt-5 or attempt-6 value: the identity sets are disjoint. The Attempt-5 P0-1 copied-digest failure mode is therefore closed for Attempt 7."
+    },
+    "d_six_command_argvs": {
+      "outcome": "pass",
+      "detail": "The manifest's execution_contract.command_order equals the executor's COMMAND_ORDER tuple exactly: setup, success.uninterrupted_control, success.resumed_child, rank_failure, interruption, verification. Every one of the six argvs targets only reconcile_exact_resume_2026-08-13-r7 paths and contains no earlier -r1..-r6 target substring. setup uses `/usr/bin/env -u CUDA_VISIBLE_DEVICES` (the Attempt-1 empty-string failure mode is avoided). Both model commands use `/usr/bin/env CUDA_VISIBLE_DEVICES=6,7`; rank_failure, interruption, and verification use `/usr/bin/env CUDA_VISIBLE_DEVICES=` and setup unsets it. Both success commands carry `--commit 4525a0f73dedc1f31bb88c59ed18f95d22930531`, equal to the frozen verified HEAD; no model-free command carries --commit. A byte scan of the manifest and packet found zero occurrences of any -r1..-r6 target name, of the attempt-4/5/6 implementation commits, or of the strings 'attempt-5'/'attempt-6' in the manifest."
+    },
+    "e_gpu_map_binding": {
+      "outcome": "pass",
+      "detail": "Live nvidia-smi UUIDs for physical indices 6 and 7 equal the manifest's execution_contract.preflight.gpu_devices entries exactly and in the same order, and are byte-identical to the Attempt-6 binding as the packet claims. The binding and its disclosure are correct. Current occupancy on physical 6 (~50,637 MiB) exceeds the 20 GiB bound and is recorded as an execution-time observation, not a freeze finding, per the disclosed gating contract."
+    },
+    "f_field_by_field_manifest_diff": {
+      "outcome": "pass",
+      "detail": "A recursive leaf-level diff of the attempt-6 and attempt-7 manifests yields 341 leaves on both sides, zero added keys, zero removed keys, and 47 changed leaves. Every changed leaf falls into the intended substitution set: r6 to r7 target/path/receipt-name substitutions, the implementation-commit substitution, the six re-rendered role config digests and fingerprints, the packet SHA-256 substitution, and the packet_author_identity substitution. Zero differences fall outside that set. execution_contract.resource_bounds, total_bounds, preflight, comparison_policy, arms, world_size, and cwd are byte-identical between the two manifests; artifact_tree_summary differs only in its three r6-to-r7 root paths and is otherwise identical, retaining max_entries 100000, max_depth 16, max_path_bytes 4096, and max_total_bytes 10737418240. GPU UUIDs and physical indices are identical, as required."
+    },
+    "g_tasks_md_3_6_conformance": {
+      "outcome": "pass",
+      "detail": "The absent target is the new -r7 root; the marker, outer terminal receipt, pre-cost review, and launch packet paths are all new wave-3-attempt-7-* names; no attempt-6 file, review, or identity is reused, and the packet author identity is the new coordexp-attempt7-packet-author. The reviewer identity is distinct from the packet author and from both prior reviewers. world_size = 2 is bound only by the manifest (top-level world_size and execution_contract.accumulation.world_size), the setup argv `--world-size 2`, and the two-rank role launch argv `--nproc_per_node 2`; a key-level scan confirms no `world_size` YAML key exists in the base config or in any of the three rendered role configs, so topology is never taken from a config field. The resumed_parent durable status semantics are bound at the frozen HEAD by the executor itself: it declares resumed_parent status 'initialized' with the comment that a SIGTERM-terminated held parent never reaches RunWriter.finalize(), and separately rejects any resumed_parent run state whose completed_at is not None (packet_executor.gpu_artifact_run_state). The packet text states the same. This is the test-first Attempt-5 P0-2 fix and it is present at the reviewed commit. gpu_measurement_source remains torch_allocator_high_water; comparison_policy retains exact rank_failure fields (expected [0,1], serialized [0,1], published [0], error_code training_state.incomplete_rank_set) and interruption fields (expected [0,1], serialized [], published [], rank_state_boundary_reached false) unchanged from Attempt 6."
+    }
+  },
+  "findings": [
+    {
+      "id": "P0-1",
+      "severity": "P0",
+      "blocking": true,
+      "title": "Post-freeze tracked-HEAD movement invalidated the Attempt-7 exact-commit binding before marker creation",
+      "detail": "Commit 0b0f554e42421333a31497ebf766bee0d49c91b4 ('docs: sync canonical AGENTS.md (multi-agent orchestration contract)', Codex Acceptance Bot, committed 2026-08-19T02:36:07+00:00) landed on branch coordexp-swift during this review, moving tracked HEAD off the frozen implementation commit 4525a0f73dedc1f31bb88c59ed18f95d22930531 that the manifest, the packet, and both success-command `--commit` arguments bind. The reviewer confirmed the failure empirically by invoking the executor's own read-only _pre_marker_validate, which raised 'HEAD differs from the frozen implementation commit' (packet_executor.head_drift). No Attempt-7 command, marker, cache, model, torchrun, GPU allocation, or artifact-target mutation executed, and all five must_be_absent targets remain absent. The drift is documentation-only and changed no review-critical file, but tasks.md 3.4 already ruled this exact scenario for Attempt 6, invalidated pre-marker by the tests-only commit 27abc8087e6c8591257463b19c8a83a63fd554e1: such an attempt 'MUST NOT be launched, edited, re-signed, or reused' and requires a fresh successor freeze. Attempt 7 must therefore be retired unexecuted. Remediation is mechanical, not a redesign: freeze Attempt 8 against the new clean HEAD and tree, with a new absent outputs/probes/coordexp_swift/reconcile_exact_resume_2026-08-13-r8 target, new wave-3-attempt-8-* receipt paths, a new packet author identity, all three role configs deterministically re-rendered against the -r8 root so no digest or fingerprint is copied from Attempts 1-7, and a new independent signed READY review bound to those identities. Everything else in the Attempt-7 packet was verified correct and can be carried forward as shape."
+    },
+    {
+      "id": "OBS-4",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Second consecutive attempt killed by a concurrent automated commit",
+      "detail": "Attempt 6 was invalidated pre-marker by 27abc8087 and Attempt 7 by 0b0f554e4, both authored by an automated committer on branch coordexp-swift, and in this case the commit landed inside the reviewer's own working window. The freeze -> independent review -> execute sequence currently spans long enough that any background commit destroys it, and each loss costs a full re-freeze and re-review. Before Attempt 8, the lead should either quiesce the automated committer for the whole window or compress freeze, review, and execute into a single uninterrupted no-commit window, and should re-read `git rev-parse HEAD` immediately before signing and immediately before invoking the executor. Without that change, Attempt 8 is likely to fail the same way."
+    },
+    {
+      "id": "OBS-1",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Physical GPU 6 is currently occupied above the declared bound",
+      "detail": "At review time physical GPU 6 reports ~50,637 MiB in use by external host-namespace workloads, above the manifest's max_gpu_occupancy_bytes of 21474836480; physical GPU 7 has drained to 0 MiB (the packet disclosed 15,827 MiB at freeze). The packet explicitly declares itself not executable until both devices drain, and execution is gated by the executor's occupancy preflight before marker creation and again before the first GPU command, plus the lead's own pre-invocation observation. This is a live scheduling condition, not a defect in the frozen packet, and it does not affect this READY verdict. The lead MUST still independently confirm both devices are within the bound immediately before invoking execute."
+    },
+    {
+      "id": "OBS-2",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Stale prose in an executor error string",
+      "detail": "reconcile_exact_resume_packet_executor.py raises 'base config identity is not the fixed Attempt-6 input' when the manifest's base config path or digest does not match the module constants. The message text still names Attempt 6, but the constants BASE_CONFIG_PATH and BASE_CONFIG_SHA256 are the correct shared base-config identity, which the reviewer verified against the live file bytes (44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f). Cosmetic only; no behavioral effect and no packet change required."
+    },
+    {
+      "id": "OBS-3",
+      "severity": "observation",
+      "blocking": false,
+      "title": "Probe comment states a different resumed_parent forward ceiling",
+      "detail": "The frozen source comment in reconcile_exact_resume_probe._role_overrides states the numeric forward ceiling as 'control=2/rank, resumed_parent=2/rank, resumed_child=1/rank', while the tasks.md Task-3 note states 'control=2/rank, resumed_parent=1/rank, resumed_child=1/rank'. The held parent is stopped after committed step 1, so the note's 1/rank is the operative execution shape and the comment's 2/rank is the unrestricted config ceiling. This is frozen-source commentary at the bound commit, binds nothing in the manifest, and does not affect the resource bounds, which are unchanged from Attempt 6. Informational."
+    }
+  ],
+  "p0_count": 1,
+  "p1_count": 0,
+  "authorization": "HOLD. Attempt 7 MUST NOT be launched. The frozen packet content itself is sound: checks b through g all pass, the three role configs were independently re-rendered and reproduce the manifest's digests and fingerprints exactly with effective_batch_size 2 and resolved_grad_accum_steps 1, no config identity is copied from Attempt 5 or 6, the six argvs and GPU map are correct, and the manifest differs from the immutable Attempt-6 manifest only by the intended r6-to-r7, commit, digest, and author substitutions. But check a fails at review completion: tracked HEAD moved to 0b0f554e42421333a31497ebf766bee0d49c91b4 during the review window, so the exact clean-HEAD binding no longer holds and the executor fails closed at packet_executor.head_drift. Per the tasks.md 3.4 Attempt-6 precedent this receipt authorizes nothing, must not be re-signed or reused, and must not be revived by resetting HEAD back to the frozen commit. Retire Attempt 7 unexecuted and freeze Attempt 8 against the new clean HEAD with a new absent -r8 target, new receipt paths, re-rendered role configs, and a fresh independent review.",
+  "superseded_receipt": {
+    "withdrawn_status": "READY",
+    "withdrawn_file_sha256": "e5a2cdc38a1b5186a5b65284338e0fe60966c367fc7912a25d9940743626b7f9",
+    "withdrawn_receipt_payload_sha256": "c114058118a8d76e4a203b777cd103598805c9c03bea1ed5d68b56d8b535ae29",
+    "withdrawn_at": "2026-08-19T02:44:51Z",
+    "reason": "The withdrawn READY receipt signed `head_at_review = 4525a0f73dedc1f31bb88c59ed18f95d22930531` and `tracked_clean: true`, both of which were already false when it was written: commit 0b0f554e4 landed at 02:36:07Z, eight minutes before the write, and the reviewer had observed HEAD only once at session start. A signed receipt carrying false verification claims cannot stand at any status. It was replaced in place, by the same reviewer, before any consumer read it: the executor's _pre_marker_validate fails at the HEAD check before it ever opens the review file, and the only other open was this reviewer's own self-test. Exactly one immutable receipt exists at the authorized path."
+  },
+  "receipt_payload_sha256": "5c57ac097833d608e53878329abb3927635ececb69d5b4f8585c8ebac47a2b6f"
+}
