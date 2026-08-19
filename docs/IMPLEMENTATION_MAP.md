@@ -111,6 +111,7 @@ Use the exact relevant spec, not a proposal copy:
 - `openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md`
 - `openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md`
 - `openspec/specs/coordexp-swift-training-artifacts/spec.md`
+- `openspec/specs/coordexp-swift-training-resume/spec.md`
 - `openspec/specs/coordexp-swift-infer-pipeline/spec.md`
 - `openspec/specs/coordexp-swift-infer-backend-trace/spec.md`
 - `openspec/specs/coordexp-swift-infer-execution-model/spec.md`

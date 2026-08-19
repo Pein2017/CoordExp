@@ -17,7 +17,9 @@ context: |
 
   Protect semantic alignment across data, images, geometry, ordering,
   templates, tokens, packing, forward behavior, losses, metrics, configs,
-  caches, and artifacts. Exact training-state resume is not a current promise.
+  caches, and artifacts. Exact training-state resume is a bounded opt-in
+  contract (`coordexp-swift-training-resume`): same world size, optimizer-step
+  save boundary, fail-closed admission; nothing broader is promised.
 
   User priority order:
   1. accuracy and precision;

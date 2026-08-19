@@ -329,6 +329,12 @@ inference-runtime implementation change is included. Rollback removes only the
 new tests/evidence and restores affected matrix rows to `gap`; it does not
 re-introduce the invalid exact-without-path clause.
 
+> **Program complete (2026-08-19).** All six waves closed and the owning
+> change archived at
+> `openspec/changes/archive/2026-08-19-reconcile-coordexp-swift-training-contracts/`;
+> its tasks.md, evidence-matrix.md, and receipts/ are the sole authority for
+> outcomes. This plan is execution history only.
+
 ### Task 4: Close the Attempt-4 GPU-Evidence Stop and Qualify Attempt 8
 
 **Files:**

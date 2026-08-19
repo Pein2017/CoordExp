@@ -269,7 +269,7 @@
 - [x] 6.3 Run `openspec validate reconcile-coordexp-swift-training-contracts --strict` and a stable-spec/delta merge-conflict scan; verify every modified requirement copies the full owning stable block and every new requirement has executable scenarios.
 - [x] 6.4 Run residue scans proving the change introduced no changed-order packing promotion, speculative efficiency claim, production cache campaign, logging enhancement, loss-objective/RL behavior, dependency upgrade, orchestration refactor, historical migration shim, cross-world-size resume, or mid-accumulation promise.
 - [x] 6.5 Obtain one independent final audit against the exact implementation commit and receipts, reporting both standards/code-quality and intent/contract verdicts; resolve all P0/P1 findings and record lower-priority dispositions explicitly.
-- [ ] 6.6 Reconcile the evidence matrix to final source/tests/receipts, mark tasks complete only from executed evidence, and sync/archive only when every gate passes; otherwise keep the change active or archive it explicitly incomplete without changing stable specs or claiming exact-resume support.
+- [x] 6.6 Reconcile the evidence matrix to final source/tests/receipts, mark tasks complete only from executed evidence, and sync/archive only when every gate passes; otherwise keep the change active or archive it explicitly incomplete without changing stable specs or claiming exact-resume support.
 
 > **Wave 6 verification and audit (2026-08-19, receipts
 > `receipts/wave-6-final-verification-receipt.md` and
