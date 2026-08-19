@@ -2373,7 +2373,16 @@ def test_three_provider_modes_have_exact_cpu_autograd_and_adam_state_equivalence
                 pack=pack,
                 encoded_examples=(encoded,),
                 position_inputs=build_qwen_position_inputs(pack, (encoded,)),
-                token_sequence=SimpleNamespace(atoms=None),
+                # A real atom-free TokenSequence selects no causal logit
+                # positions, exactly like the duck-typed stub this replaced when
+                # selection moved onto TokenSequence (design decision 6).
+                token_sequence=TokenSequence(
+                    pack_index=pack.pack_index,
+                    input_ids=pack.input_ids,
+                    segments=pack.segments,
+                    atoms=(),
+                    spans=(),
+                ),
                 vocab_groups=None,
             )
         )

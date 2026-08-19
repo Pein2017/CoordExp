@@ -6,6 +6,7 @@ import ctypes
 import errno
 import gc
 import hashlib
+import io
 import json
 import multiprocessing
 import os
@@ -2506,3 +2507,67 @@ def test_load_cache_manifest_requires_known_explicit_level(tmp_path: Path) -> No
             expected_fingerprint=UNIT_FINGERPRINT,
             level="unknown",
         )
+
+
+def test_restricted_unpickler_allows_historical_and_canonical_micro_step_paths() -> (
+    None
+):
+    """Old immutable payloads stay readable while new writes use the owner."""
+
+    micro_step_globals = {
+        (module, name)
+        for module, name in pack_cache._ALLOWED_PICKLE_GLOBALS
+        if name == "SupervisedMicroStep"
+    }
+
+    assert micro_step_globals == {
+        ("src.training.supervised_trainer", "SupervisedMicroStep"),
+        ("src.training.micro_steps", "SupervisedMicroStep"),
+    }
+
+
+def test_new_micro_step_cache_payloads_carry_the_canonical_module_path(
+    tmp_path: Path,
+) -> None:
+    cache_root = tmp_path / "cache-root"
+    cache_dir = _cache_dir(cache_root)
+
+    manifest = write_micro_step_cache(
+        cache_dir,
+        (_micro_step(0),),
+        fingerprint=UNIT_FINGERPRINT,
+        determinants=UNIT_DETERMINANTS,
+        chunk_size=1,
+    )
+    payload = (cache_dir / str(manifest["chunks"][0]["path"])).read_bytes()
+    decoded = pack_cache._RestrictedCacheUnpickler(io.BytesIO(payload)).load()
+
+    assert b"src.training.micro_steps" in payload
+    assert b"src.training.supervised_trainer" not in payload
+    assert decoded == (_micro_step(0),)
+    assert type(decoded[0]).__module__ == "src.training.micro_steps"
+
+
+def test_legacy_micro_step_payload_still_decodes_through_the_restricted_reader() -> (
+    None
+):
+    """The Wave-0 frozen chunk keeps loading through the production reader."""
+
+    payload = Path(
+        "tests/fixtures/training_orchestration/supervised_micro_step_legacy.pkl"
+    ).read_bytes()
+
+    decoded = pack_cache._RestrictedCacheUnpickler(io.BytesIO(payload)).load()
+
+    assert b"src.training.supervised_trainer" in payload
+    assert len(decoded) == 1
+    assert isinstance(decoded[0], SupervisedMicroStep)
+
+
+def test_micro_step_schema_identity_is_readable_from_pack_cache_and_its_owner() -> None:
+    from src.training import micro_steps
+
+    assert (
+        pack_cache._supervised_micro_step_schema_identity
+        is micro_steps.supervised_micro_step_schema_identity
+    )

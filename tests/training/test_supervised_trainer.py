@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import MISSING, fields, replace
 from dataclasses import dataclass
 import inspect
 from typing import Any
@@ -507,6 +507,46 @@ def test_default_qwen_forward_uses_runtime_selected_forward_device(monkeypatch) 
 
     assert observed_devices == ["cuda:7"]
     assert result.latest_observation.planned_step_id == 1
+
+
+def test_default_qwen_forward_keeps_exactly_the_token_sequence_positions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Qwen ``logits_to_keep`` input is the domain selection, unchanged."""
+
+    sequence = _token_sequence(0, target_positions=(3, 1, 2))
+    micro_step = replace(next(_micro_steps(1)), token_sequence=sequence)
+    observed_positions: list[tuple[int, ...] | None] = []
+
+    def fake_build_qwen_forward_inputs(*args: Any, **kwargs: Any) -> str:
+        del args
+        observed_positions.append(kwargs["logits_to_keep_positions"])
+        return "prepared-inputs"
+
+    def fake_run_qwen_forward(
+        _model: object, _forward_inputs: str, **_kwargs: Any
+    ) -> FakeForwardResult:
+        return FakeForwardResult(
+            pack_index=0, logits=torch.zeros(1, 2, 3), receipt={}
+        )
+
+    monkeypatch.setattr(
+        trainer_module, "build_qwen_forward_inputs", fake_build_qwen_forward_inputs
+    )
+    monkeypatch.setattr(trainer_module, "run_qwen_forward", fake_run_qwen_forward)
+
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=iter((micro_step,)),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+    trainer.run()
+
+    assert observed_positions == [(0, 1, 2)]
+    assert observed_positions == [sequence.causal_logits_positions()]
 
 
 def test_supervised_trainer_forwards_with_runtime_owned_model() -> None:
@@ -1860,6 +1900,41 @@ class RuntimeWithPreparedModel(FakeRuntime):
         self.model = model
 
 
+def _token_sequence(index: int, *, target_positions: tuple[int, ...] = ()) -> TokenSequence:
+    """One real ``TokenSequence``; an empty atom set selects no logit positions."""
+
+    return TokenSequence(
+        pack_index=index,
+        input_ids=(10, 11, 12, 13),
+        segments=(
+            PackedSegment(
+                pack_index=index,
+                segment_index=0,
+                example_index=0,
+                example_id=f"ex-{index}",
+                start=0,
+                end=4,
+            ),
+        ),
+        atoms=tuple(
+            TokenAtom(
+                pack_index=index,
+                segment_index=0,
+                example_index=0,
+                example_id=f"ex-{index}",
+                target_position=position,
+                token_id=10 + position,
+                token_type="schema",
+                text="x",
+                logical_target_position=position,
+                source="unit",
+            )
+            for position in target_positions
+        ),
+        spans=(),
+    )
+
+
 def _micro_steps(count: int, log: list[str] | None = None):
     for index in range(count):
         if log is not None:
@@ -1868,7 +1943,7 @@ def _micro_steps(count: int, log: list[str] | None = None):
             pack=f"pack-{index}",
             encoded_examples=(f"example-{index}",),
             position_inputs=f"positions-{index}",
-            token_sequence=f"tokens-{index}",
+            token_sequence=_token_sequence(index),
             vocab_groups=f"vocab-{index}",
             metadata={},
         )
@@ -2047,3 +2122,67 @@ def _gate(
         rank_diagnostics=(),
         diagnostics={},
     )
+
+
+# ---------------------------------------------------------------------------
+# Canonical SupervisedMicroStep owner (design decision 4)
+# ---------------------------------------------------------------------------
+
+
+def test_micro_step_has_one_canonical_owner_and_compatibility_exports() -> None:
+    import src.training as public_training
+    from src.training import micro_steps
+
+    assert micro_steps.SupervisedMicroStep.__module__ == "src.training.micro_steps"
+    assert public_training.SupervisedMicroStep is micro_steps.SupervisedMicroStep
+    assert trainer_module.SupervisedMicroStep is micro_steps.SupervisedMicroStep
+    assert SupervisedMicroStep is micro_steps.SupervisedMicroStep
+
+
+def test_micro_step_record_schema_is_field_order_annotation_and_default_exact() -> None:
+    from src.training import micro_steps
+
+    record = micro_steps.SupervisedMicroStep
+    observed = [
+        (item.name, item.type, MISSING if item.default is MISSING else item.default)
+        for item in fields(record)
+    ]
+
+    assert record.__dataclass_params__.frozen is True
+    assert observed == [
+        ("pack", "Any", MISSING),
+        ("encoded_examples", "Sequence[Any]", MISSING),
+        ("position_inputs", "Any", MISSING),
+        ("token_sequence", "TokenSequence | Any", MISSING),
+        ("vocab_groups", "TokenVocabularyGroups | Any", MISSING),
+        ("metadata", "Mapping[str, Any] | None", None),
+        ("forward_device", "torch.device | str | None", None),
+        ("expected_vocab_size", "int | None", None),
+        ("extra_model_kwargs", "Mapping[str, Any] | None", None),
+        ("fa2_branch_evidence", "Mapping[str, Any] | None", None),
+        ("fa2_model_dtype", "str | None", None),
+        ("capture_fa2_branch", "bool", False),
+        ("require_fa2_branch_proof", "bool", False),
+        ("fa2_branch_proof_policy", "str | None", None),
+    ]
+
+
+def test_micro_step_schema_identity_owner_reports_the_exact_record_schema() -> None:
+    from src.training import micro_steps
+
+    identity = micro_steps.supervised_micro_step_schema_identity()
+
+    assert identity["class"] == "SupervisedMicroStep"
+    assert identity["frozen"] is True
+    assert [entry["name"] for entry in identity["fields"]] == [
+        item.name for item in fields(micro_steps.SupervisedMicroStep)
+    ]
+    assert [entry["annotation"] for entry in identity["fields"]] == [
+        str(item.type) for item in fields(micro_steps.SupervisedMicroStep)
+    ]
+    assert [
+        (entry["has_default"], entry["default"]) for entry in identity["fields"]
+    ] == [
+        (item.default is not MISSING, None if item.default is MISSING else item.default)
+        for item in fields(micro_steps.SupervisedMicroStep)
+    ]

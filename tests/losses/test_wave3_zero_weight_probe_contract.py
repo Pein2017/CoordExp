@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
+from src.artifacts import identity as identity_module
 from src.qwen import parity as parity_module
 
 
@@ -1422,7 +1423,7 @@ def test_atomic_publication_postlink_failure_is_typed_and_exactly_reloaded(
     target = tmp_path / "artifact.json"
     linked: list[str] = []
     if failure_kind == "directory_fsync":
-        original_fsync = parity_module.os.fsync
+        original_fsync = identity_module.os.fsync
         calls = 0
 
         def fail_directory_fsync(fd):
@@ -1432,7 +1433,7 @@ def test_atomic_publication_postlink_failure_is_typed_and_exactly_reloaded(
                 raise OSError("injected directory fsync failure")
             return original_fsync(fd)
 
-        monkeypatch.setattr(parity_module.os, "fsync", fail_directory_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", fail_directory_fsync)
     else:
         original_unlink = Path.unlink
 
@@ -1461,14 +1462,14 @@ def test_atomic_publication_directory_open_failure_is_typed_and_exactly_reloaded
     probe = _load_probe_module()
     target = tmp_path / "artifact.json"
     linked: list[str] = []
-    original_open = parity_module.os.open
+    original_open = identity_module.os.open
 
     def fail_directory_open(path, flags, *args, **kwargs):
         if Path(path) == tmp_path:
             raise OSError("injected directory open failure")
         return original_open(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr(parity_module.os, "open", fail_directory_open)
+    monkeypatch.setattr(identity_module.os, "open", fail_directory_open)
     with pytest.raises(probe.Wave3ArtifactPublicationError) as caught:
         probe.publish_json_absent(
             target,
@@ -2180,7 +2181,7 @@ def test_marker_postlink_fsync_failure_preserves_typed_consumed_attempt(
     )
     target = tmp_path / "attempt-postlink.json"
     linked: list[str] = []
-    original_fsync = parity_module.os.fsync
+    original_fsync = identity_module.os.fsync
     calls = 0
 
     def fail_directory_fsync(fd):
@@ -2190,7 +2191,7 @@ def test_marker_postlink_fsync_failure_preserves_typed_consumed_attempt(
             raise OSError("injected marker directory fsync failure")
         return original_fsync(fd)
 
-    monkeypatch.setattr(parity_module.os, "fsync", fail_directory_fsync)
+    monkeypatch.setattr(identity_module.os, "fsync", fail_directory_fsync)
     with pytest.raises(probe.Wave3ArtifactPublicationError) as caught:
         probe.publish_json_absent(
             target,
@@ -2541,7 +2542,7 @@ def test_terminal_receipt_postlink_fsync_failure_recovers_only_its_own_link(
     receipt = _valid_passed_receipt(probe, plan)
     receipt_target = Path(plan["artifact_targets"]["receipt"])
     sidecar_target = Path(plan["artifact_targets"]["publication_failure"])
-    original_fsync = parity_module.os.fsync
+    original_fsync = identity_module.os.fsync
     calls = 0
 
     def fail_directory_fsync(fd):
@@ -2551,7 +2552,7 @@ def test_terminal_receipt_postlink_fsync_failure_recovers_only_its_own_link(
             raise OSError("injected receipt directory fsync failure")
         return original_fsync(fd)
 
-    monkeypatch.setattr(parity_module.os, "fsync", fail_directory_fsync)
+    monkeypatch.setattr(identity_module.os, "fsync", fail_directory_fsync)
     status = probe._publish_terminal_receipt(
         receipt_target=receipt_target,
         publication_failure_target=sidecar_target,

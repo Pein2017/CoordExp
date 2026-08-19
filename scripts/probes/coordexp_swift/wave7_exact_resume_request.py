@@ -35,7 +35,7 @@ from src.training.input_attestation import (  # noqa: E402
 AMENDMENT_SCHEMA = "coordexp-swift-wave7-r7-amendment-v4"
 REQUEST_SCHEMA = "coordexp-swift-wave7-exact-resume-sequence-request-v6"
 FROZEN_PARITY_SOURCE_SHA256 = (
-    "61d8460bb731d3243315b368a313e7f84d2008e415fdf3db17ed3834dad54deb"
+    "ae155a6fb2cb613f217a5873093ebd8e8fe19d5bd0503bc5abde653bab96c816"
 )
 AMENDMENT_EFFECTIVE_DATE = "2026-08-12"
 AMENDMENT_AUTHORITY_PATH = (

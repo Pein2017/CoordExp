@@ -213,6 +213,21 @@ class TokenSequence:
     def pack_length(self) -> int:
         return len(self.input_ids)
 
+    def causal_logits_positions(self) -> tuple[int, ...] | None:
+        """Return the sorted unique causal logit positions Qwen must keep.
+
+        ``None`` means "keep every position": the selection is empty.  ``atoms``
+        is read defensively because this is the exact contract moved off the
+        private trainer helper, which callers still reach with token-sequence
+        stand-ins that report no atoms.
+        """
+
+        atoms = getattr(self, "atoms", None)
+        if atoms is None:
+            return None
+        positions = tuple(sorted({int(atom.causal_logits_position) for atom in atoms}))
+        return positions or None
+
     def to_dense_labels(self, *, ignore_index: int = DEFAULT_IGNORE_INDEX) -> tuple[int, ...]:
         return dense_labels_from_token_sequence(self, ignore_index=ignore_index)
 

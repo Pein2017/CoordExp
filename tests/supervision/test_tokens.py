@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +10,7 @@ from src.packing.planner import PackedSegment, PackedSequence, plan_packed_seque
 from src.packing.supervision import build_packed_supervision
 from src.supervision import (
     TokenAtom,
+    TokenSequence,
     TokenSpan,
     build_token_sequence_from_packed_supervision,
     dense_labels_from_token_sequence,
@@ -320,6 +322,88 @@ def test_token_span_rejects_mixed_provenance_atoms() -> None:
         )
 
     assert exc_info.value.code == "supervision.span_identity"
+
+
+# ---------------------------------------------------------------------------
+# Canonical causal-logit position selection (design decision 6)
+# ---------------------------------------------------------------------------
+
+
+def _single_segment_pack_fields(*, pack_length: int) -> dict[str, object]:
+    return {
+        "pack_index": 0,
+        "input_ids": tuple(range(10, 10 + pack_length)),
+        "segments": (
+            PackedSegment(
+                pack_index=0,
+                segment_index=0,
+                example_index=0,
+                example_id="ex-0",
+                start=0,
+                end=pack_length,
+            ),
+        ),
+    }
+
+
+def test_causal_logits_positions_are_sorted_and_causally_shifted() -> None:
+    atoms = tuple(
+        _atom(
+            target_position=position,
+            segment_index=0,
+            example_id="ex-0",
+            token_id=100 + position,
+        )
+        # Deliberately unsorted: selection owns the ordering, not the caller.
+        for position in (5, 1, 3)
+    )
+    sequence = TokenSequence(
+        **_single_segment_pack_fields(pack_length=8), atoms=atoms, spans=()
+    )
+
+    positions = sequence.causal_logits_positions()
+
+    assert positions == (0, 2, 4)
+    assert positions == tuple(
+        sorted(atom.target_position - 1 for atom in sequence.atoms)
+    )
+    assert isinstance(positions, tuple)
+    assert all(type(position) is int for position in positions)
+
+
+def test_causal_logits_positions_are_none_for_an_empty_atom_set() -> None:
+    sequence = TokenSequence(
+        **_single_segment_pack_fields(pack_length=4), atoms=(), spans=()
+    )
+
+    assert sequence.causal_logits_positions() is None
+
+
+def test_causal_logits_positions_deduplicate_repeated_positions() -> None:
+    """Duplicate selections must collapse before they reach Qwen forward."""
+
+    repeated = _atom(
+        target_position=3, segment_index=0, example_id="ex-0", token_id=13
+    )
+
+    positions = TokenSequence.causal_logits_positions(
+        SimpleNamespace(atoms=(repeated, repeated))
+    )
+
+    assert positions == (2,)
+
+
+def test_causal_logits_positions_select_nothing_without_atoms() -> None:
+    """A token-sequence stand-in that reports no atoms selects no positions.
+
+    This is the contract the deleted ``_logits_positions_to_keep`` trainer
+    helper had, and the frozen ``causal_logits.json`` characterization keeps it
+    (manifest ``harness_seam_repoints``); the selector must not start raising.
+    """
+
+    assert TokenSequence.causal_logits_positions(SimpleNamespace()) is None
+    assert TokenSequence.causal_logits_positions(SimpleNamespace(atoms=None)) is None
+    assert TokenSequence.causal_logits_positions(SimpleNamespace(atoms=())) is None
 
 
 def _atom(

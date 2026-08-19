@@ -385,9 +385,9 @@ def test_preexisting_leaf_rejects_before_any_publication(
 def test_source_inventory_binds_model_weight_hash_helper_owner(producer):
     inventory = producer._source_inventory()
     by_path = {row["path"]: row for row in inventory}
-    parity_path = str((REPO_ROOT / "src/qwen/parity.py").resolve())
-    assert by_path[parity_path]["sha256"] == (
-        "61d8460bb731d3243315b368a313e7f84d2008e415fdf3db17ed3834dad54deb"
+    owner_path = str((REPO_ROOT / "src/artifacts/identity.py").resolve())
+    assert by_path[owner_path]["sha256"] == (
+        "ae155a6fb2cb613f217a5873093ebd8e8fe19d5bd0503bc5abde653bab96c816"
     )
 
 

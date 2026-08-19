@@ -12,16 +12,16 @@ import stat
 import time
 from typing import Any
 
-from src.config.loader import load_train_config
-from src.losses import build_token_vocabulary_groups
-from src.qwen import load_qwen_components
-from src.qwen.parity import (
+from src.artifacts.identity import (
     MODEL_WEIGHT_HASH_EXECUTION_POLICY_SCHEMA,
     assert_model_weight_identity_equal,
     base_model_weight_identity_with_execution_policy,
     canonical_json_bytes,
     validate_model_weight_identity,
 )
+from src.config.loader import load_train_config
+from src.losses import build_token_vocabulary_groups
+from src.qwen import load_qwen_components
 from src.training.pack_cache import (
     PACKING_CACHE_VERSION,
     build_packing_cache_determinants,

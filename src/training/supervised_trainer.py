@@ -14,32 +14,18 @@ import torch
 from src.common.errors import RuntimeContractError
 from src.losses.context import LossContext
 from src.losses.runner import LossBundle
-from src.losses.vocab import TokenVocabularyGroups
 from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
 from src.runtime.finite_gates import GateDecision
-from src.supervision import TokenSequence
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
+
+# Design decision 4: ``src.training.micro_steps`` is the canonical owner.  This
+# is an import-only compatibility re-export so supported and historical readers
+# of ``src.training.supervised_trainer.SupervisedMicroStep`` keep resolving to
+# the one record class.
+from src.training.micro_steps import SupervisedMicroStep
 
 if TYPE_CHECKING:
     from src.training.forward_input_provider import ForwardInputProvider
-
-
-@dataclass(frozen=True)
-class SupervisedMicroStep:
-    pack: Any
-    encoded_examples: Sequence[Any]
-    position_inputs: Any
-    token_sequence: TokenSequence | Any
-    vocab_groups: TokenVocabularyGroups | Any
-    metadata: Mapping[str, Any] | None = None
-    forward_device: torch.device | str | None = None
-    expected_vocab_size: int | None = None
-    extra_model_kwargs: Mapping[str, Any] | None = None
-    fa2_branch_evidence: Mapping[str, Any] | None = None
-    fa2_model_dtype: str | None = None
-    capture_fa2_branch: bool = False
-    require_fa2_branch_proof: bool = False
-    fa2_branch_proof_policy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -562,7 +548,7 @@ def _default_qwen_forward(model: Any, micro_step: SupervisedMicroStep) -> Any:
         micro_step.pack,
         micro_step.encoded_examples,
         micro_step.position_inputs,
-        logits_to_keep_positions=_logits_positions_to_keep(micro_step),
+        logits_to_keep_positions=micro_step.token_sequence.causal_logits_positions(),
         device=micro_step.forward_device,
         fa2_branch_proof_policy=micro_step.fa2_branch_proof_policy,
     )
@@ -670,16 +656,6 @@ def _default_loss_context(
         vocab_groups=micro_step.vocab_groups,
         logits_position_ids=forward_result.logits_position_ids,
     )
-
-
-def _logits_positions_to_keep(
-    micro_step: SupervisedMicroStep,
-) -> tuple[int, ...] | None:
-    atoms = getattr(micro_step.token_sequence, "atoms", None)
-    if atoms is None:
-        return None
-    positions = tuple(sorted({int(atom.causal_logits_position) for atom in atoms}))
-    return positions or None
 
 
 def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:

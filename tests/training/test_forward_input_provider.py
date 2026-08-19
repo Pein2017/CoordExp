@@ -18,6 +18,7 @@ from src.packing.planner import plan_packed_sequences
 from src.qwen.forward import QwenForwardInputs, build_qwen_forward_inputs
 from src.qwen.positions import build_qwen_position_inputs
 from src.runtime import GateDecision
+from src.supervision import TokenAtom, TokenSequence
 from src.training.forward_input_provider import (
     DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES,
     DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES,
@@ -49,7 +50,15 @@ def _make_micro_step(index: int, *, forward_device: Any = None) -> SupervisedMic
         pack=pack,
         encoded_examples=examples,
         position_inputs=positions,
-        token_sequence=SimpleNamespace(atoms=None),
+        # A real atom-free TokenSequence: it selects no causal logit positions,
+        # exactly like the duck-typed stub the deleted trainer helper accepted.
+        token_sequence=TokenSequence(
+            pack_index=pack.pack_index,
+            input_ids=pack.input_ids,
+            segments=pack.segments,
+            atoms=(),
+            spans=(),
+        ),
         vocab_groups=None,
         forward_device=forward_device,
     )
@@ -1518,3 +1527,46 @@ def test_overlapped_provider_rejects_non_cpu_tensor_before_queue_publication(
         }
     finally:
         provider.close()
+
+
+def test_provider_forward_inputs_keep_exactly_the_token_sequence_positions() -> None:
+    """The provider hands Qwen the domain selection, not a private helper."""
+
+    base = _make_micro_step(0)
+    sequence = TokenSequence(
+        pack_index=base.pack.pack_index,
+        input_ids=base.pack.input_ids,
+        segments=base.pack.segments,
+        atoms=tuple(
+            TokenAtom(
+                pack_index=base.pack.pack_index,
+                segment_index=0,
+                example_index=0,
+                example_id="ex-0",
+                target_position=position,
+                token_id=100 + position,
+                token_type="schema",
+                text="x",
+                logical_target_position=position,
+                source="unit",
+            )
+            for position in (10, 1)
+        ),
+        spans=(),
+    )
+    micro_step = replace(base, token_sequence=sequence)
+
+    observed = forward_input_provider_module._build_forward_inputs(
+        micro_step, device=None
+    )
+    expected = build_qwen_forward_inputs(
+        micro_step.pack,
+        micro_step.encoded_examples,
+        micro_step.position_inputs,
+        logits_to_keep_positions=(0, 9),
+        device=None,
+        fa2_branch_proof_policy=None,
+    )
+
+    assert sequence.causal_logits_positions() == (0, 9)
+    assert torch.equal(observed.logits_to_keep, expected.logits_to_keep)

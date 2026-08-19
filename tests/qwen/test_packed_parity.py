@@ -15,6 +15,7 @@ import sys
 import pytest
 import torch
 
+import src.artifacts.identity as identity_module
 import src.qwen.parity as parity_module
 from src.losses import SegmentBalancedDenominator
 from src.losses.runner import PlannedStepLossPlan
@@ -1310,7 +1311,7 @@ def test_atomic_json_prelink_failure_never_fires_link_ownership_callback(
     def fail_link(_source, _target) -> None:
         raise OSError("injected pre-link failure")
 
-    monkeypatch.setattr(parity_module.os, "link", fail_link)
+    monkeypatch.setattr(identity_module.os, "link", fail_link)
     with pytest.raises(OSError, match="pre-link failure"):
         write_strict_json_atomic(
             target,
@@ -1332,7 +1333,7 @@ def test_atomic_json_directory_open_failure_is_not_reported_as_success(
     def fail_directory_open(_path, _flags):
         raise OSError("injected directory open failure")
 
-    monkeypatch.setattr(parity_module.os, "open", fail_directory_open)
+    monkeypatch.setattr(identity_module.os, "open", fail_directory_open)
     with pytest.raises(ParityContractError) as caught:
         write_strict_json_atomic(
             target,
@@ -1355,7 +1356,7 @@ def test_atomic_json_postlink_failure_fires_callback_for_this_link_only(
     payload = {"value": "intended"}
     linked: list[dict[str, object]] = []
     if failure_kind == "directory_fsync":
-        original_fsync = parity_module.os.fsync
+        original_fsync = identity_module.os.fsync
         fsync_calls = 0
 
         def fail_directory_fsync(fd) -> None:
@@ -1365,7 +1366,7 @@ def test_atomic_json_postlink_failure_fires_callback_for_this_link_only(
                 raise OSError("injected directory fsync failure")
             original_fsync(fd)
 
-        monkeypatch.setattr(parity_module.os, "fsync", fail_directory_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", fail_directory_fsync)
         expected = "directory fsync"
     else:
         original_unlink = Path.unlink
@@ -1710,7 +1711,7 @@ def test_repo_identity_accepts_git_sha1_head_and_ignores_untracked_state(
             return "tracked diff\n"
         raise AssertionError(args)
 
-    monkeypatch.setattr(parity_module, "_git", fake_git)
+    monkeypatch.setattr(identity_module, "_git", fake_git)
     identity = repo_identity(tmp_path)
     assert identity["head"] == head
     assert identity["dirty"] is True
@@ -4022,7 +4023,7 @@ def test_indexed_weight_hashing_overlaps_and_matches_serial_identity(
     )
     serial = base_model_weight_identity(indexed, max_workers=1)
 
-    original = parity_module._stable_file_identity
+    original = identity_module._stable_file_identity
     overlap = threading.Barrier(2)
     active_lock = threading.Lock()
     active = 0
@@ -4042,7 +4043,7 @@ def test_indexed_weight_hashing_overlaps_and_matches_serial_identity(
                     active -= 1
         return original(path, **kwargs)
 
-    monkeypatch.setattr(parity_module, "_stable_file_identity", _overlapping_identity)
+    monkeypatch.setattr(identity_module, "_stable_file_identity", _overlapping_identity)
     parallel, policy = base_model_weight_identity_with_execution_policy(
         indexed,
         max_workers=2,
@@ -4077,7 +4078,7 @@ def test_parallel_weight_hashing_reports_lexicographically_first_shard_error(
         ),
         encoding="utf-8",
     )
-    original = parity_module._stable_file_identity
+    original = identity_module._stable_file_identity
     overlap = threading.Barrier(2)
 
     def _failing_identity(path: Path, **kwargs):
@@ -4091,7 +4092,7 @@ def test_parallel_weight_hashing_reports_lexicographically_first_shard_error(
             context={"path": path.name},
         )
 
-    monkeypatch.setattr(parity_module, "_stable_file_identity", _failing_identity)
+    monkeypatch.setattr(identity_module, "_stable_file_identity", _failing_identity)
 
     with pytest.raises(ParityContractError) as error:
         base_model_weight_identity(indexed, max_workers=2)
@@ -4137,7 +4138,7 @@ def test_weight_hash_policy_caps_workers_and_uses_one_for_standalone(
     )
     assert capped["resolved_workers"] == 2
 
-    monkeypatch.setattr(parity_module.os, "cpu_count", lambda: 1)
+    monkeypatch.setattr(identity_module.os, "cpu_count", lambda: 1)
     _, cpu_default = base_model_weight_identity_with_execution_policy(indexed)
     assert cpu_default["resolved_workers"] == 1
 
@@ -4181,7 +4182,7 @@ def test_weight_hash_executor_failure_is_stable(
             del max_workers
             raise RuntimeError("executor unavailable")
 
-    monkeypatch.setattr(parity_module, "ThreadPoolExecutor", _BrokenExecutor)
+    monkeypatch.setattr(identity_module, "ThreadPoolExecutor", _BrokenExecutor)
     with pytest.raises(ParityContractError) as error:
         base_model_weight_identity(indexed, max_workers=2)
     assert error.value.code == "qwen.parity.weight_hash_executor"
@@ -4231,7 +4232,7 @@ def test_executor_submit_failure_does_not_mask_prior_shard_error(
             assert cancel_futures is True
 
     monkeypatch.setattr(
-        parity_module,
+        identity_module,
         "ThreadPoolExecutor",
         _SubmitFailureExecutor,
     )
@@ -4877,7 +4878,7 @@ def test_post_link_marker_writer_failure_recovers_exact_consumed_attempt(
     marker_path = tmp_path / "attempt.json"
     receipt_path = tmp_path / "receipt.json"
     if failure_kind == "directory_fsync":
-        original_fsync = parity_module.os.fsync
+        original_fsync = identity_module.os.fsync
         fsync_calls = 0
 
         def fail_directory_fsync(fd):
@@ -4887,7 +4888,7 @@ def test_post_link_marker_writer_failure_recovers_exact_consumed_attempt(
                 raise OSError("injected post-link directory fsync failure")
             return original_fsync(fd)
 
-        monkeypatch.setattr(parity_module.os, "fsync", fail_directory_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", fail_directory_fsync)
         expected_message = "directory fsync"
     else:
         original_unlink = Path.unlink
@@ -4916,7 +4917,7 @@ def test_post_link_marker_writer_failure_recovers_exact_consumed_attempt(
         probe._publish_attempt_start_marker(marker_path, **kwargs)
 
     if failure_kind == "directory_fsync":
-        monkeypatch.setattr(parity_module.os, "fsync", original_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", original_fsync)
     else:
         monkeypatch.setattr(Path, "unlink", original_unlink)
     failure_receipt = probe._failure_receipt(
@@ -5001,7 +5002,7 @@ def test_run_recovers_exact_passed_receipt_after_its_own_postlink_failure(
         receipt=passed,
     )
     receipt_links = 0
-    original_link = parity_module.os.link
+    original_link = identity_module.os.link
 
     def count_receipt_link(source, target) -> None:
         nonlocal receipt_links
@@ -5009,9 +5010,9 @@ def test_run_recovers_exact_passed_receipt_after_its_own_postlink_failure(
             receipt_links += 1
         original_link(source, target)
 
-    monkeypatch.setattr(parity_module.os, "link", count_receipt_link)
+    monkeypatch.setattr(identity_module.os, "link", count_receipt_link)
     if failure_kind == "directory_fsync":
-        original_fsync = parity_module.os.fsync
+        original_fsync = identity_module.os.fsync
         fsync_calls = 0
 
         def fail_receipt_directory_fsync(fd) -> None:
@@ -5021,7 +5022,7 @@ def test_run_recovers_exact_passed_receipt_after_its_own_postlink_failure(
                 raise OSError("injected passed receipt directory fsync failure")
             original_fsync(fd)
 
-        monkeypatch.setattr(parity_module.os, "fsync", fail_receipt_directory_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", fail_receipt_directory_fsync)
     else:
         original_unlink = Path.unlink
 
@@ -5127,7 +5128,7 @@ def test_run_never_promotes_invalid_postlink_receipt(
         plan=plan,
         receipt=passed,
     )
-    original_fsync = parity_module.os.fsync
+    original_fsync = identity_module.os.fsync
     fsync_calls = 0
 
     def corrupt_after_receipt_link(fd) -> None:
@@ -5138,7 +5139,7 @@ def test_run_never_promotes_invalid_postlink_receipt(
             raise OSError("injected invalid post-link receipt")
         original_fsync(fd)
 
-    monkeypatch.setattr(parity_module.os, "fsync", corrupt_after_receipt_link)
+    monkeypatch.setattr(identity_module.os, "fsync", corrupt_after_receipt_link)
     result = probe.run_command(
         SimpleNamespace(
             plan=str(plan_path),
@@ -5240,7 +5241,7 @@ def test_run_recovers_exact_failure_style_receipt_after_own_postlink_failure(
     marker_path = tmp_path / "attempt.json"
     write_strict_json_atomic(plan_path, plan)
     receipt_links = 0
-    original_link = parity_module.os.link
+    original_link = identity_module.os.link
 
     def count_receipt_link(source, target) -> None:
         nonlocal receipt_links
@@ -5248,9 +5249,9 @@ def test_run_recovers_exact_failure_style_receipt_after_own_postlink_failure(
             receipt_links += 1
         original_link(source, target)
 
-    monkeypatch.setattr(parity_module.os, "link", count_receipt_link)
+    monkeypatch.setattr(identity_module.os, "link", count_receipt_link)
     if failure_kind == "directory_fsync":
-        original_fsync = parity_module.os.fsync
+        original_fsync = identity_module.os.fsync
         fsync_calls = 0
 
         def fail_receipt_directory_fsync(fd) -> None:
@@ -5260,7 +5261,7 @@ def test_run_recovers_exact_failure_style_receipt_after_own_postlink_failure(
                 raise OSError("injected failure receipt directory fsync failure")
             original_fsync(fd)
 
-        monkeypatch.setattr(parity_module.os, "fsync", fail_receipt_directory_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", fail_receipt_directory_fsync)
     else:
         original_unlink = Path.unlink
 
@@ -5344,7 +5345,7 @@ def test_failure_receipt_different_postlink_payload_is_not_recovered(
     marker_path = tmp_path / "attempt.json"
     write_strict_json_atomic(plan_path, plan)
     _patch_run_to_raise_simple_failure(monkeypatch, probe, plan)
-    original_fsync = parity_module.os.fsync
+    original_fsync = identity_module.os.fsync
     fsync_calls = 0
 
     def replace_after_link(fd) -> None:
@@ -5355,7 +5356,7 @@ def test_failure_receipt_different_postlink_payload_is_not_recovered(
             raise OSError("injected different failure receipt")
         original_fsync(fd)
 
-    monkeypatch.setattr(parity_module.os, "fsync", replace_after_link)
+    monkeypatch.setattr(identity_module.os, "fsync", replace_after_link)
     result = probe.run_command(
         SimpleNamespace(
             plan=str(plan_path),
@@ -5602,7 +5603,7 @@ def test_publication_sidecar_recovers_exact_payload_after_own_postlink_failure(
 
     monkeypatch.setattr(probe, "write_strict_json_atomic", fail_primary_receipt)
     if failure_kind == "directory_fsync":
-        original_fsync = parity_module.os.fsync
+        original_fsync = identity_module.os.fsync
         fsync_calls = 0
 
         def fail_sidecar_directory_fsync(fd) -> None:
@@ -5612,7 +5613,7 @@ def test_publication_sidecar_recovers_exact_payload_after_own_postlink_failure(
                 raise OSError("injected sidecar directory fsync failure")
             original_fsync(fd)
 
-        monkeypatch.setattr(parity_module.os, "fsync", fail_sidecar_directory_fsync)
+        monkeypatch.setattr(identity_module.os, "fsync", fail_sidecar_directory_fsync)
     else:
         original_unlink = Path.unlink
 
@@ -5757,7 +5758,7 @@ def test_publication_sidecar_different_postlink_payload_is_not_recovered(
         return original_writer(path, payload, **kwargs)
 
     monkeypatch.setattr(probe, "write_strict_json_atomic", fail_primary_receipt)
-    original_fsync = parity_module.os.fsync
+    original_fsync = identity_module.os.fsync
     fsync_calls = 0
 
     def replace_sidecar_after_link(fd) -> None:
@@ -5768,7 +5769,7 @@ def test_publication_sidecar_different_postlink_payload_is_not_recovered(
             raise OSError("injected different sidecar payload")
         original_fsync(fd)
 
-    monkeypatch.setattr(parity_module.os, "fsync", replace_sidecar_after_link)
+    monkeypatch.setattr(identity_module.os, "fsync", replace_sidecar_after_link)
     result = probe.run_command(
         SimpleNamespace(
             plan=str(plan_path),

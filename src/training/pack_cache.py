@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 import ctypes
-from dataclasses import MISSING, dataclass, fields
+from dataclasses import dataclass
 import errno
 import fcntl
 import hashlib
@@ -30,8 +30,11 @@ from src.packing.planner import (
     PACK_PLAN_SCHEMA_VERSION,
     build_pack_plan_policy_identity,
 )
+from src.training.micro_steps import (
+    SupervisedMicroStep,
+    supervised_micro_step_schema_identity as _supervised_micro_step_schema_identity,
+)
 from src.training.schedule import ResolvedStepSchedule
-from src.training.supervised_trainer import SupervisedMicroStep
 
 
 PACKING_CACHE_VERSION = "coordexp-swift-pack-cache-v3"
@@ -187,7 +190,11 @@ _INVALID_CACHE_ERRORS = (
 )
 
 _ALLOWED_PICKLE_GLOBALS = {
+    # Historical module path: immutable payloads published before the record
+    # moved to its canonical owner stay readable.  New payloads pickle under
+    # ``src.training.micro_steps``; both resolve to the one record class.
     ("src.training.supervised_trainer", "SupervisedMicroStep"),
+    ("src.training.micro_steps", "SupervisedMicroStep"),
     ("src.packing.planner", "PackedSequence"),
     ("src.packing.planner", "PackedSegment"),
     ("src.qwen.encoding", "EncodedExample"),
@@ -1611,27 +1618,6 @@ def _realized_vocab_group_identity(vocab_groups: Any) -> dict[str, Any]:
             "max_id": canonical_members[-1] if canonical_members else None,
         }
     return identity
-
-
-def _supervised_micro_step_schema_identity() -> dict[str, Any]:
-    schema_fields: list[dict[str, Any]] = []
-    for schema_field in fields(SupervisedMicroStep):
-        has_default = schema_field.default is not MISSING
-        schema_fields.append(
-            {
-                "name": schema_field.name,
-                "annotation": str(schema_field.type),
-                "has_default": has_default,
-                "default": (
-                    _json_identity_value(schema_field.default) if has_default else None
-                ),
-            }
-        )
-    return {
-        "class": "SupervisedMicroStep",
-        "frozen": bool(SupervisedMicroStep.__dataclass_params__.frozen),
-        "fields": schema_fields,
-    }
 
 
 def _build_determinant_entries(

@@ -1220,9 +1220,19 @@ def exercise_characterized_cache_preparation(
 
 
 def exercise_characterized_causal_logits() -> dict[str, Any]:
-    """Characterize the current private causal-logit position selection."""
+    """Characterize causal-logit position selection at its current owner.
 
-    from src.training.supervised_trainer import _logits_positions_to_keep
+    Wave 1 deletes ``supervised_trainer._logits_positions_to_keep`` in favour of
+    ``TokenSequence.causal_logits_positions`` (design decision 6).  The frozen
+    manifest's ``harness_seam_repoints`` rule re-points this call to the new
+    owner and requires the selected positions and the empty/absent-atom results
+    to replay unchanged; ``causal_logits.json`` is not a declared flip.
+    """
+
+    def select_causal_positions(
+        micro_step: SupervisedMicroStep,
+    ) -> tuple[int, ...] | None:
+        return TokenSequence.causal_logits_positions(micro_step.token_sequence)
 
     sequence = _characterized_token_sequence()
     populated = SupervisedMicroStep(
@@ -1251,9 +1261,9 @@ def exercise_characterized_causal_logits() -> dict[str, Any]:
             atom.causal_logits_position for atom in sequence.atoms
         ],
         "atom_target_positions": [atom.target_position for atom in sequence.atoms],
-        "populated": list(_logits_positions_to_keep(populated)),
-        "empty_atoms": _logits_positions_to_keep(empty_atoms),
-        "missing_atoms_attribute": _logits_positions_to_keep(no_atoms_attribute),
+        "populated": list(select_causal_positions(populated)),
+        "empty_atoms": select_causal_positions(empty_atoms),
+        "missing_atoms_attribute": select_causal_positions(no_atoms_attribute),
         "duplicate_free_sorted": True,
     }
 
@@ -1458,13 +1468,42 @@ def build_legacy_micro_step_pickle(destination: Path) -> Path:
     return destination
 
 
-def load_legacy_micro_step_pickle() -> tuple[Any, ...]:
-    """Load the frozen legacy chunk through the production restricted unpickler."""
+def restricted_load(payload: bytes) -> tuple[Any, ...]:
+    """Decode one cache chunk through the production restricted unpickler."""
 
     import io
 
-    payload = io.BytesIO(LEGACY_MICRO_STEP_PICKLE.read_bytes())
-    return pack_cache._RestrictedCacheUnpickler(payload).load()
+    return pack_cache._RestrictedCacheUnpickler(io.BytesIO(payload)).load()
+
+
+def load_legacy_micro_step_pickle() -> tuple[Any, ...]:
+    """Load the frozen legacy chunk through the production restricted unpickler."""
+
+    return restricted_load(LEGACY_MICRO_STEP_PICKLE.read_bytes())
+
+
+def wave1_revised_legacy_micro_step_expectation() -> dict[str, Any]:
+    """The frozen Wave-0 fixture plus exactly the two Wave-1 declared deltas.
+
+    The fixture bytes are never rewritten.  Wave 1 declares (manifest
+    ``declared_flips``) that the record's canonical owner becomes
+    ``src.training.micro_steps``, so the decoded class ``__module__`` changes and
+    the restricted allowlist gains the canonical module path while keeping the
+    historical one.  Everything derived from the frozen pickle bytes - the
+    digest, byte length, embedded module paths, and schema identity - must stay
+    exactly equal.
+    """
+
+    expected = load_fixture("legacy_micro_step.json")
+    for decoded in expected["decoded"]:
+        decoded["type_module"] = "src.training.micro_steps"
+    expected["restricted_pickle_allowlist"] = sorted(
+        {
+            *expected["restricted_pickle_allowlist"],
+            "src.training.micro_steps:SupervisedMicroStep",
+        }
+    )
+    return expected
 
 
 def exercise_characterized_legacy_micro_step() -> dict[str, Any]:
@@ -1590,9 +1629,17 @@ def test_generic_identity_success_and_failure_cases_match_frozen_contract(
 
 
 def test_legacy_micro_step_pickle_bytes_and_decoded_values_are_frozen() -> None:
+    """Wave-1 declared flip: canonical owner module path and allowlist."""
+
+    frozen = load_fixture("legacy_micro_step.json")
     observed = exercise_characterized_legacy_micro_step()
 
-    assert observed == load_fixture("legacy_micro_step.json")
+    assert observed == wave1_revised_legacy_micro_step_expectation()
+    # Everything the frozen bytes determine is unchanged by the owner move.
+    assert observed["sha256"] == frozen["sha256"]
+    assert observed["byte_length"] == frozen["byte_length"]
+    assert observed["pickle_module_paths"] == frozen["pickle_module_paths"]
+    assert observed["schema_identity"] == frozen["schema_identity"]
 
 
 def test_legacy_micro_step_pickle_carries_the_historical_module_path() -> None:
@@ -1603,21 +1650,42 @@ def test_legacy_micro_step_pickle_carries_the_historical_module_path() -> None:
 
 
 def test_legacy_micro_step_pickle_loads_through_the_restricted_unpickler() -> None:
+    """Wave-1 declared flip: the historical path resolves to the new owner.
+
+    The frozen bytes still name ``src.training.supervised_trainer``; the
+    restricted unpickler resolves that historical global through the
+    compatibility re-export, so the decoded class now reports the canonical
+    owner module.  The decoded values stay equal.
+    """
+
     decoded = load_legacy_micro_step_pickle()
 
     assert len(decoded) == 1
-    assert type(decoded[0]).__module__ == "src.training.supervised_trainer"
+    assert type(decoded[0]).__module__ == "src.training.micro_steps"
     assert decoded[0] == characterized_micro_step()
 
 
 def test_legacy_micro_step_pickle_is_the_real_writer_output() -> None:
-    with tempfile.TemporaryDirectory(prefix="coordexp-legacy-check-") as raw_root:
-        regenerated = build_legacy_micro_step_pickle(
-            Path(raw_root) / "regenerated.pkl"
-        )
-        payload = regenerated.read_bytes()
+    """Wave-1 declared flip: the writer now publishes the canonical path.
 
-    assert payload == LEGACY_MICRO_STEP_PICKLE.read_bytes()
+    New publications pickle under ``src.training.micro_steps``, so their bytes
+    are intentionally different from the frozen legacy payload and must never be
+    characterized as byte-identical to it (design decision 4).  What the frozen
+    node proved - that the fixture is real writer output, reproducibly - is kept
+    by regenerating twice and decoding through the production reader.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="coordexp-legacy-check-") as raw_root:
+        first = build_legacy_micro_step_pickle(Path(raw_root) / "first.pkl")
+        second = build_legacy_micro_step_pickle(Path(raw_root) / "second.pkl")
+        payload = first.read_bytes()
+        replay = second.read_bytes()
+
+    assert payload == replay
+    assert b"src.training.micro_steps" in payload
+    assert b"src.training.supervised_trainer" not in payload
+    assert payload != LEGACY_MICRO_STEP_PICKLE.read_bytes()
+    assert restricted_load(payload)[0] == characterized_micro_step()
     assert pickle.loads(payload)[0] == characterized_micro_step()
 
 

@@ -8,7 +8,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.qwen.parity import assert_absent_artifact_target, write_strict_json_atomic
+from src.artifacts.identity import (
+    assert_absent_artifact_target,
+    write_strict_json_atomic,
+)
 from src.training.pipeline import prepare_training_pack_caches
 
 

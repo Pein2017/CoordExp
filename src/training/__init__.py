@@ -5,6 +5,7 @@ from src.training.schedule import (
     StepScheduleEvent,
     resolve_planned_step_schedule,
 )
+from src.training.micro_steps import SupervisedMicroStep
 from src.training.supervised_trainer import (
     CompletedStepHandler,
     CompletedStepObservation,
@@ -13,7 +14,6 @@ from src.training.supervised_trainer import (
     QwenForwardFn,
     RuntimeBoundary,
     ScheduledStepHandler,
-    SupervisedMicroStep,
     SupervisedTrainer,
     SupervisedTrainingResult,
 )

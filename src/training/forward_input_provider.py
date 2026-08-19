@@ -45,9 +45,6 @@ from src.artifacts.resources import collect_resource_snapshot
 from src.common.errors import RuntimeContractError
 from src.config.models import ForwardInputProviderMode
 from src.qwen.forward import QwenForwardInputs, build_qwen_forward_inputs
-from src.training.supervised_trainer import (
-    _logits_positions_to_keep as _logits_to_keep_positions,
-)
 
 
 _QUEUE_POLL_SECONDS = 0.05
@@ -309,7 +306,7 @@ def _build_forward_inputs(
         micro_step.pack,
         micro_step.encoded_examples,
         micro_step.position_inputs,
-        logits_to_keep_positions=_logits_to_keep_positions(micro_step),
+        logits_to_keep_positions=micro_step.token_sequence.causal_logits_positions(),
         device=device,
         fa2_branch_proof_policy=micro_step.fa2_branch_proof_policy,
     )
