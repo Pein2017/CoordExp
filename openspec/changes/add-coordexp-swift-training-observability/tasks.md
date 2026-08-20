@@ -134,7 +134,7 @@
 
 ## 3. Wave 3 - Truthful optimizer, loss, timing, and resource observations
 
-- [ ] 3.1 Add failing CPU optimizer/scheduler tests that distinguish planned
+- [x] 3.1 Add failing CPU optimizer/scheduler tests that distinguish planned
   step, optimizer-wrapper attempt, actual applied update, and scheduler advance.
   Preserve scheduler/eval/checkpoint planned-step policy; add the closed
   `optimizer_boundary_action = apply | scaler_skip | not_attempted` decision and
@@ -155,7 +155,7 @@
   mutation truth while reporting the composite GradScaler state as
   `divergent_or_unknown`, not `unchanged`; reporter/session code MUST NOT
   synthesize those booleans from exceptions.
-- [ ] 3.2 Add failing ordering tests proving fp16 has exactly one owner and call
+- [x] 3.2 Add failing ordering tests proving fp16 has exactly one owner and call
   order: `accelerator.unscale_gradients(optimizer)` exactly once, gradient finite
   inspection and pre-clip norm, then one global boundary action. Prove `apply`
   uses a non-unscaling clip primitive such as `torch.nn.utils.clip_grad_norm_`
@@ -175,19 +175,19 @@
   `accelerator.clip_grad_norm_`, return the single runtime-owned bounded update
   receipt, propagate it through `CompletedStepObservation`, and reuse the
   existing all-rank max norm without another gradient-scan collective.
-- [ ] 3.3 In `src/training/reporting.py`, consume the prerequisite completed loss telemetry without recomputing from backend-scaled tensors or sufficient statistics: preserve raw/configured-weight/weighted fields only for actually computed terms, retain computed zero-weight gate diagnostics, preserve complete omission of a zero-weight optional term, and verify single-rank and asymmetric multi-rank rows.
-- [ ] 3.4 Capture exact per-step physical-token, supervised-atom, and pack work
+- [x] 3.3 In `src/training/reporting.py`, consume the prerequisite completed loss telemetry without recomputing from backend-scaled tensors or sufficient statistics: preserve raw/configured-weight/weighted fields only for actually computed terms, retain computed zero-weight gate diagnostics, preserve complete omission of a zero-weight optional term, and verify single-rank and asymmetric multi-rank rows.
+- [x] 3.4 Capture exact per-step physical-token, supervised-atom, and pack work
   counts before tensors are released and derive global throughput only from
   summed work divided by rank-max step duration.
-- [ ] 3.5 Extend input timing with accurately completed H2D measurement where
+- [x] 3.5 Extend input timing with accurately completed H2D measurement where
   available, retain honest CPU-build/wait/step scopes, mark unsupported fields
   unavailable, and add a test that normal observation never synchronizes CUDA
   solely for timing.
-- [ ] 3.6 Extend the resource collector with current and process-lifetime peak
+- [x] 3.6 Extend the resource collector with current and process-lifetime peak
   CUDA allocated/reserved bytes plus per-step allocator retry/OOM deltas;
   verify rank-max bytes, rank-sum deltas, CPU unavailability, and no fabricated
   zero.
-- [ ] 3.7 Update train/eval row construction in `src/training/reporting.py` to
+- [x] 3.7 Update train/eval row construction in `src/training/reporting.py` to
   emit the new loss, LR, norm, throughput, timing, memory, counter, finite, and
   availability fields while retaining one strict row per completed planned
   step/eval. Add the terminal exception: pre-wrapper terminal unsafe and post-
@@ -196,7 +196,7 @@
   completed/scheduler counts or dispatching eval/checkpoint/exact-resume/
   selector/final-success handlers. If row publication fails, preserve the
   optimizer-boundary code as primary during common failed finalization.
-- [ ] 3.8 Before any GPU-backed action, review the frozen command manifest,
+- [x] 3.8 Before any GPU-backed action, review the frozen command manifest,
   obtain fresh user authorization for that action, and record bounds for
   devices/world size, planned steps, model forwards, cache/materialization
   passes, wall time, peak GPU memory, and artifact bytes. Execute genuine CUDA
@@ -218,6 +218,36 @@
   collective/CUDA-sync residue checks, strict OpenSpec validation, and the
   single pre-DDP/cost standards plus intent-contract audit; no fp16 claim is
   allowed without both receipts.
+
+> **Wave 3 closed (2026-08-20; commits `bdb29b3fa` 3A boundary,
+> `4db58e972` 3B rows/resources, `305b17eb7` probe scripts, `e81f6a91a`
+> scaler-keying fix + receipts; pre-DDP audit
+> `receipts/wave-3-pre-ddp-audit.md` 0 P0/0 P1, Wave-4 entry CLEARED):**
+> all-rank `optimizer_boundary_action` on the existing gradient gather;
+> spec-authored fp16-only post-wrapper consensus (non-fp16 byte-unchanged);
+> constructor-only `AppliedUpdateReceipt` with derived mutation state;
+> truthful rows (availability honesty, rank-max-duration throughput,
+> IDENTICAL-not-MAX for already-global grad_norm/lr); bounded terminal-row
+> path. **Real-CUDA defect found and fixed with full RED->GREEN receipts**:
+> `_scaler_found_inf` keyed GradScaler state on the wrapper optimizer
+> (structurally False; discriminating RED proved it could flip the boundary
+> action to apply under finite-grads+scaler-inf); attempt-1 fp16 receipts
+> retain the fired FINDING as evidence, attempt-2 clean; audit re-derived
+> the fix against installed torch 2.9.1/accelerate 1.10.1 internals
+> (staleness ruled out). 3.8 executed under the frozen packet on idle GPUs
+> 0,1 (standing grant): fp16 finite+overflow arms ws1+ws2 all clauses
+> green, injected-outcome six arms x two ranks all-true, cache root
+> byte-identical, bounds honoured. Accepted deviations recorded:
+> **W3-2 (do NOT delete)** - the receipt-less `_scheduler_lr_metrics`
+> legacy fallback publishes post-scheduler LR under `lr/group_<i>`; it is
+> production-unreachable but LOAD-BEARING for the frozen characterization
+> row - Wave-5 residue searches must not remove it; W3-3 - session-level
+> terminal wiring proven by source inspection only; **carried obligation
+> bound to task 4.1: the terminal-row + injected-append-failure coverage
+> must be BEHAVIORAL at the `_run_training_session` seam**. P3 residuals
+> W3-4/W3-5 recorded in amend-6. Gate 832-834/0/0 (lead + audit), 15/15
+> fixtures/collective, determinant EQUAL/EQUAL, strict valid. Flake
+> tripwire: count stands at 2 (zero this wave).
 
 ## 4. Wave 4 - JSONL-first console and TensorBoard publisher
 

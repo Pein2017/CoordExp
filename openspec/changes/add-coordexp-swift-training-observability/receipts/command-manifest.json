@@ -199,6 +199,29 @@
    "interface_changes": "EvalRuntimeBoundary.gather_metrics now takes a typed MetricBatch; error-code renames recorded in the builder report (superseded codes had test-only callers, all flipped)",
    "archived_script_breakage": "scripts/probes/coordexp_swift/losses_wave3_two_rank_probe.py (old dict API) and wave5_provider_benchmark.py (indexes per_rank_measurement) would fail if re-run; both are archived earlier-change probe artifacts, deliberately unedited per the amend-4 disposition pattern",
    "flake_tripwire": "test_gate_ablation: 0 occurrences this wave (count stands at 2); one unrelated stale-run thread-race in test_wave7_exact_resume_interrupt recorded, green in isolation and final sweep"
+  },
+  {
+   "id": "amend-6-freeze-wave3-probes",
+   "amendment_of": "wave3-fp16-gpu-probes",
+   "date": "2026-08-20",
+   "reason": "retire the TO-FREEZE placeholder; freeze the executed packet argvs and pin Wave-3 counts (pre-DDP audit must-include #1)",
+   "frozen_argvs": {
+    "fp16-ws1": "CUDA_VISIBLE_DEVICES=0 timeout 300s conda run -n ms python scripts/probes/coordexp_swift/obs_wave3_fp16_cuda_probe.py --output <absent receipt>",
+    "fp16-ws2": "CUDA_VISIBLE_DEVICES=0,1 timeout 300s conda run -n ms python -m torch.distributed.run --standalone --nnodes=1 --nproc_per_node=2 scripts/probes/coordexp_swift/obs_wave3_fp16_cuda_probe.py --two-rank --output <absent receipt>",
+    "injected-outcome": "timeout 300s conda run -n ms python scripts/probes/coordexp_swift/obs_wave3_injected_outcome_probe.py --output <absent receipt> (CPU gloo)",
+    "fixture-collective": "conda run -n ms pytest tests/training/test_orchestration_compatibility.py tests/runtime/test_rank_report_collective.py -q"
+   },
+   "packet": "receipts/wave-3-fp16-probe-packet.md (standing GPU grant; GPUs 0,1 by observed idleness)",
+   "observed": {
+    "wave3-optimizer-gate": "832/0/0 lead replay at 4db58e972; 834/0/0 audit replay at e81f6a91a (band per new family-H tests)",
+    "fixture-collective": "15/15 at every checkpoint",
+    "fp16-attempt-1": "ws1+ws2 ok:true with the scaler_found_inf FINDING fired on real CUDA - RETAINED as RED evidence for the e81f6a91a fix, not an open defect",
+    "fp16-attempt-2": "ws1+ws2 ok:true findings:[] post-fix; bounds honoured, cache passes 0",
+    "injected-outcome": "exit [0,0], six arms x two ranks all-true truth matrix; NOTE: receipt carries no observed_bounds block (bounds attested by the packet + logs)",
+    "determinant-invariant": "EQUAL/EQUAL at e81f6a91a (audit re-derivation via the amend-4 wrapper)",
+    "scaler-fix-validation": "audit re-derived against installed torch 2.9.1 / accelerate 1.10.1 source: non-mutating .get lookup correct, staleness ruled out (GradScaler.update() rebinds per wrapper call); P3 residuals W3-4 (single-level unwrap vs accelerate while-loop) and W3-5 (silent False on unshaped state entry) recorded"
+   },
+   "archived_script_breakage_note": "losses_wave3_two_rank_probe.py (archived losses-change probe) calls the deleted clip_gradients/optimizer_step - deliberately unedited per the amend-5 precedent"
   }
  ]
 }
