@@ -34,6 +34,21 @@
   authority for scope, research meaning, compatibility, and completion.
   Superpowers artifacts are execution-only and must link rather than restate
   the owning change.
+- Superpowers is an on-demand toolbox, never a default posture: invoke a
+  skill when the current task needs it. Its planning, worktree, and
+  subagent-driving skills stay in use; no skill imposes a workflow the task
+  did not ask for.
+- Test-first is required only for fault or fail-closed paths, bug fixes
+  (reproduction test first), and frozen-contract refactors (characterization
+  first). Elsewhere prefer fail-fast runtime validation over test-first
+  ritual; exploratory probes, glue, config, and fast-failure code never get
+  ceremony. A load-bearing test, whenever written, must have been observed
+  to fail for the right reason at least once (RED or a demonstrated
+  sensitivity check); a green-only test is unverified evidence.
+- Silent-corruption surfaces (masking, supervision positions, loss
+  accounting, parity) are guarded by invariant assertions and golden
+  fixtures rather than unit TDD; probe-tier work gets no RED/GREEN
+  ceremony, matching its single-review-round budget.
 - Before broad implementation or a costly launch, retire the smallest set of
   conclusion-changing execution risks with a production-shaped vertical slice.
   Leaf tests and mocks do not close real-entry, distributed, scale, persistence,
