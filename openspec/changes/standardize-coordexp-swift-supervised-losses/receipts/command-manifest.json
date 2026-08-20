@@ -1,0 +1,178 @@
+{
+ "schema": "coordexp-swift-losses-command-manifest-v1",
+ "frozen_at_commit": "0cb0ae729",
+ "date": "2026-08-20",
+ "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+ "conda_env": "ms",
+ "environment": {
+  "always": {
+   "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "required_absent": [
+   "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+   "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+   "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+   "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+   "RANK",
+   "LOCAL_RANK",
+   "WORLD_SIZE",
+   "MASTER_ADDR",
+   "MASTER_PORT"
+  ],
+  "host_note": "the local command hook silently no-ops env-prefixed commands; every argv below is executed inside bash -c 'export ...; unset ...; <argv>' with real output confirmed, never exit codes alone"
+ },
+ "amendment_rule": "append-only: a later command change adds a new entry with amendment_of=<id> and a reason; the original entry is never edited or deleted",
+ "cache_invariant": {
+  "rule": "no command in this change may build, repair, overwrite, or publish any target under .cache/coordexp_swift/packing; determinant recompute must equal receipts/wave-0-determinant-baseline.json; a differing fingerprint is a blocking contract failure",
+  "train_fingerprint": "8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f",
+  "eval_fingerprint": "3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662"
+ },
+ "commands": [
+  {
+   "id": "wave0-entry-baseline",
+   "argv": "conda run -n ms pytest tests/config tests/losses tests/runtime tests/training/test_reporting.py tests/training/test_pack_cache_determinant_registry.py tests/artifacts tests/eval/test_forward_eval.py -q",
+   "expected": "all green at the untouched base commit; counts recorded in the Wave-0 close-out",
+   "limits": {
+    "timeout_seconds": 3600
+   }
+  },
+  {
+   "id": "wave1-config-gate",
+   "argv": "conda run -n ms pytest tests/config tests/losses tests/training/test_pack_cache_determinant_registry.py -q",
+   "expected": "green after Wave-1 config contract + migration; plus the supported-config inventory dry-resolution probe (wave1-inventory-probe) and legacy-placement residue searches",
+   "limits": {
+    "timeout_seconds": 3600
+   }
+  },
+  {
+   "id": "wave1-inventory-probe",
+   "argv": "conda run -n ms python scripts/probes/coordexp_swift/losses_config_inventory_probe.py",
+   "expected": "strict-resolves every current supported config under configs/coordexp_swift/{prod,smoke}/ and current measurement routes; prints per-file fingerprint; exits nonzero on any resolution failure",
+   "limits": {
+    "timeout_seconds": 1800
+   },
+   "note": "probe script is created in Wave 1; model-free; writes nothing outside the session scratchpad"
+  },
+  {
+   "id": "wave2-composition-gate",
+   "argv": "conda run -n ms pytest tests/losses tests/config tests/training/test_supervised_trainer.py -q",
+   "expected": "green after the closed TokenLossBinding composition and the three zero policies; includes the executed zero-policy autograd/sentinel probes as test nodes",
+   "limits": {
+    "timeout_seconds": 3600
+   }
+  },
+  {
+   "id": "wave3-parity-gate-cpu",
+   "argv": "conda run -n ms pytest tests/losses tests/runtime tests/eval/test_forward_eval.py tests/training/test_supervised_trainer.py -q",
+   "expected": "green: world-size-one vs unequal-rank parity fixtures, gate-ablation parity, non-finite gate skip, reducer exactness (gloo/CPU ranks where distributed)",
+   "limits": {
+    "timeout_seconds": 5400
+   }
+  },
+  {
+   "id": "wave3-two-rank-probe",
+   "argv": "TO-FREEZE-IN-WAVE-3-PACKET: two-rank reduction-and-update probe (gloo or GPU per its packet)",
+   "expected": "own launch packet bound to the then-current commit with fresh user authorization if GPU-backed; bounds: world_size=2, planned steps <=2, cache/materialization passes = 0",
+   "limits": {
+    "authorization": "fresh user grant required for any GPU action; decompose blanket grant is spent"
+   }
+  },
+  {
+   "id": "wave4-telemetry-gate",
+   "argv": "conda run -n ms pytest tests/artifacts tests/training/test_reporting.py tests/eval tests/losses tests/training/test_orchestration_compatibility.py tests/training/test_pipeline_assembly.py -q",
+   "expected": "green after the raw/weighted rename with declared row-schema flips listed in a manifest amendment; frozen fixtures byte-untouched; old-field residue searches clean over current roots",
+   "limits": {
+    "timeout_seconds": 5400
+   },
+   "declared_flips": "row-schema-dependent nodes to be enumerated by the Wave-4 amendment before implementation"
+  },
+  {
+   "id": "wave5-focused-full",
+   "argv": "conda run -n ms pytest tests/config tests/losses tests/runtime tests/training tests/artifacts tests/eval -q",
+   "expected": "green; judged by failure-set diff with fresh-process replays (single-process CUDA-init pollution of CPU-pure probes is a known host artifact, see decompose wave-8-cpu-matrix receipt)",
+   "limits": {
+    "timeout_seconds": 10800
+   }
+  },
+  {
+   "id": "wave5-determinant-equality",
+   "argv": "conda run -n ms python scripts/probes/coordexp_swift/losses_determinant_equality_probe.py",
+   "expected": "recomputed train/eval determinant payloads byte-equal (canonical JSON) to receipts/wave-0-determinant-baseline.json; any difference stops the change",
+   "limits": {
+    "timeout_seconds": 1800
+   },
+   "note": "probe script created in Wave 5; model-free"
+  },
+  {
+   "id": "wave5-vertical-smoke",
+   "argv": "TO-FREEZE-IN-WAVE-5-PACKET: production-shaped two-rank BF16 supervised smoke against the predecessor cache",
+   "expected": "own launch packet + fresh user authorization; bounds: <=2 GPUs, world_size=2, 1 planned/applied step, cache passes=0, wall<=900s, GPU high-water<=32GiB/rank, artifact bytes<=2.5GiB; row fields must match the Wave-4 canonical schema",
+   "limits": {
+    "authorization": "fresh user grant required; decompose blanket grant is spent"
+   }
+  },
+  {
+   "id": "strict-validation",
+   "argv": "conda run -n ms openspec validate standardize-coordexp-swift-supervised-losses --strict",
+   "expected": "valid at every wave gate",
+   "limits": {
+    "timeout_seconds": 300
+   }
+  }
+ ],
+ "amendments": [
+  {
+   "id": "amend-1-pin-entry-baseline",
+   "amendment_of": "wave0-entry-baseline",
+   "date": "2026-08-20",
+   "reason": "pin the observed counts per entry-audit F-9(iii); original entry retained",
+   "observed": "817 passed / 0 failed / 0 skipped in 49.74s at 0cb0ae729; independently replayed by the entry audit at 817/0/0 in 52.92s"
+  },
+  {
+   "id": "amend-2-validate-all",
+   "amendment_of": null,
+   "date": "2026-08-20",
+   "reason": "entry-audit F-9(ii): freeze the cross-spec validation argv used for the 0.1 pin",
+   "new_command": {
+    "id": "openspec-validate-all",
+    "argv": "conda run -n ms openspec validate --all",
+    "expected": "all items pass at wave-0 (21/21) and at the final gate"
+   }
+  },
+  {
+   "id": "amend-3-residue-argvs",
+   "amendment_of": null,
+   "date": "2026-08-20",
+   "reason": "entry-audit F-9(i): freeze the residue-search argvs tasks 1.5/2.5/4.5/5.5 invoke",
+   "new_commands": [
+    {
+     "id": "wave1-residue-search",
+     "argv": "rg -n 'coord_gaussian_rps' configs/coordexp_swift/prod configs/coordexp_swift/smoke",
+     "rule": "every hit must sit under a losses.auxiliary mapping (structurally asserted by losses_config_inventory_probe.py); zero hits under protected; plus rg -n 'import_path|loss_class|entry_point|__import__' configs/coordexp_swift src/config src/losses == zero hits"
+    },
+    {
+     "id": "wave2-residue-search",
+     "argv": "rg -n 'coord_gaussian_rps|token_type_gate' src/losses/runner.py src/training/supervised_trainer.py",
+     "rule": "hits only inside the closed TokenLossBinding composition path; the superseded ad hoc protected/coordinate branching is deleted"
+    },
+    {
+     "id": "wave4-residue-search",
+     "argv": "rg -n 'loss/base_ce|loss/token_type_gate|loss/coord_gaussian_rps' src/ tests/ scripts/ --glob '!tests/fixtures/**' --glob '!**/docs/history/**'",
+     "rule": "zero hits for the bare ambiguous family in current roots after Wave 4 (raw/weighted suffixed names excluded by the pattern's exactness check in the gate note); tests/fixtures/** stays byte-frozen (sha256-asserted in the wave-4 gate)"
+    },
+    {
+     "id": "wave5-residue-search",
+     "argv": "git diff --stat -- configs/archive docs/history tests/fixtures",
+     "rule": "empty at the final gate: no accidental historical edits"
+    }
+   ]
+  },
+  {
+   "id": "amend-4-gpu-authorization",
+   "amendment_of": "wave3-two-rank-probe",
+   "date": "2026-08-20",
+   "reason": "authorization basis changed by an explicit user grant in-session 2026-08-20",
+   "new_authorization": "standing user GPU grant 2026-08-20: the host stress-test skips occupied GPUs; idle GPUs may be used without per-action requests ('\u603b\u6709 GPUs \u662f\u7a7a\u7684.\u4f60\u53ef\u4ee5\u653e\u5fc3\u5730\u4f7f\u7528\u2026\u65e0\u9700\u7533\u8bf7'). Applies equally to wave5-vertical-smoke. Per-action packets with frozen argv, device selection by observed idleness, and numeric bounds remain REQUIRED; this amendment replaces only the 'fresh user grant per action' clause."
+  }
+ ]
+}

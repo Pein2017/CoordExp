@@ -1,9 +1,55 @@
 ## 0. Wave 0 - Pinned predecessors, owner graph, and cache invariant
 
-- [ ] 0.1 Verify `reconcile-coordexp-swift-training-contracts` and `decompose-coordexp-swift-training-orchestration` are implementation-complete, synced, and archived; record their exact commits and the current change base commit, and stop if code, stable specs, docs, or archive dispositions disagree.
-- [ ] 0.2 Record the post-decomposition owner/import graph and prove loss config, loss implementations, reporting consumers, and supported config migrations are outside `PACKING_CACHE_DETERMINANT_OWNERS`; record the exact admitted train/eval determinant payloads, aggregate hashes, target paths, and cache-hit receipts from the predecessor.
-- [ ] 0.3 Freeze an exact execution-command manifest covering cwd, `conda` environment, commands, configs, world size/devices, artifact roots, expected evidence, and quantitative limits. Require a reviewable append-only amendment for any later command change.
-- [ ] 0.4 Run the untouched focused config/loss/runtime/reporting/cache-identity/artifact suites and strict OpenSpec validation, then obtain the entry standards and intent-contract audits; do not begin Wave 1 with an unresolved P0/P1.
+- [x] 0.1 Verify `reconcile-coordexp-swift-training-contracts` and `decompose-coordexp-swift-training-orchestration` are implementation-complete, synced, and archived; record their exact commits and the current change base commit, and stop if code, stable specs, docs, or archive dispositions disagree.
+- [x] 0.2 Record the post-decomposition owner/import graph and prove loss config, loss implementations, reporting consumers, and supported config migrations are outside `PACKING_CACHE_DETERMINANT_OWNERS`; record the exact admitted train/eval determinant payloads, aggregate hashes, target paths, and cache-hit receipts from the predecessor.
+- [x] 0.3 Freeze an exact execution-command manifest covering cwd, `conda` environment, commands, configs, world size/devices, artifact roots, expected evidence, and quantitative limits. Require a reviewable append-only amendment for any later command change.
+- [x] 0.4 Run the untouched focused config/loss/runtime/reporting/cache-identity/artifact suites and strict OpenSpec validation, then obtain the entry standards and intent-contract audits; do not begin Wave 1 with an unresolved P0/P1.
+
+> **Wave 0 closed (2026-08-20, base commit `0cb0ae729`):** predecessors
+> pinned (reconcile `eb2dc97ab`; decompose `ebfa78ff1`/`68191f7ea`, both
+> archived; `openspec validate --all` 21/21). Cache invariant established:
+> 31 determinants / 24 owner files; the ONLY loss-package owner is
+> `realized_vocab_groups` -> `src/losses/vocab.py`; NO determinant field
+> reads `losses.*`; recomputed fingerprints equal the two published targets;
+> full payloads sha-frozen in `receipts/wave-0-determinant-baseline.json`
+> (task 5.3 must recompute with that exact config, entry-audit F-10).
+> **DO-NOT-EDIT stop rule:** any edit to one of the 24 owner files is a
+> blocking contract review, never a rebuild. Entry baseline
+> (`wave0-entry-baseline` argv) 817 passed / 0 failed / 0 skipped;
+> independently replayed by the entry audit at 817/0/0. Entry audit
+> (`receipts/wave-0-entry-audit.md`): STANDARDS and INTENT-CONTRACT both
+> PASS-WITH-DISPOSITIONS, 0 P0 / 0 P1 (4 P2, 6 P3), Wave 1 CLEARED.
+> Binding dispositions: F-1 - `src/config/models.py` must NOT top-level
+> import from `src.losses` (circular, reproduced); Wave 1.2 uses a deferred
+> in-validator import of `V1_TOKEN_TYPES` plus an equality test, and never
+> edits `vocab.py`. F-2 - the gate-ablation finite label must derive from
+> the RAW diagnostic (runner `_build_finite_status` currently keys on
+> weighted); task 3.4's non-finite injection is the covering RED and must
+> be observed failing against a weighted-keyed implementation once.
+> F-4 - `_default_qwen_forward` stays OUT of scope (observability change
+> owns it); `_default_loss_context`/`_runtime_loss_denominator_gatherer`
+> are legitimately in Wave-2/3 scope. F-5/F-6 correction: the frozen
+> orchestration fixtures carry only `loss/total` (preserved), so **no
+> compatibility node needs a declared row-schema flip and fixtures stay
+> byte-frozen**; the actual Wave-4 per-term consumer surface is exactly
+> four current-root files (tests/losses/test_runner.py,
+> tests/runtime/test_train_runtime.py,
+> tests/training/test_wave7_exact_resume_compare.py synthetic rows,
+> scripts/analysis/coordexp_swift_length_isolation.py); the wave-0-baseline
+> receipt's ~20-file claim is superseded, receipt not rewritten (F-8: the
+> 2026-08-20 handoff's "protected compatibility surface" line about
+> per-term keys is likewise superseded by this change's artifacts delta).
+> **F-3, user-visible research-meaning scope of Wave 1.3** (21 supported
+> configs = 5 prod + 16 smoke): enabled gate weight `0.2` in 3 prod + 2
+> smoke and `0.25` in 1 smoke ALL become `0.1`; gate `0.0` in 2 prod + 13
+> smoke becomes the named `zero_weight_ablation`; `coord_gaussian_rps`
+> moves from protected to auxiliary in 2 configs (1 prod, 1 smoke). The
+> `0.1` constant's authority is this change's approved proposal/design/spec
+> deltas. Command-manifest amendments 1-4 recorded (entry-baseline pin,
+> validate-all argv, frozen residue argvs, and the 2026-08-20 standing user
+> GPU grant replacing per-action authorization requests for waves 3/5 GPU
+> probes - packets and bounds still required). F-7 noted for Wave 5.5
+> (optional Non-Finite-Gates delta).
 
 ## 1. Wave 1 - Strict Supervised Config Contract
 
