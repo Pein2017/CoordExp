@@ -27,6 +27,62 @@ The default CLI remains fail-closed when the scientific owner evidence is not
 available.  No vLLM publication, CE fallback, hidden session attribute,
 adaptive retry, or alternate objective is used.
 
+### Reservation lifecycle correction candidate (2026-08-20)
+
+The prelaunch lifecycle review found that the public entry had only a
+lost-owner recovery constructor.  A genuinely new immutable root therefore
+could not become the primary owner without being misclassified as a successor,
+and a failure before reservation could be replaced by the unconditional
+post-reservation terminal writer.
+
+The bounded correction now distinguishes two fail-closed modes:
+
+- `fresh_primary` is the public default.  It forbids stale-parent, recovery-
+  authority, and stale-PID inputs, creates the unique root and exclusive
+  `run-reservation.json` before calling backend preflight or loading a model,
+  and fails on any root collision.
+- `lost_owner_recovery` requires the mode, exact stale reservation, and
+  recovery authority explicitly.  It preserves the append-only parent link
+  and the unchanged one-consumer retry ceiling of one.
+
+Both modes issue one hashed `RunReservationIdentity`.  Every durable phase,
+the detached resource receipt, and the terminal envelope bind that same
+identity.  A pre-reservation failure retains its original exception and never
+calls terminal persistence; a post-reservation preflight failure can publish a
+typed terminal with zero model/GPU/network/update/output actions.
+
+The first independent localized review returned HOLD with five P1 findings:
+historical v1 resource hashes were not reload-stable; a reservation identity
+could be paired with the wrong or absent resource root; primary root creation
+had a write/fsync stranding window; the public full-panel branch bypassed or
+ignored reservation flags; and a post-reservation preflight failure reported
+planned K16 counts despite zero observed actions.  One bundled correction now:
+
+- omits the new optional identity key for legacy v1 payloads and proves exact
+  historical resource/terminal reload;
+- requires the detached output-root receipt to exactly match the admitted
+  identity;
+- prepares a complete reservation in a same-parent staging directory and
+  atomically publishes it with no-replace `renameat2`, attempts cleanup of any
+  unpublished staging directory on writer/fsync/collision faults, and preserves
+  the primary exception with an attached cleanup-failure note if cleanup also
+  fails;
+- validates reservation flags in public `main()` before either one-image or
+  full-panel GPU observation and forbids ignored recovery inputs on full-panel;
+  and
+- emits explicit zero request/group/forward/backward counts when a reserved
+  run fails before any observed action or shared-surface receipt.
+
+This is a reversible code/test/report candidate at frozen base
+`273a8d25a3f24f392d4e19e115b7db9197adfbb5`.  It changes no scientific
+objective, BF16/fp32 surface ownership, K16 policy, dual-RP behavior, or
+continuation gate.  The focused lifecycle suites passed 90 tests; the adjacent
+reconciliation/native-owner/lifecycle/entry set passed 127 tests.  Ruff,
+scoped Pyright, compileall, strict OpenSpec validation, and the diff check are
+clean.  No live GPU, model, network, K16, update, checkpoint, or output-root
+action was run for this correction.  Independent localized lifecycle review
+of the corrected frozen diff is still required before lead acceptance.
+
 ## Production attempts and evidence
 
 All observed attempts used a fresh sibling successor of the previous

@@ -32,6 +32,7 @@ CONFIG_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_config.v1"
 TERMINAL_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_terminal.v1"
 PHASE_LEDGER_SCHEMA_VERSION = "human13_all_hf_phase_ledger.v1"
 RESOURCE_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_resource.v1"
+RESERVATION_IDENTITY_SCHEMA_VERSION = "human13_one_image_reservation_identity.v1"
 SOURCE_ASSEMBLY_SCHEMA_VERSION = "human13_all_hf_source_assembly.v1"
 SEED_GROUPS = (
     (35001, 35002, 35003, 35004),
@@ -169,6 +170,69 @@ def _as_mapping(value: object, *, field: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{field} must be an object")
     return value
+
+
+@dataclass(frozen=True)
+class RunReservationIdentity:
+    """Mode-neutral identity of one atomically admitted immutable run root."""
+
+    reservation_mode: Literal["fresh_primary", "lost_owner_recovery"]
+    run_id: str
+    output_root: str
+    reservation_sha256: str
+    recovery_successor_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.reservation_mode not in {"fresh_primary", "lost_owner_recovery"}:
+            raise ValueError("reservation mode is unsupported")
+        if not isinstance(self.run_id, str) or not self.run_id:
+            raise ValueError("reservation run_id must be nonempty")
+        if not isinstance(self.output_root, str) or not Path(self.output_root).is_absolute():
+            raise ValueError("reservation output_root must be absolute")
+        _digest(self.reservation_sha256, field="reservation_sha256")
+        if self.reservation_mode == "fresh_primary":
+            if self.recovery_successor_sha256 is not None:
+                raise ValueError("fresh primary reservation must not bind recovery")
+        elif self.recovery_successor_sha256 is None:
+            raise ValueError("lost-owner recovery must bind its recovery receipt")
+        if self.recovery_successor_sha256 is not None:
+            _digest(
+                self.recovery_successor_sha256,
+                field="recovery_successor_sha256",
+            )
+
+    def _payload(self) -> dict[str, Any]:
+        value = {
+            "schema_version": RESERVATION_IDENTITY_SCHEMA_VERSION,
+            "reservation_mode": self.reservation_mode,
+            "run_id": self.run_id,
+            "output_root": self.output_root,
+            "reservation_sha256": self.reservation_sha256,
+            "recovery_successor_sha256": self.recovery_successor_sha256,
+        }
+        return value
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self._payload())
+
+    def to_dict(self) -> dict[str, Any]:
+        return self._payload() | {"content_sha256": self.content_sha256}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> RunReservationIdentity:
+        if value.get("schema_version") != RESERVATION_IDENTITY_SCHEMA_VERSION:
+            raise ValueError("reservation identity schema differs")
+        identity = cls(
+            reservation_mode=value["reservation_mode"],
+            run_id=value["run_id"],
+            output_root=value["output_root"],
+            reservation_sha256=value["reservation_sha256"],
+            recovery_successor_sha256=value.get("recovery_successor_sha256"),
+        )
+        if value.get("content_sha256") != identity.content_sha256:
+            raise ValueError("reservation identity content hash differs")
+        return identity
 
 
 @dataclass(frozen=True)
@@ -854,6 +918,7 @@ class ResourceReceipt:
     phase_count: int
     retry_count: int
     promoted_checkpoint: Literal[False]
+    reservation_identity: RunReservationIdentity | None = None
     sampled_request_count: int = 16
     sampled_group_count: int = 4
     sample_forward_count: int = 2048
@@ -879,6 +944,17 @@ class ResourceReceipt:
             raise ValueError("retry_count must be a nonnegative integer")
         if self.promoted_checkpoint is not False:
             raise ValueError("proposal checkpoint promotion is forbidden")
+        if self.reservation_identity is not None and not isinstance(
+            self.reservation_identity, RunReservationIdentity
+        ):
+            raise ValueError("resource reservation identity is malformed")
+        if self.reservation_identity is not None and (
+            self.output_root is None
+            or self.output_root.path != self.reservation_identity.output_root
+        ):
+            raise ValueError(
+                "reservation identity must match the resource output root"
+            )
         for field in (
             "sampled_request_count",
             "sampled_group_count",
@@ -934,7 +1010,7 @@ class ResourceReceipt:
         return _sha256(self._payload())
 
     def _payload(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema_version": RESOURCE_SCHEMA_VERSION,
             "resources": self.resources.to_dict(),
             "output_root": None
@@ -956,6 +1032,9 @@ class ResourceReceipt:
             "cuda_peak_allocated_bytes": self.cuda_peak_allocated_bytes,
             "cuda_peak_reserved_bytes": self.cuda_peak_reserved_bytes,
         }
+        if self.reservation_identity is not None:
+            value["reservation_identity"] = self.reservation_identity.to_dict()
+        return value
 
     def to_dict(self) -> dict[str, Any]:
         value = self._payload()
@@ -978,12 +1057,19 @@ class ResourceReceipt:
             if root_value.get("content_sha256") != root.content_sha256:
                 raise ValueError("resource output root content hash differs")
         resources = DualGPUResourceReceipt.from_dict(value["resources"])
+        identity_value = value.get("reservation_identity")
+        identity = None
+        if identity_value is not None:
+            identity = RunReservationIdentity.from_dict(
+                _as_mapping(identity_value, field="reservation_identity")
+            )
         receipt = cls(
             resources=resources,
             output_root=root,
             phase_count=value["phase_count"],
             retry_count=value["retry_count"],
             promoted_checkpoint=value["promoted_checkpoint"],
+            reservation_identity=identity,
             sampled_request_count=value.get("sampled_request_count", 16),
             sampled_group_count=value.get("sampled_group_count", 4),
             sample_forward_count=value.get("sample_forward_count", 2048),
@@ -1122,7 +1208,7 @@ class AuditAnalysis:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "repetition_penalty": self.repetition_penalty,
             "source_owner_ids": list(self.source_owner_ids),
             "proposal_owner_ids": list(self.proposal_owner_ids),
@@ -1141,6 +1227,7 @@ class AuditAnalysis:
             "row_count": self.row_count,
             "token_count": self.token_count,
         }
+        return value
 
 
 @dataclass(frozen=True)
@@ -2138,6 +2225,7 @@ def _resource_receipt(
     retry_count: int = 0,
     forward_counts: Mapping[str, int] | None = None,
     backward_count: int | None = None,
+    reservation_identity: RunReservationIdentity | None = None,
 ) -> ResourceReceipt:
     sampled_request_count = 16
     sampled_group_count = 4
@@ -2163,6 +2251,7 @@ def _resource_receipt(
         phase_count=phase_count,
         retry_count=retry_count,
         promoted_checkpoint=False,
+        reservation_identity=reservation_identity,
         sampled_request_count=sampled_request_count,
         sampled_group_count=sampled_group_count,
         backward_count=backward_count,
@@ -2365,6 +2454,7 @@ def run_one_image(
     reproduced = False
     rollback_attempted = False
     failure: BaseException | None = None
+    reservation_state_exposed = hasattr(services, "reservation_identity")
     status: Literal[
         "preflight_admitted",
         "parity_failure",
@@ -2577,10 +2667,31 @@ def run_one_image(
             reproduced = True
             if "rollback_source_reproduction" not in phases:
                 phases.append("rollback_source_reproduction")
+    reservation_identity = getattr(services, "reservation_identity", None)
+    if reservation_identity is not None and not isinstance(
+        reservation_identity, RunReservationIdentity
+    ):
+        raise TypeError("service reservation identity is malformed")
+    if failure is not None and reservation_state_exposed and reservation_identity is None:
+        raise failure
     service_phase_hashes = tuple(getattr(services, "phase_receipt_sha256s", ()))
     service_phase_ledger_sha256 = getattr(services, "phase_ledger_sha256", None)
     action_counters = _action_counters(services, phases=phases, status=status)
     shared_forward_counts = _shared_surface_forward_counts(services)
+    if (
+        shared_forward_counts is None
+        and reservation_identity is not None
+        and all(value == 0 for value in action_counters.values())
+    ):
+        shared_forward_counts = {
+            "sample_forward_count": 0,
+            "replay_forward_count": 0,
+            "source_owner_forward_count": 0,
+            "total_forward_count": 0,
+            "no_cache_forward_count": 0,
+            "sampled_group_count": 0,
+            "sampled_request_count": 0,
+        }
     terminal = _seal_terminal(
         OneImageTerminalReceipt(
             terminal_status=status,
@@ -2591,6 +2702,7 @@ def run_one_image(
                 retry_count=retry_count,
                 forward_counts=shared_forward_counts,
                 backward_count=action_counters["backwards"],
+                reservation_identity=reservation_identity,
             ),
             model_actions=action_counters,
             phase_receipts=tuple(phases),
@@ -2608,7 +2720,9 @@ def run_one_image(
         issuer=_TERMINAL_ISSUER_TOKEN,
     )
     persist_terminal = getattr(services, "persist_terminal", None)
-    if callable(persist_terminal):
+    if callable(persist_terminal) and (
+        not reservation_state_exposed or reservation_identity is not None
+    ):
         persist_terminal(terminal)
     return terminal
 
@@ -2701,6 +2815,34 @@ class ProductionExecution:
     manifest_binding: Any
 
 
+def _validate_reservation_cli(args: argparse.Namespace) -> None:
+    mode = args.reservation_mode
+    stale = args.stale_reservation
+    recovery_authority = args.recovery_authority
+    stale_owner_pid = args.stale_owner_pid
+    if args.full_panel and (
+        mode != "fresh_primary"
+        or stale is not None
+        or recovery_authority is not None
+        or stale_owner_pid is not None
+    ):
+        raise ValueError(
+            "full-panel admission requires fresh primary reservation defaults"
+        )
+    if mode == "fresh_primary":
+        if stale is not None or recovery_authority is not None or stale_owner_pid is not None:
+            raise ValueError(
+                "fresh primary reservation forbids stale-parent recovery inputs"
+            )
+        return
+    if mode != "lost_owner_recovery":
+        raise ValueError("reservation mode is unsupported")
+    if stale is None:
+        raise ValueError("lost-owner recovery requires an explicit stale reservation")
+    if not isinstance(recovery_authority, str) or not recovery_authority:
+        raise ValueError("lost-owner recovery requires explicit recovery authority")
+
+
 def load_task5_runtime_factory(spec: str) -> Any:
     """Load the explicit existing-owner Task-5 semantic factory."""
 
@@ -2727,6 +2869,7 @@ def build_production_execution(
 
     if args.manifest is None or args.attempt_id is None:
         raise ValueError("one-image --execute requires --manifest and --attempt-id")
+    _validate_reservation_cli(args)
     repo_root = Path(args.repo_root).expanduser().resolve()
     _ensure_repo_root_on_sys_path(repo_root)
     resources = admit_production_gpu_resources(
@@ -2757,9 +2900,9 @@ def build_production_execution(
         else (repo_root / HUMAN13_SOURCE_INFER_CONFIG).resolve()
     )
     stale = (
-        Path(args.stale_reservation).expanduser().resolve()
-        if args.stale_reservation is not None
-        else (Path(config.output_root).expanduser().resolve() / "run-reservation.json")
+        None
+        if args.stale_reservation is None
+        else Path(args.stale_reservation).expanduser().resolve()
     )
     backend_kwargs: dict[str, Any] = dict(
         manifest=manifest,
@@ -2779,9 +2922,11 @@ def build_production_execution(
     backend = (backend_factory or ExistingOwnersProductionBackend)(**backend_kwargs)
     services = ProductionOneImageServices(
         backend=backend,
+        reservation_mode=args.reservation_mode,
         stale_reservation_path=stale,
         successor_root=output_root,
         attempt_id=args.attempt_id,
+        recovery_authority=args.recovery_authority,
         stale_owner_pid=getattr(args, "stale_owner_pid", None),
     )
     return ProductionExecution(
@@ -2807,7 +2952,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempt-id", default=None)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--source-config", type=Path, default=None)
+    parser.add_argument(
+        "--reservation-mode",
+        choices=("fresh_primary", "lost_owner_recovery"),
+        default="fresh_primary",
+    )
     parser.add_argument("--stale-reservation", type=Path, default=None)
+    parser.add_argument("--recovery-authority", default=None)
     parser.add_argument(
         "--stale-owner-pid",
         type=int,
@@ -2829,6 +2980,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    _validate_reservation_cli(args)
     config = EntryConfig.from_yaml(args.config)
     if not args.execute:
         print(

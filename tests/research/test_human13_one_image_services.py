@@ -21,11 +21,13 @@ from scripts.research.human13_one_image_services import (
     Task5ProductionContextFailureReceipt,
     Task5ProductionContextUnavailable,
 )
+import scripts.research.human13_one_image_services as service_owner
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
     GPUResource,
     OneImageTerminalReceipt,
+    OutputRootReceipt,
     ResourceReceipt,
     SourceAssemblyReceipt,
 )
@@ -279,9 +281,11 @@ def _services(
     return (
         ProductionOneImageServices(
             backend=backend,
+            reservation_mode="lost_owner_recovery",
             stale_reservation_path=stale,
             successor_root=successor,
             attempt_id="attempt-0001",
+            recovery_authority="test_explicit_owner",
             pid_is_alive=lambda pid: False,
             phase_writer=phase_writer,
         ),
@@ -313,9 +317,11 @@ def test_stale_reservation_recovery_is_parent_linked_append_only_and_dual_gpu_bo
         services.preflight_source_assembly(_config(tmp_path), _resources())
     second = ProductionOneImageServices(
         backend=_Backend(),
+        reservation_mode="lost_owner_recovery",
         stale_reservation_path=stale,
         successor_root=successor,
         attempt_id="attempt-0001",
+        recovery_authority="test_explicit_owner",
         pid_is_alive=lambda pid: False,
     )
     with pytest.raises(RuntimeError, match="already reserved"):
@@ -363,9 +369,11 @@ def test_append_only_recovery_can_chain_from_a_zero_action_successor(
     second_root = tmp_path / "one-image-recovery-attempt-0002"
     second = ProductionOneImageServices(
         backend=_Backend(),
+        reservation_mode="lost_owner_recovery",
         stale_reservation_path=first_root / "run-reservation.json",
         successor_root=second_root,
         attempt_id="attempt-0002",
+        recovery_authority="test_explicit_owner",
         pid_is_alive=lambda pid: False,
     )
     second.preflight_source_assembly(_config(tmp_path), _resources())
@@ -391,9 +399,11 @@ def test_legacy_successor_can_recover_with_explicit_lost_owner_pid_witness(
     successor = tmp_path / "legacy-successor-next"
     services = ProductionOneImageServices(
         backend=_Backend(),
+        reservation_mode="lost_owner_recovery",
         stale_reservation_path=stale,
         successor_root=successor,
         attempt_id="attempt-legacy-next",
+        recovery_authority="test_explicit_owner",
         stale_owner_pid=377949,
         pid_is_alive=lambda pid: False,
     )
@@ -405,6 +415,214 @@ def test_legacy_successor_can_recover_with_explicit_lost_owner_pid_witness(
     )
     assert recovery["parent_pid"] == 377949
     assert recovery["parent_pid_source"] == "explicit_recovery_witness"
+
+
+def test_fresh_primary_reservation_precedes_backend_and_binds_phase_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "fresh-primary"
+
+    class InspectingBackend(_Backend):
+        def preflight_source_assembly(
+            self, config: EntryConfig, resources: Any
+        ) -> Any:
+            reservation = json.loads((root / "run-reservation.json").read_text())
+            assert reservation["reservation_mode"] == "fresh_primary"
+            assert all(value == 0 for value in reservation["model_actions"].values())
+            return super().preflight_source_assembly(config, resources)
+
+    backend = InspectingBackend()
+    services = ProductionOneImageServices(
+        backend=backend,
+        reservation_mode="fresh_primary",
+        stale_reservation_path=None,
+        successor_root=root,
+        attempt_id="fresh-attempt",
+        recovery_authority=None,
+    )
+
+    services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    identity = services.reservation_identity
+    assert isinstance(identity, service_owner.RunReservationIdentity)
+    assert identity.reservation_mode == "fresh_primary"
+    assert identity.output_root == str(root.resolve())
+    assert service_owner.RunReservationIdentity.from_dict(identity.to_dict()) == identity
+    first_phase = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert first_phase["reservation_identity"] == identity.to_dict()
+    assert backend.events == ["preflight_source"]
+
+
+def test_fresh_primary_collision_has_zero_actions_and_no_admitted_identity(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "fresh-primary"
+    root.mkdir()
+    backend = _Backend()
+    services = ProductionOneImageServices(
+        backend=backend,
+        reservation_mode="fresh_primary",
+        stale_reservation_path=None,
+        successor_root=root,
+        attempt_id="fresh-attempt",
+        recovery_authority=None,
+    )
+
+    with pytest.raises(FileExistsError):
+        services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    assert services.reservation_identity is None
+    assert all(value == 0 for value in services.action_counters().values())
+    assert backend.events == []
+
+
+@pytest.mark.parametrize("failure_point", ["reservation_write", "parent_fsync"])
+def test_fresh_primary_admission_fault_does_not_strand_unique_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    root = tmp_path / "fresh-primary"
+    backend = _Backend()
+    services = ProductionOneImageServices(
+        backend=backend,
+        reservation_mode="fresh_primary",
+        stale_reservation_path=None,
+        successor_root=root,
+        attempt_id="fresh-attempt",
+        recovery_authority=None,
+    )
+    original_writer = service_owner._write_exclusive_json
+    original_fsync = service_owner._fsync_directory
+
+    def failing_writer(path: Path, value: Any) -> None:
+        if path.name == "run-reservation.json":
+            raise OSError("injected reservation write failure")
+        original_writer(path, value)
+
+    def failing_fsync(path: Path) -> None:
+        if path == root.parent:
+            raise OSError("injected parent fsync failure")
+        original_fsync(path)
+
+    if failure_point == "reservation_write":
+        monkeypatch.setattr(service_owner, "_write_exclusive_json", failing_writer)
+        expected = "reservation write failure"
+    else:
+        monkeypatch.setattr(service_owner, "_fsync_directory", failing_fsync)
+        expected = "parent fsync failure"
+
+    with pytest.raises(OSError, match=expected):
+        services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    assert services.reservation_identity is None
+    assert all(value == 0 for value in services.action_counters().values())
+    assert backend.events == []
+    assert not root.exists()
+
+
+def test_staging_cleanup_failure_never_masks_primary_reservation_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class PrimaryWriteError(OSError):
+        pass
+
+    class CleanupError(OSError):
+        pass
+
+    root = tmp_path / "fresh-primary"
+    services = ProductionOneImageServices(
+        backend=_Backend(),
+        reservation_mode="fresh_primary",
+        stale_reservation_path=None,
+        successor_root=root,
+        attempt_id="fresh-attempt",
+        recovery_authority=None,
+    )
+
+    def fail_reservation_write(path: Path, value: Any) -> None:
+        del value
+        if path.name == "run-reservation.json":
+            raise PrimaryWriteError("primary reservation write failed")
+        raise AssertionError(path)
+
+    def fail_staging_cleanup(path: Path) -> None:
+        del path
+        raise CleanupError("staging cleanup failed")
+
+    monkeypatch.setattr(
+        service_owner, "_write_exclusive_json", fail_reservation_write
+    )
+    monkeypatch.setattr(service_owner.shutil, "rmtree", fail_staging_cleanup)
+
+    with pytest.raises(
+        PrimaryWriteError, match="primary reservation write failed"
+    ) as caught:
+        services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    assert any("staging cleanup failed" in note for note in caught.value.__notes__)
+    assert services.reservation_identity is None
+    assert all(value == 0 for value in services.action_counters().values())
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("reservation_mode", ["fresh_primary", "lost_owner_recovery"])
+def test_both_reservation_modes_reload_hash_and_bind_phase_identity(
+    tmp_path: Path, reservation_mode: Any
+) -> None:
+    root = tmp_path / f"root-{reservation_mode}"
+    stale = tmp_path / "stale" / "run-reservation.json"
+    if reservation_mode == "lost_owner_recovery":
+        _stale(stale)
+    services = ProductionOneImageServices(
+        backend=_Backend(),
+        reservation_mode=reservation_mode,
+        stale_reservation_path=(
+            stale if reservation_mode == "lost_owner_recovery" else None
+        ),
+        successor_root=root,
+        attempt_id=f"attempt-{reservation_mode}",
+        recovery_authority=(
+            "test_explicit_owner"
+            if reservation_mode == "lost_owner_recovery"
+            else None
+        ),
+        pid_is_alive=lambda pid: False,
+    )
+
+    services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    identity = services.reservation_identity
+    assert isinstance(identity, service_owner.RunReservationIdentity)
+    reservation = json.loads((root / "run-reservation.json").read_text())
+    reservation_payload = {
+        key: value for key, value in reservation.items() if key != "content_sha256"
+    }
+    assert reservation["content_sha256"] == json_sha256(reservation_payload)
+    assert identity.reservation_sha256 == reservation["content_sha256"]
+    reloaded = service_owner.RunReservationIdentity.from_dict(identity.to_dict())
+    assert reloaded == identity
+    assert reloaded.content_sha256 == identity.content_sha256
+    resource = ResourceReceipt(
+        _resources(),
+        OutputRootReceipt(identity.output_root, False),
+        phase_count=len(services.phase_receipt_sha256s),
+        retry_count=0,
+        promoted_checkpoint=False,
+        reservation_identity=identity,
+        sampled_request_count=0,
+        sampled_group_count=0,
+        sample_forward_count=0,
+        replay_forward_count=0,
+        source_owner_forward_count=0,
+        total_forward_count=0,
+        no_cache_forward_count=0,
+        backward_count=0,
+    )
+    assert ResourceReceipt.from_dict(resource.to_dict()) == resource
+    for phase_path in sorted((root / "receipts").glob("*.json")):
+        assert json.loads(phase_path.read_text())["reservation_identity"] == identity.to_dict()
 
 
 def test_missing_live_owner_context_is_written_as_typed_phase_receipt(
@@ -901,10 +1119,11 @@ def test_terminal_receipt_is_written_immutably_with_recovery_lineage(
     services.preflight_source_assembly(config, resources)
     resource = ResourceReceipt(
         resources,
-        None,
+        OutputRootReceipt(str(successor.resolve()), False),
         phase_count=0,
         retry_count=0,
         promoted_checkpoint=False,
+        reservation_identity=services.reservation_identity,
     )
     terminal = OneImageTerminalReceipt(
         terminal_status="parity_failure",
@@ -927,6 +1146,69 @@ def test_terminal_receipt_is_written_immutably_with_recovery_lineage(
         services.persist_terminal(terminal)
 
 
+def test_fresh_primary_failure_persists_zero_action_bound_terminal(
+    tmp_path: Path,
+) -> None:
+    class FailingBackend(_Backend):
+        def preflight_source_assembly(
+            self, config: EntryConfig, resources: Any
+        ) -> Any:
+            del config, resources
+            self.events.append("preflight_source")
+            raise RuntimeError("fresh primary preflight failed")
+
+    root = tmp_path / "fresh-primary"
+    backend = FailingBackend()
+    services = ProductionOneImageServices(
+        backend=backend,
+        reservation_mode="fresh_primary",
+        stale_reservation_path=None,
+        successor_root=root,
+        attempt_id="fresh-attempt",
+        recovery_authority=None,
+    )
+    config = _config(tmp_path)
+    resources = _resources()
+
+    with pytest.raises(RuntimeError, match="fresh primary preflight failed"):
+        services.preflight_source_assembly(config, resources)
+
+    identity = services.reservation_identity
+    assert isinstance(identity, service_owner.RunReservationIdentity)
+    assert all(value == 0 for value in services.action_counters().values())
+    terminal = OneImageTerminalReceipt(
+        terminal_status="update_failure",
+        resource_receipt=ResourceReceipt(
+            resources,
+            OutputRootReceipt(identity.output_root, False),
+            phase_count=len(services.phase_receipt_sha256s),
+            retry_count=0,
+            promoted_checkpoint=False,
+            reservation_identity=identity,
+            sampled_request_count=0,
+            sampled_group_count=0,
+            sample_forward_count=0,
+            replay_forward_count=0,
+            source_owner_forward_count=0,
+            total_forward_count=0,
+            no_cache_forward_count=0,
+            backward_count=0,
+        ),
+        model_actions=services.action_counters(),
+        phase_receipt_sha256s=services.phase_receipt_sha256s,
+        phase_ledger_sha256=services.phase_ledger_sha256,
+        failure_reason="RuntimeError: fresh primary preflight failed",
+    )
+
+    services.persist_terminal(terminal)
+
+    envelope = json.loads((root / "terminal.json").read_text())
+    assert envelope["reservation_identity"] == identity.to_dict()
+    assert envelope["terminal"]["resource_receipt"]["reservation_identity"] == (
+        identity.to_dict()
+    )
+
+
 def test_terminal_phase_ledger_mismatch_fails_before_publication(
     tmp_path: Path,
 ) -> None:
@@ -937,10 +1219,11 @@ def test_terminal_phase_ledger_mismatch_fails_before_publication(
     services.preflight_source_assembly(config, resources)
     resource = ResourceReceipt(
         resources,
-        None,
+        OutputRootReceipt(str(successor.resolve()), False),
         phase_count=0,
         retry_count=0,
         promoted_checkpoint=False,
+        reservation_identity=services.reservation_identity,
     )
     mismatched_hashes = ("f" * 64,)
     terminal = OneImageTerminalReceipt(

@@ -13,13 +13,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
+import ctypes
 from dataclasses import dataclass, replace
 import errno
 import json
 import os
 from pathlib import Path
 import shutil
-from typing import Any, Protocol, cast, runtime_checkable
+import tempfile
+from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 from scripts.research.human13_cuda_cpu_adapter import (
     CudaHFVerticalAdapter,
@@ -39,6 +41,7 @@ from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
     OneImageTerminalReceipt,
+    RunReservationIdentity,
     SourceAssemblyReceipt,
     acquired_h_owner_ids_from_trajectory,
 )
@@ -107,6 +110,36 @@ def _pid_is_alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _rename_directory_noreplace(source: Path, target: Path) -> None:
+    """Atomically publish a prepared run root without replacing a collision."""
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    renameat2: Any = getattr(libc, "renameat2", None)
+    if renameat2 is None:
+        raise OSError(errno.ENOSYS, "renameat2 is required for atomic root admission")
+    renameat2.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    renameat2.restype = ctypes.c_int
+    result = renameat2(
+        -100,
+        os.fsencode(source),
+        -100,
+        os.fsencode(target),
+        1,
+    )
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number == errno.EEXIST:
+        raise FileExistsError(target)
+    raise OSError(error_number, os.strerror(error_number), str(target))
 
 
 @dataclass(frozen=True)
@@ -1284,10 +1317,11 @@ class ProductionOneImageServices:
         self,
         *,
         backend: ProductionOneImageBackend,
-        stale_reservation_path: str | Path,
+        reservation_mode: Literal["fresh_primary", "lost_owner_recovery"],
+        stale_reservation_path: str | Path | None,
         successor_root: str | Path,
         attempt_id: str,
-        recovery_authority: str = "explicit_task5_owner",
+        recovery_authority: str | None,
         stale_owner_pid: int | None = None,
         pid_is_alive: Callable[[int], bool] = _pid_is_alive,
         phase_writer: PhaseWriter | None = None,
@@ -1296,26 +1330,50 @@ class ProductionOneImageServices:
             raise TypeError("production services require a complete backend")
         if not isinstance(attempt_id, str) or not attempt_id:
             raise ValueError("attempt_id must be nonempty")
-        if not isinstance(recovery_authority, str) or not recovery_authority:
-            raise ValueError("recovery authority must be nonempty")
+        if reservation_mode not in {"fresh_primary", "lost_owner_recovery"}:
+            raise ValueError("reservation mode is unsupported")
         if stale_owner_pid is not None and (
             isinstance(stale_owner_pid, bool) or stale_owner_pid <= 0
         ):
             raise ValueError("stale owner PID must be a positive integer")
         self._backend = backend
-        self._stale = Path(stale_reservation_path).expanduser().resolve()
+        self._reservation_mode: Literal[
+            "fresh_primary", "lost_owner_recovery"
+        ] = reservation_mode
+        self._stale = (
+            None
+            if stale_reservation_path is None
+            else Path(stale_reservation_path).expanduser().resolve()
+        )
         self._root = Path(successor_root).expanduser().resolve()
-        if (
-            self._root == self._stale.parent
-            or self._root.parent != self._stale.parent.parent
-        ):
-            raise ValueError("successor root must be a fresh sibling of the stale root")
+        if reservation_mode == "fresh_primary":
+            if (
+                self._stale is not None
+                or recovery_authority is not None
+                or stale_owner_pid is not None
+            ):
+                raise ValueError(
+                    "fresh primary reservation forbids stale-parent recovery inputs"
+                )
+        else:
+            if self._stale is None:
+                raise ValueError("lost-owner recovery requires a stale reservation")
+            if not isinstance(recovery_authority, str) or not recovery_authority:
+                raise ValueError("lost-owner recovery requires explicit authority")
+            if (
+                self._root == self._stale.parent
+                or self._root.parent != self._stale.parent.parent
+            ):
+                raise ValueError(
+                    "recovery root must be a fresh sibling of the stale root"
+                )
         self._attempt_id = attempt_id
         self._recovery_authority = recovery_authority
         self._stale_owner_pid = stale_owner_pid
         self._pid_is_alive = pid_is_alive
         self._phase_writer = phase_writer or _write_exclusive_json
         self._recovery_sha256: str | None = None
+        self._reservation_identity: RunReservationIdentity | None = None
         self._reserved = False
         self._phase_index = 0
         self._phase_hashes: list[str] = []
@@ -1349,6 +1407,10 @@ class ProductionOneImageServices:
     @property
     def successor_root(self) -> Path:
         return self._root
+
+    @property
+    def reservation_identity(self) -> RunReservationIdentity | None:
+        return self._reservation_identity
 
     def action_counters(self) -> dict[str, int]:
         return dict(self._actions)
@@ -1389,6 +1451,9 @@ class ProductionOneImageServices:
         status: str = "completed",
         evidence: Mapping[str, Any] | None = None,
     ) -> str:
+        identity = self._reservation_identity
+        if identity is None:
+            raise RuntimeError("phase persistence requires an admitted reservation")
         self._phase_index += 1
         payload = {
             "schema_version": PHASE_SCHEMA,
@@ -1396,6 +1461,7 @@ class ProductionOneImageServices:
             "phase_index": self._phase_index,
             "phase": phase,
             "status": status,
+            "reservation_identity": identity.to_dict(),
             "recovery_successor_sha256": self._recovery_sha256,
             "evidence": {} if evidence is None else dict(evidence),
         }
@@ -1407,12 +1473,110 @@ class ProductionOneImageServices:
         self._phase_hashes.append(content)
         return content
 
-    def _reserve_successor(
+    def _reservation_payload(
+        self,
+        config: EntryConfig,
+        resources: DualGPUResourceReceipt,
+        *,
+        recovery_successor_sha256: str | None,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": RESERVATION_SCHEMA,
+            "reservation_mode": self._reservation_mode,
+            "run_id": self._attempt_id,
+            "pid": os.getpid(),
+            "output_root": str(self._root),
+            "config_sha256": config.content_sha256,
+            "manifest_sha256": config.manifest_sha256,
+            "training_gpu": resources.training_gpu,
+            "audit_gpu": resources.audit_gpu,
+            "retry_ceiling": FIXED_RETRY_CEILING,
+            "recovery_successor_sha256": recovery_successor_sha256,
+            "model_actions": dict(self._actions),
+        }
+
+    def _admit_reservation(
+        self, payload: Mapping[str, Any]
+    ) -> RunReservationIdentity:
+        reservation_sha = json_sha256(payload)
+        _write_exclusive_json(
+            self._root / "run-reservation.json",
+            dict(payload) | {"content_sha256": reservation_sha},
+        )
+        identity = RunReservationIdentity(
+            reservation_mode=self._reservation_mode,
+            run_id=self._attempt_id,
+            output_root=str(self._root),
+            reservation_sha256=reservation_sha,
+            recovery_successor_sha256=self._recovery_sha256,
+        )
+        self._reservation_identity = identity
+        self._reserved = True
+        return identity
+
+    def _reserve_primary(
+        self, config: EntryConfig, resources: DualGPUResourceReceipt
+    ) -> None:
+        if self._reserved:
+            raise RuntimeError("primary attempt is already reserved")
+        self._root.parent.mkdir(parents=True, exist_ok=True)
+        _fsync_directory(self._root.parent)
+        payload = self._reservation_payload(
+            config,
+            resources,
+            recovery_successor_sha256=None,
+        )
+        reservation_sha = json_sha256(payload)
+        identity = RunReservationIdentity(
+            reservation_mode="fresh_primary",
+            run_id=self._attempt_id,
+            output_root=str(self._root),
+            reservation_sha256=reservation_sha,
+        )
+        staging = Path(
+            tempfile.mkdtemp(
+                prefix=f".{self._root.name}.reservation-",
+                dir=self._root.parent,
+            )
+        )
+        published = False
+        primary_error: BaseException | None = None
+        try:
+            _write_exclusive_json(
+                staging / "run-reservation.json",
+                payload | {"content_sha256": reservation_sha},
+            )
+            _fsync_directory(staging)
+            _rename_directory_noreplace(staging, self._root)
+            published = True
+            self._reservation_identity = identity
+            self._reserved = True
+            _fsync_directory(self._root.parent)
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if not published and staging.exists():
+                try:
+                    shutil.rmtree(staging)
+                except BaseException as cleanup_error:
+                    if primary_error is None:
+                        raise
+                    primary_error.add_note(
+                        "unpublished staging cleanup failed: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+        self._record("primary_reservation")
+
+    def _reserve_recovery(
         self, config: EntryConfig, resources: DualGPUResourceReceipt
     ) -> None:
         if self._reserved or self._root.exists():
             raise RuntimeError("successor attempt is already reserved")
-        parent_bytes = self._stale.read_bytes()
+        stale = self._stale
+        if stale is None:
+            raise RuntimeError("lost-owner recovery lacks its stale reservation")
+        parent_bytes = stale.read_bytes()
         parent = json.loads(parent_bytes)
         if not isinstance(parent, Mapping):
             raise ValueError("stale reservation must be a JSON object")
@@ -1441,7 +1605,7 @@ class ProductionOneImageServices:
             raise RuntimeError("parent reservation PID is still alive")
         recovery_payload = {
             "schema_version": RECOVERY_SCHEMA,
-            "parent_reservation_path": str(self._stale),
+            "parent_reservation_path": str(stale),
             "parent_reservation_sha256": hashlib_sha256(parent_bytes),
             "parent_run_id": run_id,
             "parent_pid": pid,
@@ -1457,7 +1621,7 @@ class ProductionOneImageServices:
         recovery_sha = json_sha256(recovery_payload)
         claim_payload = {
             "schema_version": "human13_one_image_recovery_claim.v1",
-            "parent_reservation_path": str(self._stale),
+            "parent_reservation_path": str(stale),
             "parent_reservation_sha256": recovery_payload["parent_reservation_sha256"],
             "parent_run_id": run_id,
             "parent_pid": pid,
@@ -1470,7 +1634,7 @@ class ProductionOneImageServices:
             "recovery_authority": self._recovery_authority,
         }
         claim_path = (
-            self._stale.parent
+            stale.parent
             / ".reservation-recovery-claims"
             / f"{recovery_payload['parent_reservation_sha256']}.json"
         )
@@ -1489,26 +1653,14 @@ class ProductionOneImageServices:
             self._root / "reservation-recovery.v1.json",
             recovery_payload | {"content_sha256": recovery_sha},
         )
-        reservation_payload = {
-            "schema_version": RESERVATION_SCHEMA,
-            "run_id": self._attempt_id,
-            "pid": os.getpid(),
-            "parent_pid_source": parent_pid_source,
-            "output_root": str(self._root),
-            "config_sha256": config.content_sha256,
-            "manifest_sha256": config.manifest_sha256,
-            "training_gpu": resources.training_gpu,
-            "audit_gpu": resources.audit_gpu,
-            "retry_ceiling": FIXED_RETRY_CEILING,
-            "recovery_successor_sha256": recovery_sha,
-            "model_actions": dict(self._actions),
-        }
-        _write_exclusive_json(
-            self._root / "run-reservation.json",
-            reservation_payload | {"content_sha256": json_sha256(reservation_payload)},
-        )
         self._recovery_sha256 = recovery_sha
-        self._reserved = True
+        reservation_payload = self._reservation_payload(
+            config,
+            resources,
+            recovery_successor_sha256=recovery_sha,
+        )
+        reservation_payload["parent_pid_source"] = parent_pid_source
+        self._admit_reservation(reservation_payload)
         self._record("reservation_recovery")
 
     def preflight_source_assembly(
@@ -1516,7 +1668,10 @@ class ProductionOneImageServices:
     ) -> SourceAssemblyReceipt:
         if resources.training_gpu != 0 or resources.audit_gpu != 1:
             raise ValueError("production lifecycle requires GPU 0 training/GPU 1 audit")
-        self._reserve_successor(config, resources)
+        if self._reservation_mode == "fresh_primary":
+            self._reserve_primary(config, resources)
+        else:
+            self._reserve_recovery(config, resources)
         try:
             receipt = self._backend.preflight_source_assembly(config, resources)
         except Exception as error:
@@ -2100,10 +2255,15 @@ class ProductionOneImageServices:
             self._source_audits.clear()
 
     def persist_terminal(self, terminal: OneImageTerminalReceipt) -> None:
-        if not self._reserved or self._recovery_sha256 is None:
-            raise RuntimeError("terminal persistence requires an admitted successor")
+        identity = self._reservation_identity
+        if not self._reserved or identity is None:
+            raise RuntimeError("terminal persistence requires an admitted reservation")
         if not isinstance(terminal, OneImageTerminalReceipt):
             raise TypeError("terminal persistence requires OneImageTerminalReceipt")
+        if terminal.resource_receipt.reservation_identity != identity:
+            raise ValueError(
+                "terminal resource receipt differs from admitted reservation"
+            )
         if (
             terminal.phase_receipt_sha256s != self.phase_receipt_sha256s
             or terminal.phase_ledger_sha256 != self.phase_ledger_sha256
@@ -2126,6 +2286,7 @@ class ProductionOneImageServices:
         payload = {
             "schema_version": TERMINAL_ENVELOPE_SCHEMA,
             "attempt_id": self._attempt_id,
+            "reservation_identity": identity.to_dict(),
             "recovery_successor_sha256": self._recovery_sha256,
             "terminal_status": terminal.terminal_status,
             "terminal_sha256": terminal.content_sha256,

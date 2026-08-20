@@ -26,6 +26,7 @@ from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     ExecutionAuthority,
     GPUResource,
     OneImageTerminalReceipt,
+    OutputRootReceipt,
     ResourceReceipt,
     SourceAssemblyReceipt,
     analyze_audit_pair,
@@ -317,6 +318,9 @@ class _FakeServices:
         self.events.append(f"source_audit:{repetition_penalty}")
         return _row(repetition_penalty=repetition_penalty)
 
+    def request_source_only_close(self) -> None:
+        self.events.append("source_only_close_requested")
+
     def acquire_and_replay(
         self, training_session: object, config: EntryConfig
     ) -> object:
@@ -362,7 +366,9 @@ class _FakeServices:
         assert private is self.private
         self.events.append("cleanup_private")
 
-    def close(self, training_session: object, audit_session: object) -> None:
+    def close(
+        self, training_session: object | None, audit_session: object | None
+    ) -> None:
         del training_session, audit_session
         self.events.append("close")
 
@@ -499,9 +505,11 @@ def test_typed_runtime_context_failure_terminal_binds_observed_shared_surface_co
     backend = Backend()
     services = ProductionOneImageServices(
         backend=backend,
+        reservation_mode="lost_owner_recovery",
         stale_reservation_path=stale,
         successor_root=successor,
         attempt_id="typed-failure-attempt",
+        recovery_authority="test_explicit_owner",
         pid_is_alive=lambda _pid: False,
     )
 
@@ -772,6 +780,99 @@ def test_guarded_entry_hands_final_typed_terminal_to_durable_owner(
     assert services.terminal.content_sha256 == result.content_sha256
 
 
+def test_pre_reservation_error_is_not_masked_or_sent_to_terminal_writer(
+    tmp_path: Path,
+) -> None:
+    class PreReservationError(RuntimeError):
+        pass
+
+    class FailingBeforeReservation(_FakeServices):
+        reservation_identity = None
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.persist_calls = 0
+
+        def preflight_source_assembly(
+            self, config: EntryConfig, resources: Any
+        ) -> Any:
+            del config, resources
+            raise PreReservationError("atomic reservation collision")
+
+        def persist_terminal(self, terminal: OneImageTerminalReceipt) -> None:
+            del terminal
+            self.persist_calls += 1
+            raise AssertionError("terminal writer crossed pre-reservation failure")
+
+    services = FailingBeforeReservation()
+    root = tmp_path / "fresh-primary"
+
+    with pytest.raises(PreReservationError, match="atomic reservation collision"):
+        run_one_image(
+            _config(tmp_path),
+            authority=ExecutionAuthority(user_model_gpu_authority=True),
+            resources=_resources(),
+            output_root=root,
+            services=services,
+            manifest_image=_image(),
+        )
+
+    assert services.persist_calls == 0
+    assert not root.exists()
+
+
+def test_post_reservation_preflight_failure_has_zero_observed_resource_counts(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "fresh-primary"
+    identity = entry_owner.RunReservationIdentity(
+        reservation_mode="fresh_primary",
+        run_id="fresh-attempt",
+        output_root=str(root.resolve()),
+        reservation_sha256="a" * 64,
+    )
+
+    class FailingAfterReservation(_FakeServices):
+        reservation_identity = identity
+        phase_receipt_sha256s: tuple[str, ...] = ()
+        phase_ledger_sha256 = None
+        terminal: OneImageTerminalReceipt | None = None
+
+        def preflight_source_assembly(
+            self, config: EntryConfig, resources: Any
+        ) -> Any:
+            del config, resources
+            raise RuntimeError("post-reservation preflight failure")
+
+        def action_counters(self) -> dict[str, int]:
+            return dict(entry_owner.ZERO_MODEL_ACTIONS)
+
+        def persist_terminal(self, terminal: OneImageTerminalReceipt) -> None:
+            self.terminal = terminal
+
+    services = FailingAfterReservation()
+    terminal = run_one_image(
+        _config(tmp_path),
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=root,
+        services=services,
+        manifest_image=_image(),
+    )
+
+    resource = terminal.resource_receipt
+    assert services.terminal is terminal
+    assert resource.reservation_identity == identity
+    assert resource.sampled_request_count == 0
+    assert resource.sampled_group_count == 0
+    assert resource.sample_forward_count == 0
+    assert resource.replay_forward_count == 0
+    assert resource.source_owner_forward_count == 0
+    assert resource.total_forward_count == 0
+    assert resource.no_cache_forward_count == 0
+    assert resource.backward_count == 0
+
+
 def test_post_apply_journal_failure_is_integrated_typed_terminal_with_one_rollback(
     tmp_path: Path,
 ) -> None:
@@ -861,9 +962,11 @@ def test_post_apply_journal_failure_is_integrated_typed_terminal_with_one_rollba
     backend = Backend()
     services = ProductionOneImageServices(
         backend=backend,
+        reservation_mode="lost_owner_recovery",
         stale_reservation_path=stale,
         successor_root=successor,
         attempt_id="attempt",
+        recovery_authority="test_explicit_owner",
         pid_is_alive=lambda pid: False,
         phase_writer=phase_writer,
     )
@@ -1082,6 +1185,104 @@ def test_public_parser_does_not_expose_arbitrary_runtime_factory() -> None:
         )
 
 
+def test_cli_defaults_to_fresh_primary_without_recovery_inputs() -> None:
+    args = entry_owner.build_parser().parse_args([])
+    assert args.reservation_mode == "fresh_primary"
+    assert args.stale_reservation is None
+    assert args.recovery_authority is None
+
+
+@pytest.mark.parametrize(
+    "extra_args, expected",
+    [
+        (["--stale-reservation", "/stale/run-reservation.json"], "fresh primary"),
+        (["--recovery-authority", "owner"], "fresh primary"),
+        (["--reservation-mode", "lost_owner_recovery"], "stale reservation"),
+        (
+            [
+                "--reservation-mode",
+                "lost_owner_recovery",
+                "--stale-reservation",
+                "/stale/run-reservation.json",
+            ],
+            "recovery authority",
+        ),
+    ],
+)
+def test_cli_rejects_mixed_or_incomplete_reservation_modes_before_gpu_observation(
+    tmp_path: Path, extra_args: list[str], expected: str
+) -> None:
+    args = entry_owner.build_parser().parse_args(
+        [
+            "--execute",
+            "--user-model-gpu-authority",
+            "--output-root",
+            str(tmp_path / "new-root"),
+            "--manifest",
+            str(tmp_path / "manifest.json"),
+            "--attempt-id",
+            "attempt",
+            *extra_args,
+        ]
+    )
+
+    with pytest.raises(ValueError, match=expected):
+        entry_owner.build_production_execution(
+            config=_config(tmp_path),
+            args=args,
+            gpu_observer=lambda: (_ for _ in ()).throw(
+                AssertionError("GPU observation crossed reservation CLI validation")
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "reservation_args",
+    [
+        ["--stale-reservation", "/stale/run-reservation.json"],
+        [
+            "--reservation-mode",
+            "lost_owner_recovery",
+            "--stale-reservation",
+            "/stale/run-reservation.json",
+            "--recovery-authority",
+            "owner",
+        ],
+    ],
+)
+def test_full_panel_public_main_rejects_reservation_inputs_before_gpu_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reservation_args: list[str],
+) -> None:
+    observed = False
+
+    def forbidden_gpu_observer() -> tuple[GPUResource, GPUResource]:
+        nonlocal observed
+        observed = True
+        raise AssertionError("full-panel crossed reservation validation")
+
+    monkeypatch.setattr(
+        entry_owner,
+        "observe_production_gpu_resources",
+        forbidden_gpu_observer,
+    )
+
+    with pytest.raises(ValueError, match="fresh primary"):
+        entry_owner.main(
+            [
+                "--execute",
+                "--full-panel",
+                "--user-model-gpu-authority",
+                "--expected-terminal-sha256",
+                "a" * 64,
+                *reservation_args,
+            ]
+        )
+
+    assert observed is False
+
+
 def test_terminal_from_dict_rejects_tampered_phase_receipt_count() -> None:
     terminal = OneImageTerminalReceipt(
         terminal_status="parity_failure",
@@ -1110,6 +1311,70 @@ def test_terminal_from_dict_rejects_tampered_phase_receipt_count() -> None:
 
     with pytest.raises(ValueError, match="phase receipt count"):
         OneImageTerminalReceipt.from_dict(payload)
+
+
+def test_historical_v1_resource_and_terminal_without_reservation_key_reload() -> None:
+    resource = ResourceReceipt(
+        entry_owner.validate_dual_gpu_resources(_resources()),
+        None,
+        phase_count=0,
+        retry_count=0,
+        promoted_checkpoint=False,
+    )
+    terminal = OneImageTerminalReceipt(
+        terminal_status="parity_failure",
+        resource_receipt=resource,
+        model_actions=entry_owner.ZERO_MODEL_ACTIONS,
+        failure_reason="historical failure",
+    )
+    historical = terminal.to_dict()
+    historical_resource = historical["resource_receipt"]
+    assert "reservation_identity" not in historical_resource
+    historical_resource["content_sha256"] = entry_owner._sha256(
+        {
+            key: value
+            for key, value in historical_resource.items()
+            if key != "content_sha256"
+        }
+    )
+    historical["resource_receipt_sha256"] = historical_resource["content_sha256"]
+    historical["content_sha256"] = entry_owner._sha256(
+        {key: value for key, value in historical.items() if key != "content_sha256"}
+    )
+
+    reloaded = OneImageTerminalReceipt.from_dict(historical)
+
+    assert "reservation_identity" not in reloaded.resource_receipt.to_dict()
+    assert reloaded.to_dict() == historical
+
+
+def test_reserved_resource_requires_exact_matching_output_root() -> None:
+    identity = entry_owner.RunReservationIdentity(
+        reservation_mode="fresh_primary",
+        run_id="fresh-attempt",
+        output_root="/tmp/admitted-root",
+        reservation_sha256="a" * 64,
+    )
+    resources = entry_owner.validate_dual_gpu_resources(_resources())
+
+    with pytest.raises(ValueError, match="reservation.*output root"):
+        ResourceReceipt(
+            resources,
+            None,
+            phase_count=0,
+            retry_count=0,
+            promoted_checkpoint=False,
+            reservation_identity=identity,
+        )
+    with pytest.raises(ValueError, match="reservation.*output root"):
+        ResourceReceipt(
+            resources,
+            OutputRootReceipt("/tmp/different-root", False),
+            phase_count=0,
+            retry_count=0,
+            promoted_checkpoint=False,
+            reservation_identity=identity,
+        )
 
 
 def test_private_proposal_audit_binds_distinct_proposal_checkpoint_digest(
