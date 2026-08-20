@@ -1,0 +1,63 @@
+{
+ "bounds_observed": {
+  "artifact_bytes": 45717812,
+  "cache_passes": 0,
+  "cpu_rss_gib": 8.34,
+  "gpu_high_water_gb": 9.36,
+  "planned_steps_applied": 1
+ },
+ "cache": "train 8f11237f + eval 3b30c157 admitted; root sha inventory byte-identical",
+ "command_exit": 0,
+ "commit": "30b563e6c",
+ "config": "overlay e2c12c96... extending configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml (observability.steps=1)",
+ "date": "2026-08-20",
+ "devices": "CUDA_VISIBLE_DEVICES=0,1",
+ "no_throughput_or_quality_claim": true,
+ "packet": "receipts/wave-5-smoke-packet.md",
+ "rank_local_trees": [],
+ "receipt_sha256": "b9a005859ed732b060fd6f5f11822cb2171d033b2f75ea69050cdcaf4ece3f42",
+ "rows": {
+  "count": 2,
+  "cross_change_reproducibility": "train/eval base_ce raw equal the archived losses-change wave-5 smoke values bit-for-bit at matching seeds",
+  "splits": [
+   "train",
+   "eval"
+  ],
+  "train_highlights": {
+   "availability_note": "first observed step has no allocator delta baseline - honest omission, no fabricated zero",
+   "count/physical_tokens": 16494.0,
+   "grad_norm/pre_clip_rank_max": 50.098120633612425,
+   "input_h2d_seconds": 0.019167743682861327,
+   "loss/base_ce": {
+    "raw": 5.013396978378296,
+    "weight": 1.0,
+    "weighted": 5.013396978378296
+   },
+   "loss_total_equals_sum_weighted": true,
+   "lr/group_0": 0.0002,
+   "optimizer_boundary_action": "apply",
+   "optimizer_mutation_state": "applied",
+   "optimizer_step_count": 1,
+   "optimizer_update_applied": true,
+   "resource/gpu_current_memory_allocated_bytes": 4510186496.0,
+   "scheduler_step_count": 1,
+   "throughput/physical_tokens_per_second": 5012.448166201044,
+   "unavailable_fields": [
+    "resource/gpu_alloc_retries_delta",
+    "resource/gpu_ooms_delta"
+   ]
+  }
+ },
+ "run_dir": "outputs/smoke/obs_wave5_smoke_r1/obs_wave5_smoke",
+ "run_status": "completed/applied/finite; terminal_error null",
+ "schema": "coordexp-swift-obs-wave5-smoke-receipt-v1",
+ "single_shared_run_tree": true,
+ "task": "5.5",
+ "tensorboard": {
+  "dir": "tensorboard/",
+  "reader": "real EventAccumulator recovered train/loss/total [(1, 5.0134)]",
+  "scalar_tags": 77,
+  "train_and_eval_tags": true
+ },
+ "world_size": 2
+}
