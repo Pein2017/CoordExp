@@ -1,0 +1,48 @@
+{
+  "old_commit": "2ee6c4959",
+  "new_commit": "88391d6bb208931ba3fa537fb9522ea6b106fe60",
+  "train": {
+    "old_fingerprint": "ec5baadb6a6c2e359e31b5476635ba950be8a77e12e040ba02b9f0779938083f",
+    "new_fingerprint": "8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f",
+    "owner_changes": {
+      "micro_step_runtime_config": [
+        "src/training/pipeline.py",
+        "src/training/cache_contract.py"
+      ],
+      "micro_step_schema": [
+        "src/training/supervised_trainer.py",
+        "src/training/micro_steps.py"
+      ]
+    },
+    "owner_source_changed": [
+      "cache_serializer",
+      "micro_step_runtime_config",
+      "micro_step_schema",
+      "supervision_tokens"
+    ],
+    "content_identity_changed": [],
+    "determinant_count": 31
+  },
+  "eval.forward": {
+    "old_fingerprint": "76f369a7b7ca00037c6fcb3586ce4912512d30ac5d6732ab3f8ef64717180ae6",
+    "new_fingerprint": "3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662",
+    "owner_changes": {
+      "micro_step_runtime_config": [
+        "src/training/pipeline.py",
+        "src/training/cache_contract.py"
+      ],
+      "micro_step_schema": [
+        "src/training/supervised_trainer.py",
+        "src/training/micro_steps.py"
+      ]
+    },
+    "owner_source_changed": [
+      "cache_serializer",
+      "micro_step_runtime_config",
+      "micro_step_schema",
+      "supervision_tokens"
+    ],
+    "content_identity_changed": [],
+    "determinant_count": 31
+  }
+}
