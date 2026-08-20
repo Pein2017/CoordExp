@@ -36,6 +36,23 @@ from src.supervision import TokenSequence
 
 @dataclass(frozen=True)
 class LossTermResult:
+    """One term's three separated planned-step concepts.
+
+    - `raw_loss` (1): the **semantic** globally normalized value before
+      configured weighting -- rank-local numerator over the complete
+      planned-step (global, when distributed) `segment_balanced` denominator.
+      It carries NO backend compensation.
+    - `weighted_loss` (2): `raw_loss x weight`, still uncompensated.
+    - `backward_contribution` (3): the only differentiable value the runner
+      offers to backward -- `weighted_loss` multiplied **exactly once** by
+      `backend_gradient_scale` (the world size) to compensate the
+      Accelerate/DDP mean-gradient reduction.
+
+    At world size one `backend_gradient_scale` is `1.0` and (3) IS (2): the
+    default `None` means exactly that identity, so a bundle constructed
+    without an explicit contribution is a world-size-one bundle.
+    """
+
     name: str
     raw_loss: torch.Tensor
     weighted_loss: torch.Tensor
@@ -48,6 +65,12 @@ class LossTermResult:
     math_dtype: str
     token_weighted_diagnostic: torch.Tensor
     diagnostics: dict[str, Any]
+    backend_gradient_scale: float = 1.0
+    backward_contribution: torch.Tensor | None = None
+
+    def __post_init__(self) -> None:
+        if self.backward_contribution is None:
+            object.__setattr__(self, "backward_contribution", self.weighted_loss)
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -63,11 +86,22 @@ class LossTermResult:
             "math_dtype": self.math_dtype,
             "token_weighted_diagnostic": _float_value(self.token_weighted_diagnostic),
             "diagnostics": self.diagnostics,
+            "backend_gradient_scale": float(self.backend_gradient_scale),
+            "backward_contribution": _float_value(self.backward_contribution),
         }
 
 
 @dataclass(frozen=True)
 class LossBundle:
+    """`total_loss` is semantic telemetry; `backward_loss` is the objective.
+
+    `total_loss` is the sum of the weighted **semantic** objective terms and
+    is what every metric/artifact surface reports. `backward_loss` is the sum
+    of the differentiable local **backward contributions** and is the only
+    tensor a runtime may hand to `backward()`. They are equal at world size
+    one, which is what the `None` default encodes.
+    """
+
     total_loss: torch.Tensor
     terms: tuple[LossTermResult, ...]
     metrics: dict[str, float]
@@ -75,6 +109,11 @@ class LossBundle:
     diagnostics: dict[str, Any]
     finite_status: dict[str, Any]
     accuracy_stats: dict[str, int] = field(default_factory=dict)
+    backward_loss: torch.Tensor | None = None
+
+    def __post_init__(self) -> None:
+        if self.backward_loss is None:
+            object.__setattr__(self, "backward_loss", self.total_loss)
 
     def term_by_name(self, name: str) -> LossTermResult:
         for term in self.terms:
@@ -89,6 +128,7 @@ class LossBundle:
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
             "total_loss": _float_value(self.total_loss),
+            "backward_loss": _float_value(self.backward_loss),
             "terms": [term.to_artifact_dict() for term in self.terms],
             "metrics": dict(self.metrics),
             "counts": dict(self.counts),
@@ -379,16 +419,33 @@ class LossRunner:
         base_result = next(
             term for term in terms if term.name == BASE_CE_BINDING.name
         )
-        # Only objective terms enter `total_loss`; a detached diagnostic never
+        objective_terms = tuple(
+            term_result
+            for active, term_result in zip(active_losses, terms, strict=True)
+            if not active.is_detached_diagnostic
+        )
+        # Only objective terms enter either total; a detached diagnostic never
         # contributes a tensor to the optimized objective or its graph.
+        # `total_loss` is the SEMANTIC sum (no backend compensation) and is
+        # what every metric/artifact surface reports; `backward_loss` is the
+        # compensated sum and is the only tensor offered to `backward()`.
         total_loss = sum(
-            (
-                term_result.weighted_loss
-                for active, term_result in zip(active_losses, terms, strict=True)
-                if not active.is_detached_diagnostic
-            ),
+            (term_result.weighted_loss for term_result in objective_terms),
             terms[0].weighted_loss.new_zeros(()),
         )
+        if all(
+            term_result.backward_contribution is term_result.weighted_loss
+            for term_result in objective_terms
+        ):
+            # Nothing to compensate (world size one): the two totals are the
+            # same node, so the autograd graph is identical to the
+            # pre-separation implementation.
+            backward_loss = total_loss
+        else:
+            backward_loss = sum(
+                (term_result.backward_contribution for term_result in objective_terms),
+                terms[0].weighted_loss.new_zeros(()),
+            )
         counts = _build_micro_counts(context, base_result)
         metrics, accuracy_stats = _build_metrics(
             total_loss=total_loss,
@@ -426,6 +483,7 @@ class LossRunner:
             diagnostics=diagnostics,
             finite_status=finite_status,
             accuracy_stats=accuracy_stats,
+            backward_loss=backward_loss,
         )
 
     def finalize_planned_step(
@@ -441,7 +499,10 @@ class LossRunner:
                 context={},
             )
         terms = _merge_term_artifacts(artifacts, plan)
+        # Semantic total: the sum of weighted objective terms, with no backend
+        # compensation anywhere in it (design decision 4).
         total_loss = sum(float(term["weighted_loss"]) for term in terms)
+        backward_loss = sum(float(term["backward_contribution"]) for term in terms)
         accuracy_stats = _merge_accuracy_stats(artifacts)
         metrics = {
             "loss/total": total_loss,
@@ -480,6 +541,7 @@ class LossRunner:
             metrics[f"finite/{name}"] = 1.0 if label == "finite" else 0.0
         return {
             "total_loss": total_loss,
+            "backward_loss": backward_loss,
             "terms": terms,
             "metrics": metrics,
             "counts": dict(plan.counts),
@@ -527,15 +589,29 @@ def _compute_token_term_contribution(
         per_atom_losses=per_atom_losses,
         local_micro_step_index=local_micro_step_index,
     )
+    # (1) raw SEMANTIC value: rank-local numerator over the complete
+    # planned-step denominator (global when distributed). The backend
+    # mean-gradient compensation deliberately does NOT appear here -- it used
+    # to (`raw = raw * backend_gradient_scale`), which made every raw/weighted
+    # telemetry value world-size dependent even though the global objective is
+    # not (design decision 4).
     raw = segment_balanced_contribution(loss_slice, denominator=denominator)
-    raw = raw * float(backend_gradient_scale)
+    scale = float(backend_gradient_scale)
     if detached_diagnostic:
         # Exactly 0.0, never `raw * 0.0`: a non-finite raw diagnostic must not
         # leak into the weighted value or the objective. Its finite status is
-        # carried by `raw_loss` (see `_build_finite_status`).
+        # carried by `raw_loss` (see `_build_finite_status`). A detached
+        # diagnostic has no backward contribution at all, so it is never
+        # compensated either.
         weighted = raw.detach().new_zeros(())
+        backward_contribution = weighted
     else:
+        # (2) weighted SEMANTIC value.
         weighted = raw * float(weight)
+        # (3) differentiable local contribution: compensated exactly once.
+        # `scale == 1.0` reuses the identical tensor so the world-size-one
+        # autograd graph is unchanged by the separation.
+        backward_contribution = weighted if scale == 1.0 else weighted * scale
     if len(term_context.atoms) > 0:
         token_weighted = per_atom_losses.detach().mean()
         segment_mean_numerator = raw.detach() * float(
@@ -576,6 +652,8 @@ def _compute_token_term_contribution(
         math_dtype="float32",
         token_weighted_diagnostic=token_weighted,
         diagnostics=diagnostics,
+        backend_gradient_scale=scale,
+        backward_contribution=backward_contribution,
     )
 
 
@@ -950,8 +1028,18 @@ def _merge_term_artifacts(
         if not term_items:
             continue
         selected_count = sum(int(item.get("selected_count", 0)) for item in term_items)
+        # Semantic (uncompensated) sufficient statistics: summing the
+        # rank-local micro-step contributions over one planned step. The
+        # cross-rank sum happens once, in the runtime metric reducer.
         weighted_loss = sum(float(item["weighted_loss"]) for item in term_items)
         raw_loss = sum(float(item["raw_loss"]) for item in term_items)
+        backward_contribution = sum(
+            float(item.get("backward_contribution", item["weighted_loss"]))
+            for item in term_items
+        )
+        backend_gradient_scale = float(
+            term_items[0].get("backend_gradient_scale", 1.0)
+        )
         token_weighted = _weighted_average(
             (
                 (
@@ -982,6 +1070,8 @@ def _merge_term_artifacts(
                 "math_dtype": "float32",
                 "token_weighted_diagnostic": token_weighted,
                 "diagnostics": diagnostics,
+                "backend_gradient_scale": backend_gradient_scale,
+                "backward_contribution": backward_contribution,
             }
         )
     return merged

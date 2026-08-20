@@ -60,6 +60,25 @@ _TOKEN_WEIGHTED_DIAG_SUFFIX = "/token_weighted_diag"
 _TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX = "/token_weighted_diag/__weight__"
 _FINITE_METRIC_KEY_PREFIX = "finite/"
 
+# Planned-step objective telemetry (`loss/total`, `loss/<term>` and its
+# raw/weighted members) carries each rank's own SEMANTIC contribution to the
+# global planned-step value -- rank-local numerator over the globally merged
+# denominator, never multiplied by the backend mean-gradient compensation
+# (see `src/losses/runner.py`). Wherever the planned-step window is
+# partitioned across ranks (all train reduction, and sharded forward eval)
+# those contributions are partial and MUST be summed; a plain mean would
+# report the true objective divided by the world size. Replicated forward
+# eval is the one case where every rank already holds the identical global
+# value, so it keeps mean semantics (summing would multiply it by the world
+# size). These suffixes name the `loss/`-prefixed keys that are NOT partial
+# contributions and keep their own reducers.
+_OBJECTIVE_METRIC_KEY_PREFIX = "loss/"
+_NON_OBJECTIVE_LOSS_KEY_SUFFIXES = (
+    _TOKEN_WEIGHTED_DIAG_SUFFIX,
+    _TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX,
+    "/segment_count",
+)
+
 
 def validate_accelerator_runtime(
     accelerator: Any,
@@ -698,6 +717,12 @@ class TrainRuntime:
             else None
         )
         eval_sharded = expected_reduction_mode == EVAL_DISJOINT_SHARD_REDUCTION_MODE
+        # Same predicate the accuracy reduction above uses for `replicated`:
+        # only replicated forward eval leaves every rank holding the identical
+        # global objective value.
+        replicated_objective = (
+            expected_split == "eval" and expected_reduction_mode is None
+        )
         reduced: dict[str, float] = {}
         for key in expected_keys:
             correct_field = _ACCURACY_METRIC_CORRECT_FIELDS.get(key)
@@ -707,6 +732,12 @@ class TrainRuntime:
                     global_accuracy_stats[correct_field],
                     global_accuracy_stats[_ACCURACY_ATOM_COUNT_FIELD],
                     metric=key,
+                )
+            elif not replicated_objective and _is_planned_step_objective_metric_key(
+                key
+            ):
+                reduced[key] = sum(
+                    float(reports_by_rank[rank][key]) for rank in range(self.world_size)
                 )
             elif key in _MAX_REDUCED_METRIC_KEYS:
                 reduced[key] = max(
@@ -848,6 +879,16 @@ class TrainRuntime:
                 context={"metrics": list(metric_keys)},
             )
         return totals
+
+
+def _is_planned_step_objective_metric_key(key: str) -> bool:
+    """True for the per-rank partial objective contributions (`loss/...`)."""
+
+    if not key.startswith(_OBJECTIVE_METRIC_KEY_PREFIX):
+        return False
+    return not any(
+        key.endswith(suffix) for suffix in _NON_OBJECTIVE_LOSS_KEY_SUFFIXES
+    )
 
 
 def _is_eval_sum_metric_key(key: str) -> bool:

@@ -277,13 +277,19 @@ def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
         term_name="token_type_gate",
         term=TokenTypeGateLoss(),
         denominator=plan.denominators["token_type_gate"],
-        backend_gradient_scale=plan.backend_gradient_scale,
     )
     assert plan.denominator_scope == "planned_step_global"
     assert plan.backend_gradient_scale == 2.0
     assert term.denominator.denominator_scope == "planned_step_global"
     assert term.denominator.eligible_segment_count == 4
-    assert torch.allclose(term.raw_loss, local_base_loss / 4.0 * 2.0)
+    # Wave 3 (design decision 4): the SEMANTIC raw value is the rank-local
+    # numerator over the GLOBAL denominator and carries no backend
+    # compensation; only the differentiable local contribution is scaled, and
+    # exactly once.
+    assert torch.allclose(term.raw_loss, local_base_loss / 4.0)
+    assert torch.allclose(term.weighted_loss, local_base_loss / 4.0)
+    assert torch.allclose(term.backward_contribution, local_base_loss / 4.0 * 2.0)
+    assert term.backend_gradient_scale == 2.0
     assert term.diagnostics["backend_gradient_scale"] == 2.0
     assert gate_term.denominator.denominator_scope == "planned_step_global"
     assert gate_term.denominator.eligible_segment_count == 4
@@ -294,6 +300,10 @@ def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
     assert gate_term.raw_loss.grad_fn is None
     assert not gate_term.weighted_loss.requires_grad
     assert gate_term.weighted_loss.grad_fn is None
+    # A detached diagnostic has no backward contribution to compensate.
+    assert torch.equal(
+        gate_term.backward_contribution, gate_term.raw_loss.new_zeros(())
+    )
 
 
 def test_zero_weight_gate_preserves_unequal_streaming_diagnostics() -> None:
@@ -358,8 +368,7 @@ def test_zero_weight_gate_preserves_unequal_streaming_diagnostics() -> None:
             term_name="token_type_gate",
             term=TokenTypeGateLoss(),
             denominator=plan.denominators["token_type_gate"],
-            backend_gradient_scale=plan.backend_gradient_scale,
-            local_micro_step_index=local_index,
+                local_micro_step_index=local_index,
         )
         for local_index, context in enumerate(contexts)
     )
@@ -570,7 +579,8 @@ def test_zero_weight_gate_preserves_raw_diagnostic_without_objective_graph() -> 
         ),
         denominator=plan.denominators["token_type_gate"],
     )
-    reference_raw = reference_raw * plan.backend_gradient_scale
+    # No backend compensation on the reference: the raw semantic value never
+    # carries it (Wave 3, design decision 4), at any world size.
 
     bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
     base_term = bundle.term_by_name("base_ce")
@@ -638,14 +648,12 @@ def test_nonzero_gate_matches_reference_values_and_all_gradients() -> None:
         term_name="base_ce",
         term=BaseTokenCE(),
         denominator=plan.denominators["base_ce"],
-        backend_gradient_scale=plan.backend_gradient_scale,
     )
     reference_gate_raw = _reference_raw_token_term(
         context,
         term_name="token_type_gate",
         term=TokenTypeGateLoss(),
         denominator=plan.denominators["token_type_gate"],
-        backend_gradient_scale=plan.backend_gradient_scale,
     )
     reference_total = reference_base_raw * 1.0 + reference_gate_raw * 0.4
 
@@ -721,8 +729,7 @@ def test_zero_weight_gate_saves_only_base_objective_tensors() -> None:
             term_name="base_ce",
             term=BaseTokenCE(),
             denominator=plan.denominators["base_ce"],
-            backend_gradient_scale=plan.backend_gradient_scale,
-        )
+            )
 
     with torch.autograd.graph.saved_tensors_hooks(
         capture_saved(observed_saved),
@@ -907,11 +914,16 @@ def _reference_raw_token_term(
     term_name: str,
     term: BaseTokenCE | TokenTypeGateLoss,
     denominator: Any,
-    backend_gradient_scale: float,
     local_micro_step_index: int = 0,
 ) -> torch.Tensor:
+    """Independent SEMANTIC raw reference: numerator over the denominator.
+
+    Backend mean-gradient compensation is deliberately absent: it belongs to
+    the differentiable local contribution only (Wave 3, design decision 4).
+    """
+
     per_atom_losses = term.per_atom_loss(context)
-    raw = segment_balanced_contribution(
+    return segment_balanced_contribution(
         PlannedStepLossSlice(
             term_name=term_name,
             context=context,
@@ -920,7 +932,6 @@ def _reference_raw_token_term(
         ),
         denominator=denominator,
     )
-    return raw * float(backend_gradient_scale)
 
 
 def _logits(

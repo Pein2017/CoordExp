@@ -674,6 +674,19 @@ def _default_loss_context(
 
 
 def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
+    """The differentiable objective tensor this planned step backwards.
+
+    A bundle separates its SEMANTIC total (`total_loss`, telemetry, never
+    backend-compensated) from its differentiable local contribution
+    (`backward_loss`, compensated exactly once for the backend's mean
+    gradient reduction). Only the latter may reach `backward()`. A bundle
+    that exposes no `backward_loss` is a world-size-one bundle, where the two
+    are the same value by construction.
+    """
+
+    backward_loss = getattr(loss_bundle, "backward_loss", None)
+    if isinstance(backward_loss, torch.Tensor):
+        return backward_loss
     total_loss = getattr(loss_bundle, "total_loss", None)
     if not isinstance(total_loss, torch.Tensor):
         raise RuntimeContractError(

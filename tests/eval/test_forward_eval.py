@@ -951,18 +951,21 @@ def test_disjoint_shard_eval_reproduces_full_replicated_row_with_unequal_rank_at
         assert not key.endswith("__weight__")
 
 
-def test_disjoint_shard_eval_rejects_naive_disjoint_sum_of_local_losses() -> None:
-    """Anti-pattern proof: summing each rank's local (unscaled) loss value
-    directly -- instead of the mean-of-W-scaled-contributions the real
-    reducer uses -- would NOT reproduce the replicated total.
+def test_disjoint_shard_eval_total_sums_uncompensated_local_contributions() -> None:
+    """Wave 3: each shard reports its own SEMANTIC partial contribution.
+
+    Before the semantic/backward separation the reducer recovered the global
+    value as `mean_r(W * c_r)`, i.e. it relied on the mean cancelling a
+    backend compensation factor baked into telemetry. It now reduces
+    `sum_r(c_r)` over uncompensated contributions, which is the same number
+    without the detour through a backend-only factor. Proven against the
+    independently computed replicated reference.
     """
 
     replicated_row = _replicated_reference_row()
     rank0_row, rank1_row = _run_sharded_two_ranks()
     sharded_row = rank0_row
 
-    # mean_r(W * c_r) == sum_r(c_r) is exactly what the reducer computes;
-    # prove it against the independently-computed replicated reference.
     assert sharded_row["loss/total"] == pytest.approx(
         replicated_row["loss/total"], rel=1e-5
     )

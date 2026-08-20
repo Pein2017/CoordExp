@@ -904,8 +904,10 @@ def test_multirank_timing_fields_reduce_to_all_rank_maximum_not_mean() -> None:
     assert reduced["step_duration_seconds"] == pytest.approx(0.9)
     assert reduced["input_build_seconds"] == pytest.approx(0.2)
     assert reduced["input_wait_seconds"] == pytest.approx(0.1)
-    # Non-timing keys keep their existing plain-mean reduction, unaffected.
-    assert reduced["loss/total"] == pytest.approx(2.0)
+    # Objective keys are unaffected by the timing rule: they follow the
+    # Wave-3 planned-step rule instead, summing each rank's own uncompensated
+    # semantic contribution (1.0 + 3.0) into the global value.
+    assert reduced["loss/total"] == pytest.approx(4.0)
 
 
 def test_multirank_timing_receipt_preserves_each_rank_value() -> None:
