@@ -170,6 +170,14 @@ telemetry MUST remain distinct from any rank-local backward compensation.
 - **THEN** no local or global denominator for that loss may be constructed
 - **AND** no zero-eligible failure for that loss may affect the planned step.
 
+#### Scenario: Segment-balanced differs from token-balanced
+
+- **WHEN** two segments in one planned step have unequal eligible atom counts
+- **THEN** protected token-wise losses MUST weight the two segment means
+  equally under `segment_balanced`
+- **AND** a single global mean over all eligible atoms MAY be emitted only as a
+  diagnostic metric, not as the protected objective.
+
 ### Requirement: Loss Bundle Metrics
 
 The completed planned-step loss result SHALL contain the total weighted loss,
@@ -250,6 +258,13 @@ them.
 - **WHEN** public config attempts to select a loss by import path, callable,
   or unrecognized registry name
 - **THEN** strict config validation MUST fail before loss construction.
+
+#### Scenario: Hidden-state loss configured in V1
+
+- **WHEN** a V1 config enables a hidden-state-dependent loss before its
+  approved implementation exists
+- **THEN** loss configuration MUST fail with an explicit unsupported-loss
+  diagnostic.
 
 #### Scenario: Rollout-derived loss configured
 
