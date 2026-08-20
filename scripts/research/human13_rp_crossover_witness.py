@@ -371,7 +371,14 @@ class WitnessMeasurement:
                         )
                     if value < -GREEDY_MARGIN_TOLERANCE:
                         raise WitnessMeasurementError(
-                            f"witness margin for {row.owner_id} is not Source-greedy"
+                            "witness margin for "
+                            f"{row.owner_id} is not Source-greedy "
+                            f"(rp={decode.repetition_penalty:g}, "
+                            f"membership={decode.source_membership}, "
+                            f"token_index={token_index}, "
+                            f"chosen_token_id={decode.generated_token_ids[token_index]}, "
+                            f"competitor_token_id={competitor}, "
+                            f"margin={value:.9g})"
                         )
                     # ties resolve to the smallest generated token index
                     if best is None or value < best[0]:

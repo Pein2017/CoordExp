@@ -19,6 +19,7 @@ import importlib
 import json
 import math
 from pathlib import Path
+import sys
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, cast
 from weakref import ReferenceType, ref
@@ -67,6 +68,26 @@ _PROPOSAL_AUDIT_ARM_ID = "private_proposal"
 _DIGEST_RE = frozenset("0123456789abcdef")
 _TERMINAL_SEALS: dict[int, tuple[ReferenceType[Any], str]] = {}
 _TERMINAL_ISSUER_TOKEN = object()
+
+
+def _install_canonical_module_alias() -> None:
+    """Keep ``python -m`` and package imports on one class identity.
+
+    The services owner imports this module by its package name.  When the
+    public entry is launched with ``python -m``, Python initially registers it
+    only as ``__main__``; without this alias, terminal receipt classes are
+    duplicated and strict typed persistence rejects the receipt at the end of
+    an otherwise completed lifecycle.
+    """
+
+    if __name__ == "__main__":
+        sys.modules.setdefault(
+            "scripts.research.run_human13_all_hf_shared_surface_vertical",
+            sys.modules[__name__],
+        )
+
+
+_install_canonical_module_alias()
 
 
 def _sha256(value: object) -> str:
@@ -820,7 +841,11 @@ class ResourceReceipt:
     promoted_checkpoint: Literal[False]
     sampled_request_count: int = 16
     sampled_group_count: int = 4
-    replay_forward_count: int = 4
+    sample_forward_count: int = 2048
+    replay_forward_count: int = 2048
+    source_owner_forward_count: int = 0
+    total_forward_count: int = 4096
+    no_cache_forward_count: int = 4096
     backward_count: int = 1
     token_cap: int = 512
     peak_host_rss_bytes: int | None = None
@@ -842,21 +867,36 @@ class ResourceReceipt:
         for field in (
             "sampled_request_count",
             "sampled_group_count",
+            "sample_forward_count",
             "replay_forward_count",
+            "source_owner_forward_count",
+            "total_forward_count",
+            "no_cache_forward_count",
             "backward_count",
             "token_cap",
         ):
             _nonnegative_int(getattr(self, field), field=field)
         if (
-            self.sampled_request_count != 16
-            or self.sampled_group_count != 4
-            or self.replay_forward_count != 4
-            or self.backward_count != 1
+            self.sampled_request_count > 16
+            or self.sampled_group_count > 4
+            or self.backward_count > 1
             or self.token_cap != 512
         ):
-            raise ValueError(
-                "resource receipt differs from frozen K16 one-update budget"
-            )
+            raise ValueError("resource receipt exceeds the frozen K16 one-update budget")
+        if self.sampled_request_count != self.sampled_group_count * 4:
+            raise ValueError("sampled request/group counts differ")
+        if self.sample_forward_count > 4 * self.token_cap:
+            raise ValueError("sample forward count exceeds the frozen K16 bound")
+        if self.replay_forward_count > self.sample_forward_count:
+            raise ValueError("replay forward count exceeds sampled step coverage")
+        if self.total_forward_count != (
+            self.sample_forward_count
+            + self.replay_forward_count
+            + self.source_owner_forward_count
+        ):
+            raise ValueError("resource forward-count total differs")
+        if self.no_cache_forward_count != self.total_forward_count:
+            raise ValueError("every resource forward must remain no-cache")
         for field in (
             "peak_host_rss_bytes",
             "cuda_peak_allocated_bytes",
@@ -890,7 +930,11 @@ class ResourceReceipt:
             "promoted_checkpoint": self.promoted_checkpoint,
             "sampled_request_count": self.sampled_request_count,
             "sampled_group_count": self.sampled_group_count,
+            "sample_forward_count": self.sample_forward_count,
             "replay_forward_count": self.replay_forward_count,
+            "source_owner_forward_count": self.source_owner_forward_count,
+            "total_forward_count": self.total_forward_count,
+            "no_cache_forward_count": self.no_cache_forward_count,
             "backward_count": self.backward_count,
             "token_cap": self.token_cap,
             "peak_host_rss_bytes": self.peak_host_rss_bytes,
@@ -927,7 +971,11 @@ class ResourceReceipt:
             promoted_checkpoint=value["promoted_checkpoint"],
             sampled_request_count=value.get("sampled_request_count", 16),
             sampled_group_count=value.get("sampled_group_count", 4),
-            replay_forward_count=value.get("replay_forward_count", 4),
+            sample_forward_count=value.get("sample_forward_count", 2048),
+            replay_forward_count=value.get("replay_forward_count", 2048),
+            source_owner_forward_count=value.get("source_owner_forward_count", 0),
+            total_forward_count=value.get("total_forward_count", 4096),
+            no_cache_forward_count=value.get("no_cache_forward_count", 4096),
             backward_count=value.get("backward_count", 1),
             token_cap=value.get("token_cap", 512),
             peak_host_rss_bytes=value.get("peak_host_rss_bytes"),
@@ -1606,6 +1654,56 @@ def _project_audit(
     }
 
 
+def acquired_h_owner_ids_from_trajectory(
+    trajectory_ledger: object,
+    manifest_image: object,
+) -> tuple[str, ...]:
+    """Derive exact acquired first-hit H from the admitted trajectory ledger."""
+
+    from scripts.research.human13_trajectory_credit import (
+        _require_scientific_ledger_admission,
+    )
+
+    ledger = _require_scientific_ledger_admission(trajectory_ledger)
+    target_image_id = getattr(manifest_image, "image_id", None)
+    if target_image_id is None and len(ledger.images) == 1:
+        target_image_id = ledger.images[0].image_id
+    image_ledgers = tuple(
+        item
+        for item in ledger.images
+        if item.image_id == target_image_id
+    )
+    if len(image_ledgers) != 1:
+        raise ValueError("trajectory ledger lacks the exact manifest image")
+    manifest_h_ids = {
+        str(owner_id) for owner_id in getattr(manifest_image, "h_owner_ids", ())
+    }
+    if not manifest_h_ids:
+        manifest_h_ids = {
+            str(getattr(owner, "owner_id"))
+            for owner in getattr(manifest_image, "owners", ())
+            if str(getattr(owner, "stratum", "")).upper() == "H"
+        }
+    acquired = {
+        row.matched_owner_id
+        for trajectory in image_ledgers[0].trajectories
+        for row in trajectory.rows
+        if row.outcome == "trusted_first_hit"
+        and row.owner_stratum == "H"
+        and row.matched_owner_id is not None
+    }
+    if any(
+        not isinstance(owner_id, str)
+        or not owner_id
+        or owner_id not in manifest_h_ids
+        for owner_id in acquired
+    ):
+        raise ValueError(
+            "admitted trajectory H first hits differ from the manifest H set"
+        )
+    return tuple(sorted(cast(set[str], acquired)))
+
+
 def analyze_audit_pair(
     *,
     image: Any,
@@ -2019,14 +2117,78 @@ def _resource_receipt(
     phase_count: int,
     *,
     retry_count: int = 0,
+    forward_counts: Mapping[str, int] | None = None,
+    backward_count: int | None = None,
 ) -> ResourceReceipt:
+    sampled_request_count = 16
+    sampled_group_count = 4
+    counts = {
+        "sample_forward_count": 2048,
+        "replay_forward_count": 2048,
+        "source_owner_forward_count": 0,
+        "total_forward_count": 4096,
+        "no_cache_forward_count": 4096,
+    }
+    if forward_counts is not None:
+        counts = {
+            field: forward_counts[field]
+            for field in counts
+        }
+        sampled_request_count = forward_counts.get("sampled_request_count", 16)
+        sampled_group_count = forward_counts.get("sampled_group_count", 4)
+    if backward_count is None:
+        backward_count = 1
     return ResourceReceipt(
         resources=resources,
         output_root=output_root,
         phase_count=phase_count,
         retry_count=retry_count,
         promoted_checkpoint=False,
+        sampled_request_count=sampled_request_count,
+        sampled_group_count=sampled_group_count,
+        backward_count=backward_count,
+        **counts,
     )
+
+
+def _shared_surface_forward_counts(services: object) -> Mapping[str, int] | None:
+    receipt = getattr(services, "shared_surface_resource_receipt", None)
+    if receipt is None:
+        return None
+    to_dict = getattr(receipt, "to_dict", None)
+    if not callable(to_dict):
+        raise TypeError("shared-surface resource receipt must be serializable")
+    value = to_dict()
+    if not isinstance(value, Mapping):
+        raise TypeError("shared-surface resource receipt must serialize to an object")
+    fields = (
+        "sample_forward_count",
+        "replay_forward_count",
+        "source_owner_forward_count",
+        "total_forward_count",
+        "no_cache_forward_count",
+    )
+    counts: dict[str, int] = {
+        field: _nonnegative_int(value.get(field), field=f"shared_surface.{field}")
+        for field in fields
+    }
+    sampled_hashes = value.get("sampled_group_sha256s", ())
+    sampled_seed_groups = value.get("sampled_seed_groups", ())
+    if not isinstance(sampled_hashes, (list, tuple)):
+        raise TypeError("shared-surface sampled group hashes must be a sequence")
+    if not isinstance(sampled_seed_groups, (list, tuple)):
+        raise TypeError("shared-surface sampled seed groups must be a sequence")
+    counts["sampled_group_count"] = len(sampled_hashes)
+    counts["sampled_request_count"] = (
+        sum(
+            len(group)
+            for group in sampled_seed_groups
+            if isinstance(group, (list, tuple))
+        )
+        if sampled_seed_groups
+        else len(sampled_hashes) * 4
+    )
+    return counts
 
 
 def dry_run(config: EntryConfig) -> OneImageTerminalReceipt:
@@ -2053,7 +2215,7 @@ def dry_run(config: EntryConfig) -> OneImageTerminalReceipt:
 def _classify_failure(error: BaseException) -> str:
     name = type(error).__name__.lower()
     text = str(error).lower()
-    if "parity" in name or "parity" in text or "replay" in text:
+    if "parity" in name or "parity" in text:
         return "parity_failure"
     return "update_failure"
 
@@ -2211,7 +2373,17 @@ def run_one_image(
         audit_session = services.open_audit(config, resource_receipt)
         phases.append("gpu1_hf_fp32_sdpa_audit_surface_open")
         for rp in config.audit_repetition_penalties:
-            source_outputs[rp] = services.source_audit(audit_session, rp)
+            try:
+                source_outputs[rp] = services.source_audit(audit_session, rp)
+            except BaseException as error:
+                observed_phase = getattr(error, "_source_audit_phase", None)
+                if (
+                    isinstance(observed_phase, str)
+                    and observed_phase.startswith("source_audit_rp_")
+                    and observed_phase not in phases
+                ):
+                    phases.append(observed_phase)
+                raise
             _project_audit(
                 manifest_image,
                 source_outputs[rp],
@@ -2253,7 +2425,16 @@ def run_one_image(
                 audit_session, private_proposal, rp
             )
             phases.append(f"proposal_audit_rp_{rp:g}")
-        raw_acquired_h = getattr(acquisition, "trusted_h_owner_ids", ())
+        proposal_input = getattr(acquisition, "cuda_proposal_input", None)
+        admitted_trajectory = getattr(proposal_input, "trajectory_ledger", None)
+        raw_acquired_h = (
+            acquired_h_owner_ids_from_trajectory(
+                admitted_trajectory,
+                manifest_image,
+            )
+            if admitted_trajectory is not None
+            else getattr(acquisition, "trusted_h_owner_ids", ())
+        )
         if not isinstance(raw_acquired_h, (list, tuple)):
             raise ValueError("acquired H owner IDs must be a sequence")
         if any(not isinstance(item, str) or not item for item in raw_acquired_h):
@@ -2360,6 +2541,8 @@ def run_one_image(
                 phases.append("rollback_source_reproduction")
     service_phase_hashes = tuple(getattr(services, "phase_receipt_sha256s", ()))
     service_phase_ledger_sha256 = getattr(services, "phase_ledger_sha256", None)
+    action_counters = _action_counters(services, phases=phases, status=status)
+    shared_forward_counts = _shared_surface_forward_counts(services)
     terminal = _seal_terminal(
         OneImageTerminalReceipt(
             terminal_status=status,
@@ -2368,8 +2551,10 @@ def run_one_image(
                 root_receipt,
                 len(phases),
                 retry_count=retry_count,
+                forward_counts=shared_forward_counts,
+                backward_count=action_counters["backwards"],
             ),
-            model_actions=_action_counters(services, phases=phases, status=status),
+            model_actions=action_counters,
             phase_receipts=tuple(phases),
             source_assembly_sha256=None
             if source_assembly is None
@@ -2498,6 +2683,7 @@ def build_production_execution(
     manifest_loader: Callable[..., Any] | None = None,
     backend_factory: Callable[..., Any] | None = None,
     runtime_factory: Callable[..., Any] | None = None,
+    hf_native_owner: Any | None = None,
 ) -> ProductionExecution:
     """Construct the live owner only after explicit ``--execute`` admission."""
 
@@ -2508,6 +2694,9 @@ def build_production_execution(
     )
     from scripts.research.build_human13_k_union_manifest import load_manifest
     from scripts.research.human13_live_model import HUMAN13_SOURCE_INFER_CONFIG
+    from scripts.research.human13_hf_native_one_image_owner import (
+        build_repository_hf_native_owner,
+    )
     from scripts.research.human13_one_image_services import (
         ExistingOwnersProductionBackend,
         ProductionOneImageServices,
@@ -2533,18 +2722,28 @@ def build_production_execution(
         if args.stale_reservation is not None
         else (Path(config.output_root).expanduser().resolve() / "run-reservation.json")
     )
-    backend = (backend_factory or ExistingOwnersProductionBackend)(
+    backend_kwargs: dict[str, Any] = dict(
         manifest=manifest,
         manifest_path=manifest_path,
         repo_root=repo_root,
         source_config_path=source_config,
         runtime_factory=runtime_factory or default_task5_runtime_factory,
     )
+    if hf_native_owner is None:
+        # The repository owner is fail-closed: missing same-session projector,
+        # pre-acquisition graph row, or registry admission remains a typed HOLD.
+        hf_native_owner = build_repository_hf_native_owner()
+    if hf_native_owner is not None:
+        # Explicit public construction dependency: never recover scientific
+        # owners from a private attribute on the shared-surface session.
+        backend_kwargs["hf_native_owner"] = hf_native_owner
+    backend = (backend_factory or ExistingOwnersProductionBackend)(**backend_kwargs)
     services = ProductionOneImageServices(
         backend=backend,
         stale_reservation_path=stale,
         successor_root=output_root,
         attempt_id=args.attempt_id,
+        stale_owner_pid=getattr(args, "stale_owner_pid", None),
     )
     return ProductionExecution(
         services=services,
@@ -2570,6 +2769,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--source-config", type=Path, default=None)
     parser.add_argument("--stale-reservation", type=Path, default=None)
+    parser.add_argument(
+        "--stale-owner-pid",
+        type=int,
+        default=None,
+        help="Explicit lost-owner PID witness for a legacy reservation without pid",
+    )
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--user-model-gpu-authority", action="store_true")
     parser.add_argument("--full-panel", action="store_true")

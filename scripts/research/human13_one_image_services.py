@@ -24,11 +24,20 @@ from typing import Any, Protocol, cast, runtime_checkable
 from scripts.research.human13_cuda_cpu_adapter import (
     CudaHFVerticalAdapter,
 )
+from scripts.research.human13_hf_native_one_image_owner import (
+    HFNativeAdmissionRequest,
+    HFNativeOneImageAdmission,
+    HFNativeOneImageOwner,
+    HFNativeOneImageOwnerError,
+    PreAcquisitionSourceOwners,
+    SourceOwnerRequest,
+)
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
     OneImageTerminalReceipt,
     SourceAssemblyReceipt,
+    acquired_h_owner_ids_from_trajectory,
 )
 from src.artifacts.json_values import json_sha256
 
@@ -217,11 +226,35 @@ class Task5ProductionContextFailureReceipt:
     manifest_object_id: int
     manifest_image_object_id: int
     process_id: int
-    schema_version: str = "human13_task5_production_context_failure.v1"
+    missing_owner_publications: tuple[str, ...] = (
+        "hf_one_image_trajectory_credit_admission",
+        "pre_acquisition_source_compiler_graph",
+        "pre_acquisition_frozen_witness_and_realized_probe",
+    )
+    required_owner_phase_order: tuple[str, ...] = (
+        "source_audits",
+        "source_compiler_and_witness_freeze",
+        "hf_sample_and_replay",
+        "one_image_trajectory_credit_admission",
+    )
+    schema_version: str = "human13_task5_production_context_failure.v2"
 
     def __post_init__(self) -> None:
         if self.reason_code != "live_task2_owner_publications_unavailable":
             raise ValueError("production context failure reason differs")
+        if self.missing_owner_publications != (
+            "hf_one_image_trajectory_credit_admission",
+            "pre_acquisition_source_compiler_graph",
+            "pre_acquisition_frozen_witness_and_realized_probe",
+        ):
+            raise ValueError("production context missing-owner set differs")
+        if self.required_owner_phase_order != (
+            "source_audits",
+            "source_compiler_and_witness_freeze",
+            "hf_sample_and_replay",
+            "one_image_trajectory_credit_admission",
+        ):
+            raise ValueError("production context owner phase order differs")
         for field in (
             "config_sha256",
             "manifest_sha256",
@@ -295,6 +328,8 @@ class Task5ProductionContextFailureReceipt:
             "manifest_object_id": self.manifest_object_id,
             "manifest_image_object_id": self.manifest_image_object_id,
             "process_id": self.process_id,
+            "missing_owner_publications": list(self.missing_owner_publications),
+            "required_owner_phase_order": list(self.required_owner_phase_order),
         }
 
     @property
@@ -328,6 +363,7 @@ class Task5ObservedAcquisitionFailureReceipt:
     replay_group_sha256s: tuple[str, ...]
     sample_forward_count: int
     replay_forward_count: int
+    source_owner_forward_count: int
     total_forward_count: int
     no_cache_forward_count: int
     model_object_id: int
@@ -335,7 +371,7 @@ class Task5ObservedAcquisitionFailureReceipt:
     cleanup_reason: str
     cleanup_failures: tuple[str, ...]
     cleanup_call_count: int
-    schema_version: str = "human13_task5_observed_acquisition_failure.v1"
+    schema_version: str = "human13_task5_observed_acquisition_failure.v2"
 
     def __post_init__(self) -> None:
         for field in (
@@ -357,6 +393,7 @@ class Task5ObservedAcquisitionFailureReceipt:
         for field in (
             "sample_forward_count",
             "replay_forward_count",
+            "source_owner_forward_count",
             "total_forward_count",
             "no_cache_forward_count",
         ):
@@ -364,7 +401,9 @@ class Task5ObservedAcquisitionFailureReceipt:
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field} must be a nonnegative integer")
         if self.total_forward_count != (
-            self.sample_forward_count + self.replay_forward_count
+            self.sample_forward_count
+            + self.replay_forward_count
+            + self.source_owner_forward_count
         ):
             raise ValueError("observed shared-surface forward counts differ")
         if self.no_cache_forward_count != self.total_forward_count:
@@ -400,6 +439,7 @@ class Task5ObservedAcquisitionFailureReceipt:
             "replay_group_sha256s": list(self.replay_group_sha256s),
             "sample_forward_count": self.sample_forward_count,
             "replay_forward_count": self.replay_forward_count,
+            "source_owner_forward_count": self.source_owner_forward_count,
             "total_forward_count": self.total_forward_count,
             "no_cache_forward_count": self.no_cache_forward_count,
             "model_object_id": self.model_object_id,
@@ -624,7 +664,10 @@ def default_task5_runtime_factory(
     replay_forwards = sample_forwards
     return ProductionAcquisition(
         parity_passed=True,
-        trusted_h_owner_ids=tuple(getattr(manifest_image, "h_owner_ids", ())),
+        trusted_h_owner_ids=acquired_h_owner_ids_from_trajectory(
+            trajectory,
+            manifest_image,
+        ),
         cuda_proposal_input=surface,
         task2_resource_sha256=json_sha256(
             {
@@ -747,6 +790,7 @@ class ExistingOwnersProductionBackend:
         source_config_path: str | Path,
         runtime_factory: Task5RuntimeFactory,
         runtime_context_provider: Task5ProductionContextProvider | None = None,
+        hf_native_owner: HFNativeOneImageOwner | None = None,
         assemble_model: Callable[..., object] | None = None,
         build_skeletons: Callable[..., Mapping[int, object]] | None = None,
         open_surface: Callable[..., object] | None = None,
@@ -771,6 +815,14 @@ class ExistingOwnersProductionBackend:
             self._runtime_context_provider, Task5ProductionContextProvider
         ):
             raise TypeError("Task-5 production context provider must be callable")
+        if hf_native_owner is not None and not isinstance(
+            hf_native_owner, HFNativeOneImageOwner
+        ):
+            raise TypeError("HF-native one-image owner must implement the public seam")
+        self._hf_native_owner = hf_native_owner
+        self._active_training_handle: _LiveTrainingHandle | None = None
+        self._source_owner_audits: dict[float, Mapping[str, Any]] = {}
+        self._pre_acquisition_source: PreAcquisitionSourceOwners | None = None
         live_training_boundary = assemble_model is None
         live_audit_boundary = evaluate_checkpoint is None
         if assemble_model is None or build_skeletons is None:
@@ -940,7 +992,9 @@ class ExistingOwnersProductionBackend:
             from scripts.research.human13_hf_shared_surface import plan_image1584_k16
 
             live = self._open_surface(plan_image1584_k16(), assembly, skeleton)
-        return _LiveTrainingHandle(assembly=assembly, session=live)
+        handle = _LiveTrainingHandle(assembly=assembly, session=live)
+        self._active_training_handle = handle
+        return handle
 
     def open_audit(
         self, config: EntryConfig, resources: DualGPUResourceReceipt
@@ -999,13 +1053,49 @@ class ExistingOwnersProductionBackend:
         checkpoint = session.config.source_checkpoint_path
         if checkpoint is None:
             raise ValueError("Source checkpoint path is absent")
-        return self._audit(
+        result = self._audit(
             session,
             checkpoint_path=checkpoint,
             arm_id="frozen_source",
             milestone=0,
             repetition_penalty=repetition_penalty,
         )
+        owner = self._hf_native_owner
+        if owner is not None and self._pre_acquisition_source is None:
+            if repetition_penalty in self._source_owner_audits:
+                raise ValueError("Source owner audit RP was observed more than once")
+            self._source_owner_audits[repetition_penalty] = result
+            if tuple(self._source_owner_audits) == (1.0, 1.1):
+                training = self._active_training_handle
+                if training is None:
+                    raise RuntimeError("Source owner lacks the active training session")
+                try:
+                    self._pre_acquisition_source = owner.prepare_source(
+                        SourceOwnerRequest(
+                            assembly=training.assembly,
+                            session=training.session,
+                            manifest=self._manifest,
+                            manifest_image=self._image(),
+                            config=session.config,
+                            source_audits=dict(self._source_owner_audits),
+                        )
+                    )
+                except BaseException as error:
+                    # The RP=1.1 audit has already performed a real GPU1
+                    # forward.  Preserve that observation on the primary
+                    # owner error so the services/entry owners can receipt
+                    # it even though source-owner preparation failed.
+                    for name, value in (
+                        ("_source_audit_forward_observed", True),
+                        ("_source_audit_result", result),
+                        ("_source_audit_repetition_penalty", repetition_penalty),
+                    ):
+                        try:
+                            setattr(error, name, value)
+                        except BaseException:
+                            pass
+                    raise
+        return result
 
     def acquire_and_replay(
         self, session: object, config: EntryConfig
@@ -1031,7 +1121,33 @@ class ExistingOwnersProductionBackend:
             manifest_image=self._image(),
             config=config,
         )
-        runtime_evidence = self._runtime_context_provider.provide(context_request)
+        owner = self._hf_native_owner
+        if owner is None:
+            runtime_evidence = self._runtime_context_provider.provide(context_request)
+        else:
+            source = self._pre_acquisition_source
+            if source is None:
+                raise Task5RuntimeEvidenceError(
+                    "HF-native Source/compiler/witness owner was not frozen"
+                )
+            hf_admission = owner.admit_after_replay(
+                HFNativeAdmissionRequest(
+                    assembly=session.assembly,
+                    session=session.session,
+                    manifest=self._manifest,
+                    manifest_image=self._image(),
+                    config=config,
+                    sampled_groups=sampled,
+                    replay_groups=replayed,
+                    replay_logprob_tensors=tensors,
+                ),
+                source,
+            )
+            if type(hf_admission) is not HFNativeOneImageAdmission:
+                raise Task5RuntimeEvidenceError(
+                    "HF-native owner returned an unadmitted one-image join"
+                )
+            runtime_evidence = hf_admission.runtime_evidence
         if type(runtime_evidence) is not AdmittedTask5RuntimeEvidence:
             raise Task5RuntimeEvidenceError(
                 "production context provider returned unadmitted evidence"
@@ -1055,7 +1171,10 @@ class ExistingOwnersProductionBackend:
             or tuple(getattr(proposal, "replay_groups", ())) != replayed
             or dict(getattr(proposal, "replay_logprob_tensors", {})) != tensors
         ):
-            raise ValueError("Task-5 runtime factory changed live Task-2 group lineage")
+            raise HFNativeOneImageOwnerError(
+                "Task-5 runtime factory changed live Task-2 group lineage",
+                disposition="task2_task3_lineage_mismatch",
+            )
         return acquisition
 
     def build_cuda_adapter(self, proposal_input: object) -> SplitCudaAdapter:
@@ -1107,14 +1226,21 @@ class ExistingOwnersProductionBackend:
     def close_training(self, session: object) -> object:
         if not isinstance(session, _LiveTrainingHandle):
             raise TypeError("close requires the live training handle")
+        if self._active_training_handle is not session:
+            raise ValueError("close training handle differs from the active owner")
         try:
-            return session.session.close()
-        except Exception as error:
             try:
-                receipt = session.session.resource_receipt
-            except Exception:
-                raise error
-            raise _SharedSurfaceTrainingCloseError(receipt, error) from error
+                return session.session.close()
+            except Exception as error:
+                try:
+                    receipt = session.session.resource_receipt
+                except Exception:
+                    raise error
+                raise _SharedSurfaceTrainingCloseError(receipt, error) from error
+        finally:
+            self._active_training_handle = None
+            self._pre_acquisition_source = None
+            self._source_owner_audits.clear()
 
     def close_audit(self, session: object) -> None:
         if not isinstance(session, _LiveAuditHandle):
@@ -1135,6 +1261,7 @@ class ProductionOneImageServices:
         successor_root: str | Path,
         attempt_id: str,
         recovery_authority: str = "explicit_task5_owner",
+        stale_owner_pid: int | None = None,
         pid_is_alive: Callable[[int], bool] = _pid_is_alive,
         phase_writer: PhaseWriter | None = None,
     ) -> None:
@@ -1144,6 +1271,10 @@ class ProductionOneImageServices:
             raise ValueError("attempt_id must be nonempty")
         if not isinstance(recovery_authority, str) or not recovery_authority:
             raise ValueError("recovery authority must be nonempty")
+        if stale_owner_pid is not None and (
+            isinstance(stale_owner_pid, bool) or stale_owner_pid <= 0
+        ):
+            raise ValueError("stale owner PID must be a positive integer")
         self._backend = backend
         self._stale = Path(stale_reservation_path).expanduser().resolve()
         self._root = Path(successor_root).expanduser().resolve()
@@ -1154,6 +1285,7 @@ class ProductionOneImageServices:
             raise ValueError("successor root must be a fresh sibling of the stale root")
         self._attempt_id = attempt_id
         self._recovery_authority = recovery_authority
+        self._stale_owner_pid = stale_owner_pid
         self._pid_is_alive = pid_is_alive
         self._phase_writer = phase_writer or _write_exclusive_json
         self._recovery_sha256: str | None = None
@@ -1175,6 +1307,7 @@ class ProductionOneImageServices:
             Task5ObservedAcquisitionFailureReceipt | None
         ) = None
         self._accounted_shared_surface_forwards = 0
+        self._accounted_source_owner_forwards = 0
         self._actions = {
             "model_loads": 0,
             "forwards": 0,
@@ -1256,6 +1389,10 @@ class ProductionOneImageServices:
         if not isinstance(parent, Mapping):
             raise ValueError("stale reservation must be a JSON object")
         pid = parent.get("pid")
+        parent_pid_source = "reservation"
+        if pid is None and self._stale_owner_pid is not None:
+            pid = self._stale_owner_pid
+            parent_pid_source = "explicit_recovery_witness"
         run_id = parent.get("run_id")
         actions = parent.get("model_actions")
         if (
@@ -1280,6 +1417,7 @@ class ProductionOneImageServices:
             "parent_reservation_sha256": hashlib_sha256(parent_bytes),
             "parent_run_id": run_id,
             "parent_pid": pid,
+            "parent_pid_source": parent_pid_source,
             "parent_owner_lost": True,
             "successor_run_id": self._attempt_id,
             "successor_root": str(self._root),
@@ -1295,6 +1433,7 @@ class ProductionOneImageServices:
             "parent_reservation_sha256": recovery_payload["parent_reservation_sha256"],
             "parent_run_id": run_id,
             "parent_pid": pid,
+            "parent_pid_source": parent_pid_source,
             "successor_run_id": self._attempt_id,
             "successor_root": str(self._root),
             "config_sha256": config.content_sha256,
@@ -1325,6 +1464,8 @@ class ProductionOneImageServices:
         reservation_payload = {
             "schema_version": RESERVATION_SCHEMA,
             "run_id": self._attempt_id,
+            "pid": os.getpid(),
+            "parent_pid_source": parent_pid_source,
             "output_root": str(self._root),
             "config_sha256": config.content_sha256,
             "manifest_sha256": config.manifest_sha256,
@@ -1389,7 +1530,43 @@ class ProductionOneImageServices:
     def source_audit(
         self, audit_session: object, repetition_penalty: float
     ) -> Mapping[str, Any]:
-        result = self._backend.source_audit(audit_session, repetition_penalty)
+        try:
+            result = self._backend.source_audit(audit_session, repetition_penalty)
+        except BaseException as error:
+            if bool(getattr(error, "_source_audit_forward_observed", False)):
+                observed = getattr(error, "_source_audit_result", None)
+                observed_rp = getattr(
+                    error, "_source_audit_repetition_penalty", repetition_penalty
+                )
+                if isinstance(observed, Mapping) and isinstance(
+                    observed_rp, (int, float)
+                ) and not isinstance(observed_rp, bool):
+                    observed_rp = float(observed_rp)
+                    self._source_audits[observed_rp] = observed
+                    self._actions["forwards"] += 1
+                    phase = f"source_audit_rp_{observed_rp:g}"
+                    evidence: dict[str, Any] = {
+                        "source_audit_forward_observed": True,
+                        "repetition_penalty": observed_rp,
+                    }
+                    try:
+                        evidence["source_audit_sha256"] = json_sha256(observed)
+                    except BaseException:
+                        evidence["source_audit_sha256"] = None
+                    try:
+                        self._record(phase, status="failed", evidence=evidence)
+                    except BaseException as record_error:
+                        try:
+                            setattr(error, "_source_audit_phase_record_error", record_error)
+                        except BaseException:
+                            pass
+                    else:
+                        try:
+                            setattr(error, "_source_audit_phase_recorded", True)
+                            setattr(error, "_source_audit_phase", phase)
+                        except BaseException:
+                            pass
+            raise
         self._source_audits[repetition_penalty] = result
         self._actions["forwards"] += 1
         self._record(f"source_audit_rp_{repetition_penalty:g}")
@@ -1406,6 +1583,19 @@ class ProductionOneImageServices:
                 "k16_acquisition_replay",
                 status="runtime_context_failure",
                 evidence={"context_failure_receipt": error.receipt.to_dict()},
+            )
+            raise
+        except HFNativeOneImageOwnerError as error:
+            self._record(
+                "k16_acquisition_replay",
+                status="hf_native_owner_failure",
+                evidence={
+                    "owner_error": {
+                        "type": type(error).__name__,
+                        "reason": error.reason,
+                        "disposition": error.disposition,
+                    }
+                },
             )
             raise
         if not isinstance(acquisition, ProductionAcquisition):
@@ -1428,11 +1618,15 @@ class ProductionOneImageServices:
         return acquisition
 
     def _account_shared_surface_forwards(
-        self, sample_forward_count: int, replay_forward_count: int
+        self,
+        sample_forward_count: int,
+        replay_forward_count: int,
+        source_owner_forward_count: int = 0,
     ) -> None:
         for field, value in (
             ("sample_forward_count", sample_forward_count),
             ("replay_forward_count", replay_forward_count),
+            ("source_owner_forward_count", source_owner_forward_count),
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field} must be a nonnegative integer")
@@ -1440,9 +1634,16 @@ class ProductionOneImageServices:
         if self._accounted_shared_surface_forwards:
             if observed != self._accounted_shared_surface_forwards:
                 raise ValueError("shared-surface forward observation changed")
+            if source_owner_forward_count < self._accounted_source_owner_forwards:
+                raise ValueError("Source-owner forward observation regressed")
+            self._actions["forwards"] += (
+                source_owner_forward_count - self._accounted_source_owner_forwards
+            )
+            self._accounted_source_owner_forwards = source_owner_forward_count
             return
-        self._actions["forwards"] += observed
+        self._actions["forwards"] += observed + source_owner_forward_count
         self._accounted_shared_surface_forwards = observed
+        self._accounted_source_owner_forwards = source_owner_forward_count
 
     @staticmethod
     def _admit_shared_surface_receipt(receipt: object) -> Mapping[str, Any]:
@@ -1460,6 +1661,7 @@ class ProductionOneImageServices:
         required = {
             "sample_forward_count",
             "replay_forward_count",
+            "source_owner_forward_count",
             "total_forward_count",
             "no_cache_forward_count",
             "sampled_group_sha256s",
@@ -1479,6 +1681,7 @@ class ProductionOneImageServices:
             for field in (
                 "sample_forward_count",
                 "replay_forward_count",
+                "source_owner_forward_count",
                 "total_forward_count",
                 "no_cache_forward_count",
             )
@@ -1488,8 +1691,10 @@ class ProductionOneImageServices:
             for item in counts
         ):
             raise ValueError("shared-surface forward counts are malformed")
-        sample, replay, total, no_cache = cast(tuple[int, int, int, int], counts)
-        if total != sample + replay or no_cache != total:
+        sample, replay, source_owner, total, no_cache = cast(
+            tuple[int, int, int, int, int], counts
+        )
+        if total != sample + replay + source_owner or no_cache != total:
             raise ValueError("shared-surface no-cache forward counts differ")
         if value["retained_graph_count"] != 0:
             raise ValueError("shared-surface close retained graph ownership")
@@ -1518,11 +1723,13 @@ class ProductionOneImageServices:
         self._shared_surface_resource_receipt = receipt
         sample = cast(int, value["sample_forward_count"])
         replay = cast(int, value["replay_forward_count"])
-        self._account_shared_surface_forwards(sample, replay)
+        source_owner = cast(int, value["source_owner_forward_count"])
+        self._account_shared_surface_forwards(sample, replay, source_owner)
         evidence: dict[str, Any] = {
             "shared_surface_resource_receipt_sha256": value["content_sha256"],
             "sample_forward_count": sample,
             "replay_forward_count": replay,
+            "source_owner_forward_count": source_owner,
             "no_cache_forward_count": value["no_cache_forward_count"],
             "cleanup_state": value["cleanup_state"],
             "cleanup_reason": value["cleanup_reason"],
@@ -1554,6 +1761,7 @@ class ProductionOneImageServices:
             replay_group_sha256s=replay_hashes,
             sample_forward_count=sample,
             replay_forward_count=replay,
+            source_owner_forward_count=source_owner,
             total_forward_count=cast(int, value["total_forward_count"]),
             no_cache_forward_count=cast(int, value["no_cache_forward_count"]),
             model_object_id=cast(int, value["model_object_id"]),
@@ -1577,7 +1785,10 @@ class ProductionOneImageServices:
             or getattr(surface, "trajectory_ledger", None) is None
             or getattr(surface, "compiler_ledger", None) is None
         ):
-            raise ValueError("complete current Task2/Task3 lineage is required")
+            raise HFNativeOneImageOwnerError(
+                "complete current Task2/Task3 lineage is required",
+                disposition="task2_task3_lineage_mismatch",
+            )
 
     def apply_private_update(
         self,
@@ -1590,7 +1801,21 @@ class ProductionOneImageServices:
             raise TypeError("private update requires ProductionAcquisition")
         if not acquisition.parity_passed:
             raise RuntimeError("shared-surface parity failure forbids backward")
-        self._require_task2_task3_lineage(acquisition)
+        try:
+            self._require_task2_task3_lineage(acquisition)
+        except HFNativeOneImageOwnerError as error:
+            self._record(
+                "private_update_applied",
+                status="hf_native_owner_failure",
+                evidence={
+                    "owner_error": {
+                        "type": type(error).__name__,
+                        "reason": error.reason,
+                        "disposition": error.disposition,
+                    }
+                },
+            )
+            raise
         adapter = self._backend.build_cuda_adapter(acquisition.cuda_proposal_input)
         if not isinstance(adapter, (CudaHFVerticalAdapter, SplitCudaAdapter)):
             raise TypeError("backend must build the split CUDA adapter lifecycle")
@@ -1741,65 +1966,72 @@ class ProductionOneImageServices:
         if self._close_called:
             raise RuntimeError("one-image sessions were already closed")
         self._close_called = True
-        failures: list[Exception] = []
-        if audit_session is not None:
-            try:
-                self._backend.close_audit(audit_session)
-                self._record("audit_session_closed")
-            except Exception as error:
-                failures.append(error)
-                if self._reserved:
-                    self._record(
-                        "audit_session_closed",
-                        status="failed",
-                        evidence={"error": f"{type(error).__name__}: {error}"},
-                    )
-        if training_session is not None:
-            try:
-                receipt = self._backend.close_training(training_session)
-                if receipt is None:
-                    if self._pending_context_failure is not None:
-                        raise RuntimeError(
-                            "runtime-context failure close omitted shared-surface receipt"
-                        )
-                    evidence: Mapping[str, Any] = {}
-                else:
-                    evidence = self._observe_shared_surface_close(receipt)
-                self._record("training_session_closed", evidence=evidence)
-            except _SharedSurfaceTrainingCloseError as error:
+        try:
+            failures: list[Exception] = []
+            if audit_session is not None:
                 try:
-                    evidence = self._observe_shared_surface_close(
-                        error.resource_receipt
+                    self._backend.close_audit(audit_session)
+                    self._record("audit_session_closed")
+                except Exception as error:
+                    failures.append(error)
+                    if self._reserved:
+                        self._record(
+                            "audit_session_closed",
+                            status="failed",
+                            evidence={"error": f"{type(error).__name__}: {error}"},
+                        )
+            if training_session is not None:
+                try:
+                    receipt = self._backend.close_training(training_session)
+                    if receipt is None:
+                        if self._pending_context_failure is not None:
+                            raise RuntimeError(
+                                "runtime-context failure close omitted "
+                                "shared-surface receipt"
+                            )
+                        evidence: Mapping[str, Any] = {}
+                    else:
+                        evidence = self._observe_shared_surface_close(receipt)
+                    self._record("training_session_closed", evidence=evidence)
+                except _SharedSurfaceTrainingCloseError as error:
+                    try:
+                        evidence = self._observe_shared_surface_close(
+                            error.resource_receipt
+                        )
+                    except Exception as receipt_error:
+                        error.add_note(
+                            "shared-surface receipt observation failed: "
+                            f"{type(receipt_error).__name__}: {receipt_error}"
+                        )
+                        evidence = {}
+                    failures.append(error)
+                    if self._reserved:
+                        self._record(
+                            "training_session_closed",
+                            status="failed",
+                            evidence=evidence
+                            | {"error": f"{type(error).__name__}: {error}"},
+                        )
+                except Exception as error:
+                    failures.append(error)
+                    if self._reserved:
+                        self._record(
+                            "training_session_closed",
+                            status="failed",
+                            evidence={"error": f"{type(error).__name__}: {error}"},
+                        )
+            if failures:
+                primary = failures[0]
+                for extra in failures[1:]:
+                    primary.add_note(
+                        f"additional close failure: {type(extra).__name__}: {extra}"
                     )
-                except Exception as receipt_error:
-                    error.add_note(
-                        "shared-surface receipt observation failed: "
-                        f"{type(receipt_error).__name__}: {receipt_error}"
-                    )
-                    evidence = {}
-                failures.append(error)
-                if self._reserved:
-                    self._record(
-                        "training_session_closed",
-                        status="failed",
-                        evidence=evidence
-                        | {"error": f"{type(error).__name__}: {error}"},
-                    )
-            except Exception as error:
-                failures.append(error)
-                if self._reserved:
-                    self._record(
-                        "training_session_closed",
-                        status="failed",
-                        evidence={"error": f"{type(error).__name__}: {error}"},
-                    )
-        if failures:
-            primary = failures[0]
-            for extra in failures[1:]:
-                primary.add_note(
-                    f"additional close failure: {type(extra).__name__}: {extra}"
-                )
-            raise primary
+                raise primary
+        finally:
+            self._adapter = None
+            self._proposal = None
+            self._audit_session = None
+            self._source_audits.clear()
 
     def persist_terminal(self, terminal: OneImageTerminalReceipt) -> None:
         if not self._reserved or self._recovery_sha256 is None:

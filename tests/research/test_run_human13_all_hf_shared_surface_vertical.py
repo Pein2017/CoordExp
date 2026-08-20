@@ -6,6 +6,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 import json
+import sys
 
 import pytest
 
@@ -39,6 +40,27 @@ from scripts.research.run_human13_all_hf_shared_surface_vertical import (
 )
 from scripts.research.build_human13_k_union_manifest import default_binding
 import scripts.research.run_human13_all_hf_shared_surface_vertical as entry_owner
+
+
+def test_module_entry_alias_preserves_terminal_receipt_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ``-m`` entry must not create a second terminal-receipt class."""
+
+    canonical = "scripts.research.run_human13_all_hf_shared_surface_vertical"
+    original_name = entry_owner.__name__
+    original_main = sys.modules.get("__main__")
+    monkeypatch.setattr(entry_owner, "__name__", "__main__")
+    monkeypatch.setitem(sys.modules, "__main__", entry_owner)
+    monkeypatch.delitem(sys.modules, canonical, raising=False)
+    try:
+        entry_owner._install_canonical_module_alias()
+        assert sys.modules[canonical] is entry_owner
+    finally:
+        entry_owner.__name__ = original_name
+        if original_main is None:
+            sys.modules.pop("__main__", None)
+        else:
+            sys.modules["__main__"] = original_main
+        sys.modules[canonical] = entry_owner
 
 
 def _image() -> SimpleNamespace:
@@ -348,8 +370,9 @@ def test_typed_runtime_context_failure_terminal_binds_observed_shared_surface_co
     shared_payload = {
         "sample_forward_count": 463,
         "replay_forward_count": 463,
-        "total_forward_count": 926,
-        "no_cache_forward_count": 926,
+        "source_owner_forward_count": 7,
+        "total_forward_count": 933,
+        "no_cache_forward_count": 933,
         "sampled_group_sha256s": list(sampled_hashes),
         "replay_group_sha256s": list(replay_hashes),
         "model_object_id": 13,
@@ -469,9 +492,14 @@ def test_typed_runtime_context_failure_terminal_binds_observed_shared_surface_co
     )
 
     assert terminal.terminal_status == "update_failure"
-    assert terminal.model_actions["forwards"] == 928
+    assert terminal.model_actions["forwards"] == 935
     assert terminal.model_actions["backwards"] == 0
     assert terminal.model_actions["optimizer_steps"] == 0
+    assert terminal.resource_receipt.sample_forward_count == 463
+    assert terminal.resource_receipt.replay_forward_count == 463
+    assert terminal.resource_receipt.source_owner_forward_count == 7
+    assert terminal.resource_receipt.total_forward_count == 933
+    assert terminal.resource_receipt.no_cache_forward_count == 933
     assert backend.close_training_calls == 1
     assert backend.close_audit_calls == 1
     terminal_envelope = json.loads((successor / "terminal.json").read_text())
@@ -488,7 +516,9 @@ def test_typed_runtime_context_failure_terminal_binds_observed_shared_surface_co
     assert terminal_envelope["observed_acquisition_failure_receipt"] == failure
     assert failure["sample_forward_count"] == 463
     assert failure["replay_forward_count"] == 463
-    assert failure["no_cache_forward_count"] == 926
+    assert failure["source_owner_forward_count"] == 7
+    assert failure["total_forward_count"] == 933
+    assert failure["no_cache_forward_count"] == 933
     assert tuple(failure["sampled_group_sha256s"]) == sampled_hashes
     assert tuple(failure["replay_group_sha256s"]) == replay_hashes
     assert failure["config_sha256"] == config.content_sha256
@@ -518,7 +548,72 @@ def test_default_dry_run_has_zero_model_gpu_network_and_output_actions(
         "network_actions": 0,
         "output_creations": 0,
     }
+    assert result.resource_receipt.sample_forward_count == 2048
+    assert result.resource_receipt.replay_forward_count == 2048
+    assert result.resource_receipt.source_owner_forward_count == 0
+    assert result.resource_receipt.total_forward_count == 4096
+    assert result.resource_receipt.no_cache_forward_count == 4096
     assert not Path(config.output_root).exists()
+
+
+def test_partial_failure_resource_receipt_does_not_claim_unstarted_k16_work(
+    tmp_path: Path,
+) -> None:
+    resources = entry_owner.DualGPUResourceReceipt(
+        cards=(entry_owner.GPUResource(0, 1, 1), entry_owner.GPUResource(1, 1, 1))
+    )
+    receipt = entry_owner._resource_receipt(
+        resources,
+        None,
+        4,
+        forward_counts={
+            "sample_forward_count": 0,
+            "replay_forward_count": 0,
+            "source_owner_forward_count": 2,
+            "total_forward_count": 2,
+            "no_cache_forward_count": 2,
+            "sampled_group_count": 0,
+            "sampled_request_count": 0,
+        },
+        backward_count=0,
+    )
+    assert receipt.sampled_group_count == 0
+    assert receipt.sampled_request_count == 0
+    assert receipt.backward_count == 0
+    assert receipt.total_forward_count == 2
+
+
+def test_native_replay_text_is_update_failure_and_preserves_typed_reason(
+    tmp_path: Path,
+) -> None:
+    from scripts.research.human13_hf_native_one_image_owner import (
+        HFNativeOneImageOwnerError,
+    )
+
+    class NativeFailure(_FakeServices):
+        def acquire_and_replay(
+            self, training_session: object, config: EntryConfig
+        ) -> object:
+            del training_session, config
+            raise HFNativeOneImageOwnerError(
+                "canonical replay projection failed",
+                disposition="canonical_projection_failure",
+            )
+
+    terminal = run_one_image(
+        _config(tmp_path),
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=tmp_path / "native-failure",
+        services=NativeFailure(),
+        manifest_image=_image(),
+    )
+
+    assert terminal.terminal_status == "update_failure"
+    assert terminal.failure_reason == (
+        "HFNativeOneImageOwnerError: canonical_projection_failure: "
+        "canonical replay projection failed"
+    )
 
 
 def test_dual_gpu_admission_requires_distinct_suitable_cards() -> None:
@@ -594,6 +689,38 @@ def test_phase_order_binds_gpu_roles_and_cleans_private_proposal(
     assert result.resource_receipt.training_gpu == 0
     assert result.resource_receipt.audit_gpu == 1
     assert result.private_proposal_cleaned is True
+
+
+def test_source_audit_owner_failure_preserves_observed_forward_phase(
+    tmp_path: Path,
+) -> None:
+    class SourceOwnerFailure(_FakeServices):
+        def source_audit(
+            self, audit_session: object, repetition_penalty: float
+        ) -> dict[str, Any]:
+            result = super().source_audit(audit_session, repetition_penalty)
+            if repetition_penalty == 1.1:
+                error = RuntimeError("source owner preparation failed")
+                setattr(error, "_source_audit_forward_observed", True)
+                setattr(error, "_source_audit_phase", "source_audit_rp_1.1")
+                raise error
+            return result
+
+    services = SourceOwnerFailure()
+    config = _config(tmp_path)
+    result = run_one_image(
+        config,
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=Path(config.output_root),
+        services=services,
+        manifest_image=_image(),
+    )
+
+    assert result.terminal_status == "update_failure"
+    assert result.model_actions["forwards"] == 2
+    assert "source_audit_rp_1.1" in result.phase_receipts
+    assert "acquire_replay" not in services.events
 
 
 def test_guarded_entry_hands_final_typed_terminal_to_durable_owner(
@@ -817,8 +944,82 @@ def test_production_construction_rejects_gpu1_before_manifest_or_backend(
             manifest_loader=forbidden_manifest,
             backend_factory=forbidden_backend,
         )
-
     assert construction_calls == []
+
+
+def test_production_construction_uses_repository_native_owner_default(
+    tmp_path: Path,
+) -> None:
+    from scripts.research.human13_hf_native_one_image_owner import (
+        RepositoryHFNativeOneImageOwner,
+    )
+
+    args = entry_owner.build_parser().parse_args(
+        [
+            "--execute",
+            "--user-model-gpu-authority",
+            "--output-root",
+            str(tmp_path / "successor"),
+            "--manifest",
+            str(tmp_path / "manifest.json"),
+            "--attempt-id",
+            "attempt",
+        ]
+    )
+    observed: dict[str, Any] = {}
+
+    class Backend:
+        def preflight_source_assembly(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def open_training(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def open_audit(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def source_audit(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def acquire_and_replay(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def build_cuda_adapter(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def write_private_checkpoint(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def proposal_audit(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def reproduce_source(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def cleanup_private_checkpoint(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def close_training(self, *_args: Any) -> Any:
+            raise AssertionError
+
+        def close_audit(self, *_args: Any) -> Any:
+            raise AssertionError
+
+    def backend_factory(**kwargs: Any) -> object:
+        observed.update(kwargs)
+        return Backend()
+
+    entry_owner.build_production_execution(
+        config=_config(tmp_path),
+        args=args,
+        gpu_observer=lambda: _resources(),
+        manifest_loader=lambda *_args, **_kwargs: SimpleNamespace(
+            images=(_image(),), binding=object()
+        ),
+        backend_factory=backend_factory,
+    )
+
+    assert type(observed["hf_native_owner"]) is RepositoryHFNativeOneImageOwner
 
 
 def test_production_gpu_observation_uses_live_cuda_memory_for_exact_roles(
@@ -1410,6 +1611,96 @@ def test_acquired_h_ids_cannot_include_fabricated_g_owner(tmp_path: Path) -> Non
         manifest_image=_image(),
     )
     assert result.terminal_status == "update_failure"
+
+
+def test_proposal_gain_of_unsampled_manifest_h_does_not_pass_continuation(
+    tmp_path: Path,
+) -> None:
+    import importlib.util
+    import sys
+
+    fixture_path = Path(__file__).with_name("test_human13_cuda_cpu_adapter.py")
+    spec = importlib.util.spec_from_file_location("_unsampled_h_fixture", fixture_path)
+    assert spec is not None and spec.loader is not None
+    fixture = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = fixture
+    spec.loader.exec_module(fixture)
+    surface, _ = fixture._task2_surface(module_name="_unsampled_h_surface")
+    assert not any(
+        row.outcome == "trusted_first_hit" and row.owner_stratum == "H"
+        for image_ledger in surface.trajectory_ledger.images
+        for trajectory in image_ledger.trajectories
+        for row in trajectory.rows
+    )
+
+    base_image = _image()
+    image = SimpleNamespace(
+        **{
+            **vars(base_image),
+            "owners": (
+                *base_image.owners,
+                SimpleNamespace(
+                    owner_id="h-sampled",
+                    category="person",
+                    bbox=(40.0, 40.0, 50.0, 50.0),
+                    source_object_index=1,
+                ),
+                SimpleNamespace(
+                    owner_id="h-unsampled",
+                    category="person",
+                    bbox=(20.0, 20.0, 30.0, 30.0),
+                    source_object_index=2,
+                ),
+            ),
+            "h_owner_ids": ("h-sampled", "h-unsampled"),
+        }
+    )
+
+    class UnsampledGain(_FakeServices):
+        def acquire_and_replay(
+            self, training_session: object, config: EntryConfig
+        ) -> object:
+            del training_session, config
+            self.events.append("acquire_replay")
+            return SimpleNamespace(
+                trusted_h_owner_ids=("h-unsampled",),
+                parity_passed=True,
+                cuda_proposal_input=SimpleNamespace(
+                    trajectory_ledger=surface.trajectory_ledger
+                ),
+            )
+
+        def proposal_audit(
+            self, audit_session: object, private: object, repetition_penalty: float
+        ) -> dict[str, Any]:
+            del audit_session, private
+            self.events.append(f"proposal_audit:{repetition_penalty}")
+            result = _proposal_row(
+                owner="h-unsampled", repetition_penalty=repetition_penalty
+            )
+            result["predictions"].insert(
+                0,
+                {
+                    "generated_order": 0,
+                    "description": "person",
+                    "bbox": [0.0, 0.0, 10.0, 10.0],
+                },
+            )
+            result["predictions"][1]["generated_order"] = 1
+            return result
+
+    services = UnsampledGain()
+    result = run_one_image(
+        _config(tmp_path),
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=tmp_path / "one-image",
+        services=services,
+        manifest_image=image,
+    )
+
+    assert result.terminal_status == "completed_null_or_unsafe"
+    assert result.continuation_gate_sha256 is not None
 
 
 def test_failed_proposal_audit_attempts_rollback_exactly_once(tmp_path: Path) -> None:

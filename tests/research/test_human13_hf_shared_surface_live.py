@@ -341,6 +341,110 @@ def _complete_k16(
     return groups, replays
 
 
+def test_source_owner_raw_rows_share_model_graph_and_precede_acquisition() -> None:
+    from scripts.research.human13_hf_shared_surface_live import HFSharedSurfaceLiveError
+    from scripts.research.human13_rp_crossover_witness import SealedSourceDecode
+
+    session, assembly, skeleton = _open()
+    decode = SealedSourceDecode(
+        image_id=1584,
+        repetition_penalty=1.0,
+        prompt_token_ids=tuple(skeleton.input_ids[: skeleton.prompt_token_count]),
+        generated_token_ids=(8, 9),
+        owner_rows=(),
+    )
+
+    rows = session.raw_logit_rows(decode, (0, 1))
+
+    assert tuple(rows.shape) == (2, 8)
+    assert rows.requires_grad
+    assert session.source_owner_forward_count == 1
+    assert session.named_trainable_parameters() == tuple(
+        (name, parameter)
+        for name, parameter in assembly.model.named_parameters()
+        if parameter.requires_grad
+    )
+    session.sample_group(plan_image1584_k16().seed_groups[0])
+    with pytest.raises(HFSharedSurfaceLiveError, match="before acquisition"):
+        session.raw_logit_rows(decode, (0,))
+    session.__exit__(RuntimeError, RuntimeError("test terminal"), None)
+    receipt = session.resource_receipt
+    assert receipt.source_owner_forward_count == 1
+    assert receipt.total_forward_count == (
+        receipt.sample_forward_count
+        + receipt.replay_forward_count
+        + receipt.source_owner_forward_count
+    )
+    assert receipt.no_cache_forward_count == receipt.total_forward_count
+
+
+def test_canonical_replay_projection_uses_captured_tokenizer_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.research import human13_hf_native_projection as native_projection
+    from scripts.research.human13_hf_shared_surface_live import HFSharedSurfaceLiveError
+
+    session, assembly, _skeleton = _open()
+    _sampled, replays = _complete_k16(session)
+    manifest_image = SimpleNamespace(
+        image_id=1584,
+        image_sha256=session.source_owner_identity.image_sha256,
+    )
+    manifest = SimpleNamespace(binding=object(), images=(manifest_image,))
+    attestation = SimpleNamespace(
+        tokenizer_object_id=id(assembly.components.tokenizer),
+        processor_object_id=id(assembly.components.processor),
+        tokenizer_sha256=session.source_owner_identity.tokenizer_sha256,
+    )
+    calls: dict[str, object] = {}
+
+    def attest(
+        _cls: type[object],
+        components: object,
+        *,
+        identity: object,
+        manifest: object,
+    ) -> object:
+        calls["components"] = components
+        calls["identity"] = identity
+        calls["manifest"] = manifest
+        return attestation
+
+    expected = tuple(object() for _ in range(16))
+
+    def project(**kwargs: object) -> tuple[object, ...]:
+        calls.update(kwargs)
+        return expected
+
+    monkeypatch.setattr(
+        native_projection.HFNativeTokenizerAttestation,
+        "from_qwen_components",
+        classmethod(attest),
+    )
+    monkeypatch.setattr(native_projection, "project_hf_native_replay_groups", project)
+
+    observed = session.canonical_replay_projections(
+        replays,
+        manifest,
+        manifest_image,
+    )
+
+    assert observed is expected
+    assert calls["components"] is assembly.components
+    assert calls["identity"] is session.source_owner_identity
+    assert calls["manifest"] is manifest
+    assert calls["replay_groups"] is replays
+    assert calls["manifest_image"] is manifest_image
+    assert calls["attestation"] is attestation
+    with pytest.raises(HFSharedSurfaceLiveError, match="exact admitted replay"):
+        session.canonical_replay_projections(
+            tuple(reversed(replays)),
+            manifest,
+            manifest_image,
+        )
+    session.close()
+
+
 def test_stepwise_sampling_preserves_survivor_order_and_rng_history_receipts() -> None:
     session, assembly, _skeleton = _open()
     model = assembly.model

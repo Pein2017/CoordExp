@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import gc
 import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+import weakref
 
 import pytest
 
@@ -318,6 +320,67 @@ def test_fixed_retry_ceiling_rejects_second_fresh_successor_for_same_parent(
     assert not second_root.exists()
 
 
+def test_append_only_recovery_can_chain_from_a_zero_action_successor(
+    tmp_path: Path,
+) -> None:
+    first, _stale, first_root = _services(
+        tmp_path,
+        _Backend(),
+        successor_name="one-image-recovery-attempt-0001",
+    )
+    first.preflight_source_assembly(_config(tmp_path), _resources())
+    first_reservation = json.loads(
+        (first_root / "run-reservation.json").read_text()
+    )
+    assert isinstance(first_reservation["pid"], int)
+
+    second_root = tmp_path / "one-image-recovery-attempt-0002"
+    second = ProductionOneImageServices(
+        backend=_Backend(),
+        stale_reservation_path=first_root / "run-reservation.json",
+        successor_root=second_root,
+        attempt_id="attempt-0002",
+        pid_is_alive=lambda pid: False,
+    )
+    second.preflight_source_assembly(_config(tmp_path), _resources())
+
+    recovery = json.loads(
+        (second_root / "reservation-recovery.v1.json").read_text()
+    )
+    assert recovery["parent_reservation_path"] == str(
+        first_root / "run-reservation.json"
+    )
+    assert recovery["parent_owner_lost"] is True
+    assert (first_root / ".reservation-recovery-claims").is_dir()
+
+
+def test_legacy_successor_can_recover_with_explicit_lost_owner_pid_witness(
+    tmp_path: Path,
+) -> None:
+    stale = tmp_path / "legacy-successor" / "run-reservation.json"
+    _stale(stale)
+    legacy_payload = json.loads(stale.read_text())
+    del legacy_payload["pid"]
+    stale.write_text(json.dumps(legacy_payload, sort_keys=True) + "\n")
+    successor = tmp_path / "legacy-successor-next"
+    services = ProductionOneImageServices(
+        backend=_Backend(),
+        stale_reservation_path=stale,
+        successor_root=successor,
+        attempt_id="attempt-legacy-next",
+        stale_owner_pid=377949,
+        pid_is_alive=lambda pid: False,
+    )
+
+    services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    recovery = json.loads(
+        (successor / "reservation-recovery.v1.json").read_text()
+    )
+    assert recovery["parent_pid"] == 377949
+    assert recovery["parent_pid_source"] == "explicit_recovery_witness"
+
+
 def test_missing_live_owner_context_is_written_as_typed_phase_receipt(
     tmp_path: Path,
 ) -> None:
@@ -360,6 +423,85 @@ def test_missing_live_owner_context_is_written_as_typed_phase_receipt(
     assert phase["phase"] == "k16_acquisition_replay"
     assert phase["status"] == "runtime_context_failure"
     assert phase["evidence"]["context_failure_receipt"] == receipt.to_dict()
+
+
+def test_native_owner_admission_failure_preserves_reason_and_disposition(
+    tmp_path: Path,
+) -> None:
+    from scripts.research.human13_hf_native_one_image_owner import (
+        HFNativeOneImageOwnerError,
+    )
+
+    error = HFNativeOneImageOwnerError(
+        "canonical projection differs from admitted replay",
+        disposition="canonical_projection_lineage_mismatch",
+    )
+
+    class NativeFailureBackend(_Backend):
+        def acquire_and_replay(
+            self, session: object, config: EntryConfig
+        ) -> ProductionAcquisition:
+            del session, config
+            raise error
+
+    services, _stale, successor = _services(tmp_path, NativeFailureBackend())
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    training = services.open_training(config, resources)
+
+    with pytest.raises(HFNativeOneImageOwnerError) as caught:
+        services.acquire_and_replay(training, config)
+
+    assert caught.value is error
+    assert caught.value.reason == "canonical projection differs from admitted replay"
+    assert caught.value.disposition == "canonical_projection_lineage_mismatch"
+    phase = json.loads(sorted((successor / "receipts").glob("*.json"))[-1].read_text())
+    assert phase["phase"] == "k16_acquisition_replay"
+    assert phase["status"] == "hf_native_owner_failure"
+    assert phase["evidence"]["owner_error"] == {
+        "type": "HFNativeOneImageOwnerError",
+        "reason": "canonical projection differs from admitted replay",
+        "disposition": "canonical_projection_lineage_mismatch",
+    }
+
+
+def test_source_audit_forward_is_receipted_when_owner_prepare_fails(
+    tmp_path: Path,
+) -> None:
+    class SourceOwnerFailureBackend(_Backend):
+        def source_audit(
+            self, session: object, repetition_penalty: float
+        ) -> dict[str, Any]:
+            result = super().source_audit(session, repetition_penalty)
+            if repetition_penalty == 1.1:
+                error = RuntimeError("source owner preparation failed")
+                setattr(error, "_source_audit_forward_observed", True)
+                setattr(error, "_source_audit_result", result)
+                setattr(error, "_source_audit_repetition_penalty", repetition_penalty)
+                raise error
+            return result
+
+    backend = SourceOwnerFailureBackend()
+    services, _stale, successor = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    services.open_training(config, resources)
+    audit = services.open_audit(config, resources)
+    services.source_audit(audit, 1.0)
+
+    with pytest.raises(RuntimeError, match="source owner preparation failed"):
+        services.source_audit(audit, 1.1)
+
+    assert services.action_counters()["forwards"] == 2
+    receipts = sorted((successor / "receipts").glob("*.json"))
+    failed = json.loads(
+        next(path for path in receipts if "source_audit_rp_1.1" in path.name).read_text()
+    )
+    assert failed["status"] == "failed"
+    assert failed["evidence"]["source_audit_forward_observed"] is True
+    assert failed["evidence"]["repetition_penalty"] == 1.1
 
 
 def test_production_owner_orders_apply_checkpoint_audits_then_one_rollback_and_reproduction(
@@ -557,7 +699,9 @@ def test_production_owner_rejects_missing_task2_or_task3_lineage_before_backward
     tmp_path: Path,
 ) -> None:
     backend = _Backend()
-    services, _stale_path, _successor = _services(tmp_path, backend)
+    services, _stale_path, successor = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    services.preflight_source_assembly(config, _resources())
     invalid = ProductionAcquisition(
         parity_passed=True,
         trusted_h_owner_ids=("h-1",),
@@ -574,9 +718,23 @@ def test_production_owner_rejects_missing_task2_or_task3_lineage_before_backward
         compiler_ledger_sha256="d" * 64,
     )
 
-    with pytest.raises(ValueError, match="Task2/Task3 lineage"):
-        services.apply_private_update(object(), invalid, _config(tmp_path))
+    from scripts.research.human13_hf_native_one_image_owner import (
+        HFNativeOneImageOwnerError,
+    )
+
+    with pytest.raises(HFNativeOneImageOwnerError) as caught:
+        services.apply_private_update(object(), invalid, config)
+    assert caught.value.reason == "complete current Task2/Task3 lineage is required"
+    assert caught.value.disposition == "task2_task3_lineage_mismatch"
     assert "adapter_apply" not in backend.events
+    phase = json.loads(sorted((successor / "receipts").glob("*.json"))[-1].read_text())
+    assert phase["phase"] == "private_update_applied"
+    assert phase["status"] == "hf_native_owner_failure"
+    assert phase["evidence"]["owner_error"] == {
+        "type": "HFNativeOneImageOwnerError",
+        "reason": "complete current Task2/Task3 lineage is required",
+        "disposition": "task2_task3_lineage_mismatch",
+    }
 
 
 def test_close_attempts_both_sessions_and_surfaces_typed_failure(
@@ -589,6 +747,76 @@ def test_close_attempts_both_sessions_and_surfaces_typed_failure(
         services.close(object(), object())
 
     assert backend.events == ["close_audit", "close_training"]
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_close_releases_adapter_proposal_and_runtime_evidence_on_every_exit(
+    tmp_path: Path,
+    close_fails: bool,
+) -> None:
+    captured: dict[str, weakref.ReferenceType[object]] = {}
+
+    class RuntimeEvidence:
+        surface_identity = object()
+        sampled_groups = (1, 2, 3, 4)
+        replay_groups = (1, 2, 3, 4)
+        replay_logprob_tensors = {"live": object()}
+        trajectory_ledger = object()
+        compiler_ledger = object()
+
+    class Proposal:
+        content_sha256 = "7" * 64
+
+    class Adapter:
+        def __init__(self, evidence: object) -> None:
+            self.evidence = evidence
+
+        def apply_private_proposal(self) -> object:
+            proposal = Proposal()
+            captured["proposal"] = weakref.ref(proposal)
+            return proposal
+
+        def rollback_private_proposal(self) -> object:
+            return SimpleNamespace(
+                content_sha256="8" * 64,
+                rollback_decision="rejected_restored",
+            )
+
+    class WeakBackend(_Backend):
+        def build_cuda_adapter(self, proposal_input: object) -> Any:
+            adapter = Adapter(proposal_input)
+            captured["adapter"] = weakref.ref(adapter)
+            captured["evidence"] = weakref.ref(proposal_input)
+            return adapter
+
+    backend = WeakBackend(fail="close_training" if close_fails else None)
+    services, _stale_path, _successor = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    training = services.open_training(config, resources)
+    audit = services.open_audit(config, resources)
+    acquisition = ProductionAcquisition(
+        parity_passed=True,
+        trusted_h_owner_ids=("h-1",),
+        cuda_proposal_input=RuntimeEvidence(),
+        task2_resource_sha256="b" * 64,
+        trajectory_ledger_sha256="c" * 64,
+        compiler_ledger_sha256="d" * 64,
+    )
+    proposal = services.apply_private_update(training, acquisition, config)
+    del acquisition, proposal
+
+    if close_fails:
+        with pytest.raises(RuntimeError, match="training close failure"):
+            services.close(training, audit)
+    else:
+        services.close(training, audit)
+    del training, audit
+    gc.collect()
+
+    assert set(captured) == {"adapter", "proposal", "evidence"}
+    assert all(reference() is None for reference in captured.values())
 
 
 def test_private_cleanup_failure_is_journaled_and_not_retried(tmp_path: Path) -> None:
@@ -887,6 +1115,17 @@ def test_public_backend_default_context_provider_fails_only_at_typed_live_owner_
     assert receipt.replay_tensor_object_ids == (("live", id(tensor)),)
     assert len(receipt.sampled_group_sha256s) == 4
     assert len(receipt.replay_group_sha256s) == 4
+    assert receipt.missing_owner_publications == (
+        "hf_one_image_trajectory_credit_admission",
+        "pre_acquisition_source_compiler_graph",
+        "pre_acquisition_frozen_witness_and_realized_probe",
+    )
+    assert receipt.required_owner_phase_order == (
+        "source_audits",
+        "source_compiler_and_witness_freeze",
+        "hf_sample_and_replay",
+        "one_image_trajectory_credit_admission",
+    )
     assert receipt.content_sha256 in str(caught.value)
 
 
@@ -962,6 +1201,7 @@ def test_default_runtime_factory_composes_existing_admitted_task2_task3_owners()
         acquisition.cuda_proposal_input.trajectory_ledger is fixture.trajectory_ledger
     )
     assert acquisition.cuda_proposal_input.compiler_ledger is fixture.compiler_ledger
+    assert acquisition.trusted_h_owner_ids == ()
     assert acquisition.sample_forward_count > 0
     assert acquisition.replay_forward_count > 0
 

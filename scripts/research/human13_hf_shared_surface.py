@@ -537,7 +537,7 @@ def _roots(roots: object) -> tuple[str, str]:
 
 
 def _validate_resources(estimate: HFSharedSurfaceResourceEstimate) -> None:
-    if (estimate.image_prompt_forwards, estimate.replay_forwards, estimate.backward_count, estimate.expected_token_cap) != (2048, 4, 1, 8192):
+    if (estimate.image_prompt_forwards, estimate.replay_forwards, estimate.backward_count, estimate.expected_token_cap) != (2048, 2048, 1, 8192):
         raise SharedSurfaceContractError("resource estimate differs from frozen K16 bounds")
     if estimate.required_gpu_roles != ("gpu0:shared-bf16-fa2-training", "gpu1:fp32-sdpa-audit"):
         raise SharedSurfaceContractError("resource estimate GPU roles differ from frozen vertical")
@@ -594,7 +594,7 @@ def repetition_penalty_then_temperature(logit: float, *, token_was_seen: bool, r
 
 
 def estimate_image1584_k16_resources(*, output_roots: tuple[str, str]) -> HFSharedSurfaceResourceEstimate:
-    return _admit(HFSharedSurfaceResourceEstimate(2048, 4, 1, 8192, ("gpu0:shared-bf16-fa2-training", "gpu1:fp32-sdpa-audit"), output_roots), _validate_resources)
+    return _admit(HFSharedSurfaceResourceEstimate(2048, 2048, 1, 8192, ("gpu0:shared-bf16-fa2-training", "gpu1:fp32-sdpa-audit"), output_roots), _validate_resources)
 
 
 def dry_run_image1584_k16(*, output_roots: tuple[str, str]) -> HFSharedSurfaceDryRunReceipt:

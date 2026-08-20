@@ -562,6 +562,7 @@ def test_resource_and_dry_run_are_admitted_reloadable_and_zero_action() -> None:
     estimate = estimate_image1584_k16_resources(output_roots=roots)
     assert isinstance(estimate, HFSharedSurfaceResourceEstimate)
     assert estimate.image_prompt_forwards == 2048
+    assert estimate.replay_forwards == 2048
     assert HFSharedSurfaceResourceEstimate.from_dict(estimate.to_dict()) == estimate
     dry_run = dry_run_image1584_k16(output_roots=roots)
     assert isinstance(dry_run, HFSharedSurfaceDryRunReceipt)

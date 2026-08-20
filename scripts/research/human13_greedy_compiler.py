@@ -1520,6 +1520,77 @@ def build_compiler_ledger(
     )
 
 
+def construct_hf_native_one_image_compiler_ledger(
+    manifest: Human13KUnionManifest,
+    manifest_image: ImageRecord,
+    boundary: SourceBoundaryInput,
+    trajectory_credit_ledger: TrajectoryCreditLedger,
+) -> CompilerLedger:
+    """Admit the image-1584 compiler without forging full-panel coverage.
+
+    The frozen alias bank and manifest hash still come from the full manifest;
+    only the logical update surface is narrowed to the selected image.
+    """
+
+    admitted = _require_scientific_ledger_admission(trajectory_credit_ledger)
+    if (
+        not isinstance(manifest, Human13KUnionManifest)
+        or not isinstance(manifest_image, ImageRecord)
+        or not isinstance(boundary, SourceBoundaryInput)
+    ):
+        raise ValueError("HF-native compiler requires canonical manifest records")
+    selected = tuple(image for image in manifest.images if image.image_id == 1584)
+    if len(selected) != 1 or selected[0] != manifest_image:
+        raise ValueError("HF-native compiler requires the exact manifest image-1584")
+    manifest_sha256 = _manifest_sha256(manifest)
+    if (
+        admitted.logical_image_count != 1
+        or tuple(image.image_id for image in admitted.images) != (1584,)
+        or admitted.manifest_sha256 != manifest_sha256
+        or boundary.image.image_id != 1584
+        or boundary.repetition_penalty != admitted.training_repetition_penalty
+    ):
+        raise ValueError("HF-native compiler trajectory/Source lineage differs")
+    aliases, alias_bank_sha256 = _frozen_alias_bank(manifest)
+    image_ledger = _build_image_ledger(
+        manifest_image,
+        boundary,
+        alias_bank_sha256=alias_bank_sha256,
+    )
+    source_panel_sha256 = _sha256(
+        {
+            "schema_version": "human13_hf_native_one_image_source_panel.v1",
+            "manifest_sha256": manifest_sha256,
+            "image_id": 1584,
+            "source_decode_sha256": boundary.source_decode_sha256,
+            "trajectory_credit_sha256": admitted.content_sha256,
+        }
+    )
+    ledger = CompilerLedger(
+        source_sha256=admitted.source_sha256,
+        manifest_sha256=manifest_sha256,
+        acquisition_sha256=admitted.acquisition_sha256,
+        trajectory_credit_sha256=admitted.content_sha256,
+        repetition_penalty=cast(float, admitted.training_repetition_penalty),
+        logical_image_count=1,
+        frozen_alias_count=len(aliases),
+        alias_bank_sha256=alias_bank_sha256,
+        source_panel_sha256=source_panel_sha256,
+        images=(image_ledger,),
+    )
+    admission_sha256 = _sha256(
+        {
+            **ledger._preimage(),
+            "admission_sha256": None,
+            "admission_kind": "live-source-and-task3",
+        }
+    )
+    object.__setattr__(ledger, "admission_sha256", admission_sha256)
+    object.__setattr__(ledger, "_factory_marker", _COMPILER_LEDGER_MARKER)
+    _register_admission(_COMPILER_LEDGER_ADMISSIONS, ledger, admission_sha256)
+    return _require_compiler_admission(ledger)
+
+
 def _require_compiler_admission(ledger: object) -> CompilerLedger:
     if type(ledger) is not CompilerLedger:
         raise ValueError("scientific compiler admission requires exact ledger type")
@@ -2096,6 +2167,69 @@ def admit_compiler_compact_logits(
     return result
 
 
+def admit_hf_native_compiler_compact_logits(
+    ledger: CompilerLedger,
+    boundary: SourceBoundaryInput,
+    *,
+    raw_logits: torch.Tensor,
+) -> AdmittedCompilerCompactLogits:
+    """Bind one same-session Source row without an old packed-plan surrogate."""
+
+    admitted = _require_compiler_admission(ledger)
+    if not isinstance(boundary, SourceBoundaryInput):
+        raise ValueError("HF-native compact logits require a Source boundary")
+    if admitted.logical_image_count != 1 or len(admitted.images) != 1:
+        raise ValueError("HF-native compact logits require one logical image")
+    image = admitted.images[0]
+    site = image.site
+    if (
+        image.image_id != 1584
+        or image.source_decode_sha256 != boundary.source_decode_sha256
+        or site is None
+    ):
+        raise ValueError("HF-native compact logits lack the required Source site")
+    if (
+        not isinstance(raw_logits, torch.Tensor)
+        or raw_logits.ndim != 2
+        or raw_logits.shape[0] != 1
+        or not raw_logits.requires_grad
+        or not bool(torch.isfinite(raw_logits.detach()).all().item())
+    ):
+        raise ValueError("HF-native compact logits require one finite graph row")
+    if raw_logits.shape[1] <= max(site.compact_token_ids):
+        raise ValueError("HF-native compact logits omit a required vocabulary token")
+    mapping = {
+        "schema_version": "human13_hf_native_compiler_row.v1",
+        "site_id": site.site_id,
+        "source_decode_sha256": site.source_decode_sha256,
+        "prompt_token_sha256": site.prompt_token_sha256,
+        "source_prefix_token_sha256": site.source_prefix_token_sha256,
+        "source_history_sha256": site.source_history_sha256,
+        "generated_token_index": site.generated_token_index,
+        "local_causal_position": site.local_causal_position,
+        "compiler_ledger_sha256": admitted.content_sha256,
+        "compiler_admission_sha256": admitted.admission_sha256,
+    }
+    row = object.__new__(PackedLogitRows)
+    for field, value in (
+        ("site_id", site.site_id),
+        ("segment_id", site.packed_segment_id),
+        ("pack_index", 0),
+        ("packed_causal_position", site.local_causal_position),
+        ("mapping_sha256", _sha256(mapping)),
+        ("compiler_ledger_sha256", admitted.content_sha256),
+        ("compiler_admission_sha256", admitted.admission_sha256),
+        ("admission_sha256", ""),
+        ("raw_logits", raw_logits),
+        ("_factory_marker", _PACKED_ROW_MARKER),
+    ):
+        object.__setattr__(row, field, value)
+    row_admission = _sha256(_packed_row_admission_preimage(row))
+    object.__setattr__(row, "admission_sha256", row_admission)
+    _register_admission(_PACKED_ROW_ADMISSIONS, row, row_admission)
+    return admit_compiler_compact_logits((row,), admitted)
+
+
 def _require_compact_logits(
     value: object, ledger: CompilerLedger
 ) -> AdmittedCompilerCompactLogits:
@@ -2399,10 +2533,12 @@ __all__ = [
     "PackedLogitRows",
     "SourceBoundaryInput",
     "admit_source_compiler_panel",
+    "admit_hf_native_compiler_compact_logits",
     "admit_compiler_compact_logits_from_packed_plan",
     "admit_source_greedy_decode",
     "bind_packed_compiler_logits",
     "build_compiler_ledger",
+    "construct_hf_native_one_image_compiler_ledger",
     "build_nested_arm_artifacts",
     "combined_loss",
     "gather_compiler_compact_logits",

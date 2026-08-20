@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any, Literal, Mapping, cast
 from weakref import ReferenceType, ref
 
@@ -66,6 +66,7 @@ class SharedSurfaceResourceReceipt:
     replay_group_sha256s: tuple[str, ...]
     sample_forward_count: int
     replay_forward_count: int
+    source_owner_forward_count: int
     total_forward_count: int
     no_cache_forward_count: int
     retained_graph_count: Literal[0]
@@ -94,6 +95,7 @@ class SharedSurfaceResourceReceipt:
             "replay_group_sha256s": list(self.replay_group_sha256s),
             "sample_forward_count": self.sample_forward_count,
             "replay_forward_count": self.replay_forward_count,
+            "source_owner_forward_count": self.source_owner_forward_count,
             "total_forward_count": self.total_forward_count,
             "no_cache_forward_count": self.no_cache_forward_count,
             "retained_graph_count": self.retained_graph_count,
@@ -155,6 +157,7 @@ class SharedSurfaceResourceReceipt:
             replay_group_sha256s=tuple(value["replay_group_sha256s"]),
             sample_forward_count=value["sample_forward_count"],
             replay_forward_count=value["replay_forward_count"],
+            source_owner_forward_count=value["source_owner_forward_count"],
             total_forward_count=value["total_forward_count"],
             no_cache_forward_count=value["no_cache_forward_count"],
             retained_graph_count=value["retained_graph_count"],
@@ -243,6 +246,7 @@ def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
     counts = (
         receipt.sample_forward_count,
         receipt.replay_forward_count,
+        receipt.source_owner_forward_count,
         receipt.total_forward_count,
         receipt.no_cache_forward_count,
     )
@@ -254,7 +258,11 @@ def _validate_resource_receipt(receipt: SharedSurfaceResourceReceipt) -> None:
         or receipt.parameter_state_sha256 != receipt.identity.parameter_state_sha256
         or receipt.model_object_id != receipt.identity.model_object_id
         or receipt.total_forward_count
-        != receipt.sample_forward_count + receipt.replay_forward_count
+        != (
+            receipt.sample_forward_count
+            + receipt.replay_forward_count
+            + receipt.source_owner_forward_count
+        )
         or receipt.no_cache_forward_count != receipt.total_forward_count
         or receipt.replay_forward_count < len(receipt.replay_group_sha256s)
         or receipt.replay_forward_count > derived_replay_forward_count
@@ -683,6 +691,7 @@ class HFSharedSurfaceSession:
         )
         self._sample_forward_count = 0
         self._replay_forward_count = 0
+        self._source_owner_forward_count = 0
         self._no_cache_forward_count = 0
         self._sampled_groups: list[SampledHFGroup] = []
         self._replayed_groups: list[GradientReplayGroup] = []
@@ -707,20 +716,25 @@ class HFSharedSurfaceSession:
         *,
         reason: Literal["completed", "failed"],
         cleanup_failures: tuple[str, ...],
+        admitted_sampled: tuple[SampledHFGroup, ...] | None = None,
+        admitted_replays: tuple[GradientReplayGroup, ...] | None = None,
     ) -> SharedSurfaceResourceReceipt:
-        admitted_sampled: list[SampledHFGroup] = []
-        for index, group in enumerate(self._sampled_groups):
-            if group.group_index != index:
-                break
-            admitted_sampled.append(group)
-        admitted_replays: list[GradientReplayGroup] = []
-        for index, replay in enumerate(self._replayed_groups):
-            if (
-                index >= len(admitted_sampled)
-                or replay.sampled_group != admitted_sampled[index]
-            ):
-                break
-            admitted_replays.append(replay)
+        if admitted_sampled is None or admitted_replays is None:
+            sampled_values: list[SampledHFGroup] = []
+            for index, group in enumerate(self._sampled_groups):
+                if group.group_index != index:
+                    break
+                sampled_values.append(group)
+            replay_values: list[GradientReplayGroup] = []
+            for index, replay in enumerate(self._replayed_groups):
+                if (
+                    index >= len(sampled_values)
+                    or replay.sampled_group != sampled_values[index]
+                ):
+                    break
+                replay_values.append(replay)
+            admitted_sampled = tuple(sampled_values)
+            admitted_replays = tuple(replay_values)
         return _admit_resource_receipt(SharedSurfaceResourceReceipt(
             identity=self._identity,
             model_object_id=self._model_object_id,
@@ -729,8 +743,8 @@ class HFSharedSurfaceSession:
             tokenizer_object_id=self._tokenizer_object_id,
             processor_order=_PROCESSOR_ORDER,
             observed_logits_dtype="float32",
-            sampled_groups=tuple(admitted_sampled),
-            replay_groups=tuple(admitted_replays),
+            sampled_groups=admitted_sampled,
+            replay_groups=admitted_replays,
             sampled_seed_groups=tuple(
                 cast(
                     tuple[int, int, int, int],
@@ -746,8 +760,11 @@ class HFSharedSurfaceSession:
             ),
             sample_forward_count=self._sample_forward_count,
             replay_forward_count=self._replay_forward_count,
+            source_owner_forward_count=self._source_owner_forward_count,
             total_forward_count=(
-                self._sample_forward_count + self._replay_forward_count
+                self._sample_forward_count
+                + self._replay_forward_count
+                + self._source_owner_forward_count
             ),
             no_cache_forward_count=self._no_cache_forward_count,
             retained_graph_count=0,
@@ -756,7 +773,9 @@ class HFSharedSurfaceSession:
                 if admitted_replays
                 else None
             ),
-            session_held_reference_count=0,
+            session_held_reference_count=cast(
+                Literal[0], self._retained_live_resource_count()
+            ),
             assembly_ownership="borrowed_external",
             caller_release_claim="not_claimed",
             cleanup_state="closed",
@@ -769,6 +788,229 @@ class HFSharedSurfaceSession:
     def live_replay_tensor_count(self) -> int:
         return sum(int(value.numel()) for value in self._live_replay_tensors.values())
 
+    @property
+    def source_owner_forward_count(self) -> int:
+        """No-cache owner-evidence forwards, including proposal margin probes."""
+
+        return self._source_owner_forward_count
+
+    @property
+    def source_owner_identity(self) -> HFSharedSurfaceIdentity:
+        """Public immutable identity for experiment-local Source owners."""
+
+        self._require_invariants()
+        return self._identity
+
+    def named_trainable_parameters(
+        self,
+        *,
+        allow_parameter_update: bool = False,
+    ) -> tuple[tuple[str, torch.nn.Parameter], ...]:
+        """Expose the exact same-model trainable layout to WitnessMeasurement."""
+
+        self._require_invariants(
+            verify_parameter_values=not allow_parameter_update,
+            allow_parameter_update=allow_parameter_update,
+        )
+        return cast(
+            tuple[tuple[str, torch.nn.Parameter], ...],
+            tuple(
+                (name, parameter)
+                for name, parameter in self._parameters
+                if parameter.requires_grad
+            ),
+        )
+
+    def raw_logit_rows(self, decode: Any, token_indices: Sequence[int]) -> torch.Tensor:
+        """Graph-bearing Source rows on this session's BF16/FA2 model.
+
+        This is an additive pre-acquisition owner surface.  It has independent
+        accounting and cannot be confused with K16 sample or replay forwards.
+        """
+
+        from scripts.research.human13_rp_crossover_witness import SealedSourceDecode
+
+        if type(decode) is not SealedSourceDecode or decode.image_id != 1584:
+            raise HFSharedSurfaceLiveError("Source owner requires sealed image-1584 decode")
+        if tuple(decode.prompt_token_ids) != self._prompt:
+            raise HFSharedSurfaceLiveError("Source owner prompt differs from shared session")
+        indices = tuple(token_indices)
+        if not indices or any(
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or not 0 <= index < len(decode.generated_token_ids)
+            for index in indices
+        ):
+            raise HFSharedSurfaceLiveError("Source owner token positions are invalid")
+        if self._sampled_groups or self._replayed_groups:
+            raise HFSharedSurfaceLiveError("Source owner rows must freeze before acquisition")
+        history = (*self._prompt, *decode.generated_token_ids)
+        input_ids = torch.tensor((history,), dtype=torch.long)
+        attention_mask = torch.ones_like(input_ids)
+        positions = torch.tensor(
+            tuple(len(self._prompt) + index - 1 for index in indices),
+            dtype=torch.long,
+        )
+        return self._forward(
+            input_ids,
+            attention_mask,
+            retain_grad=True,
+            logits_to_keep=positions,
+            accounting_kind="source_owner",
+        )[0]
+
+    def proposal_realized_margin_values(
+        self,
+        source_decodes: Sequence[object],
+        witness_sites: Sequence[object],
+        *,
+        source_parameter_state_sha256: str,
+        proposal_parameter_state_sha256: str,
+    ) -> Mapping[str, float]:
+        """Measure frozen constraint sites on the explicitly applied proposal."""
+
+        from scripts.research.human13_rp_crossover_witness import (
+            SealedSourceDecode,
+            WitnessSite,
+            processed_logits,
+        )
+
+        self._require_invariants(
+            verify_parameter_values=False,
+            allow_parameter_update=True,
+        )
+        if source_parameter_state_sha256 != self._identity.parameter_state_sha256:
+            raise HFSharedSurfaceLiveError(
+                "post-apply margin Source parameter digest differs"
+            )
+        named = self.named_trainable_parameters(allow_parameter_update=True)
+        layout = ParameterLayout.from_named_parameters(named)
+        current_sha256 = parameter_state_sha256(named, layout)
+        if proposal_parameter_state_sha256 != current_sha256:
+            raise HFSharedSurfaceLiveError(
+                "post-apply margin proposal parameter digest differs"
+            )
+        if len(self._sampled_groups) != 4 or len(self._replayed_groups) != 4:
+            raise HFSharedSurfaceLiveError(
+                "post-apply margins require the complete admitted K16 replay"
+            )
+        decodes = tuple(source_decodes)
+        sites = tuple(witness_sites)
+        if any(type(decode) is not SealedSourceDecode for decode in decodes) or any(
+            type(site) is not WitnessSite for site in sites
+        ):
+            raise HFSharedSurfaceLiveError(
+                "post-apply margins require frozen Source decodes and witness sites"
+            )
+        measured: dict[str, float] = {}
+        for site in cast(tuple[WitnessSite, ...], sites):
+            decode = next(
+                (
+                    item
+                    for item in cast(tuple[SealedSourceDecode, ...], decodes)
+                    if item.image_id == site.image_id
+                    and item.source_membership == site.source_membership
+                ),
+                None,
+            )
+            if decode is None:
+                raise HFSharedSurfaceLiveError(
+                    "post-apply witness lacks its frozen Source decode"
+                )
+            history = (*self._prompt, *decode.generated_token_ids)
+            input_ids = torch.tensor((history,), dtype=torch.long)
+            attention_mask = torch.ones_like(input_ids)
+            positions = torch.tensor(
+                (len(self._prompt) + site.token_index - 1,),
+                dtype=torch.long,
+            )
+            raw = self._forward(
+                input_ids,
+                attention_mask,
+                retain_grad=False,
+                logits_to_keep=positions,
+                accounting_kind="proposal_owner",
+                allow_parameter_update=True,
+            )[0, 0]
+            processed = processed_logits(
+                raw,
+                history_token_ids=decode.history_token_ids(site.token_index),
+                repetition_penalty=decode.repetition_penalty,
+            )
+            competitors = processed.clone()
+            competitors[site.chosen_token_id] = -torch.inf
+            margin = processed[site.chosen_token_id] - torch.max(competitors)
+            if not bool(torch.isfinite(margin).item()):
+                raise HFSharedSurfaceLiveError(
+                    "post-apply realized witness margin is not finite"
+                )
+            measured[site.canonical_key] = float(margin)
+        return measured
+
+    def canonical_replay_projections(
+        self,
+        replay_groups: Sequence[GradientReplayGroup],
+        manifest: object,
+        manifest_image: object,
+    ) -> tuple[object, ...]:
+        """Project exact admitted HF replays with the captured tokenizer snapshot."""
+
+        from scripts.research.human13_hf_native_projection import (
+            HFNativeTokenizerAttestation,
+            project_hf_native_replay_groups,
+        )
+
+        self._require_invariants()
+        groups = tuple(replay_groups)
+        if (
+            len(groups) != 4
+            or len(self._replayed_groups) != 4
+            or any(
+                observed is not admitted
+                for observed, admitted in zip(
+                    groups, self._replayed_groups, strict=True
+                )
+            )
+            or tuple(group.sampled_group.group_index for group in groups)
+            != (0, 1, 2, 3)
+            or any(group.sampled_group.identity != self._identity for group in groups)
+            or any(
+                group.sampled_group is not self._sampled_groups[index]
+                for index, group in enumerate(groups)
+            )
+        ):
+            raise HFSharedSurfaceLiveError(
+                "canonical projection requires the exact admitted replay groups"
+            )
+        if (
+            getattr(manifest_image, "image_id", None) != 1584
+            or getattr(manifest_image, "image_sha256", None)
+            != self._identity.image_sha256
+            or not any(image is manifest_image for image in getattr(manifest, "images", ()))
+        ):
+            raise HFSharedSurfaceLiveError(
+                "canonical projection manifest image differs from the shared session"
+            )
+        attestation = HFNativeTokenizerAttestation.from_qwen_components(
+            self._components,
+            identity=self._identity,
+            manifest=manifest,
+        )
+        if (
+            attestation.tokenizer_object_id != self._tokenizer_object_id
+            or attestation.processor_object_id != self._processor_object_id
+            or attestation.tokenizer_sha256 != self._identity.tokenizer_sha256
+        ):
+            raise HFSharedSurfaceLiveError(
+                "canonical projector substituted the captured tokenizer runtime"
+            )
+        return project_hf_native_replay_groups(
+            replay_groups=groups,
+            manifest=manifest,
+            manifest_image=manifest_image,
+            attestation=attestation,
+        )
+
     def _retained_live_resource_count(self) -> int:
         resources = (
             self._model,
@@ -780,8 +1022,16 @@ class HFSharedSurfaceSession:
             self._processor,
             self._parameters,
             self._selected_delta,
+            self._live_replay_tensors,
+            self._sampled_groups,
+            self._replayed_groups,
         )
-        return sum(value is not None and value != () for value in resources)
+        return sum(
+            bool(value)
+            if isinstance(value, (tuple, list, dict))
+            else value is not None
+            for value in resources
+        )
 
     def __enter__(self) -> HFSharedSurfaceSession:
         self._require_open()
@@ -805,7 +1055,12 @@ class HFSharedSurfaceSession:
         if self._closed:
             raise HFSharedSurfaceLiveError("shared-surface session is already closed")
 
-    def _require_invariants(self, *, verify_parameter_values: bool = True) -> None:
+    def _require_invariants(
+        self,
+        *,
+        verify_parameter_values: bool = True,
+        allow_parameter_update: bool = False,
+    ) -> None:
         self._require_open()
         model = self._model
         assembly = self._assembly
@@ -837,9 +1092,12 @@ class HFSharedSurfaceSession:
             raise HFSharedSurfaceLiveError(
                 "shared-surface parameters must remain exclusively bfloat16"
             )
-        if _parameter_versions(current) != self._parameter_versions:
+        if (
+            not allow_parameter_update
+            and _parameter_versions(current) != self._parameter_versions
+        ):
             raise HFSharedSurfaceLiveError("shared-surface parameter state changed")
-        if verify_parameter_values:
+        if verify_parameter_values and not allow_parameter_update:
             _layout, state_sha256 = _trainable_state(current)
             if state_sha256 != self._identity.parameter_state_sha256:
                 raise HFSharedSurfaceLiveError("shared-surface parameter state changed")
@@ -912,8 +1170,16 @@ class HFSharedSurfaceSession:
         *,
         retain_grad: bool,
         logits_to_keep: torch.Tensor | int = 0,
+        accounting_kind: Literal[
+            "sample", "replay", "source_owner", "proposal_owner"
+        ]
+        | None = None,
+        allow_parameter_update: bool = False,
     ) -> torch.Tensor:
-        self._require_invariants(verify_parameter_values=False)
+        self._require_invariants(
+            verify_parameter_values=False,
+            allow_parameter_update=allow_parameter_update,
+        )
         model = self._model
         tokenizer = self._tokenizer
         skeleton = self._skeleton
@@ -965,10 +1231,27 @@ class HFSharedSurfaceSession:
             image_grid_thw=image_grid_thw,
             video_grid_thw=None,
         )
-        if retain_grad:
+        kind = accounting_kind or ("replay" if retain_grad else "sample")
+        if kind == "source_owner":
+            if not retain_grad:
+                raise HFSharedSurfaceLiveError("Source owner rows must retain graph")
+            self._source_owner_forward_count += 1
+        elif kind == "proposal_owner":
+            if retain_grad or not allow_parameter_update:
+                raise HFSharedSurfaceLiveError(
+                    "proposal owner rows require an applied no-grad surface"
+                )
+            self._source_owner_forward_count += 1
+        elif kind == "replay":
+            if not retain_grad:
+                raise HFSharedSurfaceLiveError("replay rows must retain graph")
             self._replay_forward_count += 1
-        else:
+        elif kind == "sample":
+            if retain_grad:
+                raise HFSharedSurfaceLiveError("sample rows cannot retain graph")
             self._sample_forward_count += 1
+        else:  # pragma: no cover - Literal callers are statically closed
+            raise HFSharedSurfaceLiveError("unknown forward accounting owner")
         self._no_cache_forward_count += 1
         if retain_grad:
             import torch.utils.checkpoint as checkpoint_utils
@@ -1056,7 +1339,10 @@ class HFSharedSurfaceSession:
             raise HFSharedSurfaceLiveError(
                 "shared-surface causal logits must be finite"
             )
-        self._require_invariants(verify_parameter_values=False)
+        self._require_invariants(
+            verify_parameter_values=False,
+            allow_parameter_update=allow_parameter_update,
+        )
         return logits
 
     def sample_group(self, seeds: tuple[int, ...]) -> SampledHFGroup:
@@ -1450,6 +1736,19 @@ class HFSharedSurfaceSession:
         model = self._expected_model
         accelerator = getattr(self._assembly, "accelerator", None)
         cleanup_failures: list[str] = []
+        admitted_sampled: list[SampledHFGroup] = []
+        for index, group in enumerate(self._sampled_groups):
+            if group.group_index != index:
+                break
+            admitted_sampled.append(group)
+        admitted_replays: list[GradientReplayGroup] = []
+        for index, replay in enumerate(self._replayed_groups):
+            if (
+                index >= len(admitted_sampled)
+                or replay.sampled_group != admitted_sampled[index]
+            ):
+                break
+            admitted_replays.append(replay)
         try:
             zero_grad = getattr(model, "zero_grad", None)
             if callable(zero_grad):
@@ -1478,18 +1777,17 @@ class HFSharedSurfaceSession:
             self._prompt = ()
             self._selected_delta = None
             self._selected_delta_state_sha256 = None
+            self._sampled_groups.clear()
+            self._replayed_groups.clear()
             terminal_reason: Literal["completed", "failed"] = (
                 "failed" if cleanup_failures or reason == "failed" else "completed"
             )
             self._terminal_receipt = self._build_terminal_receipt(
                 reason=terminal_reason,
                 cleanup_failures=tuple(cleanup_failures),
+                admitted_sampled=tuple(admitted_sampled),
+                admitted_replays=tuple(admitted_replays),
             )
-            # The sealed terminal receipt owns the immutable value lineage;
-            # the session must not retain duplicate group references after
-            # terminal cleanup.
-            self._sampled_groups.clear()
-            self._replayed_groups.clear()
         if cleanup_failures and primary_exception is None:
             raise HFSharedSurfaceLiveError(
                 "shared-surface cleanup failed: " + "; ".join(cleanup_failures)
