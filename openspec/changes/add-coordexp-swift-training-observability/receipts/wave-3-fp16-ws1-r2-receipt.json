@@ -1,0 +1,334 @@
+{
+  "arguments": {
+    "batch_size": 8,
+    "lr": 0.125,
+    "max_grad_norm": 0.001,
+    "overflow_loss_multiplier": 1e+35,
+    "seed": 20260820,
+    "width": 16
+  },
+  "arms": {
+    "finite": {
+      "accelerator_clip_call_count": 0,
+      "accelerator_events": [
+        "clip"
+      ],
+      "arm": "finite",
+      "backward": {
+        "base_loss": 1.0044076442718506,
+        "grad_scale_before_wrapper": 65536.0,
+        "loss_is_finite": true,
+        "poisoned_loss": 1.0044076442718506
+      },
+      "checks": {
+        "applied_lr_is_not_the_post_scheduler_value": true,
+        "applied_lr_is_the_pre_call_group_value": true,
+        "clip_actually_bounded_the_gradient_norm": true,
+        "clip_ordered_after_unscale_and_before_the_wrapper": true,
+        "clip_primitive_used_the_configured_max_norm": true,
+        "converged_action_is_apply": true,
+        "exactly_one_non_unscaling_clip_primitive": true,
+        "exactly_one_wrapper_invocation": true,
+        "gradscaler_did_not_skip": true,
+        "no_terminal_outcome": true,
+        "norm_authority_is_over_unscaled_gradients": true,
+        "post_wrapper_consensus_none_skipped": true,
+        "receipt_reports_a_truthful_applied_update": true,
+        "runtime_observed_active_scaler_on_every_rank": true,
+        "runtime_observed_unscale_completed_on_every_rank": true,
+        "scheduler_advanced_once": true,
+        "underlying_optimizer_actually_stepped": true,
+        "unscale_gradients_called_exactly_once": true,
+        "unscale_precedes_every_other_boundary_event": true,
+        "update_actually_applied_parameters_changed": true,
+        "zero_accelerator_clip_grad_norm_calls": true
+      },
+      "clip_primitive_call_count": 1,
+      "clip_primitive_max_norms": [
+        0.001
+      ],
+      "counters": {
+        "optimizer_state_entries_after": 4,
+        "optimizer_state_entries_before": 0,
+        "optimizer_step_count_after": 1,
+        "optimizer_step_count_before": 0,
+        "scheduler_last_epoch_after": 1,
+        "scheduler_last_epoch_before": 0,
+        "scheduler_step_count_after": 1,
+        "scheduler_step_count_before": 0,
+        "zero_grad_count": 0
+      },
+      "decision": {
+        "all_ranks_safe": true,
+        "finite_status": "finite",
+        "optimizer_boundary_action": "apply",
+        "optimizer_update_status": "ready_to_step",
+        "pre_clip_grad_norm_rank_max": 0.6238875966115681,
+        "rank_diagnostics": [
+          {
+            "backend_overflow": false,
+            "grad_norm_finite": true,
+            "gradients_finite": true,
+            "rank": 0,
+            "report_error_code": null,
+            "scaler_active": true,
+            "scaler_found_inf": false,
+            "unscale_completed": true
+          }
+        ],
+        "ranks": [
+          0
+        ],
+        "scaler_active": true,
+        "terminal_reason": null,
+        "unscale_completed": true,
+        "world_size": 1
+      },
+      "environment": {
+        "device": "cuda",
+        "distributed_type": "NO",
+        "initial_scale": 65536.0,
+        "kind": "cuda_accelerate",
+        "mixed_precision": "fp16",
+        "model_class": "Sequential",
+        "native_amp": true,
+        "parameter_count": 1072,
+        "scaler_class": "GradScaler"
+      },
+      "failed_checks": [],
+      "learning_rates": {
+        "post_boundary_before_scheduler": [
+          0.125
+        ],
+        "post_scheduler": [
+          0.0625
+        ],
+        "pre_call": [
+          0.125
+        ],
+        "receipt": [
+          0.125
+        ]
+      },
+      "measured_unscaled_pre_clip_norm": 0.6238875966115681,
+      "ok": true,
+      "optimizer_step_was_skipped_after_wrapper": false,
+      "order_log": [
+        "unscale_gradients",
+        "clip_primitive",
+        "wrapper_step"
+      ],
+      "parameter_digest_after": "592033cfa1d260f0b772a10843b21f5b6785da5c72e29688c30cbff7916d71cc",
+      "parameter_digest_before": "45764c564f783a805de32df86fff429e019f02d58d6ef5e17513c5f31d377d70",
+      "planned_step_id": 1,
+      "post_boundary_grad_norm": 0.0009999983970967975,
+      "receipt": {
+        "applied": true,
+        "attempted": true,
+        "group_learning_rates": [
+          0.125
+        ],
+        "mutation_state": "applied",
+        "optimizer_boundary_action": "apply",
+        "optimizer_update_status": "applied",
+        "planned_step_id": 1,
+        "post_wrapper_outcome": "none_skipped",
+        "step_was_skipped": false,
+        "terminal": false,
+        "terminal_reason": null
+      },
+      "scaler_found_inf_ground_truth_inner_optimizer": false,
+      "scaler_found_inf_visible_to_runtime": false,
+      "scheduler_payload": {
+        "scheduler_last_epoch": 1,
+        "scheduler_present": true,
+        "scheduler_step_count": 1
+      },
+      "underlying_applied_calls": 1,
+      "unscale_call_count": 1,
+      "wrapper_step_calls": 1
+    },
+    "overflow": {
+      "accelerator_clip_call_count": 0,
+      "accelerator_events": [],
+      "arm": "overflow",
+      "backward": {
+        "base_loss": 1.0044076442718506,
+        "grad_scale_before_wrapper": 65536.0,
+        "loss_is_finite": true,
+        "poisoned_loss": 1.0044077016695536e+35
+      },
+      "checks": {
+        "all_rank_confirmed_scaler_skip": true,
+        "exactly_one_wrapper_call_for_scaler_finalization": true,
+        "gradscaler_actually_skipped": true,
+        "no_false_applied_status": true,
+        "no_terminal_outcome": true,
+        "no_underlying_optimizer_mutation": true,
+        "null_applied_learning_rates_in_the_receipt": true,
+        "one_completed_wrapper_counter_increment": true,
+        "overflow_was_genuinely_produced": true,
+        "parameters_byte_unchanged": true,
+        "planned_scheduler_progression": true,
+        "runtime_observed_active_scaler_on_every_rank": true,
+        "runtime_observed_unscale_completed_on_every_rank": true,
+        "unscale_gradients_called_exactly_once": true,
+        "unscale_precedes_every_other_boundary_event": true,
+        "zero_accelerator_clip_grad_norm_calls": true,
+        "zero_clip_calls_of_any_kind": true
+      },
+      "clip_primitive_call_count": 0,
+      "clip_primitive_max_norms": [],
+      "counters": {
+        "optimizer_state_entries_after": 0,
+        "optimizer_state_entries_before": 0,
+        "optimizer_step_count_after": 1,
+        "optimizer_step_count_before": 0,
+        "scheduler_last_epoch_after": 1,
+        "scheduler_last_epoch_before": 0,
+        "scheduler_step_count_after": 1,
+        "scheduler_step_count_before": 0,
+        "zero_grad_count": 0
+      },
+      "decision": {
+        "all_ranks_safe": false,
+        "finite_status": "non_finite",
+        "optimizer_boundary_action": "scaler_skip",
+        "optimizer_update_status": "ready_to_scaler_skip",
+        "pre_clip_grad_norm_rank_max": null,
+        "rank_diagnostics": [
+          {
+            "backend_overflow": false,
+            "grad_norm_finite": false,
+            "gradients_finite": false,
+            "rank": 0,
+            "report_error_code": null,
+            "scaler_active": true,
+            "scaler_found_inf": true,
+            "unscale_completed": true
+          }
+        ],
+        "ranks": [
+          0
+        ],
+        "scaler_active": true,
+        "terminal_reason": null,
+        "unscale_completed": true,
+        "world_size": 1
+      },
+      "environment": {
+        "device": "cuda",
+        "distributed_type": "NO",
+        "initial_scale": 32768.0,
+        "kind": "cuda_accelerate",
+        "mixed_precision": "fp16",
+        "model_class": "Sequential",
+        "native_amp": true,
+        "parameter_count": 1072,
+        "scaler_class": "GradScaler"
+      },
+      "failed_checks": [],
+      "learning_rates": {
+        "post_boundary_before_scheduler": [
+          0.125
+        ],
+        "post_scheduler": [
+          0.0625
+        ],
+        "pre_call": [
+          0.125
+        ],
+        "receipt": [
+          null
+        ]
+      },
+      "measured_unscaled_pre_clip_norm": Infinity,
+      "ok": true,
+      "optimizer_step_was_skipped_after_wrapper": true,
+      "order_log": [
+        "unscale_gradients",
+        "wrapper_step"
+      ],
+      "parameter_digest_after": "45764c564f783a805de32df86fff429e019f02d58d6ef5e17513c5f31d377d70",
+      "parameter_digest_before": "45764c564f783a805de32df86fff429e019f02d58d6ef5e17513c5f31d377d70",
+      "planned_step_id": 1,
+      "post_boundary_grad_norm": Infinity,
+      "receipt": {
+        "applied": false,
+        "attempted": true,
+        "group_learning_rates": [
+          null
+        ],
+        "mutation_state": "scaler_suppressed",
+        "optimizer_boundary_action": "scaler_skip",
+        "optimizer_update_status": "skipped_scaler_overflow",
+        "planned_step_id": 1,
+        "post_wrapper_outcome": "all_skipped",
+        "step_was_skipped": true,
+        "terminal": false,
+        "terminal_reason": null
+      },
+      "scaler_found_inf_ground_truth_inner_optimizer": true,
+      "scaler_found_inf_visible_to_runtime": true,
+      "scheduler_payload": {
+        "scheduler_last_epoch": 1,
+        "scheduler_present": true,
+        "scheduler_step_count": 1
+      },
+      "underlying_applied_calls": 0,
+      "unscale_call_count": 1,
+      "wrapper_step_calls": 1
+    }
+  },
+  "change": "add-coordexp-swift-training-observability",
+  "claims_fp16_evidence": true,
+  "cuda_available": true,
+  "cuda_used": true,
+  "device_names": [
+    "NVIDIA A100 80GB PCIe"
+  ],
+  "evidence_class": "genuine_cuda_fp16_accelerate",
+  "findings": [],
+  "instrumentation": {
+    "instance_attribute_spies": [
+      "accelerator.unscale_gradients",
+      "accelerator.clip_grad_norm_",
+      "AcceleratedOptimizer.step (prepared wrapper)"
+    ],
+    "module_level_spies": [
+      "torch.nn.utils.clip_grad_norm_"
+    ],
+    "module_level_spy_rationale": "the only way to observe the identity and call count of the non-unscaling clip primitive from outside src/; delegating, restored in a finally, and corroborated by the physical post-boundary norm bound",
+    "monkeypatched_production_modules": [],
+    "production_seam_used": "accelerator.events (TrainRuntime._record_boundary_event)"
+  },
+  "mode": "single_rank_cuda_fp16",
+  "observed_bounds": {
+    "arms": 2,
+    "artifact_bytes_measurement": "printed_after_write",
+    "artifact_paths": [
+      "openspec/changes/add-coordexp-swift-training-observability/receipts/wave-3-fp16-ws1-r2-receipt.json"
+    ],
+    "cache_or_materialization_passes": 0,
+    "declared_device_count": 1,
+    "declared_world_size": 1,
+    "model_forwards_total": 2,
+    "peak_cuda_allocated_bytes": 18120192,
+    "peak_cuda_reserved_bytes": 23068672,
+    "planned_steps_total": 2,
+    "wall_clock_seconds": 0.771
+  },
+  "ok": true,
+  "production_seams_driven": [
+    "src.runtime.train_runtime.TrainRuntime.backward",
+    "src.runtime.train_runtime.TrainRuntime.post_backward",
+    "src.runtime.train_runtime.TrainRuntime.execute_optimizer_boundary",
+    "src.runtime.train_runtime.TrainRuntime.scheduler_step",
+    "src.training.control_plane._build_rank_report_gatherer"
+  ],
+  "rank": 0,
+  "schema": "coordexp-swift-obs-wave3-fp16-cuda-probe-v1",
+  "task": "3.8",
+  "torch_version": "2.9.1+cu128",
+  "world_size": 1
+}

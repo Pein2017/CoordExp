@@ -220,7 +220,9 @@ class TrainRuntime:
             # one field carries one meaning; `backend_overflow` stays the
             # non-scaler backend signal it always was.
             backend_overflow=(
-                False if scaler is not None else _accelerator_overflow(self.accelerator)
+                False
+                if scaler is not None
+                else _accelerator_overflow(self.accelerator, self.optimizer)
             ),
             scaler_active=scaler is not None,
             unscale_completed=unscale_completed,
@@ -708,11 +710,31 @@ class TrainRuntime:
             ) from exc
         return reports
 
-def _accelerator_overflow(accelerator: Any) -> bool:
+def _accelerator_overflow(accelerator: Any, optimizer: Any = None) -> bool:
+    """The non-fp16 backend overflow signal.
+
+    It shares `_scaler_found_inf`'s optimizer resolution because it had the
+    same defect: keying the scaler's per-optimizer state on `None` (or on the
+    prepared wrapper) never matches the inner optimizer the scaler saw.
+    """
+
     scaler = getattr(accelerator, "scaler", None)
     if scaler is None:
         return False
-    return _scaler_found_inf(scaler, None)
+    return _scaler_found_inf(scaler, optimizer)
+
+
+def _unwrapped_optimizer(optimizer: Any) -> Any:
+    """The optimizer a GradScaler actually saw.
+
+    `Accelerator.unscale_gradients` unwraps `AcceleratedOptimizer` and calls
+    `scaler.unscale_(inner)`, so the scaler's per-optimizer state is keyed on
+    the INNER optimizer. Reading it through the prepared wrapper misses the
+    record entirely (3.8 CUDA finding).
+    """
+
+    inner = getattr(optimizer, "optimizer", None)
+    return optimizer if inner is None else inner
 
 
 def _scaler_found_inf(scaler: Any, optimizer: Any) -> bool:
@@ -720,19 +742,38 @@ def _scaler_found_inf(scaler: Any, optimizer: Any) -> bool:
 
     Never a previous wrapper call's skip flag: that flag is stale evidence and
     the contract forbids using it as current overflow truth.
+
+    The read is deliberately NON-MUTATING. `GradScaler._found_inf_per_device`
+    is a `defaultdict` probe: asking it about an optimizer it never saw both
+    answers "nothing found" and INSERTS a fresh empty state, which would
+    corrupt the very record a probe reads as ground truth. So the mapping is
+    inspected by key when it exists, and the accessor is used only for a
+    scaler that does not expose one.
     """
 
-    found_inf = getattr(scaler, "_found_inf_per_device", None)
-    if not callable(found_inf):
-        return False
-    values: Any
-    try:
-        values = found_inf(optimizer)
-    except TypeError:
+    resolved = _unwrapped_optimizer(optimizer)
+    values: Any = None
+    states = getattr(scaler, "_per_optimizer_states", None)
+    if isinstance(states, Mapping):
+        # Authoritative AND non-mutating: `.get` never populates a defaultdict.
+        # An absent entry means this optimizer has no current record, which is
+        # a truthful False rather than a reason to poke the accessor.
+        for key in (id(resolved), id(optimizer)):
+            state = states.get(key)
+            if isinstance(state, Mapping) and "found_inf_per_device" in state:
+                values = state["found_inf_per_device"]
+                break
+    else:
+        found_inf = getattr(scaler, "_found_inf_per_device", None)
+        if not callable(found_inf):
+            return False
         try:
-            values = found_inf({})
+            values = found_inf(resolved)
         except TypeError:
-            values = found_inf()
+            try:
+                values = found_inf({})
+            except TypeError:
+                values = found_inf()
     if isinstance(values, Mapping):
         return any(bool(torch.as_tensor(value).item()) for value in values.values())
     return False

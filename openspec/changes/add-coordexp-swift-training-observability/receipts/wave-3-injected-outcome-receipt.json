@@ -1,0 +1,1110 @@
+{
+  "arms": {
+    "post_wrapper_apply_all_skipped": {
+      "cross_rank_receipt_identical": true,
+      "expected": {
+        "action": "apply",
+        "applied": false,
+        "attempted": true,
+        "clip_events": 1,
+        "lrs_all_null": true,
+        "mutation_state": "scaler_suppressed",
+        "optimizer_step_count": 1,
+        "post_wrapper_outcome": "all_skipped",
+        "step_was_skipped": true,
+        "terminal_reason": "post_wrapper_apply_all_skipped",
+        "unscaled_on_every_rank": true,
+        "wrapper_called": true
+      },
+      "injection": {
+        "0": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": true,
+          "suppress": true
+        },
+        "1": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": true,
+          "suppress": true
+        }
+      },
+      "ok": true,
+      "per_rank": {
+        "0": {
+          "arm": "post_wrapper_apply_all_skipped",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 1,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 1,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": true,
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "ready_to_step",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": null,
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 105,
+          "receipt": {
+            "applied": false,
+            "attempted": true,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "scaler_suppressed",
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "terminal_post_wrapper_apply_all_skipped",
+            "planned_step_id": 105,
+            "post_wrapper_outcome": "all_skipped",
+            "step_was_skipped": true,
+            "terminal": true,
+            "terminal_reason": "post_wrapper_apply_all_skipped"
+          },
+          "row_line_count": 1,
+          "terminal_row": {
+            "finite_status": "unavailable",
+            "lr/group_0": null,
+            "non_finite_fields": [],
+            "optimizer_boundary_action": "apply",
+            "optimizer_boundary_terminal": true,
+            "optimizer_mutation_state": "scaler_suppressed",
+            "optimizer_step_count": 1,
+            "optimizer_step_was_skipped": true,
+            "optimizer_terminal_reason": "post_wrapper_apply_all_skipped",
+            "optimizer_update_applied": false,
+            "optimizer_update_attempted": true,
+            "optimizer_update_status": "terminal_post_wrapper_apply_all_skipped",
+            "scheduler_step_count": 0,
+            "split": "train",
+            "step": 105,
+            "unavailable_fields": [
+              "lr/group_0"
+            ]
+          }
+        },
+        "1": {
+          "arm": "post_wrapper_apply_all_skipped",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 1,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 1,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": true,
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "ready_to_step",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": null,
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 105,
+          "receipt": {
+            "applied": false,
+            "attempted": true,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "scaler_suppressed",
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "terminal_post_wrapper_apply_all_skipped",
+            "planned_step_id": 105,
+            "post_wrapper_outcome": "all_skipped",
+            "step_was_skipped": true,
+            "terminal": true,
+            "terminal_reason": "post_wrapper_apply_all_skipped"
+          },
+          "row_line_count": 0,
+          "terminal_row": null
+        }
+      },
+      "planned_step_id": 105
+    },
+    "post_wrapper_mixed": {
+      "cross_rank_receipt_identical": true,
+      "expected": {
+        "action": "apply",
+        "applied": null,
+        "attempted": true,
+        "clip_events": 1,
+        "lrs_all_null": true,
+        "mutation_state": "divergent_or_unknown",
+        "optimizer_step_count": 1,
+        "post_wrapper_outcome": "mixed",
+        "step_was_skipped": null,
+        "terminal_reason": "post_wrapper_mixed",
+        "unscaled_on_every_rank": true,
+        "wrapper_called": true
+      },
+      "injection": {
+        "0": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": true,
+          "suppress": true
+        },
+        "1": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        }
+      },
+      "ok": true,
+      "per_rank": {
+        "0": {
+          "arm": "post_wrapper_mixed",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 1,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 1,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": true,
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "ready_to_step",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": null,
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 104,
+          "receipt": {
+            "applied": null,
+            "attempted": true,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "terminal_post_wrapper_mixed",
+            "planned_step_id": 104,
+            "post_wrapper_outcome": "mixed",
+            "step_was_skipped": null,
+            "terminal": true,
+            "terminal_reason": "post_wrapper_mixed"
+          },
+          "row_line_count": 1,
+          "terminal_row": {
+            "finite_status": "unavailable",
+            "lr/group_0": null,
+            "non_finite_fields": [],
+            "optimizer_boundary_action": "apply",
+            "optimizer_boundary_terminal": true,
+            "optimizer_mutation_state": "divergent_or_unknown",
+            "optimizer_step_count": 1,
+            "optimizer_step_was_skipped": null,
+            "optimizer_terminal_reason": "post_wrapper_mixed",
+            "optimizer_update_applied": null,
+            "optimizer_update_attempted": true,
+            "optimizer_update_status": "terminal_post_wrapper_mixed",
+            "scheduler_step_count": 0,
+            "split": "train",
+            "step": 104,
+            "unavailable_fields": [
+              "lr/group_0"
+            ]
+          }
+        },
+        "1": {
+          "arm": "post_wrapper_mixed",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 1,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 1,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 1,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": true,
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "ready_to_step",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": null,
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 104,
+          "receipt": {
+            "applied": null,
+            "attempted": true,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": "apply",
+            "optimizer_update_status": "terminal_post_wrapper_mixed",
+            "planned_step_id": 104,
+            "post_wrapper_outcome": "mixed",
+            "step_was_skipped": null,
+            "terminal": true,
+            "terminal_reason": "post_wrapper_mixed"
+          },
+          "row_line_count": 0,
+          "terminal_row": null
+        }
+      },
+      "planned_step_id": 104
+    },
+    "post_wrapper_scaler_skip_none_skipped": {
+      "cross_rank_receipt_identical": true,
+      "expected": {
+        "action": "scaler_skip",
+        "applied": true,
+        "attempted": true,
+        "clip_events": 0,
+        "lrs_all_null": false,
+        "mutation_state": "applied_unsafe",
+        "optimizer_step_count": 1,
+        "post_wrapper_outcome": "none_skipped",
+        "step_was_skipped": false,
+        "terminal_reason": "post_wrapper_scaler_skip_none_skipped",
+        "unscaled_on_every_rank": true,
+        "wrapper_called": true
+      },
+      "injection": {
+        "0": {
+          "found_inf": true,
+          "grad_value": Infinity,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        },
+        "1": {
+          "found_inf": true,
+          "grad_value": Infinity,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        }
+      },
+      "ok": true,
+      "per_rank": {
+        "0": {
+          "arm": "post_wrapper_scaler_skip_none_skipped",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 1,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 1,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 1,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": false,
+            "optimizer_boundary_action": "scaler_skip",
+            "optimizer_update_status": "ready_to_scaler_skip",
+            "pre_clip_grad_norm_rank_max": null,
+            "scaler_active": true,
+            "terminal_reason": null,
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 106,
+          "receipt": {
+            "applied": true,
+            "attempted": true,
+            "group_learning_rates": [
+              0.125
+            ],
+            "mutation_state": "applied_unsafe",
+            "optimizer_boundary_action": "scaler_skip",
+            "optimizer_update_status": "terminal_post_wrapper_scaler_skip_none_skipped",
+            "planned_step_id": 106,
+            "post_wrapper_outcome": "none_skipped",
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "post_wrapper_scaler_skip_none_skipped"
+          },
+          "row_line_count": 1,
+          "terminal_row": {
+            "finite_status": "unavailable",
+            "lr/group_0": 0.125,
+            "non_finite_fields": [],
+            "optimizer_boundary_action": "scaler_skip",
+            "optimizer_boundary_terminal": true,
+            "optimizer_mutation_state": "applied_unsafe",
+            "optimizer_step_count": 1,
+            "optimizer_step_was_skipped": false,
+            "optimizer_terminal_reason": "post_wrapper_scaler_skip_none_skipped",
+            "optimizer_update_applied": true,
+            "optimizer_update_attempted": true,
+            "optimizer_update_status": "terminal_post_wrapper_scaler_skip_none_skipped",
+            "scheduler_step_count": 0,
+            "split": "train",
+            "step": 106
+          }
+        },
+        "1": {
+          "arm": "post_wrapper_scaler_skip_none_skipped",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 1,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 1,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 1,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": false,
+            "optimizer_boundary_action": "scaler_skip",
+            "optimizer_update_status": "ready_to_scaler_skip",
+            "pre_clip_grad_norm_rank_max": null,
+            "scaler_active": true,
+            "terminal_reason": null,
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 106,
+          "receipt": {
+            "applied": true,
+            "attempted": true,
+            "group_learning_rates": [
+              0.125
+            ],
+            "mutation_state": "applied_unsafe",
+            "optimizer_boundary_action": "scaler_skip",
+            "optimizer_update_status": "terminal_post_wrapper_scaler_skip_none_skipped",
+            "planned_step_id": 106,
+            "post_wrapper_outcome": "none_skipped",
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "post_wrapper_scaler_skip_none_skipped"
+          },
+          "row_line_count": 0,
+          "terminal_row": null
+        }
+      },
+      "planned_step_id": 106
+    },
+    "pre_wrapper_mixed_scaler_overflow": {
+      "cross_rank_receipt_identical": true,
+      "expected": {
+        "action": null,
+        "applied": false,
+        "attempted": false,
+        "clip_events": 0,
+        "lrs_all_null": true,
+        "mutation_state": "divergent_or_unknown",
+        "optimizer_step_count": 0,
+        "post_wrapper_outcome": null,
+        "step_was_skipped": false,
+        "terminal_reason": "pre_wrapper_mixed_scaler_overflow",
+        "unscaled_on_every_rank": true,
+        "wrapper_called": false
+      },
+      "injection": {
+        "0": {
+          "found_inf": true,
+          "grad_value": Infinity,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        },
+        "1": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        }
+      },
+      "ok": true,
+      "per_rank": {
+        "0": {
+          "arm": "pre_wrapper_mixed_scaler_overflow",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 0,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 0,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": false,
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_mixed_scaler_overflow",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": "pre_wrapper_mixed_scaler_overflow",
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 101,
+          "receipt": {
+            "applied": false,
+            "attempted": false,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_mixed_scaler_overflow",
+            "planned_step_id": 101,
+            "post_wrapper_outcome": null,
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "pre_wrapper_mixed_scaler_overflow"
+          },
+          "row_line_count": 1,
+          "terminal_row": {
+            "finite_status": "unavailable",
+            "lr/group_0": null,
+            "non_finite_fields": [],
+            "optimizer_boundary_action": null,
+            "optimizer_boundary_terminal": true,
+            "optimizer_mutation_state": "divergent_or_unknown",
+            "optimizer_step_count": 0,
+            "optimizer_step_was_skipped": false,
+            "optimizer_terminal_reason": "pre_wrapper_mixed_scaler_overflow",
+            "optimizer_update_applied": false,
+            "optimizer_update_attempted": false,
+            "optimizer_update_status": "terminal_pre_wrapper_mixed_scaler_overflow",
+            "scheduler_step_count": 0,
+            "split": "train",
+            "step": 101,
+            "unavailable_fields": [
+              "lr/group_0"
+            ]
+          }
+        },
+        "1": {
+          "arm": "pre_wrapper_mixed_scaler_overflow",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 0,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 0,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": false,
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_mixed_scaler_overflow",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": "pre_wrapper_mixed_scaler_overflow",
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 101,
+          "receipt": {
+            "applied": false,
+            "attempted": false,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_mixed_scaler_overflow",
+            "planned_step_id": 101,
+            "post_wrapper_outcome": null,
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "pre_wrapper_mixed_scaler_overflow"
+          },
+          "row_line_count": 0,
+          "terminal_row": null
+        }
+      },
+      "planned_step_id": 101
+    },
+    "pre_wrapper_scaler_candidacy_divergent": {
+      "cross_rank_receipt_identical": true,
+      "expected": {
+        "action": null,
+        "applied": false,
+        "attempted": false,
+        "clip_events": 0,
+        "lrs_all_null": true,
+        "mutation_state": "divergent_or_unknown",
+        "optimizer_step_count": 0,
+        "post_wrapper_outcome": null,
+        "step_was_skipped": false,
+        "terminal_reason": "pre_wrapper_scaler_candidacy_divergent",
+        "unscaled_on_every_rank": false,
+        "wrapper_called": false
+      },
+      "injection": {
+        "0": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        },
+        "1": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": false,
+          "skip_flag": false,
+          "suppress": false
+        }
+      },
+      "ok": true,
+      "per_rank": {
+        "0": {
+          "arm": "pre_wrapper_scaler_candidacy_divergent",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 0,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 0,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": true,
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_scaler_candidacy_divergent",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": false,
+            "terminal_reason": "pre_wrapper_scaler_candidacy_divergent",
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 103,
+          "receipt": {
+            "applied": false,
+            "attempted": false,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_scaler_candidacy_divergent",
+            "planned_step_id": 103,
+            "post_wrapper_outcome": null,
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "pre_wrapper_scaler_candidacy_divergent"
+          },
+          "row_line_count": 1,
+          "terminal_row": {
+            "finite_status": "unavailable",
+            "lr/group_0": null,
+            "non_finite_fields": [],
+            "optimizer_boundary_action": null,
+            "optimizer_boundary_terminal": true,
+            "optimizer_mutation_state": "divergent_or_unknown",
+            "optimizer_step_count": 0,
+            "optimizer_step_was_skipped": false,
+            "optimizer_terminal_reason": "pre_wrapper_scaler_candidacy_divergent",
+            "optimizer_update_applied": false,
+            "optimizer_update_attempted": false,
+            "optimizer_update_status": "terminal_pre_wrapper_scaler_candidacy_divergent",
+            "scheduler_step_count": 0,
+            "split": "train",
+            "step": 103,
+            "unavailable_fields": [
+              "lr/group_0"
+            ]
+          }
+        },
+        "1": {
+          "arm": "pre_wrapper_scaler_candidacy_divergent",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 0,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 0,
+            "wrapper_step_calls": 0,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": true,
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_scaler_candidacy_divergent",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": false,
+            "terminal_reason": "pre_wrapper_scaler_candidacy_divergent",
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 103,
+          "receipt": {
+            "applied": false,
+            "attempted": false,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_scaler_candidacy_divergent",
+            "planned_step_id": 103,
+            "post_wrapper_outcome": null,
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "pre_wrapper_scaler_candidacy_divergent"
+          },
+          "row_line_count": 0,
+          "terminal_row": null
+        }
+      },
+      "planned_step_id": 103
+    },
+    "pre_wrapper_unrelated_unsafe": {
+      "cross_rank_receipt_identical": true,
+      "expected": {
+        "action": null,
+        "applied": false,
+        "attempted": false,
+        "clip_events": 0,
+        "lrs_all_null": true,
+        "mutation_state": "divergent_or_unknown",
+        "optimizer_step_count": 0,
+        "post_wrapper_outcome": null,
+        "step_was_skipped": false,
+        "terminal_reason": "pre_wrapper_unrelated_unsafe",
+        "unscaled_on_every_rank": true,
+        "wrapper_called": false
+      },
+      "injection": {
+        "0": {
+          "found_inf": false,
+          "grad_value": 0.5,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        },
+        "1": {
+          "found_inf": false,
+          "grad_value": null,
+          "scaler": true,
+          "skip_flag": false,
+          "suppress": false
+        }
+      },
+      "ok": true,
+      "per_rank": {
+        "0": {
+          "arm": "pre_wrapper_unrelated_unsafe",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 0,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 0,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": false,
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_unrelated_unsafe",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": "pre_wrapper_unrelated_unsafe",
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 102,
+          "receipt": {
+            "applied": false,
+            "attempted": false,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_unrelated_unsafe",
+            "planned_step_id": 102,
+            "post_wrapper_outcome": null,
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "pre_wrapper_unrelated_unsafe"
+          },
+          "row_line_count": 1,
+          "terminal_row": {
+            "finite_status": "unavailable",
+            "lr/group_0": null,
+            "non_finite_fields": [],
+            "optimizer_boundary_action": null,
+            "optimizer_boundary_terminal": true,
+            "optimizer_mutation_state": "divergent_or_unknown",
+            "optimizer_step_count": 0,
+            "optimizer_step_was_skipped": false,
+            "optimizer_terminal_reason": "pre_wrapper_unrelated_unsafe",
+            "optimizer_update_applied": false,
+            "optimizer_update_attempted": false,
+            "optimizer_update_status": "terminal_pre_wrapper_unrelated_unsafe",
+            "scheduler_step_count": 0,
+            "split": "train",
+            "step": 102,
+            "unavailable_fields": [
+              "lr/group_0"
+            ]
+          }
+        },
+        "1": {
+          "arm": "pre_wrapper_unrelated_unsafe",
+          "checks": {
+            "accelerator_clip_grad_norm_never_called": true,
+            "applied_lr_truth": true,
+            "clip_event_count_matches_action": true,
+            "completed_wrapper_counter_truth": true,
+            "converged_decision_matches_expected_terminal_or_action": true,
+            "exactly_one_terminal_row": true,
+            "pre_wrapper_mutation_state_divergent_or_unknown_after_unscale": true,
+            "terminal_error_code_is_the_boundary_code": true,
+            "terminal_raised_on_this_rank": true,
+            "terminal_receipt_fields_truthful": true,
+            "terminal_row_at_current_planned_step_id": true,
+            "terminal_row_carries_boundary_truth": true,
+            "unscale_called_at_most_once_on_this_rank": true,
+            "unscale_called_exactly_once_when_scaler_active": true,
+            "wrapper_invocation_truth": true,
+            "zero_scheduled_handler_progression": true,
+            "zero_scheduler_progression": true
+          },
+          "counters": {
+            "optimizer_step_count": 0,
+            "param_group_learning_rates": [
+              0.125
+            ],
+            "scheduler_last_epoch": 0,
+            "scheduler_step_count": 0,
+            "underlying_applied_calls": 0,
+            "unscale_calls": 1,
+            "wrapper_step_calls": 0,
+            "zero_grad_count": 1
+          },
+          "decision": {
+            "all_ranks_safe": false,
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_unrelated_unsafe",
+            "pre_clip_grad_norm_rank_max": 1.2247449159622192,
+            "scaler_active": true,
+            "terminal_reason": "pre_wrapper_unrelated_unsafe",
+            "unscale_completed": true
+          },
+          "ok": true,
+          "planned_step_id": 102,
+          "receipt": {
+            "applied": false,
+            "attempted": false,
+            "group_learning_rates": [
+              null
+            ],
+            "mutation_state": "divergent_or_unknown",
+            "optimizer_boundary_action": null,
+            "optimizer_update_status": "terminal_pre_wrapper_unrelated_unsafe",
+            "planned_step_id": 102,
+            "post_wrapper_outcome": null,
+            "step_was_skipped": false,
+            "terminal": true,
+            "terminal_reason": "pre_wrapper_unrelated_unsafe"
+          },
+          "row_line_count": 0,
+          "terminal_row": null
+        }
+      },
+      "planned_step_id": 102
+    }
+  },
+  "backend": "gloo",
+  "change": "add-coordexp-swift-training-observability",
+  "claims_fp16_cuda_evidence": false,
+  "cuda_available": true,
+  "cuda_initialized": false,
+  "device": "cpu",
+  "evidence_class": "injected_outcome_two_rank_cpu",
+  "findings": [],
+  "instrumentation": {
+    "injection_surface": "a bounded accelerator double implementing only the attributes TrainRuntime reads (mixed_precision, scaler, unscale_gradients, clip_grad_norm_, optimizer_step_was_skipped, events, broadcast_object_list); every decision, receipt, row, and counter comes from unmodified production code",
+    "monkeypatched_modules": []
+  },
+  "ok": true,
+  "process_exit_codes": [
+    0,
+    0
+  ],
+  "production_seams_driven": [
+    "src.runtime.train_runtime.TrainRuntime.post_backward",
+    "src.runtime.train_runtime.TrainRuntime.execute_optimizer_boundary",
+    "src.training.reporting.publish_terminal_boundary_row",
+    "src.training.control_plane._build_rank_report_gatherer",
+    "src.artifacts.run_writer.RunWriter.append_logging_row"
+  ],
+  "rendezvous_port": 19359,
+  "schema": "coordexp-swift-obs-wave3-injected-outcome-probe-v1",
+  "task": "3.8",
+  "torch_version": "2.9.1+cu128",
+  "world_size": 2
+}

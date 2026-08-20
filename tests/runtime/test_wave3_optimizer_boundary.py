@@ -878,3 +878,117 @@ def test_unreadable_post_wrapper_flag_converges_as_unknown_not_a_local_raise() -
     assert receipt.terminal_reason == "post_wrapper_mixed"
     assert receipt.applied is None
     assert receipt.mutation_state == "divergent_or_unknown"
+
+
+# ==========================================================================
+# Family H - the found_inf record must be read for the optimizer the SCALER
+# saw, not the prepared wrapper (3.8 CUDA finding)
+# ==========================================================================
+
+
+class InnerKeyedScaler:
+    """Mimics `torch` GradScaler keying: state lives under `id(inner)`.
+
+    `Accelerator.unscale_gradients` unwraps `AcceleratedOptimizer` and calls
+    `scaler.unscale_(inner)`, so `_per_optimizer_states` is keyed on the INNER
+    optimizer. The real accessor is a defaultdict read, so asking about the
+    wrapper both MISSES the record and inserts a fresh empty state.
+    """
+
+    def __init__(self, inner: Any, *, found_inf: bool) -> None:
+        self._per_optimizer_states: dict[int, dict[str, Any]] = {
+            id(inner): {
+                "found_inf_per_device": {
+                    "cuda:0": torch.tensor(1.0 if found_inf else 0.0)
+                }
+            }
+        }
+
+    def is_enabled(self) -> bool:
+        return True
+
+    def _found_inf_per_device(self, optimizer: Any = None) -> dict[str, Any]:
+        state = self._per_optimizer_states.setdefault(
+            id(optimizer), {"found_inf_per_device": {}}
+        )
+        return state["found_inf_per_device"]
+
+
+class WrappedOptimizer:
+    """Stands in for `accelerate.optimizer.AcceleratedOptimizer`."""
+
+    def __init__(self, optimizer: Any) -> None:
+        self.optimizer = optimizer
+
+    @property
+    def param_groups(self) -> Any:
+        return self.optimizer.param_groups
+
+    def step(self, closure: Any | None = None) -> Any:
+        return self.optimizer.step(closure)
+
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        self.optimizer.zero_grad(set_to_none=set_to_none)
+
+
+def test_found_inf_is_read_for_the_optimizer_the_scaler_actually_saw() -> None:
+    from src.runtime.train_runtime import _scaler_found_inf
+
+    inner = torch.optim.SGD([torch.nn.Parameter(torch.zeros(1))], lr=0.1)
+    wrapper = WrappedOptimizer(inner)
+    scaler = InnerKeyedScaler(inner, found_inf=True)
+    keys_before = set(scaler._per_optimizer_states)
+
+    assert _scaler_found_inf(scaler, wrapper) is True
+    # A defaultdict-style probe would have inserted a fresh state for the
+    # wrapper and destroyed the ground truth the probe reads.
+    assert set(scaler._per_optimizer_states) == keys_before
+
+    finite = InnerKeyedScaler(inner, found_inf=False)
+    assert _scaler_found_inf(finite, WrappedOptimizer(inner)) is False
+
+
+def test_fp16_overflow_is_reported_through_the_prepared_optimizer_wrapper() -> None:
+    """With FINITE gradients only the found_inf record can carry the overflow.
+
+    That makes this the discriminating arm: a missed record silently flips the
+    converged action from `scaler_skip` to `apply`.
+    """
+
+    events: list[str] = []
+    model = torch.nn.Linear(1, 1, bias=False)
+    inner = RecordingOptimizer(model.parameters(), events=events)
+    wrapper = WrappedOptimizer(inner)
+    accelerator = _fp16()
+    accelerator.events = events
+    inner.accelerator = accelerator
+    accelerator.prepare = lambda *objects: (objects[0], wrapper)  # type: ignore[assignment]
+    accelerator.scaler = InnerKeyedScaler(inner, found_inf=True)
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig.model_validate(
+            {"seed": 17, "determinism": {"mode": "legacy"}}
+        ),
+        runtime_batch=RuntimeBatchResolution(
+            world_size=1, effective_batch_size=1, resolved_grad_accum_steps=1
+        ),
+        model=model,
+        optimizer=inner,
+        scheduler=None,
+        expected_mixed_precision="fp16",
+        max_grad_norm=1.0,
+        accelerator=accelerator,
+        rank_report_gatherer=None,
+    )
+    assert runtime.optimizer is wrapper
+    for parameter in runtime.model.parameters():
+        parameter.grad = torch.full_like(parameter, 0.5)
+
+    decision = runtime.post_backward(planned_step_id=81)
+    assert decision.rank_diagnostics[0]["scaler_found_inf"] is True
+    assert decision.optimizer_boundary_action == "scaler_skip"
+
+    inner.suppress_update = True
+    inner.skip_flag_after_step = True
+    receipt = runtime.execute_optimizer_boundary(decision, planned_step_id=81)
+    assert receipt.action == "scaler_skip"
+    assert events == ["unscale", "wrapper_step"]
