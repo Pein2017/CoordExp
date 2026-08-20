@@ -129,6 +129,23 @@ _PUBLICATION_PLAN_FIELDS = frozenset(
 _T = TypeVar("_T")
 
 
+#: Top-level resolved-config blocks that carry NO training semantics and are
+#: therefore projected out of exact-resume compatibility.
+#:
+#: * `run` and `resume` are continuation identity: a child necessarily differs.
+#: * `observability` is rank-zero PRESENTATION only (console/TensorBoard
+#:   cadence).  DECLARED FLIP (add-coordexp-swift-training-observability, task
+#:   5.1): changing only `observability.steps` between an admitted parent and
+#:   its continuation must not make otherwise identical training state
+#:   incompatible.  This WIDENS admission, so no schema-version fence is
+#:   added: an older checkpoint whose config predates the block projects
+#:   byte-identically, and no previously admitted continuation is refused.
+#:
+#: Everything else -- forward, loss, optimizer, scheduler, data order, RNG,
+#: cadence, and precision -- stays strict.
+_RESUME_NON_SEMANTIC_CONFIG_BLOCKS = frozenset({"observability", "resume", "run"})
+
+
 def build_resume_compatibility_projection(
     resolved_config: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -162,7 +179,7 @@ def build_resume_compatibility_projection(
     semantic_config = {
         key: copy.deepcopy(value)
         for key, value in sorted(config.items())
-        if key not in {"resume", "run"}
+        if key not in _RESUME_NON_SEMANTIC_CONFIG_BLOCKS
     }
     if not semantic_config:
         _fail(

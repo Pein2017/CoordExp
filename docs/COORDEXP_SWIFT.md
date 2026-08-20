@@ -54,6 +54,7 @@ framework. Current ownership is:
 | Losses | `src/losses/` | Assemble the protected supervised objective (base CE plus token-type gate) and the typed optional coordinate Gaussian/RPS auxiliary, with `segment_balanced` normalization and finite diagnostics |
 | Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | Accelerate replicated-DDP operations, finite gates, optimizer/scheduler steps, adapter and selected-token trainable surfaces |
 | Training artifacts | `src/artifacts/run_writer.py`, `src/artifacts/checkpoints.py`, `src/artifacts/checkpoint_payload.py`, `src/artifacts/training_state.py`, `src/training/exact_resume.py` | Rank-zero run/config/log ownership, synchronized staged adapter-plus-delta inference payloads, and the opt-in exact training-state sibling and its resume admission |
+| Observation | `src/runtime/metrics.py`, `src/runtime/optimizer_boundary.py`, `src/training/reporting.py`, `src/artifacts/observation_publisher.py` | Typed producer-declared cross-rank reduction, the all-rank optimizer-boundary decision and update receipt, canonical row construction, and rank-zero publication with derived console/TensorBoard presentation |
 | Inference | `src/infer.py`, `src/inference/` | Resolve infer config, compose the model, decode, parse, score, shard, merge, and write provenance-bearing artifacts |
 | Detection evaluation | `src/eval/detection_consumer.py` | Validate raw/scored binding, normalize geometry units, write COCO artifacts, and emit mAP/mRecall metrics |
 
@@ -78,6 +79,20 @@ Config loading is strict and schema-first. A runnable training config declares
 config fingerprint are part of the runtime evidence. The training runtime is
 Accelerate-only: one process per rank, replicated DDP, with no separate
 single-process or DeepSpeed backend mode.
+
+Every supported training config authors `observability.steps` explicitly. It is
+a required positive integer with no schema default, measured on the planned-step
+clock, and it controls only how often rank zero *presents* an already canonical
+observation on the console and to TensorBoard. The current convention is
+`steps: 10` under `configs/coordexp_swift/prod/` and `steps: 1` under
+`configs/coordexp_swift/smoke/`. It never suppresses or samples a
+`logging.jsonl` row, and the legacy aliases `logging_steps`, `save_steps`,
+`eval_steps`, a separate `global_step`, and the removed `training.logging`
+cadence block all fail strict validation. Because the block is presentation
+only, it is projected out of exact-resume semantic compatibility and out of the
+three-run input-attestation projection: a continuation that differs from its
+admitted parent only in `observability.steps` stays compatible, while every
+training-semantic field remains strict.
 
 `resume.mode` selects exact training-state behavior: `disabled` (the default)
 or `exact_same_world_size`, which additionally requires
@@ -191,9 +206,36 @@ dual-written; historical JSONL keeps the schema of the commit that wrote it.
   validates the manifest and current rank's required train chunks plus every
   eval payload. Loaded train chunks receive full digest and restricted-payload
   validation, while manifest declaration checks cover every declared chunk.
+- `logging.jsonl` is the only durable scalar authority; console and TensorBoard
+  are rank-zero presentations derived from an already published row, and
+  TensorBoard event files live under `tensorboard/` inside the same run
+  directory. The console ETA is an approximate segment-local estimate: it is
+  never persisted, never restored as exact-resume state, and is not scheduling
+  evidence. A sink failure emits one bounded warning, latches that sink off for
+  the run, and leaves the published row and the rest of the run intact. Every
+  durable scalar declares one exact reducer (`SUM`, `MAX`, `IDENTICAL`,
+  `BOOL_ALL`, or a summed-numerator/denominator ratio) before the cross-rank
+  collective; there is no implicit mean and no reducer inferred from a metric
+  name. A scalar a backend cannot measure accurately is omitted and named in
+  `unavailable_fields` rather than published as a fabricated zero. MFU, TFLOPS,
+  energy, and per-rank metric traces are probe-only and stay out of normal
+  production rows. The field-by-field inventory is in
+  [`ARTIFACTS.md`](ARTIFACTS.md#canonical-scalar-rows-and-their-reducers).
+- A train row distinguishes the optimizer-wrapper attempt from the update that
+  was actually applied: the runtime-owned receipt carries the all-rank
+  `optimizer_boundary_action`, the attempted/applied/skipped booleans, and the
+  composite mutation state, and `lr/group_<index>` is the pre-call value only
+  where every rank is known to have applied it. A boundary that converges a
+  terminal outcome publishes exactly one terminal row at its current
+  planned-step id and then fails the run: it advances no scheduler, counter, or
+  scheduled handler, and publishes no exact-resume state, checkpoint,
+  best-selector update, or successful final artifact.
 - Completed training-step rows additionally carry `step_duration_seconds`,
-  `input_build_seconds`, and `input_wait_seconds` (max-reduced across ranks;
-  additive fields only, never a replacement for an existing row key). For
+  `input_build_seconds`, `input_h2d_seconds`, and `input_wait_seconds`
+  (max-reduced across ranks; additive fields only, never a replacement for an
+  existing row key). `input_h2d_seconds` appears only where the backend can
+  measure transfer completion accurately, and host enqueue time is never
+  labeled as device execution time. For
   end-to-end step wall-clock reading, use `step_duration_seconds`;
   `input_build_seconds` describes CPU-only input construction under every
   provider mode and excludes the device transfer, so it is not a substitute

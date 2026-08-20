@@ -19,6 +19,9 @@ linked OpenSpecs.
 | Surface | Owner |
 | --- | --- |
 | Training run, resolved config, and logging | `src/artifacts/run_writer.py` (rank zero) |
+| Canonical row construction | `src/training/reporting.py` |
+| Typed cross-rank metric reduction | `src/runtime/metrics.py` |
+| Row publication and derived console/TensorBoard sinks | `src/artifacts/observation_publisher.py` (rank zero) |
 | Checkpoint payloads and aliases | `src/artifacts/checkpoints.py` (all-rank synchronization; rank-zero publication) |
 | Inference payload manifest | `src/artifacts/checkpoint_payload.py` |
 | Opt-in exact training-state sibling | `src/artifacts/training_state.py` |
@@ -47,10 +50,79 @@ include:
 - `checkpoints/step-<step>/training_state/` with its `manifest.json`: the
   opt-in exact training-state sibling, written only when exact state is
   enabled;
-- `checkpoints/final.json` and `checkpoints/best.json`: checkpoint selectors.
+- `checkpoints/final.json` and `checkpoints/best.json`: checkpoint selectors;
+- `tensorboard/`: run-local rank-zero TensorBoard event files, created lazily
+  and only as a derived mirror of already published `logging.jsonl` rows.
 
 The training run does not emit `run_manifest.json`, per-split metric streams,
 per-step receipts, `checkpoint_handoff.json`, or `checkpoint-final` aliases.
+
+### Canonical scalar rows and their reducers
+
+`logging.jsonl` is the single durable scalar authority. Rank zero appends
+exactly one `train` row per completed planned optimizer-step boundary and one
+`eval` row per completed eval invocation; `observability.steps` never suppresses
+or samples a row. Beyond the loss projection below, a train row carries the
+learning rate actually applied per optimizer group (`lr/group_<index>`, sampled
+immediately before the wrapper call, JSON `null` when no update was applied),
+the pre-clip gradient norm (`grad_norm/pre_clip_rank_max`), exact work counts
+(`count/physical_tokens`, `count/supervised_atoms`, `count/packs`), derived
+global work rates (`throughput/*`), step and input timings
+(`step_duration_seconds`, `input_build_seconds`, `input_wait_seconds`,
+`input_h2d_seconds`), CUDA allocator observations (`resource/gpu_*`), the
+optimizer-boundary receipt fields, and the `optimizer_step_count` /
+`scheduler_step_count` counters.
+
+Every durable scalar declares one exact reducer before the cross-rank
+collective runs, and the producer owns that declaration
+(`src/runtime/metrics.py`). A metric with no declared reducer fails the step
+before publication rather than acquiring an implicit mean or a reducer guessed
+from its key. The reducer vocabulary is `SUM` (exact integer counts and
+per-step counter deltas), `MAX` (critical-path timings, pre-clip gradient norm,
+and memory high-water values, because the slowest rank owns the distributed
+critical path), `IDENTICAL` (values every rank must already agree on, such as
+applied learning rates and shared schedule values), `BOOL_ALL` (boolean
+conjunction; the ambiguous name `ALL` is not accepted), and ratio samples that
+sum numerator and denominator before dividing. Normal production rows contain
+aggregated values only.
+
+Availability is stated, never fabricated. When a backend cannot measure a
+scalar accurately the row omits it and names it in the bounded
+`unavailable_fields` list instead of publishing a zero; a raw NaN or Inf
+becomes JSON `null` and is named in `non_finite_fields`. Both lists are sorted,
+unique, and bounded, with any overflow recorded as a count in
+`<list>_truncated_count` rather than as arbitrary error text.
+
+A distributed optimizer boundary that becomes terminal before completion is the
+one exception to "one row per completed step": it appends exactly one terminal
+train row at its current planned-step id, carrying the terminal reason and the
+truthful nullable boundary fields, and then the run fails. That row does not
+make the boundary completed. No scheduler advance, completed-step or
+scheduler-step increment, eval, checkpoint, exact-resume publication,
+best-selector update, or successful final artifact follows it; `run.json` is
+finalized with failed status, the bounded optimizer-boundary failure code, that
+planned-step id, and the last prior completed-step counters.
+
+MFU, TFLOPS, energy estimates, and per-rank metric traces are probe-only and
+stay disabled unless an explicitly calibrated probe requests them.
+
+### Derived presentation sinks
+
+Console progress and TensorBoard are rank-zero presentations of canonical rows,
+never independent metric authorities. The corresponding `logging.jsonl` row is
+published before either sink consumes it. TensorBoard writes only under
+`tensorboard/` in the same run directory, mirrors only finite scalars plus the
+row's planned `step` as `global_step`, and uses deterministic
+`<split>/<canonical-key>` tags. Console output renders current step over the
+resolved total; an approximate ETA may be shown there but is never persisted,
+never written into exact-resume state, and is not scheduling evidence.
+
+Sink failure is contained. A TensorBoard import, initialization, `add_scalar`,
+`flush`, or `close` failure emits at most one bounded run warning plus one
+best-effort stderr line, latches that sink disabled for the rest of the run,
+and cannot remove, rewrite, or invalidate an already published row; training,
+eval, checkpoint, and later JSONL publication continue. No non-main rank writes
+console progress or TensorBoard event files.
 
 Train and forward-eval rows in `logging.jsonl` share one loss projection. Every
 computed term contributes an explicit field family — `loss/<term>/raw` for the

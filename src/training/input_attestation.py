@@ -35,6 +35,18 @@ CACHE_ATTESTATION_SCHEMA = "coordexp-swift-wave7-r5-cache-input-attestation-v1"
 MODEL_ATTESTATION_SCHEMA = "coordexp-swift-wave7-r5-model-input-attestation-v2"
 PREPARATION_RECEIPT_SCHEMA = "coordexp-swift-pack-cache-preparation-receipt-v1"
 RUN_ROLES = ("uninterrupted", "interrupted_parent", "resume_child")
+
+#: Top-level config blocks the three-run semantic projection ignores.
+#:
+#: `run`/`resume` are per-role continuation identity.  `observability` is
+#: rank-zero presentation cadence only -- DECLARED FLIP
+#: (add-coordexp-swift-training-observability, task 5.1): the three Wave-7
+#: roles may make different presentation decisions without breaking the
+#: semantic equality that binds them to one training question.  This mirrors
+#: `src/artifacts/training_state.py::_RESUME_NON_SEMANTIC_CONFIG_BLOCKS`; the
+#: two projections have different owners and different payloads but must never
+#: disagree about what "training semantics" means.
+_NON_SEMANTIC_CONFIG_BLOCKS = frozenset({"observability", "resume", "run"})
 SPLITS = ("train", "eval.forward")
 _SPLIT_RECEIPT_KEYS = {"train": "train", "eval.forward": "eval"}
 _MAX_JSON_BYTES = 16 * 1024 * 1024
@@ -110,14 +122,15 @@ def _resolved_configs(
         role: {
             key: deepcopy(value)
             for key, value in resolved[role].config_dict.items()
-            if key not in {"run", "resume"}
+            if key not in _NON_SEMANTIC_CONFIG_BLOCKS
         }
         for role in RUN_ROLES
     }
     reference = projections[RUN_ROLES[0]]
     if any(projections[role] != reference for role in RUN_ROLES[1:]):
         raise ValueError(
-            "training configs have semantic drift outside accepted run/resume differences"
+            "training configs have semantic drift outside accepted run/resume "
+            "and presentation differences"
         )
     roots = {
         Path(item.config.model.base_model).expanduser().resolve()

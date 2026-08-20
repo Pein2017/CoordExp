@@ -166,9 +166,11 @@ def _mutate_accuracy(
     )
 
 
-def _fixture(root: Path, *, mutation: str | None = None) -> dict[str, Path]:
+def _fixture(
+    root: Path, *, mutation: str | None = None, v1_mutation: str | None = None
+) -> dict[str, Path]:
     root.mkdir(parents=True, exist_ok=True)
-    paths = v1_test._fixture(root)
+    paths = v1_test._fixture(root, mutation=v1_mutation)
     for run_dir in (paths["reference"], paths["parent"], paths["child"]):
         for checkpoint_dir in sorted((run_dir / "checkpoints").glob("step-*")):
             _upgrade_checkpoint(checkpoint_dir)
@@ -360,9 +362,95 @@ def test_v1_source_and_tests_remain_byte_frozen() -> None:
     # and now carries the explicit `.../weighted` name instead. That key is
     # never asserted and the probe treats every `loss/` leaf generically, so
     # no comparison semantics moved.
+    # Declared flip (`add-coordexp-swift-training-observability`, task 5.2),
+    # previous pin
+    # `04170fbccd4be311023f5d337d50f78cc3d9a4747e4123b32deb6756f5ee6edf`: the
+    # synthetic `_train_row` now carries the CURRENT Wave-3B/Wave-4 row schema
+    # (loss weight/denominator family, boundary truth, counters, throughput,
+    # allocator, availability), `_resolved_config` authors the required
+    # `observability.steps`, and the fixture gained accepted/rejected drift
+    # arms.  V2 imports those helpers, so its own fixtures move with them.
     assert _sha256(Path(v1_test.__file__)) == (
-        "04170fbccd4be311023f5d337d50f78cc3d9a4747e4123b32deb6756f5ee6edf"
+        "e88e8e99be42c7776e0e9650f10802f8e7863b53cf5c2a3ea2c747600730392a"
     )
+
+
+@pytest.mark.parametrize(
+    "v1_mutation", ["observation_drift", "presentation_config_drift"]
+)
+def test_v2_accepts_the_new_non_semantic_observations(
+    tmp_path: Path, v1_mutation: str
+) -> None:
+    """Task 5.2 at the v2 comparator.
+
+    v2 owns a SUFFIX predicate for timing (`_duration_seconds`,
+    `_wall_seconds`, `time/`) that `input_h2d_seconds`, `throughput/*`, and
+    the allocator fields all evade.  It now also consumes v1's by-name
+    `OBSERVATION_ONLY_FIELDS`, so machine observations and presentation-only
+    config drift are recorded rather than compared.
+    """
+
+    paths = _fixture(tmp_path, v1_mutation=v1_mutation)
+
+    result = _run_final(paths)
+
+    assert result.returncode == 0, result.stderr
+    receipt = json.loads(paths["output"].read_text(encoding="utf-8"))
+    assert receipt["status"] == "passed"
+    assert receipt["mismatches"] == []
+
+
+@pytest.mark.parametrize(
+    "v1_mutation",
+    ["lr_drift", "boundary_drift", "counter_drift", "loss_weight_drift"],
+)
+def test_v2_still_rejects_lr_update_counter_and_loss_weight_drift(
+    tmp_path: Path, v1_mutation: str
+) -> None:
+    """The 5.2 relaxation must not have widened into training semantics."""
+
+    paths = _fixture(tmp_path, v1_mutation=v1_mutation)
+
+    result = _run_final(paths)
+
+    assert result.returncode == 1
+    receipt = json.loads(paths["output"].read_text(encoding="utf-8"))
+    assert receipt["status"] == "failed"
+    # v2 reuses v1's leaf value comparator, so the leaf code stays v1's.
+    assert "wave7_compare.logging_value" in {
+        row["code"] for row in receipt["mismatches"]
+    }
+
+
+def test_v2_classifies_every_new_producer_owned_field_by_name() -> None:
+    """P2-COMPARATOR at v2: one classification, shared with v1, by name."""
+
+    from src.training import reporting
+
+    for name in reporting.THROUGHPUT_FIELDS:
+        assert compare._is_observation_only(name), name
+    for name in reporting._CUDA_ALLOCATOR_ROW_FIELDS.values():
+        assert compare._is_observation_only(name), name
+    assert compare._is_observation_only("input_h2d_seconds")
+    # The retained suffix/prefix predicate alone does NOT classify them.
+    assert not compare._is_observational_timing("input_h2d_seconds")
+    assert not compare._is_observational_timing("throughput/packs_per_second")
+
+    row = v1_test._train_row(4)
+    projection = compare._semantic_log_projection(row)
+    excluded = compare._timing_observation(row)["values"]
+    # v2 additionally treats derived accuracy ratios as non-authoritative.
+    accuracy = {"accuracy_stats", *compare.ACCURACY_FIELDS} & set(row)
+    assert set(projection) | set(excluded) | accuracy == set(row)
+    for name in (
+        "grad_norm/pre_clip_rank_max",
+        "loss/base_ce/weight",
+        "lr/group_0",
+        "optimizer_update_applied",
+        "optimizer_step_count",
+        "scheduler_step_count",
+    ):
+        assert name in projection, name
 
 
 def test_r5_final_accepts_timing_drift_with_authoritative_exact_stats(

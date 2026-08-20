@@ -234,11 +234,19 @@ TRAIN_PORTS = {
     "interrupted_parent": 29682,
     "resume_child": 29683,
 }
+# DECLARED RE-PIN (add-coordexp-swift-training-observability, task 5.2).
+# Previous seals:
+#   v1 dfbb4d63c22d5c0db78c296514af1fe8fe24c28299175c90547b1a2917064034
+#   v2 2e3b6ea6d3cb7bb4bb43fc0d077b83e26b70d141a5401e3c1df6a7ee6f7b17bf
+# Both comparators now classify this change's timing/throughput/allocator/
+# availability row fields as non-semantic observations BY EXACT NAME and
+# filter (rather than compare wholesale) the bounded diagnostic name lists.
+# Nothing that was compared as training semantics stopped being compared.
 FROZEN_V1_COMPARATOR_SHA256 = (
-    "dfbb4d63c22d5c0db78c296514af1fe8fe24c28299175c90547b1a2917064034"
+    "4698eeca1439bf65d55d524acf9d780f6078251756e792258172d3c79147c8d2"
 )
 FROZEN_V2_COMPARATOR_SHA256 = (
-    "2e3b6ea6d3cb7bb4bb43fc0d077b83e26b70d141a5401e3c1df6a7ee6f7b17bf"
+    "aaac6aeecc825773e1b5d93827a61474581dd8fa894f400713719c2628cada66"
 )
 FROZEN_DETERMINISM_PREFLIGHT_SOURCE_SHA256 = (
     "52d6e2a3b709ede73f5794eefdbfd6c57997714af29f5329e936b8953492346c"
@@ -246,8 +254,14 @@ FROZEN_DETERMINISM_PREFLIGHT_SOURCE_SHA256 = (
 FROZEN_PARITY_SOURCE_SHA256 = (
     "ae155a6fb2cb613f217a5873093ebd8e8fe19d5bd0503bc5abde653bab96c816"
 )
+# DECLARED RE-PIN (add-coordexp-swift-training-observability, task 5.1).
+# Previous seal: 458427b30903424e4233a934f3a8ea972f3a97fd96bd21183608dcec74a371b1
+# The three-run semantic projection now also ignores the top-level
+# `observability` block, which is rank-zero presentation cadence and carries no
+# training semantics; `run`/`resume` exclusion and every other comparison are
+# unchanged.
 FROZEN_INPUT_ATTESTATION_SOURCE_SHA256 = (
-    "458427b30903424e4233a934f3a8ea972f3a97fd96bd21183608dcec74a371b1"
+    "351f24953a9d55d80f3a1d5476c3171e30a80b0588ccf97adb0bca35c768b1fc"
 )
 FROZEN_REQUEST_PRODUCER_SOURCE_SHA256 = (
     "8f24bd4da50af596ecaf9b931a8586d6c91d7d3cb2c93f2fa1161fa8a2304cd0"

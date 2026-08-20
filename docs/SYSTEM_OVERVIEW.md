@@ -87,6 +87,18 @@ owns exact-resume choreography and the forward-input provider lifetime,
 registers eval/checkpoint handlers, and runs `SupervisedTrainer`.
 `src/training/reporting.py` owns completed-step rows.
 
+One completed observation passes through four owners and no generic
+coordinator. `src/runtime/optimizer_boundary.py` converges the all-rank
+optimizer-boundary decision and returns the single update receipt that
+distinguishes a wrapper attempt from an applied update.
+`src/runtime/metrics.py` reduces the step's scalars across ranks under
+producer-declared reducers, failing closed on any metric with no declared
+reducer instead of averaging it. `src/training/reporting.py` builds the
+canonical row, and `src/artifacts/observation_publisher.py` publishes it on
+rank zero and only then feeds the derived console and TensorBoard sinks.
+`observability.steps` is a required presentation interval that controls those
+sinks alone; it never suppresses a canonical row.
+
 `src/training/supervised_trainer.py` owns planned-step and micro-step iteration
 through explicit runtime and loss interfaces. The only training backend is
 Accelerate replicated DDP with one process per rank; there are no separate
@@ -142,6 +154,15 @@ Inference artifacts are written by
 `src/inference/artifacts.py`; evaluation artifacts are written by
 `src/eval/detection_consumer.py`. The canonical inventory is
 [`ARTIFACTS.md`](ARTIFACTS.md).
+
+Scalar observation is JSONL-first: `logging.jsonl` is the durable authority,
+and the rank-zero console line and the run-local `tensorboard/` event files are
+derived from a row that is already published. The console ETA is an approximate
+estimate that is never persisted or restored. A derived-sink failure is
+latched with one bounded warning and never invalidates a published row. A
+terminal optimizer boundary publishes one row at its current planned-step id
+and then fails the run without publishing exact-resume state, a checkpoint, a
+best-selector update, or a successful final artifact.
 
 The minimal inference payload is a standard PEFT adapter plus an optional
 separate selected-token embedding delta, both loaded by explicit inference

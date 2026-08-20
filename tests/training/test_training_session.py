@@ -853,6 +853,15 @@ class _TerminalSeamHarness:
         self.root = tmp_path
         self.is_main = is_main
         self.config = _terminal_seam_config(tmp_path)
+        # Owned here (not built inline in `run()`) so a test can read the
+        # lifecycle counters back after the terminal boundary.
+        self.lifecycle: dict[str, Any] = {
+            "completed_steps": 0,
+            "consumed_packs": 0,
+            "checkpoint_event_count": 0,
+            "optimizer_update_status": None,
+            "finite_status": None,
+        }
         self.eval_dispatches: list[Any] = []
         self.checkpoint_dispatches: list[Any] = []
         self.final_dispatches: list[Any] = []
@@ -1049,13 +1058,7 @@ class _TerminalSeamHarness:
             run_id="run",
             run_segment_id="segment-run",
             writer=self.writer,
-            lifecycle={
-                "completed_steps": 0,
-                "consumed_packs": 0,
-                "checkpoint_event_count": 0,
-                "optimizer_update_status": None,
-                "finite_status": None,
-            },
+            lifecycle=self.lifecycle,
             rank_report_gatherer=gatherer,
             resolved_forward_input_provider=session.resolve_forward_input_provider_mode(
                 "synchronous"
@@ -1184,6 +1187,96 @@ def test_session_presents_nothing_when_the_terminal_row_cannot_publish(
 
     assert "42/100" not in capsys.readouterr().err
     assert harness.logging_rows() == []
+
+
+def test_terminal_boundary_publishes_no_state_checkpoint_selector_or_final(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 5.2: a terminal optimizer boundary publishes NOTHING durable.
+
+    The one bounded terminal row is the only artifact it may leave.  No
+    exact-resume training state, checkpoint payload, best-selector alias, or
+    successful final artifact may exist, and the completed-step count must not
+    move to the terminal planned step.
+    """
+
+    from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+
+    harness = _TerminalSeamHarness(tmp_path, monkeypatch)
+    lifecycle_before = dict(harness.lifecycle)
+
+    with pytest.raises(OptimizerBoundaryTerminal):
+        harness.run()
+
+    run_dir = harness.writer.run_dir
+    # The terminal row for planned step 42 is the ONLY durable publication.
+    (row,) = harness.logging_rows()
+    assert row["step"] == 42 and row["optimizer_boundary_terminal"] is True
+
+    # No exact-resume state, checkpoint payload, selector alias, or final.
+    assert not list(run_dir.glob("checkpoints/**/training_state"))
+    assert not list(run_dir.glob("checkpoints/step-*"))
+    assert not (run_dir / "checkpoints/best.json").exists()
+    assert not (run_dir / "checkpoints/final.json").exists()
+    assert not (run_dir / "final.json").exists()
+    assert not (run_dir / "final_metrics.json").exists()
+
+    # No scheduled handler ran, so nothing could have published one.
+    assert harness.eval_dispatches == []
+    assert harness.checkpoint_dispatches == []
+    assert harness.final_dispatches == []
+
+    # Planned step 42 is NOT counted as completed.
+    state = harness.writer.read_run()
+    assert state["status"] != "completed"
+    assert state["completed_steps"] == lifecycle_before["completed_steps"] == 0
+    assert harness.lifecycle["completed_steps"] == 0
+    assert harness.lifecycle["checkpoint_event_count"] == 0
+
+
+def test_terminal_boundary_finalizes_run_json_failed_at_the_planned_step(
+    scripted_entry: _ScriptedEntry,
+) -> None:
+    """Task 5.2: `run.json` records failed status and the terminal step id.
+
+    This drives the REAL entry (`session.run()` raises -> `session.fail()` ->
+    `publish_training_entry_failure`), so the failed finalization is the
+    production one rather than a re-implementation.
+    """
+
+    from src.runtime.optimizer_boundary import (
+        AppliedUpdateReceipt,
+        OptimizerBoundaryTerminal,
+    )
+
+    receipt = AppliedUpdateReceipt.terminal_not_attempted(
+        42, 1, "pre_wrapper_mixed_scaler_overflow", unscale_completed=True
+    )
+    terminal = OptimizerBoundaryTerminal(receipt)
+
+    def raising(_live: session.TrainingSession) -> dict[str, Any]:
+        raise terminal
+
+    scripted_entry.on_run = raising  # type: ignore[method-assign]
+
+    with pytest.raises(OptimizerBoundaryTerminal) as excinfo:
+        scripted_entry.run()
+
+    assert excinfo.value is terminal
+    assert scripted_entry.fail_calls == [terminal]
+
+    run_state = scripted_entry.run_state()
+    assert run_state["status"] == "failed"
+    # The bounded primary failure code and the CURRENT planned-step id.
+    assert "runtime.optimizer_boundary_terminal" in run_state["terminal_error"]
+    assert '"planned_step_id": 42' in run_state["terminal_error"]
+    assert "pre_wrapper_mixed_scaler_overflow" in run_state["terminal_error"]
+    # The terminal step is not counted, and no success artifact was published.
+    assert run_state["completed_steps"] == 0
+    assert run_state["checkpoint_event_count"] == 0
+    run_dir = scripted_entry.root / "artifacts" / "run"
+    assert not (run_dir / "final.json").exists()
+    assert not (run_dir / "checkpoints/best.json").exists()
 
 
 def test_a_non_main_rank_writes_no_progress_and_no_event_files(

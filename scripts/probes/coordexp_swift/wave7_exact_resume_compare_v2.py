@@ -31,7 +31,14 @@ EVENT_SCHEMA = "coordexp-swift-checkpoint-publication-event"
 EVENT_SCHEMA_VERSION = 2
 PROGRESS_SCHEMA = "coordexp-swift-checkpoint-committed-progress"
 PROGRESS_SCHEMA_VERSION = 1
-V1_SOURCE_SHA256 = "dfbb4d63c22d5c0db78c296514af1fe8fe24c28299175c90547b1a2917064034"
+# DECLARED RE-PIN (add-coordexp-swift-training-observability, task 5.2).
+# Previous seal: dfbb4d63c22d5c0db78c296514af1fe8fe24c28299175c90547b1a2917064034
+# (the Wave-4 loss-telemetry state).  The v1 probe now classifies this change's
+# timing/throughput/allocator/availability fields as observations BY NAME
+# (`v1.OBSERVATION_ONLY_FIELDS`) and filters `unavailable_fields`/
+# `non_finite_fields` instead of comparing them wholesale.  No previously
+# compared training-semantic field moved out of the comparison.
+V1_SOURCE_SHA256 = "4698eeca1439bf65d55d524acf9d780f6078251756e792258172d3c79147c8d2"
 V2_EVENT_FIELDS = v1.CHECKPOINT_PUBLICATION_EVENT_FIELDS | frozenset(
     {"schema", "schema_version", "inference_payload_identity", "committed_progress"}
 )
@@ -785,6 +792,11 @@ def _checked_accuracy_stats(
 
 
 def _is_observational_timing(field: str) -> bool:
+    # RETAINED unchanged: these convention predicates still own the Wave-7
+    # timing families.  They are NOT extended for new fields -- see
+    # `v1.OBSERVATION_ONLY_FIELDS`, which classifies every field this change
+    # added BY EXACT NAME (P2-COMPARATOR: `input_h2d_seconds` matches none of
+    # the suffixes below, and neither would the next new field).
     return (
         field in v1.TIMING_FIELDS
         or field == "eval_duration_seconds"
@@ -794,23 +806,34 @@ def _is_observational_timing(field: str) -> bool:
     )
 
 
+def _is_observation_only(field: str) -> bool:
+    """v2's single classification: v1's by-name set plus v2's own families."""
+
+    return (
+        field in v1.OBSERVATION_ONLY_FIELDS
+        or _is_observational_timing(field)
+        or field == "per_rank_measurement"
+        or field.startswith("resource/")
+    )
+
+
 def _semantic_log_projection(row: Mapping[str, Any]) -> dict[str, Any]:
     result = {
         key: value
         for key, value in row.items()
-        if not _is_observational_timing(key)
-        and key != "per_rank_measurement"
-        and not key.startswith("resource/")
+        if not _is_observation_only(key)
         and key != "accuracy_stats"
         and key not in ACCURACY_FIELDS
     }
-    non_finite = result.get("non_finite_fields")
-    if isinstance(non_finite, list):
-        result["non_finite_fields"] = sorted(
-            field
-            for field in non_finite
-            if not _is_observational_timing(field) and not field.startswith("resource/")
-        )
+    # Filtered, never dropped: an unmeasurable timing field may be named here
+    # in one run and not the other, but an unapplied `lr/group_<i>` must not.
+    for diagnostic in ("non_finite_fields", "unavailable_fields"):
+        if diagnostic in result:
+            value = result[diagnostic]
+            if isinstance(value, list):
+                result[diagnostic] = sorted(
+                    field for field in value if not _is_observation_only(field)
+                )
     return result
 
 
@@ -819,11 +842,7 @@ def _timing_observation(row: Mapping[str, Any]) -> dict[str, Any]:
         "split": row["split"],
         "step": row["step"],
         "values": {
-            key: value
-            for key, value in row.items()
-            if _is_observational_timing(key)
-            or key == "per_rank_measurement"
-            or key.startswith("resource/")
+            key: value for key, value in row.items() if _is_observation_only(key)
         },
     }
 

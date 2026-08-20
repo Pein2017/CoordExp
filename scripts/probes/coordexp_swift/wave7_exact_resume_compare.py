@@ -205,6 +205,80 @@ MARKER_OBSERVATION_FIELDS = frozenset(
 TIMING_FIELDS = frozenset(
     {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
 )
+
+#: Row fields that are OBSERVATIONS OF THE MACHINE, not of the training
+#: question, enumerated BY EXACT NAME.
+#:
+#: DECLARED FLIP (add-coordexp-swift-training-observability, task 5.2,
+#: resolving the Wave-0 entry audit's P2-COMPARATOR): the Wave-3B/Wave-4 row
+#: schema added fields that evade every convention predicate this comparator
+#: already had -- `input_h2d_seconds` matches neither `TIMING_FIELDS` nor the
+#: v2 `_duration_seconds`/`_wall_seconds` suffixes, and a future field could
+#: evade them again.  New non-semantic fields are therefore listed here BY
+#: NAME and never by suffix or prefix convention.  The pre-existing
+#: `TIMING_FIELDS` set and `resource/` prefix are RETAINED as-is (they still
+#: carry the Wave-7 fields and the process-lifetime peak/CPU resource family);
+#: the allocator names below are additionally spelled out so the by-name
+#: enumeration is complete on its own and reviewable without reasoning about
+#: prefixes.
+#:
+#: Everything a resumed run must reproduce EXACTLY stays out of this set and
+#: is compared strictly: `loss/*` (including each term's configured
+#: `weight`, `denominator_scope`, `selected_atom_count`, and
+#: `skipped_segment_count`), `lr/group_<i>`, `grad_norm/pre_clip_rank_max`,
+#: `finite/*`, `finite_status`, `count/*` exact work counts,
+#: `optimizer_update_status`, the five `optimizer_*` boundary-truth fields,
+#: `optimizer_boundary_terminal`/`optimizer_terminal_reason`,
+#: `micro_step_count`, and the `optimizer_step_count`/`scheduler_step_count`
+#: counters (exact-resume restores both through the rank data cursor's
+#: `runtime_counters`, so a parent and its continuation MUST agree at the same
+#: planned step).
+OBSERVATION_ONLY_FIELDS = frozenset(
+    {
+        # Wave 3.5: host-to-device transfer time, only where the backend can
+        # measure completion accurately.
+        "input_h2d_seconds",
+        # Wave 3.4: global work rates derived from summed work over the
+        # all-rank MAXIMUM step duration -- a wall-clock quantity.
+        "throughput/packs_per_second",
+        "throughput/physical_tokens_per_second",
+        "throughput/supervised_atoms_per_second",
+        # Wave 3.6: current CUDA allocator occupancy and per-step allocator
+        # counter deltas.  Allocation order is not training semantics.
+        "resource/gpu_alloc_retries_delta",
+        "resource/gpu_current_memory_allocated_bytes",
+        "resource/gpu_current_memory_reserved_bytes",
+        "resource/gpu_ooms_delta",
+        # Wave 4.6: bookkeeping for the bounded availability list below.
+        "unavailable_fields_truncated_count",
+    }
+)
+
+
+def _is_observation_only(field: str) -> bool:
+    """One classification used by BOTH the projection and the observation."""
+
+    return (
+        field in OBSERVATION_ONLY_FIELDS
+        or field in TIMING_FIELDS
+        or field == "per_rank_measurement"
+        or field.startswith("resource/")
+    )
+
+
+def _semantic_field_names(names: Any) -> Any:
+    """Drop observation-only names from a bounded diagnostic name list.
+
+    `unavailable_fields` and `non_finite_fields` mix the two classes: a
+    backend that could not measure `input_h2d_seconds` names it here, but so
+    does a skipped optimizer update naming `lr/group_0`.  The list is
+    FILTERED, never dropped, so availability drift in machine observations is
+    tolerated while an LR that was not applied still fails the comparison.
+    """
+
+    if not isinstance(names, list):
+        return names
+    return sorted(field for field in names if not _is_observation_only(field))
 CHECKPOINT_PUBLICATION_EVENT_FIELDS = frozenset(
     {
         "checkpoint_identity",
@@ -2002,30 +2076,16 @@ def _validate_lineage(
 
 def _projection_for_log(row: Mapping[str, Any]) -> dict[str, Any]:
     result = {
-        key: value
-        for key, value in row.items()
-        if key not in TIMING_FIELDS
-        and key != "per_rank_measurement"
-        and not key.startswith("resource/")
+        key: value for key, value in row.items() if not _is_observation_only(key)
     }
-    non_finite = result.get("non_finite_fields")
-    if isinstance(non_finite, list):
-        result["non_finite_fields"] = sorted(
-            field
-            for field in non_finite
-            if field not in TIMING_FIELDS and not field.startswith("resource/")
-        )
+    for diagnostic in ("non_finite_fields", "unavailable_fields"):
+        if diagnostic in result:
+            result[diagnostic] = _semantic_field_names(result[diagnostic])
     return result
 
 
 def _excluded_log_observation(row: Mapping[str, Any]) -> dict[str, Any]:
-    values = {
-        key: value
-        for key, value in row.items()
-        if key in TIMING_FIELDS
-        or key == "per_rank_measurement"
-        or key.startswith("resource/")
-    }
+    values = {key: value for key, value in row.items() if _is_observation_only(key)}
     return {
         "split": row["split"],
         "step": row["step"],

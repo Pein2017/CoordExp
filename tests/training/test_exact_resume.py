@@ -158,6 +158,53 @@ def test_resume_compatibility_keeps_max_steps_and_checkpoint_cadence_strict() ->
     assert build_resume_compatibility_projection(cadence_drift) != expected
 
 
+def _presentation_parent_config() -> dict[str, Any]:
+    """A resolved config that authors the required presentation interval."""
+
+    parent = copy.deepcopy(_resolved_config())
+    parent["config"]["observability"] = {"steps": 10}
+    parent["config"]["optimizer"] = {"lr": 0.0002, "weight_decay": 0.01}
+    return parent
+
+
+def test_resume_compatibility_excludes_the_presentation_only_observability_block(
+) -> None:
+    """`observability` is rank-zero presentation, never training semantics.
+
+    add-coordexp-swift-training-observability task 5.1: changing only
+    `observability.steps` between an admitted parent and its continuation MUST
+    NOT make otherwise identical training state incompatible, while every
+    training-semantic field stays strict.
+    """
+
+    parent = _presentation_parent_config()
+    child = copy.deepcopy(parent)
+    child["config"]["run"]["name"] = "child"
+    child["config"]["resume"] = {
+        "checkpoint_dir": "/outputs/parent/checkpoints/step-1",
+        "mode": "exact_same_world_size",
+    }
+    # Production authors `steps: 10`; a smoke continuation authors `steps: 1`.
+    child["config"]["observability"] = {"steps": 1}
+
+    expected = build_resume_compatibility_projection(parent)
+    assert "observability" not in expected["semantic_config"]
+    assert build_resume_compatibility_projection(child) == expected
+
+    # Sensitivity: the presentation-only relaxation must not widen into
+    # training semantics.  Each of these still projects differently.
+    for drift in (
+        ("optimizer", "lr", 0.0004),
+        ("training", "max_steps", 3),
+        ("training", "seed", 18),
+        ("runtime", "seed", 18),
+    ):
+        block, field, value = drift
+        drifted = copy.deepcopy(child)
+        drifted["config"][block][field] = value
+        assert build_resume_compatibility_projection(drifted) != expected, drift
+
+
 def _identities(
     resolved_config: Mapping[str, Any] | None = None,
 ) -> Mapping[str, str]:
@@ -1041,6 +1088,113 @@ def test_resume_projection_allows_continuation_metadata_and_rejects_semantic_dri
 
     drifted = copy.deepcopy(child)
     drifted["config"]["training"]["seed"] = 18
+    model, optimizer, scheduler = _runtime(initialized=False)
+    model_before = {
+        name: parameter.detach().clone() for name, parameter in model.named_parameters()
+    }
+    setter_calls: list[str] = []
+    with pytest.raises(ArtifactContractError) as exc_info:
+        admit_and_restore_current_rank(
+            checkpoint,
+            checkpoint_step=17,
+            rank=0,
+            world_size=1,
+            identities=_identities(drifted),
+            resolved_config=drifted,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=None,
+            cuda_device_topology=("cuda:0",),
+            set_torch_cuda_rng_states=lambda _states: setter_calls.append("cuda"),
+        )
+    assert exc_info.value.code == "training_state.incompatible"
+    assert setter_calls == []
+    assert all(
+        torch.equal(dict(model.named_parameters())[name], value)
+        for name, value in model_before.items()
+    )
+
+
+def test_admission_accepts_presentation_only_drift_and_still_rejects_lr_drift(
+    tmp_path: Path,
+) -> None:
+    """Task 5.1 at the real admission seam, not only at the projection.
+
+    A continuation that differs from its admitted parent only in
+    `observability.steps` (plus the accepted run/resume continuation
+    metadata) restores exactly; an optimizer learning-rate drift beside it
+    still fails closed BEFORE any runtime mutation.
+    """
+
+    checkpoint = _checkpoint(tmp_path)
+    parent = _presentation_parent_config()
+    plan = TrainingStatePublicationPlan(
+        parent_run_id="run-parent",
+        parent_segment_id="segment-2",
+        checkpoint_step=17,
+        continuation_index=2,
+        world_size=1,
+        identities=_identities(parent),
+        scheduler_applicable=True,
+        scaler_applicable=False,
+        resolved_config=parent,
+        resume_compatibility=build_resume_compatibility_projection(parent),
+        accumulation_microstep=0,
+    )
+    collectives = _ThreadCollectives(1)
+    publish_distributed_exact_resume(
+        checkpoint,
+        plan=plan,
+        rank=0,
+        local_payload=_rank_payload(rank=0, world_size=1),
+        barrier=collectives.barrier,
+        gather_status=collectives.gather,
+    )
+
+    child = copy.deepcopy(parent)
+    child["config"]["run"] = {
+        "artifact_root": "/outputs/child",
+        "name": "child",
+        "output_dir": "/outputs/child/segment",
+    }
+    child["config"]["resume"] = {
+        "checkpoint_dir": str(checkpoint),
+        "mode": "exact_same_world_size",
+    }
+    child["config"]["observability"] = {"steps": 1}
+    child["resolution"]["entry_config_path"] = "/configs/child.yaml"
+
+    model, optimizer, scheduler = _runtime(initialized=False)
+    restored_cuda: list[torch.Tensor] = []
+    original_python = random.getstate()
+    original_numpy = np.random.get_state()
+    original_cpu = torch.get_rng_state()
+    try:
+        restored = admit_and_restore_current_rank(
+            checkpoint,
+            checkpoint_step=17,
+            rank=0,
+            world_size=1,
+            identities=_identities(child),
+            resolved_config=child,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scaler=None,
+            cuda_device_topology=("cuda:0",),
+            get_torch_cuda_rng_states=lambda: (torch.zeros(32, dtype=torch.uint8),),
+            set_torch_cuda_rng_states=lambda states: restored_cuda.extend(states),
+        )
+    finally:
+        random.setstate(original_python)
+        np.random.set_state(original_numpy)
+        torch.set_rng_state(original_cpu)
+    assert restored.next_rank_local_micro_step == 30
+    assert len(restored_cuda) == 1
+
+    drifted = copy.deepcopy(child)
+    drifted["config"]["optimizer"]["lr"] = 0.0004
     model, optimizer, scheduler = _runtime(initialized=False)
     model_before = {
         name: parameter.detach().clone() for name, parameter in model.named_parameters()

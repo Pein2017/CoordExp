@@ -1580,11 +1580,15 @@ def test_shared_gpu_post_cleanup_recovery_validator_rejects_incomplete_sweep(
 def test_frozen_comparator_and_predecessor_failure_identities(
     controller: ModuleType,
 ) -> None:
+    # DECLARED RE-PIN (add-coordexp-swift-training-observability, task 5.2);
+    # previous seals `dfbb4d63...` (v1) and `2e3b6ea6...` (v2).  Both
+    # comparators now classify the new timing/throughput/allocator/
+    # availability row fields as non-semantic observations by exact name.
     assert controller.FROZEN_V1_COMPARATOR_SHA256 == (
-        "dfbb4d63c22d5c0db78c296514af1fe8fe24c28299175c90547b1a2917064034"
+        "4698eeca1439bf65d55d524acf9d780f6078251756e792258172d3c79147c8d2"
     )
     assert controller.FROZEN_V2_COMPARATOR_SHA256 == (
-        "2e3b6ea6d3cb7bb4bb43fc0d077b83e26b70d141a5401e3c1df6a7ee6f7b17bf"
+        "aaac6aeecc825773e1b5d93827a61474581dd8fa894f400713719c2628cada66"
     )
     assert _sha256(controller.REQUIRED_SOURCE_PATHS[0].read_bytes()) == (
         controller.FROZEN_V1_COMPARATOR_SHA256

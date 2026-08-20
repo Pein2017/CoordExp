@@ -289,6 +289,41 @@ def test_rejects_semantic_config_drift_and_bad_preparation_binding(inputs):
         _build(inputs)
 
 
+def test_accepts_presentation_only_observability_drift_across_the_three_runs(inputs):
+    """Task 5.1: `observability.steps` is presentation, not run semantics.
+
+    The three Wave-7 roles may make different rank-zero presentation
+    decisions (a production parent at `steps: 10`, a resumed child at
+    `steps: 1`) without breaking the semantic-projection equality that binds
+    the three runs to one training question.
+    """
+
+    # The `uninterrupted` file is left byte-identical on purpose: the frozen
+    # cache-preparation receipt pins its resolved-config fingerprint, and this
+    # node is about cross-ROLE presentation drift, not receipt rebinding.
+    authored = yaml.safe_load(Path(inputs.configs["uninterrupted"]).read_text())
+    # Wave 1 made the block required with no default, so it is authored.
+    assert isinstance(authored["observability"]["steps"], int)
+    for role, steps in (("interrupted_parent", 4), ("resume_child", 7)):
+        path = Path(inputs.configs[role])
+        payload = yaml.safe_load(path.read_text())
+        assert payload["observability"]["steps"] == authored["observability"]["steps"]
+        assert steps != authored["observability"]["steps"]
+        payload["observability"]["steps"] = steps
+        path.write_text(yaml.safe_dump(payload, sort_keys=False))
+
+    cache, model = _build(inputs)
+    result = validate_training_input_attestations(
+        cache_attestation=cache,
+        model_attestation=model,
+        config_paths=inputs.configs,
+        validate_cache_payloads=True,
+        rehash_model_weights=False,
+        max_cache_payload_bytes=10_000_000,
+    )
+    assert result["status"] == "passed"
+
+
 def test_rejects_preparation_receipt_root_and_split_drift(inputs):
     receipt = json.loads(inputs.receipt_path.read_text())
     body = {key: value for key, value in receipt.items() if key != "receipt_sha256"}

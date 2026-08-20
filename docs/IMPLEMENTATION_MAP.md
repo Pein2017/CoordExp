@@ -26,6 +26,9 @@ reuse.
 | Initialized-run lifetime | `src/training/session.py` | `tests/training/test_training_session.py` |
 | Cache admission and hydration | `src/training/cache_workflow.py`, `src/training/cache_contract.py` | `tests/training/test_pipeline_cache_preflight.py` |
 | Completed-step reporting | `src/training/reporting.py` | `tests/training/test_pipeline_assembly.py` |
+| Typed distributed metric reduction | `src/runtime/metrics.py` | `tests/runtime/test_metrics.py` |
+| Optimizer-boundary decision and update receipt | `src/runtime/optimizer_boundary.py` | `tests/runtime/test_wave3_optimizer_boundary.py` |
+| Rank-zero observation publication and derived sinks | `src/artifacts/observation_publisher.py` | `tests/artifacts/test_observation_publisher.py` |
 | Cached micro-step schema | `src/training/micro_steps.py` | `tests/training/test_pack_cache_determinant_registry.py` |
 | Forward-input preparation | `src/training/forward_input_provider.py` | `tests/training/test_forward_input_provider.py` |
 | Planned-step loop | `src/training/supervised_trainer.py` | `tests/training/test_supervised_trainer.py` |
@@ -94,6 +97,15 @@ schema from an archived YAML file or an old plan.
   `TrainingSession` (`session.py`), which owns model/runtime assembly,
   exact-resume, eval/checkpoint/finalization, and the forward-input provider
   lifetime. `src/training/reporting.py` owns completed-step rows.
+- One observation has exactly four owners and no generic coordinator:
+  `src/runtime/metrics.py` owns typed cross-rank reduction (each metric
+  declares its reducer; there is no name-derived or mean fallback),
+  `src/runtime/optimizer_boundary.py` owns the all-rank boundary decision and
+  the single update receipt, `src/training/reporting.py` owns canonical row
+  construction, and `src/artifacts/observation_publisher.py` owns rank-zero
+  publication plus the derived console and TensorBoard sinks. `session.py`
+  composes them. The training facade is not a second row, reducer, or sink
+  owner.
 - `src/training/forward_input_provider.py` owns forward-input preparation.
   The strict config field `training.forward_input_provider_mode` is the only
   selector; no environment variable may replace it. `synchronous` is the

@@ -57,6 +57,7 @@ def _resolved_config(
     *,
     name: str,
     checkpoint_dir: Path | None,
+    observability_steps: int = 10,
 ) -> dict[str, Any]:
     config_source = run_dir.parent / "configs" / f"{name}.json"
     _json(config_source, {"name": name, "schema_version": 1})
@@ -70,6 +71,10 @@ def _resolved_config(
             "data": {"train": {"path": "/data/train.jsonl"}},
             "eval": {"forward": {"steps": [3]}},
             "model": {"precision": "bf16"},
+            # Required rank-zero presentation cadence (Wave 1).  It is
+            # PRESENTATION ONLY, so the three roles may author different
+            # values without breaking resume compatibility (task 5.1/5.2).
+            "observability": {"steps": observability_steps},
             "optimizer": {"lr": 0.001},
             "packing": {"policy": "source_order_next_fit"},
             "resume": resume,
@@ -273,27 +278,75 @@ def _train_row(
     *,
     aggregate_metric_drift: bool = False,
     loss_drift: bool = False,
+    observation_drift: bool = False,
+    lr_drift: bool = False,
+    boundary_drift: bool = False,
+    counter_drift: bool = False,
+    loss_weight_drift: bool = False,
 ) -> dict[str, Any]:
-    return {
+    """One canonical train row in the CURRENT Wave-3B/Wave-4 schema.
+
+    `observation_drift` perturbs only the fields task 5.2 classifies as
+    observations of the machine (timing, throughput, allocator, availability).
+    Every other drift flag perturbs a field that MUST remain strict.
+    """
+
+    # A machine observation: wall clock, allocator occupancy, and which
+    # backend measurements happened to succeed.  None of it is reproducible.
+    observation = 1.7 if observation_drift else 1.0
+    unavailable = ["input_h2d_seconds"] if observation_drift else []
+    row = {
         "acc_top1": 0.5 + step / 100 + (0.004 if aggregate_metric_drift else 0.0),
+        "count/packs": 4,
+        "count/physical_tokens": 512 * step,
+        "count/supervised_atoms": 96 * step,
+        "finite/base_ce": True,
+        "finite/total_loss": True,
         "finite_status": "finite",
-        "input_build_seconds": 0.01 * step,
-        "input_wait_seconds": 0.001 * step,
+        "grad_norm/pre_clip_rank_max": 0.75 + step / 100,
+        "input_build_seconds": 0.01 * step * observation,
+        "input_wait_seconds": 0.001 * step * observation,
+        "loss/base_ce/denominator_scope": "merged_global",
+        "loss/base_ce/selected_atom_count": 96 * step,
+        "loss/base_ce/skipped_segment_count": 0,
+        "loss/base_ce/weight": 2.0 if loss_weight_drift else 1.0,
         "loss/base_ce/weighted": 1.0 / step,
         "loss/total": 1.0 / step + (0.1 if loss_drift else 0.0),
-        "lr/group_0": 0.001 * (0.9**step),
+        "lr/group_0": 0.001 * (0.9**step) * (1.5 if lr_drift else 1.0),
         "micro_step_count": 2,
         "non_finite_fields": [],
-        "optimizer_update_status": "applied",
+        "optimizer_boundary_action": "not_attempted" if boundary_drift else "apply",
+        "optimizer_mutation_state": "unchanged" if boundary_drift else "applied",
+        "optimizer_step_count": step + (1 if counter_drift else 0),
+        "optimizer_step_was_skipped": False,
+        "optimizer_update_applied": not boundary_drift,
+        "optimizer_update_attempted": not boundary_drift,
+        "optimizer_update_status": "skipped" if boundary_drift else "applied",
         "per_rank_measurement": {
             str(rank): {"step_duration_seconds": 0.1 * step + rank / 1000}
             for rank in range(WORLD_SIZE)
         },
         "resource/cpu_max_rss_bytes": float(1000 + step),
+        "resource/gpu_alloc_retries_delta": 1.0 if observation_drift else 0.0,
+        "resource/gpu_current_memory_allocated_bytes": 4096.0 * observation,
+        "resource/gpu_current_memory_reserved_bytes": 8192.0 * observation,
+        "resource/gpu_ooms_delta": 0.0,
+        "scheduler_step_count": step,
         "split": "train",
         "step": step,
-        "step_duration_seconds": 0.1 * step,
+        "step_duration_seconds": 0.1 * step * observation,
+        "throughput/packs_per_second": 4.0 / observation,
+        "throughput/physical_tokens_per_second": 512.0 / observation,
+        "throughput/supervised_atoms_per_second": 96.0 / observation,
+        "unavailable_fields": unavailable,
     }
+    if not observation_drift:
+        # The measured arm publishes the H2D scalar the drifted arm names as
+        # unavailable: presence/absence of an observation must not be drift.
+        row["input_h2d_seconds"] = 0.002 * step
+    if unavailable:
+        row["unavailable_fields_truncated_count"] = 0
+    return row
 
 
 def _eval_row() -> dict[str, Any]:
@@ -460,6 +513,18 @@ def _run_receipt(
     }
 
 
+#: Row-level mutations the fixture can apply to the resume child only.
+#: Each name is a `_train_row` keyword; `observation_drift` is the one the
+#: comparator must ACCEPT.
+_ROW_MUTATIONS = (
+    "observation_drift",
+    "lr_drift",
+    "boundary_drift",
+    "counter_drift",
+    "loss_weight_drift",
+)
+
+
 def _write_logs(
     run_dir: Path,
     train_steps: range,
@@ -467,12 +532,17 @@ def _write_logs(
     aggregate_metric_drift: bool = False,
     include_eval: bool,
     loss_drift: bool = False,
+    row_mutation: str | None = None,
 ) -> None:
+    mutation_kwargs = {
+        name: name == row_mutation for name in _ROW_MUTATIONS
+    }
     rows = [
         _train_row(
             step,
             aggregate_metric_drift=aggregate_metric_drift and step == 4,
             loss_drift=loss_drift and step == 4,
+            **mutation_kwargs,
         )
         for step in train_steps
     ]
@@ -681,6 +751,10 @@ def _fixture(root: Path, *, mutation: str | None = None) -> dict[str, Path]:
     child = (root / "resume-child").resolve()
     for path in (reference, parent, child):
         path.mkdir()
+    # Task 5.2: a continuation may re-author the rank-zero presentation
+    # cadence.  `semantic_config_drift` is its fail-closed control.
+    presentation_drift = mutation == "presentation_config_drift"
+    child_lr = 0.002 if mutation == "semantic_config_drift" else 0.001
     reference_config = _resolved_config(
         reference, name="uninterrupted", checkpoint_dir=None
     )
@@ -689,8 +763,12 @@ def _fixture(root: Path, *, mutation: str | None = None) -> dict[str, Path]:
     )
     parent_checkpoint = parent / "checkpoints/step-3"
     child_config = _resolved_config(
-        child, name="resume-child", checkpoint_dir=parent_checkpoint
+        child,
+        name="resume-child",
+        checkpoint_dir=parent_checkpoint,
+        observability_steps=1 if presentation_drift else 10,
     )
+    child_config["config"]["optimizer"]["lr"] = child_lr
     reference_step3 = _publish_checkpoint(
         reference,
         step=3,
@@ -765,6 +843,7 @@ def _fixture(root: Path, *, mutation: str | None = None) -> dict[str, Path]:
         aggregate_metric_drift=mutation == "aggregate_metric_drift",
         include_eval=False,
         loss_drift=mutation == "loss_drift",
+        row_mutation=mutation if mutation in _ROW_MUTATIONS else None,
     )
     parent_manifest_path = parent / "checkpoints/step-3/training_state/manifest.json"
     parent_manifest_sha256 = _sha256(parent_manifest_path)
@@ -1029,6 +1108,14 @@ def test_accepted_fixture_publishes_bounded_passed_receipt(tmp_path: Path) -> No
         ("tensor_drift", None),
         ("loss_drift", "wave7_compare.logging_value"),
         ("aggregate_metric_drift", "wave7_compare.logging_value"),
+        # Task 5.2: the new observability schema widened what the comparator
+        # tolerates.  These arms prove it did NOT widen into loss, LR, norm,
+        # update-truth, counter, or semantic-config drift.
+        ("lr_drift", "wave7_compare.logging_value"),
+        ("boundary_drift", "wave7_compare.logging_value"),
+        ("counter_drift", "wave7_compare.logging_value"),
+        ("loss_weight_drift", "wave7_compare.logging_value"),
+        ("semantic_config_drift", "wave7_compare.resume_compatibility_mismatch"),
         ("lineage_mismatch", "wave7_compare.lineage_mismatch"),
         ("pruning", "wave7_compare.parent_tree_changed"),
         ("extra_fields", "wave7_compare.schema"),
@@ -1064,6 +1151,119 @@ def test_contract_mutations_publish_failed_receipt(
     assert receipt["mismatches"]
     if expected_code is not None:
         assert expected_code in {row["code"] for row in receipt["mismatches"]}
+
+
+@pytest.mark.parametrize(
+    "mutation", ["observation_drift", "presentation_config_drift"]
+)
+def test_non_semantic_drift_is_accepted_and_recorded_not_compared(
+    tmp_path: Path, mutation: str
+) -> None:
+    """Task 5.2: the new observations are recorded, never compared.
+
+    `observation_drift` perturbs every timing/throughput/allocator/
+    availability field of the resume child's rows (and drops the H2D scalar
+    the reference measured); `presentation_config_drift` re-authors
+    `observability.steps`.  Neither is a training-semantic difference.
+    """
+
+    paths = _fixture(tmp_path, mutation=mutation)
+
+    result = _run_compare(paths)
+
+    assert result.returncode == 0, result.stderr
+    receipt = json.loads(paths["output"].read_text(encoding="utf-8"))
+    assert receipt["status"] == "passed"
+    assert receipt["mismatches"] == []
+    if mutation == "observation_drift":
+        # The drifted values are still PUBLISHED as observations.
+        child_values = receipt["log_comparison"]["excluded_observations"][
+            "resume_child"
+        ][0]["values"]
+        assert child_values["step_duration_seconds"] == pytest.approx(0.4 * 1.7)
+        assert child_values["throughput/packs_per_second"] == pytest.approx(4.0 / 1.7)
+        assert child_values["resource/gpu_current_memory_allocated_bytes"] == (
+            pytest.approx(4096.0 * 1.7)
+        )
+
+
+def test_every_new_producer_owned_field_is_classified_by_name() -> None:
+    """P2-COMPARATOR: no new field may evade classification by convention.
+
+    The producer of the canonical row is `src/training/reporting.py`.  Reading
+    its declared field-name constants (read-only) makes this a real tripwire:
+    a future throughput or allocator field that nobody classifies fails here
+    instead of silently entering the semantic comparison.
+    """
+
+    from src.training import reporting
+
+    for name in reporting.THROUGHPUT_FIELDS:
+        assert name in compare.OBSERVATION_ONLY_FIELDS, name
+    for name in reporting._CUDA_ALLOCATOR_ROW_FIELDS.values():
+        assert name in compare.OBSERVATION_ONLY_FIELDS, name
+    assert "input_h2d_seconds" in compare.OBSERVATION_ONLY_FIELDS
+    # ... and none of the by-name exclusions is caught by the RETAINED
+    # convention predicates alone, which is exactly why P2-COMPARATOR asked
+    # for an enumeration.
+    assert not compare.OBSERVATION_ONLY_FIELDS & compare.TIMING_FIELDS
+
+    row = _train_row(4)
+    projection = compare._projection_for_log(row)
+    excluded = compare._excluded_log_observation(row)["values"]
+    # Every field of a full-shaped row is classified exactly once.
+    assert set(projection) | set(excluded) == set(row)
+    assert not set(projection) & set(excluded)
+    # The strict half: everything a continuation must reproduce exactly.
+    for name in (
+        "count/physical_tokens",
+        "count/supervised_atoms",
+        "finite/base_ce",
+        "finite_status",
+        "grad_norm/pre_clip_rank_max",
+        "loss/base_ce/denominator_scope",
+        "loss/base_ce/selected_atom_count",
+        "loss/base_ce/skipped_segment_count",
+        "loss/base_ce/weight",
+        "loss/total",
+        "lr/group_0",
+        "micro_step_count",
+        "optimizer_boundary_action",
+        "optimizer_mutation_state",
+        "optimizer_step_count",
+        "optimizer_step_was_skipped",
+        "optimizer_update_applied",
+        "optimizer_update_attempted",
+        "optimizer_update_status",
+        "scheduler_step_count",
+    ):
+        assert name in projection, name
+    # The recorded half.
+    for name in (
+        "input_h2d_seconds",
+        "resource/gpu_alloc_retries_delta",
+        "step_duration_seconds",
+        "throughput/physical_tokens_per_second",
+    ):
+        assert name in excluded, name
+
+
+def test_diagnostic_name_lists_are_filtered_not_dropped() -> None:
+    """An unapplied LR must still fail even though availability may drift."""
+
+    row = dict(_train_row(4))
+    row["unavailable_fields"] = [
+        "grad_norm/pre_clip_rank_max",
+        "input_h2d_seconds",
+        "lr/group_0",
+        "resource/gpu_ooms_delta",
+        "step_duration_seconds",
+    ]
+    projection = compare._projection_for_log(row)
+    assert projection["unavailable_fields"] == [
+        "grad_norm/pre_clip_rank_max",
+        "lr/group_0",
+    ]
 
 
 def test_expected_source_hash_mismatch_fails_closed(tmp_path: Path) -> None:
