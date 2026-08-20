@@ -305,11 +305,11 @@
 
 ## 5. Wave 5 - Resume boundary, docs, and production-shaped acceptance
 
-- [ ] 5.1 Exclude the top-level `observability` block from exact-resume
+- [x] 5.1 Exclude the top-level `observability` block from exact-resume
   semantic compatibility and three-run input-attestation projections while
   keeping forward, loss, optimizer, scheduler, data-order, RNG, applied LR,
   pre-clip norm, finite, and update-status comparisons strict.
-- [ ] 5.2 Update the Wave 7 exact-resume comparator and fixtures to classify new
+- [x] 5.2 Update the Wave 7 exact-resume comparator and fixtures to classify new
   timing/resource/availability fields as non-semantic observations, ignore
   console/TensorBoard/ETA, and accept presentation-only config drift without
   accepting loss, LR, norm, or update drift. Prove no exact-resume state,
@@ -317,16 +317,16 @@
   terminal pre-wrapper or post-wrapper optimizer boundary, and that `run.json`
   records failed status plus the current planned-step id without counting it as
   completed.
-- [ ] 5.3 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`,
+- [x] 5.3 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`,
   `docs/IMPLEMENTATION_MAP.md`, and `docs/ARTIFACTS.md` with the required config,
   canonical metric meanings/reducers, run-local TensorBoard path, approximate
   ETA boundary, failure policy, and probe-only metric exclusions; do not revive
   historical Trainer/event-bus terminology.
-- [ ] 5.4 Run the focused exact-resume, input-attestation, config, runtime,
+- [x] 5.4 Run the focused exact-resume, input-attestation, config, runtime,
   loss, eval, artifact, trainer, reporting, publisher, and session suites through
   `conda run -n ms`, then re-resolve every active production/smoke training
   config and run strict JSON/non-finite checks over emitted fixture rows.
-- [ ] 5.5 With fresh user authorization for this distinct GPU action, record its
+- [x] 5.5 With fresh user authorization for this distinct GPU action, record its
   bounds for devices/world size, planned steps, model forwards, cache/
   materialization passes, wall time, peak GPU memory, and artifact bytes, then
   execute the smallest current two-rank production-mimic config that
@@ -336,11 +336,37 @@
   rank-local run/event trees. Record exact config, commit, command, devices,
   artifact root, counters, and evidence scope without making a throughput or
   model-quality claim.
-- [ ] 5.6 Run the relevant broader regression suite, `openspec validate
+- [x] 5.6 Run the relevant broader regression suite, `openspec validate
   add-coordexp-swift-training-observability --strict`, and residue searches
   proving no implicit reducer, old scheduler-derived LR path, normal per-rank
   trace, alternate scalar authority, or unbounded sink error state remains.
-- [ ] 5.7 Obtain the final standards/code-quality and intent/spec-contract
+- [x] 5.7 Obtain the final standards/code-quality and intent/spec-contract
   audits over the implementation, executed probes, emitted artifacts, docs,
   and exact-resume exclusions; resolve all P0/P1 findings and record any lower
   severity residual risk before requesting OpenSpec verification/archive.
+
+
+> **Wave 5 closed / change complete (2026-08-20; commits `30b563e6c` part 1,
+> `c4d4dc857` smoke receipts, plus this close-out; final audit
+> `receipts/wave-5-final-audit.md` STANDARDS+INTENT both
+> PASS-WITH-DISPOSITIONS, 0 P0 / 0 P1, completion gate YES):**
+> presentation-only `observability` excluded from exact-resume
+> compatibility and three-run attestation with RED-observed fail-closed
+> semantics retained; comparators classify observation fields BY NAME with
+> partition-completeness tests (optimizer truth/counters/loss-weight kept
+> semantic); terminal-boundary no-publication proven behaviorally
+> (no state/checkpoint/selector/final from a terminal boundary; run.json
+> failed at the planned-step id). 5.5 smoke under the frozen packet on
+> idle GPUs 0,1 (standing grant): one shared run tree, train+eval
+> canonical rows with every new field family live (incl. honest
+> unavailable_fields on the first-step allocator deltas), TB 77 tags
+> verified with the real event reader, all bounds honoured, cache
+> byte-identical, and train/eval base_ce raw values bit-equal to the
+> archived losses-change smoke. 5.4 focused 1357/0/0; 5.6 broad
+> 2565/0/126skip with zero residue (audit's independent f-string-aware
+> sweep also 0). Final-audit P2s discharged in this commit: amend-8
+> (placeholder retired, counts pinned, re-pins recorded) and the
+> ARTIFACTS.md reducer-attribution fix (pre-clip norm is IDENTICAL by
+> design, not MAX). P3s recorded in the receipt. Archive-mechanics
+> scenario diff: 0 problems across all six MODIFIED requirements.
+> Flake tripwire final count: 2 (never reached 3).

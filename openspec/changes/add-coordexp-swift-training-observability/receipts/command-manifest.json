@@ -238,6 +238,22 @@
    },
    "retained_fallbacks": "W3-2 _scheduler_lr_metrics AND the new CompletedStepReporter(publisher=None)/_publish_row(None) publication-only path - both load-bearing for frozen characterization fixtures; Wave-5 residue searches must not delete either",
    "readings": "console to stderr (stdout owns the CLI JSON summary); >256-byte diagnostic NAME fails closed rather than truncating (spec truncation applies to the field-name LIST bound; a single over-long canonical name is a defect)"
+  },
+  {
+   "id": "amend-8-freeze-wave5",
+   "amendment_of": "wave5-vertical-smoke",
+   "date": "2026-08-20",
+   "reason": "retire the TO-FREEZE placeholder; pin Wave-5 counts; record the declared re-pins (final-audit P2-MANIFEST-W5)",
+   "frozen_argv": "CUDA_VISIBLE_DEVICES=0,1 timeout 900s conda run -n ms python -m torch.distributed.run --standalone --nproc_per_node 2 -m src.train --config <overlay e2c12c96...> (packet receipts/wave-5-smoke-packet.md; standing GPU grant; observed: exit 0, completed/applied/finite, 1 shared run tree, train+eval canonical rows with all new field families live incl. honest unavailable_fields, TB 77 tags reader-verified, GPU HW 9.36GB, RSS 8.34GiB, artifacts 45,717,812 B, cache byte-identical, receipts/wave-5-smoke-receipt.json)",
+   "observed": {
+    "wave5-resume-gate (as executed, combined)": "835/0/0 lead replay; 5.4 focused set 1357/0/0",
+    "wave5-broad-regression": "2691 collected: 2565 passed / 126 skipped / 0 failed",
+    "config-inventory-re-resolution": "exit 0 over all 25 supported configs",
+    "residue": "all frozen searches zero; audit's independent f-string-aware sweep 0 hits across 8 patterns; 14 dynamic row-key families all producer-declared",
+    "determinant-invariant": "EQUAL/EQUAL with byte-equal payloads at c4d4dc857 (audit re-derivation)"
+   },
+   "declared_repins": "wave-5 part-1 comparator/attestation seals: v2 V1_SOURCE dfbb4d63->4698eeca; v1-test-module pin 04170fbc->e88e8e99; sequence FROZEN_V1 dfbb4d63->4698eeca, FROZEN_V2 2e3b6ea6->aaac6aee, FROZEN_INPUT_ATTESTATION 458427b3->351f2495 - all with in-place declared-flip comments (30b563e6c)",
+   "retained_fallbacks_carried": "W3-2 _scheduler_lr_metrics and CompletedStepReporter(publisher=None) both intact with recorded justification (amend-7)"
   }
  ]
 }

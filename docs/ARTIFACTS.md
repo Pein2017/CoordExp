@@ -78,10 +78,12 @@ collective runs, and the producer owns that declaration
 (`src/runtime/metrics.py`). A metric with no declared reducer fails the step
 before publication rather than acquiring an implicit mean or a reducer guessed
 from its key. The reducer vocabulary is `SUM` (exact integer counts and
-per-step counter deltas), `MAX` (critical-path timings, pre-clip gradient norm,
-and memory high-water values, because the slowest rank owns the distributed
-critical path), `IDENTICAL` (values every rank must already agree on, such as
-applied learning rates and shared schedule values), `BOOL_ALL` (boolean
+per-step counter deltas), `MAX` (critical-path timings and memory high-water
+values, because the slowest rank owns the distributed critical path),
+`IDENTICAL` (values every rank must already agree on, such as applied
+learning rates, shared schedule values, and the pre-clip gradient norm —
+already the all-rank maximum at its finite-gates authority, so a divergence
+is an error rather than something to re-reduce), `BOOL_ALL` (boolean
 conjunction; the ambiguous name `ALL` is not accepted), and ratio samples that
 sum numerator and denominator before dividing. Normal production rows contain
 aggregated values only.
