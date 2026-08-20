@@ -134,12 +134,48 @@
 
 ## 3. Wave 3 - Global Objective And DDP Parity
 
-- [ ] 3.1 Add failing fixtures that distinguish semantic raw value, weighted semantic value, and backend-compensated local backward contribution at world size one and with unequal rank-local eligible-segment counts.
-- [ ] 3.2 Refactor streaming planning, micro-step computation, and finalization so fp32 per-atom math and global planned-step `segment_balanced` denominators remain unchanged while backend mean-gradient compensation affects the differentiable local contribution exactly once and never semantic telemetry.
-- [ ] 3.3 Add parameter-gradient and one-optimizer-update parity tests comparing an unequal-rank distributed planned step with the equivalent world-size-one batch for base CE, enabled gate, and positive-weight coordinate auxiliary within declared tolerances.
-- [ ] 3.4 Add gate-ablation parity tests proving that finite detached diagnostics preserve the base-CE raw value, objective, gradient, finite decision, and optimizer update of a base-only reference; separately inject a non-finite gate diagnostic and prove all ranks skip before backward under the existing fail-closed scalar gate.
-- [ ] 3.5 Exercise train and forward-eval reducers with unequal rank-local denominators and verify exact counts, raw/weighted aggregation, no double scaling, and no collective-order divergence.
-- [ ] 3.6 Before any distributed or GPU-backed action, review the frozen command manifest, obtain fresh user authorization for each GPU action, and record bounds for world size, planned steps, model forwards, cache/materialization passes (required `0`), wall time, peak GPU memory, and artifact bytes. Then gate Wave 3 with focused loss/runtime/eval tests, the authorized two-rank reduction-and-update probe, strict OpenSpec validation, collective/residue review, and the single pre-DDP/cost standards plus intent-contract audit; stop on a bound violation or unresolved P0/P1.
+- [x] 3.1 Add failing fixtures that distinguish semantic raw value, weighted semantic value, and backend-compensated local backward contribution at world size one and with unequal rank-local eligible-segment counts.
+- [x] 3.2 Refactor streaming planning, micro-step computation, and finalization so fp32 per-atom math and global planned-step `segment_balanced` denominators remain unchanged while backend mean-gradient compensation affects the differentiable local contribution exactly once and never semantic telemetry.
+- [x] 3.3 Add parameter-gradient and one-optimizer-update parity tests comparing an unequal-rank distributed planned step with the equivalent world-size-one batch for base CE, enabled gate, and positive-weight coordinate auxiliary within declared tolerances.
+- [x] 3.4 Add gate-ablation parity tests proving that finite detached diagnostics preserve the base-CE raw value, objective, gradient, finite decision, and optimizer update of a base-only reference; separately inject a non-finite gate diagnostic and prove all ranks skip before backward under the existing fail-closed scalar gate.
+- [x] 3.5 Exercise train and forward-eval reducers with unequal rank-local denominators and verify exact counts, raw/weighted aggregation, no double scaling, and no collective-order divergence.
+- [x] 3.6 Before any distributed or GPU-backed action, review the frozen command manifest, obtain fresh user authorization for each GPU action, and record bounds for world size, planned steps, model forwards, cache/materialization passes (required `0`), wall time, peak GPU memory, and artifact bytes. Then gate Wave 3 with focused loss/runtime/eval tests, the authorized two-rank reduction-and-update probe, strict OpenSpec validation, collective/residue review, and the single pre-DDP/cost standards plus intent-contract audit; stop on a bound violation or unresolved P0/P1.
+
+> **Wave 3 closed (2026-08-20, code commit `a20673078`; opus builder, zero
+> correction rounds; pre-DDP audit `receipts/wave-3-pre-ddp-audit.md`
+> STANDARDS + INTENT both PASS-WITH-DISPOSITIONS, 0 P0/0 P1, Wave-4 entry
+> CLEARED):** backend mean-gradient compensation now applied exactly once
+> at one site (`backward_contribution`); raw/weighted/total/metrics/finite
+> surfaces traced clean of it (the pre-change defect: compensation was
+> applied to raw and accidentally cancelled by mean-over-ranks reduction);
+> reducers sum uncompensated partials for train at any world size and
+> sharded eval, replicated eval untouched. Parity evidence: two-rank gloo
+> unequal-rank grads+update vs ws-1 within rtol=1e-5/atol=1e-6 (mutation
+> sensitivity 0.09/0.18, ~5 orders above the bar); gate-ablation bitwise
+> (`torch.equal`, justified: no gate op in the objective graph);
+> distributed non-finite gate injection converges one all-rank
+> pre-backward skip (entry-audit F-2's covering receipt; finite_gates.py
+> byte-unchanged this wave). 3.6 packet frozen at `a20673078` and executed
+> once (CPU gloo, 0 GPU, 0 cache passes, exit 0 / 0 findings / 12
+> collective ops per rank; `receipts/wave-3-two-rank-probe-{packet.md,
+> receipt.json}`; manifest amend-8). Gates: 366/0/0 (lead + audit
+> replays), fixtures/collective 15/15, determinant fingerprints + payload
+> baseline re-verified independently twice; audit-owned repo-free DDP
+> sensitivity check MECHANISM_CONFIRMED. Disclosures: per-rank telemetry
+> semantics changed (per-rank rows now carry uncompensated partials;
+> reduced values unchanged); `_total_loss` prefers `backward_loss` with a
+> ws-1-identity fallback (audit I-1/I-6: Wave 4/5 must fail-close the
+> fallbacks); audit I-4: bind the replicated-eval predicate once; audit
+> I-5: Wave 4 must make an explicit row-schema decision for the new
+> additive keys. Owned open PRE-EXISTING defects (predate this change,
+> excluded from parity gating with in-test comments): train-side
+> `count/packs`+`count/examples` mean-over-ranks and unweighted
+> `token_weighted_diag` (introduced `2b0a2165a`), zero-eligible-segment
+> collective desync (`e1662c2c7`/`3cd40f5f0`) — Wave-4 candidates.
+> Wave-5 receipt schema must add `commit`, `wall_seconds`, and a
+> cache-root sha inventory. `tests/fixtures/` top-level tree hash moved
+> only by the disclosed Wave-1 live-input fixture deviation; the frozen
+> `training_orchestration/` subtree is unchanged at `2fe137cc`.
 
 ## 4. Wave 4 - Canonical Loss Telemetry
 

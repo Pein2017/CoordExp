@@ -1,0 +1,799 @@
+{
+  "arms": {
+    "base_ce_only": {
+      "configured_weights": {
+        "base_ce": 1.0,
+        "coord_gaussian_rps": 0.0,
+        "token_type_gate": 0.0
+      },
+      "distributed_rank0": {
+        "accuracy_stats": {
+          "atom_count": 2,
+          "top1_correct": 0,
+          "top5_correct": 1
+        },
+        "arm": "base_ce_only",
+        "backend_gradient_scale": 2.0,
+        "backward_loss": 1.234661340713501,
+        "denominator_scope": "planned_step_global",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "6699fa9fe8387b56365e856198d818b92f86af79777876fcc1ddc0c8e12e3e15",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "7a969144d0d42046316a80e4b670801f28b99ba3caf020956ec1c6186f2a2e87",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 2.0,
+          "count/packs": 1.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.368380904197693,
+          "loss/token_type_gate": 0.0,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.4316774606704712,
+          "loss/total": 2.317910075187683
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 1.234661340713501,
+            "raw_loss": 0.6173306703567505,
+            "weight": 1.0,
+            "weighted_loss": 0.6173306703567505
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.0,
+            "raw_loss": 0.4245544672012329,
+            "weight": 0.0,
+            "weighted_loss": 0.0
+          }
+        },
+        "total_loss": 0.6173306703567505,
+        "world_size": 2
+      },
+      "distributed_rank1": {
+        "accuracy_stats": {
+          "atom_count": 3,
+          "top1_correct": 0,
+          "top5_correct": 1
+        },
+        "arm": "base_ce_only",
+        "backend_gradient_scale": 2.0,
+        "backward_loss": 3.4011588096618652,
+        "denominator_scope": "planned_step_global",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "6699fa9fe8387b56365e856198d818b92f86af79777876fcc1ddc0c8e12e3e15",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "7a969144d0d42046316a80e4b670801f28b99ba3caf020956ec1c6186f2a2e87",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 2.0,
+          "count/packs": 1.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.368380904197693,
+          "loss/token_type_gate": 0.0,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.4316774606704712,
+          "loss/total": 2.317910075187683
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 3.4011588096618652,
+            "raw_loss": 1.7005794048309326,
+            "weight": 1.0,
+            "weighted_loss": 1.7005794048309326
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.0,
+            "raw_loss": 0.8738527894020081,
+            "weight": 0.0,
+            "weighted_loss": 0.0
+          }
+        },
+        "total_loss": 1.7005794048309326,
+        "world_size": 2
+      },
+      "findings": [],
+      "parity_deltas": {
+        "max_abs_gradient_delta": 0.0,
+        "max_abs_parameter_delta": 0.0,
+        "pooled_total_loss": 0.0,
+        "pooled_total_loss_value": 2.317910075187683,
+        "rank_local_accuracy_stats_differ": true,
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.0,
+          "count/eligible_segments": 0.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 0.0,
+          "finite/base_ce": 0.0,
+          "finite/token_type_gate": 0.0,
+          "finite/total_loss": 0.0,
+          "loss/base_ce": 0.0,
+          "loss/base_ce/segment_count": 0.0,
+          "loss/token_type_gate": 0.0,
+          "loss/token_type_gate/segment_count": 0.0,
+          "loss/total": 0.0
+        },
+        "terms": {
+          "base_ce": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          },
+          "token_type_gate": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          }
+        }
+      },
+      "world_size_one_reference": {
+        "accuracy_stats": {
+          "atom_count": 5,
+          "top1_correct": 0,
+          "top5_correct": 2
+        },
+        "arm": "base_ce_only",
+        "backend_gradient_scale": 1.0,
+        "backward_loss": 2.317910075187683,
+        "denominator_scope": "planned_step",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "6699fa9fe8387b56365e856198d818b92f86af79777876fcc1ddc0c8e12e3e15",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "7a969144d0d42046316a80e4b670801f28b99ba3caf020956ec1c6186f2a2e87",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 4.0,
+          "count/packs": 2.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.348192548751831,
+          "loss/token_type_gate": 0.0,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.3783693790435791,
+          "loss/total": 2.317910075187683
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 2.317910075187683,
+            "raw_loss": 2.317910075187683,
+            "weight": 1.0,
+            "weighted_loss": 2.317910075187683
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 0.0,
+            "raw_loss": 1.298407256603241,
+            "weight": 0.0,
+            "weighted_loss": 0.0
+          }
+        },
+        "total_loss": 2.317910075187683,
+        "world_size": 1
+      }
+    },
+    "coord_auxiliary": {
+      "configured_weights": {
+        "base_ce": 1.0,
+        "coord_gaussian_rps": 0.5,
+        "token_type_gate": 0.1
+      },
+      "distributed_rank0": {
+        "accuracy_stats": {
+          "atom_count": 2,
+          "top1_correct": 0,
+          "top5_correct": 1
+        },
+        "arm": "coord_auxiliary",
+        "backend_gradient_scale": 2.0,
+        "backward_loss": 1.5793607160449028,
+        "denominator_scope": "planned_step_global",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "coord_gaussian_rps": {
+            "context_count": 2,
+            "eligible_segment_count": 3,
+            "selected_atom_count": 3,
+            "skipped_segment_count": 1
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "7689364bebc3a55b1b33f78bf5d4b042a3aebc9e9b48ac172d9bf65e97b0c319",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "c9d323739efe698ecc66ad70dfdea48358fe0e9b9eda51c60c22b6d35d4754cd",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 2.0,
+          "count/packs": 1.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/coord_gaussian_rps": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.368380904197693,
+          "loss/coord_gaussian_rps": 0.3813467174768448,
+          "loss/coord_gaussian_rps/segment_count": 3.0,
+          "loss/coord_gaussian_rps/token_weighted_diag": 0.7668614685535431,
+          "loss/token_type_gate": 0.12984072789549828,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.4316774606704712,
+          "loss/total": 2.829097520560026
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 1.234661340713501,
+            "raw_loss": 0.6173306703567505,
+            "weight": 1.0,
+            "weighted_loss": 0.6173306703567505
+          },
+          "coord_gaussian_rps": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.25978848338127136,
+            "raw_loss": 0.25978848338127136,
+            "weight": 0.5,
+            "weighted_loss": 0.12989424169063568
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.08491089195013046,
+            "raw_loss": 0.4245544672012329,
+            "weight": 0.1,
+            "weighted_loss": 0.04245544597506523
+          }
+        },
+        "total_loss": 0.7896803580224514,
+        "world_size": 2
+      },
+      "distributed_rank1": {
+        "accuracy_stats": {
+          "atom_count": 3,
+          "top1_correct": 0,
+          "top5_correct": 1
+        },
+        "arm": "coord_auxiliary",
+        "backend_gradient_scale": 2.0,
+        "backward_loss": 4.0788343250751495,
+        "denominator_scope": "planned_step_global",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "coord_gaussian_rps": {
+            "context_count": 2,
+            "eligible_segment_count": 3,
+            "selected_atom_count": 3,
+            "skipped_segment_count": 1
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "7689364bebc3a55b1b33f78bf5d4b042a3aebc9e9b48ac172d9bf65e97b0c319",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "c9d323739efe698ecc66ad70dfdea48358fe0e9b9eda51c60c22b6d35d4754cd",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 2.0,
+          "count/packs": 1.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/coord_gaussian_rps": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.368380904197693,
+          "loss/coord_gaussian_rps": 0.3813467174768448,
+          "loss/coord_gaussian_rps/segment_count": 3.0,
+          "loss/coord_gaussian_rps/token_weighted_diag": 0.7668614685535431,
+          "loss/token_type_gate": 0.12984072789549828,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.4316774606704712,
+          "loss/total": 2.829097520560026
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 3.4011588096618652,
+            "raw_loss": 1.7005794048309326,
+            "weight": 1.0,
+            "weighted_loss": 1.7005794048309326
+          },
+          "coord_gaussian_rps": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.5029049515724182,
+            "raw_loss": 0.5029049515724182,
+            "weight": 0.5,
+            "weighted_loss": 0.2514524757862091
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.1747705638408661,
+            "raw_loss": 0.8738527894020081,
+            "weight": 0.1,
+            "weighted_loss": 0.08738528192043304
+          }
+        },
+        "total_loss": 2.0394171625375748,
+        "world_size": 2
+      },
+      "findings": [],
+      "parity_deltas": {
+        "max_abs_gradient_delta": 0.0,
+        "max_abs_parameter_delta": 0.0,
+        "pooled_total_loss": 0.0,
+        "pooled_total_loss_value": 2.829097520560026,
+        "rank_local_accuracy_stats_differ": true,
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.0,
+          "count/eligible_segments": 0.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 0.0,
+          "finite/base_ce": 0.0,
+          "finite/coord_gaussian_rps": 0.0,
+          "finite/token_type_gate": 0.0,
+          "finite/total_loss": 0.0,
+          "loss/base_ce": 0.0,
+          "loss/base_ce/segment_count": 0.0,
+          "loss/coord_gaussian_rps": 0.0,
+          "loss/coord_gaussian_rps/segment_count": 0.0,
+          "loss/token_type_gate": 0.0,
+          "loss/token_type_gate/segment_count": 0.0,
+          "loss/total": 0.0
+        },
+        "terms": {
+          "base_ce": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          },
+          "coord_gaussian_rps": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          },
+          "token_type_gate": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          }
+        }
+      },
+      "world_size_one_reference": {
+        "accuracy_stats": {
+          "atom_count": 5,
+          "top1_correct": 0,
+          "top5_correct": 2
+        },
+        "arm": "coord_auxiliary",
+        "backend_gradient_scale": 1.0,
+        "backward_loss": 2.829097520560026,
+        "denominator_scope": "planned_step",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "coord_gaussian_rps": {
+            "context_count": 2,
+            "eligible_segment_count": 3,
+            "selected_atom_count": 3,
+            "skipped_segment_count": 1
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "7689364bebc3a55b1b33f78bf5d4b042a3aebc9e9b48ac172d9bf65e97b0c319",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "c9d323739efe698ecc66ad70dfdea48358fe0e9b9eda51c60c22b6d35d4754cd",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 4.0,
+          "count/packs": 2.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/coord_gaussian_rps": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.348192548751831,
+          "loss/coord_gaussian_rps": 0.3813467174768448,
+          "loss/coord_gaussian_rps/segment_count": 3.0,
+          "loss/coord_gaussian_rps/token_weighted_diag": 0.762693464756012,
+          "loss/token_type_gate": 0.12984072789549828,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.3783693790435791,
+          "loss/total": 2.829097520560026
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 2.317910075187683,
+            "raw_loss": 2.317910075187683,
+            "weight": 1.0,
+            "weighted_loss": 2.317910075187683
+          },
+          "coord_gaussian_rps": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 0.3813467174768448,
+            "raw_loss": 0.7626934349536896,
+            "weight": 0.5,
+            "weighted_loss": 0.3813467174768448
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 0.12984072789549828,
+            "raw_loss": 1.298407256603241,
+            "weight": 0.1,
+            "weighted_loss": 0.12984072789549828
+          }
+        },
+        "total_loss": 2.829097520560026,
+        "world_size": 1
+      }
+    },
+    "enabled_gate": {
+      "configured_weights": {
+        "base_ce": 1.0,
+        "coord_gaussian_rps": 0.0,
+        "token_type_gate": 0.1
+      },
+      "distributed_rank0": {
+        "accuracy_stats": {
+          "atom_count": 2,
+          "top1_correct": 0,
+          "top5_correct": 1
+        },
+        "arm": "enabled_gate",
+        "backend_gradient_scale": 2.0,
+        "backward_loss": 1.3195722326636314,
+        "denominator_scope": "planned_step_global",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "13c2e754fc3c97dc035e2056cbcd428ce8c665e075c1645730113d595c6c37ae",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "23336f28d3784856bda0d68e0763db202a52c9b6b158c0bce99ab7819a4513fe",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 2.0,
+          "count/packs": 1.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.368380904197693,
+          "loss/token_type_gate": 0.12984072789549828,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.4316774606704712,
+          "loss/total": 2.4477508030831814
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 1.234661340713501,
+            "raw_loss": 0.6173306703567505,
+            "weight": 1.0,
+            "weighted_loss": 0.6173306703567505
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.08491089195013046,
+            "raw_loss": 0.4245544672012329,
+            "weight": 0.1,
+            "weighted_loss": 0.04245544597506523
+          }
+        },
+        "total_loss": 0.6597861163318157,
+        "world_size": 2
+      },
+      "distributed_rank1": {
+        "accuracy_stats": {
+          "atom_count": 3,
+          "top1_correct": 0,
+          "top5_correct": 1
+        },
+        "arm": "enabled_gate",
+        "backend_gradient_scale": 2.0,
+        "backward_loss": 3.5759293735027313,
+        "denominator_scope": "planned_step_global",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "13c2e754fc3c97dc035e2056cbcd428ce8c665e075c1645730113d595c6c37ae",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "23336f28d3784856bda0d68e0763db202a52c9b6b158c0bce99ab7819a4513fe",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 2.0,
+          "count/packs": 1.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.368380904197693,
+          "loss/token_type_gate": 0.12984072789549828,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.4316774606704712,
+          "loss/total": 2.4477508030831814
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 3.4011588096618652,
+            "raw_loss": 1.7005794048309326,
+            "weight": 1.0,
+            "weighted_loss": 1.7005794048309326
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 2.0,
+            "backward_contribution": 0.1747705638408661,
+            "raw_loss": 0.8738527894020081,
+            "weight": 0.1,
+            "weighted_loss": 0.08738528192043304
+          }
+        },
+        "total_loss": 1.7879646867513657,
+        "world_size": 2
+      },
+      "findings": [],
+      "parity_deltas": {
+        "max_abs_gradient_delta": 0.0,
+        "max_abs_parameter_delta": 0.0,
+        "pooled_total_loss": 0.0,
+        "pooled_total_loss_value": 2.4477508030831814,
+        "rank_local_accuracy_stats_differ": true,
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.0,
+          "count/eligible_segments": 0.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 0.0,
+          "finite/base_ce": 0.0,
+          "finite/token_type_gate": 0.0,
+          "finite/total_loss": 0.0,
+          "loss/base_ce": 0.0,
+          "loss/base_ce/segment_count": 0.0,
+          "loss/token_type_gate": 0.0,
+          "loss/token_type_gate/segment_count": 0.0,
+          "loss/total": 0.0
+        },
+        "terms": {
+          "base_ce": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          },
+          "token_type_gate": {
+            "pooled_raw_loss": 0.0,
+            "pooled_weighted_loss": 0.0
+          }
+        }
+      },
+      "world_size_one_reference": {
+        "accuracy_stats": {
+          "atom_count": 5,
+          "top1_correct": 0,
+          "top5_correct": 2
+        },
+        "arm": "enabled_gate",
+        "backend_gradient_scale": 1.0,
+        "backward_loss": 2.4477508030831814,
+        "denominator_scope": "planned_step",
+        "denominators": {
+          "base_ce": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          },
+          "token_type_gate": {
+            "context_count": 2,
+            "eligible_segment_count": 4,
+            "selected_atom_count": 5,
+            "skipped_segment_count": 0
+          }
+        },
+        "finite_status": "finite",
+        "gradient_digest": "13c2e754fc3c97dc035e2056cbcd428ce8c665e075c1645730113d595c6c37ae",
+        "optimizer_update_status": "ready_to_step",
+        "parameter_digest": "23336f28d3784856bda0d68e0763db202a52c9b6b158c0bce99ab7819a4513fe",
+        "reduced_metrics": {
+          "acc_top1": 0.0,
+          "acc_top5": 0.4,
+          "count/eligible_segments": 4.0,
+          "count/examples": 4.0,
+          "count/packs": 2.0,
+          "count/skipped_segments": 0.0,
+          "count/supervised_atoms": 5.0,
+          "finite/base_ce": 1.0,
+          "finite/token_type_gate": 1.0,
+          "finite/total_loss": 1.0,
+          "loss/base_ce": 2.317910075187683,
+          "loss/base_ce/segment_count": 4.0,
+          "loss/base_ce/token_weighted_diag": 2.348192548751831,
+          "loss/token_type_gate": 0.12984072789549828,
+          "loss/token_type_gate/segment_count": 4.0,
+          "loss/token_type_gate/token_weighted_diag": 1.3783693790435791,
+          "loss/total": 2.4477508030831814
+        },
+        "terms": {
+          "base_ce": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 2.317910075187683,
+            "raw_loss": 2.317910075187683,
+            "weight": 1.0,
+            "weighted_loss": 2.317910075187683
+          },
+          "token_type_gate": {
+            "backend_gradient_scale": 1.0,
+            "backward_contribution": 0.12984072789549828,
+            "raw_loss": 1.298407256603241,
+            "weight": 0.1,
+            "weighted_loss": 0.12984072789549828
+          }
+        },
+        "total_loss": 2.4477508030831814,
+        "world_size": 1
+      }
+    }
+  },
+  "backend": "gloo",
+  "change": "standardize-coordexp-swift-supervised-losses",
+  "collective_op_count_by_rank": {
+    "0": 12,
+    "1": 12
+  },
+  "cuda_available": true,
+  "cuda_initialized": false,
+  "declared_tolerances": {
+    "atol": 1e-06,
+    "rtol": 1e-05
+  },
+  "device": "cpu",
+  "findings": [],
+  "probe": "losses_wave3_two_rank_probe",
+  "status": "OK",
+  "task": "3.6",
+  "ungated_metric_keys": [
+    "count/examples",
+    "count/packs",
+    "*/token_weighted_diag"
+  ],
+  "world_size": 2
+}

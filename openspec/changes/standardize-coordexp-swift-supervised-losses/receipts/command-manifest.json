@@ -221,6 +221,20 @@
     "determinant-invariant": "fingerprints and baseline_sha256 byte-identical; 24 owner files zero diff",
     "red-receipts": "bindings module collection error; 10 failed zero-policy nodes incl. the F-2 raw-vs-weighted finite RED observed against the weighted-keyed implementation; 2.4 probes proven sensitive via three reverted source mutations"
    }
+  },
+  {
+   "id": "amend-8-freeze-wave3-probe",
+   "amendment_of": "wave3-two-rank-probe",
+   "date": "2026-08-20",
+   "reason": "retire the TO-FREEZE placeholder: packet frozen at a20673078 and executed once (CPU gloo, no GPU, standing grant on record but not consumed)",
+   "frozen_argv": "timeout --signal=TERM --kill-after=30s 600s conda run -n ms python scripts/probes/coordexp_swift/losses_wave3_two_rank_probe.py --output openspec/changes/standardize-coordexp-swift-supervised-losses/receipts/wave-3-two-rank-probe-receipt.json (bash -c wrapper; packet receipts/wave-3-two-rank-probe-packet.md)",
+   "observed": {
+    "probe": "exit 0, status OK, findings [], collective ops {0:12, 1:12}, rtol=1e-5/atol=1e-6, cuda_initialized false, cache root sha-inventory unchanged",
+    "wave3-parity-gate-cpu": "366 passed / 0 failed / 0 skipped (lead replay; audit replay identical)",
+    "fixture-collective-argv": "15/15 both replays; frozen training_orchestration subtree unchanged at 2fe137cc",
+    "determinant-invariant": "fingerprints + payload equality + baseline_sha256 reproduced by lead AND audit independently",
+    "audit-sensitivity": "repo-free two-rank real-DDP check: uncompensated backward is exactly 0.5x the ws-1 reference (MECHANISM_CONFIRMED)"
+   }
   }
  ]
 }
