@@ -68,6 +68,20 @@ object-balanced, or role-balanced reduction semantics.
 - **AND** the weighted objective value MUST be the raw value multiplied by the
   resolved gate weight.
 
+#### Scenario: Auxiliary-only loss config attempted
+
+- **WHEN** a training config attempts to omit both protected losses for normal
+  supervised training
+- **THEN** loss configuration MUST fail unless a future approved research
+  override explicitly changes the contract.
+
+#### Scenario: Old production objective parity claimed
+
+- **WHEN** a config, artifact, or report claims parity with archived coordinate
+  soft-CE or object/role-balanced objective semantics
+- **THEN** validation or review MUST reject the claim unless a later approved
+  auxiliary-loss contract implements and verifies those semantics.
+
 ### Requirement: Token Type Vocabulary Groups
 
 `TokenTypeGateLoss` SHALL use resolved vocabulary groups rather than ad hoc
