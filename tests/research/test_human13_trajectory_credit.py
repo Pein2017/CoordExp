@@ -1252,7 +1252,7 @@ def test_verified_tokenizer_factory_rejects_file_class_path_receipt_and_processo
     )
     tokenizer_config_path = class_components.base_model_path / "tokenizer_config.json"
     tokenizer_config = json.loads(tokenizer_config_path.read_text(encoding="utf-8"))
-    tokenizer_config["tokenizer_class"] = "Qwen2TokenizerFast"
+    tokenizer_config["tokenizer_class"] = "UnrelatedTokenizer"
     tokenizer_config_path.write_text(
         json.dumps(tokenizer_config),
         encoding="utf-8",
@@ -1311,6 +1311,26 @@ def test_verified_tokenizer_factory_rejects_file_class_path_receipt_and_processo
             manifest=path_manifest,
             publication=path_publication,
         )
+
+
+def test_tokenizer_config_class_accepts_exact_qwen_slow_fast_pair() -> None:
+    from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
+
+    from src.qwen.tokens import tokenizer_config_class_matches_runtime
+
+    assert tokenizer_config_class_matches_runtime("Qwen2Tokenizer", Qwen2TokenizerFast)
+    assert tokenizer_config_class_matches_runtime(
+        "Qwen2TokenizerFast", Qwen2TokenizerFast
+    )
+    assert not tokenizer_config_class_matches_runtime(
+        "UnrelatedTokenizer", Qwen2TokenizerFast
+    )
+    class UnrelatedRuntime:
+        pass
+
+    assert not tokenizer_config_class_matches_runtime(
+        "Qwen2Tokenizer", UnrelatedRuntime
+    )
 
 
 def test_verified_tokenizer_deterministically_reproduces_canonical_projection(

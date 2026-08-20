@@ -273,6 +273,49 @@ allocations=2, one Source-audit forward, and zero K16 sample/replay,
 backward, optimizer, checkpoint, private, output, or network actions.  It is
 excluded from the scientific one-update budget and must not be reused.
 
+### Committed fresh-primary attempt and tokenizer identity blocker
+
+The committed fresh-primary attempt ran from `b18bff23ca14656d7156d648ff11e41b2c9b014f`
+at the immutable root
+`one-image-successor-20260820T-k16-bf16-native-b18bff2-v1/`.  Its terminal is
+`update_failure` (envelope hash
+`6c60d0346afab8e20350e7d21db4dbb9a1cd151c347b701a9cab686c16d9f396`, inner
+terminal hash
+`ddf5d1b6f87d6d447f7b89317f5584d56702c05f04a0b44c509c22f2cc32a2e6`, phase
+ledger `64a673d408a55c90206d27f0360403266f530921bc68facefbfd11af8925b2b4`).
+The failure occurred before objective construction and backward:
+`HFNativeOneImageOwnerError: canonical_projection_failure: canonical replay
+projection failed: HFNativeProjectionError: tokenizer snapshot differs from
+surface/manifest identity`.
+
+K16 acquisition/replay had already recorded four sampled groups/16 requests,
+463 sampled forwards and 463 replay forwards.  Total/no-cache forwards were
+1154 (228 Source-owner forwards); model actions were loads=2, GPU allocations=2,
+forwards=1156, backward=0, optimizer=0, checkpoint/private/output=0, and
+network=0.  Audit and training sessions closed once each and GPUs were released;
+no private proposal, update, rollback, or Source reproduction existed to audit.
+
+CPU artifact inspection established a representation mismatch, not different
+tokenization semantics.  For the exact base path bound by image-1584, the
+`tokenizer.json` SHA-256 is
+`ca7e80dee65c629af3b314e76a7587490db3f4e6412df4af9f3b690a9e9916f8`, matching
+the manifest and live identity.  The runtime concrete class is
+`transformers.models.qwen2.tokenization_qwen2_fast.Qwen2TokenizerFast`, while
+`tokenizer_config.json` records the factory/slow class `Qwen2Tokenizer`; the
+installed fast class declares exactly that slow class.  The prior predicate
+incorrectly required the config class to equal the concrete fast class.
+
+The narrow correction adds one shared exact relation helper in
+`src/qwen/tokens.py` and uses it in both Task-3 verified tokenizer runtime
+inspection and the HF-native projection attestation.  It accepts only the
+concrete runtime class or its declared `slow_tokenizer_class`; existing
+installed source/module checks, tokenizer.json hash, manifest concrete class,
+backend serialization, and private decoder checks remain strict.  The exact
+Qwen2Tokenizer -> Qwen2TokenizerFast relation and an unrelated-class rejection
+are covered by a CPU regression.  No scientific objective, surface ownership,
+K16, LR, parity, or gate semantics changed, and no second live attempt is
+authorized by this correction.
+
 ## Verification
 
 - P1 receipt-completeness/schema correction: 108 reconciliation, native-owner,
@@ -288,6 +331,11 @@ excluded from the scientific one-update budget and must not be reused.
 - The staged native bridge and adjacent CPU/injected suites were green before
   the live attempt.  The committed-HEAD scientific attempt must repeat the
   normal Source admission inside its fresh root before any K16 work.
+- Tokenizer blocker correction: the exact Qwen2 slow/fast relation regression
+  was observed RED before the shared helper existed, then the targeted
+  Task-3/runtime and HF-native projection checks passed (28 trajectory-credit,
+  54 shared-surface, and 13 native-owner tests).  Ruff, compileall, and scoped
+  Pyright are clean for the four changed Python paths.
 - Task 4.6 and Tasks 5.1–5.5 remain unchecked in OpenSpec.
 
 ## Claim boundary and stop rule

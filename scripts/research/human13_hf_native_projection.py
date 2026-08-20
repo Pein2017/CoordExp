@@ -75,7 +75,10 @@ class HFNativeTokenizerAttestation:
 
         from src.config.fingerprint import sha256_file
         from src.qwen.runtime_loading import QwenComponents, _processor_identity
-        from src.qwen.tokens import validate_qwen_token_identity
+        from src.qwen.tokens import (
+            tokenizer_config_class_matches_runtime,
+            validate_qwen_token_identity,
+        )
 
         if type(components) is not QwenComponents:
             raise HFNativeProjectionError(
@@ -124,7 +127,10 @@ class HFNativeTokenizerAttestation:
         if (
             tokenizer_sha256 != identity.tokenizer_sha256
             or tokenizer_sha256 != getattr(surface, "tokenizer_sha256", None)
-            or tokenizer_config.get("tokenizer_class") != tokenizer_class.__name__
+            or not tokenizer_config_class_matches_runtime(
+                tokenizer_config.get("tokenizer_class"),
+                tokenizer_class,
+            )
             or getattr(surface, "tokenizer_class", None) != tokenizer_class.__name__
         ):
             raise HFNativeProjectionError(

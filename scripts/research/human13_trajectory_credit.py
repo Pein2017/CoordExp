@@ -299,6 +299,7 @@ def _inspect_tokenizer_runtime(
     from transformers import PreTrainedTokenizerFast
 
     from src.config.fingerprint import sha256_file
+    from src.qwen.tokens import tokenizer_config_class_matches_runtime
 
     if not isinstance(tokenizer, PreTrainedTokenizerFast):
         raise ValueError(
@@ -406,7 +407,7 @@ def _inspect_tokenizer_runtime(
         or processor_receipt.get("tokenizer_class") != actual_class_name
     ):
         raise ValueError("tokenizer runtime receipt tokenizer class differs")
-    if tokenizer_config.get("tokenizer_class") != actual_class_name:
+    if not tokenizer_config_class_matches_runtime(tokenizer_config.get("tokenizer_class"), tokenizer_class):
         raise ValueError("tokenizer class differs from tokenizer_config identity")
     if manifest.binding.surface.tokenizer_class != actual_class_name:
         raise ValueError("tokenizer class differs from manifest identity")

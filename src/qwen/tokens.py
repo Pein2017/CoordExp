@@ -31,6 +31,25 @@ DEFAULT_REQUIRED_TOKENS = (*DEFAULT_WRAPPER_TOKENS, *DEFAULT_COORDINATE_TOKENS)
 INVALID_WRAPPER_ALIASES = INVALID_QWEN_WRAPPER_ALIASES
 
 
+def tokenizer_config_class_matches_runtime(
+    tokenizer_config_class: object,
+    runtime_class: object,
+) -> bool:
+    """Accept a concrete fast tokenizer or its exact declared slow class."""
+
+    if not isinstance(tokenizer_config_class, str) or not tokenizer_config_class:
+        return False
+    if not isinstance(runtime_class, type):
+        return False
+    if tokenizer_config_class == runtime_class.__name__:
+        return True
+    slow_tokenizer_class = getattr(runtime_class, "slow_tokenizer_class", None)
+    return (
+        isinstance(slow_tokenizer_class, type)
+        and tokenizer_config_class == slow_tokenizer_class.__name__
+    )
+
+
 @dataclass(frozen=True)
 class QwenTokenIdentity:
     """Validated identity facts for the CoordExp Qwen tokenizer."""
