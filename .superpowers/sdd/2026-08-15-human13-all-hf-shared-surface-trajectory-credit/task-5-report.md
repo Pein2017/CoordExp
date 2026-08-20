@@ -28,6 +28,7 @@ reservation remain intact; none was overwritten or deleted.
 | `one-image-successor-20260820T092800Z` | typed `update_failure`: same-model Source witness rejected `gt:1584:2` before K16 | terminal reported model loads 2, forwards 3, backward 0, optimizer 0, checkpoint/output 0; the pre-fix ledger omitted the completed RP=1.1 GPU-1 audit |
 | `one-image-successor-20260820T093802Z-diag5` | same typed Source-witness failure; instrumented diagnostic confirmed the same failure | terminal reported model loads 2, forwards 3, backward 0, optimizer 0, checkpoint/output 0; the pre-fix ledger omission remained |
 | `one-image-successor-20260820T094100Z-diag7` | same typed Source-witness failure with durable instrumented observation | terminal reported model loads 2, forwards 3, backward 0, optimizer 0, checkpoint/output 0; diagnostic artifact records the exact mismatch below |
+| `one-image-successor-20260820T113000Z-surface-reconcile-live` | current-tree production entry reached both model surfaces, then the new reconciliation receipt rejected the same Source-witness mismatch | model loads 2, forwards 4 (2 Source-owner + 2 audits), GPU allocations 2, backward 0, optimizer 0, private/checkpoint/output 0 |
 
 The canonical source inference config was used for the latter two attempts.
 Their durable terminal and phase receipts are under their respective roots;
@@ -53,6 +54,26 @@ training-surface chosen-minus-best margin = -0.125
 This is a real model-surface disagreement, not a sampler/replay parity
 failure.  The existing strict witness contract therefore stops before K16,
 backward, optimizer, private checkpoint, dual-RP proposal audit, or rollback.
+
+The current-tree live attempt is durably recorded at
+`one-image-successor-20260820T113000Z-surface-reconcile-live/terminal.json`.
+Its outer terminal envelope has content hash
+`eced6b997bf88b6f4a69dd235d516df2099581c7003d13174e78464c1042e621`, phase
+ledger hash `5bac4ff5998bd7d3c57d5769c01e6a4725ff15de786e6c8a9e1fb07a4b9e5c33`,
+and recovery-successor hash
+`89df6de23610e68555fb1728eb99a5412b3bb910bcbda59691f3107c5ed2b070`.  The
+inner terminal receipt records model loads=2, forwards=4, GPU allocations=2,
+backward=0, optimizer steps=0, and no private/checkpoint/output creation.  The
+`source_audit_rp_1.1` phase carries the admitted=false reconciliation receipt
+(`5f0b9545c8d5cafaabfa06ca85c540911ae5a5c3812f0422c2838b652886b901`) and the
+same witness error; no K16 work began.
+
+The first attempt after adding the owner also exposed a direct-script import
+defect (`scripts.research` was absent from `sys.path`); the entry now installs
+the explicit `--repo-root` before dynamic owner imports.  The fix is covered by
+the focused regression and was exercised by the current live attempt.  The
+earlier parent reservation remains untouched; the live run used `diag7` as its
+single append-only lost-owner parent and a fresh sibling successor.
 
 ## Telemetry correction
 
@@ -97,22 +118,26 @@ receipt, and the Source-audit failure phase serializes it before the service
 re-raises the primary error.  The admitted receipt is included in the
 pre-acquisition owner digest.
 
-The additive contract is CPU/injected evidence only at this point: the focused
-reconciliation/owner/service suites pass 45 tests and the broader current
-Human-13 CPU/injected matrix passes 391 tests with 2 warnings.  No real model,
-GPU, network, checkpoint, update, or output action was performed for this
-correction.  The known image-1584 Source-vs-training greedy mismatch therefore
+The additive contract was first verified with CPU/injected evidence; after the
+direct-script import-path fix, the focused reconciliation/owner/service/entry
+set passes 88 tests and the broader current Human-13 CPU/injected matrix passes
+393 tests with 2 warnings.  The current live attempt then exercised the real
+entry and both model surfaces, but no update path passed the Source-witness
+gate.  The known image-1584 Source-vs-training greedy mismatch therefore
 remains a scientific HOLD rather than being hidden by the new receipt path.
 
 ## Verification
 
-- Focused entry, service, native-owner, and witness suites: 92 passed.
-- Adjacent CPU/injected Human-13 suites: 385 passed, 2 warnings.
+- Focused reconciliation, service, native-owner, and entry suites: 88 passed
+  after the direct-script import-path and precedence regressions.
+- Adjacent CPU/injected Human-13 suites: 393 passed, 2 warnings.
 - Target Ruff, compileall, and Pyright error-level diagnostics: clean.
 - The Pyright claim is scoped to the touched production modules and focused
   tests; broad legacy fixture checking retains its pre-existing errors.
 - The staged native bridge and adjacent CPU/injected suites were green before
-  the live attempts; no real update path has passed the Source-witness gate.
+  the live attempt.  The current-tree production entry crossed model loading
+  and both Source surfaces but no real update path passed the Source-witness
+  gate.
 - Task 4.6 and Tasks 5.1–5.5 remain unchecked in OpenSpec.
 
 ## Claim boundary and stop rule

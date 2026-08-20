@@ -90,6 +90,21 @@ def _install_canonical_module_alias() -> None:
 _install_canonical_module_alias()
 
 
+def _ensure_repo_root_on_sys_path(repo_root: Path) -> None:
+    """Make direct script execution resolve the repository package imports.
+
+    ``python scripts/research/<entry>.py`` puts only the script directory on
+    ``sys.path``.  The production execution path imports sibling owners via
+    ``scripts.research`` after parsing ``--repo-root``; install that explicit
+    root before the first dynamic import without relying on the caller's
+    working directory or ``PYTHONPATH``.
+    """
+
+    root = str(repo_root.expanduser().resolve())
+    sys.path[:] = [entry for entry in sys.path if entry != root]
+    sys.path.insert(0, root)
+
+
 def _sha256(value: object) -> str:
     payload = json.dumps(
         value,
@@ -2689,6 +2704,8 @@ def build_production_execution(
 
     if args.manifest is None or args.attempt_id is None:
         raise ValueError("one-image --execute requires --manifest and --attempt-id")
+    repo_root = Path(args.repo_root).expanduser().resolve()
+    _ensure_repo_root_on_sys_path(repo_root)
     resources = admit_production_gpu_resources(
         (gpu_observer or observe_production_gpu_resources)()
     )
@@ -2703,7 +2720,6 @@ def build_production_execution(
         default_task5_runtime_factory,
     )
 
-    repo_root = Path(args.repo_root).expanduser().resolve()
     manifest_path = Path(args.manifest).expanduser().resolve()
     manifest = (manifest_loader or load_manifest)(
         manifest_path, require_full_panel=True

@@ -37,9 +37,32 @@ from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     _seal_terminal,
     validate_dual_gpu_resources,
     _manifest_image_identity,
+    _ensure_repo_root_on_sys_path,
 )
 from scripts.research.build_human13_k_union_manifest import default_binding
 import scripts.research.run_human13_all_hf_shared_surface_vertical as entry_owner
+
+
+def test_direct_entry_installs_explicit_repo_root_for_package_imports(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    monkeypatch.setattr(entry_owner.sys, "path", ["/sentinel"])
+    _ensure_repo_root_on_sys_path(root)
+    assert entry_owner.sys.path[0] == str(root.resolve())
+
+
+def test_direct_entry_promotes_existing_repo_root_ahead_of_competing_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    monkeypatch.setattr(entry_owner.sys, "path", ["/competing", str(root), "/other"])
+    _ensure_repo_root_on_sys_path(root)
+    assert entry_owner.sys.path == [str(root.resolve()), "/competing", "/other"]
 
 
 def test_module_entry_alias_preserves_terminal_receipt_identity(monkeypatch: pytest.MonkeyPatch) -> None:
