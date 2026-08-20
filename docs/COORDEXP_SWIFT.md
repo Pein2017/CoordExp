@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Current routing guide for the CoordExp-Swift training, inference, evaluation, and artifact infrastructure.
 tags: [coordexp-swift, training, inference, eval, routing]
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # CoordExp-Swift Canonical Infrastructure
@@ -51,7 +51,7 @@ framework. Current ownership is:
 | Template and spans | `src/templates/` | Render prompts/assistant content and expose semantic supervision spans |
 | Qwen boundary | `src/qwen/` | Load model/processor/tokenizer, encode chat/image inputs, build positions, and run forward helpers |
 | Packing and supervision | `src/packing/`, `src/supervision/` | Concatenate no-padding segments and map logical token atoms to physical positions |
-| Losses | `src/losses/` | Assemble CE, token-type gating, optional coordinate Gaussian/RPS, normalization, and diagnostics |
+| Losses | `src/losses/` | Assemble the protected supervised objective (base CE plus token-type gate) and the typed optional coordinate Gaussian/RPS auxiliary, with `segment_balanced` normalization and finite diagnostics |
 | Runtime and optimization | `src/runtime/`, `src/optim/`, `src/adapters/` | Accelerate replicated-DDP operations, finite gates, optimizer/scheduler steps, adapter and selected-token trainable surfaces |
 | Training artifacts | `src/artifacts/run_writer.py`, `src/artifacts/checkpoints.py`, `src/artifacts/checkpoint_payload.py`, `src/artifacts/training_state.py`, `src/training/exact_resume.py` | Rank-zero run/config/log ownership, synchronized staged adapter-plus-delta inference payloads, and the opt-in exact training-state sibling and its resume admission |
 | Inference | `src/infer.py`, `src/inference/` | Resolve infer config, compose the model, decode, parse, score, shard, merge, and write provenance-bearing artifacts |
@@ -85,6 +85,71 @@ or `exact_same_world_size`, which additionally requires
 `resume.checkpoint_dir` under `exact_same_world_size` publishes exact state
 without resuming, which is the publish-only control or parent form.
 
+## Supervised loss contract
+
+The supervised objective is strict, closed, and SFT-only. Normative semantics
+belong to
+[supervision/losses](../openspec/specs/coordexp-swift-supervision-losses/spec.md)
+and [config runtime](../openspec/specs/coordexp-swift-config-runtime/spec.md);
+this section only routes operators to the shape a current config must author.
+
+```yaml
+losses:
+  normalizer: segment_balanced
+  protected:
+    base_ce:
+      weight: 1.0
+    token_type_gate:
+      mode: enabled                # or: zero_weight_ablation
+      weight: 0.1                  # enabled pairs only with this value
+      groups: [desc_text, schema, coordinate, eos]
+  auxiliary:                       # optional block
+    coord_gaussian_rps:
+      weight: 1.0
+```
+
+- **Protected baseline.** `base_ce` is always present with weight exactly
+  `1.0`. `token_type_gate` under `mode: enabled` carries the single canonical
+  enabled weight shown above, over exactly those four ordered groups. No other
+  protected weight, group order, or group set is accepted.
+- **Named gate ablation.** The pure-CE contrast is authored as
+  `mode: zero_weight_ablation` with weight exactly `0`; a zero weight without
+  that named mode is rejected. The mode survives into
+  `resolved_config.json`, so an intentional contrast is never confused with an
+  accidentally disabled baseline.
+- **Typed auxiliary placement.** Coordinate Gaussian/RPS is an optional
+  auxiliary, authored only under `losses.auxiliary`. There is no compatibility
+  alias for the former protected placement: authoring it under
+  `losses.protected` fails strict validation with a migration-oriented error
+  rather than being moved silently.
+
+Each term carries one declared zero policy, and each policy has exactly one
+runtime path:
+
+- `forbid` (`base_ce`): omission or a zero weight fails config validation
+  before loss construction.
+- `detached_diagnostic` (`token_type_gate`): in the named ablation the
+  denominator and fp32 per-atom math still run, but inside a no-grad boundary.
+  Raw, count, and finite diagnostics are retained, the weighted value is a
+  literal zero, and no gate tensor enters the optimized objective or the
+  autograd graph. Because it stays a protected diagnostic, a non-finite raw
+  gate value still participates in the all-rank pre-backward safety decision
+  and still blocks backward and the optimizer update.
+- `omit` (`coord_gaussian_rps`): at weight zero the term is not instantiated,
+  no denominator is built or gathered, its math is never called, and it
+  contributes no bundle entry, finite check, or logging field. Its absence is a
+  whole missing field family, not a zero-valued one.
+
+Logging rows name the two concepts separately for every computed term:
+`loss/<term>/raw` is the globally normalized planned-step value before
+weighting, `loss/<term>/weighted` is that value times the configured weight,
+and `loss/<term>/selected_count` reports how many atoms the term consumed.
+`loss/total` is the sum of the weighted objective terms. Distributed
+mean-gradient compensation is applied once to the differentiable local
+contribution only and never appears in these reported values. The old
+ambiguous per-term field that named the weighted value is gone and is not
+dual-written; historical JSONL keeps the schema of the commit that wrote it.
+
 ## Semantic boundaries that docs must preserve
 
 - `source_order` preserves authored object order. `geo_sorted` validates the
@@ -93,9 +158,11 @@ without resuming, which is the publish-only control or parent form.
   `src/qwen/encoding.py` aligns spans with physical Qwen tokens, and
   `src/packing/` remaps them into packed positions. Do not collapse these into
   one generic dataset owner.
-- The active loss assembly is owned by `src/losses/runner.py`. Current source
-  terms are base CE, optional token-type gating, and optional coordinate
-  Gaussian/RPS; normalization and finite diagnostics are explicit.
+- The active loss assembly is owned by `src/losses/runner.py` over the closed
+  term inventory in `src/losses/bindings.py`. The supervised objective is
+  SFT-only: there is no rollout-derived, hidden-state, policy, value, KL, or
+  reward composition, and no import path, callable, or dynamic registry may
+  select a term. See [Supervised loss contract](#supervised-loss-contract).
 - Inference score-bearing artifacts require backend-neutral trace evidence,
   selected-token score provenance, row binding, and identity fingerprints.
   Predictions alone are not sufficient COCO evidence.

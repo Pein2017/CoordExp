@@ -5,7 +5,7 @@ doc_type: artifacts-reference
 status: canonical
 domain: repo
 summary: Current CoordExp-Swift training, inference, evaluation, checkpoint, and provenance artifacts.
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # Artifacts And Provenance
@@ -51,6 +51,23 @@ include:
 
 The training run does not emit `run_manifest.json`, per-split metric streams,
 per-step receipts, `checkpoint_handoff.json`, or `checkpoint-final` aliases.
+
+Train and forward-eval rows in `logging.jsonl` share one loss projection. Every
+computed term contributes an explicit field family — `loss/<term>/raw` for the
+globally normalized planned-step value before weighting,
+`loss/<term>/weighted` for that value times the configured weight, and
+`loss/<term>/selected_count` for the atoms it consumed — alongside its existing
+segment-count, token-weighted-diagnostic, and `finite/<term>` fields.
+`loss/total` is the sum of the weighted objective terms; no field carries the
+distributed mean-gradient compensation applied to the differentiable local
+contribution. The named zero-weight gate ablation keeps its whole family with a
+weighted value of zero, while a zero-weight optional auxiliary contributes no
+field at all rather than zero-valued ones. Non-finite computed values are still
+serialized as JSON `null` and named in `non_finite_fields`. Rows written before
+this projection use the older ambiguous per-term field and are read against the
+commit that wrote them; there is no dual-written alias. The authored loss shape
+behind these fields is described in
+[`COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md#supervised-loss-contract).
 
 A checkpoint carries two independent payload surfaces:
 

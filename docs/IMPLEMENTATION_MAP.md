@@ -5,7 +5,7 @@ doc_type: implementation-map
 status: canonical
 domain: repo
 summary: Small source and test routing map for the current CoordExp-Swift implementation.
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # Implementation Map
@@ -80,7 +80,11 @@ schema from an archived YAML file or an old plan.
   positions.
 - `src/packing/` creates physical packed segments and remaps supervision.
 - `src/supervision/tokens.py` is the token-level record interface.
-- `src/losses/runner.py` owns configured loss assembly and normalization.
+- `src/losses/runner.py` owns configured loss assembly and normalization over
+  the closed term inventory in `src/losses/bindings.py`, which declares each
+  implemented term's role, normalizer, and zero policy. That inventory is
+  private and compiled with the code: there is no registry, import path, or
+  callable config for selecting a loss.
 - `src/runtime/train_runtime.py` owns the Accelerate-only replicated-DDP
   execution boundary, finite gates, optimizer, and scheduler behavior.
 - `src/training/pipeline.py` is the training facade only: it builds the

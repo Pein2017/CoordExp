@@ -1,0 +1,74 @@
+{
+  "baseline_path": "openspec/changes/standardize-coordexp-swift-supervised-losses/receipts/wave-0-determinant-baseline.json",
+  "baseline_sha256": "b2d9595f07a0a511abf436e24f47b21c5694760c4d308bed4845fd5712931059",
+  "cache_materialization_passes": 0,
+  "cache_root_inventory": {
+    "cache_version": "coordexp-swift-pack-cache-v3",
+    "file_count": 6,
+    "files": [
+      {
+        "path": "coordexp-swift-pack-cache-v3/.3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662.lock",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_bytes": 0
+      },
+      {
+        "path": "coordexp-swift-pack-cache-v3/.8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f.lock",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size_bytes": 0
+      },
+      {
+        "path": "coordexp-swift-pack-cache-v3/3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662/chunks/chunk-00000.pkl",
+        "sha256": "9b39e5c536faac2b9125ff5f7ed98bcb1ae8561c95c21310fe6324342449bcce",
+        "size_bytes": 1491886
+      },
+      {
+        "path": "coordexp-swift-pack-cache-v3/3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662/manifest.json",
+        "sha256": "8de1fda29784aad26d2408817a0525f50386f205da07c917bed58b92a5d92992",
+        "size_bytes": 239645
+      },
+      {
+        "path": "coordexp-swift-pack-cache-v3/8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f/chunks/chunk-00000.pkl",
+        "sha256": "bf717dcd47518366db4e943d03b11b811cff1c5a9f331053ed544997c9fa0a8f",
+        "size_bytes": 2283120
+      },
+      {
+        "path": "coordexp-swift-pack-cache-v3/8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f/manifest.json",
+        "sha256": "c1d9fea76d063c6bd2b045f0ec6240cb65390849d1e9d8cfde72c64833e025e8",
+        "size_bytes": 239523
+      }
+    ],
+    "present": true,
+    "root": "/data/CoordExp/.worktrees/CoordExp-swift/.cache/coordexp_swift/packing",
+    "total_bytes": 4254174
+  },
+  "change": "standardize-coordexp-swift-supervised-losses",
+  "commit": "5779c006a56323bd7a25222c794f8ee009664e42",
+  "config": "configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate2_ebs2_1step.yaml",
+  "findings": [],
+  "model_loaded": false,
+  "probe": "losses_determinant_equality",
+  "splits": {
+    "eval.forward": {
+      "baseline_fingerprint": "3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662",
+      "fingerprint_equal": true,
+      "first_difference": null,
+      "payload_equal": true,
+      "recomputed_fingerprint": "3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662",
+      "verdict": "EQUAL"
+    },
+    "train": {
+      "baseline_fingerprint": "8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f",
+      "fingerprint_equal": true,
+      "first_difference": null,
+      "payload_equal": true,
+      "recomputed_fingerprint": "8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f",
+      "verdict": "EQUAL"
+    }
+  },
+  "started_at": "2026-08-20T12:57:29.420839Z",
+  "status": "OK",
+  "task": "5.3",
+  "tree_dirty": true,
+  "wall_seconds": 1.351
+}
+

@@ -230,6 +230,31 @@ def test_loss_runner_finalize_rejects_micro_artifact_correct_exceeding_atoms() -
     assert exc_info.value.code == "loss.accuracy_stats_correct_exceeds_atoms"
 
 
+def test_loss_runner_finalize_rejects_term_missing_backward_contribution() -> None:
+    """Wave-5 remainder of pre-DDP audit I-1/I-6.
+
+    `_merge_term_artifacts` used to read
+    `item.get("backward_contribution", item["weighted_loss"])`. A real term
+    artifact ALWAYS carries `backward_contribution`
+    (`LossTermResult.to_artifact_dict`), so reaching that fallback means a
+    broken or foreign artifact stream: at world size > 1 the fallback silently
+    substitutes the UNcompensated weighted value, which divides the planned
+    step's whole backward objective by the world size with no exception and no
+    telemetry difference. Fail closed instead.
+    """
+
+    runner, plan, artifact = _single_micro_step_plan_and_artifact()
+    base_term = next(
+        term for term in artifact["terms"] if term["name"] == "base_ce"
+    )
+    del base_term["backward_contribution"]
+
+    with pytest.raises(LossContractError) as exc_info:
+        runner.finalize_planned_step((artifact,), plan)
+    assert exc_info.value.code == "loss.micro_artifact_backward_contribution_missing"
+    assert exc_info.value.context["term"] == "base_ce"
+
+
 def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
     context = _context(
         _logits(

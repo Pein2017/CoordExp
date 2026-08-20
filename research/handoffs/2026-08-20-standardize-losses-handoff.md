@@ -48,6 +48,10 @@ packet with its own authorization basis — ask the user.
   `finite/*`, segment counts, token_weighted_diag) — completed-step row
   schema is a protected compatibility surface (see
   `archive/2026-08-20-decompose…/receipts/wave-8-compatibility-comparison.json`).
+  [Correction, entry-audit F-8: SUPERSEDED — `standardize-coordexp-swift-supervised-losses`
+  deliberately replaced the bare per-term keys with `loss/<term>/raw` + `/weighted`
+  + `/selected_count` and dual-writes no alias; the frozen fixtures stay byte-frozen
+  because they carry only `loss/total`.]
 - Losses runner: `src/losses/runner.py`; normalizer currently
   `segment_balanced` in smoke/prod configs.
 

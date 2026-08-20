@@ -5,7 +5,7 @@ doc_type: overview
 status: canonical
 domain: repo
 summary: End-to-end current flow from data intake to CoordExp-Swift training, inference, evaluation, and artifacts.
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # System Overview
@@ -59,11 +59,18 @@ spans to packed positions. `src/supervision/tokens.py` carries token type,
 object/field identity, target position, causal-logit position, and optional
 coordinate targets.
 
-`src/losses/runner.py` assembles the configured terms and emits loss,
-denominator, and finite-status diagnostics. The current source route exposes
-base CE, optional token-type gating, and optional coordinate Gaussian/RPS; do
-not describe old recursive-detection or rollout-matching trainers as current
-Swift V1 ownership.
+`src/losses/runner.py` assembles the configured terms and emits raw/weighted
+values, denominators, and finite-status diagnostics over the closed term
+inventory declared in `src/losses/bindings.py`. The supervised objective is
+SFT-only and strict: protected base CE plus the protected token-type gate,
+with coordinate Gaussian/RPS as a typed optional auxiliary. Each term declares
+one zero policy — base CE forbids a zero weight, the gate's named
+zero-weight ablation keeps a detached diagnostic outside the autograd graph
+while remaining part of the all-rank pre-backward safety decision, and the
+coordinate auxiliary is omitted entirely at weight zero. See
+[`COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md#supervised-loss-contract) for the
+authored shape. Do not describe old recursive-detection or rollout-matching
+trainers as current Swift V1 ownership.
 
 ## Training assembly and runtime
 

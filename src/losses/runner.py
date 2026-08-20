@@ -1040,8 +1040,17 @@ def _merge_term_artifacts(
         # cross-rank sum happens once, in the runtime metric reducer.
         weighted_loss = sum(float(item["weighted_loss"]) for item in term_items)
         raw_loss = sum(float(item["raw_loss"]) for item in term_items)
+        # FAIL-CLOSED (pre-DDP audit I-1/I-6, Wave-5 remainder): every real
+        # term artifact carries `backward_contribution`
+        # (`LossTermResult.to_artifact_dict`). Falling back to
+        # `weighted_loss` would silently substitute the UNcompensated
+        # semantic value, dividing the planned step's backward objective by
+        # the world size with no exception, no telemetry difference, and no
+        # finite-gate signal. There is no narrow exemption: a term item
+        # without the field is a broken or foreign artifact stream, not a
+        # world-size-one one.
         backward_contribution = sum(
-            float(item.get("backward_contribution", item["weighted_loss"]))
+            _checked_micro_backward_contribution(item, term_name=name)
             for item in term_items
         )
         backend_gradient_scale = float(
@@ -1082,6 +1091,24 @@ def _merge_term_artifacts(
             }
         )
     return merged
+
+
+def _checked_micro_backward_contribution(
+    item: Mapping[str, Any], *, term_name: str
+) -> float:
+    if "backward_contribution" not in item:
+        raise LossContractError(
+            "streaming micro-step term artifact is missing "
+            "backward_contribution; falling back to the uncompensated "
+            "weighted_loss would scale the planned step's backward objective "
+            "by 1/world_size",
+            code="loss.micro_artifact_backward_contribution_missing",
+            context={
+                "term": term_name,
+                "observed_fields": sorted(str(field) for field in item),
+            },
+        )
+    return float(item["backward_contribution"])
 
 
 def _merge_term_diagnostics(
