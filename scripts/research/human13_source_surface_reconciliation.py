@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping, Sequence
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from pathlib import Path
 from typing import Any, cast
@@ -20,7 +20,8 @@ from src.artifacts.json_values import json_sha256
 from src.data.geometry import COORD_TOKEN_PATTERN
 
 
-SCHEMA_VERSION = "human13_source_surface_reconciliation.v2"
+LEGACY_SCHEMA_VERSION = "human13_source_surface_reconciliation.v2"
+SCHEMA_VERSION = "human13_source_surface_reconciliation.v3"
 SOURCE_SURFACE = "gpu1:fp32/sdpa/batch1"
 TRAINING_SURFACE = "gpu0:bfloat16/flash_attention_2"
 _EXPECTED_AUDIT_RPS = (1.0, 1.1)
@@ -226,7 +227,7 @@ class CoordinateAliasReconciliation:
         return json_sha256(self._payload())
 
     def _payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "schema_version": "human13_coordinate_alias_reconciliation.v1",
             "admitted": self.admitted,
             "mismatch_count": self.mismatch_count,
@@ -238,6 +239,7 @@ class CoordinateAliasReconciliation:
                 else None
             ),
         }
+        return payload
 
     def to_dict(self) -> dict[str, object]:
         payload = self._payload()
@@ -622,6 +624,104 @@ def _runtime_identity_sha256(
 
 
 @dataclass(frozen=True)
+class CanonicalSourceBaselineReceipt:
+    """One complete canonical Source baseline and its owner assignment."""
+
+    surface: str
+    repetition_penalty: float
+    canonical_payload: Mapping[str, object]
+    owner_map: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        if self.surface not in {SOURCE_SURFACE, TRAINING_SURFACE}:
+            raise ValueError("canonical Source baseline surface differs")
+        if (
+            isinstance(self.repetition_penalty, bool)
+            or float(self.repetition_penalty) not in _EXPECTED_AUDIT_RPS
+        ):
+            raise ValueError("canonical Source baseline RP differs")
+        if not isinstance(self.canonical_payload, Mapping):
+            raise TypeError("canonical Source baseline payload must be an object")
+        if not isinstance(self.owner_map, Mapping):
+            raise TypeError("canonical Source baseline owner map must be an object")
+        payload = copy.deepcopy(dict(self.canonical_payload))
+        owner_map = copy.deepcopy(dict(self.owner_map))
+        json_sha256(payload)
+        json_sha256(owner_map)
+        object.__setattr__(self, "repetition_penalty", float(self.repetition_penalty))
+        object.__setattr__(self, "canonical_payload", payload)
+        object.__setattr__(self, "owner_map", owner_map)
+
+    @property
+    def canonical_payload_sha256(self) -> str:
+        return json_sha256(dict(self.canonical_payload))
+
+    @property
+    def owner_map_sha256(self) -> str:
+        return json_sha256(dict(self.owner_map))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": "human13_canonical_source_baseline.v1",
+            "surface": self.surface,
+            "repetition_penalty": self.repetition_penalty,
+            "canonical_payload": copy.deepcopy(dict(self.canonical_payload)),
+            "canonical_payload_sha256": self.canonical_payload_sha256,
+            "owner_map": copy.deepcopy(dict(self.owner_map)),
+            "owner_map_sha256": self.owner_map_sha256,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> CanonicalSourceBaselineReceipt:
+        expected = {
+            "schema_version",
+            "surface",
+            "repetition_penalty",
+            "canonical_payload",
+            "canonical_payload_sha256",
+            "owner_map",
+            "owner_map_sha256",
+        }
+        if set(value) != expected or value.get("schema_version") != (
+            "human13_canonical_source_baseline.v1"
+        ):
+            raise ValueError("canonical Source baseline fields differ from schema")
+        payload = value["canonical_payload"]
+        owner_map = value["owner_map"]
+        if not isinstance(payload, Mapping) or not isinstance(owner_map, Mapping):
+            raise TypeError("canonical Source baseline evidence must be objects")
+        receipt = cls(
+            surface=str(value["surface"]),
+            repetition_penalty=_coerce_float(value["repetition_penalty"]),
+            canonical_payload=payload,
+            owner_map=owner_map,
+        )
+        if value["canonical_payload_sha256"] != receipt.canonical_payload_sha256:
+            raise ValueError("canonical Source baseline payload hash differs")
+        if value["owner_map_sha256"] != receipt.owner_map_sha256:
+            raise ValueError("canonical Source baseline owner-map hash differs")
+        return receipt
+
+
+def _canonical_baseline_matrix(
+    values: Sequence[CanonicalSourceBaselineReceipt],
+) -> tuple[CanonicalSourceBaselineReceipt, ...]:
+    baselines = tuple(values)
+    expected = (
+        (SOURCE_SURFACE, 1.0),
+        (SOURCE_SURFACE, 1.1),
+        (TRAINING_SURFACE, 1.0),
+        (TRAINING_SURFACE, 1.1),
+    )
+    observed = tuple((item.surface, item.repetition_penalty) for item in baselines)
+    if observed != expected:
+        raise ValueError(
+            "canonical Source baselines must bind fp32/BF16 RP1.0/RP1.1"
+        )
+    return baselines
+
+
+@dataclass(frozen=True)
 class SourceSurfaceReconciliationRequest:
     """All immutable evidence needed for one surface-admission attempt."""
 
@@ -643,6 +743,7 @@ class SourceSurfaceReconciliationRequest:
     image_id: int
     source_audit_sha256s: tuple[tuple[float, str], ...]
     decodes: tuple[object, ...]
+    canonical_baselines: tuple[CanonicalSourceBaselineReceipt, ...]
     check: Callable[[], int]
     coordinate_alias_check: Callable[[], CoordinateAliasReconciliation] | None = None
 
@@ -739,6 +840,11 @@ class SourceSurfaceReconciliationRequest:
         if len(decodes) != 2:
             raise ValueError("surface reconciliation requires two Source decodes")
         object.__setattr__(self, "decodes", decodes)
+        object.__setattr__(
+            self,
+            "canonical_baselines",
+            _canonical_baseline_matrix(self.canonical_baselines),
+        )
 
 
 @dataclass(frozen=True)
@@ -770,15 +876,42 @@ class SourceSurfaceReconciliationReceipt:
     checked_token_count: int
     mismatch_count: int
     failure_reason: str | None
+    canonical_baselines: tuple[CanonicalSourceBaselineReceipt, ...]
     coordinate_alias: CoordinateAliasReconciliation | None = None
+    _schema_version: str = field(
+        default=SCHEMA_VERSION,
+        repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        if self._schema_version == SCHEMA_VERSION:
+            object.__setattr__(
+                self,
+                "canonical_baselines",
+                _canonical_baseline_matrix(self.canonical_baselines),
+            )
+        elif self._schema_version == LEGACY_SCHEMA_VERSION:
+            if self.canonical_baselines:
+                raise ValueError("legacy v2 receipt cannot carry v3 baselines")
+            object.__setattr__(self, "canonical_baselines", ())
+        else:
+            raise ValueError("Source reconciliation receipt schema is unsupported")
+
+    @property
+    def cross_surface_disposition(self) -> str:
+        """Return the non-decision-bearing disposition of surface divergence."""
+
+        if self.coordinate_alias is None:
+            return "not_checked"
+        return "admitted" if self.coordinate_alias.admitted else "diagnostic_only"
 
     @property
     def content_sha256(self) -> str:
         return json_sha256(self._payload())
 
     def _payload(self) -> dict[str, object]:
-        return {
-            "schema_version": SCHEMA_VERSION,
+        payload: dict[str, object] = {
+            "schema_version": self._schema_version,
             "admitted": self.admitted,
             "source_surface": self.source_surface,
             "training_surface": self.training_surface,
@@ -814,6 +947,11 @@ class SourceSurfaceReconciliationReceipt:
                 else None
             ),
         }
+        if self._schema_version == SCHEMA_VERSION:
+            payload["canonical_baselines"] = [
+                item.to_dict() for item in self.canonical_baselines
+            ]
+        return payload
 
     def to_dict(self) -> dict[str, object]:
         payload = self._payload()
@@ -822,11 +960,45 @@ class SourceSurfaceReconciliationReceipt:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> SourceSurfaceReconciliationReceipt:
-        expected = set(cls.__dataclass_fields__) | {
+        schema_version = value.get("schema_version")
+        common_fields = {
             "schema_version",
+            "admitted",
+            "source_surface",
+            "training_surface",
+            "training_model_object_id",
+            "training_checkpoint_payload_sha256",
+            "source_checkpoint_payload_sha256s",
+            "source_checkpoint_paths",
+            "training_checkpoint_path",
+            "source_adapter_sha256s",
+            "source_embedding_delta_sha256s",
+            "source_base_model_paths",
+            "training_base_model_path",
+            "source_manifest_sha256s",
+            "manifest_image_sha256",
+            "training_image_sha256",
+            "source_image_sha256s",
+            "training_parameter_state_sha256",
+            "manifest_sha256",
+            "image_id",
+            "source_audit_sha256s",
+            "source_runtime_identity_sha256",
+            "checked_decode_count",
+            "checked_token_count",
+            "mismatch_count",
+            "failure_reason",
+            "coordinate_alias",
             "content_sha256",
         }
-        if set(value) != expected or value.get("schema_version") != SCHEMA_VERSION:
+        expected = (
+            common_fields | {"canonical_baselines"}
+            if schema_version == SCHEMA_VERSION
+            else common_fields
+        )
+        if schema_version not in {LEGACY_SCHEMA_VERSION, SCHEMA_VERSION} or set(
+            value
+        ) != expected:
             raise ValueError("Source reconciliation receipt fields differ from schema")
         raw_alias = value.get("coordinate_alias")
         alias = (
@@ -834,6 +1006,19 @@ class SourceSurfaceReconciliationReceipt:
             if isinstance(raw_alias, Mapping)
             else None
         )
+        if schema_version == SCHEMA_VERSION:
+            raw_baselines = value.get("canonical_baselines")
+            if not isinstance(raw_baselines, Sequence):
+                raise TypeError("canonical Source baselines must be a sequence")
+            baselines = tuple(
+                CanonicalSourceBaselineReceipt.from_dict(item)
+                for item in raw_baselines
+                if isinstance(item, Mapping)
+            )
+            if len(baselines) != len(raw_baselines):
+                raise TypeError("canonical Source baseline entry must be an object")
+        else:
+            baselines = ()
         receipt = cls(
             admitted=bool(value["admitted"]),
             source_surface=str(value["source_surface"]),
@@ -913,6 +1098,8 @@ class SourceSurfaceReconciliationReceipt:
                 else None
             ),
             coordinate_alias=alias,
+            canonical_baselines=baselines,
+            _schema_version=str(schema_version),
         )
         if value.get("content_sha256") != receipt.content_sha256:
             raise ValueError("Source reconciliation receipt content hash differs")
@@ -972,6 +1159,7 @@ def _receipt(
         mismatch_count=mismatch_count,
         failure_reason=failure_reason,
         coordinate_alias=coordinate_alias,
+        canonical_baselines=request.canonical_baselines,
     )
 
 
@@ -1133,14 +1321,10 @@ def reconcile_source_surface(
                 ),
                 admitted=False,
             )
-        if not coordinate_alias.admitted:
-            return _receipt(
-                request,
-                mismatch_count=max(1, coordinate_alias.mismatch_count),
-                failure_reason=coordinate_alias.failure_reason,
-                admitted=False,
-                coordinate_alias=coordinate_alias,
-            )
+        # Coordinate/token/row/owner divergence is deliberately retained as
+        # diagnostic evidence.  It does not gate the independent BF16 policy
+        # baseline; strict identity and the BF16-native ``request.check`` below
+        # remain the only admission conditions here.
     try:
         changed = request.check()
         if isinstance(changed, bool) or not isinstance(changed, int) or changed < 0:
@@ -1174,8 +1358,10 @@ def reconcile_source_surface(
 
 __all__ = [
     "SCHEMA_VERSION",
+    "LEGACY_SCHEMA_VERSION",
     "SOURCE_SURFACE",
     "TRAINING_SURFACE",
+    "CanonicalSourceBaselineReceipt",
     "SourceSurfaceReconciliationReceipt",
     "SourceSurfaceReconciliationRequest",
     "CoordinateAliasEvidence",

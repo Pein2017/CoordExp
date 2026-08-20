@@ -1946,6 +1946,8 @@ class OneImageServices(Protocol):
         self, audit_session: object, repetition_penalty: float
     ) -> Mapping[str, Any]: ...
 
+    def request_source_only_close(self) -> None: ...
+
     def acquire_and_replay(
         self, training_session: object, config: EntryConfig
     ) -> object: ...
@@ -1977,6 +1979,7 @@ class OneImageServices(Protocol):
 class OneImageTerminalReceipt:
     terminal_status: Literal[
         "dry_run",
+        "preflight_admitted",
         "parity_failure",
         "update_failure",
         "completed_null_or_unsafe",
@@ -1997,6 +2000,7 @@ class OneImageTerminalReceipt:
     def __post_init__(self) -> None:
         if self.terminal_status not in {
             "dry_run",
+            "preflight_admitted",
             "parity_failure",
             "update_failure",
             "completed_null_or_unsafe",
@@ -2328,6 +2332,7 @@ def run_one_image(
     manifest_image: Any | ManifestImageContext | None = None,
     manifest_binding: Any | None = None,
     execute: bool = True,
+    preflight_only: bool = False,
 ) -> OneImageTerminalReceipt:
     """Run one guarded lifecycle through injected Task-1/2/3 owners.
 
@@ -2361,11 +2366,16 @@ def run_one_image(
     rollback_attempted = False
     failure: BaseException | None = None
     status: Literal[
+        "preflight_admitted",
         "parity_failure",
         "update_failure",
         "completed_null_or_unsafe",
         "passing_one_image",
     ] = "update_failure"
+
+    class _PreflightAdmitted(Exception):
+        pass
+
     try:
         source_assembly = services.preflight_source_assembly(config, resource_receipt)
         phases.append("admission_source_assembly")
@@ -2412,6 +2422,15 @@ def run_one_image(
                 expected_source_identity=source_identity,
             )
             phases.append(f"source_audit_rp_{rp:g}")
+        if preflight_only:
+            phases.append("preflight_source_surfaces_admitted")
+            request_source_only_close = getattr(
+                services, "request_source_only_close", None
+            )
+            if callable(request_source_only_close):
+                request_source_only_close()
+                phases.append("source_only_close_requested")
+            raise _PreflightAdmitted()
         acquisition = services.acquire_and_replay(training_session, config)
         phases.append("k16_acquisition_replay")
         if getattr(acquisition, "parity_passed", True) is not True:
@@ -2486,10 +2505,14 @@ def run_one_image(
         if not reproduced:
             raise RuntimeError("Source reproduction failed after private audits")
         status = "passing_one_image" if gate.admitted else "completed_null_or_unsafe"
+    except _PreflightAdmitted:
+        failure = None
+        status = "preflight_admitted"
     except BaseException as error:  # cleanup and classification are terminal-owned
         failure = error
         status = cast(
             Literal[
+                "preflight_admitted",
                 "parity_failure",
                 "update_failure",
                 "completed_null_or_unsafe",
@@ -2792,6 +2815,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicit lost-owner PID witness for a legacy reservation without pid",
     )
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="run production source admission and close without K16/update",
+    )
     parser.add_argument("--user-model-gpu-authority", action="store_true")
     parser.add_argument("--full-panel", action="store_true")
     parser.add_argument("--one-image-terminal-sha256", default=None)
@@ -2846,6 +2874,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         services=execution.services,
         manifest_image=execution.manifest_image,
         manifest_binding=execution.manifest_binding,
+        preflight_only=args.preflight_only,
     )
     print(json.dumps(terminal.to_dict(), sort_keys=True, separators=(",", ":")))
     return 0

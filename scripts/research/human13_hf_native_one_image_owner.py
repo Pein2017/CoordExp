@@ -23,6 +23,9 @@ from scripts.research.human13_hf_native_projection import (
     hf_native_request_evidence_sha256 as _projected_request_evidence_sha256,
 )
 from scripts.research.human13_source_surface_reconciliation import (
+    SOURCE_SURFACE,
+    TRAINING_SURFACE,
+    CanonicalSourceBaselineReceipt,
     CoordinateAliasReconciliation,
     SourceSurfaceReconciliationReceipt,
     SourceSurfaceReconciliationRequest,
@@ -520,6 +523,7 @@ class SourceOwnerRequest:
     manifest_image: object
     config: object
     source_audits: Mapping[float, Mapping[str, Any]]
+    training_source_audits: Mapping[float, Mapping[str, Any]] | None = None
 
     def __post_init__(self) -> None:
         if tuple(self.source_audits) != (1.0, 1.1):
@@ -581,10 +585,10 @@ class PreAcquisitionSourceOwners:
             raise HFNativeOneImageOwnerError(
                 "Source surface reconciliation receipt is untyped"
             )
-        if self.surface_reconciliation is not None and not self.surface_reconciliation.admitted:
-            raise HFNativeOneImageOwnerError(
-                "Source surface reconciliation receipt is not admitted"
-            )
+        # Cross-surface token/row/owner divergence is diagnostic evidence under
+        # the successor semantics.  The outer receipt must still admit strict
+        # identity and the BF16-native Source owner; a nested coordinate checker
+        # may therefore be a non-admitted diagnostic result.
 
     @property
     def content_sha256(self) -> str:
@@ -987,6 +991,12 @@ def prepare_repository_source_owners(
         SealedSourceDecode,
         WitnessMeasurement,
     )
+    from src.inference.parsing import parse_compact_object_box_closed
+    from src.templates.renderer import (
+        BOX_END_TOKEN,
+        OBJECT_REF_END_TOKEN,
+        OBJECT_REF_START_TOKEN,
+    )
 
     identity = getattr(request.session, "source_owner_identity", None)
     if identity is None or not callable(getattr(request.session, "raw_logit_rows", None)):
@@ -999,6 +1009,7 @@ def prepare_repository_source_owners(
     sealed: list[SealedSourceDecode] = []
     boundaries: list[SourceBoundaryInput] = []
     audit_hashes: list[tuple[float, str]] = []
+    training_audit_hashes: list[tuple[float, str]] = []
     checkpoint_hashes: set[str] = set()
     source_runtime_identities: list[Mapping[str, object]] = []
     source_checkpoint_payload_sha256s: list[str] = []
@@ -1018,10 +1029,152 @@ def prepare_repository_source_owners(
             Mapping[str, Any],
         ]
     ] = []
+    training_surface_snapshots: list[
+        tuple[
+            float,
+            tuple[int, ...],
+            tuple[Mapping[str, Any], ...],
+            Mapping[str, Any],
+        ]
+    ] = []
+    canonical_baselines: list[CanonicalSourceBaselineReceipt] = []
     source_image_dimensions: tuple[int, int] | None = None
     manifest_image = cast(Any, request.manifest_image)
     surface = cast(Any, request.session)
     owners = {owner.owner_id: owner for owner in manifest_image.owners}
+
+    def _token_labels(token_ids: Sequence[int]) -> tuple[str, ...]:
+        tokenizer = getattr(surface, "_tokenizer", None)
+        convert = getattr(tokenizer, "convert_ids_to_tokens", None)
+        if not callable(convert):
+            raise HFNativeOneImageOwnerError(
+                "shared session lacks canonical token-string conversion"
+            )
+        labels: list[str] = []
+        for token_id in token_ids:
+            value = convert(int(token_id))
+            if isinstance(value, list):
+                if len(value) != 1:
+                    raise HFNativeOneImageOwnerError(
+                        "canonical tokenizer returned multiple token strings"
+                    )
+                value = value[0]
+            labels.append(str(value))
+        return tuple(labels)
+
+    def _row_token_spans(labels: Sequence[str]) -> tuple[tuple[int, int], ...]:
+        spans: list[tuple[int, int]] = []
+        index = 0
+        while index < len(labels):
+            if labels[index] != OBJECT_REF_START_TOKEN:
+                index += 1
+                continue
+            object_end = next(
+                (
+                    position
+                    for position in range(index + 1, len(labels))
+                    if labels[position] == OBJECT_REF_END_TOKEN
+                ),
+                None,
+            )
+            if object_end is None:
+                break
+            box_end = next(
+                (
+                    position
+                    for position in range(object_end + 1, len(labels))
+                    if labels[position] == BOX_END_TOKEN
+                ),
+                None,
+            )
+            if box_end is None:
+                break
+            spans.append((index, box_end + 1))
+            index = box_end + 1
+        return tuple(spans)
+
+    def _build_bf16_source_audits() -> dict[float, Mapping[str, Any]]:
+        provided = request.training_source_audits
+        if provided is not None:
+            if tuple(provided) != (1.0, 1.1):
+                raise HFNativeOneImageOwnerError(
+                    "BF16 Source audits must be ordered RP1.0/RP1.1"
+                )
+            return dict(provided)
+        free_running = getattr(surface, "free_running_greedy_token_ids", None)
+        tokenizer = getattr(surface, "_tokenizer", None)
+        decode_text = getattr(tokenizer, "decode", None)
+        if not callable(free_running) or not callable(decode_text):
+            raise HFNativeOneImageOwnerError(
+                "shared session lacks BF16-native free-running Source projection"
+            )
+        dimensions = source_image_dimensions
+        if dimensions is None:
+            raise HFNativeOneImageOwnerError(
+                "fp32 Source audit lacks image dimensions for BF16 projection"
+            )
+        width, height = dimensions
+        result: dict[float, Mapping[str, Any]] = {}
+        for rp in (1.0, 1.1):
+            generated = tuple(
+                int(value)
+                for value in cast(
+                    Sequence[Any], free_running(repetition_penalty=rp)
+                )
+            )
+            labels = _token_labels(generated)
+            text = str(
+                decode_text(
+                    list(generated),
+                    skip_special_tokens=False,
+                    clean_up_tokenization_spaces=False,
+                )
+            )
+            parsed = parse_compact_object_box_closed(
+                text,
+                row_id=f"bf16-source:{rp}",
+                row_index=0,
+                image_width=width,
+                image_height=height,
+            )
+            spans = _row_token_spans(labels)
+            if len(spans) != len(parsed.predictions):
+                raise HFNativeOneImageOwnerError(
+                    "BF16-native Source parser rows lack exact token spans"
+                )
+            base = dict(request.source_audits[rp])
+            provenance = base.get("provenance")
+            if not isinstance(provenance, Mapping):
+                raise HFNativeOneImageOwnerError(
+                    "fp32 Source audit lacks canonical provenance"
+                )
+            predictions = tuple(
+                {
+                    "generated_order": int(prediction["generated_order"]),
+                    "description": str(prediction["description"]),
+                    "bbox": list(prediction["bbox"]),
+                    "token_start": spans[index][0],
+                    "token_end": spans[index][1],
+                }
+                for index, prediction in enumerate(parsed.predictions)
+            )
+            result[rp] = {
+                **base,
+                "repetition_penalty": rp,
+                "generated_token_ids": list(generated),
+                "predictions": list(predictions),
+                "parser": parsed.parser_policy,
+                "parser_status": parsed.parse_status,
+                "stop_reason": "im_end",
+                "terminal_token_index": len(generated) - 1,
+                "malformed_row_count": len(parsed.dropped_predictions),
+                "surface": "bf16/flash_attention_2",
+                "image_width": width,
+                "image_height": height,
+                "provenance": dict(provenance),
+            }
+        return result
+
     for rp, output in request.source_audits.items():
         prompt = output.get("prompt_token_ids")
         generated = output.get("generated_token_ids")
@@ -1055,19 +1208,6 @@ def prepare_repository_source_owners(
                     "Source audits disagree on image dimensions"
                 )
             source_image_dimensions = candidate_dimensions
-        current_predictions = tuple(
-            CurrentPrediction(
-                generated_order=int(row["generated_order"]),
-                category=str(row["description"]),
-                bbox=cast(
-                    tuple[float, float, float, float],
-                    tuple(float(value) for value in row["bbox"]),
-                ),
-                token_start=int(row["token_start"]),
-                token_end=int(row["token_end"]),
-            )
-            for row in prediction_values
-        )
         checkpoint_sha = str(provenance.get("checkpoint_payload_sha256"))
         checkpoint_hashes.add(checkpoint_sha)
         runtime_identity = output.get("hf_runtime_identity")
@@ -1097,15 +1237,69 @@ def prepare_repository_source_owners(
         source_base_model_paths.append(
             str(source_identity_mapping.get("base_model_path"))
         )
+        matched = _match_prefix(
+            manifest_image,
+            prediction_values,
+            duplicate_iou_threshold=matcher.duplicate_iou_threshold,
+            owner_iou_threshold=matcher.owner_iou_threshold,
+        )
+        canonical_baselines.append(
+            CanonicalSourceBaselineReceipt(
+                surface=SOURCE_SURFACE,
+                repetition_penalty=float(rp),
+                canonical_payload=cast(Mapping[str, object], output),
+                owner_map=cast(
+                    Mapping[str, object], matched.get("owner_matches", {})
+                ),
+            )
+        )
+        source_surface_snapshots.append(
+            (
+                float(rp),
+                tuple(int(value) for value in generated_values),
+                tuple(prediction_values),
+                cast(Mapping[str, Any], matched),
+            )
+        )
+        audit_hashes.append((rp, json_sha256(output)))
+    training_source_audits = _build_bf16_source_audits()
+    for rp, output in training_source_audits.items():
+        prompt = output.get("prompt_token_ids")
+        generated = output.get("generated_token_ids")
+        predictions = output.get("predictions")
+        provenance = output.get("provenance")
+        if not all(isinstance(value, list) for value in (prompt, generated, predictions)) or not isinstance(provenance, Mapping):
+            raise HFNativeOneImageOwnerError(
+                "BF16-native Source audit lacks prompt/token/span evidence"
+            )
+        prompt_values = cast(list[Any], prompt)
+        generated_values = cast(list[Any], generated)
+        prediction_values = cast(list[Mapping[str, Any]], predictions)
+        current_predictions = tuple(
+            CurrentPrediction(
+                generated_order=int(row["generated_order"]),
+                category=str(row["description"]),
+                bbox=cast(
+                    tuple[float, float, float, float],
+                    tuple(float(value) for value in row["bbox"]),
+                ),
+                token_start=int(row["token_start"]),
+                token_end=int(row["token_end"]),
+            )
+            for row in prediction_values
+        )
+        checkpoint_sha = str(provenance.get("checkpoint_payload_sha256"))
         decode = CurrentDecode(
             image_id=1584,
-            trajectory_id=str(output.get("trajectory_id")),
+            trajectory_id=f"bf16-source:{rp}",
             generated_token_ids=tuple(int(value) for value in generated_values),
             predictions=current_predictions,
             parser=str(output.get("parser")),
             parser_status=str(output.get("parser_status")),
             stop_reason=str(output.get("stop_reason")),
-            checkpoint=CheckpointIdentity(str(provenance.get("checkpoint_path")), checkpoint_sha),
+            checkpoint=CheckpointIdentity(
+                str(provenance.get("checkpoint_path")), checkpoint_sha
+            ),
             terminal_token_index=output.get("terminal_token_index"),
             malformed_row_count=int(output.get("malformed_row_count", 0)),
         )
@@ -1116,13 +1310,35 @@ def prepare_repository_source_owners(
             duplicate_iou_threshold=matcher.duplicate_iou_threshold,
             owner_iou_threshold=matcher.owner_iou_threshold,
         )
+        canonical_baselines.append(
+            CanonicalSourceBaselineReceipt(
+                surface=TRAINING_SURFACE,
+                repetition_penalty=float(rp),
+                canonical_payload=cast(Mapping[str, object], output),
+                owner_map=cast(
+                    Mapping[str, object], matched.get("owner_matches", {})
+                ),
+            )
+        )
+        training_surface_snapshots.append(
+            (
+                float(rp),
+                tuple(int(value) for value in generated_values),
+                tuple(prediction_values),
+                cast(Mapping[str, Any], matched),
+            )
+        )
         rows = {row.generated_order: row for row in frontier.rows}
         owner_rows = tuple(
             sorted(
                 (
                     SealedOwnerRow(
                         owner_id=owner_id,
-                        owner_class=(LEGACY_M_OWNER_CLASS if owners[owner_id].stratum == "M" else TRUSTED_OWNER_CLASS),
+                        owner_class=(
+                            LEGACY_M_OWNER_CLASS
+                            if owners[owner_id].stratum == "M"
+                            else TRUSTED_OWNER_CLASS
+                        ),
                         token_start=rows[int(receipt["generated_order"])].token_start,
                         token_end=rows[int(receipt["generated_order"])].token_end,
                     )
@@ -1131,18 +1347,42 @@ def prepare_repository_source_owners(
                 key=lambda row: (row.token_start, row.token_end, row.owner_id),
             )
         )
-        sealed.append(SealedSourceDecode(1584, rp, tuple(prompt_values), tuple(generated_values), owner_rows))
-        source_surface_snapshots.append(
-            (
-                float(rp),
-                tuple(int(value) for value in generated_values),
-                tuple(prediction_values),
-                cast(Mapping[str, Any], matched),
+        sealed.append(
+            SealedSourceDecode(
+                1584,
+                rp,
+                tuple(prompt_values),
+                tuple(generated_values),
+                owner_rows,
             )
         )
         if rp == 1.0:
-            boundaries.append(SourceBoundaryInput(frontier, tuple(prompt_values), rp, manifest_image.image_sha256))
-        audit_hashes.append((rp, json_sha256(output)))
+            boundaries.append(
+                SourceBoundaryInput(
+                    frontier,
+                    tuple(prompt_values),
+                    rp,
+                    manifest_image.image_sha256,
+                )
+            )
+        training_audit_hashes.append((rp, json_sha256(output)))
+    training_rp1 = next(
+        (snapshot for snapshot in training_surface_snapshots if snapshot[0] == 1.0),
+        None,
+    )
+    if training_rp1 is None:
+        raise HFNativeOneImageOwnerError("BF16-native Source lacks RP1.0 baseline")
+    training_g = {
+        str(owner_id)
+        for owner_id in training_rp1[3].get("owner_matches", {})
+        if str(owner_id) in owners and owners[str(owner_id)].stratum == "G"
+    }
+    missing_protected_g = set(manifest_image.g_owner_ids) - training_g
+    if missing_protected_g:
+        raise HFNativeOneImageOwnerError(
+            "BF16-native Source is missing protected G owners: "
+            + ",".join(sorted(missing_protected_g))
+        )
     if len(checkpoint_hashes) != 1:
         raise HFNativeOneImageOwnerError("Source audits differ in checkpoint identity")
     if len(boundaries) != 1:
@@ -1186,27 +1426,6 @@ def prepare_repository_source_owners(
         str(owner.owner_id): tuple(float(value) for value in owner.bbox)
         for owner in manifest_image.owners
     }
-
-    def _token_labels(token_ids: tuple[int, ...]) -> tuple[str, ...]:
-        tokenizer = getattr(surface, "_tokenizer", None)
-        convert = getattr(tokenizer, "convert_ids_to_tokens", None)
-        if not callable(convert):
-            raise HFNativeOneImageOwnerError(
-                "shared session lacks canonical token-string conversion",
-                disposition="source_surface_coordinate_alias_unavailable",
-            )
-        labels: list[str] = []
-        for token_id in token_ids:
-            value = convert(int(token_id))
-            if isinstance(value, list):
-                if len(value) != 1:
-                    raise HFNativeOneImageOwnerError(
-                        "canonical tokenizer returned multiple token strings",
-                        disposition="source_surface_coordinate_alias_unavailable",
-                    )
-                value = value[0]
-            labels.append(str(value))
-        return tuple(labels)
 
     def _coordinate_bin(label: str) -> int | None:
         match = COORD_TOKEN_PATTERN.fullmatch(label)
@@ -1306,296 +1525,54 @@ def prepare_repository_source_owners(
             return cached
         diagnostic_context = _CoordinateAliasDiagnosticContext()
         try:
-            if source_surface_snapshots:
-                first_snapshot = source_surface_snapshots[0]
-                first_source_ids = tuple(first_snapshot[1])
-                first_match = first_snapshot[3]
-                first_owner_matches = first_match.get("owner_matches", {})
-                if isinstance(first_owner_matches, Mapping):
-                    first_source_boxes = {
-                        str(owner_id): cast(Sequence[float], receipt["bbox"])
-                        for owner_id, receipt in first_owner_matches.items()
-                    }
-                    first_source_rows = {
-                        str(owner_id): int(receipt["generated_order"])
-                        for owner_id, receipt in first_owner_matches.items()
-                    }
-                    first_source_membership = {
-                        owner_id: str(owners[owner_id].stratum)
-                        for owner_id in first_source_boxes
-                        if owner_id in owners
-                    }
-                    first_source_protected_g = tuple(
-                        owner_id
-                        for owner_id, stratum in first_source_membership.items()
-                        if stratum == "G"
-                    )
-                    diagnostic_context = replace(
-                        diagnostic_context,
-                        repetition_penalty=float(first_snapshot[0]),
-                        source_tokens=tuple(str(value) for value in first_source_ids),
-                        source_token_ids=first_source_ids,
-                        source_boxes=_CoordinateAliasDiagnosticContext._boxes(
-                            first_source_boxes
-                        ),
-                        source_owner_rows=_CoordinateAliasDiagnosticContext._rows(
-                            first_source_rows
-                        ),
-                        source_membership=_CoordinateAliasDiagnosticContext._membership(
-                            first_source_membership
-                        ),
-                        source_protected_g=first_source_protected_g,
-                    )
-            free_running = getattr(surface, "free_running_greedy_token_ids", None)
-            if not callable(free_running):
-                raise HFNativeOneImageOwnerError(
-                    "shared session lacks the free-running BF16/FA2 greedy owner surface",
-                    disposition="source_surface_coordinate_alias_unavailable",
-                )
-            training_sequences = tuple(
-                tuple(
-                    int(value)
-                    for value in cast(
-                        Sequence[Any],
-                        free_running(repetition_penalty=float(snapshot[0])),
-                    )
-                )
-                for snapshot in source_surface_snapshots
-            )
-            if len(training_sequences) != len(source_surface_snapshots):
-                source_snapshot = (
-                    source_surface_snapshots[0]
-                    if source_surface_snapshots
-                    else None
-                )
-                source_ids = source_snapshot[1] if source_snapshot is not None else ()
+            if len(source_surface_snapshots) != 2 or len(training_surface_snapshots) != 2:
                 result = _diagnostic_failure(
-                    "training greedy surface count differs from Source audits",
-                    repetition_penalty=(
-                        source_snapshot[0] if source_snapshot is not None else None
+                    "independent Source baseline count differs",
+                    source_token_ids=(
+                        source_surface_snapshots[0][1]
+                        if source_surface_snapshots
+                        else ()
                     ),
-                    source_tokens=tuple(str(value) for value in source_ids),
-                    source_token_ids=source_ids,
+                    training_token_ids=(
+                        training_surface_snapshots[0][1]
+                        if training_surface_snapshots
+                        else ()
+                    ),
                 )
                 alias_cache["result"] = result
                 return result
-            all_evidence = []
-            if source_image_dimensions is None:
-                source_snapshot = (
-                    source_surface_snapshots[0]
-                    if source_surface_snapshots
-                    else None
-                )
-                source_ids = source_snapshot[1] if source_snapshot is not None else ()
-                training_ids = training_sequences[0] if training_sequences else ()
-                result = _diagnostic_failure(
-                    "Source audit lacks canonical image_width/image_height",
-                    repetition_penalty=(
-                        source_snapshot[0] if source_snapshot is not None else None
-                    ),
-                    source_tokens=tuple(str(value) for value in source_ids),
-                    training_tokens=tuple(str(value) for value in training_ids),
-                    source_token_ids=source_ids,
-                    training_token_ids=training_ids,
-                )
-                alias_cache["result"] = result
-                return result
-            image_width, image_height = source_image_dimensions
-            for snapshot_index, (
-                _rp,
-                source_ids,
-                source_predictions,
-                source_match,
-            ) in enumerate(source_surface_snapshots):
-                source_ids = tuple(source_ids)
-                training_ids = tuple(training_sequences[snapshot_index])
-                source_boxes = {
-                    str(owner_id): cast(Sequence[float], receipt["bbox"])
-                    for owner_id, receipt in source_match["owner_matches"].items()
-                }
-                source_owner_rows = {
-                    str(owner_id): int(receipt["generated_order"])
-                    for owner_id, receipt in source_match["owner_matches"].items()
-                }
-                source_membership = {
-                    owner_id: str(owners[owner_id].stratum)
-                    for owner_id in source_boxes
-                    if owner_id in owners
-                }
-                source_protected_g = tuple(
-                    owner_id
-                    for owner_id, stratum in source_membership.items()
-                    if stratum == "G"
-                )
-                diagnostic_context = replace(
-                    diagnostic_context,
-                    repetition_penalty=float(_rp),
-                    source_tokens=tuple(str(value) for value in source_ids),
-                    training_tokens=tuple(str(value) for value in training_ids),
-                    source_token_ids=source_ids,
-                    training_token_ids=training_ids,
-                    source_boxes=_CoordinateAliasDiagnosticContext._boxes(source_boxes),
-                    source_owner_rows=_CoordinateAliasDiagnosticContext._rows(
-                        source_owner_rows
-                    ),
-                    source_membership=_CoordinateAliasDiagnosticContext._membership(
-                        source_membership
-                    ),
-                    source_protected_g=source_protected_g,
-                )
-                source_labels = _token_labels(source_ids)
-                training_labels = _token_labels(training_ids)
-                diagnostic_context = replace(
-                    diagnostic_context,
-                    source_tokens=source_labels,
-                    training_tokens=training_labels,
-                )
-                if len(source_labels) != len(training_labels):
+            all_evidence: list[object] = []
+            for snapshot_index, source_snapshot in enumerate(source_surface_snapshots):
+                source_rp, source_ids_raw, source_predictions, source_match = source_snapshot
+                training_rp, training_ids_raw, _training_predictions, training_match = training_surface_snapshots[snapshot_index]
+                if float(source_rp) != float(training_rp):
                     result = _diagnostic_failure(
-                        "training greedy token length differs",
-                        repetition_penalty=_rp,
-                        source_tokens=source_labels,
-                        training_tokens=training_labels,
-                        source_token_ids=source_ids,
-                        training_token_ids=training_ids,
-                        source_boxes=source_boxes,
-                        source_owner_rows=source_owner_rows,
-                        source_membership=source_membership,
-                        source_protected_g=source_protected_g,
+                        "independent Source repetition-penalty baselines differ",
+                        repetition_penalty=float(source_rp),
+                        source_token_ids=source_ids_raw,
+                        training_token_ids=training_ids_raw,
                     )
                     alias_cache["result"] = result
                     return result
-                owner_by_order = {
-                    int(receipt["generated_order"]): str(owner_id)
-                    for owner_id, receipt in source_match["owner_matches"].items()
-                }
-                training_predictions: list[dict[str, Any]] = []
-                coordinate_roles: dict[int, tuple[str, str]] = {}
-                for row in source_predictions:
-                    order = int(row["generated_order"])
-                    owner_id = owner_by_order.get(order)
-                    coordinate_positions = [
-                        position
-                        for position in range(
-                            int(row["token_start"]), int(row["token_end"])
-                        )
-                        if 0 <= position < len(source_labels)
-                        and _coordinate_bin(source_labels[position]) is not None
-                    ]
-                    if len(coordinate_positions) != 4:
-                        result = _diagnostic_failure(
-                            f"row {order} lacks four canonical coordinate tokens",
-                            repetition_penalty=_rp,
-                            source_tokens=source_labels,
-                            training_tokens=training_labels,
-                            source_token_ids=source_ids,
-                            training_token_ids=training_ids,
-                            source_boxes=source_boxes,
-                            source_owner_rows=source_owner_rows,
-                            source_membership=source_membership,
-                            source_protected_g=source_protected_g,
-                        )
-                        alias_cache["result"] = result
-                        return result
-                    for role, position in zip(
-                        ("x1", "y1", "x2", "y2"),
-                        coordinate_positions,
-                        strict=True,
-                    ):
-                        source_bin = _coordinate_bin(source_labels[position])
-                        training_bin = _coordinate_bin(training_labels[position])
-                        if source_bin is None or training_bin is None:
-                            result = _diagnostic_failure(
-                                f"row {order} has a non-canonical coordinate token",
-                                repetition_penalty=_rp,
-                                source_tokens=source_labels,
-                                training_tokens=training_labels,
-                                source_token_ids=source_ids,
-                                training_token_ids=training_ids,
-                                source_boxes=source_boxes,
-                                source_owner_rows=source_owner_rows,
-                                source_membership=source_membership,
-                                source_protected_g=source_protected_g,
-                            )
-                            alias_cache["result"] = result
-                            return result
-                        if owner_id is not None:
-                            coordinate_roles[position] = (owner_id, role)
-                    diagnostic_context = replace(
-                        diagnostic_context,
-                        coordinate_roles=_CoordinateAliasDiagnosticContext._roles(
-                            coordinate_roles
-                        ),
-                    )
-                    training_box = _project_coordinate_bbox(
-                        training_labels,
-                        coordinate_positions,
-                        image_width=image_width,
-                        image_height=image_height,
-                        field=f"training.predictions[{order}].bbox",
-                    )
-                    training_row = dict(row)
-                    training_row["bbox"] = list(training_box)
-                    training_predictions.append(training_row)
-                provisional_training_boxes = {
-                    owner_id: cast(Sequence[float], row["bbox"])
-                    for row in training_predictions
-                    for owner_id in [owner_by_order.get(int(row["generated_order"]))]
-                    if owner_id is not None
-                }
-                provisional_training_rows = {
-                    owner_id: int(row["generated_order"])
-                    for row in training_predictions
-                    for owner_id in [owner_by_order.get(int(row["generated_order"]))]
-                    if owner_id is not None
-                }
-                provisional_training_membership = {
-                    owner_id: str(owners[owner_id].stratum)
-                    for owner_id in provisional_training_boxes
-                    if owner_id in owners
-                }
-                diagnostic_context = replace(
-                    diagnostic_context,
-                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(
-                        provisional_training_boxes
-                    ),
-                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(
-                        provisional_training_rows
-                    ),
-                    training_membership=_CoordinateAliasDiagnosticContext._membership(
-                        provisional_training_membership
-                    ),
-                    training_protected_g=tuple(
-                        owner_id
-                        for owner_id, stratum in provisional_training_membership.items()
-                        if stratum == "G"
-                    ),
-                )
-                training_match = _match_prefix(
-                    manifest_image,
-                    training_predictions,
-                    duplicate_iou_threshold=matcher.duplicate_iou_threshold,
-                    owner_iou_threshold=matcher.owner_iou_threshold,
-                )
+                source_ids = tuple(source_ids_raw)
+                training_ids = tuple(training_ids_raw)
+                source_matches = source_match.get("owner_matches", {})
+                training_matches = training_match.get("owner_matches", {})
                 source_boxes = {
                     str(owner_id): cast(Sequence[float], receipt["bbox"])
-                    for owner_id, receipt in source_match["owner_matches"].items()
+                    for owner_id, receipt in source_matches.items()
                 }
                 training_boxes = {
                     str(owner_id): cast(Sequence[float], receipt["bbox"])
-                    for owner_id, receipt in training_match["owner_matches"].items()
+                    for owner_id, receipt in training_matches.items()
                 }
                 source_owner_rows = {
                     str(owner_id): int(receipt["generated_order"])
-                    for owner_id, receipt in source_match["owner_matches"].items()
+                    for owner_id, receipt in source_matches.items()
                 }
                 training_owner_rows = {
                     str(owner_id): int(receipt["generated_order"])
-                    for owner_id, receipt in training_match["owner_matches"].items()
-                }
-                gt_boxes = {
-                    str(owner.owner_id): tuple(float(value) for value in owner.bbox)
-                    for owner in manifest_image.owners
+                    for owner_id, receipt in training_matches.items()
                 }
                 source_membership = {
                     owner_id: str(owners[owner_id].stratum)
@@ -1607,48 +1584,99 @@ def prepare_repository_source_owners(
                     for owner_id in training_boxes
                     if owner_id in owners
                 }
+                source_protected_g = tuple(
+                    owner_id
+                    for owner_id, stratum in source_membership.items()
+                    if stratum == "G"
+                )
+                training_protected_g = tuple(
+                    owner_id
+                    for owner_id, stratum in training_membership.items()
+                    if stratum == "G"
+                )
+                source_labels = _token_labels(source_ids)
+                training_labels = _token_labels(training_ids)
+                coordinate_roles: dict[int, tuple[str, str]] = {}
+                owner_by_order = {
+                    int(receipt["generated_order"]): str(owner_id)
+                    for owner_id, receipt in source_matches.items()
+                }
+                for row in source_predictions:
+                    row_start = int(row["token_start"])
+                    row_end = int(row["token_end"])
+                    positions = [
+                        position
+                        for position in range(row_start, row_end)
+                        if 0 <= position < len(source_labels)
+                        and _coordinate_bin(source_labels[position]) is not None
+                    ]
+                    if len(positions) != 4:
+                        result = _diagnostic_failure(
+                            "Source canonical row lacks four coordinate tokens",
+                            repetition_penalty=float(source_rp),
+                            source_tokens=source_labels,
+                            training_tokens=training_labels,
+                            source_token_ids=source_ids,
+                            training_token_ids=training_ids,
+                            source_boxes=source_boxes,
+                            training_boxes=training_boxes,
+                            source_owner_rows=source_owner_rows,
+                            training_owner_rows=training_owner_rows,
+                            source_membership=source_membership,
+                            training_membership=training_membership,
+                            source_protected_g=source_protected_g,
+                            training_protected_g=training_protected_g,
+                        )
+                        alias_cache["result"] = result
+                        return result
+                    owner_id = owner_by_order.get(int(row["generated_order"]))
+                    if owner_id is not None:
+                        coordinate_roles.update(
+                            {
+                                position: (owner_id, role)
+                                for role, position in zip(
+                                    ("x1", "y1", "x2", "y2"),
+                                    positions,
+                                    strict=True,
+                                )
+                            }
+                        )
                 diagnostic_context = replace(
                     diagnostic_context,
-                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(
-                        training_boxes
+                    repetition_penalty=float(source_rp),
+                    source_tokens=source_labels,
+                    training_tokens=training_labels,
+                    source_token_ids=source_ids,
+                    training_token_ids=training_ids,
+                    coordinate_roles=_CoordinateAliasDiagnosticContext._roles(
+                        coordinate_roles
                     ),
-                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(
-                        training_owner_rows
-                    ),
-                    training_membership=_CoordinateAliasDiagnosticContext._membership(
-                        training_membership
-                    ),
-                    training_protected_g=tuple(
-                        owner_id
-                        for owner_id, stratum in training_membership.items()
-                        if stratum == "G"
-                    ),
+                    source_boxes=_CoordinateAliasDiagnosticContext._boxes(source_boxes),
+                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(training_boxes),
+                    source_owner_rows=_CoordinateAliasDiagnosticContext._rows(source_owner_rows),
+                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(training_owner_rows),
+                    source_membership=_CoordinateAliasDiagnosticContext._membership(source_membership),
+                    training_membership=_CoordinateAliasDiagnosticContext._membership(training_membership),
+                    source_protected_g=source_protected_g,
+                    training_protected_g=training_protected_g,
                 )
                 result = reconcile_coordinate_alias(
                     source_tokens=source_labels,
                     training_tokens=training_labels,
                     source_token_ids=source_ids,
                     training_token_ids=training_ids,
-                    repetition_penalty=float(_rp),
+                    repetition_penalty=float(source_rp),
                     coordinate_roles=coordinate_roles,
                     source_boxes=source_boxes,
                     training_boxes=training_boxes,
-                    gt_boxes=gt_boxes,
+                    gt_boxes=canonical_gt_boxes,
                     owner_match={owner_id: owner_id for owner_id in source_boxes},
                     source_owner_rows=source_owner_rows,
                     training_owner_rows=training_owner_rows,
                     source_membership=source_membership,
                     training_membership=training_membership,
-                    source_protected_g=tuple(
-                        owner_id
-                        for owner_id, stratum in source_membership.items()
-                        if stratum == "G"
-                    ),
-                    training_protected_g=tuple(
-                        owner_id
-                        for owner_id, stratum in training_membership.items()
-                        if stratum == "G"
-                    ),
+                    source_protected_g=source_protected_g,
+                    training_protected_g=training_protected_g,
                 )
                 if not result.admitted:
                     alias_cache["result"] = result
@@ -1658,7 +1686,7 @@ def prepare_repository_source_owners(
                 admitted=True,
                 mismatch_count=0,
                 failure_reason=None,
-                evidence=tuple(all_evidence),
+                evidence=tuple(cast(Any, all_evidence)),
             )
         except BaseException as error:
             result = _diagnostic_failure_from_context(
@@ -1672,8 +1700,11 @@ def prepare_repository_source_owners(
         frozen_bank["bank"] = measurement.freeze_witness_bank(
             binding=witness_binding
         )
-        result = coordinate_alias_check()
-        return 0 if result.admitted else max(1, result.mismatch_count)
+        # Cross-surface token/row/owner divergence is diagnostic-only.  The
+        # checker is still executed and persisted, but it cannot block the
+        # independent BF16 policy baseline after the witness has frozen.
+        coordinate_alias_check()
+        return 0
 
     reconciliation = reconcile_source_surface(
         SourceSurfaceReconciliationRequest(
@@ -1717,6 +1748,7 @@ def prepare_repository_source_owners(
             decodes=tuple(sealed),
             check=freeze_and_check,
             coordinate_alias_check=coordinate_alias_check,
+            canonical_baselines=tuple(canonical_baselines),
         )
     )
     if not reconciliation.admitted:
@@ -1739,7 +1771,7 @@ def prepare_repository_source_owners(
         parameter_state_sha256=identity.parameter_state_sha256,
         manifest_sha256=getattr(request.config, "manifest_sha256"),
         image_sha256=identity.image_sha256,
-        source_audit_sha256s=tuple(audit_hashes),
+        source_audit_sha256s=tuple(training_audit_hashes),
         compiler_source_context=tuple(boundaries), witness_bank=bank,
         realized_margin_probe=realized_margin_probe,
         frozen_before_acquisition=True, sample_group_count_at_freeze=0,

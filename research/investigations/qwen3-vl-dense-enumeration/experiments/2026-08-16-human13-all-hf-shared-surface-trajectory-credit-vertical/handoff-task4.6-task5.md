@@ -1,5 +1,30 @@
 # Handoff: Task 4.6 / Task 5 boundary
 
+## Semantic supersession (2026-08-20)
+
+The former cross-surface exact-token/coordinate-alias admission rule is
+superseded by the active OpenSpec/design decision.  The immutable
+`one-image-successor-20260820T-reconcile-v2` artifact is retained as the
+evidence that fp32/SDPA and BF16/FA2 are distinct policies: BF16 preserved all
+protected G owners and additionally covered `gt:1584:12`, while other token
+and owner differences were not coordinate quantization aliases.  Future
+admission must therefore freeze independent baselines: BF16-native Source,
+compiler, witness, and preservation inputs on GPU0; fp32/SDPA Source baselines
+at RP 1.0 and 1.10 on GPU1.  Cross-surface divergence is diagnostic-only.
+Strict BF16 sampler/replay parity, model/checkpoint/adapter/tokenizer/prompt/
+image/manifest identity, protected BF16 G presence, K16, LR, objective,
+dual-RP outcome gate, private proposal, rollback, and no-promotion remain
+unchanged.
+
+The current live diagnostic root is decision-bearing but pre-update only:
+
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/one-image-successor-20260820T-reconcile-v2`
+
+It recorded RP1.0 pass, RP1.1 diagnostic divergence, 204 source-audit
+forwards, zero sample/replay/backward/update/checkpoint actions, and a clean
+source-only failed close.  Its compact evidence is under
+`receipts/006-source_audit_rp_1.1.json`.
+
 Date: 2026-08-16 UTC
 
 ## Objective and decision
@@ -36,27 +61,29 @@ gate, output publication, or downstream consumer evidence.
 
 ## Open blocker and stop rule
 
-The guarded entry still has only an injected `OneImageServices` protocol.  No
-production implementation is present for the complete Task-5 path.  The CUDA
-adapter is a bounded seam, but production wiring still needs:
+The production service and split CUDA lifecycle now exist, but the next live
+owner revision must replace the former cross-surface reconciliation gate with
+surface-separated admission.  It still needs:
 
-1. conversion from Task-3 `human13_all_hf_objective_binding.v1` to the adapter's
-   `human13_cuda_objective_binding.v1`;
-2. live Task-2 replay/trajectory/compiler/witness ownership on the same CUDA
-   model and transaction;
-3. GPU-1 HF fp32/SDPA source/proposal audit ownership;
-4. private proposal checkpoint bytes, rollback reproduction, durable failure or
-   success receipt, and downstream/full-panel consumer wiring; and
-5. recovery of the stale configured `one-image/run-reservation.json` (PID
-   377949 is dead) under an explicit owner.  It must not be deleted or
+1. a BF16-native free-running Source projection on the same CUDA session;
+2. BF16-native compiler Source boundary, remaining-owner state, frozen witness
+   bank/Jacobians, and post-apply margin probe;
+3. durable fp32/SDPA Source baselines at RP 1.0 and 1.10, with proposal audits
+   compared only within that fp32 surface;
+4. strict protected-BF16-G and internal sampler/replay parity admission, while
+   retaining cross-surface divergence as diagnostic-only evidence;
+5. the existing private checkpoint, rollback reproduction, durable receipt,
+   and downstream/full-panel consumer wiring; and
+6. append-only recovery of the stale configured `one-image/run-reservation.json`
+   (PID 377949 is dead) under an explicit owner.  It must not be deleted or
    overwritten by a continuation run without a verified recovery receipt.
 
-Do not call `--execute`, do not perform an update, and do not mark 4.6 or 5.x
-complete until these owners exist and a production-shaped dry-run/update
-receipt binds the current tree, config, source assembly, resource cards,
-checkpoint/output paths, and rollback consumer.  If the next task cannot
-resolve the service and reservation ownership without changing research
-meaning or execution policy, leave the tasks unchecked and report HOLD.
+Do not mark 4.6 or 5.x complete until a production-shaped no-update receipt
+binds the current tree, config, BF16-native Source/witness/compiler inputs,
+fp32 baselines, resource cards, and diagnostic divergence.  Only then may the
+same reserved root perform one K16 private update.  A missing protected BF16 G,
+internal parity failure, or fp32 identity drift remains a typed HOLD; a
+cross-surface token/owner difference alone does not.
 
 ## Minimal next reading path
 

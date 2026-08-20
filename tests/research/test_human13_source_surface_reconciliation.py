@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -7,6 +9,7 @@ import pytest
 from scripts.research.human13_hf_shared_surface import HFSharedSurfaceIdentity
 from scripts.research.human13_rp_crossover_witness import SealedSourceDecode
 from scripts.research.human13_source_surface_reconciliation import (
+    CanonicalSourceBaselineReceipt,
     CoordinateAliasReconciliation,
     SourceSurfaceReconciliationReceipt,
     SourceSurfaceReconciliationRequest,
@@ -30,6 +33,28 @@ def _identity() -> HFSharedSurfaceIdentity:
         prompt_sha256=json_sha256([10]),
         image_sha256="f" * 64,
         use_cache=False,
+    )
+
+
+def _canonical_baselines() -> tuple[CanonicalSourceBaselineReceipt, ...]:
+    return tuple(
+        CanonicalSourceBaselineReceipt(
+            surface=surface,
+            repetition_penalty=rp,
+            canonical_payload={
+                "surface": surface,
+                "repetition_penalty": rp,
+                "generated_token_ids": [1, 2],
+                "predictions": [],
+            },
+            owner_map={},
+        )
+        for surface, rp in (
+            ("gpu1:fp32/sdpa/batch1", 1.0),
+            ("gpu1:fp32/sdpa/batch1", 1.1),
+            ("gpu0:bfloat16/flash_attention_2", 1.0),
+            ("gpu0:bfloat16/flash_attention_2", 1.1),
+        )
     )
 
 
@@ -72,6 +97,7 @@ def _request(*, check) -> SourceSurfaceReconciliationRequest:
             SealedSourceDecode(1584, 1.0, (10,), (1, 2), ()),
             SealedSourceDecode(1584, 1.1, (10,), (1, 2), ()),
         ),
+        canonical_baselines=_canonical_baselines(),
         check=check,
     )
 
@@ -429,10 +455,139 @@ def test_source_surface_failure_receipt_reload_and_content_tamper_fail_closed() 
     )
 
     receipt = reconcile_source_surface(request)
-    assert receipt.admitted is False
+    assert receipt.admitted is True
+    assert receipt.cross_surface_disposition == "diagnostic_only"
     restored = SourceSurfaceReconciliationReceipt.from_dict(receipt.to_dict())
     assert restored.to_dict() == receipt.to_dict()
     tampered = receipt.to_dict()
     tampered["content_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="content hash"):
         SourceSurfaceReconciliationReceipt.from_dict(tampered)
+
+
+def test_nested_rp1_divergence_retains_all_four_canonical_source_baselines() -> None:
+    baselines = tuple(
+        CanonicalSourceBaselineReceipt(
+            surface=surface,
+            repetition_penalty=rp,
+            canonical_payload={
+                "surface": surface,
+                "repetition_penalty": rp,
+                "generated_token_ids": [100, 200 + index],
+                "predictions": [
+                    {
+                        "generated_order": 0,
+                        "description": "person",
+                        "bbox": [10.0, 20.0, 30.0, 40.0],
+                        "token_start": 0,
+                        "token_end": 2,
+                    }
+                ],
+            },
+            owner_map={
+                "gt:1584:2": {
+                    "generated_order": 0,
+                    "bbox": [10.0, 20.0, 30.0, 40.0],
+                }
+            },
+        )
+        for index, (surface, rp) in enumerate(
+            (
+                ("gpu1:fp32/sdpa/batch1", 1.0),
+                ("gpu1:fp32/sdpa/batch1", 1.1),
+                ("gpu0:bfloat16/flash_attention_2", 1.0),
+                ("gpu0:bfloat16/flash_attention_2", 1.1),
+            )
+        )
+    )
+    nested_rp1_divergence = CoordinateAliasReconciliation(
+        admitted=False,
+        mismatch_count=1,
+        failure_reason="non-coordinate token differs at position 5",
+    )
+    request = _request(check=lambda: 0)
+    request = SourceSurfaceReconciliationRequest(
+        **{
+            **request.__dict__,
+            "coordinate_alias_check": lambda: nested_rp1_divergence,
+            "canonical_baselines": baselines,
+        }
+    )
+
+    receipt = reconcile_source_surface(request)
+
+    assert receipt.admitted is True
+    assert receipt.cross_surface_disposition == "diagnostic_only"
+    published = cast(
+        list[dict[str, Any]], receipt.to_dict()["canonical_baselines"]
+    )
+    assert [
+        (item["surface"], item["repetition_penalty"]) for item in published
+    ] == [
+        ("gpu1:fp32/sdpa/batch1", 1.0),
+        ("gpu1:fp32/sdpa/batch1", 1.1),
+        ("gpu0:bfloat16/flash_attention_2", 1.0),
+        ("gpu0:bfloat16/flash_attention_2", 1.1),
+    ]
+    for expected, observed in zip(baselines, published, strict=True):
+        assert observed["canonical_payload"] == expected.canonical_payload
+        assert observed["canonical_payload_sha256"] == json_sha256(
+            expected.canonical_payload
+        )
+        assert observed["owner_map"] == expected.owner_map
+        assert observed["owner_map_sha256"] == json_sha256(expected.owner_map)
+    restored = SourceSurfaceReconciliationReceipt.from_dict(receipt.to_dict())
+    assert restored.to_dict() == receipt.to_dict()
+    incomplete = receipt.to_dict()
+    incomplete["canonical_baselines"] = published[:-1]
+    with pytest.raises(ValueError, match="bind fp32/BF16"):
+        SourceSurfaceReconciliationReceipt.from_dict(incomplete)
+    payload_tamper = receipt.to_dict()
+    tampered_baselines = cast(
+        list[dict[str, Any]], payload_tamper["canonical_baselines"]
+    )
+    tampered_payload = cast(
+        dict[str, Any], tampered_baselines[3]["canonical_payload"]
+    )
+    tampered_payload["generated_token_ids"] = [999]
+    with pytest.raises(ValueError, match="payload hash"):
+        SourceSurfaceReconciliationReceipt.from_dict(payload_tamper)
+
+
+def test_new_four_cell_receipt_uses_v3_without_masquerading_as_v2() -> None:
+    receipt = reconcile_source_surface(_request(check=lambda: 0))
+
+    assert receipt.to_dict()["schema_version"] == (
+        "human13_source_surface_reconciliation.v3"
+    )
+
+
+def test_immutable_v6_legacy_v2_receipt_still_round_trips_strictly() -> None:
+    phase_path = Path(
+        "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
+        "2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/"
+        "one-image-successor-20260820T-preflight-bf16-native-v6/receipts/"
+        "007-source_surface_reconciliation.json"
+    )
+    phase = cast(dict[str, Any], json.loads(phase_path.read_text(encoding="utf-8")))
+    evidence = cast(dict[str, Any], phase["evidence"])
+    payload = cast(dict[str, Any], evidence["receipt"])
+
+    restored = SourceSurfaceReconciliationReceipt.from_dict(payload)
+
+    assert restored.to_dict() == payload
+    assert restored.to_dict()["schema_version"] == (
+        "human13_source_surface_reconciliation.v2"
+    )
+    assert "canonical_baselines" not in restored.to_dict()
+    legacy_marked_v3 = dict(payload)
+    legacy_marked_v3["schema_version"] = (
+        "human13_source_surface_reconciliation.v3"
+    )
+    with pytest.raises(ValueError, match="fields differ"):
+        SourceSurfaceReconciliationReceipt.from_dict(legacy_marked_v3)
+    v2_with_v3_fields = dict(payload)
+    v3 = reconcile_source_surface(_request(check=lambda: 0)).to_dict()
+    v2_with_v3_fields["canonical_baselines"] = v3["canonical_baselines"]
+    with pytest.raises(ValueError, match="fields differ"):
+        SourceSurfaceReconciliationReceipt.from_dict(v2_with_v3_fields)

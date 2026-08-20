@@ -143,34 +143,45 @@ before any full algorithm update exists.  If the complete arm produces a
 positive protected result, a later change may compare trajectory-only and
 compiler-only additions.
 
-### 5. Separate the training surface from the behavioral audit surface
+### 5. Separate the training policy from the behavioral audit surface
 
 Sampling, replay, compiler gradient, preservation Jacobians, and AdamW run on
-GPU 0 through the shared BF16/FA2 session.  Source and proposal clean-greedy
-audits use the established HF fp32/SDPA batch-one evaluator on GPU 1 when two
-cards are available.  BF16/FA2 is the sole authority for the scientific
-objective and update path.  The audit model is not score-function evidence and
-owns only a stable owner-level behavioral readout; it does not need numerical
-or token identity with the training surface.
+GPU 0 through the shared BF16/FA2 session.  The BF16 session freezes a
+canonical Source decode independently at each RP, derives its owner rows and
+compiler Source boundary, freezes BF16-native WitnessMeasurement/Jacobians,
+and uses the same BF16 surface for the post-apply margin probe.  Source and
+proposal clean-greedy audits use the established HF fp32/SDPA batch-one
+evaluator on GPU 1 when two cards are available.  The fp32 Source baseline is
+frozen before the update at RP 1.0 and RP 1.10, and proposal outcomes are
+computed only as Source-versus-proposal changes within that fp32 surface.
+BF16/FA2 is the sole authority for the scientific objective and update path;
+the audit model is not score-function evidence and owns only a stable
+owner-level behavioral readout.  Its output need not be numerically or
+token-identical to the training surface.
 
-#### Cross-surface reconciliation
+#### Independent baselines and diagnostic cross-surface divergence
 
-The source-owner gate has one constructor/loader/checker/publisher choke point
-for comparing the two clean-greedy surfaces.  It parses both outputs with the
-frozen canonical parser, then applies a cardinality-first one-to-one owner
-matcher.  Non-coordinate tokens (row open/close, description/category,
-STOP/terminal, row order and structure) must be identical.  A legal rectangle
-may differ only in a decoded 1000-bin coordinate; every differing coordinate
-must have inclusive `abs(delta_bin) <= 5`.  The matched owner, full matched
-owner set, G/H/M membership, and protected-G identity must be unchanged.  The
-receipt records each alias position, coordinate role, token/bin pair, delta,
-both boxes, owner, both IoUs, and the final disposition.  A delta above five,
-an invalid rectangle, a non-coordinate mismatch, an owner exchange, or a
-membership change fails closed.
+The admission choke point has one constructor/loader/checker/publisher path
+for two independent canonical baselines.  It parses each output with the
+frozen canonical parser and applies the cardinality-first one-to-one owner
+matcher on each surface separately.  BF16 admission requires every frozen
+manifest G owner needed for preservation to be present in the BF16 Source
+baseline and requires the BF16-native witness/compiler inputs to be valid.
+The fp32/SDPA Source baseline must be durable at both audit repetition
+penalties before any private update.  Cross-surface differences are published
+as a `diagnostic_only` divergence receipt; they never gate the BF16 proposal.
 
-This rule is deliberately asymmetric: it admits a behavioral coordinate alias
-for the audit surface, but it never widens BF16/FA2 sampler-to-replay history,
-chosen-token, shape, or processed-log-probability parity.
+The divergence receipt retains the old coordinate-alias evidence format where
+available (token positions, coordinate roles, bins/deltas, boxes, owners, IoUs
+and disposition), plus complete token counts, owner sets/maps, membership,
+protected-G sets, and hashes of the full prediction payloads.  It explicitly
+records that the surfaces have different policies.  A difference such as the
+observed BF16 extra H owner is therefore scientifically visible without being
+misclassified as a quantization alias.  Strict identity checks still fail
+closed for model/checkpoint/adapter/embedding/tokenizer/prompt/image/manifest
+or declared processor-policy drift.  This diagnostic path never widens
+BF16/FA2 sampler-to-replay history, chosen-token, shape, or processed-
+log-probability parity.
 
 The runtime writes a private adapter checkpoint only for evaluation.  It does
 not publish or promote it.  If a second GPU is unavailable, execution stays
@@ -179,9 +190,12 @@ a separately reviewed sequential unload/reload adapter may be added later.
 
 ### 6. Make one-image behavior—not another infrastructure matrix—the gate
 
-For each audit RP `r`, define `G_r` as the Source clean-greedy matched-owner
-set.  Define `H` before the update from trusted owners hit by the new RP-1.0
-K16 acquisition but absent from `G_1.0`.  Proposal readout reports:
+For each audit RP `r`, define `G_r` as the fp32/SDPA Source clean-greedy
+matched-owner set.  Define the BF16 training target as the manifest H set
+minus owners already present in the BF16-native Source baseline.  A BF16
+Source-covered H owner is trusted baseline context, not an H gain target.
+Trajectory credit may still account for its first hits, but the continuation
+gate does not claim a gain for it.  Proposal readout reports:
 
 ```text
 H_gain_r = |proposal_r intersect H minus G_r|
@@ -245,10 +259,12 @@ one-image terminal hash.  There are no adaptive retries.
    existing ledger/compiler/preservation runtime through injected fakes.
 3. Add the one-image production-shaped entry, private dual-GPU audit lifecycle,
    immutable receipts, and a zero-action dry run.
-4. Run one no-update image-1584 reconciliation/parity vertical.  If the fixed
-  coordinate-alias reconciliation and unchanged BF16/FA2 replay parity are
-  both admitted, continue in the
-   same reserved root to exactly one private complete update and dual-RP audit.
+4. Run one no-update image-1584 preflight.  Freeze the BF16-native Source
+   projection/witness/compiler boundary and the fp32/SDPA Source baselines;
+   publish any cross-surface divergence as diagnostic-only evidence while
+   retaining strict BF16/FA2 replay parity.  If these independent admissions
+   pass, continue in the same reserved root to exactly one private complete
+   update and dual-RP audit.
 5. Publish the bounded one-image result and rollback evidence.  Run the
    13-image continuation only if the exact continuation gate passes.
 

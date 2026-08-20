@@ -44,9 +44,12 @@
 - [x] 3.1 Adapt the admitted replay rows to the existing sealed
   `TrajectoryCreditLedger` and global `N*K` numerator/denominator without
   changing first-hit, burden, STOP, RLOO, or legacy-M semantics.
-- [x] 3.2 Materialize the existing sparse compiler on the same live BF16/FA2
-  Source session, including absent-site zero semantics, frozen alias binding,
-  `kappa=1`, margin `1e-4`, and coefficient `1.0`.
+- [ ] 3.2 Materialize the existing sparse compiler on a BF16-native canonical
+  Source projection from the same live BF16/FA2 session, including
+  absent-site zero semantics, frozen alias binding, `kappa=1`, margin `1e-4`,
+  coefficient `1.0`, and remaining-owner state that excludes H owners already
+  covered by the BF16 Source baseline.  Do not feed fp32/SDPA token paths into
+  the compiler or preservation witness bank.
 - [x] 3.3 Reuse fresh AdamW at fixed `3e-6` and the existing actual-delta
   owner-wise preservation projection; require all three components and forbid
   CE, unprojected, or missing-component fallback.
@@ -68,14 +71,15 @@
 - [x] 4.2 Bind GPU 0 to the shared training session and GPU 1 to the established
   HF fp32/SDPA batch-one audit path; fail before model load when two distinct
   cards, output roots, or authority receipts are unavailable.
-- [x] 4.3 Compute fresh Source and private-proposal clean greedy at RP 1.0 and
-  RP 1.10, then publish H gained, G lost, incidental M gained, net unique
-  owners, duplicate/unmatched/malformed burdens, stop/cap, rows, and tokens
-  under the canonical parser/matcher.  Reconcile the fp32/SDPA audit against
-  the BF16/FA2 training surface through the fixed coordinate-only bin alias
-  (`abs(delta) <= 5`, inclusive); non-coordinate tokens, legal rectangles,
-  canonical owner assignment, matched sets, G/H/M membership, and protected-G
-  identity remain exact, while BF16/FA2 sampler-to-replay parity remains
+- [ ] 4.3 Build independent canonical baselines: BF16-native Source
+  projection/witness/compiler inputs on GPU0 and fp32/SDPA Source clean-greedy
+  baselines at RP 1.0 and RP 1.10 on GPU1.  Publish H gained, G lost,
+  incidental M gained, net unique owners, duplicate/unmatched/malformed
+  burdens, stop/cap, rows, and tokens under the canonical parser/matcher for
+  the fp32 Source-versus-proposal audit.  Keep cross-surface token/row/owner
+  differences as `diagnostic_only` evidence; enforce strict identity fields and
+  protected BF16 G presence, but do not use coordinate equality or owner-set
+  equality as an admission gate.  BF16/FA2 sampler-to-replay parity remains
   strict.
 - [x] 4.4 Implement the exact continuation gate and a full-panel entry that
   remains model/GPU-inert unless it receives the content hash of a passing
@@ -85,21 +89,26 @@
   parity failure, update failure, completed-null/unsafe result, and passing
   one-image result.
 - [ ] 4.6 Run the final prelaunch smoke review against the real public CLI,
-  config, model assembly, sampler/replay, backward, private checkpoint, audit,
-  analyzer, rollback, and consumer interfaces; verify the coordinate-alias
-  reconciliation choke point and unchanged internal replay parity; resolve
-  only conclusion-changing P0/P1 findings before execution.
+  config, model assembly, BF16-native Source projection/witness/compiler,
+  sampler/replay, backward, private checkpoint, paired fp32 audit, analyzer,
+  rollback, and consumer interfaces; verify the shared independent-baseline
+  choke point, diagnostic-only divergence receipt, and unchanged internal
+  replay parity; resolve only conclusion-changing P0/P1 findings before
+  execution.
 
 ## 5. Bounded execution and closure
 
 - [ ] 5.1 Inspect live GPU/process/artifact state, reserve two suitable cards and
-  the immutable one-image root, and run the guarded no-update image-1584 K16
-  shared-surface coordinate-reconciliation plus strict internal-parity phase.
-- [ ] 5.2 If coordinate reconciliation and strict internal parity both pass,
-  continue in the same declared run to one
-  complete private update, both clean-greedy audits, exact rollback, and Source
-  reproduction; if parity fails, publish the typed implementation HOLD with
-  zero update and do not tune tolerances.
+  the immutable one-image root, and run the guarded no-update image-1584
+  preflight: freeze the BF16-native Source witness/compiler inputs and fp32
+  Source baselines, publish cross-surface divergence as diagnostic-only, and
+  keep K16 sample/replay/update counters at zero.
+- [ ] 5.2 If independent BF16/fp32 baseline admission and strict BF16 internal
+  parity both pass, continue in the same declared run to one complete private
+  update, both fp32 clean-greedy audits, exact rollback, and Source
+  reproduction; if a protected BF16 G owner is missing or parity fails,
+  publish the typed implementation HOLD with zero update and do not tune
+  tolerances or force cross-surface agreement.
 - [ ] 5.3 Independently audit artifact hashes, surface lineage, request/token
   coverage, one-update count, gained/lost arithmetic, prohibited-path absence,
   private-byte lifecycle, and rollback before interpreting the result.

@@ -472,6 +472,7 @@ class WitnessMeasurement:
             raise WitnessMeasurementError("a typed witness binding is required")
         layout = self.parameter_layout
         digests: dict[str, str] = {}
+        frozen_jacobians: dict[str, torch.Tensor] = {}
         for site in self.witness_sites:
             jacobian = self._jacobian(site)
             if jacobian.numel() != layout.total_numel:
@@ -479,6 +480,11 @@ class WitnessMeasurement:
                     "witness Jacobian does not match the frozen parameter layout"
                 )
             digests[site.canonical_key] = jacobian_sha256(jacobian)
+            # The BF16/FA2 graph can be numerically nondeterministic across
+            # repeated autograd traversals.  A frozen witness must therefore
+            # serve the exact Jacobian that was content-addressed at freeze,
+            # rather than re-running the live graph later.
+            frozen_jacobians[site.canonical_key] = jacobian.detach().clone()
             del jacobian
         by_key = {site.canonical_key: site for site in self.sites}
         witnesses = tuple(
@@ -502,7 +508,7 @@ class WitnessMeasurement:
                 raise WitnessMeasurementError(
                     f"no frozen witness site owns {witness.canonical_key}"
                 )
-            return self._jacobian(site)
+            return frozen_jacobians[witness.canonical_key].clone()
 
         constraints = tuple(
             sorted(

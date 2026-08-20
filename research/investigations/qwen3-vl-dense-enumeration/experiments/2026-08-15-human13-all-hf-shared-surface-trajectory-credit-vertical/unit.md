@@ -4,12 +4,12 @@ description: A compute-heavy one-image successor that finally tests one complete
 type: investigation
 role: research_unit
 authority: non_normative_research
-implementation_status: planned
+implementation_status: active
 unit_id: 2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical
 topic: qwen3-vl-dense-enumeration
-status: planned
-evidence_status: none
-updated: 2026-08-15
+status: active
+evidence_status: live_diagnostic
+updated: 2026-08-20
 ---
 
 # One-sentence question
@@ -17,7 +17,10 @@ updated: 2026-08-15
 If K16 sampling and gradient replay share one trainable HF BF16/FA2 model
 surface, can one complete trajectory-credit + sparse greedy-compiler +
 preservation update add at least one K-retrievable owner to image-1584 clean
-greedy without losing any Source-visible owner under either RP audit?
+greedy without losing any Source-visible owner under either fp32/SDPA RP audit?
+The BF16/FA2 surface owns the policy and update; fp32/SDPA owns only paired
+owner-level behavioral audit, so cross-surface token/owner differences are
+diagnostic evidence rather than an admission gate.
 
 ## Authority and predecessor boundary
 
@@ -48,10 +51,15 @@ often gained H while losing G, proving both that the language-only DoRA surface
 can move recall and that owner exchange is a first-order failure mode.
 
 The new algorithm has never been trained.  Its last unit stopped before
-backward.  The strongest alternative explanation is therefore mechanical:
+backward.  The strongest alternative explanation was initially mechanical:
 multi-trajectory credit may be useful, but the cross-engine numerical policy
 made the score-function evidence inadmissible before the algorithm could be
-tested.
+tested.  A fresh GPU0/GPU1 diagnostic on 2026-08-20 falsified the stronger
+assumption that the two surfaces should have the same owner set: BF16 retained
+all protected G owners and additionally covered `gt:1584:12`, while fp32/SDPA
+differed at several non-coordinate and large-coordinate positions.  Under the
+revised surface-separated design this is diagnostic-only evidence, not a
+quantization alias, and it does not relax internal BF16 sampler/replay parity.
 
 The strongest algorithmic alternative is an explicitly approximate/off-policy
 vLLM estimator.  That route may be more scalable, but it must expose its bias
@@ -107,6 +115,15 @@ error `<=0.002` nats.  These are inherited semantic tolerances, not a target to
 tune.  Failure produces zero optimizer steps.  It is an implementation HOLD
 for this shared-surface seam, not evidence that the algorithm is bad.
 
+The BF16 session also constructs the canonical free-running Source projection
+independently at each audit RP, including sealed decode rows, the compiler
+Source boundary, the frozen WitnessMeasurement/Jacobians, and the post-apply
+margin probe.  None of those training-policy inputs may be copied from the
+fp32/SDPA audit token path.  The fp32/SDPA surface freezes paired Source
+baselines and later evaluates the private proposal only within that same audit
+surface.  Differences between the two policies are retained in a
+`diagnostic_only` divergence receipt and do not gate BF16 admission.
+
 ## Complete algorithm
 
 This unit tests the full C algorithm first instead of another large ablation.
@@ -132,11 +149,13 @@ trajectories, not a best-suffix CE target and not a tied union reward.
 
 ### Sparse greedy compiler
 
-At the sealed Source premature-STOP boundary, the compiler uses the frozen
-metric-valid alias bank to compare normalized uncovered-valid mass with the
-realized STOP/bad child.  It keeps `kappa=1`, margin `1e-4`, coefficient `1.0`,
-RP-processed logits without temperature, and absent-site zero semantics.
-Final free clean greedy—not the teacher-forced compiler margin—owns transfer.
+At the BF16-native sealed Source premature-STOP boundary, the compiler uses
+the frozen metric-valid alias bank to compare normalized uncovered-valid mass
+with the realized STOP/bad child.  Its remaining-owner state subtracts H
+owners already present in the BF16 Source baseline.  It keeps `kappa=1`,
+margin `1e-4`, coefficient `1.0`, RP-processed logits without temperature,
+and absent-site zero semantics.  Final free clean greedy—not the teacher-
+forced compiler margin—owns transfer.
 
 ### Proposal preservation
 
@@ -157,9 +176,11 @@ the first behavioral result.
 
 ## Primary outcome and continuation gate
 
-For audit RP `r`, let `G_r` be the Source clean-greedy matched-owner set.  Let
-`H` be trusted owners hit by the new RP-1.0 K16 acquisition but absent from
-`G_1.0`.  Report, by exact owner ID:
+For audit RP `r`, let `G_r` be the fp32/SDPA Source clean-greedy matched-owner
+set.  Let the BF16 training target be the manifest H set minus owners already
+present in the BF16-native Source baseline.  BF16-baseline-covered H owners
+remain trusted context and may receive trajectory credit, but are not claimed
+as post-update H gains.  Report, by exact owner ID:
 
 ```text
 H_gain_r     = |proposal_r intersect H minus G_r|
@@ -192,10 +213,14 @@ decision-bearing evidence about the complete algorithm.
    replay mapping, objective normalization, one update, audit, artifact, and
    rollback receipts.
 2. Production-shaped no-update vertical on image 1584: one shared BF16/FA2
-   sampler/replay model on GPU 0 and the standard fp32/SDPA audit role reserved
-   on a distinct GPU.
-3. If parity passes unchanged, continue to one complete private update and
-   dual-RP clean-greedy audit, then restore Source exactly.
+   sampler/replay model on GPU 0, BF16-native Source/witness/compiler inputs,
+   and the standard fp32/SDPA audit role reserved on a distinct GPU.  Publish
+   cross-surface divergence as diagnostic-only while freezing both independent
+   baselines.
+3. If BF16 protected-G admission, BF16 internal parity, BF16-native witness,
+   and both fp32 Source baselines pass, continue to one complete private
+   update and dual-RP fp32 Source-versus-proposal audit, then restore Source
+   exactly.
 4. Independently verify lineage, component/delta evidence, gained/lost owner
    arithmetic, private-byte cleanup, and rollback.
 5. Run one 13-image update only if the exact one-image continuation gate passes.
@@ -220,8 +245,11 @@ the one-image vertical.
 
 ## Stop rules
 
-Stop before update on any surface identity, request/history/token, RP order,
-finiteness, or `0.02/0.002` parity failure.  Do not change tolerance.
+Stop before update on any strict identity, BF16 request/history/token, RP
+order, finiteness, or `0.02/0.002` BF16 sampler/replay parity failure.  Do not
+change tolerance.  Cross-surface token/coordinate/owner divergence alone is
+diagnostic and does not trigger this stop, but missing protected BF16 G owners
+or fp32 Source identity drift do.
 
 Stop before private apply on a missing/non-finite objective component, failed
 AdamW reconstruction, uncertified preservation solve, or non-finite state.

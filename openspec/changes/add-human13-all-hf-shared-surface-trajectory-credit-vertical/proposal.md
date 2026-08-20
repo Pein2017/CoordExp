@@ -26,14 +26,18 @@ surface and reach a real one-update behavioral result.
   update if the shared surface passes.
 - Treat the BF16/FlashAttention-2 training surface as the sole authority for
   sampling, replay, trajectory credit, greedy compilation, preservation, and
-  the update token/path.  The fp32/SDPA surface is only a stable owner-level
-  clean-greedy behavioral audit.  Its output need not be numerically or
-  token-identical to BF16/FA2: the single cross-surface admission choke point
-  permits only a frozen coordinate-bin alias with inclusive `abs(delta) <= 5`
-  on the 1000-bin coordinate range.  Row structure, non-coordinate tokens,
-  legal rectangles, canonical cardinality-first owner matching, matched owner
-  sets, G/H/M membership, and protected-G identity remain exact.  This alias
-  never relaxes sampler-to-replay parity on the BF16/FA2 surface.
+  the update token/path.  Construct its Source projection, compiler boundary,
+  witness bank, and post-apply margin probe from BF16-native free-running
+  outputs; never feed fp32/SDPA token paths into the BF16 policy.  Keep the
+  fp32/SDPA surface as a separate paired owner-level clean-greedy audit at both
+  repetition penalties.  The shared choke point enforces strict identity only
+  for model/checkpoint/adapter/embedding/tokenizer/prompt/image/manifest and
+  declared processor policy.  Cross-surface token, row, coordinate, and owner
+  differences are retained as `diagnostic_only` evidence and do not decide
+  admission.  This restores the design boundary that the audit surface need
+  not be numerically or token-identical to BF16/FA2, while BF16 sampler-to-
+  replay parity remains strict and unchanged.  The superseded coordinate-alias
+  artifact remains immutable as the evidence that invalidated that gate.
 - Audit that private proposal with clean greedy at RP 1.0 and RP 1.10, report
   H gained, G lost, net unique owners, duplication, malformed rows, STOP/cap
   burden, and restore Source exactly.  No checkpoint is promoted.

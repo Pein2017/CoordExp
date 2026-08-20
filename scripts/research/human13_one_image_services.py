@@ -32,6 +32,9 @@ from scripts.research.human13_hf_native_one_image_owner import (
     PreAcquisitionSourceOwners,
     SourceOwnerRequest,
 )
+from scripts.research.human13_source_surface_reconciliation import (
+    SourceSurfaceReconciliationReceipt,
+)
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
@@ -1097,6 +1100,15 @@ class ExistingOwnersProductionBackend:
                     raise
         return result
 
+    @property
+    def source_surface_reconciliation_receipt(
+        self,
+    ) -> SourceSurfaceReconciliationReceipt | None:
+        source = self._pre_acquisition_source
+        if source is None:
+            return None
+        return source.surface_reconciliation
+
     def acquire_and_replay(
         self, session: object, config: EntryConfig
     ) -> ProductionAcquisition:
@@ -1596,7 +1608,28 @@ class ProductionOneImageServices:
         self._source_audits[repetition_penalty] = result
         self._actions["forwards"] += 1
         self._record(f"source_audit_rp_{repetition_penalty:g}")
+        reconciliation = getattr(
+            self._backend, "source_surface_reconciliation_receipt", None
+        )
+        if (
+            repetition_penalty == 1.1
+            and isinstance(reconciliation, SourceSurfaceReconciliationReceipt)
+        ):
+            self._record(
+                "source_surface_reconciliation",
+                evidence={
+                    "receipt": reconciliation.to_dict(),
+                    "cross_surface_disposition": reconciliation.cross_surface_disposition,
+                },
+            )
         return result
+
+    def request_source_only_close(self) -> None:
+        """Mark a no-update preflight for the typed aborted close path."""
+
+        if self._close_called:
+            raise RuntimeError("cannot request source-only close after close")
+        self._source_only_close_requested = True
 
     def acquire_and_replay(
         self, training_session: object, config: EntryConfig

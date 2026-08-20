@@ -2,6 +2,18 @@
 
 ## Scope and boundary
 
+### Semantic supersession (2026-08-20)
+
+The former cross-surface exact-token/coordinate-alias gate is superseded by
+the active OpenSpec decision.  The immutable v2 diagnostic below shows that
+BF16/FA2 and fp32/SDPA are distinct policies: BF16 retained every protected G
+owner and additionally covered `gt:1584:12`, while several other token and
+owner differences were not quantization aliases.  Cross-surface divergence is
+now `diagnostic_only`.  Strict identity fields, protected BF16-G presence,
+internal BF16 sampler/replay parity, BF16-native witness/compiler inputs,
+dual-RP fp32 Source/proposal audit, private proposal, rollback, K16, LR, and
+no-promotion semantics remain unchanged.
+
 The Task-5 bridge now has an explicit experiment-local production owner:
 `RepositoryHFNativeOneImageOwner` prepares the Source compiler boundary and
 witness on the live BF16/FlashAttention-2 session before K16 acquisition,
@@ -29,6 +41,7 @@ reservation remain intact; none was overwritten or deleted.
 | `one-image-successor-20260820T093802Z-diag5` | same typed Source-witness failure; instrumented diagnostic confirmed the same failure | terminal reported model loads 2, forwards 3, backward 0, optimizer 0, checkpoint/output 0; the pre-fix ledger omission remained |
 | `one-image-successor-20260820T094100Z-diag7` | same typed Source-witness failure with durable instrumented observation | terminal reported model loads 2, forwards 3, backward 0, optimizer 0, checkpoint/output 0; diagnostic artifact records the exact mismatch below |
 | `one-image-successor-20260820T113000Z-surface-reconcile-live` | current-tree production entry reached both model surfaces, then the new reconciliation receipt rejected the same Source-witness mismatch | model loads 2, forwards 4 (2 Source-owner + 2 audits), GPU allocations 2, backward 0, optimizer 0, private/checkpoint/output 0 |
+| `one-image-successor-20260820T-reconcile-v2` | fresh current-tree GPU0/GPU1 source-only diagnostic; RP1.0 passed, RP1.1 produced durable diagnostic-only divergence and source-only failed close | model loads 2, forwards 204, GPU allocations 2, backward 0, optimizer 0, sample/replay 0, checkpoint/private/output/network 0 |
 
 The canonical source inference config was used for the latter two attempts.
 Their durable terminal and phase receipts are under their respective roots;
@@ -75,6 +88,24 @@ the focused regression and was exercised by the current live attempt.  The
 earlier parent reservation remains untouched; the live run used `diag7` as its
 single append-only lost-owner parent and a fresh sibling successor.
 
+The fresh v2 diagnostic supersedes that former admission result without
+rewriting it.  Its immutable root is
+`one-image-successor-20260820T-reconcile-v2/`; the terminal hash is
+`4b8015ed953788c5851701127adac00aaf8e594e2a88477c1eba89bd56d7fc87` and the
+phase ledger hash is
+`10924d7c7ae0eff57e2e3dc431d0d9117e3567d7f2f2b5e1ade72b4bf3161aaa`.
+RP1.0 passed; RP1.1 produced diagnostic-only evidence at
+`receipts/006-source_audit_rp_1.1.json`.  Source and training each generated
+109 tokens.  Source owners were
+`{gt:1584:2,gt:1584:4,gt:1584:7,gt:1584:8,gt:1584:11,gt:1584:17,gt:1584:18}`;
+training retained those protected G owners and additionally covered
+`gt:1584:12` (H).  The receipt records mismatch positions
+`[5,16,40,41,52,58,67,68,69,70,77,97]`, including the known `615->616`
+coordinate difference and non-coordinate/large-coordinate differences.  No
+K16 sampling/replay, backward, update, checkpoint, or proposal audit occurred.
+Training and audit sessions each closed once through the source-only failed
+close path with sample/replay=0 and a durable shared resource receipt.
+
 ## Telemetry correction
 
 The first live failure exposed that the outer `ResourceReceipt` still claimed
@@ -95,12 +126,12 @@ and the entry carries that phase into the terminal without replacing the
 primary owner error.  Historical terminal JSON is not rewritten; future
 attempts use the corrected ledger.
 
-## Additive surface reconciliation owner
+## Surface-separated baseline owner
 
-The Source-witness seam now has an experiment-local reconciliation owner.  It
-does not copy logits, replace the BF16/FA2 training surface, use the fp32/SDPA
-audit surface as a training witness, change the `1e-6` margin rule, or add a
-fallback objective.  It binds the two execution domains explicitly:
+The Source-witness seam now has an experiment-local baseline owner.  It does
+not copy logits, replace the BF16/FA2 training surface, use the fp32/SDPA audit
+surface as a training witness, change the `1e-6` margin rule, or add a fallback
+objective.  It binds the two execution domains explicitly:
 
 - GPU 1 `hf`, batch one, fp32, SDPA runtime identity and both RP audit hashes;
 - GPU 0 BF16/FlashAttention-2/eval/no-cache training identity, adapter and
@@ -110,18 +141,17 @@ fallback objective.  It binds the two execution domains explicitly:
 - the exact two sealed Source decodes and token count.
 
 The BF16/FA2 surface remains the sole scientific authority for sampling,
-replay, trajectory credit, compiler, preservation, and the update path.  The
-fp32/SDPA surface owns only stable owner-level clean-greedy behavior.  The
-owner now uses one cross-surface reconciliation choke point: frozen canonical
-parsing plus cardinality-first one-to-one matching; exact row structure,
-non-coordinate tokens, legal rectangles, matched owner sets, G/H/M membership,
-and protected-G identity are required.  A bbox coordinate may differ only as a
-decoded 1000-bin alias with inclusive `abs(delta_bin) <= 5`.  Each admitted
-alias records position, coordinate role, both tokens/bins, delta, both boxes,
-owner, both IoUs, and disposition.  A delta above five, malformed rectangle,
-non-coordinate difference, owner exchange, or membership change is typed
-non-admission.  This rule does not relax BF16/FA2 sampler-to-replay history,
-token, shape, or processed-log-probability parity.
+replay, trajectory credit, compiler, preservation, and the update path.  It
+must build the free-running BF16 Source projection, compiler boundary,
+remaining-owner state, WitnessMeasurement/Jacobians, and post-apply margin
+probe from its own output.  The fp32/SDPA surface owns only stable owner-level
+clean-greedy behavior and freezes paired Source baselines before update.
+Canonical parser/matcher receipts are required independently on each surface.
+Strict identity is limited to model/checkpoint/adapter/embedding/tokenizer/
+prompt/image/manifest and declared processor policy.  Cross-surface token,
+coordinate, row, or owner differences are retained as `diagnostic_only`
+evidence and never gate the BF16 proposal.  This does not relax BF16/FA2
+sampler-to-replay history, token, shape, or processed-log-probability parity.
 
 `HFNativeOneImageOwnerError` carries the reconciliation receipt, and the
 Source-audit failure phase serializes it before the service re-raises the
@@ -129,14 +159,70 @@ primary error.  The admitted receipt is included in the pre-acquisition owner
 digest.
 
 The previous additive contract was first verified with CPU/injected evidence;
-the current live attempt exercised the real entry and both model surfaces but
-used the former exact-token cross-surface gate.  Its durable rejection is a
-historical artifact, not evidence against the newly authorized coordinate
-alias.  A fresh no-update image-1584 reconciliation is required before any
-update claim.
+the earlier live attempts exercised the former exact-token/coordinate-alias
+gate.  Their durable rejections remain historical artifacts.  The fresh v2
+root is the evidence that invalidated that cross-surface admission invariant;
+it does not yet prove BF16-native witness/compiler admission or an update.
+
+### P1 durable-baseline receipt correction
+
+The preflight reconciliation phase now binds an ordered four-cell canonical
+baseline matrix: fp32/SDPA RP1.0 and RP1.1 followed by BF16/FA2 RP1.0 and
+RP1.1.  Every cell carries the complete canonical payload, its SHA-256, the
+canonical matcher owner map, and its SHA-256.  The matrix is part of the typed
+reconciliation receipt, the durable reconciliation phase receipt, and therefore
+the terminal phase ledger.  A nested RP1.0 cross-surface divergence remains
+`diagnostic_only` but can no longer cause RP1.1 or either BF16 baseline to be
+absent from durable evidence.  No historical artifact was changed and this
+correction performed no GPU, model, network, K16, backward, or update action.
+
+The four-cell producer/loader/publisher uses
+`human13_source_surface_reconciliation.v3`.  A strict schema dispatcher keeps
+legacy `v2` receipts loadable only with their exact historical field set: the
+immutable v6 `receipts/007-source_surface_reconciliation.json` round-trips
+under current code without acquiring `canonical_baselines`.  Conversely, a
+legacy payload relabeled as v3, or a v2 payload carrying v3 fields, is rejected;
+the two schemas cannot masquerade as one another.
+
+### Fresh v3 preflight and safety-abort provenance
+
+The first fresh immutable preflight under the v3 receipt code is
+`one-image-successor-20260820T-preflight-bf16-native-v7/`.  Its terminal is
+`preflight_admitted`, with terminal hash
+`9d702138f1c7e2209a7bb4b9dfe6badf6e7878b11028f3f8d8ba784f98fee59d` and phase
+ledger hash
+`5e498091d0a7816de9168846868fd3f66540ef3ae440e46af39ade875d8c1bf6`.
+The v3 reconciliation receipt is
+`receipts/007-source_surface_reconciliation.json` (inner hash
+`89cbe1c761a4f9619233287577eb62fda7c75b1d7a4190db102618517b524c23`).  It
+contains all four fp32/BF16 × RP1.0/RP1.1 canonical payloads and owner maps.
+The BF16 Source retains all protected G owners and has baseline H owner
+`gt:1584:12`; cross-surface disposition remains `diagnostic_only`.
+
+The v7 counters are model loads=2, GPU allocations=2, forwards=230 (228
+BF16-native Source-owner/no-cache forwards plus two fp32 audits), with zero
+sample/replay groups, backward, optimizer steps, checkpoint/private/output, or
+network actions.  Both sessions closed exactly once through source-only close;
+the resource receipt records source-owner/no-cache/total forwards=228 and the
+GPUs were released.  This is preflight evidence only; no K16 work occurred.
+
+An interrupted successor,
+`one-image-successor-20260820T-k16-bf16-native-v1/`, is preserved as an
+operator safety abort, not an algorithm outcome.  It was launched before the
+committed-HEAD execution constraint was received and was stopped immediately;
+its terminal hash is
+`67c432d76053721d4b28680be46fe11673aaf188be162c6866d09818ad0efb1f` and its
+failure reason is `KeyboardInterrupt`.  It recorded model loads=2, GPU
+allocations=2, one Source-audit forward, and zero K16 sample/replay,
+backward, optimizer, checkpoint, private, output, or network actions.  It is
+excluded from the scientific one-update budget and must not be reused.
 
 ## Verification
 
+- P1 receipt-completeness/schema correction: 108 reconciliation, native-owner,
+  production-service, and entry tests passed, including the nested-RP1.0
+  divergence counterexample, v2/v3 dispatch, immutable v6 receipt reload, and
+  incomplete/tampered baseline checks.
 - Focused reconciliation, service, native-owner, and entry suites: 88 passed
   after the direct-script import-path and precedence regressions.
 - Adjacent CPU/injected Human-13 suites: 393 passed, 2 warnings.
@@ -144,22 +230,21 @@ update claim.
 - The Pyright claim is scoped to the touched production modules and focused
   tests; broad legacy fixture checking retains its pre-existing errors.
 - The staged native bridge and adjacent CPU/injected suites were green before
-  the live attempt.  The current-tree production entry crossed model loading
-  and both Source surfaces but no real update path passed the Source-witness
-  gate.
+  the live attempt.  The committed-HEAD scientific attempt must repeat the
+  normal Source admission inside its fresh root before any K16 work.
 - Task 4.6 and Tasks 5.1–5.5 remain unchecked in OpenSpec.
 
 ## Claim boundary and stop rule
 
-The current evidence supports only a historical safe pre-acquisition HOLD under
-the former exact-token rule.  It does not support an update, audit, rollback,
-or 13-image continuation claim under the new rule.  The next run must produce
-an immutable no-update receipt proving that the observed 615/616 coordinate
-alias is admitted while internal BF16/FA2 replay parity remains strict.
+The current evidence supports a durable pre-acquisition diagnostic-only
+observation, not an update, rollback, or 13-image continuation claim.  The
+next run is exactly one fresh committed-HEAD image-1584 K16 attempt; it must
+repeat BF16-native Source/witness/compiler admission and durable fp32/SDPA
+Source baselines while retaining the v2 divergence evidence.
 
-Do not relax the fixed five-bin alias, permit non-coordinate or owner changes,
-use GPU-1 logits as the training witness, switch the training surface to
-fp32/SDPA, or add a CE/vLLM fallback.  A subsequent run must use a fresh
-immutable root; the historical failed root remains untouched.  Only after the
-no-update reconciliation and strict internal parity pass may one private K16
-update, dual-RP audit, rollback, and Source reproduction execute.
+Do not increase coordinate tolerance, force owner/token agreement, use GPU-1
+logits as the BF16 training witness, switch the training surface to fp32/SDPA,
+or add a CE/vLLM fallback.  A subsequent run must use a fresh immutable root;
+the historical failed roots remain untouched.  Only after independent baseline
+admission and strict internal BF16 parity pass may one private K16 update,
+dual-RP fp32 audit, rollback, and Source reproduction execute.

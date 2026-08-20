@@ -82,47 +82,69 @@ no greater than `0.02` nats, and group-mean absolute error no greater than
 - **THEN** the probe records a typed parity failure, performs zero optimizer
   steps, and does not reinterpret or widen the tolerance
 
-### Requirement: Cross-surface owner-level reconciliation
+### Requirement: Independent policy baselines and diagnostic cross-surface evidence
 
 The BF16/FlashAttention-2 training surface SHALL remain the sole authority for
 sampling, replay, trajectory credit, greedy compilation, preservation, and the
-update token/path.  The fp32/SDPA surface SHALL be used only for stable
-owner-level clean-greedy behavioral audits.  The single reconciliation
-constructor/loader/checker/publisher SHALL parse both outputs with the frozen
-canonical parser and use the cardinality-first one-to-one owner matcher.
+update token/path.  It SHALL construct a BF16-native canonical Source
+projection, compiler Source boundary, WitnessMeasurement/Jacobians, and
+post-apply margin probe from its own free-running outputs.  The fp32/SDPA
+surface SHALL remain a separate owner-level clean-greedy audit surface, with
+durable Source baselines frozen at repetition penalties `1.0` and `1.10`.
 
-For every differing bbox coordinate, the checker SHALL decode the coordinate
-bin on the frozen 1000-bin range and admit only an inclusive `abs(delta_bin) <=
-5` alias.  Both boxes SHALL be legal rectangles.  Row openers/closers,
-description/category tokens, STOP/terminal tokens, row order, and all other
-non-coordinate tokens SHALL match exactly.  The matched owner, complete
-matched-owner set, G/H/M membership, and protected-G identity SHALL be
-unchanged.  The receipt SHALL record token position, coordinate role, both
-tokens/bins, delta, both boxes, owner, both IoUs, and disposition.  This
-reconciliation rule SHALL NOT relax any sampler-to-replay history, token,
-shape, or processed-log-probability parity requirement on BF16/FA2.
+The single admission constructor/loader/checker/publisher SHALL enforce strict
+identity only for model/checkpoint/adapter/embedding/tokenizer/prompt/image/
+manifest and declared processor policy.  It SHALL parse each surface with the
+frozen canonical parser and apply the cardinality-first one-to-one owner
+matcher independently on each surface.  BF16 admission SHALL require every
+protected manifest G owner needed for preservation to be present in the BF16
+Source baseline, while cross-surface token/row/coordinate/owner differences
+SHALL be retained as `diagnostic_only` evidence and SHALL NOT gate the BF16
+proposal.  The divergence receipt SHALL preserve token positions, roles,
+bins/deltas, boxes, owners, IoUs, owner sets/maps, membership, protected-G
+sets, and full-payload hashes where available.
 
-#### Scenario: Coordinate alias is metric-equivalent
+This diagnostic path SHALL NOT relax any sampler-to-replay history, token,
+shape, or processed-log-probability parity requirement on BF16/FA2.  A BF16
+Source-covered H owner SHALL be baseline context rather than an H gain target;
+trajectory credit MAY account for its first hits, but continuation arithmetic
+MUST subtract those owners from the BF16 training target.
 
-- **WHEN** the source and training outputs differ only at a coordinate bin,
-  both rectangles are legal, the delta is at most five, and canonical matching
-  produces the same owner and membership sets
-- **THEN** the reconciliation admits the pair and publishes a coordinate-alias
-  receipt with the exact token/bin and IoU evidence
+#### Scenario: BF16 and fp32 baselines diverge diagnostically
 
-#### Scenario: Inclusive coordinate boundary
+- **WHEN** BF16 contains the same protected G owners as the manifest plus an H
+  owner that is absent from fp32 Source, and both surfaces have valid canonical
+  matcher receipts and strict identity fields
+- **THEN** admission succeeds, the divergence receipt is marked
+  `diagnostic_only`, and the extra H is not counted as a BF16 post-update gain
 
-- **WHEN** one coordinate differs by exactly five bins and all other rules
-  remain unchanged
-- **THEN** the reconciliation admits the pair
+#### Scenario: Missing protected BF16 G fails before K16
 
-#### Scenario: Unsafe cross-surface difference
+- **WHEN** the BF16-native Source baseline misses a protected manifest G owner
+- **THEN** the run emits a typed non-admission receipt before sampling, replay,
+  backward, or private proposal creation
 
-- **WHEN** a coordinate delta is six or more, a non-coordinate token differs,
-  either rectangle is invalid, canonical matching exchanges an owner, or any
-  G/H/M or protected-G membership changes
-- **THEN** the reconciliation emits a typed non-admission receipt before any
-  update or private proposal
+#### Scenario: fp32 Source identity drifts
+
+- **WHEN** fp32 Source and proposal/audit inputs differ in checkpoint, adapter,
+  tokenizer, prompt, image, manifest, or declared processor identity
+- **THEN** the paired audit fails closed even if BF16 admission is otherwise
+  valid
+
+#### Scenario: BF16-native witness and compiler inputs are used
+
+- **WHEN** the BF16 Source projection is admitted
+- **THEN** selected witness tokens are greedy on BF16, the compiler boundary and
+  preservation bank are bound to the same BF16 model/session, and compiler
+  remaining-owner state excludes H owners already present in BF16 Source
+
+#### Scenario: Cross-surface token differences remain evidence
+
+- **WHEN** the old `615`/`616` coordinate difference or larger/non-coordinate
+  differences appear between surfaces
+- **THEN** the exact token/row/owner/bbox evidence is published as
+  `diagnostic_only`; no coordinate tolerance is applied and no BF16 internal
+  parity rule is widened
 
 ### Requirement: Complete one-update objective
 
