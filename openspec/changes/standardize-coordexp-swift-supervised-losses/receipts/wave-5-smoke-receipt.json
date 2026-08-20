@@ -1,0 +1,54 @@
+{
+ "bounds_observed": {
+  "artifact_bytes": 45712689,
+  "cpu_rss_gib": 8.34,
+  "gpu_high_water_gb": 9.36,
+  "planned_steps_applied": 1
+ },
+ "cache": {
+  "eval_admitted": "3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662",
+  "preparation_phase": "not_run",
+  "publication_phase": "not_run",
+  "root_sha_inventory": "byte-identical before/after (lead diff)",
+  "train_admitted": "8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f"
+ },
+ "command_exit": 0,
+ "commit": "fa8233edf8455cf3c7e1780784887a65dfbe948a",
+ "date": "2026-08-20",
+ "devices": "CUDA_VISIBLE_DEVICES=0,1",
+ "final_finite_status": "finite",
+ "final_optimizer_update_status": "applied",
+ "packet": "receipts/wave-5-smoke-packet.md",
+ "receipt_sha256": "4589bcc44323efeed82d05ff6af8576b51e89821ec252b63c871a851981db6f0",
+ "row_inspection": {
+  "backward_or_backend_keys": 0,
+  "bare_loss_keys": 0,
+  "coord_gaussian_rps_keys": 0,
+  "eval": {
+   "base_ce_raw": 3.347256660461426,
+   "base_ce_weighted": 3.347256660461426,
+   "gate_raw": 0.19928929209709167,
+   "gate_weighted": 0.0,
+   "keys": 38,
+   "selected_count": 202.0,
+   "total_equals_sum_weighted": true
+  },
+  "note": "row envelope exceeds the 4.4 harness key-count by the production resource/per-rank fields only; every loss-family key canonical; gate ablation family retained with weighted exactly 0.0; omitted auxiliary family entirely absent; single rank-zero writer",
+  "rows": 2,
+  "train": {
+   "base_ce_raw": 5.013396978378296,
+   "base_ce_weighted": 5.013396978378296,
+   "gate_raw": 1.367613136768341,
+   "gate_weighted": 0.0,
+   "keys": 39,
+   "selected_count": 560.0,
+   "total_equals_sum_weighted": true
+  }
+ },
+ "run_dir": "outputs/smoke/wave5_losses_smoke_r1/wave5_losses_smoke",
+ "run_status": "completed",
+ "schema": "coordexp-swift-losses-wave5-smoke-receipt-v1",
+ "task": "5.3/5.4",
+ "terminal_error": null,
+ "world_size": 2
+}

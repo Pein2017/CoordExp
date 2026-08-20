@@ -262,6 +262,27 @@
     "collateral": "tests/runtime 96/0; tests/training+config 1625/0/126skip; tests/eval 49/0",
     "determinant-invariant": "fingerprints + baseline_sha256 byte-identical; 24 owner files zero diff"
    }
+  },
+  {
+   "id": "amend-10-freeze-wave5-smoke",
+   "amendment_of": "wave5-vertical-smoke",
+   "date": "2026-08-20",
+   "reason": "retire the TO-FREEZE placeholder: packet frozen at fa8233edf and executed once (final-audit P2 remedy)",
+   "frozen_argv": "CUDA_VISIBLE_DEVICES=0,1 timeout --signal=TERM --kill-after=30s 900s conda run -n ms python -m torch.distributed.run --standalone --nproc_per_node 2 -m src.train --config /data/CoordExp/.claude/jobs/c9895ff9/tmp/wave5/wave5_losses_smoke.yaml (bash -c export wrapper; overlay sha f6b49bc2..., packet receipts/wave-5-smoke-packet.md)",
+   "authorization": "user standing GPU grant 2026-08-20 (amend-4); devices selected by observed idleness (0,1 at 3 MiB each)",
+   "observed": "exit 0; run completed/applied/finite; GPU HW 9.36 GB <=32 GiB; CPU RSS 8.34 GiB <=16 GiB; artifacts 45,712,689 B <=2.5 GiB; 1 applied step; cache root byte-identical before/after; receipts/wave-5-smoke-receipt.json"
+  },
+  {
+   "id": "amend-11-pin-wave5-suites",
+   "amendment_of": "wave5-focused-full",
+   "date": "2026-08-20",
+   "reason": "pin observed counts; note the argv's tests/qwen gap (final-audit closure)",
+   "observed": {
+    "wave5-focused-full": "2441 passed / 0 failed / 0 errors / 126 skipped (886.9s; skips = exactly the historicized executor module, single classname/reason)",
+    "tests-qwen-closure": "the frozen argv never collects tests/qwen; final audit closed the gap with a direct replay: 285 passed / 132 skipped / 0 failed (the 6 vacuous parity-mutation skips live there)",
+    "audit-replays": "tests/losses+config+artifacts 723/0/0; compat+collective 15/15; determinant probe re-run EQUAL/EQUAL at clean HEAD post-smoke, cache inventory byte-identical to the pre-smoke capture",
+    "wave5-determinant-equality": "lead-executed receipt EQUAL/EQUAL (receipts/wave-5-determinant-equality-receipt.json); provenance note: receipt predates fa8233edf by ~60s, re-anchored by the audit's clean-HEAD replay (final-audit P3)"
+   }
   }
  ]
 }

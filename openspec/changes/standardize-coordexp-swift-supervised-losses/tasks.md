@@ -225,9 +225,42 @@
 
 ## 5. Wave 5 - Documentation And Production-Shaped Acceptance
 
-- [ ] 5.1 Update canonical loss/config/artifact operator docs and config examples to describe the protected baseline, named gate ablation, typed auxiliary placement, zero policies, raw/weighted fields, and the explicit SFT-only boundary without copying the OpenSpec change as a second authority.
-- [ ] 5.2 Run the complete focused config, loss, trainer, runtime, eval, and artifact suites plus repository config-inventory validation; fix failures without weakening the new strict contract or adding compatibility aliases.
-- [ ] 5.3 Recompute the exact train/eval determinant payloads and hashes after all source/config edits and require equality with the Wave 0 baseline. If either changes, stop for contract review and do not materialize, repair, overwrite, or publish a second cache. Obtain fresh user authorization for this distinct GPU action and record its own bounds for devices/world size, planned steps, model forwards, cache/materialization passes (`0`), wall time, peak GPU memory, and artifact bytes; then run the smallest production-shaped distributed supervised vertical smoke against the predecessor cache and bind the receipt to the frozen exact command, config, commit, artifact root, cache identities, bounds, and exact row fields.
-- [ ] 5.4 Inspect the smoke for finite objective/update status, raw-to-weighted arithmetic, exact term presence/absence, gate mode, global denominators, and single-writer artifact behavior; do not interpret the zero-work probe or smoke as a throughput or memory improvement claim.
-- [ ] 5.5 Run strict validation for this change and all affected stable-spec deltas, inspect the full change diff and supported-config migration, and search current roots for legacy protected placement, noncanonical gate constants/groups, dynamic loss hooks, ambiguous loss fields, and accidental historical edits.
-- [ ] 5.6 Obtain independent standards and user-intent/contract audit verdicts covering SFT-only scope, scientific meaning, DDP math, zero behavior, artifact compatibility, migration completeness, overdesign, and legacy residue; resolve every P0/P1 before marking the change implementation-complete.
+- [x] 5.1 Update canonical loss/config/artifact operator docs and config examples to describe the protected baseline, named gate ablation, typed auxiliary placement, zero policies, raw/weighted fields, and the explicit SFT-only boundary without copying the OpenSpec change as a second authority.
+- [x] 5.2 Run the complete focused config, loss, trainer, runtime, eval, and artifact suites plus repository config-inventory validation; fix failures without weakening the new strict contract or adding compatibility aliases.
+- [x] 5.3 Recompute the exact train/eval determinant payloads and hashes after all source/config edits and require equality with the Wave 0 baseline. If either changes, stop for contract review and do not materialize, repair, overwrite, or publish a second cache. Obtain fresh user authorization for this distinct GPU action and record its own bounds for devices/world size, planned steps, model forwards, cache/materialization passes (`0`), wall time, peak GPU memory, and artifact bytes; then run the smallest production-shaped distributed supervised vertical smoke against the predecessor cache and bind the receipt to the frozen exact command, config, commit, artifact root, cache identities, bounds, and exact row fields.
+- [x] 5.4 Inspect the smoke for finite objective/update status, raw-to-weighted arithmetic, exact term presence/absence, gate mode, global denominators, and single-writer artifact behavior; do not interpret the zero-work probe or smoke as a throughput or memory improvement claim.
+- [x] 5.5 Run strict validation for this change and all affected stable-spec deltas, inspect the full change diff and supported-config migration, and search current roots for legacy protected placement, noncanonical gate constants/groups, dynamic loss hooks, ambiguous loss fields, and accidental historical edits.
+- [x] 5.6 Obtain independent standards and user-intent/contract audit verdicts covering SFT-only scope, scientific meaning, DDP math, zero behavior, artifact compatibility, migration completeness, overdesign, and legacy residue; resolve every P0/P1 before marking the change implementation-complete.
+
+
+> **Wave 5 closed / change complete (2026-08-20, commits `fa8233edf` part 1
+> + this close-out; final audit `receipts/wave-5-final-audit.md` STANDARDS
+> and USER-INTENT both PASS-WITH-DISPOSITIONS, 0 P0 / 0 P1, completion
+> gate YES):** docs updated in four canonical pages (describe-and-link, no
+> second authority; two historical-reference pages verified untouched by
+> design); determinant equality probe EQUAL/EQUAL lead-executed AND
+> audit-re-executed at clean HEAD post-smoke (cache inventory byte-equal
+> to the pre-smoke capture, proving zero smoke-side cache bytes from
+> bytes); production-shaped two-rank BF16 smoke on idle GPUs 0,1 under the
+> frozen packet (standing user GPU grant): completed/applied/finite,
+> 1 applied step, both predecessor fingerprints admitted,
+> ablation row shape live-verified (gate raw 1.3676 train / 0.1993 eval
+> visible, weighted exactly 0.0, zero coord/bare/backward keys,
+> loss/total == sum weighted exactly, single rank-zero writer); focused
+> full suite 2441/0/0 with 126 reasoned skips; residue searches clean
+> structurally (rps_weight/vertical_prob 0.2 literals correctly
+> distinguished from gate weights); I-1/I-6 fully discharged
+> (`loss.micro_artifact_backward_contribution_missing`, RED-observed);
+> F-7 Non-Finite Gates MODIFIED delta authored (lead) — sync carries two
+> MODIFIED + one ADDED delta set. Manifest amend-10/11 retire the smoke
+> placeholder and pin suite counts. Audit notes recorded: F-B (receipt
+> provenance ~60s pre-commit, re-anchored), F-C (receipt schema lacked
+> wall_seconds; inventory prose re-derived from bytes), F-G (smoke
+> exercised the ablation shape only, packet-declared). Carried forward as
+> non-blocking to `add-coordexp-swift-training-observability`: F-D
+> (`LossTermResult.__post_init__` unreachable weighted_loss default), F-F
+> (wave-2 probe test-isolation flake, 0/2441 recurrence), the two
+> pre-existing count defects (`count/packs`+`count/examples`
+> mean-over-ranks; unweighted train `token_weighted_diag`; TODO at
+> train_runtime.py, provenance 2b0a2165a), and the zero-eligible-segment
+> collective desync (`e1662c2c7`/`3cd40f5f0`).
