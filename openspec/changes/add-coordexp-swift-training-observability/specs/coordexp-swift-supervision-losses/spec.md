@@ -7,7 +7,11 @@ current-gradient/overflow checks after backward. Unsafe non-finite state MUST
 prevent an unacknowledged corrupted optimizer update. Recoverable bad examples
 or synchronized skips MAY be reported without changing the planned-step
 schedule. In distributed execution, the scalar finite check MUST produce one
-reduced all-rank decision before any rank calls backward. Under fp16,
+reduced all-rank decision before any rank calls backward. The pre-backward
+decision MUST consider the raw finite status of every computed protected term —
+including a protected diagnostic whose weighted contribution is zero, such as
+the named zero-weight gate ablation — not only the total optimized loss. Under
+fp16,
 post-backward handling MUST unscale exactly once before each rank reports
 current gradient finiteness, pre-clip norm, active-GradScaler status, and whether
 the current unscale recorded non-finite gradients. Pre-call logic MUST NOT use a
@@ -58,6 +62,25 @@ parameters or scaler state.
 - **AND** rank zero MUST log the synchronized unsafe/update status once
 - **AND** non-finite scalar fields MUST be represented as JSON `null` and named
   in `non_finite_fields`.
+
+#### Scenario: Non-finite protected diagnostic with finite total loss
+
+- **WHEN** a computed protected term's raw value is NaN or Inf on any rank
+  while the total optimized loss remains finite (for example the zero-weight
+  gate ablation, whose weighted contribution is exactly zero)
+- **THEN** the all-rank pre-backward decision MUST classify the planned step
+  unsafe
+- **AND** all ranks MUST skip backward and optimizer update for that planned
+  step
+- **AND** the term's non-finite fields MUST be represented as JSON `null` and
+  named in `non_finite_fields`.
+
+#### Scenario: Distributed gradient overflow
+
+- **WHEN** any rank reports unsafe gradient or overflow status
+- **THEN** all ranks MUST use the same global skip/update decision for that
+  planned step
+- **AND** rank zero MUST log that global decision once.
 
 #### Scenario: Uniform distributed fp16 gradient overflow
 

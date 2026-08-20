@@ -1,0 +1,170 @@
+{
+ "schema": "coordexp-swift-observability-command-manifest-v1",
+ "frozen_at_commit": "3d390b108",
+ "date": "2026-08-20",
+ "cwd": "/data/CoordExp/.worktrees/CoordExp-swift",
+ "conda_env": "ms",
+ "environment": {
+  "always": {
+   "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "required_absent": [
+   "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+   "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE",
+   "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+   "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+   "RANK",
+   "LOCAL_RANK",
+   "WORLD_SIZE",
+   "MASTER_ADDR",
+   "MASTER_PORT"
+  ],
+  "host_note": "the local command hook silently no-ops env-prefixed commands; every argv runs inside bash -c 'export ...; unset ...; <argv>' with real output confirmed, never exit codes alone; heredocs into conda run are swallowed - use script files"
+ },
+ "amendment_rule": "append-only: a later command change adds an entry with amendment_of=<id> and a reason; originals are never edited or deleted",
+ "cache_invariant": {
+  "rule": "no command in this change may build, repair, overwrite, or publish any target under .cache/coordexp_swift/packing; the observability surfaces (config observability.steps, metrics, reporting, publisher, session wiring) are not determinant owners - verify at wave gates with the archived losses-change equality probe pattern; a differing fingerprint is a blocking contract failure",
+  "train_fingerprint": "8f11237fc793f921dce4a9570b2f2d053a69ed604f3b42e006a8ac6c07476f2f",
+  "eval_fingerprint": "3b30c157d639fdbfe30013a4c05fa17abb10ed2201c673d4409266cc60af6662",
+  "note": "observability.steps IS a new strict-config field; confirm at Wave-1 gate that it does not enter any determinant payload (payload reads are enumerated in the losses change wave-0 receipt)"
+ },
+ "authorization": {
+  "gpu": "standing user GPU grant 2026-08-20: host stress tests skip occupied GPUs; idle GPUs usable without per-action requests. Per-action packets with frozen argv, observed-idle device selection, and numeric bounds remain REQUIRED (tasks 3.8, 5.5)."
+ },
+ "commands": [
+  {
+   "id": "wave0-entry-baseline",
+   "argv": "conda run -n ms pytest tests/config tests/losses tests/runtime tests/training/test_reporting.py tests/artifacts tests/training/test_exact_resume.py tests/training/test_pipeline_exact_resume.py -q",
+   "expected": "all green at the untouched base commit; counts pinned by amendment",
+   "limits": {
+    "timeout_seconds": 3600
+   }
+  },
+  {
+   "id": "wave1-config-gate",
+   "argv": "conda run -n ms pytest tests/config tests/losses -q",
+   "expected": "green after ObservabilityConfig + config authoring; plus the supported-inventory resolution script and residue searches (no default, no logging alias)",
+   "limits": {
+    "timeout_seconds": 3600
+   }
+  },
+  {
+   "id": "wave1-inventory-resolve",
+   "argv": "conda run -n ms python scripts/probes/coordexp_swift/losses_config_inventory_probe.py",
+   "expected": "reuse the archived losses inventory probe: every supported training YAML strict-resolves with explicit observability.steps; exit 0",
+   "limits": {
+    "timeout_seconds": 1800
+   }
+  },
+  {
+   "id": "wave2-reduction-gate",
+   "argv": "conda run -n ms pytest tests/runtime tests/eval tests/losses -q",
+   "expected": "green after typed metric samples/reducers migration; implicit-reducer/registry residue searches clean",
+   "limits": {
+    "timeout_seconds": 5400
+   }
+  },
+  {
+   "id": "wave2-gloo-probe",
+   "argv": "TO-FREEZE-IN-WAVE-2: real two-process gloo probe with asymmetric rank-local samples (task 2.5); CPU only",
+   "limits": {
+    "authorization": "no GPU; distributed action reviewed against this manifest"
+   }
+  },
+  {
+   "id": "wave3-optimizer-gate",
+   "argv": "conda run -n ms pytest tests/training/test_supervised_trainer.py tests/runtime tests/losses tests/training/test_reporting.py tests/artifacts -q",
+   "expected": "green after boundary-action/receipt/timing/resource work (CPU arms)",
+   "limits": {
+    "timeout_seconds": 5400
+   }
+  },
+  {
+   "id": "wave3-fp16-gpu-probes",
+   "argv": "TO-FREEZE-IN-WAVE-3-PACKET: genuine CUDA fp16 finite + overflow arms via real Accelerate, plus the bounded two-rank injected-outcome probe (task 3.8)",
+   "limits": {
+    "authorization": "standing GPU grant; per-action packet with bounds (devices, world size 2, planned steps, forwards, cache passes 0, wall, GPU peak, artifact bytes) REQUIRED"
+   }
+  },
+  {
+   "id": "wave4-publisher-gate",
+   "argv": "conda run -n ms pytest tests/artifacts tests/training/test_reporting.py tests/training/test_training_session.py tests/training/test_pipeline_assembly.py -q",
+   "expected": "green after JSONL-first publisher + console + TensorBoard sink; failure-injection and event-reader suites included; residue searches (event bus, registries, alternate scalar files, DB/W&B, per-rank streams) clean",
+   "limits": {
+    "timeout_seconds": 5400
+   }
+  },
+  {
+   "id": "wave5-resume-gate",
+   "argv": "conda run -n ms pytest tests/training/test_exact_resume.py tests/training/test_pipeline_exact_resume.py tests/training/test_wave7_exact_resume_compare.py tests/training/test_wave7_exact_resume_compare_v2.py tests/config tests/runtime tests/losses tests/eval tests/artifacts tests/training/test_reporting.py -q",
+   "expected": "green after observability exact-resume exclusions; comparator classifies new fields non-semantic",
+   "limits": {
+    "timeout_seconds": 7200
+   }
+  },
+  {
+   "id": "wave5-vertical-smoke",
+   "argv": "TO-FREEZE-IN-WAVE-5-PACKET: smallest current two-rank production-mimic config, one real finite optimizer update + scheduled eval, TensorBoard events verified (task 5.5)",
+   "limits": {
+    "authorization": "standing GPU grant; per-action packet with bounds REQUIRED"
+   }
+  },
+  {
+   "id": "wave5-broad-regression",
+   "argv": "conda run -n ms pytest tests/config tests/losses tests/runtime tests/training tests/artifacts tests/eval -q",
+   "expected": "judged by failure-set diff with fresh-process replays (known host artifact: single-process CUDA-init pollution of CPU-pure probes; 126 historicized executor skips expected)",
+   "limits": {
+    "timeout_seconds": 10800
+   }
+  },
+  {
+   "id": "strict-validation",
+   "argv": "conda run -n ms openspec validate add-coordexp-swift-training-observability --strict",
+   "expected": "valid at every wave gate",
+   "limits": {
+    "timeout_seconds": 300
+   }
+  },
+  {
+   "id": "openspec-validate-all",
+   "argv": "conda run -n ms openspec validate --all",
+   "expected": "all items pass at wave 0 (20/20) and the final gate",
+   "limits": {
+    "timeout_seconds": 300
+   }
+  }
+ ],
+ "amendments": [
+  {
+   "id": "amend-1-pin-entry-baseline",
+   "amendment_of": "wave0-entry-baseline",
+   "date": "2026-08-20",
+   "reason": "pin observed counts (entry-audit must-include #5)",
+   "observed": "890 passed / 0 failed / 0 skipped at 3d390b108; independently replayed by the entry audit at 890/0/0"
+  },
+  {
+   "id": "amend-2-entry-audit-p2s",
+   "amendment_of": null,
+   "date": "2026-08-20",
+   "reason": "entry-audit P2 remedies: gate breadth, residue argvs, suite coverage, owner no-edit list",
+   "items": {
+    "wave1-config-gate-breadth": "wave1-config-gate argv extended in effect to include tests/training/test_pack_cache_determinant_registry.py (determinant no-entry proof for observability.steps) and the four historicized pin-family files (guards must survive the second config migration) - run as wave1-pin-family-check: conda run -n ms pytest tests/training/test_pack_cache_determinant_registry.py tests/qwen/test_packed_parity.py tests/training/test_wave7_exact_resume_config_bundle.py tests/training/test_reconcile_exact_resume_packet_executor_historicized.py tests/losses/test_wave3_zero_weight_probe_contract.py -q",
+    "residue-argvs": {
+     "wave1-residue": "rg -n 'observability' src/config/models.py (field required, no default literal) plus rg -n 'logging_steps|log_interval|logging.steps' configs/coordexp_swift src/config == zero hits",
+     "wave2-residue": "rg -n 'suffix|endswith|_KEY_PREFIX' src/runtime/train_runtime.py src/runtime/metrics.py - no name-convention reducer selection survives; rg -n 'per_rank_measurement' src/ - absent from normal rows",
+     "wave4-residue": "rg -ln 'event_bus|EventEmitter|wandb|W&B|sqlite|log_rotation' src/ == zero; alternate scalar file search: rg -ln 'scalars.json|metrics.jsonl' src/ == zero"
+    },
+    "wave4-gate-adds": "wave4-publisher-gate also runs tests/runtime and the TensorBoard event-reader suite (path fixed when created)",
+    "wave5-gate-adds": "wave5-resume-gate also runs tests/training/test_input_attestation.py (three-run attestation projections, task 5.1)",
+    "cache-owner-no-edit": "DO-NOT-EDIT determinant owners for this change (subset most at risk): src/training/micro_steps.py, src/training/cache_contract.py, src/training/pack_cache.py, src/losses/vocab.py, src/supervision/tokens.py; full 24-file list in the losses change's archived wave-0-baseline.md"
+   }
+  },
+  {
+   "id": "amend-3-p1-reduce-resolution",
+   "amendment_of": null,
+   "date": "2026-08-20",
+   "reason": "entry-audit P1-REDUCE: assign reclassification of the four plain-mean families before Wave 1 (lead disposition; full text in tasks.md Wave-0 amendment)",
+   "resolution": "train count/packs+count/examples -> SUM (declared value fix of the 2b0a2165a defect); train loss/<t>/token_weighted_diag -> ratio sample (count-weighted, matching sharded eval; declared value fix); train finite/* -> BOOL_ALL (declared value fix; 0.5-on-split-step artifact eliminated); replicated-eval objective keys -> IDENTICAL after an empirical two-rank divergence measurement in the 2.5 gloo probe (bitwise-equal expected under the enforced deterministic env; if not observed, a bounded-tolerance IDENTICAL variant with the measured bound recorded). All four are RED-first declared value changes in Wave 2, never silent."
+  }
+ ]
+}

@@ -1,10 +1,45 @@
 ## 0. Wave 0 - Prerequisite authority and baseline
 
-- [ ] 0.1 Verify `reconcile-coordexp-swift-training-contracts`, `decompose-coordexp-swift-training-orchestration`, and `standardize-coordexp-swift-supervised-losses` are implementation-complete, synced, and archived; record their exact commits and this change's base commit, and stop if stable specs, current code, docs, or archive dispositions disagree.
-- [ ] 0.2 Rebase this change's `Wide-Step Logging Stream` delta against the complete stable requirement produced by the synced losses change; retain every post-loss paragraph/scenario and prove the canonical computed-term fields are raw/configured-weight/weighted, the ambiguous alias is absent, and an omitted zero-weight optional term has no field family.
-- [ ] 0.3 Characterize and pin the fixed owner/import graph: `src/runtime/metrics.py` for types/reduction, `src/training/reporting.py` for canonical rows, `src/artifacts/observation_publisher.py` for JSONL-first sinks, and `src/training/session.py` for wiring. Stop if the predecessor has not established these owner seams or if the facade remains a competing owner.
-- [ ] 0.4 Freeze an exact command manifest with cwd, `conda` environment, commands, configs, world size/devices, artifact roots, expected evidence, and quantitative limits; require a reviewed append-only amendment for any later command change.
-- [ ] 0.5 Run the focused config/loss/runtime/reporting/artifact/exact-resume suites against that untouched baseline and gate entry with strict OpenSpec validation plus standards and intent-contract audits; do not begin implementation with an unresolved P0/P1.
+- [x] 0.1 Verify `reconcile-coordexp-swift-training-contracts`, `decompose-coordexp-swift-training-orchestration`, and `standardize-coordexp-swift-supervised-losses` are implementation-complete, synced, and archived; record their exact commits and this change's base commit, and stop if stable specs, current code, docs, or archive dispositions disagree.
+- [x] 0.2 Rebase this change's `Wide-Step Logging Stream` delta against the complete stable requirement produced by the synced losses change; retain every post-loss paragraph/scenario and prove the canonical computed-term fields are raw/configured-weight/weighted, the ambiguous alias is absent, and an omitted zero-weight optional term has no field family.
+- [x] 0.3 Characterize and pin the fixed owner/import graph: `src/runtime/metrics.py` for types/reduction, `src/training/reporting.py` for canonical rows, `src/artifacts/observation_publisher.py` for JSONL-first sinks, and `src/training/session.py` for wiring. Stop if the predecessor has not established these owner seams or if the facade remains a competing owner.
+- [x] 0.4 Freeze an exact command manifest with cwd, `conda` environment, commands, configs, world size/devices, artifact roots, expected evidence, and quantitative limits; require a reviewed append-only amendment for any later command change.
+- [x] 0.5 Run the focused config/loss/runtime/reporting/artifact/exact-resume suites against that untouched baseline and gate entry with strict OpenSpec validation plus standards and intent-contract audits; do not begin implementation with an unresolved P0/P1.
+
+> **Wave 0 closed (2026-08-20, base `3d390b108`):** predecessors pinned
+> (all three archived; validate --all 20/20). Delta rebase complete and
+> audit-verified in both directions (zero stable scenarios missing; all
+> observability intent retained; three deliberate 2026-08-12 relaxations
+> proven authored via `0b98f0561`). Owner seams pinned (new owners
+> correctly absent; facade clean; reduction source
+> `train_runtime.py::_reduce_metric_reports`). Manifest + amendments 1-3;
+> entry baseline 890/0/0 (lead + audit replays). Entry audit
+> (`receipts/wave-0-entry-audit.md`): STANDARDS + INTENT both
+> PASS-WITH-DISPOSITIONS, 1 P1 / 5 P2 / 2 P3; the P1 and P2s are
+> resolved by manifest amend-2/-3 and the amendment below; entry gate
+> thereby CLEARED.
+>
+> **Wave-0 amendment (resolves entry-audit P1-REDUCE; binds Wave 2):**
+> the typed reducer set carries no MEAN and no fallback, so the four
+> families currently in the plain-mean branch are reclassified as
+> RED-first DECLARED VALUE CHANGES in Wave 2 (never silent):
+> (1) train `count/packs`+`count/examples` -> SUM (fixes the 2b0a2165a
+> mean-over-ranks defect; matches sharded eval);
+> (2) train `loss/<term>/token_weighted_diag` -> count-weighted ratio
+> sample (fixes the unweighted mean-of-rank-means defect);
+> (3) train `finite/*` -> BOOL_ALL (audit-found 0.5-on-split-step
+> artifact; matches the all-rank finite decision semantics);
+> (4) replicated-eval objective keys -> IDENTICAL, gated on an empirical
+> two-rank divergence measurement inside the task-2.5 gloo probe
+> (bitwise equality expected under the enforced deterministic env; if
+> divergence is observed, a bounded-tolerance IDENTICAL variant with the
+> measured bound recorded instead). Task 2.4's "preserving full-row
+> equivalence" clause is amended accordingly: equivalence is preserved
+> for correctly-reduced families; the three defect families change value
+> BY DECLARATION with parity evidence against a world-size-1 reference.
+> P2-COMPARATOR carried to Wave 5.2: new fields must be enumerated BY
+> NAME in the comparator exclusions (`input_h2d_seconds` evades both the
+> v1 TIMING_FIELDS list and v2's suffix predicate).
 
 ## 1. Wave 1 - Required presentation config
 

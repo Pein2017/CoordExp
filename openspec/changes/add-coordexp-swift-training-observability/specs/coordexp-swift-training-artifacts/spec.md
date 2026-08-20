@@ -1,9 +1,10 @@
 ## MODIFIED Requirements
 
-> Application precondition: before implementation, this complete modified
-> requirement MUST be rebased against the stable `Wide-Step Logging Stream`
-> produced by syncing `standardize-coordexp-swift-supervised-losses`; every
-> post-loss paragraph and scenario is retained, and this delta remains additive.
+> Rebase receipt: these modified requirements were rebased on 2026-08-20 against
+> the stable specs produced by syncing and archiving
+> `standardize-coordexp-swift-supervised-losses` (repository state `3d390b108`).
+> Every post-loss paragraph and scenario is retained, and this delta remains
+> additive on top of that text.
 
 ### Requirement: Optimizer-Step Order
 
@@ -44,6 +45,12 @@ contradictory results retain their known booleans. Gradient clearing is cleanup
 and MUST NOT be represented as repairing rank-selective parameter or scaler
 mutation.
 
+#### Scenario: Unsafe step after backward
+
+- **WHEN** post-backward global overflow status is unsafe
+- **THEN** runtime MUST skip the optimizer update
+- **AND** still emit the planned-step lifecycle event with update status.
+
 #### Scenario: Recoverable unsafe step after backward
 
 - **WHEN** a retained bf16/non-scaler post-backward gate chooses supported
@@ -82,18 +89,27 @@ required planned training `step`. Each row SHALL store the complete scalar
 logging mapping for that observation together instead of writing one record per
 metric.
 
-Train rows MUST include the weighted total loss; for every actually computed loss
-term, its raw value, configured weight, weighted value, denominator scope,
-eligible-segment count, selected-atom count, and skipped-segment count; top-level
-`acc_top1` and `acc_top5`; optimizer-update and finite status; and optimizer
-group learning rates. Every computed term MUST retain the prerequisite
-`loss/<term>/raw` and `loss/<term>/weighted` fields; the removed ambiguous
-`loss/<term>` alias MUST NOT be restored. Additive observability fields SHALL
-expose the corresponding configured weight and denominator inputs. An
-`lr/group_<index>` value MUST be sampled
-immediately before the optimizer-step call and, when the update is applied,
-MUST be the exact learning rate used for that update rather than the value
-produced by the subsequent scheduler advance. When an update is skipped, each
+Train and forward-eval rows MUST use explicit `loss/<term>/raw` and
+`loss/<term>/weighted` fields for every computed loss term, plus matching
+term-count and finite-status fields. `loss/total` MUST be the sum of weighted
+objective terms. The zero-weight protected gate ablation MUST retain its raw,
+weighted-zero, count, and finite fields. A disabled optional auxiliary term
+MUST have no raw, weighted, denominator, count, or finite field. Train rows
+MUST also include top-level `acc_top1`, top-level `acc_top5`, actual
+learning-rate values, optimizer-update status, and finite status where those
+values are available. The removed ambiguous bare `loss/<term>` alias MUST NOT
+be restored for any term.
+
+Additive to that prerequisite schema, train rows MUST also expose, for every
+actually computed loss term, its configured weight, denominator scope,
+eligible-segment count, selected-atom count, and skipped-segment count, together
+with per-optimizer-group learning rates. These additive observability fields
+SHALL expose the corresponding configured weight and denominator inputs beside
+the existing raw and weighted values rather than replacing them. An
+`lr/group_<index>` value MUST be sampled immediately before the optimizer-step
+call and, when the update is applied, MUST be the exact learning rate used for
+that update rather than the value produced by the subsequent scheduler
+advance. When an update is skipped, each
 configured optimizer-group LR field MUST be JSON `null`, named in
 `unavailable_fields` as not applied, and remain distinguishable through
 `optimizer_update_status`; a scheduled or would-have-been value MUST NOT be
@@ -251,15 +267,41 @@ Arbitrary exception text MUST NOT be stored in either list.
 - **WHEN** planned step 42 completes with an applied optimizer update
 - **THEN** `logging.jsonl` MUST receive exactly one `train` row with required
   `step: 42`
-- **AND** all canonical logging metrics for that step MUST be fields in that
-  row, independent of `observability.steps`.
+- **AND** all computed loss terms MUST have explicit raw and weighted fields in
+  that row
+- **AND** all other canonical logging metrics for that step MUST be fields in
+  that row, independent of `observability.steps`.
 
 #### Scenario: Eval runs at planned step
 
 - **WHEN** scheduled eval completes at planned step 42
 - **THEN** `logging.jsonl` MUST receive exactly one `eval` row with required
   `step: 42`
+- **AND** that row MUST use the same computed-term raw/weighted and
+  disabled-term omission rules as training
 - **AND** that row MUST be the canonical durable scalar record for the eval.
+
+#### Scenario: Gate ablation row
+
+- **WHEN** a step uses the named zero-weight token-gate ablation
+- **THEN** its row MUST contain the gate raw diagnostic, weighted value `0`,
+  selected count, and finite status
+- **AND** MUST distinguish that computed diagnostic from optimized terms.
+
+#### Scenario: Optional auxiliary omitted
+
+- **WHEN** a step's resolved coordinate Gaussian/RPS auxiliary has weight `0`
+- **THEN** its row MUST contain no coordinate Gaussian/RPS raw, weighted,
+  denominator, count, or finite field.
+
+#### Scenario: Optimizer update is skipped
+
+- **WHEN** an all-rank objective finite gate skips the optimizer update for one
+  planned step
+- **THEN** that step MUST still receive one train logging row
+- **AND** the row MUST state the skipped update and non-finite/unsafe status
+- **AND** any non-finite computed scalar MUST be `null` and named in
+  `non_finite_fields`.
 
 #### Scenario: Pre-wrapper rejection skips the optimizer update
 

@@ -111,6 +111,13 @@ the schedule MUST NOT reinterpret that scaler mutation as a completed update.
 - **AND** final checkpoint and final metrics MUST be scheduled at planned step
   5.
 
+#### Scenario: Unsafe optimizer update skipped
+
+- **WHEN** a planned step is marked unsafe before optimizer update
+- **THEN** schedule events for that planned step MUST still use the original
+  planned-step id
+- **AND** artifacts MUST record that the optimizer update was not applied.
+
 #### Scenario: Recoverable optimizer update is skipped
 
 - **WHEN** a planned step reaches an all-rank-confirmed `scaler_skip` or a
