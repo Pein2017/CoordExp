@@ -10,10 +10,19 @@ metric registry -- ``add-coordexp-swift-training-observability`` may extend this
 seam later, but this change does not pre-build that feature or change an artifact
 byte.
 
-``_append_logging_row_shared`` and ``_resource_scalar_metrics`` are also called
-directly by ``src.training.session._eval_forward_handler`` (moved to the session
-owner in wave 5), which imports this module rather than the facade forwarding
-them under their historical names.
+``_resource_scalar_metrics`` is also called directly by
+``src.training.session._eval_forward_handler`` (moved to the session owner in
+wave 5), which imports this module rather than the facade forwarding it under
+its historical name.
+
+Wave 4 of ``add-coordexp-swift-training-observability`` moved the rank-zero
+append plus its all-rank status handshake OUT of this module:
+``_append_logging_row_shared`` now lives in
+``src/artifacts/observation_publisher.py``, which owns JSONL-first publication
+and the derived console/TensorBoard lifecycle. No forwarding alias is kept
+here - this owner builds canonical rows and hands them to the injected
+publisher (or, for the frozen single-owner fixtures, to the publication-only
+handshake directly).
 
 Wave 2 of ``add-coordexp-swift-training-observability`` made this owner declare
 each observation scalar's reducer through ``src/runtime/metrics.py`` and stopped
@@ -52,6 +61,8 @@ from typing import Any
 
 from dataclasses import dataclass
 
+from src.artifacts import observation_publisher
+from src.artifacts.observation_publisher import ObservationPublisher
 from src.artifacts.resources import (
     CUDA_ALLOCATOR_BYTE_FIELDS,
     collect_resource_snapshot,
@@ -72,12 +83,6 @@ from src.runtime.metrics import (
 from src.runtime.optimizer_boundary import AppliedUpdateReceipt
 from src.training import cache_workflow
 from src.training.supervised_trainer import CompletedStepObservation
-
-try:
-    from accelerate.utils import broadcast_object_list
-except ImportError:  # pragma: no cover - exercised only in stripped environments.
-    broadcast_object_list = None  # type: ignore[assignment]
-
 
 def _scheduler_lr_metrics(scheduler_artifact: Any) -> dict[str, float]:
     if not isinstance(scheduler_artifact, Mapping):
@@ -293,55 +298,30 @@ def _throughput_fields(
     return fields
 
 
-def _append_logging_row_shared(
-    *, writer: RunWriter | None, row: Mapping[str, Any], runtime: Any
+def _publish_row(
+    *,
+    publisher: ObservationPublisher | None,
+    writer: RunWriter | None,
+    row: Mapping[str, Any],
+    runtime: Any,
+    terminal: bool = False,
 ) -> None:
-    """Append on rank zero and make its bounded outcome common to every rank."""
-    accelerator = getattr(runtime, "accelerator", runtime)
-    is_main = bool(
-        getattr(
-            runtime, "is_main_process", getattr(accelerator, "is_main_process", True)
+    """Publish one canonical row through the JSONL-first publication owner.
+
+    ``publisher`` is the composed rank-zero publisher
+    ``src/training/session.py`` builds for a production run; it appends the row
+    and only then presents it. ``None`` selects publication WITHOUT any derived
+    sink, which is the shape the frozen characterization fixtures and the
+    single-owner unit tests construct directly; it is the same bounded
+    append/status handshake, so the published bytes are identical either way.
+    """
+
+    if publisher is None:
+        observation_publisher._append_logging_row_shared(
+            writer=writer, row=row, runtime=runtime
         )
-    )
-    status: dict[str, Any] = {"ok": True}
-    if is_main:
-        try:
-            if writer is None:
-                raise RuntimeError("rank zero has no run writer")
-            writer.append_logging_row(row)
-        except BaseException as exc:
-            status = {
-                "ok": False,
-                "error": f"{type(exc).__name__}: {exc}"[:1024],
-            }
-    values: list[Any] = [status]
-    if (
-        int(getattr(runtime, "world_size", getattr(accelerator, "num_processes", 1)))
-        > 1
-    ):
-        broadcast = getattr(accelerator, "broadcast_object_list", None)
-        if callable(broadcast):
-            result = broadcast(values, from_process=0)
-            if result is not None:
-                values = result
-        elif broadcast_object_list is not None:
-            broadcast_object_list(values, from_process=0)
-        else:
-            raise RuntimeContractError(
-                "logging outcome broadcast requires accelerate",
-                code="runtime.logging_broadcast_unavailable",
-            )
-    shared = values[0]
-    if not isinstance(shared, Mapping) or not bool(shared.get("ok")):
-        error = (
-            shared.get("error", "invalid status")
-            if isinstance(shared, Mapping)
-            else shared
-        )
-        raise RuntimeContractError(
-            f"rank zero logging append failed: {error}",
-            code="runtime.logging_append_failed",
-        )
+        return
+    publisher.publish(row, terminal=terminal)
 
 
 def _finish_first_optimizer_step_phase(
@@ -413,12 +393,16 @@ class CompletedStepReporter:
         runtime: Any,
         resource_collector: Callable[[], Mapping[str, Any]] | None = None,
         cuda_allocator_sampler: Callable[[], Mapping[str, Any]] | None = None,
+        publisher: ObservationPublisher | None = None,
     ) -> None:
         self._writer = writer
         self._lifecycle = lifecycle
         self._runtime = runtime
         self._resource_collector = resource_collector
         self._cuda_allocator_sampler = cuda_allocator_sampler
+        # The JSONL-first publication owner. It is injected, never built here:
+        # composition belongs to `src/training/session.py`.
+        self._publisher = publisher
         # The allocator retry/OOM counters are PROCESS-LIFETIME counters, so
         # the row publishes deltas against the previous completed observation.
         # There is no prior snapshot for the first observed step, and that is
@@ -683,7 +667,9 @@ class CompletedStepReporter:
             row["accuracy_stats"] = dict(reduced_accuracy_stats)
         if unavailable:
             row["unavailable_fields"] = sorted(unavailable)
-        _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
+        _publish_row(
+            publisher=self._publisher, writer=writer, row=row, runtime=runtime
+        )
         warmup_steps = lifecycle.get("measurement_warmup_steps")
         reduced_step_duration = reduced.get("step_duration_seconds")
         if (
@@ -782,6 +768,7 @@ def publish_terminal_boundary_row(
     runtime: Any,
     lifecycle: Mapping[str, Any],
     terminal: Any,
+    publisher: ObservationPublisher | None = None,
 ) -> None:
     """Publish/converge exactly one terminal row before failed finalization.
 
@@ -807,6 +794,12 @@ def publish_terminal_boundary_row(
         return
     row = build_terminal_boundary_row(receipt, runtime=runtime)
     try:
-        _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
+        _publish_row(
+            publisher=publisher,
+            writer=writer,
+            row=row,
+            runtime=runtime,
+            terminal=True,
+        )
     except BaseException:
         return

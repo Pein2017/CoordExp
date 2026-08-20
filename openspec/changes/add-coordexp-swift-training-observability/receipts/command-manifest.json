@@ -222,6 +222,22 @@
     "scaler-fix-validation": "audit re-derived against installed torch 2.9.1 / accelerate 1.10.1 source: non-mutating .get lookup correct, staleness ruled out (GradScaler.update() rebinds per wrapper call); P3 residuals W3-4 (single-level unwrap vs accelerate while-loop) and W3-5 (silent False on unshaped state entry) recorded"
    },
    "archived_script_breakage_note": "losses_wave3_two_rank_probe.py (archived losses-change probe) calls the deleted clip_gradients/optimizer_step - deliberately unedited per the amend-5 precedent"
+  },
+  {
+   "id": "amend-7-pin-wave4-gate",
+   "amendment_of": "wave4-publisher-gate",
+   "date": "2026-08-20",
+   "reason": "pin observed Wave-4 counts (gate argv as executed adds tests/runtime per amend-2)",
+   "observed": {
+    "wave4-publisher-gate+runtime": "735 passed / 0 failed / 0 skipped (builder + lead replays identical)",
+    "fixture-collective": "15/15",
+    "collateral": "2345 passed / 126 skipped / 0 failed over training+artifacts+runtime+eval+config",
+    "residue": "event_bus/wandb/sqlite/log_rotation zero; alternate scalar authorities zero; tensorboard only in observation_publisher.py; no per-rank event streams",
+    "determinant-invariant": "payload sha b2d9595f byte-identical (lead recompute)",
+    "carried-obligation-discharged": "W3-3 behavioral terminal harness at _run_training_session with real RunWriter + publisher; green-from-birth seam pins converted to evidence by a byte-restored mutation check"
+   },
+   "retained_fallbacks": "W3-2 _scheduler_lr_metrics AND the new CompletedStepReporter(publisher=None)/_publish_row(None) publication-only path - both load-bearing for frozen characterization fixtures; Wave-5 residue searches must not delete either",
+   "readings": "console to stderr (stdout owns the CLI JSON summary); >256-byte diagnostic NAME fails closed rather than truncating (spec truncation applies to the field-name LIST bound; a single over-long canonical name is a defect)"
   }
  ]
 }

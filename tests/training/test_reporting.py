@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.artifacts import observation_publisher
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.runtime.metrics import reduce_rank_payloads
@@ -105,6 +106,15 @@ def test_reporter_is_keyword_only_constructed_and_callable(tmp_path: Path) -> No
     like ``resource_collector`` rather than being reached for implicitly. The
     surface stays keyword-only, default-``None``, and adds no sink, cadence,
     ETA, TensorBoard, or metric-registry parameter.
+
+    DECLARED FLIP (add-coordexp-swift-training-observability, Wave 4, task
+    4.2): it also takes the optional ``publisher``. That is the JSONL-first
+    publication OWNER (``src/artifacts/observation_publisher.py``), injected
+    by ``src/training/session.py``, which is where cadence, console, and
+    TensorBoard live. This owner still exposes no sink list, no cadence
+    parameter, no ETA, and no metric registry: it builds the canonical row and
+    hands it over. ``None`` keeps the identical publication-only handshake the
+    frozen characterization fixtures depend on.
     """
 
     import inspect
@@ -118,6 +128,7 @@ def test_reporter_is_keyword_only_constructed_and_callable(tmp_path: Path) -> No
         "runtime",
         "resource_collector",
         "cuda_allocator_sampler",
+        "publisher",
     }
     for name in (
         "writer",
@@ -125,10 +136,12 @@ def test_reporter_is_keyword_only_constructed_and_callable(tmp_path: Path) -> No
         "runtime",
         "resource_collector",
         "cuda_allocator_sampler",
+        "publisher",
     ):
         assert parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
     assert parameters["resource_collector"].default is None
     assert parameters["cuda_allocator_sampler"].default is None
+    assert parameters["publisher"].default is None
 
     call_signature = inspect.signature(reporting.CompletedStepReporter.__call__)
     assert list(call_signature.parameters) == ["self", "observation"]
@@ -398,6 +411,17 @@ def test_reporter_train_row_key_set_matches_the_frozen_fixture(tmp_path: Path) -
 
 
 def test_append_logging_row_shared_broadcasts_rank_zero_failure() -> None:
+    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 4).
+
+    Old assertion: ``reporting`` owned the rank-zero append and its all-rank
+    status handshake.
+
+    New assertion: ``src/artifacts/observation_publisher.py`` owns JSONL-first
+    publication, so this node calls the moved owner under its historical name.
+    ``reporting`` keeps no forwarding alias; its behavior, including both
+    bounded error codes, is unchanged.
+    """
+
     shared: dict[str, object] = {}
 
     class Collective:
@@ -427,7 +451,7 @@ def test_append_logging_row_shared_broadcasts_rank_zero_failure() -> None:
 
     for runtime, writer in ((main_runtime, failing_writer), (peer_runtime, None)):
         with pytest.raises(RuntimeContractError) as exc_info:
-            reporting._append_logging_row_shared(
+            observation_publisher._append_logging_row_shared(
                 writer=writer, row={"step": 1, "split": "train"}, runtime=runtime
             )
         assert exc_info.value.code == "runtime.logging_append_failed"
@@ -438,7 +462,7 @@ def test_append_logging_row_shared_appends_successfully_on_rank_zero(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting._append_logging_row_shared(
+    observation_publisher._append_logging_row_shared(
         writer=writer, row={"step": 1, "split": "train"}, runtime=_Runtime()
     )
     row = json.loads(writer.logging_path.read_text())

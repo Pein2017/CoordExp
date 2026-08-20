@@ -13,6 +13,7 @@ import src.training.execution_plan as execution_plan
 import src.training.pipeline as pipeline
 import src.training.reporting as reporting
 import src.training.session as session
+from src.artifacts import observation_publisher
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
@@ -1182,7 +1183,11 @@ def test_rank_zero_logging_failure_is_broadcast_as_shared_named_error(
     )
     for runtime, writer in ((main_runtime, failing_writer), (peer_runtime, None)):
         with pytest.raises(RuntimeContractError) as exc_info:
-            reporting._append_logging_row_shared(
+            # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 4):
+            # the rank-zero append plus its all-rank status handshake is owned
+            # by `src/artifacts/observation_publisher.py`; the historical
+            # behavior and both bounded codes are unchanged.
+            observation_publisher._append_logging_row_shared(
                 writer=writer, row={"step": 1, "split": "train"}, runtime=runtime
             )
         assert exc_info.value.code == "runtime.logging_append_failed"
@@ -2048,6 +2053,11 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
             train_order="source_order",
         ),
         checkpoint=SimpleNamespace(save_final=False),
+        # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 1/4):
+        # `observability.steps` is a REQUIRED presentation cadence and the
+        # session composes the rank-zero publisher from it, so a session-level
+        # fixture must now make that presentation decision explicitly.
+        observability=SimpleNamespace(steps=1),
     )
     admission_order: list[str] = []
 
@@ -2774,7 +2784,15 @@ WAVE0_TRAIN_ROW_KEYS = (
 #: Wave 4 declares two flips (manifest wave-4 ``declared_flips_in_scope``):
 #: ``_append_logging_row_shared`` moves to ``reporting`` under its historical
 #: name (both the train and eval callbacks call it, so it survives as a
-#: shared module-level function). ``_train_logging_handler`` has no entry
+#: shared module-level function).
+#:
+#: DECLARED FLIP (``add-coordexp-swift-training-observability``, ITS Wave 4 -
+#: the wave numbers in this table are the DECOMPOSE change's): the successor
+#: change moved ``_append_logging_row_shared`` on to
+#: ``src/artifacts/observation_publisher.py``, which owns JSONL-first
+#: publication and the derived console/TensorBoard lifecycle. The historical
+#: NAME is preserved at the new owner and ``reporting`` keeps no forwarding
+#: alias, so this node still proves "moved, not re-published". ``_train_logging_handler`` has no entry
 #: here any more: design decision 9 replaces the factory function with
 #: ``reporting.CompletedStepReporter``, an architecturally different symbol,
 #: so there is no same-named successor to assert against; the parametrized
@@ -2796,7 +2814,7 @@ WAVE0_PIPELINE_OWNED_HELPERS: dict[str, tuple[int, object | None]] = {
     "_hydrate_eval_micro_steps_from_cache": (3, cache_workflow),
     "_pack_cache_preparation_receipt": (3, cache_workflow),
     "_aggregate_cache_phase": (3, cache_workflow),
-    "_append_logging_row_shared": (4, reporting),
+    "_append_logging_row_shared": (4, observation_publisher),
     "_run_initialized_training": (5, session),
     "_checkpoint_handler": (5, session),
     "_eval_forward_handler": (5, session),

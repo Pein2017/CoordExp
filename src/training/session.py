@@ -50,6 +50,7 @@ from src.artifacts.provenance import (
     require_mapped_native_execution_attestation,
     require_pinned_runtime_baseline,
 )
+from src.artifacts.observation_publisher import ObservationPublisher
 from src.artifacts.run_writer import admit_exact_resume_checkpoint_publication
 from src.artifacts.resources import (
     collect_cuda_allocator_sample,
@@ -2309,6 +2310,18 @@ def _run_initialized_training(
 
         exact_training_state_callback_factory = publish_exact_training_state
     forward_input_provider = build_forward_input_provider(forward_input_provider_mode)
+    # ONE rank-zero observation publisher for the whole run (design decision 5):
+    # it appends every canonical row through the shared handshake and then owns
+    # the derived console/TensorBoard presentation at the required cadence.
+    # Presentation config is REQUIRED, so a missing block is a fail-closed
+    # resolution defect rather than a silently disabled sink.
+    observation_publisher = ObservationPublisher(
+        writer=writer,
+        runtime=runtime,
+        run_dir=run_directory.run_dir,
+        presentation_steps=int(config.observability.steps),
+        total_planned_steps=int(schedule.resolved_max_steps),
+    )
     checkpoint_writer = CheckpointWriter(run_directory.run_dir)
     eval_by_step: dict[int, dict[str, Any]] = {}
     committed_checkpoint_steps: set[int] = set()
@@ -2342,6 +2355,7 @@ def _run_initialized_training(
             runtime=runtime,
             resource_collector=collect_resource_snapshot,
             cuda_allocator_sampler=collect_cuda_allocator_sample,
+            publisher=observation_publisher,
         ),
         on_checkpoint=checkpoint_handler,
         on_eval=_eval_forward_handler(
@@ -2356,6 +2370,7 @@ def _run_initialized_training(
             eval_by_step=eval_by_step,
             reduction_mode=eval_reduction_mode,
             lifecycle=lifecycle,
+            publisher=observation_publisher,
         ),
         on_final=_final_handler(
             checkpoint_handler=checkpoint_handler,
@@ -2397,6 +2412,7 @@ def _run_initialized_training(
                 runtime=runtime,
                 lifecycle=lifecycle,
                 terminal=terminal,
+                publisher=observation_publisher,
             )
             raise
         if lifecycle.get("active_phase") is not None:
@@ -2441,6 +2457,9 @@ def _run_initialized_training(
             "scheduled_event_counts": dict(result.scheduled_event_counts),
         }
     finally:
+        # Terminal close of the derived event sink; it is best effort and can
+        # never change the run's outcome.
+        observation_publisher.close()
         if forward_input_provider is not None:
             forward_input_provider.close()
 
@@ -3273,6 +3292,7 @@ def _eval_forward_handler(
     reduction_mode: str = EVAL_REDUCTION_REPLICATED,
     lifecycle: dict[str, Any] | None = None,
     resource_collector: Callable[[], Mapping[str, Any]] = collect_resource_snapshot,
+    publisher: ObservationPublisher | None = None,
 ) -> Any:
     lifecycle_state = {} if lifecycle is None else lifecycle
 
@@ -3337,7 +3357,9 @@ def _eval_forward_handler(
             row.update(dict(reduced_measurement))
             row["resource_observation_scope"] = _EVAL_RESOURCE_OBSERVATION_SCOPE
             eval_by_step[int(scheduled_event.planned_step_id)] = row
-            reporting._append_logging_row_shared(writer=writer, row=row, runtime=runtime)
+            reporting._publish_row(
+                publisher=publisher, writer=writer, row=row, runtime=runtime
+            )
             lifecycle_state["evaluation_event_count"] = (
                 int(lifecycle_state.get("evaluation_event_count", 0)) + 1
             )

@@ -251,35 +251,57 @@
 
 ## 4. Wave 4 - JSONL-first console and TensorBoard publisher
 
-- [ ] 4.1 Add failing publisher tests for required `step`, step/total console
+- [x] 4.1 Add failing publisher tests for required `step`, step/total console
   formatting, train interval/terminal dispatch, unconditional eval mirroring,
   rank-zero-only ownership, and proof that JSONL append completes before any
   presentation call. Cover the terminal optimizer-boundary row and an injected
   append failure that still converges failed finalization with the primary
   optimizer-boundary code.
-- [ ] 4.2 Keep the row builder in `src/training/reporting.py` and implement the
+- [x] 4.2 Keep the row builder in `src/training/reporting.py` and implement the
   direct rank-zero observation publisher in
   `src/artifacts/observation_publisher.py` around the existing `RunWriter`
   append/status handshake; expose one train/eval publication interface rather
   than an event dispatcher.
-- [ ] 4.3 Implement the compact console presenter and segment-local approximate
+- [x] 4.3 Implement the compact console presenter and segment-local approximate
   ETA without persisting ETA or presentation state and without including sink
   time in `step_duration_seconds`.
-- [ ] 4.4 Implement a lazy run-local `tensorboard/` sink using
+- [x] 4.4 Implement a lazy run-local `tensorboard/` sink using
   `torch.utils.tensorboard.SummaryWriter`, deterministic
   `<split>/<canonical-key>` tags, finite numeric values only, canonical planned
   step as `global_step`, bounded queueing, and terminal close.
-- [ ] 4.5 Add a TensorBoard event-reader test that loads a temporary run's event
+- [x] 4.5 Add a TensorBoard event-reader test that loads a temporary run's event
   file and proves expected train/eval tags, finite values, and global steps.
-- [ ] 4.6 Inject TensorBoard import, initialization, `add_scalar`, flush, and close failures; prove the already written JSONL row survives, at most one bounded run warning plus one best-effort stderr warning is emitted, cleanup failure cannot recurse, the sink latches disabled, and later JSONL/eval/checkpoint work continues. Add exact tests that `unavailable_fields` and `non_finite_fields` are sorted/unique and bounded by field count and name bytes with one bounded truncation count/marker.
-- [ ] 4.7 Wire the publisher only from `src/training/session.py`, delete
+- [x] 4.6 Inject TensorBoard import, initialization, `add_scalar`, flush, and close failures; prove the already written JSONL row survives, at most one bounded run warning plus one best-effort stderr warning is emitted, cleanup failure cannot recurse, the sink latches disabled, and later JSONL/eval/checkpoint work continues. Add exact tests that `unavailable_fields` and `non_finite_fields` are sorted/unique and bounded by field count and name bytes with one bounded truncation count/marker.
+- [x] 4.7 Wire the publisher only from `src/training/session.py`, delete
   superseded console/TensorBoard/pass-through helpers, and verify non-main ranks
   create neither terminal progress nor event files.
-- [ ] 4.8 Gate Wave 4 with focused publisher, run-writer, train/eval reporting/
+- [x] 4.8 Gate Wave 4 with focused publisher, run-writer, train/eval reporting/
   session, TensorBoard reader, and failure suites; strict OpenSpec validation; searches
   for event buses, generic registries, alternate scalar files, DB/W&B, and
   per-rank event streams; do not continue with an unresolved test or validation
   failure.
+
+> **Wave 4 closed (2026-08-20, opus builder, zero correction rounds):**
+> `src/artifacts/observation_publisher.py` owns the direct rank-zero
+> publisher (publish/close only; no dispatcher); JSONL append + all-rank
+> status broadcast strictly precede any presentation; identity validation
+> runs on every rank before the collective. Console (stderr, step/total +
+> compact scalars + segment-local approximate ETA never persisted);
+> TensorBoard lazy run-local sink with deterministic split/key tags,
+> finite-only numerics, canonical global_step, real event-reader test.
+> Seven-arm failure injection all isolated (latch, one bounded warning +
+> one stderr line, no recursion, run continues). W3-3 carried obligation
+> DISCHARGED behaviorally at `_run_initialized_training` (real RunWriter,
+> primary boundary code on injected append failure, zero handler dispatch,
+> non-main rank creates nothing); seam pins proven by a byte-restored
+> mutation check. `_append_logging_row_shared` moved (not aliased) to the
+> publisher module with declared-flip pin retargets; no other legacy
+> console/TB helper existed to delete (receipted). Retained load-bearing
+> fallbacks recorded in amend-7 (W3-2 LR fallback + publisher=None
+> publication-only path) - Wave-5 residue must not remove them. Gate
+> 735/0/0 (lead replay identical), 15/15 fixtures/collective, collateral
+> 2345/0/126skip, residue zero, strict valid, determinant payload sha
+> byte-identical. Flake tripwire: count stands at 2 (zero this wave).
 
 ## 5. Wave 5 - Resume boundary, docs, and production-shaped acceptance
 

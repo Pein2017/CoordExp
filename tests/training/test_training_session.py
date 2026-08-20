@@ -781,3 +781,421 @@ def test_session_owns_cache_hydration_and_the_facade_does_not() -> None:
     ):
         assert hydration in owner, hydration
         assert hydration not in facade, hydration
+
+
+# ---------------------------------------------------------------------------
+# Behavioral terminal optimizer-boundary seam (Wave-3 carried obligation W3-3,
+# discharged by add-coordexp-swift-training-observability task 4.1)
+#
+# The Wave-3 receipts proved the reporting seam behaviorally and the SESSION
+# seam only by source inspection.  These nodes drive the real
+# `_run_initialized_training` body with a stub trainer whose `run()` raises the
+# converged `OptimizerBoundaryTerminal`, a REAL `RunWriter`, and a real
+# `ObservationPublisher`, and read the resulting artifacts.
+# ---------------------------------------------------------------------------
+
+
+def _terminal_seam_config(root: Path, *, observability_steps: int = 1) -> SimpleNamespace:
+    dataset = SimpleNamespace(path=root / "train.jsonl", sample_limit=2)
+    dataset.path.write_text("{}\n", encoding="utf-8")
+    return SimpleNamespace(
+        run=SimpleNamespace(
+            name="terminal-run",
+            artifact_root=str(root / "artifacts"),
+            output_dir="run",
+            collision_policy="fail",
+        ),
+        runtime=SimpleNamespace(seed=7, determinism=SimpleNamespace(mode="legacy")),
+        training=SimpleNamespace(precision="no", max_grad_norm=1.0),
+        model=SimpleNamespace(
+            special_token_embeddings=object(),
+            attn_implementation="flash_attention_2",
+            fa2_branch_proof="first_micro_step",
+        ),
+        adapter=object(),
+        packing=SimpleNamespace(
+            global_max_length=7,
+            policy="source_order_next_fit",
+            window_size=None,
+            lookahead=None,
+            seed=17,
+            worker_count=1,
+            cursor_byte_budget=65_536,
+            max_packs_per_fragment=None,
+            fragment_item_budget=1_024,
+            fragment_byte_budget=4_194_304,
+        ),
+        template=SimpleNamespace(object_ordering="geo_sorted"),
+        losses=object(),
+        optimizer=object(),
+        data=SimpleNamespace(train=dataset, eval=None, train_order="source_order"),
+        checkpoint=SimpleNamespace(save_final=False),
+        observability=SimpleNamespace(steps=observability_steps),
+    )
+
+
+class _TerminalSeamHarness:
+    """Drive the real `_run_initialized_training` body up to `trainer.run()`."""
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        is_main: bool = True,
+    ) -> None:
+        from src.artifacts.run_writer import RunWriter
+        from src.runtime.optimizer_boundary import (
+            AppliedUpdateReceipt,
+            OptimizerBoundaryTerminal,
+        )
+
+        self.root = tmp_path
+        self.is_main = is_main
+        self.config = _terminal_seam_config(tmp_path)
+        self.eval_dispatches: list[Any] = []
+        self.checkpoint_dispatches: list[Any] = []
+        self.final_dispatches: list[Any] = []
+        self.console = _RecordingConsole()
+        self.receipt = AppliedUpdateReceipt.terminal_not_attempted(
+            42, 1, "pre_wrapper_mixed_scaler_overflow", unscale_completed=True
+        )
+        self.terminal = OptimizerBoundaryTerminal(self.receipt)
+        self.writer = (
+            RunWriter.initialize(
+                run_dir=tmp_path / "run",
+                run_id="run",
+                run_name="terminal-run",
+                artifact_root=tmp_path,
+                collision_outcome="created",
+                created_at="now",
+                config_fingerprint="fp",
+                resolved_config={},
+                world_size=1,
+                resolved_max_steps=None,
+            )
+            if is_main
+            else None
+        )
+        self.accelerator = SimpleNamespace(
+            is_main_process=is_main,
+            num_processes=1,
+            process_index=0,
+            device="cpu",
+        )
+        self.runtime = SimpleNamespace(
+            model=object(),
+            accelerator=self.accelerator,
+            is_main_process=is_main,
+            world_size=1,
+            optimizer_step_count=5,
+            scheduler_step_count=5,
+            validate_eval_reduction_consensus=lambda **kwargs: None,
+        )
+        self._install(monkeypatch)
+
+    def _install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        components = SimpleNamespace(
+            model=SimpleNamespace(to=lambda device: None),
+            token_identity=SimpleNamespace(
+                tokenizer_vocab_size=10, to_artifact_dict=lambda: {"tokens": 1}
+            ),
+            processor_identity=SimpleNamespace(
+                to_artifact_dict=lambda: {"processor": 1}
+            ),
+            tokenizer=object(),
+            base_model_path=self.root / "model",
+            base_config_sha256="base",
+            tokenizer_sha256="tokenizer",
+            processor=SimpleNamespace(image_processor=object()),
+        )
+        self.components = components
+        model = SimpleNamespace(name="model")
+        monkeypatch.setattr(
+            cache_workflow, "seed_training_runtime", lambda *a, **k: None, raising=False
+        )
+        for module in (session, cache_workflow):
+            monkeypatch.setattr(
+                module, "load_qwen_components", lambda *a, **k: components,
+                raising=False,
+            )
+        monkeypatch.setattr(
+            session, "load_default_adapter_source_gate_evidence", lambda root: object()
+        )
+        monkeypatch.setattr(
+            session, "build_adapter_setup_plan",
+            lambda *a, **k: SimpleNamespace(mode="fresh"),
+        )
+        monkeypatch.setattr(
+            session, "setup_dora_adapter",
+            lambda m, plan: SimpleNamespace(
+                model=model, receipt=SimpleNamespace(adapter_name="default")
+            ),
+        )
+        monkeypatch.setattr(
+            session, "build_default_special_token_selection", lambda *a: object()
+        )
+        monkeypatch.setattr(
+            session,
+            "load_default_special_token_embedding_source_gate_evidence",
+            lambda root: object(),
+        )
+        monkeypatch.setattr(
+            session, "install_special_token_embedding_deltas",
+            lambda m, selection, source_gate: SimpleNamespace(
+                model=model, receipt=object()
+            ),
+        )
+        monkeypatch.setattr(session, "enable_training_memory_savers", lambda m: None)
+        monkeypatch.setattr(
+            session,
+            "_move_model_and_resolve_mapped_native_execution",
+            lambda **kwargs: None,
+        )
+        monkeypatch.setattr(
+            cache_workflow,
+            "_attach_image_processors_to_micro_steps",
+            lambda steps, **kwargs: tuple(steps),
+        )
+        monkeypatch.setattr(
+            cache_workflow,
+            "_apply_fa2_branch_proof_policy",
+            lambda steps, config: tuple(steps),
+        )
+        monkeypatch.setattr(session.LossRunner, "from_config", lambda config: object())
+        monkeypatch.setattr(
+            session, "build_optimizer_group_plan", lambda *a, **k: object()
+        )
+        monkeypatch.setattr(session, "build_scheduler_plan", lambda *a, **k: object())
+        monkeypatch.setattr(
+            session, "build_optimizer_and_scheduler",
+            lambda *a, **k: (object(), object()),
+        )
+        monkeypatch.setattr(
+            session, "build_trainable_surface_receipt", lambda *a, **k: object()
+        )
+        monkeypatch.setattr(session, "TrainRuntime", lambda **kwargs: self.runtime)
+        monkeypatch.setattr(session, "CheckpointWriter", lambda run_dir: object())
+        monkeypatch.setattr(
+            session,
+            "_checkpoint_handler",
+            lambda *a, **k: lambda *args, **kwargs: self.checkpoint_dispatches.append(
+                args
+            ),
+        )
+        monkeypatch.setattr(
+            session,
+            "_eval_forward_handler",
+            lambda **kwargs: lambda *args: self.eval_dispatches.append(args),
+        )
+        monkeypatch.setattr(
+            session,
+            "_final_handler",
+            lambda **kwargs: lambda *args: self.final_dispatches.append(args),
+        )
+
+        harness = self
+
+        def trainer(**kwargs: Any) -> Any:
+            harness.trainer_kwargs = kwargs
+
+            def run() -> Any:
+                raise harness.terminal
+
+            return SimpleNamespace(run=run)
+
+        monkeypatch.setattr(session, "SupervisedTrainer", trainer)
+
+    @property
+    def preflight(self) -> dict[str, Any]:
+        return {
+            "rank": 0,
+            "world_size": 1,
+            "cache_root": str(self.root / "cache-root"),
+            "cache_root_receipt": {
+                "resolved_root": str(self.root / "cache-root"),
+                "source": "default",
+            },
+            "components": self.components,
+            "vocab_groups": object(),
+            "schedule": SimpleNamespace(
+                resolved_max_steps=100, runtime_batch=object()
+            ),
+            "train_cache": {
+                "cache_dir": self.root / "cache",
+                "micro_step_count": 1,
+                "format_version": "v1",
+                "fingerprint": "f" * 64,
+                "determinants_sha256": "d" * 64,
+                "phase_receipt": {},
+            },
+            "eval_cache": None,
+            "eval_reduction": {"effective_mode": "replicated", "pack_count": None},
+            "train_micro_steps": (SimpleNamespace(split="train"),),
+            "phase_trace": {},
+        }
+
+    def run(self) -> dict[str, Any]:
+        gatherer = lambda report: (report,)  # noqa: E731
+        gatherer.close = lambda: None  # type: ignore[attr-defined]
+        return session._run_initialized_training(
+            repo_root=self.root,
+            resolved_config=SimpleNamespace(
+                entry_config_path=self.root / "config.yaml", fingerprint="config-fp"
+            ),
+            config=self.config,
+            accelerator=self.accelerator,
+            run_directory=RunDirectory("run", self.root, self.root / "run", "created"),
+            run_id="run",
+            run_segment_id="segment-run",
+            writer=self.writer,
+            lifecycle={
+                "completed_steps": 0,
+                "consumed_packs": 0,
+                "checkpoint_event_count": 0,
+                "optimizer_update_status": None,
+                "finite_status": None,
+            },
+            rank_report_gatherer=gatherer,
+            resolved_forward_input_provider=session.resolve_forward_input_provider_mode(
+                "synchronous"
+            ),
+            provenance={"schema_version": 3},
+            preflight=self.preflight,
+        )
+
+    def logging_rows(self) -> list[dict[str, Any]]:
+        path = self.root / "run" / "logging.jsonl"
+        if not path.exists():
+            return []
+        return [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+
+class _RecordingConsole:
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+
+    def write(self, text: str) -> int:
+        if text.strip():
+            self.lines.append(text)
+        return len(text)
+
+    def flush(self) -> None:
+        return None
+
+
+def test_session_publishes_one_terminal_row_before_the_boundary_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+
+    harness = _TerminalSeamHarness(tmp_path, monkeypatch)
+
+    with pytest.raises(OptimizerBoundaryTerminal) as excinfo:
+        harness.run()
+
+    # The PRIMARY optimizer-boundary failure is what leaves the session.
+    assert excinfo.value is harness.terminal
+    assert excinfo.value.receipt.terminal_reason == "pre_wrapper_mixed_scaler_overflow"
+
+    (row,) = harness.logging_rows()
+    assert row["step"] == 42
+    assert row["split"] == "train"
+    assert row["optimizer_boundary_terminal"] is True
+    assert row["optimizer_terminal_reason"] == "pre_wrapper_mixed_scaler_overflow"
+    assert row["optimizer_update_applied"] is False
+    assert row["optimizer_step_count"] == 5
+    assert row["scheduler_step_count"] == 5
+
+    # No scheduled handler ran, and no success finalization was published.
+    assert harness.eval_dispatches == []
+    assert harness.checkpoint_dispatches == []
+    assert harness.final_dispatches == []
+    assert harness.writer.read_run()["status"] != "completed"
+    assert not (harness.writer.run_dir / "final.json").exists()
+
+
+def test_session_terminal_row_publication_failure_keeps_the_boundary_primary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.artifacts.run_writer import RunWriter
+    from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+
+    harness = _TerminalSeamHarness(tmp_path, monkeypatch)
+    attempts: list[dict[str, Any]] = []
+
+    def failing_append(self: Any, row: Any) -> Any:
+        attempts.append(dict(row))
+        raise OSError("disk full")
+
+    monkeypatch.setattr(RunWriter, "append_logging_row", failing_append)
+
+    with pytest.raises(OptimizerBoundaryTerminal) as excinfo:
+        harness.run()
+
+    # The bounded primary optimizer-boundary failure remains the terminal cause
+    # ahead of the row-publication failure, and every rank still converges it.
+    assert excinfo.value is harness.terminal
+    # Publication was attempted exactly once for the terminal planned step.
+    assert [row["step"] for row in attempts] == [42]
+    assert harness.logging_rows() == []
+    assert harness.eval_dispatches == []
+    assert harness.checkpoint_dispatches == []
+    assert harness.final_dispatches == []
+    assert harness.writer.read_run()["status"] != "completed"
+
+
+def test_session_presents_the_terminal_row_only_after_it_is_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The publisher is wired from the session, and presentation is derived."""
+
+    from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+
+    harness = _TerminalSeamHarness(tmp_path, monkeypatch)
+
+    with pytest.raises(OptimizerBoundaryTerminal):
+        harness.run()
+
+    presented = capsys.readouterr().err
+    assert "42/100" in presented
+    assert len(harness.logging_rows()) == 1
+
+
+def test_session_presents_nothing_when_the_terminal_row_cannot_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from src.artifacts.run_writer import RunWriter
+    from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+
+    harness = _TerminalSeamHarness(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        RunWriter,
+        "append_logging_row",
+        lambda self, row: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.raises(OptimizerBoundaryTerminal):
+        harness.run()
+
+    assert "42/100" not in capsys.readouterr().err
+    assert harness.logging_rows() == []
+
+
+def test_a_non_main_rank_writes_no_progress_and_no_event_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+
+    harness = _TerminalSeamHarness(tmp_path, monkeypatch, is_main=False)
+
+    with pytest.raises(OptimizerBoundaryTerminal):
+        harness.run()
+
+    assert capsys.readouterr().err.strip() == ""
+    assert harness.logging_rows() == []
+    assert not (tmp_path / "run" / "tensorboard").exists()
