@@ -52,6 +52,7 @@ from src.artifacts.provenance import (
 )
 from src.artifacts.run_writer import admit_exact_resume_checkpoint_publication
 from src.artifacts.resources import (
+    collect_cuda_allocator_sample,
     collect_resource_snapshot,
     converge_rank_cpu_resources,
     merge_rank_cpu_resource_receipts,
@@ -99,6 +100,7 @@ from src.runtime import (
     validate_accelerator_runtime,
 )
 from src.runtime.metrics import REDUCER_MAX, MetricBatch, ScalarSample
+from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
 from src.training.schedule import ResolvedStepSchedule, resolve_planned_step_schedule
 from src.training.pack_cache import (
     load_rank_micro_steps_from_cache,
@@ -2339,6 +2341,7 @@ def _run_initialized_training(
             lifecycle=lifecycle,
             runtime=runtime,
             resource_collector=collect_resource_snapshot,
+            cuda_allocator_sampler=collect_cuda_allocator_sample,
         ),
         on_checkpoint=checkpoint_handler,
         on_eval=_eval_forward_handler(
@@ -2380,7 +2383,22 @@ def _run_initialized_training(
         )
     try:
         _begin_run_phase(writer, lifecycle, "first_optimizer_step")
-        result = trainer.run()
+        try:
+            result = trainer.run()
+        except OptimizerBoundaryTerminal as terminal:
+            # The boundary converged a terminal outcome on EVERY rank. Publish
+            # the one bounded terminal row for the current planned step first,
+            # then keep raising the primary optimizer-boundary failure so
+            # common failed finalization records it ahead of any publication
+            # failure. Nothing about this branch advances the scheduler,
+            # completed-step count, or a scheduled handler.
+            reporting.publish_terminal_boundary_row(
+                writer=writer,
+                runtime=runtime,
+                lifecycle=lifecycle,
+                terminal=terminal,
+            )
+            raise
         if lifecycle.get("active_phase") is not None:
             _fail_active_run_phase(writer, lifecycle)
         latest = result.latest_observation

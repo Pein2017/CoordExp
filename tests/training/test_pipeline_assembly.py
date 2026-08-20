@@ -2636,9 +2636,20 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
     contract does not itself own): capture the row's key set with timing
     fields unmeasured (the pre-existing baseline this row producer already
     wrote before task 1.3), then again with real timing values supplied,
-    and assert the ONLY difference is the three additive timing keys -- no
+    and assert the ONLY difference is the additive timing keys -- no
     other key appears, disappears, or is renamed, and `accuracy_stats`
     remains the same strict nested structure in both rows.
+
+    DECLARED FLIP (add-coordexp-swift-training-observability, Wave 3, task
+    3.4).
+
+    Old assertion: measuring the step added EXACTLY the three timing keys.
+
+    New assertion: it also adds the derived global work-rate fields, because
+    a work rate cannot exist without a positive measured step duration. The
+    unmeasured baseline therefore names those same fields in
+    `unavailable_fields` instead of publishing a fabricated zero rate, which
+    is the one key whose VALUE legitimately differs between the two rows.
     """
 
     context = _real_loss_context()
@@ -2688,9 +2699,26 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
     timed_row = json.loads(timed_writer.logging_path.read_text())
 
     timing_keys = {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
+    # This observation reports no physical-token work count, so only the work
+    # rates whose counts the loss telemetry itself supplies become available.
+    throughput_keys = {
+        name
+        for name, work in reporting.THROUGHPUT_FIELDS.items()
+        if work in baseline_row
+    }
+    assert throughput_keys == {
+        "throughput/supervised_atoms_per_second",
+        "throughput/packs_per_second",
+    }
     assert timing_keys.isdisjoint(baseline_row)
-    assert set(timed_row) == set(baseline_row) | timing_keys
+    assert set(reporting.THROUGHPUT_FIELDS).isdisjoint(baseline_row)
+    assert set(reporting.THROUGHPUT_FIELDS) <= set(baseline_row["unavailable_fields"])
+    assert throughput_keys.isdisjoint(timed_row["unavailable_fields"])
+    assert "throughput/physical_tokens_per_second" in timed_row["unavailable_fields"]
+    assert set(timed_row) == set(baseline_row) | timing_keys | throughput_keys
     for key in baseline_row:
+        if key == "unavailable_fields":
+            continue
         assert baseline_row[key] == timed_row[key]
     assert baseline_row["accuracy_stats"] == artifact["accuracy_stats"]
     assert timed_row["accuracy_stats"] == artifact["accuracy_stats"]

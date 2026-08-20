@@ -1588,3 +1588,127 @@ def test_provider_forward_inputs_keep_exactly_the_token_sequence_positions() -> 
 
     assert sequence.causal_logits_positions() == (0, 9)
     assert torch.equal(observed.logits_to_keep, expected.logits_to_keep)
+
+
+# ---------------------------------------------------------------------------
+# add-coordexp-swift-training-observability Wave 3 (task 3.5): accurately
+# completed host-to-device measurement, or an honest unavailability.
+# ---------------------------------------------------------------------------
+
+
+class _FakeCudaEvent:
+    def __init__(self, *, completed: bool = True, elapsed_ms: float = 4.0) -> None:
+        self._completed = completed
+        self._elapsed_ms = elapsed_ms
+        self.record_calls = 0
+
+    def record(self) -> None:
+        self.record_calls += 1
+
+    def query(self) -> bool:
+        return self._completed
+
+    def elapsed_time(self, other: "_FakeCudaEvent") -> float:
+        del other
+        return self._elapsed_ms
+
+
+def _event_factory(events: list[_FakeCudaEvent], *, completed: bool = True):
+    def make() -> _FakeCudaEvent:
+        event = _FakeCudaEvent(completed=completed)
+        events.append(event)
+        return event
+
+    return make
+
+
+def test_h2d_timer_resolves_only_already_completed_events() -> None:
+    from src.training.forward_input_provider import PlannedStepH2DTimer
+
+    events: list[_FakeCudaEvent] = []
+    timer = PlannedStepH2DTimer(event_factory=_event_factory(events))
+    timer.begin_planned_step()
+    for _ in range(2):
+        pair = timer.begin_transfer("cuda:0")
+        timer.end_transfer(pair)
+
+    seconds, reason = timer.resolve()
+
+    assert reason is None
+    # Two bracketed transfers of 4 ms each, reported in seconds.
+    assert seconds == pytest.approx(0.008)
+    assert [event.record_calls for event in events] == [1, 1, 1, 1]
+
+
+def test_h2d_timer_never_forces_readiness_and_reports_unavailable() -> None:
+    from src.training.forward_input_provider import PlannedStepH2DTimer
+
+    events: list[_FakeCudaEvent] = []
+    timer = PlannedStepH2DTimer(event_factory=_event_factory(events, completed=False))
+    timer.begin_planned_step()
+    timer.end_transfer(timer.begin_transfer("cuda:0"))
+
+    seconds, reason = timer.resolve()
+
+    assert seconds is None
+    assert reason == "h2d_events_not_completed"
+
+
+def test_h2d_timer_marks_a_non_cuda_target_unavailable() -> None:
+    from src.training.forward_input_provider import PlannedStepH2DTimer
+
+    events: list[_FakeCudaEvent] = []
+    timer = PlannedStepH2DTimer(event_factory=_event_factory(events))
+    timer.begin_planned_step()
+    timer.end_transfer(timer.begin_transfer(None))
+
+    seconds, reason = timer.resolve()
+
+    assert seconds is None
+    assert reason == "h2d_target_not_cuda"
+    assert events == []
+
+
+def test_h2d_timer_reports_no_observed_transfer_for_an_empty_planned_step() -> None:
+    from src.training.forward_input_provider import PlannedStepH2DTimer
+
+    timer = PlannedStepH2DTimer(event_factory=_event_factory([]))
+    timer.begin_planned_step()
+
+    assert timer.resolve() == (None, "h2d_no_transfer_observed")
+
+
+def test_h2d_timer_reports_an_unavailable_event_api() -> None:
+    from src.training.forward_input_provider import PlannedStepH2DTimer
+
+    def failing_factory() -> object:
+        raise RuntimeError("no cuda events here")
+
+    timer = PlannedStepH2DTimer(event_factory=failing_factory)
+    timer.begin_planned_step()
+    timer.end_transfer(timer.begin_transfer("cuda:0"))
+
+    assert timer.resolve() == (None, "h2d_events_unavailable")
+
+
+@pytest.mark.parametrize("mode", ["synchronous", "overlapped"])
+def test_cpu_providers_report_an_honest_h2d_unavailability(mode: str) -> None:
+    from src.training.forward_input_provider import (
+        OverlappedForwardInputProvider,
+        SynchronousForwardInputProvider,
+    )
+
+    provider = (
+        SynchronousForwardInputProvider()
+        if mode == "synchronous"
+        else OverlappedForwardInputProvider()
+    )
+    micro_step = _make_micro_step(0)
+    provider.begin_planned_step(1, (micro_step,))
+    provider.take(0, micro_step)
+    seconds, reason = provider.resolve_planned_step_h2d_seconds()
+    provider.end_planned_step()
+    provider.close()
+
+    assert seconds is None
+    assert reason == "h2d_target_not_cuda"

@@ -115,6 +115,10 @@ class ForwardInputProvider(Protocol):
 
     def take(self, ordinal: int, micro_step: Any) -> QwenForwardInputs: ...
 
+    def resolve_planned_step_h2d_seconds(self) -> tuple[float | None, str | None]:
+        """Return this planned step's ``(h2d_seconds, unavailable_reason)``."""
+        ...
+
     def end_planned_step(self) -> None: ...
 
     def close(self) -> None: ...
@@ -412,6 +416,76 @@ def _validate_process_max_rss_ceiling(
     return observed
 
 
+def _cuda_timing_event() -> Any:
+    return torch.cuda.Event(enable_timing=True)
+
+
+class PlannedStepH2DTimer:
+    """Bracket the provider-owned host-to-device copies of one planned step.
+
+    Completion is RESOLVED, never forced. ``resolve`` reads an event pair only
+    when the end event already reports completion, so a normal observation
+    adds no synchronization to the execution it measures (design decision 4).
+    A transfer whose completion cannot be established is reported unavailable
+    with a bounded reason; a zero would be indistinguishable from a real
+    measurement of an instantaneous copy, and host enqueue duration is never
+    relabeled as device execution time.
+    """
+
+    def __init__(self, *, event_factory: Callable[[], Any] | None = None) -> None:
+        self._event_factory = (
+            _cuda_timing_event if event_factory is None else event_factory
+        )
+        self._pairs: list[tuple[Any, Any]] = []
+        self._unavailable_reason: str | None = None
+
+    def begin_planned_step(self) -> None:
+        self._pairs = []
+        self._unavailable_reason = None
+
+    def begin_transfer(self, device: torch.device | str | None) -> tuple[Any, Any] | None:
+        torch_device = torch.device("cpu") if device is None else torch.device(device)
+        if torch_device.type != "cuda":
+            # A CPU-resident "transfer" has no device-side duration to measure.
+            self._unavailable_reason = "h2d_target_not_cuda"
+            return None
+        try:
+            start = self._event_factory()
+            end = self._event_factory()
+            start.record()
+        except Exception:
+            self._unavailable_reason = "h2d_events_unavailable"
+            return None
+        return (start, end)
+
+    def end_transfer(self, pair: tuple[Any, Any] | None) -> None:
+        if pair is None:
+            return
+        try:
+            pair[1].record()
+        except Exception:
+            self._unavailable_reason = "h2d_events_unavailable"
+            return
+        self._pairs.append(pair)
+
+    def resolve(self) -> tuple[float | None, str | None]:
+        """Return ``(seconds, unavailable_reason)`` without synchronizing."""
+
+        if self._unavailable_reason is not None:
+            return None, self._unavailable_reason
+        if not self._pairs:
+            return None, "h2d_no_transfer_observed"
+        total_ms = 0.0
+        for start, end in self._pairs:
+            try:
+                if not bool(end.query()):
+                    return None, "h2d_events_not_completed"
+                total_ms += float(start.elapsed_time(end))
+            except Exception:
+                return None, "h2d_event_read_failed"
+        return max(0.0, total_ms / 1000.0), None
+
+
 def _move_forward_inputs_to_device(
     forward_inputs: QwenForwardInputs, device: torch.device | str | None
 ) -> QwenForwardInputs:
@@ -439,16 +513,28 @@ def _move_forward_inputs_to_device(
     )
 
 
+def _timed_move_to_device(
+    forward_inputs: QwenForwardInputs,
+    device: torch.device | str | None,
+    timer: PlannedStepH2DTimer,
+) -> QwenForwardInputs:
+    pair = timer.begin_transfer(device)
+    moved = _move_forward_inputs_to_device(forward_inputs, device)
+    timer.end_transfer(pair)
+    return moved
+
+
 class SynchronousForwardInputProvider:
     """Reference semantic path: builds forward inputs on demand, no thread."""
 
     lookahead_depth = 0
     max_prepared_items = 0
 
-    def __init__(self) -> None:
+    def __init__(self, *, _h2d_event_factory: Callable[[], Any] | None = None) -> None:
         self._state = _StepBoundState()
         self._closed = False
         self.last_take_wait_seconds = 0.0
+        self._h2d_timer = PlannedStepH2DTimer(event_factory=_h2d_event_factory)
 
     def begin_planned_step(
         self, planned_step_id: int, moved_micro_steps: Sequence[Any]
@@ -456,6 +542,7 @@ class SynchronousForwardInputProvider:
         del planned_step_id
         _assert_not_closed(self._closed)
         self._state.begin(moved_micro_steps)
+        self._h2d_timer.begin_planned_step()
 
     def take(self, ordinal: int, micro_step: Any) -> QwenForwardInputs:
         expected_micro_step = self._state.validate_take(ordinal, micro_step)
@@ -466,9 +553,12 @@ class SynchronousForwardInputProvider:
         # `total_build_inputs_ns` receipt means CPU-only build time too —
         # comparable to the overlapped provider's, not H2D-inclusive.
         forward_inputs = _build_forward_inputs(expected_micro_step, device=None)
-        return _move_forward_inputs_to_device(
-            forward_inputs, expected_micro_step.forward_device
+        return _timed_move_to_device(
+            forward_inputs, expected_micro_step.forward_device, self._h2d_timer
         )
+
+    def resolve_planned_step_h2d_seconds(self) -> tuple[float | None, str | None]:
+        return self._h2d_timer.resolve()
 
     def end_planned_step(self) -> None:
         self._state.end()
@@ -597,6 +687,7 @@ class OverlappedForwardInputProvider:
         _resident_cpu_tensor_payload_ceiling_bytes: int | None = None,
         _process_max_rss_ceiling_bytes: int | None = None,
         _process_max_rss_reader: Callable[[], object] | None = None,
+        _h2d_event_factory: Callable[[], Any] | None = None,
     ) -> None:
         payload_ceiling_bytes = (
             DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES
@@ -637,6 +728,7 @@ class OverlappedForwardInputProvider:
         self._build_slot: threading.Semaphore | None = None
         self._thread: threading.Thread | None = None
         self.last_take_wait_seconds = 0.0
+        self._h2d_timer = PlannedStepH2DTimer(event_factory=_h2d_event_factory)
 
     def begin_planned_step(
         self, planned_step_id: int, moved_micro_steps: Sequence[Any]
@@ -644,6 +736,7 @@ class OverlappedForwardInputProvider:
         del planned_step_id
         _assert_not_closed(self._closed)
         self._state.begin(moved_micro_steps)
+        self._h2d_timer.begin_planned_step()
         item_queue: "queue.Queue[_PreparedItem]" = queue.Queue(maxsize=1)
         cancel_event = threading.Event()
         build_slot = threading.Semaphore(1)
@@ -708,9 +801,12 @@ class OverlappedForwardInputProvider:
                 code="training.forward_input_provider_empty_item",
                 context={"ordinal": ordinal},
             )
-        return _move_forward_inputs_to_device(
-            item.forward_inputs, expected_micro_step.forward_device
+        return _timed_move_to_device(
+            item.forward_inputs, expected_micro_step.forward_device, self._h2d_timer
         )
+
+    def resolve_planned_step_h2d_seconds(self) -> tuple[float | None, str | None]:
+        return self._h2d_timer.resolve()
 
     def end_planned_step(self) -> None:
         self._state.end()
@@ -742,6 +838,7 @@ class OverlappedForwardInputProvider:
 
 __all__ = [
     "DEFAULT_PROCESS_MAX_RSS_CEILING_BYTES",
+    "PlannedStepH2DTimer",
     "DEFAULT_RESIDENT_CPU_TENSOR_PAYLOAD_CEILING_BYTES",
     "ForwardInputProvider",
     "OVERLAPPED_MODE",

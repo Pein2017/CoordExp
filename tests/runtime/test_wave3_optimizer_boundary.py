@@ -708,9 +708,14 @@ def test_no_consumer_synthesizes_receipt_booleans_from_an_exception() -> None:
         for path in root.rglob("*.py")
         if "AppliedUpdateReceipt" in path.read_text(encoding="utf-8")
     )
+    # DECLARED FLIP (Wave 3, task 3.7): `src/training/reporting.py` joins the
+    # CONSUMER list. It builds the terminal train row from a receipt it was
+    # handed and type-checks it fail-closed, but it constructs none: the
+    # producer assertion above is deliberately NOT widened.
     assert consumers == [
         "src/runtime/optimizer_boundary.py",
         "src/runtime/train_runtime.py",
+        "src/training/reporting.py",
         "src/training/supervised_trainer.py",
     ]
 

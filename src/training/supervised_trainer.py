@@ -43,6 +43,14 @@ class CompletedStepObservation:
     # Plumbing only (tasks 3.1/3.2): the runtime-owned boundary truth travels
     # with the observation. Row emission of its fields belongs to task 3.7.
     update_receipt: AppliedUpdateReceipt | None = None
+    # Wave-3 observation inputs (tasks 3.4/3.5). Each defaults to "this
+    # producer reported nothing about that scope", which is NOT the same as
+    # "measured and unavailable": the reporter only publishes an availability
+    # claim for a scope its producer actually observed.
+    physical_token_count: int | None = None
+    input_h2d_seconds: float | None = None
+    input_h2d_unavailable_reason: str | None = None
+    pre_clip_grad_norm_rank_max: float | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -252,6 +260,11 @@ class SupervisedTrainer:
     ) -> tuple[CompletedStepObservation, int]:
         step_start_monotonic = time.monotonic()
         input_build_seconds = 0.0
+        # Exact per-step packed work, accumulated while the token sequences are
+        # still alive (task 3.4). `None` means at least one processed
+        # micro-step could not report its physical length, so the planned
+        # step's work count is unknown rather than partially summed.
+        physical_token_count: int | None = 0
         moved_micro_steps: list[SupervisedMicroStep] = []
         for local_micro_step_index in range(micro_steps_per_planned_step):
             micro_step = self._next_micro_step(
@@ -288,6 +301,11 @@ class SupervisedTrainer:
                 sync_gradients = local_micro_step_index == len(moved_micro_steps) - 1
                 with self.runtime.accumulation_context(sync_gradients=sync_gradients):
                     _sync_device_if_requested(micro_step.forward_device)
+                    micro_physical_tokens = _physical_token_count(micro_step)
+                    if micro_physical_tokens is None or physical_token_count is None:
+                        physical_token_count = None
+                    else:
+                        physical_token_count += micro_physical_tokens
                     effective_micro_step, fa2_admission_armed = (
                         self._effective_fa2_proof_micro_step(micro_step)
                     )
@@ -402,6 +420,12 @@ class SupervisedTrainer:
             # normative compute/optimizer boundary, and must not inflate
             # `step_duration_seconds`.
             step_duration_seconds = time.monotonic() - step_start_monotonic
+            # Resolving the already-recorded transfer events is a query, not a
+            # synchronization: an unresolved timer reports unavailable rather
+            # than forcing the boundary to wait for its own instrument.
+            input_h2d_seconds, input_h2d_unavailable_reason = (
+                _resolve_provider_h2d_seconds(provider)
+            )
         finally:
             if provider is not None:
                 provider.end_planned_step()
@@ -418,6 +442,12 @@ class SupervisedTrainer:
             input_build_seconds=input_build_seconds,
             input_wait_seconds=input_wait_seconds,
             update_receipt=update_receipt,
+            physical_token_count=physical_token_count,
+            input_h2d_seconds=input_h2d_seconds,
+            input_h2d_unavailable_reason=input_h2d_unavailable_reason,
+            pre_clip_grad_norm_rank_max=getattr(
+                boundary_decision, "pre_clip_grad_norm_rank_max", None
+            ),
         )
         del moved_micro_steps, micro_loss_artifacts, plan
         del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact
@@ -749,6 +779,34 @@ def _profile_sync_enabled() -> bool:
     if _PROFILE_SYNC_TIMING_POLICY is not None:
         return _PROFILE_SYNC_TIMING_POLICY
     return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
+
+
+def _physical_token_count(micro_step: Any) -> int | None:
+    """Exact packed physical-token length of one micro-step, or unknown."""
+
+    input_ids = getattr(
+        getattr(micro_step, "token_sequence", None), "input_ids", None
+    )
+    if input_ids is None:
+        return None
+    try:
+        return int(len(input_ids))
+    except TypeError:
+        return None
+
+
+def _resolve_provider_h2d_seconds(provider: Any) -> tuple[float | None, str | None]:
+    """Read the provider's resolved H2D receipt without forcing readiness."""
+
+    if provider is None:
+        return None, "h2d_no_forward_input_provider"
+    resolver = getattr(provider, "resolve_planned_step_h2d_seconds", None)
+    if not callable(resolver):
+        return None, "h2d_not_reported_by_provider"
+    seconds, reason = resolver()
+    if seconds is None:
+        return None, str(reason) if reason is not None else "h2d_unavailable"
+    return float(seconds), None
 
 
 def _sync_forward_result_if_requested(forward_result: Any) -> None:

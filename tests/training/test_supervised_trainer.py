@@ -2271,3 +2271,209 @@ def test_total_loss_keeps_the_narrow_duck_typed_total_only_fallback() -> None:
     with pytest.raises(RuntimeContractError) as exc_info:
         trainer_module._total_loss(SimpleNamespace(total_loss=None))
     assert exc_info.value.code == "trainer.loss_bundle_total_loss"
+
+
+# ---------------------------------------------------------------------------
+# add-coordexp-swift-training-observability Wave 3 (tasks 3.4/3.5):
+# exact work counts captured before release, honest input timing scopes, and
+# no CUDA synchronization performed solely to make a timer readable.
+# ---------------------------------------------------------------------------
+
+
+def _lenient_loss_context(micro_step: SupervisedMicroStep, forward_result: Any) -> str:
+    del forward_result
+    return f"context-{micro_step.pack}"
+
+
+class _H2DProvider(FakeForwardInputProvider):
+    """Provider double that reports one resolved planned-step H2D receipt."""
+
+    def __init__(self, seconds: float | None, reason: str | None) -> None:
+        super().__init__()
+        self._seconds = seconds
+        self._reason = reason
+        self.resolve_calls = 0
+
+    def resolve_planned_step_h2d_seconds(self) -> tuple[float | None, str | None]:
+        self.resolve_calls += 1
+        return self._seconds, self._reason
+
+
+def test_streaming_step_captures_exact_physical_token_counts_before_release() -> None:
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+    )
+
+    observation = trainer.run().latest_observation
+
+    assert observation is not None
+    # Two packs of four physical tokens each: the exact packed work of this
+    # planned step, read from the token sequences while they are still alive.
+    assert observation.physical_token_count == 8
+
+
+def test_physical_token_count_counts_only_processed_micro_steps() -> None:
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=2),
+        pack_stream=_micro_steps(2),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([], unsafe_pre_call_indices={0}),
+    )
+
+    observation = trainer.run().latest_observation
+
+    assert observation is not None
+    assert observation.micro_step_count == 1
+    assert observation.physical_token_count == 4
+
+
+def test_streaming_step_carries_the_all_rank_pre_clip_gradient_norm() -> None:
+    class _NormRuntime(FakeRuntime):
+        def post_backward(self, *, planned_step_id: int) -> GateDecision:
+            return replace(
+                super().post_backward(planned_step_id=planned_step_id),
+                pre_clip_grad_norm_rank_max=1.75,
+            )
+
+    runtime = _NormRuntime([])
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1),
+        qwen_forward=_forward([]),
+        loss_context_factory=_loss_context([]),
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=runtime,
+    )
+
+    observation = trainer.run().latest_observation
+
+    assert observation is not None
+    # Copied from the runtime's already reduced diagnostic; the reporter must
+    # never open a second gradient-scan collective for it.
+    assert observation.pre_clip_grad_norm_rank_max == 1.75
+
+
+def test_streaming_step_records_a_resolved_h2d_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _H2DProvider(0.125, None)
+    monkeypatch.setattr(
+        trainer_module, "run_qwen_forward", lambda *args, **kwargs: FakeForwardResult(
+            pack_index=0, logits=torch.zeros(1, 2, 3), receipt=None
+        )
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1),
+        loss_context_factory=_lenient_loss_context,
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        forward_input_provider=provider,
+    )
+
+    observation = trainer.run().latest_observation
+
+    assert observation is not None
+    assert observation.input_h2d_seconds == pytest.approx(0.125)
+    assert observation.input_h2d_unavailable_reason is None
+    assert provider.resolve_calls == 1
+
+
+def test_unresolvable_h2d_is_marked_unavailable_and_never_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _H2DProvider(None, "h2d_target_not_cuda")
+    monkeypatch.setattr(
+        trainer_module, "run_qwen_forward", lambda *args, **kwargs: FakeForwardResult(
+            pack_index=0, logits=torch.zeros(1, 2, 3), receipt=None
+        )
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1),
+        loss_context_factory=_lenient_loss_context,
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        forward_input_provider=provider,
+    )
+
+    observation = trainer.run().latest_observation
+
+    assert observation is not None
+    assert observation.input_h2d_seconds is None
+    assert observation.input_h2d_unavailable_reason == "h2d_target_not_cuda"
+
+
+def test_a_provider_without_the_h2d_surface_reports_no_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeForwardInputProvider()
+    monkeypatch.setattr(
+        trainer_module, "run_qwen_forward", lambda *args, **kwargs: FakeForwardResult(
+            pack_index=0, logits=torch.zeros(1, 2, 3), receipt=None
+        )
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1),
+        pack_stream=_micro_steps(1),
+        loss_context_factory=_lenient_loss_context,
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        forward_input_provider=provider,
+    )
+
+    observation = trainer.run().latest_observation
+
+    assert observation is not None
+    assert observation.input_h2d_seconds is None
+    assert observation.input_h2d_unavailable_reason == "h2d_not_reported_by_provider"
+
+
+def test_normal_planned_step_never_synchronizes_cuda_for_timing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A timer must never change the execution it measures (design decision 4)."""
+
+    synchronizations: list[object] = []
+    monkeypatch.setattr(
+        torch.cuda,
+        "synchronize",
+        lambda device=None: synchronizations.append(device),
+    )
+    provider = _H2DProvider(None, "h2d_events_not_completed")
+    monkeypatch.setattr(
+        trainer_module, "run_qwen_forward", lambda *args, **kwargs: FakeForwardResult(
+            pack_index=0, logits=torch.zeros(1, 2, 3), receipt=None
+        )
+    )
+    trainer = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=2, grad_accum_steps=1),
+        pack_stream=_micro_steps(2),
+        loss_context_factory=_lenient_loss_context,
+        loss_runner=StreamingFakeLossRunner([]),
+        runtime=FakeRuntime([]),
+        forward_input_provider=provider,
+    )
+
+    result = trainer.run()
+
+    assert synchronizations == []
+    observation = result.latest_observation
+    assert observation is not None
+    # Not measurable is reported as unavailable, never forced to be readable.
+    assert observation.input_h2d_seconds is None
+    assert observation.input_h2d_unavailable_reason == "h2d_events_not_completed"

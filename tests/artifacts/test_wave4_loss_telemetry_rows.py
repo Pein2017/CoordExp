@@ -119,6 +119,31 @@ FORBIDDEN_ROW_SUBSTRINGS = (
 )
 
 
+# DECLARED FLIP (add-coordexp-swift-training-observability, Wave 3, tasks
+# 3.3/3.4/3.7).
+#
+# Old assertion: train and forward-eval rows had the SAME complete key set for
+# every computed term.
+#
+# New assertion: the loss projection is still one shared projection, but TRAIN
+# rows additionally expose the configured weight and the denominator inputs
+# needed to interpret raw/weighted ("Additive to that prerequisite schema,
+# train rows MUST also expose, for every actually computed loss term, its
+# configured weight, denominator scope, eligible-segment count, selected-atom
+# count, and skipped-segment count"). `segment_count` above IS the
+# eligible-segment count, so it is not duplicated. Eval rows are unchanged.
+_WAVE3_TRAIN_ONLY_TERM_SUFFIXES = (
+    "/weight",
+    "/denominator_scope",
+    "/selected_atom_count",
+    "/skipped_segment_count",
+)
+# A train observation carrying finalized loss telemetry but no measured step
+# duration, work count, or allocator sample names those fields unavailable
+# rather than publishing a fabricated zero for them.
+_WAVE3_TRAIN_ONLY_ENVELOPE = frozenset({"unavailable_fields"})
+
+
 def _term_keys(term_names: tuple[str, ...]) -> set[str]:
     keys: set[str] = set()
     for name in term_names:
@@ -127,8 +152,22 @@ def _term_keys(term_names: tuple[str, ...]) -> set[str]:
     return keys
 
 
+def wave3_train_only_keys(term_names: tuple[str, ...]) -> set[str]:
+    keys = set(_WAVE3_TRAIN_ONLY_ENVELOPE)
+    for name in term_names:
+        keys.update(
+            f"loss/{name}{suffix}" for suffix in _WAVE3_TRAIN_ONLY_TERM_SUFFIXES
+        )
+    return keys
+
+
 def expected_train_row_keys(term_names: tuple[str, ...]) -> set[str]:
-    return set(_ROW_ENVELOPE_TRAIN) | set(_SHARED_METRIC_KEYS) | _term_keys(term_names)
+    return (
+        set(_ROW_ENVELOPE_TRAIN)
+        | set(_SHARED_METRIC_KEYS)
+        | _term_keys(term_names)
+        | wave3_train_only_keys(term_names)
+    )
 
 
 def expected_eval_row_keys(term_names: tuple[str, ...]) -> set[str]:
@@ -459,7 +498,12 @@ def test_eval_row_uses_the_same_projection_as_train_for_every_shape(
     # Identical computed-term projection on both splits: same field names,
     # same values, same non-finite normalization, from one artifact.
     selector = ("loss/", "finite/", "count/", "acc_top")
-    shared = {key for key in train if key.startswith(selector)}
+    train_only = wave3_train_only_keys(names)
+    shared = {
+        key
+        for key in train
+        if key.startswith(selector) and key not in train_only
+    }
     assert shared == {key for key in evaluated if key.startswith(selector)}
     for key in shared:
         if train[key] is None:
@@ -482,10 +526,12 @@ def test_enabled_baseline_eval_row_uses_the_same_projection(tmp_path: Path) -> N
     assert evaluated["split"] == "eval"
     # Same computed-term projection on both splits: identical loss/finite/count
     # field names and identical values from one artifact.
+    train_only = wave3_train_only_keys(names)
     shared = {
         key
         for key in train
         if key.startswith(("loss/", "finite/", "count/", "acc_top"))
+        and key not in train_only
     }
     assert shared == {
         key

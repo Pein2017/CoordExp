@@ -93,9 +93,75 @@ def _normalize_logging_row(row: Mapping[str, Any]) -> dict[str, Any]:
             "non_finite_fields must be a list of field names",
             code="run_writer.invalid_non_finite_fields",
         )
-    normalized["non_finite_fields"] = sorted(set(declared).union(fields))
+    _bind_bounded_field_names(
+        normalized,
+        field="non_finite_fields",
+        names=set(declared).union(fields),
+        code="run_writer.invalid_non_finite_fields",
+    )
+    if "unavailable_fields" in normalized:
+        unavailable = normalized["unavailable_fields"]
+        if not isinstance(unavailable, list):
+            raise ArtifactContractError(
+                "unavailable_fields must be a list of field names",
+                code="run_writer.invalid_unavailable_fields",
+            )
+        _bind_bounded_field_names(
+            normalized,
+            field="unavailable_fields",
+            names=unavailable,
+            code="run_writer.invalid_unavailable_fields",
+        )
     _reject_non_finite(normalized)
     return normalized
+
+
+#: One diagnostic name list may retain at most this many canonical field names.
+MAX_DIAGNOSTIC_FIELD_NAMES = 256
+#: A single canonical field name may not exceed this many UTF-8 bytes.
+MAX_DIAGNOSTIC_FIELD_NAME_BYTES = 256
+
+
+def _bind_bounded_field_names(
+    normalized: dict[str, Any],
+    *,
+    field: str,
+    names: Any,
+    code: str,
+) -> None:
+    """Bind one sorted, unique, bounded diagnostic name list onto the row.
+
+    The retained list never grows past its bound and the omitted DISTINCT-name
+    count travels in ``<field>_truncated_count``. The truncation count is
+    written only when something was actually omitted, so a normal row carries
+    neither an unbounded list nor an always-zero counter. Arbitrary exception
+    text is never accepted here: entries are canonical field names.
+    """
+
+    checked: set[str] = set()
+    for name in names:
+        if not isinstance(name, str) or not name:
+            raise ArtifactContractError(
+                f"{field} must contain nonempty canonical field names",
+                code=code,
+                context={"field": field},
+            )
+        if len(name.encode("utf-8")) > MAX_DIAGNOSTIC_FIELD_NAME_BYTES:
+            raise ArtifactContractError(
+                f"{field} rejects a field name longer than its byte bound",
+                code=code,
+                context={
+                    "field": field,
+                    "name_bytes": len(name.encode("utf-8")),
+                    "max_name_bytes": MAX_DIAGNOSTIC_FIELD_NAME_BYTES,
+                },
+            )
+        checked.add(name)
+    ordered = sorted(checked)
+    normalized[field] = ordered[:MAX_DIAGNOSTIC_FIELD_NAMES]
+    omitted = len(ordered) - len(normalized[field])
+    if omitted > 0:
+        normalized[f"{field}_truncated_count"] = omitted
 
 
 def _provenance_payload(provenance: Mapping[str, Any] | None) -> dict[str, Any]:

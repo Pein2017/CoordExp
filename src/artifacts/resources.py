@@ -20,6 +20,12 @@ _GPU_COUNTERS = (
     "max_memory_allocated_bytes",
     "max_memory_reserved_bytes",
 )
+#: Current allocator occupancy. The process-lifetime PEAKS stay in
+#: ``_GPU_COUNTERS`` above, whose schema durable phase receipts already embed.
+CUDA_ALLOCATOR_BYTE_FIELDS = ("current_allocated_bytes", "current_reserved_bytes")
+#: Process-lifetime allocator counters; rows publish their per-step deltas.
+CUDA_ALLOCATOR_COUNTER_FIELDS = ("num_alloc_retries", "num_ooms")
+CUDA_ALLOCATOR_FIELDS = CUDA_ALLOCATOR_BYTE_FIELDS + CUDA_ALLOCATOR_COUNTER_FIELDS
 _RANK_CPU_SCOPE = "all_rank_deterministic_maximum"
 _RANK_RECEIPT_SCOPE = "current_process_lifetime_high_water_at_phase_observation"
 _RESOURCE_REASON_MAX_LENGTH = 128
@@ -48,6 +54,140 @@ def collect_resource_snapshot(
             maxrss_unit_bytes=maxrss_unit_bytes,
         ),
         "gpu": _collect_gpu(cuda_api),
+    }
+
+
+def collect_cuda_allocator_sample(*, cuda_api: object = _AUTO_CUDA) -> dict[str, object]:
+    """Read one bounded CUDA allocator observation for the current process.
+
+    This is deliberately a SEPARATE reader from ``collect_resource_snapshot``:
+    that snapshot's exact schema is embedded verbatim in durable phase
+    receipts, so the per-step observability fields added by
+    ``add-coordexp-swift-training-observability`` (Wave 3, task 3.6) arrive
+    beside it instead of retyping it.
+
+    It reports:
+
+    * ``current_allocated_bytes`` / ``current_reserved_bytes`` -- the CURRENT
+      allocator occupancy (the process-lifetime PEAKS remain owned by
+      ``collect_resource_snapshot``'s ``max_memory_*`` fields);
+    * ``num_alloc_retries`` / ``num_ooms`` -- process-lifetime allocator
+      counters, from which the caller derives per-step deltas via
+      :func:`cuda_allocator_counter_deltas`.
+
+    It never imports Torch, never initializes CUDA, never allocates device
+    memory, and never resets peak statistics -- resetting peaks would mutate
+    measurement state shared with the phase resource receipts. Any counter it
+    cannot read accurately is reported as explicitly unavailable; a fabricated
+    zero would be indistinguishable from a real measurement of zero.
+    """
+
+    unavailable_reason: str | None = None
+    if cuda_api is _AUTO_CUDA:
+        torch_module = sys.modules.get("torch")
+        if torch_module is None:
+            unavailable_reason = "torch_not_imported"
+            cuda_api = None
+        else:
+            try:
+                cuda_api = getattr(torch_module, "cuda")
+            except Exception:
+                unavailable_reason = "torch_cuda_api_unavailable"
+                cuda_api = None
+    elif cuda_api is None:
+        unavailable_reason = "cuda_api_unavailable"
+
+    if cuda_api is None:
+        return _unavailable_cuda_allocator_sample(
+            unavailable_reason or "cuda_api_unavailable"
+        )
+    try:
+        initialized = cuda_api.is_initialized()  # type: ignore[attr-defined]
+    except Exception:
+        return _unavailable_cuda_allocator_sample("cuda_initialization_state_unavailable")
+    if not isinstance(initialized, bool):
+        return _unavailable_cuda_allocator_sample("cuda_initialization_state_invalid")
+    if not initialized:
+        return _unavailable_cuda_allocator_sample("cuda_not_initialized")
+
+    device_index = _read_cuda_counter(
+        lambda: cuda_api.current_device(),  # type: ignore[attr-defined]
+        "cuda_current_device_unavailable",
+    )
+    if not isinstance(device_index, int):
+        return _unavailable_cuda_allocator_sample("cuda_current_device_unavailable")
+
+    values: dict[str, object] = {
+        "current_allocated_bytes": _read_cuda_counter(
+            lambda: cuda_api.memory_allocated(device_index),  # type: ignore[attr-defined]
+            "cuda_memory_allocated_unavailable",
+        ),
+        "current_reserved_bytes": _read_cuda_counter(
+            lambda: cuda_api.memory_reserved(device_index),  # type: ignore[attr-defined]
+            "cuda_memory_reserved_unavailable",
+        ),
+    }
+    try:
+        stats: object = cuda_api.memory_stats(device_index)  # type: ignore[attr-defined]
+    except Exception:
+        stats = None
+    for field in CUDA_ALLOCATOR_COUNTER_FIELDS:
+        if not isinstance(stats, Mapping):
+            values[field] = _unavailable("cuda_memory_stats_unavailable")
+            continue
+        raw = stats.get(field)
+        values[field] = (
+            raw
+            if _is_nonnegative_int(raw)
+            else _unavailable(f"cuda_memory_stats_invalid_{field}")
+        )
+    available = all(
+        _is_nonnegative_int(values[field]) for field in CUDA_ALLOCATOR_FIELDS
+    )
+    return {
+        "schema_version": _SCHEMA_VERSION,
+        "scope": _GPU_SCOPE,
+        "available": available,
+        "unavailable_reason": None if available else "cuda_counter_read_incomplete",
+        "device_index": device_index,
+        **values,
+    }
+
+
+def cuda_allocator_counter_deltas(
+    previous: Mapping[str, object] | None,
+    current: Mapping[str, object] | None,
+) -> dict[str, int | None]:
+    """Return per-step deltas of the process-lifetime allocator counters.
+
+    ``None`` means "no honest delta exists": there is no prior observation,
+    either side could not be read, or the process-lifetime counter moved
+    backwards (which is a measurement fault, not a negative delta). A ``None``
+    delta must be published as unavailable rather than as ``0``.
+    """
+
+    deltas: dict[str, int | None] = {}
+    for field in CUDA_ALLOCATOR_COUNTER_FIELDS:
+        before = None if previous is None else previous.get(field)
+        after = None if current is None else current.get(field)
+        if not _is_nonnegative_int(before) or not _is_nonnegative_int(after):
+            deltas[field] = None
+            continue
+        if int(after) < int(before):  # type: ignore[arg-type]
+            deltas[field] = None
+            continue
+        deltas[field] = int(after) - int(before)  # type: ignore[arg-type]
+    return deltas
+
+
+def _unavailable_cuda_allocator_sample(reason: str) -> dict[str, object]:
+    return {
+        "schema_version": _SCHEMA_VERSION,
+        "scope": _GPU_SCOPE,
+        "available": False,
+        "unavailable_reason": reason,
+        "device_index": None,
+        **{field: _unavailable(reason) for field in CUDA_ALLOCATOR_FIELDS},
     }
 
 
