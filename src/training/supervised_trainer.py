@@ -16,6 +16,7 @@ from src.losses.context import LossContext
 from src.losses.runner import LossBundle
 from src.qwen.forward import build_qwen_forward_inputs, run_qwen_forward
 from src.runtime.finite_gates import GateDecision
+from src.runtime.optimizer_boundary import AppliedUpdateReceipt
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
 
 # Design decision 4: ``src.training.micro_steps`` is the canonical owner.  This
@@ -39,6 +40,9 @@ class CompletedStepObservation:
     step_duration_seconds: float | None = None
     input_build_seconds: float | None = None
     input_wait_seconds: float | None = None
+    # Plumbing only (tasks 3.1/3.2): the runtime-owned boundary truth travels
+    # with the observation. Row emission of its fields belongs to task 3.7.
+    update_receipt: AppliedUpdateReceipt | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -97,9 +101,12 @@ class RuntimeBoundary(Protocol):
 
     def post_backward(self, *, planned_step_id: int) -> GateDecision: ...
 
-    def clip_gradients(self, *, planned_step_id: int) -> None: ...
-
-    def optimizer_step(self, *, planned_step_id: int) -> None: ...
+    def execute_optimizer_boundary(
+        self,
+        decision: GateDecision,
+        *,
+        planned_step_id: int,
+    ) -> AppliedUpdateReceipt: ...
 
     def scheduler_step(self, *, planned_step_id: int) -> Mapping[str, Any] | None: ...
 
@@ -372,12 +379,18 @@ class SupervisedTrainer:
                 post_decision = self.runtime.post_backward(
                     planned_step_id=planned_step_id,
                 )
-                optimizer_update_status = post_decision.optimizer_update_status
                 finite_status = post_decision.finite_status
-                if post_decision.should_call_optimizer_step:
-                    self.runtime.clip_gradients(planned_step_id=planned_step_id)
-                    self.runtime.optimizer_step(planned_step_id=planned_step_id)
-                    optimizer_update_status = "applied"
+                boundary_decision = post_decision
+            else:
+                boundary_decision = pre_decision
+            # One runtime-owned call for every boundary action. The trainer
+            # never branches on the action, never clips, never calls the
+            # wrapper, and never synthesizes update truth.
+            update_receipt = self.runtime.execute_optimizer_boundary(
+                boundary_decision,
+                planned_step_id=planned_step_id,
+            )
+            optimizer_update_status = update_receipt.optimizer_update_status
 
             scheduler_artifact = _optional_artifact(
                 self.runtime.scheduler_step(planned_step_id=planned_step_id)
@@ -404,9 +417,11 @@ class SupervisedTrainer:
             step_duration_seconds=step_duration_seconds,
             input_build_seconds=input_build_seconds,
             input_wait_seconds=input_wait_seconds,
+            update_receipt=update_receipt,
         )
         del moved_micro_steps, micro_loss_artifacts, plan
         del pre_decision, post_decision, scheduler_artifact, loss_bundle_artifact
+        del boundary_decision, update_receipt
         return observation, consumed_count
 
     def _effective_fa2_proof_micro_step(

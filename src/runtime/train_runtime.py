@@ -18,6 +18,13 @@ from src.runtime.finite_gates import (
     reduce_scalar_finite_reports,
 )
 from src.runtime.metrics import MetricBatch, reduce_rank_payloads
+from src.runtime.optimizer_boundary import (
+    OPTIMIZER_BOUNDARY_ACTIONS,
+    AppliedUpdateReceipt,
+    OptimizerBoundaryTerminal,
+    RankPostWrapperReport,
+    reduce_post_wrapper_reports,
+)
 from src.runtime.seeding import seed_training_runtime
 
 if TYPE_CHECKING:
@@ -120,6 +127,7 @@ class TrainRuntime:
         self.optimizer_step_count = 0
         self.scheduler_step_count = 0
         self.zero_grad_count = 0
+        self._unscaled_planned_step_id: int | None = None
         self._validate_runtime_contract(
             runtime_batch=runtime_batch,
             expected_mixed_precision=expected_mixed_precision,
@@ -179,30 +187,131 @@ class TrainRuntime:
         self.accelerator.backward(loss)
 
     def post_backward(self, *, planned_step_id: int) -> GateDecision:
+        """Own exactly-once fp16 unscale, then the all-rank boundary decision.
+
+        Under fp16 this is the ONLY place `accelerator.unscale_gradients` is
+        called, and it runs BEFORE any gradient is inspected, any norm is
+        computed, and any clipping happens. A local unscale failure becomes a
+        report field rather than a rank-local raise, so the failure converges
+        through the same all-rank collective every other rank is already in.
+        """
+
+        scaler = self._active_fp16_scaler()
+        unscale_completed = False
+        report_error_code: str | None = None
+        scaler_found_inf = False
+        if scaler is not None:
+            try:
+                self._unscale_gradients_once(planned_step_id=planned_step_id)
+                unscale_completed = True
+            except Exception:  # converged as terminal, never raised rank-locally
+                report_error_code = "fp16_unscale_failed"
+            if unscale_completed:
+                try:
+                    scaler_found_inf = _scaler_found_inf(scaler, self.optimizer)
+                except Exception:
+                    report_error_code = "fp16_found_inf_unreadable"
         report = build_gradient_finite_report(
             self.model.parameters(),
             planned_step_id=planned_step_id,
             rank=self.rank,
             world_size=self.world_size,
-            backend_overflow=_accelerator_overflow(self.accelerator),
+            # Under fp16 the overflow record travels in `scaler_found_inf`, so
+            # one field carries one meaning; `backend_overflow` stays the
+            # non-scaler backend signal it always was.
+            backend_overflow=(
+                False if scaler is not None else _accelerator_overflow(self.accelerator)
+            ),
+            scaler_active=scaler is not None,
+            unscale_completed=unscale_completed,
+            scaler_found_inf=scaler_found_inf,
+            report_error_code=report_error_code,
         )
         return reduce_gradient_overflow_reports(self._gather_rank_reports(report))
 
-    def clip_gradients(self, *, planned_step_id: int) -> None:
-        del planned_step_id
-        if self.max_grad_norm is None:
-            return
-        self.accelerator.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+    def execute_optimizer_boundary(
+        self,
+        decision: GateDecision,
+        *,
+        planned_step_id: int,
+    ) -> AppliedUpdateReceipt:
+        """Execute the ONE converged boundary action and return its receipt.
 
-    def optimizer_step(self, *, planned_step_id: int) -> None:
-        del planned_step_id
+        Every branch of the optimizer boundary lives here: this is the single
+        writer of `optimizer_step_count`, the single caller of the optimizer
+        wrapper, and the single producer of `AppliedUpdateReceipt`. Callers
+        never branch on the action themselves, so no second path can reach the
+        wrapper around the consensus.
+        """
+
+        group_count = self._optimizer_group_count()
+        if decision.terminal_reason is not None:
+            # Cleanup only. It does not repair possibly divergent scaler state.
+            self.zero_gradients(planned_step_id=planned_step_id)
+            raise OptimizerBoundaryTerminal(
+                AppliedUpdateReceipt.terminal_not_attempted(
+                    planned_step_id,
+                    group_count,
+                    decision.terminal_reason,
+                    unscale_completed=decision.unscale_completed,
+                )
+            )
+        action = decision.optimizer_boundary_action
+        if action not in OPTIMIZER_BOUNDARY_ACTIONS:
+            raise RuntimeContractError(
+                "optimizer boundary requires a converged closed action",
+                code="runtime.optimizer_boundary_action_missing",
+                context={
+                    "planned_step_id": int(planned_step_id),
+                    "stage": decision.stage,
+                    "optimizer_boundary_action": action,
+                },
+            )
+        if action == "not_attempted":
+            return AppliedUpdateReceipt.not_attempted(
+                planned_step_id,
+                group_count,
+                decision.optimizer_update_status,
+            )
         if self.optimizer is None:
             raise RuntimeContractError(
-                "optimizer_step requires an optimizer",
+                "optimizer boundary requires an optimizer",
                 code="runtime.optimizer_missing",
             )
+        # Sampled immediately before the wrapper call: this is the LR that an
+        # applied update actually used, never the post-scheduler value.
+        pre_call_learning_rates = self._sample_group_learning_rates()
+        if action == "apply":
+            self._clip_gradients_without_unscaling()
         self.optimizer.step()
         self.optimizer_step_count += 1
+        if not decision.scaler_active:
+            return AppliedUpdateReceipt.applied_update(
+                planned_step_id,
+                group_learning_rates=pre_call_learning_rates,
+            )
+        outcome = self._converge_post_wrapper_outcome(
+            action=action,
+            planned_step_id=planned_step_id,
+        )
+        if action == "apply" and outcome == "none_skipped":
+            return AppliedUpdateReceipt.applied_update(
+                planned_step_id,
+                group_learning_rates=pre_call_learning_rates,
+                post_wrapper_outcome=outcome,
+            )
+        if action == "scaler_skip" and outcome == "all_skipped":
+            return AppliedUpdateReceipt.scaler_skipped(planned_step_id, group_count)
+        self.zero_gradients(planned_step_id=planned_step_id)
+        raise OptimizerBoundaryTerminal(
+            AppliedUpdateReceipt.terminal_post_wrapper(
+                planned_step_id,
+                group_count,
+                action=action,
+                outcome=outcome,
+                pre_call_learning_rates=pre_call_learning_rates,
+            )
+        )
 
     def scheduler_step(self, *, planned_step_id: int) -> dict[str, Any]:
         if self.scheduler is None:
@@ -428,6 +537,99 @@ class TrainRuntime:
                 },
             )
 
+    # -- optimizer-boundary internals -------------------------------------
+
+    def _active_fp16_scaler(self) -> Any | None:
+        """The active fp16 GradScaler, or None for bf16/fp32/no-scaler runs."""
+
+        if _normalize_mixed_precision(getattr(self.accelerator, "mixed_precision", None)) != "fp16":
+            return None
+        scaler = getattr(self.accelerator, "scaler", None)
+        if scaler is None:
+            return None
+        if not getattr(scaler, "is_enabled", lambda: True)():
+            return None
+        return scaler
+
+    def _unscale_gradients_once(self, *, planned_step_id: int) -> None:
+        if self._unscaled_planned_step_id == int(planned_step_id):
+            raise RuntimeContractError(
+                "fp16 gradients were already unscaled for this planned step; "
+                "unscale must happen exactly once per boundary",
+                code="runtime.fp16_unscale_repeated",
+                context={"planned_step_id": int(planned_step_id)},
+            )
+        unscale = getattr(self.accelerator, "unscale_gradients", None)
+        if not callable(unscale):
+            raise RuntimeContractError(
+                "fp16 training requires accelerator.unscale_gradients",
+                code="runtime.fp16_unscale_missing",
+            )
+        unscale(self.optimizer)
+        self._unscaled_planned_step_id = int(planned_step_id)
+
+    def _clip_gradients_without_unscaling(self) -> None:
+        """Clip already-unscaled gradients with a NON-unscaling primitive.
+
+        Accelerate's own clipping helper is prohibited on every branch because
+        it may unscale a second time; the runtime has already unscaled exactly
+        once and owns the pre-clip norm.
+        """
+
+        if self.max_grad_norm is None:
+            return
+        self._record_boundary_event("clip")
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+
+    def _record_boundary_event(self, event: str) -> None:
+        events = getattr(self.accelerator, "events", None)
+        if isinstance(events, list):
+            events.append(event)
+
+    def _optimizer_group_count(self) -> int:
+        if self.optimizer is None:
+            return 0
+        return len(getattr(self.optimizer, "param_groups", ()))
+
+    def _sample_group_learning_rates(self) -> tuple[float | None, ...]:
+        if self.optimizer is None:
+            return ()
+        sampled: list[float | None] = []
+        for group in self.optimizer.param_groups:
+            value = group.get("lr")
+            sampled.append(None if value is None else _float_scalar(value))
+        return tuple(sampled)
+
+    def _converge_post_wrapper_outcome(
+        self,
+        *,
+        action: str,
+        planned_step_id: int,
+    ) -> str:
+        """One bounded all-rank boolean consensus over post-wrapper skips.
+
+        This is an optimizer-CORRECTNESS collective, required before the
+        scheduler or any row handling; it is not a metric/observability
+        collective, and it exists only when a real fp16 wrapper call happened.
+        No rank interprets or raises from its own flag before it converges.
+        """
+
+        step_was_skipped = False
+        report_error_code: str | None = None
+        try:
+            step_was_skipped = _wrapper_step_was_skipped(self.accelerator)
+        except RuntimeContractError:
+            report_error_code = "fp16_step_skip_flag_unreadable"
+        report = RankPostWrapperReport(
+            planned_step_id=int(planned_step_id),
+            rank=self.rank,
+            world_size=self.world_size,
+            action=action,
+            step_was_skipped=step_was_skipped,
+            report_error_code=report_error_code,
+        )
+        return reduce_post_wrapper_reports(self._gather_rank_reports(report))
+
     def _validate_runtime_contract(
         self,
         *,
@@ -510,15 +712,48 @@ def _accelerator_overflow(accelerator: Any) -> bool:
     scaler = getattr(accelerator, "scaler", None)
     if scaler is None:
         return False
+    return _scaler_found_inf(scaler, None)
+
+
+def _scaler_found_inf(scaler: Any, optimizer: Any) -> bool:
+    """Read THIS step's `found_inf` record, populated by this step's unscale.
+
+    Never a previous wrapper call's skip flag: that flag is stale evidence and
+    the contract forbids using it as current overflow truth.
+    """
+
     found_inf = getattr(scaler, "_found_inf_per_device", None)
-    if callable(found_inf):
+    if not callable(found_inf):
+        return False
+    values: Any
+    try:
+        values = found_inf(optimizer)
+    except TypeError:
         try:
             values = found_inf({})
         except TypeError:
             values = found_inf()
-        if isinstance(values, Mapping):
-            return any(bool(torch.as_tensor(value).item()) for value in values.values())
+    if isinstance(values, Mapping):
+        return any(bool(torch.as_tensor(value).item()) for value in values.values())
     return False
+
+
+def _wrapper_step_was_skipped(accelerator: Any) -> bool:
+    """The immediate post-wrapper skip flag for THIS rank.
+
+    Authoritative as a consensus INPUT only. A missing flag under an active
+    scaler is unknowable truth, so it fails closed into the consensus as a
+    contract error rather than being guessed.
+    """
+
+    try:
+        value = accelerator.optimizer_step_was_skipped
+    except AttributeError as exc:
+        raise RuntimeContractError(
+            "fp16 optimizer boundary requires accelerator.optimizer_step_was_skipped",
+            code="runtime.fp16_step_skip_flag_missing",
+        ) from exc
+    return bool(value)
 
 
 def _normalize_mixed_precision(value: Any) -> str:
@@ -578,6 +813,8 @@ def _float_scalar(value: Any) -> float:
 
 __all__ = [
     "EVAL_DISJOINT_SHARD_REDUCTION_MODE",
+    "AppliedUpdateReceipt",
+    "OptimizerBoundaryTerminal",
     "TrainRuntime",
     "validate_accelerator_runtime",
 ]

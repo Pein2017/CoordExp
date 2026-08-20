@@ -1828,11 +1828,26 @@ class FakeRuntime:
             clear=False,
         )
 
-    def clip_gradients(self, *, planned_step_id: int) -> None:
-        self.log.append(f"runtime.clip:{planned_step_id}")
+    def execute_optimizer_boundary(
+        self,
+        decision: GateDecision,
+        *,
+        planned_step_id: int,
+    ) -> Any:
+        from src.runtime.optimizer_boundary import AppliedUpdateReceipt
 
-    def optimizer_step(self, *, planned_step_id: int) -> None:
-        self.log.append(f"runtime.optimizer:{planned_step_id}")
+        if decision.should_call_optimizer_step:
+            self.log.append(f"runtime.clip:{planned_step_id}")
+            self.log.append(f"runtime.optimizer:{planned_step_id}")
+            return AppliedUpdateReceipt.applied_update(
+                planned_step_id,
+                group_learning_rates=(0.01,),
+            )
+        return AppliedUpdateReceipt.not_attempted(
+            planned_step_id,
+            1,
+            decision.optimizer_update_status,
+        )
 
     def scheduler_step(self, *, planned_step_id: int) -> None:
         self.log.append(f"runtime.scheduler:{planned_step_id}")

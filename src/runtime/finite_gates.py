@@ -11,6 +11,11 @@ import torch
 
 from src.common.errors import RuntimeContractError
 from src.losses import LossBundle
+from src.runtime.optimizer_boundary import (
+    TERMINAL_PRE_WRAPPER_MIXED_SCALER_OVERFLOW,
+    TERMINAL_PRE_WRAPPER_SCALER_CANDIDACY_DIVERGENT,
+    TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE,
+)
 
 
 @dataclass(frozen=True)
@@ -144,13 +149,38 @@ class RankGradientFiniteReport:
     gradients_finite: bool
     backend_overflow: bool
     grad_norm: float | None
+    # fp16 candidacy inputs (tasks 3.1/3.2). They travel on the SAME all-rank
+    # report the gradient gate already gathers, so the closed boundary action
+    # converges without a second gradient-scan collective.
+    scaler_active: bool = False
+    unscale_completed: bool = False
+    scaler_found_inf: bool = False
+    report_error_code: str | None = None
 
     def is_safe(self) -> bool:
         return (
-            self.gradients_finite
+            self.report_error_code is None
+            and self.gradients_finite
             and not self.backend_overflow
+            and not self.scaler_found_inf
             and self.grad_norm is not None
             and math.isfinite(float(self.grad_norm))
+        )
+
+    def is_scaler_overflow_candidate(self) -> bool:
+        """The current-unscaled-gradient overflow predicate.
+
+        Deliberately reads only THIS step's evidence: unscaled gradient
+        finiteness and the `found_inf` record populated by this step's
+        exactly-once unscale. A previous wrapper call's skip flag is never an
+        input here.
+        """
+
+        return bool(self.scaler_active) and (
+            not self.gradients_finite
+            or self.scaler_found_inf
+            or self.backend_overflow
+            or (self.grad_norm is not None and not math.isfinite(float(self.grad_norm)))
         )
 
     def to_diagnostic_dict(self) -> dict[str, Any]:
@@ -165,6 +195,10 @@ class RankGradientFiniteReport:
             "backend_overflow": self.backend_overflow,
             "grad_norm": float(self.grad_norm) if grad_norm_finite else None,
             "grad_norm_finite": grad_norm_finite,
+            "scaler_active": self.scaler_active,
+            "unscale_completed": self.unscale_completed,
+            "scaler_found_inf": self.scaler_found_inf,
+            "report_error_code": self.report_error_code,
         }
 
 
@@ -183,6 +217,16 @@ class GateDecision:
     reason_codes: tuple[str, ...]
     rank_diagnostics: tuple[dict[str, Any], ...]
     diagnostics: dict[str, Any]
+    # The closed all-rank boundary action. Exactly one of `apply`,
+    # `scaler_skip`, `not_attempted` -- or `None` together with a
+    # `terminal_reason`, which is a terminal distributed decision rather than a
+    # fourth normal action. `None` with no terminal reason means this decision
+    # does not own a boundary action (a safe pre-backward gate).
+    optimizer_boundary_action: str | None = None
+    terminal_reason: str | None = None
+    scaler_active: bool = False
+    unscale_completed: bool = False
+    pre_clip_grad_norm_rank_max: float | None = None
 
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
@@ -199,6 +243,9 @@ class GateDecision:
             "reason_codes": list(self.reason_codes),
             "rank_diagnostics": list(self.rank_diagnostics),
             "diagnostics": self.diagnostics,
+            "optimizer_boundary_action": self.optimizer_boundary_action,
+            "terminal_reason": self.terminal_reason,
+            "pre_clip_grad_norm_rank_max": self.pre_clip_grad_norm_rank_max,
         }
 
 
@@ -232,6 +279,9 @@ def reduce_scalar_finite_reports(
             "unsafe_rank_count": len(unsafe_reasons),
             "policy": "all_rank_scalar_consensus",
         },
+        # A rejected scalar gate is a SUPPORTED `not_attempted` boundary: no
+        # backward, no wrapper, nothing unscaled.
+        optimizer_boundary_action=None if all_safe else "not_attempted",
     )
 
 
@@ -243,6 +293,9 @@ def reduce_gradient_overflow_reports(
     unsafe_ranks: set[int] = set()
     grad_norms: list[float] = []
     for report in checked:
+        if report.report_error_code is not None:
+            unsafe_reasons.append(f"rank{report.rank}:{report.report_error_code}")
+            unsafe_ranks.add(report.rank)
         if report.grad_norm is not None:
             grad_norm = float(report.grad_norm)
             if math.isfinite(grad_norm):
@@ -259,7 +312,17 @@ def reduce_gradient_overflow_reports(
         if report.backend_overflow:
             unsafe_reasons.append(f"rank{report.rank}:backend_overflow")
             unsafe_ranks.add(report.rank)
+        if report.scaler_found_inf:
+            unsafe_reasons.append(f"rank{report.rank}:scaler_found_inf")
+            unsafe_ranks.add(report.rank)
     all_safe = not unsafe_reasons
+    max_grad_norm = max(grad_norms) if grad_norms else None
+    action, terminal_reason = _reduce_boundary_action(checked, all_safe=all_safe)
+    scaler_active = all(report.scaler_active for report in checked)
+    unscale_completed = any(report.unscale_completed for report in checked)
+    if terminal_reason is not None:
+        unsafe_reasons = [*unsafe_reasons, f"terminal:{terminal_reason}"]
+    calls_wrapper = action in ("apply", "scaler_skip")
     return GateDecision(
         stage="post_backward_gradient",
         planned_step_id=checked[0].planned_step_id,
@@ -267,10 +330,11 @@ def reduce_gradient_overflow_reports(
         ranks=tuple(report.rank for report in checked),
         all_ranks_safe=all_safe,
         should_call_backward=False,
-        should_call_optimizer_step=all_safe,
+        should_call_optimizer_step=calls_wrapper,
         should_clear_gradients=not all_safe,
-        optimizer_update_status=(
-            "ready_to_step" if all_safe else "skipped_gradient_or_overflow"
+        optimizer_update_status=_post_backward_status(
+            action=action,
+            terminal_reason=terminal_reason,
         ),
         finite_status="finite" if all_safe else "non_finite",
         reason_codes=tuple(unsafe_reasons),
@@ -279,9 +343,64 @@ def reduce_gradient_overflow_reports(
             "unsafe_rank_count": len(unsafe_ranks),
             "unsafe_reason_count": len(unsafe_reasons),
             "policy": "all_rank_gradient_consensus",
-            "max_grad_norm": max(grad_norms) if grad_norms else None,
+            "max_grad_norm": max_grad_norm,
         },
+        optimizer_boundary_action=action,
+        terminal_reason=terminal_reason,
+        scaler_active=scaler_active,
+        unscale_completed=unscale_completed,
+        pre_clip_grad_norm_rank_max=max_grad_norm,
     )
+
+
+def _post_backward_status(*, action: str | None, terminal_reason: str | None) -> str:
+    if terminal_reason is not None:
+        return f"terminal_{terminal_reason}"
+    if action == "apply":
+        # Preserved verbatim: downstream compatibility surfaces read this
+        # exact string for the ready-to-step gate.
+        return "ready_to_step"
+    if action == "scaler_skip":
+        return "ready_to_scaler_skip"
+    return "skipped_gradient_or_overflow"
+
+
+def _reduce_boundary_action(
+    checked: Sequence[RankGradientFiniteReport],
+    *,
+    all_safe: bool,
+) -> tuple[str | None, str | None]:
+    """Converge ONE closed boundary action, or ONE terminal unsafe decision.
+
+    This is a pure function of the already-gathered all-rank reports, so every
+    rank computes the identical result from the identical inputs before any
+    rank enters the optimizer wrapper. No rank-local branch precedes it.
+    """
+
+    scaler_ranks = {report.rank for report in checked if report.scaler_active}
+    if not scaler_ranks:
+        # Retained bf16/non-scaler path, unchanged: safe applies, unsafe is a
+        # SUPPORTED `not_attempted` completed boundary.
+        return ("apply" if all_safe else "not_attempted", None)
+    if len(scaler_ranks) != len(checked):
+        return (None, TERMINAL_PRE_WRAPPER_SCALER_CANDIDACY_DIVERGENT)
+    if any(report.report_error_code is not None for report in checked):
+        return (None, TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE)
+    if any(not report.unscale_completed for report in checked):
+        return (None, TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE)
+    candidates = {
+        report.rank for report in checked if report.is_scaler_overflow_candidate()
+    }
+    if len(candidates) == len(checked):
+        return ("scaler_skip", None)
+    if candidates:
+        return (None, TERMINAL_PRE_WRAPPER_MIXED_SCALER_OVERFLOW)
+    if all(report.is_safe() for report in checked):
+        return ("apply", None)
+    # No rank is an overflow candidate, yet some rank is unsafe for an
+    # unrelated reason (a missing or non-finite norm without non-finite
+    # gradients). Under fp16 that is terminal, not a silent skip.
+    return (None, TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE)
 
 
 def build_gradient_finite_report(
@@ -291,6 +410,10 @@ def build_gradient_finite_report(
     rank: int,
     world_size: int,
     backend_overflow: bool,
+    scaler_active: bool = False,
+    unscale_completed: bool = False,
+    scaler_found_inf: bool = False,
+    report_error_code: str | None = None,
 ) -> RankGradientFiniteReport:
     squared_norm = 0.0
     saw_grad = False
@@ -333,6 +456,10 @@ def build_gradient_finite_report(
         gradients_finite=gradients_finite,
         backend_overflow=bool(backend_overflow),
         grad_norm=grad_norm,
+        scaler_active=bool(scaler_active),
+        unscale_completed=bool(unscale_completed),
+        scaler_found_inf=bool(scaler_found_inf),
+        report_error_code=report_error_code,
     )
 
 

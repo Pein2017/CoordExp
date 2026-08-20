@@ -467,8 +467,7 @@ def test_runtime_preserves_accumulation_backward_clip_optimizer_scheduler_order(
     with runtime.accumulation_context(sync_gradients=True):
         runtime.backward(runtime.model(torch.tensor([[2.0]])).sum(), planned_step_id=1)
     decision = runtime.post_backward(planned_step_id=1)
-    runtime.clip_gradients(planned_step_id=1)
-    runtime.optimizer_step(planned_step_id=1)
+    runtime.execute_optimizer_boundary(decision, planned_step_id=1)
     runtime.scheduler_step(planned_step_id=1)
     runtime.zero_gradients(planned_step_id=1)
     assert decision.should_call_optimizer_step

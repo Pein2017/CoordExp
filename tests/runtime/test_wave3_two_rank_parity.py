@@ -408,9 +408,9 @@ def _run_planned_step(
             None if parameter.grad is None else parameter.grad.detach().clone()
             for parameter in model.parameters()
         ]
-        if post_decision.should_call_optimizer_step:
-            runtime.clip_gradients(planned_step_id=planned_step_id)
-            runtime.optimizer_step(planned_step_id=planned_step_id)
+        result["update_receipt"] = runtime.execute_optimizer_boundary(
+            post_decision, planned_step_id=planned_step_id
+        ).to_artifact_dict()
     else:
         result["gradients"] = [
             None if parameter.grad is None else parameter.grad.detach().clone()
