@@ -83,20 +83,71 @@ the same packed segment.
 
 ### Requirement: Protected Default Losses
 
-V1 training SHALL include both `BaseTokenCE` and `TokenTypeGateLoss` as
-protected default losses. Base CE MUST compute full-vocabulary CE over all
-supervised atoms. Gate loss MUST enforce token-type legality over the same
-supervision surface. Every V1 `TokenAtom` MUST resolve to exactly one closed
-token type before protected losses run. `TokenTypeGateLoss` MUST compute
-group-mass CE from fp32 selected logits as
-`logsumexp(all_logits) - logsumexp(allowed_group_logits)`. The first smoke
-resolved config MUST show explicit weights for both protected losses, with
-`base_ce.weight: 1.0` and `token_type_gate.weight: 0.1` unless a later approved
-config profile changes them. These protected V1 losses MUST be treated as the
-new baseline training objective, not as parity with archived production
-coordinate soft-CE, object-balanced, or role-balanced reduction semantics. Any
-claim or implementation of those older objective semantics MUST be introduced
-by a later explicit auxiliary-loss contract.
+Supervised training SHALL include both `BaseTokenCE` and
+`TokenTypeGateLoss` as protected losses. Base CE MUST compute full-vocabulary
+CE over all supervised atoms, MUST be present in every supported supervised
+config, and MUST have weight exactly `1.0`. Gate loss MUST enforce token-type
+legality over the same supervision surface. Its canonical enabled weight MUST
+be exactly `0.1`; weight `0` MUST be accepted only as an explicitly identified
+zero-weight gate ablation. No other protected-loss weights are supported.
+
+Every supervised `TokenAtom` MUST resolve to exactly one closed token type
+before protected losses run. `TokenTypeGateLoss` MUST compute group-mass CE
+from fp32 selected logits as `logsumexp(all_logits) -
+logsumexp(allowed_group_logits)`. In the zero-weight gate ablation, the gate
+calculation MUST run without autograd participation and MUST retain its raw,
+weighted-zero, count, and finite diagnostics. A finite gate diagnostic MUST NOT
+alter the base-CE objective or gradients. A non-finite protected gate
+diagnostic MUST remain part of the all-rank pre-backward safety decision and
+MUST prevent backward and optimizer update. These protected losses are the
+canonical SFT baseline, not parity with archived coordinate soft-CE,
+object-balanced, or role-balanced reduction semantics.
+
+#### Scenario: Base CE omitted or reweighted
+
+- **WHEN** a supported supervised config omits base CE or gives it a weight
+  other than `1.0`
+- **THEN** strict config validation MUST fail before loss construction or
+  model mutation.
+
+#### Scenario: Canonical protected baseline configured
+
+- **WHEN** a normal supervised config enables the protected baseline
+- **THEN** base CE MUST resolve to weight `1.0`
+- **AND** token-type gate MUST resolve to weight `0.1` over all four canonical
+  token groups.
+
+#### Scenario: Named zero-weight gate ablation
+
+- **WHEN** a supervised config explicitly identifies the zero-weight gate
+  ablation and gives token-type gate weight `0`
+- **THEN** the optimized objective and gradients MUST equal the base-CE-only
+  objective for the same planned-step inputs
+- **AND** gate raw, weighted-zero, count, and finite diagnostics MUST be
+  computed without an autograd edge into the optimized objective.
+
+#### Scenario: Zero-weight gate diagnostic is non-finite
+
+- **WHEN** the named zero-weight gate ablation produces a non-finite raw
+  protected diagnostic on any rank
+- **THEN** all ranks MUST converge one unsafe scalar decision before backward
+- **AND** backward and optimizer update MUST be skipped even though the gate
+  has no autograd edge and weighted value zero.
+
+#### Scenario: Unidentified zero-weight gate
+
+- **WHEN** a supervised config gives token-type gate weight `0` without the
+  explicit gate-ablation identity
+- **THEN** strict config validation MUST fail before loss construction.
+
+#### Scenario: Gate loss computed for coordinate target
+
+- **WHEN** a coordinate-token atom is selected for `TokenTypeGateLoss`
+- **THEN** the loss MUST compute
+  `logsumexp(all selected logits) - logsumexp(<|coord_0|>..<|coord_999|> logits)`
+  in fp32
+- **AND** the weighted objective value MUST be the raw value multiplied by the
+  resolved gate weight.
 
 #### Scenario: Auxiliary-only loss config attempted
 
@@ -111,15 +162,6 @@ by a later explicit auxiliary-loss contract.
   soft-CE or object/role-balanced objective semantics
 - **THEN** validation or review MUST reject the claim unless a later approved
   auxiliary-loss contract implements and verifies those semantics.
-
-#### Scenario: Gate loss computed for coordinate target
-
-- **WHEN** a coordinate-token atom is selected for `TokenTypeGateLoss`
-- **THEN** the loss MUST compute
-  `logsumexp(all selected logits) - logsumexp(<|coord_0|>..<|coord_999|> logits)`
-  in fp32
-- **AND** the weighted metric value MUST reflect the resolved
-  `token_type_gate.weight`.
 
 ### Requirement: FP32 Objective Logits
 
@@ -137,17 +179,25 @@ for another approved reason.
 ### Requirement: Token Type Vocabulary Groups
 
 `TokenTypeGateLoss` SHALL use resolved vocabulary groups rather than ad hoc
-integer ranges hidden inside a loss function. V1 target token types are closed
-to `desc_text`, `schema`, `coordinate`, and `eos`. The resolver MUST exclude
-Qwen chat/control, image/video/pad, tool/FIM/repo, think, reserved CoordExp,
-and other non-target special tokens from free-text allowance.
+integer ranges hidden inside a loss function. The protected gate configuration
+MUST contain exactly `desc_text`, `schema`, `coordinate`, and `eos`, with no
+missing, duplicate, or additional group. The resolver MUST exclude Qwen
+chat/control, image/video/pad, tool/FIM/repo, think, reserved CoordExp, and
+other non-target special tokens from free-text allowance.
 
 #### Scenario: Coordinate token target
 
 - **WHEN** a supervised atom has token type `coordinate`
 - **THEN** gate loss MUST treat `<|coord_0|>` through `<|coord_999|>` as the
   allowed target group
-- **AND** MUST penalize probability mass assigned outside that group.
+- **AND** MUST penalize probability mass assigned outside that group when the
+  gate is enabled.
+
+#### Scenario: Incomplete or reordered gate group set
+
+- **WHEN** a supervised config omits, duplicates, adds, or reorders the
+  canonical gate groups
+- **THEN** strict config validation MUST fail before vocabulary resolution.
 
 #### Scenario: Qwen control token in assistant target
 
@@ -158,34 +208,37 @@ and other non-target special tokens from free-text allowance.
 
 #### Scenario: Atom without resolved token type
 
-- **WHEN** a V1 supervised atom lacks a resolved token type
+- **WHEN** a supervised atom lacks a resolved token type
 - **THEN** protected loss setup MUST fail before objective math
 - **AND** the diagnostic MUST include the atom position and span provenance.
 
 ### Requirement: Planned-Step Loss Normalizers
 
-Loss normalizers SHALL be length-invariant over the planned optimizer-step
-window. The protected token-wise reducer MUST be `segment_balanced`: compute
-the mean loss over eligible atoms within each eligible segment, then the mean
-over eligible segments in the complete planned optimizer-step window across
+Computed token-wise losses SHALL be length-invariant over the planned
+optimizer-step window. The reducer MUST be `segment_balanced`: compute the mean
+loss over eligible atoms within each eligible segment, then the mean over
+eligible segments in the complete planned optimizer-step window across
 accumulation and ranks. Per-term denominators MUST be computed from the
 complete planned-step window, not from rank-local windows or pack-local means
 averaged afterward. In distributed training, rank-local denominator
-contributions MUST be gathered before backward; local contributions MUST be
-scaled to compensate Accelerate's mean gradient reduction so the effective
-objective is globally planned-step balanced. Segments with zero eligible atoms
-MUST be excluded from that term's denominator. Protected losses MUST fail if
-the complete planned-step window has zero eligible segments for the term.
-Runtime and loss code MUST avoid double scaling. The resulting global
-denominators and effective scale MAY be included in the wide train logging row
-or explicit diagnostics, but MUST NOT require rank-local durable receipt files.
+contributions MUST be gathered before backward; differentiable rank-local
+contributions MUST be scaled exactly once to compensate the backend's mean
+gradient reduction so the effective objective and update equal the same
+global planned-step objective at world size one.
+
+Segments with zero eligible atoms MUST be excluded from a computed term's
+denominator. An enabled protected or auxiliary term MUST fail if the complete
+planned-step window has zero eligible segments. A disabled optional auxiliary
+term MUST construct no denominator and therefore MUST NOT trigger an empty
+denominator failure. The global semantic raw and weighted values used for
+telemetry MUST remain distinct from any rank-local backward compensation.
 
 #### Scenario: Different token counts across micro-steps
 
 - **WHEN** two micro-steps in one planned optimizer step contain different
   numbers of supervised tokens
-- **THEN** protected loss normalization MUST divide by the planned-step
-  `segment_balanced` denominator for the selected term
+- **THEN** each computed loss MUST divide by its planned-step
+  `segment_balanced` denominator
 - **AND** MUST NOT average two already-normalized micro-step losses equally.
 
 #### Scenario: Unequal rank-local segment counts
@@ -194,8 +247,22 @@ or explicit diagnostics, but MUST NOT require rank-local durable receipt files.
   to one planned optimizer step
 - **THEN** all ranks MUST use the same all-rank `planned_step_global`
   denominator for that term
-- **AND** the effective scale MUST remain inspectable through compact logging
-  or explicit test diagnostics without per-rank artifact streams.
+- **AND** the resulting gradient and optimizer update MUST match the equivalent
+  world-size-one planned-step calculation within declared numerical tolerance.
+
+#### Scenario: Backend compensation is not telemetry
+
+- **WHEN** distributed backward requires a world-size compensation factor
+- **THEN** the factor MUST affect the differentiable rank-local contribution
+  exactly once
+- **AND** raw and weighted semantic telemetry MUST NOT be multiplied by that
+  backend compensation factor.
+
+#### Scenario: Disabled auxiliary has no denominator
+
+- **WHEN** an optional auxiliary loss has weight `0`
+- **THEN** no local or global denominator for that loss may be constructed
+- **AND** no zero-eligible failure for that loss may affect the planned step.
 
 #### Scenario: Segment-balanced differs from token-balanced
 
@@ -207,42 +274,54 @@ or explicit diagnostics, but MUST NOT require rank-local durable receipt files.
 
 ### Requirement: Loss Bundle Metrics
 
-`LossRunner` SHALL return a `LossBundle` containing total weighted loss,
-weighted per-term loss metrics, top-level `acc_top1`, top-level `acc_top5`,
-selected-count diagnostics, and finite-status diagnostics. Stored per-term loss
-metrics MUST be weighted values. After all-rank reduction, the complete scalar
-mapping for one planned step SHALL be written together in that step's wide
-`train` row in `logging.jsonl`. Cross-rank reduction of `acc_top1` and
-`acc_top5` MUST be derived from exact rank-local sufficient statistics — the
-integer top-1 correct count, the integer top-5 correct count, and the
-rank-local supervised-atom count — summed across ranks before the ratio is
-formed, so the reduced value equals `sum_r(correct_r) / sum_r(atoms_r)`.
-These sufficient statistics MAY travel only in the internal reduction payload
-and need not become durable logging fields. The reduction MUST NOT weight
-per-rank accuracies by an already-global atom count (the planned-step metric
-`count/supervised_atoms` is globally merged and therefore not a valid
-per-rank weight) and MUST NOT reconstruct integer counts from rounded
-floating-point ratios. At world size one the reduced value MUST equal the
-rank-local value. Non-finite values MUST retain their field names with JSON
-`null` values and MUST be listed in `non_finite_fields` rather than making the
-planned step unwriteable.
+The completed planned-step loss result SHALL contain the total weighted loss,
+explicit raw and weighted values for every computed term, top-level
+`acc_top1`, top-level `acc_top5`, matching selected-count diagnostics, and
+finite-status diagnostics. Raw values MUST express the globally normalized
+term before configured weighting; weighted values MUST equal raw values times
+their configured weight; total loss MUST equal the sum of weighted objective
+terms. A zero-weight protected gate ablation remains a computed diagnostic term
+and MUST expose raw, weighted-zero, count, and finite fields. A zero-weight
+optional auxiliary term is not computed and MUST expose none of those fields.
+
+After all-rank reduction, the complete scalar mapping for one planned step
+SHALL be written together in that step's wide `train` row in `logging.jsonl`.
+Cross-rank reduction of `acc_top1` and `acc_top5` MUST be derived from exact
+rank-local sufficient statistics — integer correct counts and rank-local
+supervised-atom counts — summed across ranks before the ratio is formed. It
+MUST NOT average rank-local ratios, weight them by an already-global count, or
+reconstruct integer counts from rounded ratios. At world size one the reduced
+value MUST equal the rank-local value. Non-finite computed fields MUST retain
+their names with JSON `null` and MUST be listed in `non_finite_fields`.
 
 #### Scenario: Train metric event emitted
 
-- **WHEN** a train step completes
-- **THEN** its single logging row MUST include weighted protected-loss metrics
-  and top-level `acc_top1` and `acc_top5`
-- **AND** top-1/top-5 names MUST NOT be nested under a base-CE namespace.
+- **WHEN** a train step completes with enabled base CE and token-type gate
+- **THEN** its single logging row MUST include unambiguous raw and weighted
+  fields for both terms and their matching counts and finite fields
+- **AND** it MUST include top-level `acc_top1` and `acc_top5`.
+
+#### Scenario: Zero-weight gate metric event emitted
+
+- **WHEN** a train or eval step uses the named zero-weight gate ablation
+- **THEN** the gate raw diagnostic MUST remain visible and the gate weighted
+  value MUST be zero
+- **AND** the gate fields MUST be detached from autograd and distinguishable
+  from optimized objective terms.
+
+#### Scenario: Disabled optional metric fields omitted
+
+- **WHEN** an optional auxiliary term resolves to weight `0`
+- **THEN** its raw, weighted, denominator, count, and finite fields MUST all be
+  absent from the completed-step result.
 
 #### Scenario: Unequal rank-local atom counts
 
 - **WHEN** distributed ranks contribute unequal supervised-atom counts to one
   planned step
-- **THEN** the reduced `acc_top1` and `acc_top5` MUST equal the pooled ratio
-  of summed rank-local integer correct counts over summed rank-local atom
-  counts
-- **AND** MUST NOT be the plain mean of per-rank accuracies or a mean
-  weighted by a globally merged atom count.
+- **THEN** reduced `acc_top1` and `acc_top5` MUST equal the pooled ratio of
+  summed integer correct counts over summed atom counts
+- **AND** MUST NOT be the plain mean of per-rank accuracies.
 
 ### Requirement: Non-Finite Loss And Gradient Gates
 
@@ -251,9 +330,13 @@ gradient/overflow checks after backward. Unsafe non-finite state MUST prevent a
 corrupted optimizer update. Recoverable bad examples or warnings MAY be
 reported without changing the planned-step schedule. In distributed execution,
 the scalar finite check MUST produce one reduced all-rank decision before any
-rank calls backward. The resulting update and finite status MUST be represented
-once in the rank-zero train logging row for that planned step; normal training
-MUST NOT write duplicate rank-local gate receipts.
+rank calls backward. The pre-backward decision MUST consider the raw finite
+status of every computed protected term — including a protected diagnostic
+whose weighted contribution is zero, such as the named zero-weight gate
+ablation — not only the total optimized loss. The resulting update and finite
+status MUST be represented once in the rank-zero train logging row for that
+planned step; normal training MUST NOT write duplicate rank-local gate
+receipts.
 
 #### Scenario: Non-finite scalar loss
 
@@ -267,6 +350,18 @@ MUST NOT write duplicate rank-local gate receipts.
 - **AND** rank zero MUST log the synchronized unsafe/update status once.
 - **AND** non-finite scalar fields MUST be represented as JSON `null` and named
   in `non_finite_fields`.
+
+#### Scenario: Non-finite protected diagnostic with finite total loss
+
+- **WHEN** a computed protected term's raw value is NaN or Inf on any rank
+  while the total optimized loss remains finite (for example the zero-weight
+  gate ablation, whose weighted contribution is exactly zero)
+- **THEN** the all-rank pre-backward decision MUST classify the planned step
+  unsafe
+- **AND** all ranks MUST skip backward and optimizer update for that planned
+  step
+- **AND** the term's non-finite fields MUST be represented as JSON `null` and
+  named in `non_finite_fields`.
 
 #### Scenario: Distributed gradient overflow
 
@@ -285,11 +380,33 @@ MUST NOT write duplicate rank-local gate receipts.
 
 ### Requirement: Future Auxiliary Loss Seam
 
-The V1 loss abstraction SHALL allow future token-wise, site-wise, coordinate,
-hidden-state, and rollout-derived losses to consume `TokenSequence`,
-`LossContext`, model outputs, and typed metadata. Hidden-state and rollout
-losses MUST remain unimplemented in V1 unless a later approved change promotes
+The supervised loss surface SHALL expose a closed typed set of implemented
+protected and auxiliary losses with a declared role, normalization policy, and
+zero-weight policy for each term. The supported public config MUST select only
+that closed set and MUST NOT accept Python import paths, arbitrary callables,
+or a dynamic loss registry. Coordinate Gaussian/RPS SHALL be a typed optional
+auxiliary rather than a protected loss. Hidden-state, rollout-derived, and RL
+loss composition remain unsupported unless a later approved change promotes
 them.
+
+#### Scenario: Coordinate Gaussian/RPS enabled
+
+- **WHEN** a supervised config enables coordinate Gaussian/RPS with positive
+  weight under the auxiliary surface
+- **THEN** it MUST participate in fp32, planned-step `segment_balanced`
+  objective computation and expose raw and weighted telemetry.
+
+#### Scenario: Coordinate Gaussian/RPS disabled
+
+- **WHEN** coordinate Gaussian/RPS is absent or has weight `0`
+- **THEN** it MUST be omitted from loss computation, denominator construction,
+  metrics, and finite checks.
+
+#### Scenario: Arbitrary loss implementation configured
+
+- **WHEN** public config attempts to select a loss by import path, callable,
+  or unrecognized registry name
+- **THEN** strict config validation MUST fail before loss construction.
 
 #### Scenario: Hidden-state loss configured in V1
 
@@ -297,3 +414,11 @@ them.
   approved implementation exists
 - **THEN** loss configuration MUST fail with an explicit unsupported-loss
   diagnostic.
+
+#### Scenario: Rollout-derived loss configured
+
+- **WHEN** a supervised config enables a rollout-derived or RL-composition
+  loss before a later approved contract exists
+- **THEN** loss configuration MUST fail with an explicit unsupported-loss
+  diagnostic.
+
