@@ -165,6 +165,21 @@
    "date": "2026-08-20",
    "reason": "entry-audit P1-REDUCE: assign reclassification of the four plain-mean families before Wave 1 (lead disposition; full text in tasks.md Wave-0 amendment)",
    "resolution": "train count/packs+count/examples -> SUM (declared value fix of the 2b0a2165a defect); train loss/<t>/token_weighted_diag -> ratio sample (count-weighted, matching sharded eval; declared value fix); train finite/* -> BOOL_ALL (declared value fix; 0.5-on-split-step artifact eliminated); replicated-eval objective keys -> IDENTICAL after an empirical two-rank divergence measurement in the 2.5 gloo probe (bitwise-equal expected under the enforced deterministic env; if not observed, a bounded-tolerance IDENTICAL variant with the measured bound recorded). All four are RED-first declared value changes in Wave 2, never silent."
+  },
+  {
+   "id": "amend-4-pin-wave1-gate",
+   "amendment_of": "wave1-config-gate",
+   "date": "2026-08-20",
+   "reason": "pin observed Wave-1 counts; record the determinant-probe path disposition and a tracked flake",
+   "observed": {
+    "wave1-config-gate": "435 passed / 0 failed / 0 skipped (builder x8 + lead replay identical)",
+    "wave1-inventory-resolve": "exit 0: 25 supported configs strict-resolve with explicit observability.steps",
+    "wave1-pin-family-check": "520 passed / 6 skipped - all four historicized guards stable across the second config-byte drift",
+    "determinant-no-entry": "unmodified probe module run with BASELINE_PATH redirected to the ARCHIVED losses baseline (the frozen argv's pre-archive path no longer exists): EQUAL/EQUAL. Independently confirmed by the lead's direct recompute: fingerprints AND canonical payload sha b2d9595f07a0a511 byte-identical - observability.steps enters no determinant at any level",
+    "red": "42 failed / 9 passed before implementation; 17 alias/extra params declared green-from-birth as regression pins (extra=forbid already covered them)"
+   },
+   "probe_path_disposition": "future waves run the determinant probe via a wrapper that redirects only BASELINE_PATH to openspec/changes/archive/2026-08-20-standardize-coordexp-swift-supervised-losses/receipts/wave-0-determinant-baseline.json; the probe script itself is not edited (it is the archived change's artifact)",
+   "tracked_flake": "tests/losses/test_zero_policies.py::test_gate_ablation_creates_no_autograd_edge_into_the_objective - SECOND non-reproducing occurrence (first: losses wave 4, 1/9; now: 1/13; deterministic inputs, no config coupling; prior attribution: cross-module global-state leakage into plan.backend_gradient_scale). TRIPWIRE: a third occurrence anywhere in this change mandates fixing the test's global-state isolation as its own task before the wave in progress closes."
   }
  ]
 }

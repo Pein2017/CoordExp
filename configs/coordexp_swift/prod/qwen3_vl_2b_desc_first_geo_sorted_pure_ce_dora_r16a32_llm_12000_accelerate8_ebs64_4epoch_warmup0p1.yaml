@@ -108,3 +108,6 @@ checkpoint:
   every_fraction: 0.4
   steps: []
   save_final: true
+
+observability:
+  steps: 10

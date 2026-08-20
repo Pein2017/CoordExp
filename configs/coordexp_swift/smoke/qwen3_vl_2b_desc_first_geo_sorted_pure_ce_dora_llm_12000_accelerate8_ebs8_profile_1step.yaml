@@ -109,3 +109,6 @@ checkpoint:
   steps:
     - 1
   save_final: true
+
+observability:
+  steps: 1

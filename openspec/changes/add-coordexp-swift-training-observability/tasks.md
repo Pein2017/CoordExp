@@ -43,23 +43,40 @@
 
 ## 1. Wave 1 - Required presentation config
 
-- [ ] 1.1 Add failing config tests proving `observability.steps` is required
+- [x] 1.1 Add failing config tests proving `observability.steps` is required
   with no default, accepts only positive integers, rejects legacy logging
   aliases, and remains present in `resolved_config.json`.
-- [ ] 1.2 Add the strict required `ObservabilityConfig` surface to
+- [x] 1.2 Add the strict required `ObservabilityConfig` surface to
   `src/config/models.py` without adding enable flags, sink lists, or a
   compatibility alias.
-- [ ] 1.3 Author an explicit `observability.steps` value in every supported
+- [x] 1.3 Author an explicit `observability.steps` value in every supported
   training YAML under `configs/coordexp_swift/prod/` and
   `configs/coordexp_swift/smoke/`; leave inference, archived, Stage 1, and Stage
   2 configs untouched.
-- [ ] 1.4 Update current config fixture builders and strict-key tests so every
+- [x] 1.4 Update current config fixture builders and strict-key tests so every
   accepted training fixture makes an explicit presentation decision and old
   fixtures fail for the intended missing-field reason.
-- [ ] 1.5 Gate Wave 1 with the focused config suite, a script that resolves
+- [x] 1.5 Gate Wave 1 with the focused config suite, a script that resolves
   every supported active training YAML, strict OpenSpec validation, a residue
   search for an observability default or accepted logging alias, and no
   unresolved test or validation failure.
+
+> **Wave 1 closed (2026-08-20, opus builder, zero correction rounds):**
+> `ObservabilityConfig` with exactly `steps: int = Field(gt=0, strict=True)`,
+> required, no default, no alias/enable-flag/sink surface, presentation-only
+> docstring. RED 42/9 observed; 17 alias/extra params declared
+> green-from-birth regression pins. 26 files authored (prod=10, smoke and
+> length_isolation=1, live loader-input fixture=1 pre-authorized; text-append
+> only, byte-preserving; frozen training_orchestration subtree untouched).
+> Active-profile baseline revision `2a297a93a` -> `51cc48de6`, 25/25 digests
+> refreshed via the test module's own digest helper; drift-guard allowlist
+> deliberately NOT widened. Gate: 435/0/0 (lead replay identical); inventory
+> probe exit 0; pin-family check 520/6skip stable across the second
+> config-byte drift; residue zero; **determinant no-entry proven twice**
+> (redirected archived-baseline probe EQUAL/EQUAL + lead direct recompute
+> with payload sha byte-identical). Manifest amend-4 records the archived
+> probe-path disposition and the tracked test_gate_ablation flake (2nd
+> occurrence, tripwire set at 3). Collateral survey 1889/0/126skip.
 
 ## 2. Wave 2 - Explicit distributed metric reduction
 

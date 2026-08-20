@@ -41,6 +41,20 @@ class CadenceConfig(StrictConfigModel):
         return value
 
 
+class ObservabilityConfig(StrictConfigModel):
+    """Rank-zero presentation cadence for console and TensorBoard projections.
+
+    ``steps`` is a required positive planned-step interval with no schema
+    default. It decides only how often already-canonical observations are
+    projected to the rank-zero console and to TensorBoard. It never suppresses,
+    samples, delays, or otherwise changes the canonical one-row-per-completed-
+    step ``logging.jsonl`` stream, which remains the sole authoritative durable
+    scalar record, and it carries no research meaning.
+    """
+
+    steps: int = Field(gt=0, strict=True)
+
+
 class RunConfig(StrictConfigModel):
     name: str
     artifact_root: str
@@ -522,6 +536,7 @@ class TrainConfig(StrictConfigModel):
     runtime: RuntimeConfig
     eval: EvalConfig
     checkpoint: CheckpointConfig
+    observability: ObservabilityConfig
     resume: ResumeConfig = Field(default_factory=ResumeConfig)
 
     @model_validator(mode="after")

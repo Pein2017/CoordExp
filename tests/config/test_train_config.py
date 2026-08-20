@@ -86,6 +86,8 @@ def test_smoke_config_loads_and_writes_resolved_artifacts(tmp_path: Path) -> Non
     assert payload["config"]["data"]["train"]["path"] == str(
         fixture_root / "examples.jsonl"
     )
+    assert resolved.config.observability.steps == 1
+    assert payload["config"]["observability"] == {"steps": 1}
 
 
 @pytest.mark.parametrize("field", ("lr", "weight_decay"))
@@ -1028,7 +1030,10 @@ def test_production_relaunch_configs_load_strictly() -> None:
 def test_active_profile_migration_changes_only_infrastructure_allowlist() -> None:
     """Guard the migration against scientific drift in every active profile."""
     baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
-    assert baseline["baseline_revision"] == "2a297a93a"
+    # Refreshed at the `add-coordexp-swift-training-observability` wave-0 close
+    # commit: the declared required `observability.steps` migration changes
+    # every active-profile digest, and nothing else in this wave may.
+    assert baseline["baseline_revision"] == "51cc48de6"
     assert tuple(baseline["normalization_allowlist"]) == (
         INFRASTRUCTURE_DELETION_ALLOWLIST
     )
@@ -1320,6 +1325,204 @@ def test_random_ordering_pure_ce_typegate_configs_are_matched_and_prompt_neutral
         assert "x1 y1 x2 y2 order" in prompt
 
 
+# --------------------------------------------------------------------------
+# Required presentation cadence: `observability.steps`
+#
+# Wave 1 of `add-coordexp-swift-training-observability`. The field is a
+# rank-zero console/TensorBoard presentation interval only: it never suppresses
+# or samples the canonical one-row-per-completed-step `logging.jsonl` stream.
+# --------------------------------------------------------------------------
+
+
+def _config_without_observability() -> dict[str, Any]:
+    payload = _minimal_config()
+    payload.pop("observability", None)
+    return payload
+
+
+def test_observability_steps_is_required_with_no_schema_default(
+    tmp_path: Path,
+) -> None:
+    """An old fixture without the field fails naming the missing block."""
+    payload = _config_without_observability()
+    config_path = tmp_path / "missing-observability.yaml"
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    error = exc_info.value
+    assert error.code == "config.schema_validation"
+    assert error.context["field"] == "observability"
+    assert "Field required" in error.context["message"]
+    assert "observability" in str(error)
+
+
+def test_observability_steps_persists_into_resolved_config_artifacts(
+    tmp_path: Path,
+) -> None:
+    payload = _config_without_observability()
+    payload["observability"] = {"steps": 7}
+    config_path = tmp_path / "explicit-observability.yaml"
+    _write_yaml(config_path, payload)
+
+    resolved = load_train_config(config_path)
+
+    assert resolved.config.observability.steps == 7
+    assert resolved.config_dict["observability"] == {"steps": 7}
+
+    artifacts = write_resolved_config_artifacts(resolved, tmp_path / "run-observe")
+    artifact_payload = json.loads(artifacts.json_path.read_text())
+    assert artifact_payload["config"]["observability"] == {"steps": 7}
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [0, -1, -10, 2.5, 1.0, "10", None, [1], True],
+    ids=[
+        "zero",
+        "negative-one",
+        "negative-ten",
+        "float-fraction",
+        "float-whole",
+        "string",
+        "null",
+        "list",
+        "bool",
+    ],
+)
+def test_observability_steps_accepts_only_positive_integers(
+    tmp_path: Path,
+    steps: Any,
+) -> None:
+    payload = _config_without_observability()
+    payload["observability"] = {"steps": steps}
+    config_path = tmp_path / "invalid-observability.yaml"
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    error = exc_info.value
+    # The rejection must come from the field constraint itself, never from the
+    # block being unknown to the schema.
+    assert error.context["field"] == "observability.steps"
+    assert "Extra inputs are not permitted" not in error.context["message"]
+
+
+@pytest.mark.parametrize("steps", [1, 2, 10, 1_000])
+def test_observability_steps_accepts_positive_integers(
+    tmp_path: Path,
+    steps: int,
+) -> None:
+    payload = _config_without_observability()
+    payload["observability"] = {"steps": steps}
+    config_path = tmp_path / f"observability-{steps}.yaml"
+    _write_yaml(config_path, payload)
+
+    assert load_train_config(config_path).config.observability.steps == steps
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        {"steps": 1, "logging_steps": 1},
+        {"steps": 1, "log_interval": 1},
+        {"steps": 1, "enabled": True},
+        {"steps": 1, "sinks": ["console"]},
+        {"steps": 1, "console": {"enabled": True}},
+        {"steps": 1, "tensorboard": {"enabled": True}},
+        {"logging_steps": 1},
+        {"log_interval": 1},
+    ],
+    ids=[
+        "alias-logging_steps",
+        "alias-log_interval",
+        "enable-flag",
+        "sink-list",
+        "console-sink",
+        "tensorboard-sink",
+        "alias-only-logging_steps",
+        "alias-only-log_interval",
+    ],
+)
+def test_observability_block_rejects_aliases_flags_and_sinks(
+    tmp_path: Path,
+    block: dict[str, Any],
+) -> None:
+    payload = _config_without_observability()
+    payload["observability"] = block
+    config_path = tmp_path / "observability-extra.yaml"
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_train_config(config_path)
+
+    assert exc_info.value.context["field"].startswith("observability")
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "logging_steps",
+        "log_interval",
+        "logging.steps",
+        "training.logging_steps",
+        "training.log_interval",
+        "training.logging.steps",
+        "runtime.logging_steps",
+        "eval.logging_steps",
+        "checkpoint.logging_steps",
+    ],
+)
+def test_legacy_logging_cadence_aliases_are_rejected_wherever_authored(
+    tmp_path: Path,
+    field_path: str,
+) -> None:
+    payload = _minimal_config()
+    _set_nested(payload, field_path, 10)
+    config_path = tmp_path / "legacy-logging-alias.yaml"
+    _write_yaml(config_path, payload)
+
+    with pytest.raises(ConfigContractError, match="Extra inputs are not permitted"):
+        load_train_config(config_path)
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    tuple(
+        sorted(
+            path
+            for root in ACTIVE_TRAIN_CONFIG_ROOTS
+            for path in root.rglob("*.yaml")
+        )
+    ),
+    ids=lambda path: str(path),
+)
+def test_supported_config_authors_explicit_positive_observability_steps(
+    config_path: Path,
+) -> None:
+    authored = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert "observability" in authored, f"{config_path} omits observability"
+    assert set(authored["observability"]) == {"steps"}
+
+    resolved = load_train_config(config_path)
+    steps = resolved.config.observability.steps
+    assert isinstance(steps, int) and not isinstance(steps, bool)
+    assert steps > 0
+    assert resolved.config_dict["observability"] == {"steps": steps}
+
+
+def test_observability_has_no_default_on_the_train_config_surface() -> None:
+    observability_field = TrainConfig.model_fields["observability"]
+    assert observability_field.is_required()
+    assert observability_field.default_factory is None
+
+    steps_field = observability_field.annotation.model_fields["steps"]
+    assert steps_field.is_required()
+    assert steps_field.default_factory is None
+
+
 def _minimal_config() -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -1404,6 +1607,9 @@ def _minimal_config() -> dict[str, Any]:
             "inference": {"enabled": False},
         },
         "checkpoint": {"every_fraction": 0.4, "steps": [], "save_final": True},
+        # Every accepted training fixture makes the presentation decision
+        # explicitly; there is no schema default to fall back on.
+        "observability": {"steps": 1},
     }
 
 
