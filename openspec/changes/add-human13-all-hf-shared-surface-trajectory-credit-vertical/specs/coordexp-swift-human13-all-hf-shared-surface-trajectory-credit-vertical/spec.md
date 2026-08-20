@@ -82,6 +82,48 @@ no greater than `0.02` nats, and group-mean absolute error no greater than
 - **THEN** the probe records a typed parity failure, performs zero optimizer
   steps, and does not reinterpret or widen the tolerance
 
+### Requirement: Cross-surface owner-level reconciliation
+
+The BF16/FlashAttention-2 training surface SHALL remain the sole authority for
+sampling, replay, trajectory credit, greedy compilation, preservation, and the
+update token/path.  The fp32/SDPA surface SHALL be used only for stable
+owner-level clean-greedy behavioral audits.  The single reconciliation
+constructor/loader/checker/publisher SHALL parse both outputs with the frozen
+canonical parser and use the cardinality-first one-to-one owner matcher.
+
+For every differing bbox coordinate, the checker SHALL decode the coordinate
+bin on the frozen 1000-bin range and admit only an inclusive `abs(delta_bin) <=
+5` alias.  Both boxes SHALL be legal rectangles.  Row openers/closers,
+description/category tokens, STOP/terminal tokens, row order, and all other
+non-coordinate tokens SHALL match exactly.  The matched owner, complete
+matched-owner set, G/H/M membership, and protected-G identity SHALL be
+unchanged.  The receipt SHALL record token position, coordinate role, both
+tokens/bins, delta, both boxes, owner, both IoUs, and disposition.  This
+reconciliation rule SHALL NOT relax any sampler-to-replay history, token,
+shape, or processed-log-probability parity requirement on BF16/FA2.
+
+#### Scenario: Coordinate alias is metric-equivalent
+
+- **WHEN** the source and training outputs differ only at a coordinate bin,
+  both rectangles are legal, the delta is at most five, and canonical matching
+  produces the same owner and membership sets
+- **THEN** the reconciliation admits the pair and publishes a coordinate-alias
+  receipt with the exact token/bin and IoU evidence
+
+#### Scenario: Inclusive coordinate boundary
+
+- **WHEN** one coordinate differs by exactly five bins and all other rules
+  remain unchanged
+- **THEN** the reconciliation admits the pair
+
+#### Scenario: Unsafe cross-surface difference
+
+- **WHEN** a coordinate delta is six or more, a non-coordinate token differs,
+  either rectangle is invalid, canonical matching exchanges an owner, or any
+  G/H/M or protected-G membership changes
+- **THEN** the reconciliation emits a typed non-admission receipt before any
+  update or private proposal
+
 ### Requirement: Complete one-update objective
 
 After admission, the first vertical SHALL perform exactly one fresh-AdamW

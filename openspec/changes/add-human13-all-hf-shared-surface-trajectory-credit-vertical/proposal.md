@@ -24,6 +24,16 @@ surface and reach a real one-update behavioral result.
   `0.002` mean chosen-token processed-logprob tolerances, then immediately
   performs one full trajectory-credit + sparse greedy-compiler + preservation
   update if the shared surface passes.
+- Treat the BF16/FlashAttention-2 training surface as the sole authority for
+  sampling, replay, trajectory credit, greedy compilation, preservation, and
+  the update token/path.  The fp32/SDPA surface is only a stable owner-level
+  clean-greedy behavioral audit.  Its output need not be numerically or
+  token-identical to BF16/FA2: the single cross-surface admission choke point
+  permits only a frozen coordinate-bin alias with inclusive `abs(delta) <= 5`
+  on the 1000-bin coordinate range.  Row structure, non-coordinate tokens,
+  legal rectangles, canonical cardinality-first owner matching, matched owner
+  sets, G/H/M membership, and protected-G identity remain exact.  This alias
+  never relaxes sampler-to-replay parity on the BF16/FA2 surface.
 - Audit that private proposal with clean greedy at RP 1.0 and RP 1.10, report
   H gained, G lost, net unique owners, duplication, malformed rows, STOP/cap
   burden, and restore Source exactly.  No checkpoint is promoted.

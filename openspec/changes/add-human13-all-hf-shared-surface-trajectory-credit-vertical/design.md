@@ -148,9 +148,29 @@ compiler-only additions.
 Sampling, replay, compiler gradient, preservation Jacobians, and AdamW run on
 GPU 0 through the shared BF16/FA2 session.  Source and proposal clean-greedy
 audits use the established HF fp32/SDPA batch-one evaluator on GPU 1 when two
-cards are available.  This audit model is not score-function evidence and does
-not need numerical parity with the training surface; it owns the stable owner
-behavior readout.
+cards are available.  BF16/FA2 is the sole authority for the scientific
+objective and update path.  The audit model is not score-function evidence and
+owns only a stable owner-level behavioral readout; it does not need numerical
+or token identity with the training surface.
+
+#### Cross-surface reconciliation
+
+The source-owner gate has one constructor/loader/checker/publisher choke point
+for comparing the two clean-greedy surfaces.  It parses both outputs with the
+frozen canonical parser, then applies a cardinality-first one-to-one owner
+matcher.  Non-coordinate tokens (row open/close, description/category,
+STOP/terminal, row order and structure) must be identical.  A legal rectangle
+may differ only in a decoded 1000-bin coordinate; every differing coordinate
+must have inclusive `abs(delta_bin) <= 5`.  The matched owner, full matched
+owner set, G/H/M membership, and protected-G identity must be unchanged.  The
+receipt records each alias position, coordinate role, token/bin pair, delta,
+both boxes, owner, both IoUs, and the final disposition.  A delta above five,
+an invalid rectangle, a non-coordinate mismatch, an owner exchange, or a
+membership change fails closed.
+
+This rule is deliberately asymmetric: it admits a behavioral coordinate alias
+for the audit surface, but it never widens BF16/FA2 sampler-to-replay history,
+chosen-token, shape, or processed-log-probability parity.
 
 The runtime writes a private adapter checkpoint only for evaluation.  It does
 not publish or promote it.  If a second GPU is unavailable, execution stays
@@ -225,7 +245,9 @@ one-image terminal hash.  There are no adaptive retries.
    existing ledger/compiler/preservation runtime through injected fakes.
 3. Add the one-image production-shaped entry, private dual-GPU audit lifecycle,
    immutable receipts, and a zero-action dry run.
-4. Run one no-update image-1584 parity vertical.  If admitted, continue in the
+4. Run one no-update image-1584 reconciliation/parity vertical.  If the fixed
+  coordinate-alias reconciliation and unchanged BF16/FA2 replay parity are
+  both admitted, continue in the
    same reserved root to exactly one private complete update and dual-RP audit.
 5. Publish the bounded one-image result and rollback evidence.  Run the
    13-image continuation only if the exact continuation gate passes.

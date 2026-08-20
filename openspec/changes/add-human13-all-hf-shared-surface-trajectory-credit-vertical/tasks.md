@@ -71,7 +71,12 @@
 - [x] 4.3 Compute fresh Source and private-proposal clean greedy at RP 1.0 and
   RP 1.10, then publish H gained, G lost, incidental M gained, net unique
   owners, duplicate/unmatched/malformed burdens, stop/cap, rows, and tokens
-  under the canonical parser/matcher.
+  under the canonical parser/matcher.  Reconcile the fp32/SDPA audit against
+  the BF16/FA2 training surface through the fixed coordinate-only bin alias
+  (`abs(delta) <= 5`, inclusive); non-coordinate tokens, legal rectangles,
+  canonical owner assignment, matched sets, G/H/M membership, and protected-G
+  identity remain exact, while BF16/FA2 sampler-to-replay parity remains
+  strict.
 - [x] 4.4 Implement the exact continuation gate and a full-panel entry that
   remains model/GPU-inert unless it receives the content hash of a passing
   one-image terminal; add fail-closed tests for every missing condition.
@@ -81,15 +86,17 @@
   one-image result.
 - [ ] 4.6 Run the final prelaunch smoke review against the real public CLI,
   config, model assembly, sampler/replay, backward, private checkpoint, audit,
-  analyzer, rollback, and consumer interfaces; resolve only conclusion-changing
-  P0/P1 findings before execution.
+  analyzer, rollback, and consumer interfaces; verify the coordinate-alias
+  reconciliation choke point and unchanged internal replay parity; resolve
+  only conclusion-changing P0/P1 findings before execution.
 
 ## 5. Bounded execution and closure
 
 - [ ] 5.1 Inspect live GPU/process/artifact state, reserve two suitable cards and
   the immutable one-image root, and run the guarded no-update image-1584 K16
-  shared-surface parity phase.
-- [ ] 5.2 If parity passes unchanged, continue in the same declared run to one
+  shared-surface coordinate-reconciliation plus strict internal-parity phase.
+- [ ] 5.2 If coordinate reconciliation and strict internal parity both pass,
+  continue in the same declared run to one
   complete private update, both clean-greedy audits, exact rollback, and Source
   reproduction; if parity fails, publish the typed implementation HOLD with
   zero update and do not tune tolerances.

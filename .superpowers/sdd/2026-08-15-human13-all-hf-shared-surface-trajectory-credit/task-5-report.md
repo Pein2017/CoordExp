@@ -109,22 +109,31 @@ fallback objective.  It binds the two execution domains explicitly:
   and tokenizer hashes, and the distinct checkpoint-payload digest domains;
 - the exact two sealed Source decodes and token count.
 
-The owner invokes the existing `WitnessMeasurement` checker as its only
-scientific decision owner.  Exact agreement returns a content-addressed
-admission receipt; identity drift, unserializable runtime evidence, image
-lineage drift, a nonzero teacher-forced change, or a checker exception returns
-a typed non-admission receipt.  `HFNativeOneImageOwnerError` carries that
-receipt, and the Source-audit failure phase serializes it before the service
-re-raises the primary error.  The admitted receipt is included in the
-pre-acquisition owner digest.
+The BF16/FA2 surface remains the sole scientific authority for sampling,
+replay, trajectory credit, compiler, preservation, and the update path.  The
+fp32/SDPA surface owns only stable owner-level clean-greedy behavior.  The
+owner now uses one cross-surface reconciliation choke point: frozen canonical
+parsing plus cardinality-first one-to-one matching; exact row structure,
+non-coordinate tokens, legal rectangles, matched owner sets, G/H/M membership,
+and protected-G identity are required.  A bbox coordinate may differ only as a
+decoded 1000-bin alias with inclusive `abs(delta_bin) <= 5`.  Each admitted
+alias records position, coordinate role, both tokens/bins, delta, both boxes,
+owner, both IoUs, and disposition.  A delta above five, malformed rectangle,
+non-coordinate difference, owner exchange, or membership change is typed
+non-admission.  This rule does not relax BF16/FA2 sampler-to-replay history,
+token, shape, or processed-log-probability parity.
 
-The additive contract was first verified with CPU/injected evidence; after the
-direct-script import-path fix, the focused reconciliation/owner/service/entry
-set passes 88 tests and the broader current Human-13 CPU/injected matrix passes
-393 tests with 2 warnings.  The current live attempt then exercised the real
-entry and both model surfaces, but no update path passed the Source-witness
-gate.  The known image-1584 Source-vs-training greedy mismatch therefore
-remains a scientific HOLD rather than being hidden by the new receipt path.
+`HFNativeOneImageOwnerError` carries the reconciliation receipt, and the
+Source-audit failure phase serializes it before the service re-raises the
+primary error.  The admitted receipt is included in the pre-acquisition owner
+digest.
+
+The previous additive contract was first verified with CPU/injected evidence;
+the current live attempt exercised the real entry and both model surfaces but
+used the former exact-token cross-surface gate.  Its durable rejection is a
+historical artifact, not evidence against the newly authorized coordinate
+alias.  A fresh no-update image-1584 reconciliation is required before any
+update claim.
 
 ## Verification
 
@@ -142,14 +151,15 @@ remains a scientific HOLD rather than being hidden by the new receipt path.
 
 ## Claim boundary and stop rule
 
-The current evidence supports only a safe pre-acquisition HOLD: the required
-GPU-1 fp32/SDPA Source decode is not greedy on the same GPU-0 BF16/FA2 training
-surface at one coordinate token.  It does not support an update, audit, rollback,
-or 13-image continuation claim.
+The current evidence supports only a historical safe pre-acquisition HOLD under
+the former exact-token rule.  It does not support an update, audit, rollback,
+or 13-image continuation claim under the new rule.  The next run must produce
+an immutable no-update receipt proving that the observed 615/616 coordinate
+alias is admitted while internal BF16/FA2 replay parity remains strict.
 
-Do not fix this by changing the generated token, relaxing the witness margin,
-using GPU-1 logits as the training witness, switching the training surface to
-fp32/SDPA, or adding a CE/vLLM fallback.  Any of those would change the frozen
-research contract.  A subsequent run requires an additive same-contract owner
-that reconciles this source identity without weakening the witness rule; until
-then the one-image live gate remains HOLD.
+Do not relax the fixed five-bin alias, permit non-coordinate or owner changes,
+use GPU-1 logits as the training witness, switch the training surface to
+fp32/SDPA, or add a CE/vLLM fallback.  A subsequent run must use a fresh
+immutable root; the historical failed root remains untouched.  Only after the
+no-update reconciliation and strict internal parity pass may one private K16
+update, dual-RP audit, rollback, and Source reproduction execute.
