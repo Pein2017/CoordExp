@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import math
 from collections.abc import Callable, Iterable, Sequence
 from typing import Any, Literal, Mapping, cast
 from weakref import ReferenceType, ref
@@ -587,6 +588,8 @@ def _apply_policy(
     input_ids: torch.Tensor,
     logits: torch.Tensor,
     plan: HFSharedSurfacePlan,
+    *,
+    repetition_penalty: float | None = None,
 ) -> torch.Tensor:
     """Use the HF generation processors in the frozen Task-1 order."""
 
@@ -597,7 +600,11 @@ def _apply_policy(
     )
 
     scores = RepetitionPenaltyLogitsProcessor(
-        penalty=plan.policy.repetition_penalty
+        penalty=(
+            plan.policy.repetition_penalty
+            if repetition_penalty is None
+            else repetition_penalty
+        )
     )(input_ids, logits)  # pyright: ignore[reportArgumentType] - HF stub aliases
     scores = TemperatureLogitsWarper(temperature=plan.policy.temperature)(
         input_ids, scores  # pyright: ignore[reportArgumentType] - HF stub aliases
@@ -858,6 +865,79 @@ class HFSharedSurfaceSession:
             logits_to_keep=positions,
             accounting_kind="source_owner",
         )[0]
+
+    def free_running_greedy_token_ids(
+        self,
+        *,
+        repetition_penalty: float,
+    ) -> tuple[int, ...]:
+        """Generate one clean-greedy sequence on the live BF16/FA2 surface.
+
+        This is an owner-level behavioral observation only.  It is deliberately
+        separate from sampler/replay groups and never supplies score-function
+        evidence or changes the frozen K16 policy contract.
+        """
+
+        self._require_open()
+        self._require_invariants()
+        if (
+            isinstance(repetition_penalty, bool)
+            or not isinstance(repetition_penalty, (int, float))
+            or not math.isfinite(float(repetition_penalty))
+            or float(repetition_penalty) < 1.0
+        ):
+            raise HFSharedSurfaceLiveError("greedy repetition penalty is invalid")
+        model = self._model
+        tokenizer = self._tokenizer
+        if model is None or tokenizer is None:
+            raise HFSharedSurfaceLiveError(
+                "shared-surface greedy references are unavailable"
+            )
+        stop_token_id = tokenizer.convert_tokens_to_ids(
+            self._plan.policy.stop_token
+        )
+        if (
+            isinstance(stop_token_id, bool)
+            or not isinstance(stop_token_id, int)
+            or stop_token_id < 0
+            or stop_token_id >= len(tokenizer)
+        ):
+            raise HFSharedSurfaceLiveError(
+                "shared-surface tokenizer lacks the exact im_end stop token"
+            )
+        generated: list[int] = []
+        device = next(iter(model.parameters())).device
+        for _token_index in range(self._plan.policy.max_new_tokens):
+            history = self._prompt + tuple(generated)
+            input_ids = torch.tensor((history,), dtype=torch.long, device=device)
+            attention_mask = torch.ones_like(input_ids)
+            logits = self._forward(
+                input_ids,
+                attention_mask,
+                retain_grad=False,
+                logits_to_keep=torch.tensor(
+                    [int(input_ids.shape[1]) - 1],
+                    dtype=torch.long,
+                    device=device,
+                ),
+                accounting_kind="source_greedy",
+            )[:, -1, :]
+            processed = _apply_policy(
+                input_ids,
+                logits,
+                self._plan,
+                repetition_penalty=float(repetition_penalty),
+            )
+            token_id = int(torch.argmax(processed, dim=-1)[0].item())
+            generated.append(token_id)
+            if token_id == stop_token_id:
+                break
+        else:
+            raise HFSharedSurfaceLiveError(
+                "shared-surface greedy reached the frozen token cap"
+            )
+        self._require_invariants()
+        return tuple(generated)
 
     def proposal_realized_margin_values(
         self,
@@ -1171,7 +1251,7 @@ class HFSharedSurfaceSession:
         retain_grad: bool,
         logits_to_keep: torch.Tensor | int = 0,
         accounting_kind: Literal[
-            "sample", "replay", "source_owner", "proposal_owner"
+            "sample", "replay", "source_owner", "source_greedy", "proposal_owner"
         ]
         | None = None,
         allow_parameter_update: bool = False,
@@ -1235,6 +1315,12 @@ class HFSharedSurfaceSession:
         if kind == "source_owner":
             if not retain_grad:
                 raise HFSharedSurfaceLiveError("Source owner rows must retain graph")
+            self._source_owner_forward_count += 1
+        elif kind == "source_greedy":
+            if retain_grad:
+                raise HFSharedSurfaceLiveError(
+                    "free-running Source greedy rows cannot retain graph"
+                )
             self._source_owner_forward_count += 1
         elif kind == "proposal_owner":
             if retain_grad or not allow_parameter_update:

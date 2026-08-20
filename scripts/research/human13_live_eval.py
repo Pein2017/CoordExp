@@ -89,6 +89,8 @@ def build_analyzer_output(
     malformed_row_count: int,
     runtime: Mapping[str, int | float],
     repetition_penalty: float = 1.0,
+    image_width: int | None = None,
+    image_height: int | None = None,
 ) -> dict[str, object]:
     """Build one strict input row for ``analyze_human13_k_union.py``."""
 
@@ -114,6 +116,17 @@ def build_analyzer_output(
     ):
         raise ValueError("terminal_token_index must identify the final generated token")
     evaluation_rp = _clean_greedy_repetition_penalty(repetition_penalty)
+    if (image_width is None) != (image_height is None):
+        raise ValueError("image_width and image_height must be provided together")
+    if image_width is not None and (
+        isinstance(image_width, bool)
+        or not isinstance(image_width, int)
+        or image_width <= 0
+        or isinstance(image_height, bool)
+        or not isinstance(image_height, int)
+        or image_height <= 0
+    ):
+        raise ValueError("image dimensions must be positive integers")
     source = tuple(getattr(image, "trajectories"))[0]
     binding = manifest.binding
     source_identity = binding.source
@@ -163,6 +176,9 @@ def build_analyzer_output(
         "source_trajectory_id": source.trajectory_id,
         "trajectory_id": bound_trajectory_id,
     }
+    if image_width is not None and image_height is not None:
+        provenance["image_width"] = image_width
+        provenance["image_height"] = image_height
     return {
         "image_id": image_id,
         "arm_id": arm_id,
@@ -659,6 +675,8 @@ def evaluate_hf_checkpoint(
                 malformed_row_count=len(dropped_predictions),
                 runtime={"decode_seconds": elapsed},
                 repetition_penalty=evaluation_rp,
+                image_width=int(example.image.width),
+                image_height=int(example.image.height),
             )
             # The exact processor-built prompt is part of the live Source
             # boundary.  Analyzer consumers ignore this additive field; the

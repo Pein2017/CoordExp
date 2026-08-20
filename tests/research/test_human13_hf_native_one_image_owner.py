@@ -25,6 +25,7 @@ from scripts.research.human13_hf_native_one_image_owner import (
     PreAcquisitionSourceOwners,
     RepositoryHFNativeOneImageOwner,
     SourceOwnerRequest,
+    _project_coordinate_bbox,
     build_repository_hf_native_owner,
     construct_hf_native_one_image_trajectory_ledger,
     hf_native_request_evidence_sha256,
@@ -111,6 +112,16 @@ def _source(*, session: object, model: object) -> PreAcquisitionSourceOwners:
         sample_group_count_at_freeze=0,
         replay_group_count_at_freeze=0,
     )
+
+
+def test_native_owner_projects_coordinate_bins_at_canonical_image_scale() -> None:
+    assert _project_coordinate_bbox(
+        ("<|coord_20|>", "<|coord_100|>", "<|coord_25|>", "<|coord_200|>"),
+        (0, 1, 2, 3),
+        image_width=1024,
+        image_height=1024,
+        field="training.predictions[0].bbox",
+    ) == (20, 102, 26, 205)
 
 
 def test_owner_rejects_late_witness_and_old_vllm_surrogate() -> None:

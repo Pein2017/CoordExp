@@ -9,17 +9,21 @@ teacher-forced checker agree exactly.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+import math
 from pathlib import Path
+from typing import cast
 
 from src.artifacts.json_values import json_sha256
+from src.data.geometry import COORD_TOKEN_PATTERN
 
 
-SCHEMA_VERSION = "human13_source_surface_reconciliation.v1"
+SCHEMA_VERSION = "human13_source_surface_reconciliation.v2"
 SOURCE_SURFACE = "gpu1:fp32/sdpa/batch1"
 TRAINING_SURFACE = "gpu0:bfloat16/flash_attention_2"
 _EXPECTED_AUDIT_RPS = (1.0, 1.1)
+_COORDINATE_TOKEN = COORD_TOKEN_PATTERN
 
 
 def _digest(value: object, *, field: str) -> str:
@@ -36,6 +40,245 @@ def _field(value: object, name: str) -> object:
     if isinstance(value, Mapping):
         return value.get(name)
     return getattr(value, name, None)
+
+
+def _box(value: Sequence[float], *, field: str) -> tuple[float, float, float, float]:
+    if len(value) != 4:
+        raise ValueError(f"{field} must contain four coordinates")
+    result = cast(
+        tuple[float, float, float, float],
+        tuple(float(item) for item in value),
+    )
+    if not all(math.isfinite(item) for item in result):
+        raise ValueError(f"{field} must contain finite coordinates")
+    x1, y1, x2, y2 = result
+    if not x1 < x2 or not y1 < y2:
+        raise ValueError(f"{field} is not a legal rectangle")
+    return result
+
+
+def _iou(first: Sequence[float], second: Sequence[float]) -> float:
+    x1, y1, x2, y2 = _box(first, field="first bbox")
+    a1, b1, a2, b2 = _box(second, field="second bbox")
+    intersection = max(0.0, min(x2, a2) - max(x1, a1)) * max(
+        0.0, min(y2, b2) - max(y1, b1)
+    )
+    first_area = (x2 - x1) * (y2 - y1)
+    second_area = (a2 - a1) * (b2 - b1)
+    return intersection / (first_area + second_area - intersection)
+
+
+@dataclass(frozen=True)
+class CoordinateAliasEvidence:
+    """One accepted coordinate-bin alias between the two audit surfaces."""
+
+    token_position: int
+    coordinate_role: str
+    source_token: str
+    training_token: str
+    source_bin: int
+    training_bin: int
+    delta_bin: int
+    source_bbox: tuple[float, float, float, float]
+    training_bbox: tuple[float, float, float, float]
+    owner_id: str
+    source_iou: float
+    training_iou: float
+    disposition: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "token_position": self.token_position,
+            "coordinate_role": self.coordinate_role,
+            "source_token": self.source_token,
+            "training_token": self.training_token,
+            "source_bin": self.source_bin,
+            "training_bin": self.training_bin,
+            "delta_bin": self.delta_bin,
+            "source_bbox": list(self.source_bbox),
+            "training_bbox": list(self.training_bbox),
+            "owner_id": self.owner_id,
+            "source_iou": self.source_iou,
+            "training_iou": self.training_iou,
+            "disposition": self.disposition,
+        }
+
+
+@dataclass(frozen=True)
+class CoordinateAliasReconciliation:
+    """Typed result of the fixed cross-surface coordinate-only admission."""
+
+    admitted: bool
+    mismatch_count: int
+    failure_reason: str | None
+    evidence: tuple[CoordinateAliasEvidence, ...] = ()
+
+    @property
+    def content_sha256(self) -> str:
+        return json_sha256(self._payload())
+
+    def _payload(self) -> dict[str, object]:
+        return {
+            "schema_version": "human13_coordinate_alias_reconciliation.v1",
+            "admitted": self.admitted,
+            "mismatch_count": self.mismatch_count,
+            "failure_reason": self.failure_reason,
+            "evidence": [item.to_dict() for item in self.evidence],
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        payload = self._payload()
+        payload["content_sha256"] = self.content_sha256
+        return payload
+
+
+def reconcile_coordinate_alias(
+    *,
+    source_tokens: Sequence[object],
+    training_tokens: Sequence[object],
+    coordinate_roles: Mapping[int, tuple[str, str]],
+    source_boxes: Mapping[str, Sequence[float]],
+    training_boxes: Mapping[str, Sequence[float]],
+    gt_boxes: Mapping[str, Sequence[float]],
+    owner_match: Mapping[str, str],
+    source_owner_rows: Mapping[str, int],
+    training_owner_rows: Mapping[str, int],
+    source_membership: Mapping[str, str],
+    training_membership: Mapping[str, str],
+    source_protected_g: Collection[str],
+    training_protected_g: Collection[str],
+) -> CoordinateAliasReconciliation:
+    """Admit only canonical owner-preserving coordinate aliases.
+
+    ``coordinate_roles`` is produced by the canonical parser/projector and
+    maps each generated token position to ``(owner_id, x1|y1|x2|y2)``.  This
+    deliberately treats arbitrary token-id differences as unsafe: only token
+    strings that decode to ``coord_<0..999>`` may use the fixed five-bin alias.
+    """
+
+    source = tuple(str(item) for item in source_tokens)
+    training = tuple(str(item) for item in training_tokens)
+    if len(source) != len(training):
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason="token_length_differs",
+        )
+    if dict(owner_match) != {
+        owner_id: owner_id for owner_id in source_boxes
+    } or set(training_boxes) != set(source_boxes):
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason="canonical owner assignment differs",
+        )
+    if dict(source_owner_rows) != dict(training_owner_rows):
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason="canonical owner row assignment differs",
+        )
+    if dict(source_membership) != dict(training_membership):
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason="G/H/M membership differs",
+        )
+    if set(source_protected_g) != set(training_protected_g):
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason="protected-G identity differs",
+        )
+    boxes: dict[str, tuple[float, float, float, float]] = {}
+    training_box_values: dict[str, tuple[float, float, float, float]] = {}
+    gt: dict[str, tuple[float, float, float, float]] = {}
+    try:
+        boxes = {
+            owner_id: _box(value, field=f"source bbox {owner_id}")
+            for owner_id, value in source_boxes.items()
+        }
+        training_box_values = {
+            owner_id: _box(value, field=f"training bbox {owner_id}")
+            for owner_id, value in training_boxes.items()
+        }
+        gt = {
+            owner_id: _box(value, field=f"ground-truth bbox {owner_id}")
+            for owner_id, value in gt_boxes.items()
+        }
+    except (TypeError, ValueError) as error:
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason=str(error),
+        )
+    if set(boxes) - set(gt):
+        return CoordinateAliasReconciliation(
+            admitted=False,
+            mismatch_count=1,
+            failure_reason="matched owner lacks ground-truth binding",
+        )
+    evidence: list[CoordinateAliasEvidence] = []
+    for position, (source_token, training_token) in enumerate(zip(source, training)):
+        if source_token == training_token:
+            continue
+        role_binding = coordinate_roles.get(position)
+        if role_binding is None:
+            return CoordinateAliasReconciliation(
+                admitted=False,
+                mismatch_count=1,
+                failure_reason=f"non-coordinate token differs at position {position}",
+            )
+        owner_id, role = role_binding
+        source_match = _COORDINATE_TOKEN.fullmatch(source_token)
+        training_match = _COORDINATE_TOKEN.fullmatch(training_token)
+        if source_match is None or training_match is None:
+            return CoordinateAliasReconciliation(
+                admitted=False,
+                mismatch_count=1,
+                failure_reason=f"non-coordinate token differs at position {position}",
+            )
+        source_bin = int(source_match.group(1))
+        training_bin = int(training_match.group(1))
+        delta_bin = training_bin - source_bin
+        if abs(delta_bin) > 5:
+            return CoordinateAliasReconciliation(
+                admitted=False,
+                mismatch_count=1,
+                failure_reason=(
+                    f"coordinate delta exceeds five at position {position}: "
+                    f"{delta_bin}"
+                ),
+            )
+        if owner_id not in boxes or owner_id not in training_box_values:
+            return CoordinateAliasReconciliation(
+                admitted=False,
+                mismatch_count=1,
+                failure_reason=f"coordinate owner {owner_id} is not matched",
+            )
+        evidence.append(
+            CoordinateAliasEvidence(
+                token_position=position,
+                coordinate_role=role,
+                source_token=source_token,
+                training_token=training_token,
+                source_bin=source_bin,
+                training_bin=training_bin,
+                delta_bin=delta_bin,
+                source_bbox=boxes[owner_id],
+                training_bbox=training_box_values[owner_id],
+                owner_id=owner_id,
+                source_iou=_iou(boxes[owner_id], gt[owner_id]),
+                training_iou=_iou(training_box_values[owner_id], gt[owner_id]),
+                disposition="metric_equivalent_coordinate_alias",
+            )
+        )
+    return CoordinateAliasReconciliation(
+        admitted=True,
+        mismatch_count=0,
+        failure_reason=None,
+        evidence=tuple(evidence),
+    )
 
 
 def _runtime_payload(value: Mapping[str, object]) -> dict[str, object]:
@@ -94,6 +337,7 @@ class SourceSurfaceReconciliationRequest:
     source_audit_sha256s: tuple[tuple[float, str], ...]
     decodes: tuple[object, ...]
     check: Callable[[], int]
+    coordinate_alias_check: Callable[[], CoordinateAliasReconciliation] | None = None
 
     def __post_init__(self) -> None:
         if not callable(self.check):
@@ -219,6 +463,7 @@ class SourceSurfaceReconciliationReceipt:
     checked_token_count: int
     mismatch_count: int
     failure_reason: str | None
+    coordinate_alias: CoordinateAliasReconciliation | None = None
 
     @property
     def content_sha256(self) -> str:
@@ -256,6 +501,11 @@ class SourceSurfaceReconciliationReceipt:
             "checked_token_count": self.checked_token_count,
             "mismatch_count": self.mismatch_count,
             "failure_reason": self.failure_reason,
+            "coordinate_alias": (
+                self.coordinate_alias.to_dict()
+                if self.coordinate_alias is not None
+                else None
+            ),
         }
 
     def to_dict(self) -> dict[str, object]:
@@ -270,6 +520,7 @@ def _receipt(
     mismatch_count: int,
     failure_reason: str | None,
     admitted: bool,
+    coordinate_alias: CoordinateAliasReconciliation | None = None,
 ) -> SourceSurfaceReconciliationReceipt:
     identity = request.training_identity
     parameter_state = _field(identity, "parameter_state_sha256")
@@ -315,15 +566,16 @@ def _receipt(
         ),
         mismatch_count=mismatch_count,
         failure_reason=failure_reason,
+        coordinate_alias=coordinate_alias,
     )
 
 
 def reconcile_source_surface(
     request: SourceSurfaceReconciliationRequest,
 ) -> SourceSurfaceReconciliationReceipt:
-    """Admit only exact Source/training identity and teacher-forced agreement.
+    """Admit immutable identities plus the fixed cross-surface checker.
 
-    The callback is the existing witness owner.  This function never computes
+    The callbacks are existing scientific owners.  This function never computes
     logits, changes tolerances, or substitutes another model surface.
     """
 
@@ -460,6 +712,29 @@ def reconcile_source_surface(
             failure_reason="; ".join(mismatches),
             admitted=False,
         )
+    coordinate_alias: CoordinateAliasReconciliation | None = None
+    if request.coordinate_alias_check is not None:
+        try:
+            coordinate_alias = request.coordinate_alias_check()
+            if not isinstance(coordinate_alias, CoordinateAliasReconciliation):
+                raise TypeError("coordinate alias checker returned an invalid receipt")
+        except BaseException as error:
+            return _receipt(
+                request,
+                mismatch_count=1,
+                failure_reason=(
+                    f"coordinate_alias_checker_error:{type(error).__name__}: {error}"
+                ),
+                admitted=False,
+            )
+        if not coordinate_alias.admitted:
+            return _receipt(
+                request,
+                mismatch_count=max(1, coordinate_alias.mismatch_count),
+                failure_reason=coordinate_alias.failure_reason,
+                admitted=False,
+                coordinate_alias=coordinate_alias,
+            )
     try:
         changed = request.check()
         if isinstance(changed, bool) or not isinstance(changed, int) or changed < 0:
@@ -472,6 +747,7 @@ def reconcile_source_surface(
                 f"checker_error:{type(error).__name__}: {error}"
             ),
             admitted=False,
+            coordinate_alias=coordinate_alias,
         )
     if changed:
         return _receipt(
@@ -479,12 +755,14 @@ def reconcile_source_surface(
             mismatch_count=changed,
             failure_reason=f"teacher_forced_greedy_changed_tokens={changed}",
             admitted=False,
+            coordinate_alias=coordinate_alias,
         )
     return _receipt(
         request,
         mismatch_count=0,
         failure_reason=None,
         admitted=True,
+        coordinate_alias=coordinate_alias,
     )
 
 
@@ -494,5 +772,8 @@ __all__ = [
     "TRAINING_SURFACE",
     "SourceSurfaceReconciliationReceipt",
     "SourceSurfaceReconciliationRequest",
+    "CoordinateAliasEvidence",
+    "CoordinateAliasReconciliation",
+    "reconcile_coordinate_alias",
     "reconcile_source_surface",
 ]

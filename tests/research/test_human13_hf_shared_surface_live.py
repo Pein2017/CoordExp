@@ -378,6 +378,23 @@ def test_source_owner_raw_rows_share_model_graph_and_precede_acquisition() -> No
     assert receipt.no_cache_forward_count == receipt.total_forward_count
 
 
+def test_free_running_greedy_owner_uses_updated_history_and_stop() -> None:
+    session, _assembly, _skeleton = _open()
+    try:
+        generated = session.free_running_greedy_token_ids(
+            repetition_penalty=1.0
+        )
+
+        assert generated == (0, 3)
+        assert [
+            tuple(call["input_ids"].shape)
+            for call in session._model.forward_calls
+        ] == [(1, 3), (1, 4)]
+        assert session.source_owner_forward_count == 2
+    finally:
+        session.__exit__(RuntimeError, RuntimeError("test terminal"), None)
+
+
 def test_canonical_replay_projection_uses_captured_tokenizer_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

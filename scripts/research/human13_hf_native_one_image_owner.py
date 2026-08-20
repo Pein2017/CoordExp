@@ -8,7 +8,7 @@ older vLLM ``AdmittedPublication`` contract.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import math
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
@@ -23,11 +23,14 @@ from scripts.research.human13_hf_native_projection import (
     hf_native_request_evidence_sha256 as _projected_request_evidence_sha256,
 )
 from scripts.research.human13_source_surface_reconciliation import (
+    CoordinateAliasReconciliation,
     SourceSurfaceReconciliationReceipt,
     SourceSurfaceReconciliationRequest,
+    reconcile_coordinate_alias,
     reconcile_source_surface,
 )
 from src.artifacts.json_values import json_sha256
+from src.data.geometry import COORD_TOKEN_PATTERN, coord_bins_to_pixel_xyxy, parse_coord_token
 
 if TYPE_CHECKING:
     from scripts.research.human13_adamw_proposal_preservation import FrozenWitnessBank
@@ -52,6 +55,30 @@ class HFNativeOneImageOwnerError(RuntimeError):
         self.disposition = disposition
         self.reconciliation_receipt = reconciliation_receipt
         super().__init__(f"{disposition}: {reason}")
+
+
+def _project_coordinate_bbox(
+    labels: Sequence[str],
+    positions: Sequence[int],
+    *,
+    image_width: int,
+    image_height: int,
+    field: str,
+) -> tuple[int, int, int, int]:
+    """Project canonical norm-1000 coordinate tokens into pixel ``xyxy``."""
+
+    if len(positions) != 4:
+        raise ValueError(f"{field} must contain four coordinate positions")
+    bins = tuple(
+        parse_coord_token(labels[position], field=f"{field}[{index}]")
+        for index, position in enumerate(positions)
+    )
+    return coord_bins_to_pixel_xyxy(
+        bins,
+        image_width=image_width,
+        image_height=image_height,
+        field=field,
+    )
 
 
 def _digest(value: object, *, field: str) -> str:
@@ -910,8 +937,18 @@ def prepare_repository_source_owners(
     source_adapter_sha256s: list[str] = []
     source_embedding_delta_sha256s: list[str] = []
     source_base_model_paths: list[str] = []
+    source_surface_snapshots: list[
+        tuple[
+            float,
+            tuple[int, ...],
+            tuple[Mapping[str, Any], ...],
+            Mapping[str, Any],
+        ]
+    ] = []
+    source_image_dimensions: tuple[int, int] | None = None
     manifest_image = cast(Any, request.manifest_image)
     surface = cast(Any, request.session)
+    owners = {owner.owner_id: owner for owner in manifest_image.owners}
     for rp, output in request.source_audits.items():
         prompt = output.get("prompt_token_ids")
         generated = output.get("generated_token_ids")
@@ -922,6 +959,29 @@ def prepare_repository_source_owners(
         prompt_values = cast(list[Any], prompt)
         generated_values = cast(list[Any], generated)
         prediction_values = cast(list[Mapping[str, Any]], predictions)
+        width_value = output.get("image_width", provenance.get("image_width"))
+        height_value = output.get("image_height", provenance.get("image_height"))
+        if width_value is not None or height_value is not None:
+            if (
+                isinstance(width_value, bool)
+                or not isinstance(width_value, int)
+                or width_value <= 0
+                or isinstance(height_value, bool)
+                or not isinstance(height_value, int)
+                or height_value <= 0
+            ):
+                raise HFNativeOneImageOwnerError(
+                    "Source audit image dimensions are malformed"
+                )
+            candidate_dimensions = (width_value, height_value)
+            if (
+                source_image_dimensions is not None
+                and source_image_dimensions != candidate_dimensions
+            ):
+                raise HFNativeOneImageOwnerError(
+                    "Source audits disagree on image dimensions"
+                )
+            source_image_dimensions = candidate_dimensions
         current_predictions = tuple(
             CurrentPrediction(
                 generated_order=int(row["generated_order"]),
@@ -984,7 +1044,6 @@ def prepare_repository_source_owners(
             owner_iou_threshold=matcher.owner_iou_threshold,
         )
         rows = {row.generated_order: row for row in frontier.rows}
-        owners = {owner.owner_id: owner for owner in manifest_image.owners}
         owner_rows = tuple(
             sorted(
                 (
@@ -1000,6 +1059,14 @@ def prepare_repository_source_owners(
             )
         )
         sealed.append(SealedSourceDecode(1584, rp, tuple(prompt_values), tuple(generated_values), owner_rows))
+        source_surface_snapshots.append(
+            (
+                float(rp),
+                tuple(int(value) for value in generated_values),
+                tuple(prediction_values),
+                cast(Mapping[str, Any], matched),
+            )
+        )
         if rp == 1.0:
             boundaries.append(SourceBoundaryInput(frontier, tuple(prompt_values), rp, manifest_image.image_sha256))
         audit_hashes.append((rp, json_sha256(output)))
@@ -1041,12 +1108,234 @@ def prepare_repository_source_owners(
         frozen_before_acquisition=True,
     )
     frozen_bank: dict[str, Any] = {}
+    alias_cache: dict[str, CoordinateAliasReconciliation] = {}
+
+    def _token_labels(token_ids: tuple[int, ...]) -> tuple[str, ...]:
+        tokenizer = getattr(surface, "_tokenizer", None)
+        convert = getattr(tokenizer, "convert_ids_to_tokens", None)
+        if not callable(convert):
+            raise HFNativeOneImageOwnerError(
+                "shared session lacks canonical token-string conversion",
+                disposition="source_surface_coordinate_alias_unavailable",
+            )
+        labels: list[str] = []
+        for token_id in token_ids:
+            value = convert(int(token_id))
+            if isinstance(value, list):
+                if len(value) != 1:
+                    raise HFNativeOneImageOwnerError(
+                        "canonical tokenizer returned multiple token strings",
+                        disposition="source_surface_coordinate_alias_unavailable",
+                    )
+                value = value[0]
+            labels.append(str(value))
+        return tuple(labels)
+
+    def _coordinate_bin(label: str) -> int | None:
+        match = COORD_TOKEN_PATTERN.fullmatch(label)
+        return (
+            parse_coord_token(label, field="source_surface.coordinate")
+            if match is not None
+            else None
+        )
+
+    def coordinate_alias_check() -> CoordinateAliasReconciliation:
+        cached = alias_cache.get("result")
+        if cached is not None:
+            return cached
+        try:
+            free_running = getattr(surface, "free_running_greedy_token_ids", None)
+            if not callable(free_running):
+                raise HFNativeOneImageOwnerError(
+                    "shared session lacks the free-running BF16/FA2 greedy owner surface",
+                    disposition="source_surface_coordinate_alias_unavailable",
+                )
+            training_sequences = tuple(
+                tuple(
+                    int(value)
+                    for value in cast(
+                        Sequence[Any],
+                        free_running(repetition_penalty=float(snapshot[0])),
+                    )
+                )
+                for snapshot in source_surface_snapshots
+            )
+            if len(training_sequences) != len(source_surface_snapshots):
+                raise HFNativeOneImageOwnerError(
+                    "training greedy surface count differs from Source audits",
+                    disposition="source_surface_coordinate_alias_unavailable",
+                )
+            all_evidence = []
+            if source_image_dimensions is None:
+                result = CoordinateAliasReconciliation(
+                    admitted=False,
+                    mismatch_count=1,
+                    failure_reason=(
+                        "Source audit lacks canonical image_width/image_height"
+                    ),
+                )
+                alias_cache["result"] = result
+                return result
+            image_width, image_height = source_image_dimensions
+            for snapshot_index, (
+                _rp,
+                source_ids,
+                source_predictions,
+                source_match,
+            ) in enumerate(source_surface_snapshots):
+                training_ids = tuple(training_sequences[snapshot_index])
+                source_labels = _token_labels(source_ids)
+                training_labels = _token_labels(training_ids)
+                if len(source_labels) != len(training_labels):
+                    result = CoordinateAliasReconciliation(
+                        admitted=False,
+                        mismatch_count=1,
+                        failure_reason="training greedy token length differs",
+                    )
+                    alias_cache["result"] = result
+                    return result
+                owner_by_order = {
+                    int(receipt["generated_order"]): str(owner_id)
+                    for owner_id, receipt in source_match["owner_matches"].items()
+                }
+                training_predictions: list[dict[str, Any]] = []
+                coordinate_roles: dict[int, tuple[str, str]] = {}
+                for row in source_predictions:
+                    order = int(row["generated_order"])
+                    owner_id = owner_by_order.get(order)
+                    coordinate_positions = [
+                        position
+                        for position in range(
+                            int(row["token_start"]), int(row["token_end"])
+                        )
+                        if 0 <= position < len(source_labels)
+                        and _coordinate_bin(source_labels[position]) is not None
+                    ]
+                    if len(coordinate_positions) != 4:
+                        result = CoordinateAliasReconciliation(
+                            admitted=False,
+                            mismatch_count=1,
+                            failure_reason=(
+                                f"row {order} lacks four canonical coordinate tokens"
+                            ),
+                        )
+                        alias_cache["result"] = result
+                        return result
+                    for role, position in zip(
+                        ("x1", "y1", "x2", "y2"),
+                        coordinate_positions,
+                        strict=True,
+                    ):
+                        source_bin = _coordinate_bin(source_labels[position])
+                        training_bin = _coordinate_bin(training_labels[position])
+                        if source_bin is None or training_bin is None:
+                            result = CoordinateAliasReconciliation(
+                                admitted=False,
+                                mismatch_count=1,
+                                failure_reason=(
+                                    f"row {order} has a non-canonical coordinate token"
+                                ),
+                            )
+                            alias_cache["result"] = result
+                            return result
+                        if owner_id is not None:
+                            coordinate_roles[position] = (owner_id, role)
+                    training_box = _project_coordinate_bbox(
+                        training_labels,
+                        coordinate_positions,
+                        image_width=image_width,
+                        image_height=image_height,
+                        field=f"training.predictions[{order}].bbox",
+                    )
+                    training_row = dict(row)
+                    training_row["bbox"] = list(training_box)
+                    training_predictions.append(training_row)
+                training_match = _match_prefix(
+                    manifest_image,
+                    training_predictions,
+                    duplicate_iou_threshold=matcher.duplicate_iou_threshold,
+                    owner_iou_threshold=matcher.owner_iou_threshold,
+                )
+                source_boxes = {
+                    str(owner_id): cast(Sequence[float], receipt["bbox"])
+                    for owner_id, receipt in source_match["owner_matches"].items()
+                }
+                training_boxes = {
+                    str(owner_id): cast(Sequence[float], receipt["bbox"])
+                    for owner_id, receipt in training_match["owner_matches"].items()
+                }
+                source_owner_rows = {
+                    str(owner_id): int(receipt["generated_order"])
+                    for owner_id, receipt in source_match["owner_matches"].items()
+                }
+                training_owner_rows = {
+                    str(owner_id): int(receipt["generated_order"])
+                    for owner_id, receipt in training_match["owner_matches"].items()
+                }
+                gt_boxes = {
+                    str(owner.owner_id): tuple(float(value) for value in owner.bbox)
+                    for owner in manifest_image.owners
+                }
+                source_membership = {
+                    owner_id: str(owners[owner_id].stratum)
+                    for owner_id in source_boxes
+                    if owner_id in owners
+                }
+                training_membership = {
+                    owner_id: str(owners[owner_id].stratum)
+                    for owner_id in training_boxes
+                    if owner_id in owners
+                }
+                result = reconcile_coordinate_alias(
+                    source_tokens=source_labels,
+                    training_tokens=training_labels,
+                    coordinate_roles=coordinate_roles,
+                    source_boxes=source_boxes,
+                    training_boxes=training_boxes,
+                    gt_boxes=gt_boxes,
+                    owner_match={owner_id: owner_id for owner_id in source_boxes},
+                    source_owner_rows=source_owner_rows,
+                    training_owner_rows=training_owner_rows,
+                    source_membership=source_membership,
+                    training_membership=training_membership,
+                    source_protected_g=tuple(
+                        owner_id
+                        for owner_id, stratum in source_membership.items()
+                        if stratum == "G"
+                    ),
+                    training_protected_g=tuple(
+                        owner_id
+                        for owner_id, stratum in training_membership.items()
+                        if stratum == "G"
+                    ),
+                )
+                if not result.admitted:
+                    alias_cache["result"] = result
+                    return result
+                all_evidence.extend(result.evidence)
+            result = CoordinateAliasReconciliation(
+                admitted=True,
+                mismatch_count=0,
+                failure_reason=None,
+                evidence=tuple(all_evidence),
+            )
+        except BaseException as error:
+            result = CoordinateAliasReconciliation(
+                admitted=False,
+                mismatch_count=1,
+                failure_reason=(
+                    f"coordinate_alias_checker_error:{type(error).__name__}: {error}"
+                ),
+            )
+        alias_cache["result"] = result
+        return result
 
     def freeze_and_check() -> int:
         frozen_bank["bank"] = measurement.freeze_witness_bank(
             binding=witness_binding
         )
-        return measurement.teacher_forced_greedy_change_count()
+        result = coordinate_alias_check()
+        return 0 if result.admitted else max(1, result.mismatch_count)
 
     reconciliation = reconcile_source_surface(
         SourceSurfaceReconciliationRequest(
@@ -1089,6 +1378,7 @@ def prepare_repository_source_owners(
             source_audit_sha256s=tuple(audit_hashes),
             decodes=tuple(sealed),
             check=freeze_and_check,
+            coordinate_alias_check=coordinate_alias_check,
         )
     )
     if not reconciliation.admitted:

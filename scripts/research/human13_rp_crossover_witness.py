@@ -607,6 +607,33 @@ class WitnessMeasurement:
                         changed += 1
         return changed
 
+    def teacher_forced_greedy_token_ids(self) -> tuple[tuple[int, ...], ...]:
+        """Return processed teacher-forced argmax IDs for each sealed decode.
+
+        This is an observation surface for cross-surface behavioral
+        reconciliation.  It does not alter the strict sampler-to-replay parity
+        contract, which remains owned by the shared-surface replay receipts.
+        """
+
+        result: list[tuple[int, ...]] = []
+        for decode in self._decodes:
+            indices = tuple(range(len(decode.generated_token_ids)))
+            with torch.no_grad():
+                rows = self._rows(decode, indices)
+                argmax_ids: list[int] = []
+                for offset, token_index in enumerate(indices):
+                    processed = self._processed(decode, token_index, rows[offset])
+                    if not bool(torch.isfinite(processed).all().item()):
+                        raise WitnessMeasurementError(
+                            "teacher-forced greedy row is not finite"
+                        )
+                    best = torch.max(processed)
+                    argmax_ids.append(
+                        int(torch.nonzero(processed == best, as_tuple=False)[0].item())
+                    )
+            result.append(tuple(argmax_ids))
+        return tuple(result)
+
 
 def decision_margin_dose_statistics(
     *, source_margins: Mapping[str, float], applied_margins: Mapping[str, float]
