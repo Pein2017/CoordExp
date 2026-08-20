@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-METRIC_KEYS = ("loss/total", "loss/base_ce", "acc_top1", "acc_top5")
+METRIC_KEYS = ("loss/total", "loss/base_ce/weighted", "acc_top1", "acc_top5")
 COUNT_KEYS = (
     "count/examples",
     "count/packs",

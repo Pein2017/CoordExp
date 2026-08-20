@@ -179,11 +179,49 @@
 
 ## 4. Wave 4 - Canonical Loss Telemetry
 
-- [ ] 4.1 Add artifact-first failing tests for exact train and eval row schemas using `loss/<term>/raw`, `loss/<term>/weighted`, `loss/total`, matching counts/denominators/finite fields, gate-ablation retention, optional-family omission, and JSON-null normalization of computed non-finite diagnostics.
-- [ ] 4.2 Update loss-bundle finalization and rank-zero train/eval projection to emit the new explicit field families, remove the ambiguous `loss/<term>` aliases, and keep total loss equal to the sum of weighted objective terms.
-- [ ] 4.3 Search and migrate all current code, tests, scripts, selectors, and operator tooling that consume the old per-term fields; preserve historical JSONL and historical readers as commit-bound evidence rather than rewriting artifacts.
-- [ ] 4.4 Verify bounded row shape for enabled baseline, gate ablation, enabled coordinate auxiliary, omitted coordinate auxiliary, and unsafe-step serialization without adding per-rank streams or new artifact families.
-- [ ] 4.5 Gate Wave 4 with artifact/loss/eval integration tests, an executed one-step row projection probe, strict OpenSpec validation, and old-field and duplicate-alias residue searches; do not begin Wave 5 with an unresolved test or validation failure.
+- [x] 4.1 Add artifact-first failing tests for exact train and eval row schemas using `loss/<term>/raw`, `loss/<term>/weighted`, `loss/total`, matching counts/denominators/finite fields, gate-ablation retention, optional-family omission, and JSON-null normalization of computed non-finite diagnostics.
+- [x] 4.2 Update loss-bundle finalization and rank-zero train/eval projection to emit the new explicit field families, remove the ambiguous `loss/<term>` aliases, and keep total loss equal to the sum of weighted objective terms.
+- [x] 4.3 Search and migrate all current code, tests, scripts, selectors, and operator tooling that consume the old per-term fields; preserve historical JSONL and historical readers as commit-bound evidence rather than rewriting artifacts.
+- [x] 4.4 Verify bounded row shape for enabled baseline, gate ablation, enabled coordinate auxiliary, omitted coordinate auxiliary, and unsafe-step serialization without adding per-rank streams or new artifact families.
+- [x] 4.5 Gate Wave 4 with artifact/loss/eval integration tests, an executed one-step row projection probe, strict OpenSpec validation, and old-field and duplicate-alias residue searches; do not begin Wave 5 with an unresolved test or validation failure.
+
+> **Wave 4 closed (2026-08-20, opus builder — session dropped once on an
+> API error and was resumed with edits intact; zero correction rounds):**
+> rows now emit `loss/<term>/raw` + `/weighted` + `/selected_count` with
+> the existing `/segment_count`, `/token_weighted_diag`, `finite/<term>`
+> namespaces; bare `loss/<term>` aliases removed with NO dual-write; the
+> same projection serves train and forward eval, asserted on all five 4.4
+> shapes incl. unsafe-step JSON-null normalization (`non_finite_fields`
+> exact list, no NaN/Infinity literals in bytes). RED first: 6 failed /
+> 4 passed artifact-first module, with the 4 green-at-birth nodes proven
+> by reverted mutations (I-5 leak injection; I-1 guard neutralization).
+> Consumer migration: 9 files, not entry-audit F-6's 4 (Waves 2-3 added
+> four test files; `tests/eval/test_forward_eval.py` builds keys via
+> f-strings and was invisible to the literal grep — methodological note
+> recorded in amend-9 for Wave 5.5). Carried obligations: **I-5
+> discharged** (backward_loss/backward_contribution/backend_gradient_scale
+> asserted absent from persisted rows, mutation-receipted); **I-4
+> discharged** (`_is_replicated_eval_reduction` single predicate, truth
+> table + single-call-site test); **I-1/I-6 partial** — `_total_loss`
+> fail-closes missing tensor `backward_loss`
+> (`trainer.loss_bundle_backward_loss_missing`), documented duck-typed
+> path retained; named remainder for Wave 5:
+> `src/losses/runner.py:1044` micro-artifact `backward_contribution`
+> fallback. Pre-existing count defects (mean-reduced `count/packs`/
+> `count/examples`, unweighted train `token_weighted_diag`) NOT fixed —
+> ws-1 row shapes did not force them; source TODO with provenance
+> `2b0a2165a` records both. Identity-pin flip accepted (amend-9): V1
+> test-module drift guard re-pinned, probe-script provenance seal
+> `dfbb4d63` untouched. Flake disclosure: one 1-of-9 non-reproducing
+> failure in the untouched Wave-2 probe
+> `test_gate_ablation_creates_no_autograd_edge_into_the_objective`
+> (graph-shape assert; 200/200 direct trials stable; builder attribution:
+> cross-module global-state leakage into `plan.backend_gradient_scale`) —
+> recorded as a pre-existing test-isolation hazard for Wave 5.5 review,
+> not absorbed. Gate 704/0/0 (builder x7 + lead replay); residue 77 hits
+> all suffixed, zero bare; strict validation valid; determinant
+> fingerprints + payload baseline byte-identical; frozen subtree
+> `2fe137cc` re-asserted and pinned inside the new test module.
 
 ## 5. Wave 5 - Documentation And Production-Shaped Acceptance
 

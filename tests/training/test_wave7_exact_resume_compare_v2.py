@@ -348,9 +348,20 @@ def _run_pre_child(
 
 
 def test_v1_source_and_tests_remain_byte_frozen() -> None:
+    # `V1_SOURCE_SHA256` pins the V1 PROBE SCRIPT and is the provenance seal on
+    # the completed exact-resume evidence: it is never re-pinned and is
+    # untouched by the Wave-4 loss-telemetry rename.
     assert _sha256(v1_test.SCRIPT) == compare.V1_SOURCE_SHA256
+    # The second pin is a local drift guard on the V1 TEST MODULE whose helpers
+    # V2 imports; it exists to force a conscious acknowledgement whenever that
+    # module changes. Declared Wave-4 flip
+    # (`standardize-coordexp-swift-supervised-losses`, task 4.3): the module's
+    # synthetic `_train_row` filler carried the ambiguous bare per-term alias
+    # and now carries the explicit `.../weighted` name instead. That key is
+    # never asserted and the probe treats every `loss/` leaf generically, so
+    # no comparison semantics moved.
     assert _sha256(Path(v1_test.__file__)) == (
-        "2dc19c32fedf0e4b7e93010a6f1f7b027bcebe606f17116de799e46143d2d5ca"
+        "04170fbccd4be311023f5d337d50f78cc3d9a4747e4123b32deb6756f5ee6edf"
     )
 
 

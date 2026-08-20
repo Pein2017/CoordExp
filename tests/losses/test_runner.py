@@ -129,10 +129,10 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
     assert bundle["metrics"]["loss/total"] == pytest.approx(
         float(expected_total.detach())
     )
-    assert bundle["metrics"]["loss/base_ce"] == pytest.approx(
+    assert bundle["metrics"]["loss/base_ce/weighted"] == pytest.approx(
         float((expected_base.loss * 1.0).detach())
     )
-    assert bundle["metrics"]["loss/token_type_gate"] == pytest.approx(
+    assert bundle["metrics"]["loss/token_type_gate/weighted"] == pytest.approx(
         float((expected_gate.loss * 0.5).detach())
     )
     assert gate_term["diagnostics"]["selected_count_by_token_type"] == {

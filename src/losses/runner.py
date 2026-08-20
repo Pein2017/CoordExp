@@ -515,7 +515,14 @@ class LossRunner:
         }
         for term in terms:
             name = str(term["name"])
-            metrics[f"loss/{name}"] = float(term["weighted_loss"])
+            # Explicit raw/weighted families (design decision 5). The
+            # ambiguous bare `loss/<name>` alias is NOT dual-written: it named
+            # the weighted value while reading like the term's own value.
+            metrics[f"loss/{name}/raw"] = float(term["raw_loss"])
+            metrics[f"loss/{name}/weighted"] = float(term["weighted_loss"])
+            metrics[f"loss/{name}/selected_count"] = float(
+                term.get("selected_count", 0)
+            )
             metrics[f"loss/{name}/token_weighted_diag"] = float(
                 term["token_weighted_diagnostic"]
             )
@@ -1302,7 +1309,12 @@ def _build_metrics(
         ),
     }
     for term in terms:
-        metrics[f"loss/{term.name}"] = _float_value(term.weighted_loss)
+        # Same explicit family as `finalize_planned_step` (design decision 5):
+        # one projection for micro-step bundles, planned-step finalization,
+        # train rows, and forward-eval rows.
+        metrics[f"loss/{term.name}/raw"] = _float_value(term.raw_loss)
+        metrics[f"loss/{term.name}/weighted"] = _float_value(term.weighted_loss)
+        metrics[f"loss/{term.name}/selected_count"] = float(term.selected_count)
         metrics[f"loss/{term.name}/token_weighted_diag"] = _float_value(
             term.token_weighted_diagnostic
         )

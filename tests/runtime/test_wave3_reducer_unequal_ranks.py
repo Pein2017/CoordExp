@@ -90,8 +90,11 @@ def test_train_reducer_sums_unequal_rank_local_semantic_contributions() -> None:
     gatherer = _PeerGatherer(
         {
             "metrics": {
-                "loss/base_ce": 2.4,
-                "loss/token_type_gate": 0.3,
+                "loss/base_ce/raw": 2.4,
+                "loss/base_ce/weighted": 2.4,
+                "loss/base_ce/selected_count": 4.0,
+                "loss/token_type_gate/raw": 3.0,
+                "loss/token_type_gate/weighted": 0.3,
                 "loss/total": 2.7,
                 "loss/base_ce/segment_count": 4.0,
                 "loss/base_ce/token_weighted_diag": 1.5,
@@ -108,8 +111,11 @@ def test_train_reducer_sums_unequal_rank_local_semantic_contributions() -> None:
 
     reduced = runtime.gather_metrics(
         {
-            "loss/base_ce": 0.8,
-            "loss/token_type_gate": 0.1,
+            "loss/base_ce/raw": 0.8,
+            "loss/base_ce/weighted": 0.8,
+            "loss/base_ce/selected_count": 2.0,
+            "loss/token_type_gate/raw": 1.0,
+            "loss/token_type_gate/weighted": 0.1,
             "loss/total": 0.9,
             "loss/base_ce/segment_count": 4.0,
             "loss/base_ce/token_weighted_diag": 0.5,
@@ -120,8 +126,15 @@ def test_train_reducer_sums_unequal_rank_local_semantic_contributions() -> None:
     )["metrics"]
 
     # raw/weighted aggregation: exact sum of the rank-local contributions.
-    assert reduced["loss/base_ce"] == pytest.approx(3.2)
-    assert reduced["loss/token_type_gate"] == pytest.approx(0.4)
+    # The Wave-4 rename must keep BOTH explicit families classified as partial
+    # objective contributions -- a `/raw` key that fell through to the mean
+    # branch would silently report half the global raw value at world size two.
+    assert reduced["loss/base_ce/raw"] == pytest.approx(3.2)
+    assert reduced["loss/token_type_gate/raw"] == pytest.approx(4.0)
+    assert reduced["loss/base_ce/weighted"] == pytest.approx(3.2)
+    assert reduced["loss/token_type_gate/weighted"] == pytest.approx(0.4)
+    # Rank-local selected counts are partial too: summed, never averaged.
+    assert reduced["loss/base_ce/selected_count"] == pytest.approx(6.0)
     assert reduced["loss/total"] == pytest.approx(3.6)
     # ... and never the plain mean it used to be.
     assert reduced["loss/total"] != pytest.approx(1.8)
@@ -139,8 +152,8 @@ def test_train_reducer_total_equals_sum_of_reduced_weighted_terms() -> None:
     gatherer = _PeerGatherer(
         {
             "metrics": {
-                "loss/base_ce": 2.4,
-                "loss/coord_gaussian_rps": 0.75,
+                "loss/base_ce/weighted": 2.4,
+                "loss/coord_gaussian_rps/weighted": 0.75,
                 "loss/total": 3.15,
             }
         }
@@ -148,8 +161,8 @@ def test_train_reducer_total_equals_sum_of_reduced_weighted_terms() -> None:
     runtime = _runtime(world_size=2, gatherer=gatherer)
     reduced = runtime.gather_metrics(
         {
-            "loss/base_ce": 0.8,
-            "loss/coord_gaussian_rps": 0.25,
+            "loss/base_ce/weighted": 0.8,
+            "loss/coord_gaussian_rps/weighted": 0.25,
             "loss/total": 1.05,
         },
         planned_step_id=7,
@@ -157,7 +170,7 @@ def test_train_reducer_total_equals_sum_of_reduced_weighted_terms() -> None:
     )["metrics"]
 
     assert reduced["loss/total"] == pytest.approx(
-        reduced["loss/base_ce"] + reduced["loss/coord_gaussian_rps"]
+        reduced["loss/base_ce/weighted"] + reduced["loss/coord_gaussian_rps/weighted"]
     )
     assert reduced["loss/total"] == pytest.approx(4.2)
 
@@ -165,12 +178,12 @@ def test_train_reducer_total_equals_sum_of_reduced_weighted_terms() -> None:
 def test_world_size_one_train_reduction_equals_rank_local_values() -> None:
     runtime = _runtime(world_size=1)
     reduced = runtime.gather_metrics(
-        {"loss/base_ce": 0.8, "loss/total": 0.9, "acc_top1": 0.5, "acc_top5": 1.0},
+        {"loss/base_ce/weighted": 0.8, "loss/total": 0.9, "acc_top1": 0.5, "acc_top5": 1.0},
         planned_step_id=7,
         split="train",
         accuracy_stats={"top1_correct": 1, "top5_correct": 2, "atom_count": 2},
     )
-    assert reduced["metrics"]["loss/base_ce"] == pytest.approx(0.8)
+    assert reduced["metrics"]["loss/base_ce/weighted"] == pytest.approx(0.8)
     assert reduced["metrics"]["loss/total"] == pytest.approx(0.9)
     assert reduced["metrics"]["acc_top1"] == pytest.approx(0.5)
     assert reduced["metrics"]["acc_top5"] == pytest.approx(1.0)
@@ -186,7 +199,7 @@ def test_replicated_eval_reduction_keeps_identical_global_values_unsummed() -> N
 
     gatherer = _PeerGatherer(
         {
-            "metrics": {"loss/base_ce": 1.25, "loss/total": 1.25},
+            "metrics": {"loss/base_ce/weighted": 1.25, "loss/total": 1.25},
             "accuracy_stats": {
                 "top1_correct": 2,
                 "top5_correct": 3,
@@ -196,12 +209,12 @@ def test_replicated_eval_reduction_keeps_identical_global_values_unsummed() -> N
     )
     runtime = _runtime(world_size=2, gatherer=gatherer)
     reduced = runtime.gather_metrics(
-        {"loss/base_ce": 1.25, "loss/total": 1.25},
+        {"loss/base_ce/weighted": 1.25, "loss/total": 1.25},
         planned_step_id=7,
         split="eval",
     )["metrics"]
 
-    assert reduced["loss/base_ce"] == pytest.approx(1.25)
+    assert reduced["loss/base_ce/weighted"] == pytest.approx(1.25)
     assert reduced["loss/total"] == pytest.approx(1.25)
     assert reduced["loss/total"] != pytest.approx(2.5)
 
@@ -210,7 +223,7 @@ def test_sharded_eval_reduction_sums_partial_semantic_contributions() -> None:
     gatherer = _PeerGatherer(
         {
             "metrics": {
-                "loss/base_ce": 2.4,
+                "loss/base_ce/weighted": 2.4,
                 "loss/total": 2.4,
                 "loss/base_ce/segment_count": 4.0,
                 "count/supervised_atoms": 6.0,
@@ -227,7 +240,7 @@ def test_sharded_eval_reduction_sums_partial_semantic_contributions() -> None:
     runtime = _runtime(world_size=2, gatherer=gatherer)
     reduced = runtime.gather_metrics(
         {
-            "loss/base_ce": 0.8,
+            "loss/base_ce/weighted": 0.8,
             "loss/total": 0.8,
             "loss/base_ce/segment_count": 4.0,
             "count/supervised_atoms": 6.0,
@@ -239,7 +252,7 @@ def test_sharded_eval_reduction_sums_partial_semantic_contributions() -> None:
         reduction_mode="disjoint_shard",
     )["metrics"]
 
-    assert reduced["loss/base_ce"] == pytest.approx(3.2)
+    assert reduced["loss/base_ce/weighted"] == pytest.approx(3.2)
     assert reduced["loss/total"] == pytest.approx(3.2)
     assert reduced["loss/base_ce/segment_count"] == pytest.approx(4.0)
     assert reduced["count/supervised_atoms"] == pytest.approx(6.0)

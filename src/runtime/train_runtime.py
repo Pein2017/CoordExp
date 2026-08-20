@@ -60,8 +60,9 @@ _TOKEN_WEIGHTED_DIAG_SUFFIX = "/token_weighted_diag"
 _TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX = "/token_weighted_diag/__weight__"
 _FINITE_METRIC_KEY_PREFIX = "finite/"
 
-# Planned-step objective telemetry (`loss/total`, `loss/<term>` and its
-# raw/weighted members) carries each rank's own SEMANTIC contribution to the
+# Planned-step objective telemetry (`loss/total`, `loss/<term>/raw`,
+# `loss/<term>/weighted`, and the rank-local `loss/<term>/selected_count`)
+# carries each rank's own SEMANTIC contribution to the
 # global planned-step value -- rank-local numerator over the globally merged
 # denominator, never multiplied by the backend mean-gradient compensation
 # (see `src/losses/runner.py`). Wherever the planned-step window is
@@ -704,25 +705,25 @@ class TrainRuntime:
                 code="runtime.accuracy_stats_missing",
                 context={"metrics": list(accuracy_keys_present)},
             )
+        # ONE binding of the replicated-eval predicate, used by BOTH the
+        # accuracy reduction and the objective reduction below (pre-DDP audit
+        # I-4): the two branches must never be able to disagree about which
+        # ranks already hold the identical global value.
+        replicated_eval = _is_replicated_eval_reduction(
+            split=expected_split, reduction_mode=expected_reduction_mode
+        )
         global_accuracy_stats = (
             self._reduce_accuracy_stats(
                 reports_by_rank=reports_by_rank,
                 accuracy_stats_by_rank=accuracy_stats_by_rank,
                 metric_keys=accuracy_keys_present,
-                replicated=(
-                    expected_split == "eval" and expected_reduction_mode is None
-                ),
+                replicated=replicated_eval,
             )
             if accuracy_keys_present
             else None
         )
         eval_sharded = expected_reduction_mode == EVAL_DISJOINT_SHARD_REDUCTION_MODE
-        # Same predicate the accuracy reduction above uses for `replicated`:
-        # only replicated forward eval leaves every rank holding the identical
-        # global objective value.
-        replicated_objective = (
-            expected_split == "eval" and expected_reduction_mode is None
-        )
+        replicated_objective = replicated_eval
         reduced: dict[str, float] = {}
         for key in expected_keys:
             correct_field = _ACCURACY_METRIC_CORRECT_FIELDS.get(key)
@@ -750,6 +751,20 @@ class TrainRuntime:
             elif eval_sharded and key.startswith(_FINITE_METRIC_KEY_PREFIX):
                 reduced[key] = self._reduce_eval_finite_metric(key, reports_by_rank)
             else:
+                # TODO(wave-3 pre-DDP audit, owned PRE-EXISTING defects, both
+                # introduced by `2b0a2165a` and out of this change's scope):
+                # (a) the train-side `count/packs` and `count/examples` keys
+                # land here and are MEAN-reduced over ranks, so a distributed
+                # train row under-reports them by the world size (they are
+                # rank-local disjoint counts and should be summed, exactly as
+                # `_EVAL_SUM_METRIC_KEY_NAMES` already does for sharded eval);
+                # (b) `loss/<term>/token_weighted_diag` is mean-reduced here
+                # for train, i.e. UNWEIGHTED, while sharded eval reduces the
+                # exact count-weighted average through
+                # `_prepare_disjoint_shard_scalars`. Neither is introduced or
+                # relied on by the raw/weighted rename; fixing them changes
+                # distributed train telemetry values and needs its own
+                # RED/parity evidence.
                 reduced[key] = (
                     sum(
                         float(reports_by_rank[rank][key])
@@ -879,6 +894,20 @@ class TrainRuntime:
                 context={"metrics": list(metric_keys)},
             )
         return totals
+
+
+def _is_replicated_eval_reduction(
+    *, split: str | None, reduction_mode: str | None
+) -> bool:
+    """THE replicated-eval predicate (pre-DDP audit I-4).
+
+    Only replicated forward eval leaves every rank holding the identical
+    global value -- for the accuracy sufficient statistics and for the
+    planned-step objective telemetry alike. Both reduction branches read this
+    one definition so a future mode can never be classified two ways.
+    """
+
+    return split == "eval" and reduction_mode is None
 
 
 def _is_planned_step_objective_metric_key(key: str) -> bool:

@@ -915,8 +915,22 @@ def test_disjoint_shard_eval_reproduces_full_replicated_row_with_unequal_rank_at
         replicated_row["loss/total"], rel=1e-5
     )
     for name in ("base_ce", "token_type_gate"):
-        assert sharded_row[f"loss/{name}"] == pytest.approx(
-            replicated_row[f"loss/{name}"], rel=1e-5
+        # Explicit raw/weighted families (design decision 5): both are
+        # rank-local partial contributions to the same global planned-step
+        # value and must reproduce the replicated reference exactly.
+        assert f"loss/{name}" not in sharded_row
+        assert f"loss/{name}" not in replicated_row
+        assert sharded_row[f"loss/{name}/raw"] == pytest.approx(
+            replicated_row[f"loss/{name}/raw"], rel=1e-5
+        )
+        assert sharded_row[f"loss/{name}/weighted"] == pytest.approx(
+            replicated_row[f"loss/{name}/weighted"], rel=1e-5
+        )
+        # Rank-local selected counts sum over the disjoint shards to the same
+        # global count every replicated rank already holds.
+        assert (
+            sharded_row[f"loss/{name}/selected_count"]
+            == replicated_row[f"loss/{name}/selected_count"]
         )
         assert sharded_row[f"loss/{name}/token_weighted_diag"] == pytest.approx(
             replicated_row[f"loss/{name}/token_weighted_diag"], rel=1e-5

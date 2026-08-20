@@ -191,10 +191,10 @@ def test_bundle_total_loss_is_semantic_while_backward_loss_carries_the_scale() -
         semantic_total * float(_WORLD_SIZE)
     )
     assert bundle.metrics["loss/total"] == pytest.approx(semantic_total)
-    assert bundle.metrics["loss/base_ce"] == pytest.approx(
+    assert bundle.metrics["loss/base_ce/weighted"] == pytest.approx(
         float(base.weighted_loss.detach())
     )
-    assert bundle.metrics["loss/token_type_gate"] == pytest.approx(
+    assert bundle.metrics["loss/token_type_gate/weighted"] == pytest.approx(
         float(gate.weighted_loss.detach())
     )
 
@@ -295,7 +295,7 @@ def test_finalized_planned_step_raw_and_weighted_exclude_the_backend_scale() -> 
     semantic_total = sum(expected_weighted.values())
     assert finalized["total_loss"] == pytest.approx(semantic_total)
     assert finalized["metrics"]["loss/total"] == pytest.approx(semantic_total)
-    assert finalized["metrics"]["loss/base_ce"] == pytest.approx(
+    assert finalized["metrics"]["loss/base_ce/weighted"] == pytest.approx(
         expected_weighted["base_ce"]
     )
 

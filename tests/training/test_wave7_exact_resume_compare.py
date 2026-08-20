@@ -279,7 +279,7 @@ def _train_row(
         "finite_status": "finite",
         "input_build_seconds": 0.01 * step,
         "input_wait_seconds": 0.001 * step,
-        "loss/base_ce": 1.0 / step,
+        "loss/base_ce/weighted": 1.0 / step,
         "loss/total": 1.0 / step + (0.1 if loss_drift else 0.0),
         "lr/group_0": 0.001 * (0.9**step),
         "micro_step_count": 2,

@@ -235,6 +235,33 @@
     "determinant-invariant": "fingerprints + payload equality + baseline_sha256 reproduced by lead AND audit independently",
     "audit-sensitivity": "repo-free two-rank real-DDP check: uncompensated backward is exactly 0.5x the ws-1 reference (MECHANISM_CONFIRMED)"
    }
+  },
+  {
+   "id": "amend-9-wave4-declared-flips",
+   "amendment_of": "wave4-telemetry-gate",
+   "date": "2026-08-20",
+   "reason": "task 4.2 removes the ambiguous bare loss/<term> alias; enumerate every row-schema-dependent surface (recorded at implementation, before the wave commit)",
+   "rule": "bare loss/<term> named the WEIGHTED value -> migrate to loss/<term>/weighted; /raw and /selected_count are new fields",
+   "declared_flips": [
+    "src/losses/runner.py (both emission sites)",
+    "tests/losses/test_runner.py",
+    "tests/losses/test_wave3_semantic_vs_backward.py",
+    "tests/runtime/test_wave3_reducer_unequal_ranks.py",
+    "tests/runtime/test_wave3_two_rank_parity.py",
+    "tests/runtime/test_train_runtime.py (I-4 binding test appended; keys already suffixed)",
+    "tests/training/test_wave7_exact_resume_compare.py (synthetic filler row)",
+    "tests/eval/test_forward_eval.py (missed by entry-audit F-6: builds keys via f-string)",
+    "scripts/analysis/coordexp_swift_length_isolation.py"
+   ],
+   "no_flips_required": "tests/training/test_orchestration_compatibility.py (F-5/F-6 confirmed); tests/fixtures/** byte-frozen at 2fe137cc",
+   "identity_pin_flip": "tests/training/test_wave7_exact_resume_compare_v2.py V1 TEST-MODULE drift guard 2dc19c32->04170fbc (declared flip, comment in place); compare.V1_SOURCE_SHA256 probe-script provenance seal UNCHANGED at dfbb4d63 \u2014 lead accepted per the decompose 71dab9772 precedent",
+   "methodological_note": "the frozen wave4-residue-search argv cannot see f-string-built keys; Wave 5.5 must pair it with a search for loss/{ constructions",
+   "observed": {
+    "wave4-telemetry-gate": "704 passed / 0 failed / 0 skipped (entry 689/0; lead independent replay identical)",
+    "wave4-residue-search": "77 hits all suffixed (40 /weighted, 14 /raw, 9+3 diag, 11 /segment_count, 4 /selected_count); zero bare quoted keys by lead grep",
+    "collateral": "tests/runtime 96/0; tests/training+config 1625/0/126skip; tests/eval 49/0",
+    "determinant-invariant": "fingerprints + baseline_sha256 byte-identical; 24 owner files zero diff"
+   }
   }
  ]
 }

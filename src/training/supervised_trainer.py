@@ -679,14 +679,32 @@ def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
     A bundle separates its SEMANTIC total (`total_loss`, telemetry, never
     backend-compensated) from its differentiable local contribution
     (`backward_loss`, compensated exactly once for the backend's mean
-    gradient reduction). Only the latter may reach `backward()`. A bundle
-    that exposes no `backward_loss` is a world-size-one bundle, where the two
-    are the same value by construction.
+    gradient reduction). Only the latter may reach `backward()`.
+
+    FAIL-CLOSED (pre-DDP audit I-1/I-6): a real `LossBundle` ALWAYS carries a
+    tensor `backward_loss` (`LossBundle.__post_init__` defaults it to
+    `total_loss` at world size one), so a real bundle that reaches the
+    `total_loss` fallback is a broken bundle, not a world-size-one bundle --
+    silently backwarding its uncompensated semantic total would divide every
+    gradient by the world size. The narrow documented fallback below exists
+    only for duck-typed test doubles that expose `total_loss` alone and never
+    run distributed.
     """
 
     backward_loss = getattr(loss_bundle, "backward_loss", None)
     if isinstance(backward_loss, torch.Tensor):
         return backward_loss
+    if isinstance(loss_bundle, LossBundle):
+        raise RuntimeContractError(
+            "a real LossBundle must expose a tensor backward_loss; falling "
+            "back to the uncompensated semantic total_loss would scale every "
+            "gradient by 1/world_size",
+            code="trainer.loss_bundle_backward_loss_missing",
+            context={
+                "bundle_type": type(loss_bundle).__name__,
+                "backward_loss_type": type(backward_loss).__name__,
+            },
+        )
     total_loss = getattr(loss_bundle, "total_loss", None)
     if not isinstance(total_loss, torch.Tensor):
         raise RuntimeContractError(

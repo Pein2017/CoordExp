@@ -1457,3 +1457,32 @@ class RecordingScheduler:
 
     def get_last_lr(self) -> list[float]:
         return [float(group["lr"]) for group in self.optimizer.param_groups]
+
+
+# ---------------------------------------------------------------------------
+# Pre-DDP audit I-4: one binding of the replicated-eval predicate.
+# ---------------------------------------------------------------------------
+
+
+def test_replicated_eval_predicate_is_bound_once_for_accuracy_and_objective() -> None:
+    """Both reduction branches must read ONE definition, never two copies.
+
+    A second inline copy is how the accuracy reduction and the objective
+    reduction could silently disagree about which ranks already hold the
+    identical global value (mean vs sum), which is a silent-corruption seam.
+    """
+
+    import inspect
+
+    from src.runtime.train_runtime import _is_replicated_eval_reduction
+
+    assert _is_replicated_eval_reduction(split="eval", reduction_mode=None) is True
+    assert _is_replicated_eval_reduction(split="train", reduction_mode=None) is False
+    assert (
+        _is_replicated_eval_reduction(split="eval", reduction_mode="disjoint_shard")
+        is False
+    )
+
+    source = inspect.getsource(TrainRuntime._reduce_metric_reports)
+    assert source.count("_is_replicated_eval_reduction(") == 1
+    assert 'expected_split == "eval"' not in source

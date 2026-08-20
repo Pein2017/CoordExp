@@ -2209,3 +2209,50 @@ def test_micro_step_schema_identity_owner_reports_the_exact_record_schema() -> N
         (item.default is not MISSING, None if item.default is MISSING else item.default)
         for item in fields(micro_steps.SupervisedMicroStep)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Pre-DDP audit I-1/I-6: the backward_loss -> total_loss fallback is
+# fail-closed for real bundles.
+# ---------------------------------------------------------------------------
+
+
+def test_total_loss_rejects_a_real_bundle_without_a_tensor_backward_loss() -> None:
+    """A real `LossBundle` may never reach the uncompensated-total fallback.
+
+    `LossBundle.__post_init__` always installs a tensor `backward_loss`, so a
+    real bundle that lacks one has been corrupted after construction. Silently
+    backwarding `total_loss` there would divide every gradient by the world
+    size under Accelerate/DDP mean reduction.
+    """
+
+    from src.losses.runner import LossBundle
+
+    total = torch.tensor(1.5)
+    bundle = LossBundle(
+        total_loss=total,
+        terms=(),
+        metrics={},
+        counts={},
+        diagnostics={},
+        finite_status={},
+    )
+    assert isinstance(bundle.backward_loss, torch.Tensor)
+    object.__setattr__(bundle, "backward_loss", None)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        trainer_module._total_loss(bundle)
+    assert exc_info.value.code == "trainer.loss_bundle_backward_loss_missing"
+
+
+def test_total_loss_keeps_the_narrow_duck_typed_total_only_fallback() -> None:
+    """Documented narrow path: non-`LossBundle` test doubles, never distributed."""
+
+    from types import SimpleNamespace
+
+    total = torch.tensor(2.0)
+    assert trainer_module._total_loss(SimpleNamespace(total_loss=total)) is total
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        trainer_module._total_loss(SimpleNamespace(total_loss=None))
+    assert exc_info.value.code == "trainer.loss_bundle_total_loss"

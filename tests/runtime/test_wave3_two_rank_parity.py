@@ -585,7 +585,7 @@ def _gate_ablation_worker(rank: int, port: int, output: mp.Queue) -> None:
         assert gate["backward_contribution"] == 0.0
         assert ablation["finalized_total_loss"] == base["weighted_loss"]
         assert ablation["finalized_metrics"]["loss/total"] == pytest.approx(
-            ablation["finalized_metrics"]["loss/base_ce"]
+            ablation["finalized_metrics"]["loss/base_ce/weighted"]
         )
         assert ablation["pre_decision"]["finite_status"] == "finite"
 
