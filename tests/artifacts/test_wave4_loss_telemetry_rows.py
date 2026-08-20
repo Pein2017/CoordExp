@@ -56,6 +56,7 @@ from src.losses import (
     TokenVocabularyGroups,
 )
 from src.packing.planner import PackedSegment
+from src.runtime.metrics import reduce_rank_payloads
 from src.supervision import TokenAtom, TokenSequence
 from src.training import reporting
 from src.training.supervised_trainer import CompletedStepObservation
@@ -292,17 +293,26 @@ class _Accelerator:
 
 
 class _Runtime:
-    """World-size-one identity gather: the projection under test is the seam."""
+    """World-size-one gather: the projection under test is the seam.
+
+    DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, task
+    2.3): the reporter now declares a typed `MetricBatch`, so this double runs
+    the real world-size-one reduction rather than echoing a mapping. Row keys
+    and values are unchanged, which the exact key-set assertions below keep
+    proving.
+    """
 
     is_main_process = True
     world_size = 1
     accelerator = _Accelerator()
 
-    def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-        result: dict[str, object] = {"metrics": dict(metrics)}  # type: ignore[arg-type]
-        accuracy_stats = kwargs.get("accuracy_stats")
-        if isinstance(accuracy_stats, dict):
-            result["accuracy_stats"] = dict(accuracy_stats)
+    def gather_metrics(self, batch: Any) -> object:
+        reduced = reduce_rank_payloads(
+            [batch.to_rank_payload(rank=0, world_size=1)], world_size=1
+        )
+        result: dict[str, object] = {"metrics": dict(reduced.metrics)}
+        if reduced.accuracy_stats is not None:
+            result["accuracy_stats"] = dict(reduced.accuracy_stats)
         return result
 
 

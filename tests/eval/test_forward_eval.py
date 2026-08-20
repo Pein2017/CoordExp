@@ -20,8 +20,7 @@ from src.eval.forward import (
     EVAL_REDUCTION_REPLICATED,
     ForwardEvalObservation,
     ForwardEvalRunner,
-    _finalize_disjoint_shard_scalars,
-    _prepare_disjoint_shard_scalars,
+    _extract_shard_envelope_counts,
     partition_eval_micro_steps_for_rank,
     resolve_active_eval_reduction_mode,
 )
@@ -29,6 +28,12 @@ from src.losses import LossRunner, TokenVocabularyGroups
 from src.losses.context import LossContext
 from src.losses.runner import _weighted_average
 from src.packing.planner import PackedSegment
+from src.runtime.metrics import (
+    REDUCER_SUM,
+    ScalarSample,
+    loss_telemetry_batch,
+    reduce_rank_payloads,
+)
 from src.runtime.train_runtime import TrainRuntime
 from src.supervision import TokenAtom, TokenSequence
 from src.training.supervised_trainer import SupervisedMicroStep
@@ -282,19 +287,19 @@ class FakeEvalRuntime:
         self.log.append(f"runtime.move:{planned_step_id}:{local_micro_step_index}")
         return micro_step
 
-    def gather_metrics(
-        self,
-        metrics: dict[str, float],
-        *,
-        planned_step_id: int,
-        split: str,
-        accuracy_stats: dict[str, int] | None = None,
-    ) -> dict[str, Any]:
-        self.log.append(f"runtime.gather:{planned_step_id}:{split}")
-        self.gathered.append((planned_step_id, split, dict(metrics)))
+    def gather_metrics(self, batch: Any) -> dict[str, Any]:
+        # Wave-2 typed batch (task 2.3/2.4): the double reduces the single
+        # world-size-one reduction so the seam under test stays the producer.
+        self.log.append(f"runtime.gather:{batch.planned_step_id}:{batch.split}")
+        reduced = reduce_rank_payloads(
+            [batch.to_rank_payload(rank=0, world_size=1)], world_size=1
+        )
+        self.gathered.append(
+            (batch.planned_step_id, batch.split, dict(reduced.metrics))
+        )
         return {
-            "metrics": dict(metrics),
-            "accuracy_stats": dict(accuracy_stats or {}),
+            "metrics": dict(reduced.metrics),
+            "accuracy_stats": dict(reduced.accuracy_stats or {}),
             "reduction": "single_rank",
         }
 
@@ -991,11 +996,14 @@ def test_disjoint_shard_globally_zero_selected_term_matches_replicated_zero_weig
     """Independent re-review finding (2026-08-04): `_weighted_average`
     (`src/losses/runner.py`) -- the exact replicated-path computation this
     sharded reduction must reproduce -- resolves a zero-total-weight average
-    to `0.0`, never an error, so `_finalize_disjoint_shard_scalars` was
-    changed to match that convention instead of raising
-    `eval_forward.token_weighted_diag_zero_weight`. This is a pure-function
-    proof of that local convention match, using a hand-built
-    `loss_artifact`/`scalars` payload.
+    to `0.0`, never an error.
+
+    Wave-2 restatement (`add-coordexp-swift-training-observability`, task
+    2.4): the companion `__weight__` metric key that used to carry the
+    denominator through the collective is gone; a `token_weighted_diag`
+    family is now one typed `RatioSample` whose declared `empty_value`
+    reproduces that same convention. The declaration is proven here against
+    `_weighted_average` itself.
 
     CORRECTED same-day follow-up (end-to-end review, see
     `test_disjoint_shard_eval_globally_zero_selected_term_is_rejected_identically_to_replicated`
@@ -1005,14 +1013,9 @@ def test_disjoint_shard_globally_zero_selected_term_matches_replicated_zero_weig
     "at least one eligible segment" check in
     `_build_denominator_from_token_sequences` fails closed first, on every
     rank, before any forward/compute happens, in BOTH reduction modes
-    identically. The `weight <= 0.0` branch this test exercises is
-    therefore defensive/unreachable code in real production use, not a live
-    correctness fix -- kept as harmless convention-matching code (per this
-    session's explicit instruction), the same disposition already given to
-    `_prepare_disjoint_shard_scalars`'s own dead `local_value is None`
-    branch (task 4.2's P2-D). This test remains a valid, narrow proof that
-    the helper function itself matches `_weighted_average`'s convention;
-    it does not by itself establish production reachability -- see the
+    identically. The zero-denominator branch this test exercises is
+    therefore defensive/convention-matching code, not a live correctness
+    fix; it does not by itself establish production reachability -- see the
     end-to-end test below for that.
     """
 
@@ -1024,17 +1027,34 @@ def test_disjoint_shard_globally_zero_selected_term_matches_replicated_zero_weig
         "loss/total": 1.0,
         "loss/coordinate_gaussian/token_weighted_diag": 0.0,
     }
-    per_rank = [
-        _prepare_disjoint_shard_scalars(
-            scalars, loss_artifact, example_count=2, pack_count=1
+    batches = [
+        loss_telemetry_batch(
+            planned_step_id=4,
+            split="eval",
+            loss_metrics=scalars,
+            loss_artifact=loss_artifact,
+            partial_rank_contributions=True,
+            extra_samples=(
+                ScalarSample(
+                    name="example_count", reducer=REDUCER_SUM, value=2.0, integral=True
+                ),
+                ScalarSample(
+                    name="pack_count", reducer=REDUCER_SUM, value=1.0, integral=True
+                ),
+            ),
+            reduction_mode=EVAL_REDUCTION_DISJOINT_SHARD,
         )
         for _ in range(2)
     ]
-    # Cross-rank sum, exactly what `TrainRuntime._reduce_eval_sum_metric`
-    # does for these keys.
-    summed = {key: sum(rank[key] for rank in per_rank) for key in per_rank[0]}
+    reduced = reduce_rank_payloads(
+        [
+            batch.to_rank_payload(rank=rank, world_size=2)
+            for rank, batch in enumerate(batches)
+        ],
+        world_size=2,
+    )
 
-    result, example_count, pack_count = _finalize_disjoint_shard_scalars(summed)
+    result, example_count, pack_count = _extract_shard_envelope_counts(reduced.metrics)
 
     assert result["loss/coordinate_gaussian/token_weighted_diag"] == reference == 0.0
     assert example_count == 4

@@ -22,6 +22,7 @@ import pytest
 
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
+from src.runtime.metrics import reduce_rank_payloads
 from src.training import reporting
 from src.training.supervised_trainer import CompletedStepObservation
 
@@ -32,15 +33,22 @@ class _Accelerator:
 
 
 class _Runtime:
+    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, task
+    2.3): the reporter hands the runtime a typed `MetricBatch`, so this double
+    runs the real world-size-one reduction instead of echoing a mapping."""
+
     is_main_process = True
     world_size = 1
     accelerator = _Accelerator()
 
-    def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-        result: dict[str, object] = {"metrics": dict(metrics)}  # type: ignore[arg-type]
-        accuracy_stats = kwargs.get("accuracy_stats")
-        if isinstance(accuracy_stats, dict):
-            result["accuracy_stats"] = dict(accuracy_stats)
+    def gather_metrics(self, batch: object) -> object:
+        reduced = reduce_rank_payloads(
+            [batch.to_rank_payload(rank=0, world_size=1)],  # type: ignore[attr-defined]
+            world_size=1,
+        )
+        result: dict[str, object] = {"metrics": dict(reduced.metrics)}
+        if reduced.accuracy_stats is not None:
+            result["accuracy_stats"] = dict(reduced.accuracy_stats)
         return result
 
 
@@ -237,20 +245,26 @@ def test_reporter_requests_split_and_accuracy_stats_from_runtime_gather(
     calls: list[dict[str, object]] = []
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            calls.append({"metrics": dict(metrics), **kwargs})  # type: ignore[arg-type]
-            return super().gather_metrics(metrics, **kwargs)
+        def gather_metrics(self, batch: object) -> object:
+            calls.append(batch)
+            return super().gather_metrics(batch)
 
     reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(
         _observation(1)
     )
 
-    assert calls[0]["split"] == "train"
-    assert calls[0]["planned_step_id"] == 1
-    assert calls[0]["accuracy_stats"] == {
-        "top1_correct": 1,
-        "top5_correct": 2,
-        "atom_count": 2,
+    batch = calls[0]
+    assert batch.split == "train"
+    assert batch.planned_step_id == 1
+    assert batch.accuracy.top1_correct == 1
+    assert batch.accuracy.top5_correct == 2
+    assert batch.accuracy.atom_count == 2
+    # The producer declares one exact reducer per sample; the reduction
+    # boundary never infers one from a key name.
+    declared = {sample.name: getattr(sample, "reducer", "RATIO") for sample in batch.samples}
+    assert declared == {
+        "loss/total": "SUM",
+        "lr/group_0": "IDENTICAL",
     }
 
 
@@ -258,7 +272,7 @@ def test_reporter_rejects_reduction_without_scalar_mapping(tmp_path: Path) -> No
     writer = _writer(tmp_path)
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
+        def gather_metrics(self, batch: object) -> object:
             return {"metrics": None}
 
     reporter = reporting.CompletedStepReporter(
@@ -276,8 +290,9 @@ def test_reporter_rejects_accuracy_keys_without_global_accuracy_stats(
     writer = _writer(tmp_path)
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            return {"metrics": dict(metrics), "accuracy_stats": None}  # type: ignore[arg-type]
+        def gather_metrics(self, batch: object) -> object:
+            reduced = super().gather_metrics(batch)
+            return {"metrics": reduced["metrics"], "accuracy_stats": None}  # type: ignore[index]
 
     reporter = reporting.CompletedStepReporter(
         writer=writer, lifecycle={}, runtime=Runtime()
@@ -293,28 +308,38 @@ def test_reporter_rejects_accuracy_keys_without_global_accuracy_stats(
 # ---------------------------------------------------------------------------
 
 
-def test_per_rank_measurement_selects_bounded_prefixes_and_sorts_keys() -> None:
-    receipt = reporting._per_rank_measurement(
-        {
-            "per_rank_metrics": {
-                "1": {
-                    "step_duration_seconds": 0.2,
-                    "resource/cpu_max_rss_bytes": 10,
-                    "unrelated_field": 5,
-                },
-                "0": {"input_wait_seconds": 0.1},
-            }
-        }
-    )
-    assert receipt == {
-        "1": {"resource/cpu_max_rss_bytes": 10.0, "step_duration_seconds": 0.2},
-        "0": {"input_wait_seconds": 0.1},
-    }
+def test_normal_train_row_carries_no_per_rank_measurement_trace(
+    tmp_path: Path,
+) -> None:
+    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    2.3/2.6).
 
+    Old assertions: `reporting._per_rank_measurement(...)` projected selected
+    per-rank timing/resource scalars and the reporter serialized them into the
+    canonical row under `per_rank_measurement`.
 
-def test_per_rank_measurement_returns_none_when_nothing_selected() -> None:
-    assert reporting._per_rank_measurement({"per_rank_metrics": {}}) is None
-    assert reporting._per_rank_measurement({}) is None
+    New assertion: normal production rows carry aggregated values only. The
+    per-rank scalars stay ephemeral inside the reduction result, where bounded
+    lifecycle resource accounting still reads them (see
+    `rank_cpu_resources_from_metric_rows`).
+    """
+
+    assert not hasattr(reporting, "_per_rank_measurement")
+
+    writer = _writer(tmp_path)
+    reporting.CompletedStepReporter(
+        writer=writer,
+        lifecycle={},
+        runtime=_Runtime(),
+        resource_collector=lambda: {
+            "cpu": {"max_rss_bytes": 1024},
+            "gpu": {"initialized": False},
+        },
+    )(_observation(1))
+
+    row = json.loads(writer.logging_path.read_text())
+    assert "per_rank_measurement" not in row
+    assert row["resource/cpu_max_rss_bytes"] == 1024.0
 
 
 # ---------------------------------------------------------------------------

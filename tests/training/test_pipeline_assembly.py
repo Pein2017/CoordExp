@@ -25,6 +25,7 @@ from src.training.supervised_trainer import (
     SupervisedMicroStep,
 )
 from src.training.forward_input_provider import build_forward_input_provider
+from src.runtime.metrics import reduce_rank_payloads
 from src.runtime.seeding import seed_training_runtime
 
 def _patch_shared_cache_import(
@@ -51,15 +52,25 @@ class _Accelerator:
 
 
 class _Runtime:
+    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    2.3/2.4): every producer now hands the runtime a typed `MetricBatch`, so
+    this double runs the real world-size-one reduction."""
+
     is_main_process = True
     world_size = 1
     accelerator = _Accelerator()
 
-    def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-        result: dict[str, object] = {"metrics": dict(metrics)}
-        accuracy_stats = kwargs.get("accuracy_stats")
-        if isinstance(accuracy_stats, dict):
-            result["accuracy_stats"] = dict(accuracy_stats)
+    def gather_metrics(self, batch: object) -> object:
+        reduced = reduce_rank_payloads(
+            [batch.to_rank_payload(rank=0, world_size=1)],  # type: ignore[attr-defined]
+            world_size=1,
+        )
+        result: dict[str, object] = {
+            "metrics": dict(reduced.metrics),
+            "per_rank_metrics": dict(reduced.per_rank_metrics),
+        }
+        if reduced.accuracy_stats is not None:
+            result["accuracy_stats"] = dict(reduced.accuracy_stats)
         return result
 
 
@@ -418,10 +429,9 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
     class Runtime(_Runtime):
         rank = 0
 
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            values = dict(metrics)  # type: ignore[arg-type]
-            gather_calls.append({"metrics": values, **kwargs})
-            return {"metrics": values, "per_rank_metrics": {"0": values}}
+        def gather_metrics(self, batch: object) -> object:
+            gather_calls.append(batch)
+            return super().gather_metrics(batch)
 
     class FakeEvalRunner:
         def __init__(self, **kwargs: object) -> None:
@@ -575,9 +585,13 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
     assert {row["resource_observation_scope"] for row in eval_rows} == {
         "process_lifetime_high_water_observed_after_evaluation"
     }
-    assert all("per_rank_measurement" in row for row in eval_rows)
+    # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    # 2.3/2.6): old assertion `all("per_rank_measurement" in row ...)`. Normal
+    # eval rows now carry aggregated values only; per-rank scalars stay
+    # ephemeral inside the reduction result.
+    assert not any("per_rank_measurement" in row for row in eval_rows)
     assert [
-        call["split"] for call in gather_calls if call["split"] == "eval.measurement"
+        batch.split for batch in gather_calls if batch.split == "eval.measurement"
     ] == ["eval.measurement", "eval.measurement"]
 
 
@@ -762,8 +776,13 @@ def test_train_logging_uses_all_rank_reduced_scalars_and_preserves_nonfinite(
     class Runtime(_Runtime):
         world_size = 2
 
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            calls.append(dict(metrics))
+        def gather_metrics(self, batch: object) -> object:
+            calls.append(
+                {
+                    sample.name: getattr(sample, "reducer", "RATIO")
+                    for sample in batch.samples  # type: ignore[attr-defined]
+                }
+            )
             return {
                 "metrics": {
                     "loss/total": 2.0,
@@ -782,14 +801,14 @@ def test_train_logging_uses_all_rank_reduced_scalars_and_preserves_nonfinite(
     row = json.loads(writer.logging_path.read_text())
     # _observation() does not measure timing (production-dead batch-path
     # shape): the timing fields must be entirely absent, not fabricated 0.0.
-    assert calls == [
-        {
-            "lr/group_0": 1e-5,
-            "loss/total": 1.0,
-            "acc_top1": 0.5,
-            "acc_top5": 1.0,
-        }
-    ]
+    # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, task
+    # 2.3): the producer used to hand the runtime an untyped value mapping
+    # (asserted here as `{"lr/group_0": 1e-5, "loss/total": 1.0,
+    # "acc_top1": 0.5, "acc_top5": 1.0}`). It now hands over typed samples
+    # whose declared reducers are the thing worth pinning; the accuracy
+    # ratios travel as exact integer sufficient statistics instead of
+    # already-divided values.
+    assert calls == [{"lr/group_0": "IDENTICAL", "loss/total": "SUM"}]
     assert row["loss/total"] == 2.0
     assert row["acc_top1"] == 0.5
     assert row["diagnostic/nonfinite"] is None
@@ -817,11 +836,8 @@ def test_train_row_carries_timing_fields_additively(tmp_path: Path) -> None:
     )
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            return {
-                "metrics": dict(metrics),
-                "accuracy_stats": dict(kwargs["accuracy_stats"]),
-            }  # type: ignore[arg-type]
+        def gather_metrics(self, batch: object) -> object:
+            return super().gather_metrics(batch)
 
     reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
     row = json.loads(writer.logging_path.read_text())
@@ -859,11 +875,8 @@ def test_train_row_normalizes_non_finite_timing_fields(tmp_path: Path) -> None:
     )
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            return {
-                "metrics": dict(metrics),
-                "accuracy_stats": dict(kwargs["accuracy_stats"]),
-            }  # type: ignore[arg-type]
+        def gather_metrics(self, batch: object) -> object:
+            return super().gather_metrics(batch)
 
     reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
     row = json.loads(writer.logging_path.read_text())
@@ -905,12 +918,8 @@ def test_train_row_records_resources_without_rewriting_run_high_water_per_step(
     )
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            values = dict(metrics)  # type: ignore[arg-type]
-            return {
-                "metrics": values,
-                "per_rank_metrics": {"0": values},
-            }
+        def gather_metrics(self, batch: object) -> object:
+            return super().gather_metrics(batch)
 
     reporting.CompletedStepReporter(
         writer=writer,
@@ -922,11 +931,14 @@ def test_train_row_records_resources_without_rewriting_run_high_water_per_step(
     row = json.loads(writer.logging_path.read_text())
     assert row["resource/cpu_max_rss_bytes"] == 1024.0
     assert row["resource/gpu_max_memory_reserved_bytes"] == 16384.0
-    assert row["per_rank_measurement"]["0"]["input_wait_seconds"] == 0.02
-    assert (
-        row["per_rank_measurement"]["0"]["resource/gpu_max_memory_allocated_bytes"]
-        == 8192.0
-    )
+    # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    # 2.3/2.6): the old assertions read
+    # `row["per_rank_measurement"]["0"][...]`. A normal row no longer
+    # serializes a per-rank trace; the aggregated scalars above are the
+    # canonical record.
+    assert "per_rank_measurement" not in row
+    assert row["input_wait_seconds"] == 0.02
+    assert row["resource/gpu_max_memory_allocated_bytes"] == 8192.0
     assert writer.read_run()["measurement"]["resource_high_water"] is None
 
 
@@ -2587,12 +2599,9 @@ def test_train_logging_persists_real_loss_runner_accuracy_stats(
     calls: list[dict[str, object]] = []
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            calls.append({"metrics": dict(metrics), **kwargs})
-            return {
-                "metrics": dict(metrics),
-                "accuracy_stats": dict(kwargs["accuracy_stats"]),
-            }
+        def gather_metrics(self, batch: object) -> object:
+            calls.append(batch)
+            return super().gather_metrics(batch)
 
     observation = CompletedStepObservation(
         planned_step_id=1,
@@ -2603,7 +2612,13 @@ def test_train_logging_persists_real_loss_runner_accuracy_stats(
     )
     reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
 
-    assert calls[0]["accuracy_stats"] == artifact["accuracy_stats"]
+    # DECLARED FLIP (Wave 2, task 2.3): the exact integer statistics now
+    # travel as a typed batch field rather than a `gather_metrics` kwarg.
+    assert {
+        "top1_correct": calls[0].accuracy.top1_correct,
+        "top5_correct": calls[0].accuracy.top5_correct,
+        "atom_count": calls[0].accuracy.atom_count,
+    } == artifact["accuracy_stats"]
     row = json.loads(writer.logging_path.read_text())
     assert row["acc_top1"] == pytest.approx(1.0)
     assert row["accuracy_stats"] == artifact["accuracy_stats"]
@@ -2637,11 +2652,8 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
     artifact = runner.finalize_planned_step((micro_bundle.to_artifact_dict(),), plan)
 
     class Runtime(_Runtime):
-        def gather_metrics(self, metrics: object, **kwargs: object) -> object:
-            return {
-                "metrics": dict(metrics),
-                "accuracy_stats": dict(kwargs["accuracy_stats"]),
-            }  # type: ignore[arg-type]
+        def gather_metrics(self, batch: object) -> object:
+            return super().gather_metrics(batch)
 
     baseline_writer = _writer(tmp_path / "baseline")
     baseline_observation = CompletedStepObservation(

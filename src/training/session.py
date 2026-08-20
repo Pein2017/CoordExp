@@ -98,6 +98,7 @@ from src.runtime import (
     TrainRuntime,
     validate_accelerator_runtime,
 )
+from src.runtime.metrics import REDUCER_MAX, MetricBatch, ScalarSample
 from src.training.schedule import ResolvedStepSchedule, resolve_planned_step_schedule
 from src.training.pack_cache import (
     load_rank_micro_steps_from_cache,
@@ -3282,9 +3283,19 @@ def _eval_forward_handler(
                 **reporting._resource_scalar_metrics(post_eval_resources),
             }
             gathered_measurement = runtime.gather_metrics(
-                local_measurement,
-                planned_step_id=int(scheduled_event.planned_step_id),
-                split="eval.measurement",
+                MetricBatch(
+                    planned_step_id=int(scheduled_event.planned_step_id),
+                    split="eval.measurement",
+                    # Wall-clock and high-water resource observations: the
+                    # slowest rank owns the critical path, so each of these is
+                    # an all-rank maximum.
+                    samples=tuple(
+                        ScalarSample(
+                            name=name, reducer=REDUCER_MAX, value=float(value)
+                        )
+                        for name, value in sorted(local_measurement.items())
+                    ),
+                )
             )
             reduced_measurement = (
                 gathered_measurement.get("metrics")
@@ -3307,9 +3318,6 @@ def _eval_forward_handler(
             row["finite_status"] = observation.finite_status
             row.update(dict(reduced_measurement))
             row["resource_observation_scope"] = _EVAL_RESOURCE_OBSERVATION_SCOPE
-            per_rank_measurement = reporting._per_rank_measurement(gathered_measurement)
-            if per_rank_measurement is not None:
-                row["per_rank_measurement"] = per_rank_measurement
             eval_by_step[int(scheduled_event.planned_step_id)] = row
             reporting._append_logging_row_shared(writer=writer, row=row, runtime=runtime)
             lifecycle_state["evaluation_event_count"] = (

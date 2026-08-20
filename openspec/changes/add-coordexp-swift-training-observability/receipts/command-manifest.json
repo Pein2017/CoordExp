@@ -180,6 +180,25 @@
    },
    "probe_path_disposition": "future waves run the determinant probe via a wrapper that redirects only BASELINE_PATH to openspec/changes/archive/2026-08-20-standardize-coordexp-swift-supervised-losses/receipts/wave-0-determinant-baseline.json; the probe script itself is not edited (it is the archived change's artifact)",
    "tracked_flake": "tests/losses/test_zero_policies.py::test_gate_ablation_creates_no_autograd_edge_into_the_objective - SECOND non-reproducing occurrence (first: losses wave 4, 1/9; now: 1/13; deterministic inputs, no config coupling; prior attribution: cross-module global-state leakage into plan.backend_gradient_scale). TRIPWIRE: a third occurrence anywhere in this change mandates fixing the test's global-state isolation as its own task before the wave in progress closes."
+  },
+  {
+   "id": "amend-5-freeze-wave2-gloo-probe",
+   "amendment_of": "wave2-gloo-probe",
+   "date": "2026-08-20",
+   "reason": "retire the TO-FREEZE placeholder and pin Wave-2 observed counts",
+   "frozen_argv": "conda run -n ms python scripts/probes/coordexp_swift/obs_wave2_gloo_probe.py (bash -c export wrapper; lead-executed receipt receipts/wave-2-gloo-probe-receipt.json, gloo banner lines stripped)",
+   "observed": {
+    "gloo-probe": "exit 0 twice (builder + lead); ok true; asymmetric MAX/SUM/ratio/BOOL_ALL/IDENTICAL all verified on both ranks; schema mismatch fails closed on both ranks; clean termination; replicated-eval divergence bitwise 0.0 -> IDENTICAL implemented EXACT with IDENTICAL_ABS_TOLERANCE=0.0",
+    "wave2-reduction-gate": "384 passed / 0 failed / 0 skipped (builder + lead replays identical)",
+    "artifacts+reporting+compat": "379 passed / 0 failed; completed_step_rows.json byte-identical; fixtures untouched",
+    "collateral tests/training": "1446 passed / 126 skipped / 0 failed",
+    "determinant-invariant": "lead direct recompute: fingerprints + payload sha b2d9595f byte-identical",
+    "red": "7/7 family-level REDs against the dict API (SUM 2.0!=4.0, ratio 2.5!=3.25, BOOL_ALL 0.5!=0.0, IDENTICAL DID-NOT-RAISE x2, no-reducer DID-NOT-RAISE, module absent)"
+   },
+   "declared_value_changes": "the four Wave-0-amendment families landed as declared RED-first changes; additionally lr/group_* and merged-denominator counts moved to fail-closed IDENTICAL (value-preserving; genuine divergence now raises instead of averaging); MAX is deterministically NaN-propagating",
+   "interface_changes": "EvalRuntimeBoundary.gather_metrics now takes a typed MetricBatch; error-code renames recorded in the builder report (superseded codes had test-only callers, all flipped)",
+   "archived_script_breakage": "scripts/probes/coordexp_swift/losses_wave3_two_rank_probe.py (old dict API) and wave5_provider_benchmark.py (indexes per_rank_measurement) would fail if re-run; both are archived earlier-change probe artifacts, deliberately unedited per the amend-4 disposition pattern",
+   "flake_tripwire": "test_gate_ablation: 0 occurrences this wave (count stands at 2); one unrelated stale-run thread-race in test_wave7_exact_resume_interrupt recorded, green in isolation and final sweep"
   }
  ]
 }

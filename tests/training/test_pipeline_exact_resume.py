@@ -202,14 +202,23 @@ def test_train_logging_persists_validated_global_integer_accuracy_stats(
         is_main_process = True
         accelerator = SimpleNamespace(is_main_process=True, num_processes=1)
 
-        def gather_metrics(self, metrics: Any, **kwargs: Any) -> dict[str, Any]:
-            assert kwargs["accuracy_stats"] == {
+        def gather_metrics(self, batch: Any) -> dict[str, Any]:
+            # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2,
+            # task 2.3): the rank-local exact integer statistics now travel as
+            # a typed batch field instead of a `gather_metrics` kwarg.
+            assert {
+                "top1_correct": batch.accuracy.top1_correct,
+                "top5_correct": batch.accuracy.top5_correct,
+                "atom_count": batch.accuracy.atom_count,
+            } == {
                 "top1_correct": 3,
                 "top5_correct": 4,
                 "atom_count": 5,
             }
             return {
-                "metrics": dict(metrics),
+                "metrics": {
+                    sample.name: sample.value for sample in batch.samples
+                },
                 "accuracy_stats": dict(global_accuracy_stats),
             }
 

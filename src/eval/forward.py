@@ -12,6 +12,12 @@ from typing import Any, Protocol
 import torch
 
 from src.common.errors import RuntimeContractError
+from src.runtime.metrics import (
+    REDUCER_SUM,
+    MetricBatch,
+    ScalarSample,
+    loss_telemetry_batch,
+)
 from src.runtime.train_runtime import EVAL_DISJOINT_SHARD_REDUCTION_MODE
 from src.training.supervised_trainer import (
     LossContextFactory,
@@ -26,9 +32,10 @@ from src.training.supervised_trainer import (
 
 EVAL_FORWARD_SPLIT = "eval"
 
-# Rank-sharded eval.forward (design Seam C). `EVAL_REDUCTION_REPLICATED` is
-# the pre-Wave-4 behavior, byte-identical: every rank evaluates the full
-# eval set and cross-rank reduction is the existing identical-value mean.
+# Rank-sharded eval.forward (design Seam C). Under `EVAL_REDUCTION_REPLICATED`
+# every rank evaluates the full eval set, so every rank already holds the same
+# global value and cross-rank reduction is an explicit identical-value check
+# (Wave 2 replaced the implicit mean over those identical values).
 # `EVAL_REDUCTION_DISJOINT_SHARD` partitions eval packs disjointly by
 # `sequence_ordinal % world_size == rank` (the canonical micro-step
 # sequence position, not the `pack_index` identity label -- see
@@ -46,8 +53,8 @@ _EVAL_REDUCTION_CONTROLS = frozenset(
     {_EVAL_REDUCTION_CONTROL_AUTO, EVAL_REDUCTION_REPLICATED}
 )
 
-_TOKEN_WEIGHTED_DIAG_SUFFIX = "/token_weighted_diag"
-_TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX = "/token_weighted_diag/__weight__"
+_EXAMPLE_COUNT_METRIC = "example_count"
+_PACK_COUNT_METRIC = "pack_count"
 
 
 def resolve_eval_reduction_control() -> str:
@@ -152,15 +159,7 @@ class EvalRuntimeBoundary(Protocol):
         local_micro_step_index: int,
     ) -> SupervisedMicroStep: ...
 
-    def gather_metrics(
-        self,
-        metrics: Mapping[str, float],
-        *,
-        planned_step_id: int,
-        split: str,
-        accuracy_stats: Mapping[str, int] | None = None,
-        reduction_mode: str | None = None,
-    ) -> Mapping[str, Any]: ...
+    def gather_metrics(self, batch: MetricBatch) -> Mapping[str, Any]: ...
 
     def gather_loss_denominators(
         self,
@@ -375,18 +374,36 @@ class ForwardEvalRunner:
         scalars = _metric_scalars(None, loss_artifact)
         accuracy_stats = _accuracy_stats_from(None, loss_artifact)
         pack_count = len(micro_steps)
+        # `example_count`/`pack_count` are row-envelope fields, not durable
+        # metric keys: a disjoint shard contributes its own exact integer
+        # counts through the same collective and they are extracted back out
+        # after reduction. The replicated evaluator already holds the whole
+        # eval set on every rank and reports its own identical counts.
+        extra_samples: tuple[ScalarSample, ...] = ()
         if sharded:
-            scalars = _prepare_disjoint_shard_scalars(
-                scalars,
-                loss_artifact,
-                example_count=example_count,
-                pack_count=pack_count,
+            extra_samples = (
+                ScalarSample(
+                    name=_EXAMPLE_COUNT_METRIC,
+                    reducer=REDUCER_SUM,
+                    value=float(example_count),
+                    integral=True,
+                ),
+                ScalarSample(
+                    name=_PACK_COUNT_METRIC,
+                    reducer=REDUCER_SUM,
+                    value=float(pack_count),
+                    integral=True,
+                ),
             )
         gathered, global_accuracy_stats = self._gather_scalars(
-            scalars, planned_step_id=planned_step_id, accuracy_stats=accuracy_stats
+            scalars,
+            planned_step_id=planned_step_id,
+            loss_artifact=loss_artifact,
+            accuracy_stats=accuracy_stats,
+            extra_samples=extra_samples,
         )
         if sharded:
-            gathered, example_count, pack_count = _finalize_disjoint_shard_scalars(
+            gathered, example_count, pack_count = _extract_shard_envelope_counts(
                 gathered
             )
         return example_count, pack_count, gathered, global_accuracy_stats
@@ -411,22 +428,30 @@ class ForwardEvalRunner:
         scalars: Mapping[str, float | None],
         *,
         planned_step_id: int,
+        loss_artifact: Mapping[str, Any],
         accuracy_stats: Mapping[str, int] | None = None,
+        extra_samples: tuple[ScalarSample, ...] = (),
     ) -> tuple[dict[str, float | None], dict[str, int] | None]:
         gather = getattr(self.runtime, "gather_metrics", None)
         if not callable(gather):
             return dict(scalars), _strict_accuracy_stats_or_none(accuracy_stats)
-        finite_or_nonfinite = {
-            name: float(value) for name, value in scalars.items() if value is not None
-        }
-        gather_kwargs: dict[str, Any] = {
-            "planned_step_id": planned_step_id,
-            "split": EVAL_FORWARD_SPLIT,
-            "accuracy_stats": accuracy_stats,
-        }
-        if self.reduction_mode == EVAL_REDUCTION_DISJOINT_SHARD:
-            gather_kwargs["reduction_mode"] = EVAL_REDUCTION_DISJOINT_SHARD
-        gathered = gather(finite_or_nonfinite, **gather_kwargs)
+        sharded = self.reduction_mode == EVAL_REDUCTION_DISJOINT_SHARD
+        gathered = gather(
+            loss_telemetry_batch(
+                planned_step_id=planned_step_id,
+                split=EVAL_FORWARD_SPLIT,
+                loss_metrics=scalars,
+                loss_artifact=loss_artifact,
+                # Disjoint shards hold partial contributions to one global eval
+                # result; a replicated evaluator already holds the whole eval
+                # set on every rank, so its values must be identical, not summed
+                # and not averaged.
+                partial_rank_contributions=sharded,
+                accuracy_stats=accuracy_stats,
+                extra_samples=extra_samples,
+                reduction_mode=EVAL_REDUCTION_DISJOINT_SHARD if sharded else None,
+            )
+        )
         reduced = gathered.get("metrics") if isinstance(gathered, Mapping) else None
         if not isinstance(reduced, Mapping):
             raise RuntimeContractError(
@@ -492,76 +517,23 @@ def _runtime_model(runtime: EvalRuntimeBoundary | None, fallback_model: Any) -> 
     return getattr(runtime, "model", fallback_model)
 
 
-def _prepare_disjoint_shard_scalars(
-    scalars: Mapping[str, float | None],
-    loss_artifact: Mapping[str, Any],
-    *,
-    example_count: int,
-    pack_count: int,
-) -> dict[str, float | None]:
-    """Inject rank-local sufficient statistics before the metric gather.
-
-    `example_count`/`pack_count` become ordinary sum-reduced metric keys
-    (never durable row fields themselves -- extracted back out after
-    reduction). Each term's `token_weighted_diag` value is replaced by its
-    pre-weighted product (`value * local selected_count`) plus a companion
-    `.../__weight__` key, so the exact cross-rank weighted average
-    `sum_r(value_r * count_r) / sum_r(count_r)` can be recovered from two
-    plain sums.
-    """
-
-    prepared = dict(scalars)
-    prepared["example_count"] = float(example_count)
-    prepared["pack_count"] = float(pack_count)
-    for term in loss_artifact.get("terms", ()):
-        name = str(term.get("name"))
-        weighted_key = f"loss/{name}{_TOKEN_WEIGHTED_DIAG_SUFFIX}"
-        if weighted_key not in prepared:
-            continue
-        local_value = prepared[weighted_key]
-        local_value = 0.0 if local_value is None else float(local_value)
-        selected_count = int(term.get("selected_count", 0))
-        prepared[weighted_key] = local_value * float(selected_count)
-        prepared[f"loss/{name}{_TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX}"] = float(
-            selected_count
-        )
-    return prepared
-
-
-def _finalize_disjoint_shard_scalars(
+def _extract_shard_envelope_counts(
     scalars: Mapping[str, float | None],
 ) -> tuple[dict[str, float | None], int, int]:
+    """Take the reduced row-envelope counts back out of the metric mapping.
+
+    They ride the same collective as every other sample (declared exact
+    integer sums) but are row-envelope fields rather than durable metric keys,
+    so they never reach the canonical row under these internal names.
+    """
+
     result = dict(scalars)
     example_count = _required_nonnegative_int(
-        result.pop("example_count", None), field="example_count"
+        result.pop(_EXAMPLE_COUNT_METRIC, None), field=_EXAMPLE_COUNT_METRIC
     )
     pack_count = _required_nonnegative_int(
-        result.pop("pack_count", None), field="pack_count"
+        result.pop(_PACK_COUNT_METRIC, None), field=_PACK_COUNT_METRIC
     )
-    weight_keys = [
-        key for key in result if key.endswith(_TOKEN_WEIGHTED_DIAG_WEIGHT_SUFFIX)
-    ]
-    for weight_key in weight_keys:
-        base_key = weight_key[: -len("/__weight__")]
-        weight_value = result.pop(weight_key)
-        if base_key not in result:
-            continue
-        weight = 0.0 if weight_value is None else float(weight_value)
-        if weight <= 0.0:
-            # Mirrors `_weighted_average`'s own zero-total-weight convention
-            # (`src/losses/runner.py`) exactly: a term with globally zero
-            # selected tokens across the sharded eval set (e.g. an optional
-            # coordinate term on a text-only eval split) is not corrupted
-            # data -- `TrainRuntime._reduce_eval_sum_metric` already
-            # fail-closes on a negative per-rank weight before this runs, so
-            # reaching here with `weight <= 0.0` only ever means an honest
-            # global zero, which the replicated reference this reduction
-            # must reproduce also resolves to 0.0, never a raise.
-            result[base_key] = 0.0
-            continue
-        numerator = result[base_key]
-        numerator = 0.0 if numerator is None else float(numerator)
-        result[base_key] = numerator / weight
     return result, example_count, pack_count
 
 

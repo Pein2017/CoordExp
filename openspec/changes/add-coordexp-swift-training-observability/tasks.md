@@ -80,31 +80,57 @@
 
 ## 2. Wave 2 - Explicit distributed metric reduction
 
-- [ ] 2.1 Add failing unit tests for scalar and ratio samples, cross-rank
+- [x] 2.1 Add failing unit tests for scalar and ratio samples, cross-rank
   schema/reducer disagreement, required versus backend-unavailable fields,
   identical-value mismatch, sum-before-divide ratios, and rejection of a
   metric with no reducer.
-- [ ] 2.2 Implement the narrow immutable metric sample/batch types and reducer
+- [x] 2.2 Implement the narrow immutable metric sample/batch types and reducer
   logic in `src/runtime/metrics.py`; use `BOOL_ALL` for boolean conjunction,
   keep reducer selection producer-owned, and add no
   mutable registry, event names, subscriptions, or implicit mean fallback.
-- [ ] 2.3 Migrate train metric gathering to typed batches, preserving exact
+- [x] 2.3 Migrate train metric gathering to typed batches, preserving exact
   integer accuracy statistics and keeping per-rank reports ephemeral rather
   than serializing a normal `per_rank_measurement` trace.
-- [ ] 2.4 Migrate both replicated and disjoint-shard eval reduction to explicit
+- [x] 2.4 Migrate both replicated and disjoint-shard eval reduction to explicit
   `IDENTICAL`, `SUM`, `MAX`, `BOOL_ALL`, and ratio samples while preserving
   full-row equivalence and best-checkpoint selector values.
-- [ ] 2.5 Add and execute a real two-process Gloo probe with deliberately
+- [x] 2.5 Add and execute a real two-process Gloo probe with deliberately
   asymmetric rank-local norms, timings, counts, and numerator/denominator
   statistics; assert rank maximum, sum, ratio, schema agreement, and clean
   collective termination.
-- [ ] 2.6 Delete the superseded key-name/suffix reducer tables, implicit
+- [x] 2.6 Delete the superseded key-name/suffix reducer tables, implicit
   plain-mean branch, and normal-row per-rank serialization after all callers
   use typed batches.
-- [ ] 2.7 Gate Wave 2 with focused runtime and eval suites, the Gloo receipt,
+- [x] 2.7 Gate Wave 2 with focused runtime and eval suites, the Gloo receipt,
   strict OpenSpec validation, and searches proving no implicit reducer or
   dynamic registry remains; do not continue with an unresolved test or
   validation failure.
+
+> **Wave 2 closed (2026-08-20, opus builder, zero correction rounds):**
+> typed reduction lives in new `src/runtime/metrics.py` (immutable
+> samples/batches; SUM/MAX/IDENTICAL/BOOL_ALL/ratio; producer-declared
+> reducers; undeclared metric raises `runtime.metric_reducer_undeclared`;
+> no registry, no implicit mean). The Wave-0 amendment's four families
+> landed as declared RED-first value changes with per-family RED receipts
+> (SUM counts, count-weighted ratio diag, BOOL_ALL finite, and
+> replicated-eval IDENTICAL implemented EXACT after the gloo probe
+> measured bitwise-0.0 divergence). `train_runtime.py` 1165->583 lines:
+> plain-mean branch (2b0a2165a TODO discharged), all suffix/prefix
+> reducer tables, and the eval dict machinery deleted; normal rows no
+> longer serialize `per_rank_measurement` (zero hits in src/; per-rank
+> scalars remain ephemeral in ReducedMetricBatch for bounded lifecycle
+> receipts). Collective order/count unchanged (single gather; fixtures
+> byte-identical; compat suite green). ws-1 parity exclusion list DELETED
+> - every reduced key now matches the reference. Gates (lead replays
+> identical): 384/0/0 reduction, 379/0 artifacts/reporting/compat, 1446/0
+> collateral, strict valid, determinant fingerprints + payload sha
+> byte-identical. Deviations accepted: lr/group_* + merged-denominator
+> counts -> fail-closed IDENTICAL (value-preserving), NaN-propagating
+> MAX, error-code renames (test-only callers), typed
+> `EvalRuntimeBoundary.gather_metrics` protocol. Manifest amend-5 pins
+> counts, retires the probe placeholder, and records two archived probe
+> scripts that would break if re-run (deliberately unedited). Flake
+> tripwire count stands at 2 (zero this wave).
 
 ## 3. Wave 3 - Truthful optimizer, loss, timing, and resource observations
 

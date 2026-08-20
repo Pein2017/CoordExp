@@ -1011,7 +1011,14 @@ def exercise_characterized_run_writer(tmp_path: Path) -> dict[str, bytes]:
 
 
 class _CharacterizationRuntime:
-    """The minimal reduction surface the completed-step callback consumes."""
+    """The minimal reduction surface the completed-step callback consumes.
+
+    DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, task
+    2.3): the callback now hands the boundary a typed `MetricBatch` instead of
+    an untyped mapping, so this double runs the real world-size-one reduction.
+    The characterized rows themselves are unchanged, which is what
+    `completed_step_rows.json` continues to prove byte-for-byte.
+    """
 
     is_main_process = True
     world_size = 1
@@ -1023,11 +1030,15 @@ class _CharacterizationRuntime:
 
     accelerator = _Accelerator()
 
-    def gather_metrics(self, metrics: Mapping[str, Any], **kwargs: Any) -> Any:
-        result: dict[str, Any] = {"metrics": dict(metrics)}
-        accuracy_stats = kwargs.get("accuracy_stats")
-        if isinstance(accuracy_stats, Mapping):
-            result["accuracy_stats"] = dict(accuracy_stats)
+    def gather_metrics(self, batch: Any) -> Any:
+        from src.runtime.metrics import reduce_rank_payloads
+
+        reduced = reduce_rank_payloads(
+            [batch.to_rank_payload(rank=0, world_size=1)], world_size=1
+        )
+        result: dict[str, Any] = {"metrics": dict(reduced.metrics)}
+        if reduced.accuracy_stats is not None:
+            result["accuracy_stats"] = dict(reduced.accuracy_stats)
         return result
 
 

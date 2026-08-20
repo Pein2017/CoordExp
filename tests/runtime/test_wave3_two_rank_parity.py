@@ -420,12 +420,18 @@ def _run_planned_step(
         parameter.detach().clone() for parameter in model.parameters()
     ]
     if gather_metrics:
+        from src.runtime.metrics import loss_telemetry_batch
+
         result["reduced_metrics"] = dict(
             runtime.gather_metrics(
-                finalized["metrics"],
-                planned_step_id=planned_step_id,
-                split="train",
-                accuracy_stats=finalized["accuracy_stats"],
+                loss_telemetry_batch(
+                    planned_step_id=planned_step_id,
+                    split="train",
+                    loss_metrics=finalized["metrics"],
+                    loss_artifact=finalized,
+                    partial_rank_contributions=True,
+                    accuracy_stats=finalized["accuracy_stats"],
+                )
             )["metrics"]
         )
     return result
@@ -546,13 +552,14 @@ def _parity_worker(rank: int, port: int, output: mp.Queue) -> None:
             # untouched by it: `count/packs`/`count/examples` count this
             # rank's own micro-steps, and `token_weighted_diag` is a
             # per-rank token mean that the train reducer averages unweighted.
-            # Every objective, accuracy, finite and globally-denominated
-            # count key IS compared.
-            compared = {
-                key: value
-                for key, value in reference["reduced_metrics"].items()
-                if not _is_rank_local_shard_metric_key(key)
-            }
+            # DECLARED FLIP (add-coordexp-swift-training-observability,
+            # Wave 2, tasks 2.3/2.4): `count/packs`, `count/examples`, and
+            # `loss/<term>/token_weighted_diag` used to be excluded here
+            # because the implicit mean made them disagree with the
+            # world-size-one reference. Their declared SUM and count-weighted
+            # ratio reducers now reproduce that reference exactly, so EVERY
+            # reduced key is compared.
+            compared = dict(reference["reduced_metrics"])
             assert any(key.startswith("loss/") for key in compared)
             for key, reference_value in compared.items():
                 observed = distributed["reduced_metrics"][key]
@@ -664,13 +671,6 @@ def _non_finite_gate_worker(rank: int, port: int, output: mp.Queue) -> None:
     finally:
         TokenTypeGateLoss.per_atom_loss = original_per_atom_loss  # type: ignore[method-assign]
         _destroy_process_group_best_effort()
-
-
-_RANK_LOCAL_SHARD_METRIC_KEYS = frozenset({"count/packs", "count/examples"})
-
-
-def _is_rank_local_shard_metric_key(key: str) -> bool:
-    return key in _RANK_LOCAL_SHARD_METRIC_KEYS or key.endswith("/token_weighted_diag")
 
 
 def _assert_tensor_lists_close(

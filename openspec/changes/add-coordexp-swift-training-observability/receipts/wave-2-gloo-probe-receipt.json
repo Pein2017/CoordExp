@@ -1,0 +1,128 @@
+{
+  "backend": "gloo",
+  "declared_identical_abs_tolerance": 0.0,
+  "device": "cpu",
+  "every_rank_derives_the_same_global_row": true,
+  "identical_reducer_decision": "exact",
+  "ok": true,
+  "per_rank": {
+    "0": {
+      "checks": {
+        "collective_usable_after_failure": true,
+        "not_mean:count/examples": true,
+        "not_mean:count/packs": true,
+        "not_mean:finite/total_loss": true,
+        "not_mean:loss/base_ce/token_weighted_diag": true,
+        "per_rank_projection_has_both_ranks": true,
+        "reduced:count/eligible_segments": true,
+        "reduced:count/examples": true,
+        "reduced:count/packs": true,
+        "reduced:finite/total_loss": true,
+        "reduced:grad_norm/pre_clip_rank_max": true,
+        "reduced:input_wait_seconds": true,
+        "reduced:loss/base_ce/token_weighted_diag": true,
+        "reduced:lr/group_0": true,
+        "reduced:step_duration_seconds": true,
+        "replicated_divergence_within_declared_tolerance": true,
+        "schema_disagreement_fails_closed": true
+      },
+      "clean_shutdown": true,
+      "ok": true,
+      "rank": 0,
+      "reduced_metrics": {
+        "count/eligible_segments": 4.0,
+        "count/examples": 14.0,
+        "count/packs": 4.0,
+        "finite/total_loss": 0.0,
+        "grad_norm/pre_clip_rank_max": 1.75,
+        "input_wait_seconds": 0.3,
+        "loss/base_ce/token_weighted_diag": 1.25,
+        "lr/group_0": 1e-05,
+        "step_duration_seconds": 0.9
+      },
+      "reduction": "all_rank_mixed",
+      "replicated_divergence": {
+        "bitwise_identical": true,
+        "max_abs_divergence": 0.0,
+        "per_rank_value_hex": [
+          "0x1.3629b00000000p+3",
+          "0x1.3629b00000000p+3"
+        ],
+        "per_rank_values": [
+          9.692588806152344,
+          9.692588806152344
+        ]
+      },
+      "schema_disagreement_code": "runtime.metric_schema_mismatch"
+    },
+    "1": {
+      "checks": {
+        "collective_usable_after_failure": true,
+        "not_mean:count/examples": true,
+        "not_mean:count/packs": true,
+        "not_mean:finite/total_loss": true,
+        "not_mean:loss/base_ce/token_weighted_diag": true,
+        "per_rank_projection_has_both_ranks": true,
+        "reduced:count/eligible_segments": true,
+        "reduced:count/examples": true,
+        "reduced:count/packs": true,
+        "reduced:finite/total_loss": true,
+        "reduced:grad_norm/pre_clip_rank_max": true,
+        "reduced:input_wait_seconds": true,
+        "reduced:loss/base_ce/token_weighted_diag": true,
+        "reduced:lr/group_0": true,
+        "reduced:step_duration_seconds": true,
+        "replicated_divergence_within_declared_tolerance": true,
+        "schema_disagreement_fails_closed": true
+      },
+      "clean_shutdown": true,
+      "ok": true,
+      "rank": 1,
+      "reduced_metrics": {
+        "count/eligible_segments": 4.0,
+        "count/examples": 14.0,
+        "count/packs": 4.0,
+        "finite/total_loss": 0.0,
+        "grad_norm/pre_clip_rank_max": 1.75,
+        "input_wait_seconds": 0.3,
+        "loss/base_ce/token_weighted_diag": 1.25,
+        "lr/group_0": 1e-05,
+        "step_duration_seconds": 0.9
+      },
+      "reduction": "all_rank_mixed",
+      "replicated_divergence": {
+        "bitwise_identical": true,
+        "max_abs_divergence": 0.0,
+        "per_rank_value_hex": [
+          "0x1.3629b00000000p+3",
+          "0x1.3629b00000000p+3"
+        ],
+        "per_rank_values": [
+          9.692588806152344,
+          9.692588806152344
+        ]
+      },
+      "schema_disagreement_code": "runtime.metric_schema_mismatch"
+    }
+  },
+  "process_exit_codes": [
+    0,
+    0
+  ],
+  "rendezvous_port": 54519,
+  "replicated_eval_divergence": {
+    "bitwise_identical": true,
+    "max_abs_divergence": 0.0,
+    "per_rank_value_hex": [
+      "0x1.3629b00000000p+3",
+      "0x1.3629b00000000p+3"
+    ],
+    "per_rank_values": [
+      9.692588806152344,
+      9.692588806152344
+    ]
+  },
+  "schema": "coordexp-swift-obs-wave2-gloo-probe-v1",
+  "world_size": 2
+}
+

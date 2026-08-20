@@ -10,11 +10,16 @@ metric registry -- ``add-coordexp-swift-training-observability`` may extend this
 seam later, but this change does not pre-build that feature or change an artifact
 byte.
 
-``_append_logging_row_shared``, ``_resource_scalar_metrics``, and
-``_per_rank_measurement`` are also called directly by
-``src.training.session._eval_forward_handler`` (moved to the session owner in
-wave 5), which imports this module rather than the facade forwarding them under
-their historical names.
+``_append_logging_row_shared`` and ``_resource_scalar_metrics`` are also called
+directly by ``src.training.session._eval_forward_handler`` (moved to the session
+owner in wave 5), which imports this module rather than the facade forwarding
+them under their historical names.
+
+Wave 2 of ``add-coordexp-swift-training-observability`` made this owner declare
+each observation scalar's reducer through ``src/runtime/metrics.py`` and stopped
+serializing a per-rank measurement trace into the canonical row; per-rank
+scalars remain available inside the reduction result for bounded lifecycle
+resource accounting only.
 """
 
 from __future__ import annotations
@@ -31,6 +36,12 @@ from src.artifacts.resources import (
 )
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
+from src.runtime.metrics import (
+    REDUCER_IDENTICAL,
+    REDUCER_MAX,
+    ScalarSample,
+    loss_telemetry_batch,
+)
 from src.training import cache_workflow
 from src.training.supervised_trainer import CompletedStepObservation
 
@@ -76,37 +87,6 @@ def _resource_scalar_metrics(snapshot: Mapping[str, Any]) -> dict[str, float]:
             if isinstance(value, int) and not isinstance(value, bool):
                 metrics[f"resource/gpu_{field}"] = float(value)
     return metrics
-
-
-def _per_rank_measurement(
-    gathered: Mapping[str, Any],
-) -> dict[str, dict[str, float]] | None:
-    per_rank = gathered.get("per_rank_metrics")
-    if not isinstance(per_rank, Mapping):
-        return None
-    prefixes = (
-        "eval_duration_seconds",
-        "input_build_seconds",
-        "input_wait_seconds",
-        "resource/",
-        "step_duration_seconds",
-    )
-    receipt: dict[str, dict[str, float]] = {}
-    for rank, metrics in per_rank.items():
-        if not isinstance(metrics, Mapping):
-            continue
-        selected = {
-            str(key): float(value)
-            for key, value in metrics.items()
-            if isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and any(
-                str(key) == prefix or str(key).startswith(prefix) for prefix in prefixes
-            )
-        }
-        if selected:
-            receipt[str(rank)] = {key: selected[key] for key in sorted(selected)}
-    return receipt or None
 
 
 def _append_logging_row_shared(
@@ -250,33 +230,50 @@ class CompletedStepReporter:
         loss_bundle = dict(observation.loss_bundle_artifact)
         metrics = loss_bundle.get("metrics", {})
         accuracy_stats = loss_bundle.get("accuracy_stats")
-        scalar_metrics = _scheduler_lr_metrics(observation.scheduler_artifact)
-        if isinstance(metrics, Mapping):
-            scalar_metrics.update({str(name): value for name, value in metrics.items()})
+        observation_samples: list[ScalarSample] = []
+        # Applied learning rates and shared schedule values are one global
+        # number every rank must already agree on (task 2.4): a rank-local
+        # divergence is a fault, never something to average away.
+        for name, value in _scheduler_lr_metrics(observation.scheduler_artifact).items():
+            observation_samples.append(
+                ScalarSample(name=name, reducer=REDUCER_IDENTICAL, value=value)
+            )
+        # The slowest rank owns the distributed critical path, so every timing
+        # and high-water resource scalar reduces as the all-rank maximum.
         timing_fields = {
             "step_duration_seconds": observation.step_duration_seconds,
             "input_build_seconds": observation.input_build_seconds,
             "input_wait_seconds": observation.input_wait_seconds,
         }
-        scalar_metrics.update(
-            {
-                name: float(value)
-                for name, value in timing_fields.items()
-                if value is not None
-            }
-        )
+        for name, value in timing_fields.items():
+            if value is None:
+                continue
+            observation_samples.append(
+                ScalarSample(name=name, reducer=REDUCER_MAX, value=float(value))
+            )
         resource_snapshot = (
             None if resource_collector is None else dict(resource_collector())
         )
         if resource_snapshot is not None:
-            scalar_metrics.update(_resource_scalar_metrics(resource_snapshot))
+            for name, value in _resource_scalar_metrics(resource_snapshot).items():
+                observation_samples.append(
+                    ScalarSample(name=name, reducer=REDUCER_MAX, value=float(value))
+                )
         gathered = runtime.gather_metrics(
-            scalar_metrics,
-            planned_step_id=observation.planned_step_id,
-            split=cache_workflow.TRAIN_SPLIT,
-            accuracy_stats=accuracy_stats
-            if isinstance(accuracy_stats, Mapping)
-            else None,
+            loss_telemetry_batch(
+                planned_step_id=observation.planned_step_id,
+                split=cache_workflow.TRAIN_SPLIT,
+                loss_metrics=metrics if isinstance(metrics, Mapping) else {},
+                loss_artifact=loss_bundle,
+                # Every rank owns a disjoint slice of the planned step, so its
+                # objective telemetry and pack/example counts are partial
+                # contributions to one global value.
+                partial_rank_contributions=True,
+                accuracy_stats=accuracy_stats
+                if isinstance(accuracy_stats, Mapping)
+                else None,
+                extra_samples=tuple(observation_samples),
+            )
         )
         reduced = gathered.get("metrics") if isinstance(gathered, Mapping) else None
         if not isinstance(reduced, Mapping):
@@ -315,9 +312,6 @@ class CompletedStepReporter:
         }
         if isinstance(reduced_accuracy_stats, Mapping):
             row["accuracy_stats"] = dict(reduced_accuracy_stats)
-        per_rank_measurement = _per_rank_measurement(gathered)
-        if per_rank_measurement is not None:
-            row["per_rank_measurement"] = per_rank_measurement
         _append_logging_row_shared(writer=writer, row=row, runtime=runtime)
         warmup_steps = lifecycle.get("measurement_warmup_steps")
         reduced_step_duration = reduced.get("step_duration_seconds")
