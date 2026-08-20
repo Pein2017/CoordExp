@@ -74,6 +74,36 @@ and the entry carries that phase into the terminal without replacing the
 primary owner error.  Historical terminal JSON is not rewritten; future
 attempts use the corrected ledger.
 
+## Additive surface reconciliation owner
+
+The Source-witness seam now has an experiment-local reconciliation owner.  It
+does not copy logits, replace the BF16/FA2 training surface, use the fp32/SDPA
+audit surface as a training witness, change the `1e-6` margin rule, or add a
+fallback objective.  It binds the two execution domains explicitly:
+
+- GPU 1 `hf`, batch one, fp32, SDPA runtime identity and both RP audit hashes;
+- GPU 0 BF16/FlashAttention-2/eval/no-cache training identity, adapter and
+  selected embedding-delta hashes;
+- canonical checkpoint/base-model paths, manifest and image identity, prompt
+  and tokenizer hashes, and the distinct checkpoint-payload digest domains;
+- the exact two sealed Source decodes and token count.
+
+The owner invokes the existing `WitnessMeasurement` checker as its only
+scientific decision owner.  Exact agreement returns a content-addressed
+admission receipt; identity drift, unserializable runtime evidence, image
+lineage drift, a nonzero teacher-forced change, or a checker exception returns
+a typed non-admission receipt.  `HFNativeOneImageOwnerError` carries that
+receipt, and the Source-audit failure phase serializes it before the service
+re-raises the primary error.  The admitted receipt is included in the
+pre-acquisition owner digest.
+
+The additive contract is CPU/injected evidence only at this point: the focused
+reconciliation/owner/service suites pass 45 tests and the broader current
+Human-13 CPU/injected matrix passes 391 tests with 2 warnings.  No real model,
+GPU, network, checkpoint, update, or output action was performed for this
+correction.  The known image-1584 Source-vs-training greedy mismatch therefore
+remains a scientific HOLD rather than being hidden by the new receipt path.
+
 ## Verification
 
 - Focused entry, service, native-owner, and witness suites: 92 passed.

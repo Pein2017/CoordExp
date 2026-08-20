@@ -1553,6 +1553,15 @@ class ProductionOneImageServices:
                         evidence["source_audit_sha256"] = json_sha256(observed)
                     except BaseException:
                         evidence["source_audit_sha256"] = None
+                    reconciliation = getattr(
+                        error, "reconciliation_receipt", None
+                    )
+                    if reconciliation is not None and callable(
+                        getattr(reconciliation, "to_dict", None)
+                    ):
+                        evidence["surface_reconciliation_receipt"] = (
+                            reconciliation.to_dict()
+                        )
                     try:
                         self._record(phase, status="failed", evidence=evidence)
                     except BaseException as record_error:
@@ -1586,16 +1595,19 @@ class ProductionOneImageServices:
             )
             raise
         except HFNativeOneImageOwnerError as error:
+            owner_error: dict[str, object] = {
+                "type": type(error).__name__,
+                "reason": error.reason,
+                "disposition": error.disposition,
+            }
+            if error.reconciliation_receipt is not None:
+                owner_error["surface_reconciliation_receipt"] = (
+                    error.reconciliation_receipt.to_dict()
+                )
             self._record(
                 "k16_acquisition_replay",
                 status="hf_native_owner_failure",
-                evidence={
-                    "owner_error": {
-                        "type": type(error).__name__,
-                        "reason": error.reason,
-                        "disposition": error.disposition,
-                    }
-                },
+                evidence={"owner_error": owner_error},
             )
             raise
         if not isinstance(acquisition, ProductionAcquisition):

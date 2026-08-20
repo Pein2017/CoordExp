@@ -22,6 +22,11 @@ from scripts.research.human13_hf_native_projection import (
     HFNativeProjectionError,
     hf_native_request_evidence_sha256 as _projected_request_evidence_sha256,
 )
+from scripts.research.human13_source_surface_reconciliation import (
+    SourceSurfaceReconciliationReceipt,
+    SourceSurfaceReconciliationRequest,
+    reconcile_source_surface,
+)
 from src.artifacts.json_values import json_sha256
 
 if TYPE_CHECKING:
@@ -37,6 +42,7 @@ class HFNativeOneImageOwnerError(RuntimeError):
         reason: str,
         *,
         disposition: str = "hf_native_owner_admission_failure",
+        reconciliation_receipt: SourceSurfaceReconciliationReceipt | None = None,
     ) -> None:
         if not isinstance(reason, str) or not reason:
             raise TypeError("HF-native owner failure reason must be nonempty")
@@ -44,6 +50,7 @@ class HFNativeOneImageOwnerError(RuntimeError):
             raise TypeError("HF-native owner failure disposition must be nonempty")
         self.reason = reason
         self.disposition = disposition
+        self.reconciliation_receipt = reconciliation_receipt
         super().__init__(f"{disposition}: {reason}")
 
 
@@ -441,6 +448,7 @@ class PreAcquisitionSourceOwners:
     replay_group_count_at_freeze: int
     source_decodes: tuple[object, ...] = ()
     compiler_raw_logits: object | None = None
+    surface_reconciliation: SourceSurfaceReconciliationReceipt | None = None
 
     def __post_init__(self) -> None:
         if self.frozen_before_acquisition is not True:
@@ -467,6 +475,16 @@ class PreAcquisitionSourceOwners:
                 raise HFNativeOneImageOwnerError(
                     "pre-acquisition compiler row must be one finite graph tensor"
                 )
+        if self.surface_reconciliation is not None and not isinstance(
+            self.surface_reconciliation, SourceSurfaceReconciliationReceipt
+        ):
+            raise HFNativeOneImageOwnerError(
+                "Source surface reconciliation receipt is untyped"
+            )
+        if self.surface_reconciliation is not None and not self.surface_reconciliation.admitted:
+            raise HFNativeOneImageOwnerError(
+                "Source surface reconciliation receipt is not admitted"
+            )
 
     @property
     def content_sha256(self) -> str:
@@ -519,6 +537,9 @@ class PreAcquisitionSourceOwners:
                         self.compiler_raw_logits, "requires_grad", None
                     ),
                 },
+                "surface_reconciliation_sha256": None
+                if self.surface_reconciliation is None
+                else self.surface_reconciliation.content_sha256,
             }
         )
 
@@ -879,6 +900,16 @@ def prepare_repository_source_owners(
     boundaries: list[SourceBoundaryInput] = []
     audit_hashes: list[tuple[float, str]] = []
     checkpoint_hashes: set[str] = set()
+    source_runtime_identities: list[Mapping[str, object]] = []
+    source_checkpoint_payload_sha256s: list[str] = []
+    source_checkpoint_paths: list[str] = []
+    source_tokenizer_sha256s: list[str] = []
+    source_prompt_sha256s: list[str] = []
+    source_image_sha256s: list[str] = []
+    source_manifest_sha256s: list[str] = []
+    source_adapter_sha256s: list[str] = []
+    source_embedding_delta_sha256s: list[str] = []
+    source_base_model_paths: list[str] = []
     manifest_image = cast(Any, request.manifest_image)
     surface = cast(Any, request.session)
     for rp, output in request.source_audits.items():
@@ -906,6 +937,33 @@ def prepare_repository_source_owners(
         )
         checkpoint_sha = str(provenance.get("checkpoint_payload_sha256"))
         checkpoint_hashes.add(checkpoint_sha)
+        runtime_identity = output.get("hf_runtime_identity")
+        source_runtime_identities.append(
+            cast(Mapping[str, object], runtime_identity)
+            if isinstance(runtime_identity, Mapping)
+            else {}
+        )
+        source_checkpoint_payload_sha256s.append(checkpoint_sha)
+        source_checkpoint_paths.append(str(provenance.get("checkpoint_path")))
+        source_tokenizer_sha256s.append(str(provenance.get("tokenizer_sha256")))
+        source_prompt_sha256s.append(json_sha256(prompt_values))
+        source_image_sha256s.append(str(provenance.get("image_sha256")))
+        source_manifest_sha256s.append(str(provenance.get("manifest_sha256")))
+        source_identity = provenance.get("source_checkpoint_identity")
+        source_identity_mapping = (
+            cast(Mapping[str, object], source_identity)
+            if isinstance(source_identity, Mapping)
+            else {}
+        )
+        source_adapter_sha256s.append(
+            str(source_identity_mapping.get("adapter_sha256"))
+        )
+        source_embedding_delta_sha256s.append(
+            str(source_identity_mapping.get("special_embedding_sha256"))
+        )
+        source_base_model_paths.append(
+            str(source_identity_mapping.get("base_model_path"))
+        )
         decode = CurrentDecode(
             image_id=1584,
             trajectory_id=str(output.get("trajectory_id")),
@@ -976,14 +1034,70 @@ def prepare_repository_source_owners(
         (compiler_image.site.generated_token_index,),
     )
     measurement = WitnessMeasurement(decodes=tuple(sealed), surface=surface)
-    lazy_bank = measurement.freeze_witness_bank(binding=WitnessBinding(
+    witness_binding = WitnessBinding(
         unit_id=UNIT_ID,
         source_checkpoint_sha256=checkpoint_hashes.pop(),
         manifest_sha256=getattr(request.config, "manifest_sha256"),
         frozen_before_acquisition=True,
-    ))
-    if measurement.teacher_forced_greedy_change_count() != 0:
-        raise HFNativeOneImageOwnerError("Source audit is not same-model teacher-forced greedy")
+    )
+    frozen_bank: dict[str, Any] = {}
+
+    def freeze_and_check() -> int:
+        frozen_bank["bank"] = measurement.freeze_witness_bank(
+            binding=witness_binding
+        )
+        return measurement.teacher_forced_greedy_change_count()
+
+    reconciliation = reconcile_source_surface(
+        SourceSurfaceReconciliationRequest(
+            training_identity=identity,
+            source_runtime_identities=tuple(source_runtime_identities),
+            source_checkpoint_payload_sha256s=tuple(
+                source_checkpoint_payload_sha256s
+            ),
+            source_checkpoint_paths=tuple(source_checkpoint_paths),
+            training_checkpoint_path=str(
+                getattr(
+                    getattr(getattr(request.assembly, "plan", None), "source", None),
+                    "checkpoint_path",
+                    getattr(request.config, "source_checkpoint_path", None),
+                )
+            ),
+            source_adapter_sha256s=tuple(source_adapter_sha256s),
+            source_embedding_delta_sha256s=tuple(source_embedding_delta_sha256s),
+            source_base_model_paths=tuple(source_base_model_paths),
+            training_base_model_path=str(
+                getattr(
+                    request.config,
+                    "base_model_path",
+                    getattr(
+                        getattr(getattr(request.assembly, "plan", None), "source", None),
+                        "base_model_path",
+                        None,
+                    ),
+                )
+            ),
+            source_manifest_sha256s=tuple(source_manifest_sha256s),
+            manifest_image_sha256=str(
+                getattr(request.manifest_image, "image_sha256", None)
+            ),
+            source_tokenizer_sha256s=tuple(source_tokenizer_sha256s),
+            source_prompt_sha256s=tuple(source_prompt_sha256s),
+            source_image_sha256s=tuple(source_image_sha256s),
+            manifest_sha256=getattr(request.config, "manifest_sha256"),
+            image_id=1584,
+            source_audit_sha256s=tuple(audit_hashes),
+            decodes=tuple(sealed),
+            check=freeze_and_check,
+        )
+    )
+    if not reconciliation.admitted:
+        raise HFNativeOneImageOwnerError(
+            reconciliation.failure_reason or "Source surfaces failed reconciliation",
+            disposition="source_surface_reconciliation_failure",
+            reconciliation_receipt=reconciliation,
+        )
+    lazy_bank = frozen_bank["bank"]
     bank = freeze_witness_bank_for_post_acquisition(lazy_bank)
     realized_margin_probe = AdmittedPostApplyMarginProbe(
         session=request.session,
@@ -1004,6 +1118,7 @@ def prepare_repository_source_owners(
         replay_group_count_at_freeze=0,
         source_decodes=tuple(sealed),
         compiler_raw_logits=compiler_raw_logits,
+        surface_reconciliation=reconciliation,
     )
 
 
