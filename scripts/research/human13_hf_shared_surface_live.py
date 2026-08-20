@@ -672,7 +672,19 @@ class HFSharedSurfaceSession:
         )
         self._prompt = _prompt_tokens(skeleton)
         prompt_sha256 = json_sha256(list(self._prompt))
-        image_sha256 = _image_sha256(skeleton)
+        # ``HFSharedSurfaceIdentity.image_sha256`` is the canonical raw image
+        # content binding shared with the manifest/Source surface.  The
+        # runtime composite (image id + pixels + grid) remains a private
+        # session invariant so the two digest domains are never compared as if
+        # they were interchangeable.
+        image_encoding = getattr(skeleton, "image_encoding", None)
+        image_plan = getattr(image_encoding, "plan", None)
+        image_sha256 = getattr(image_plan, "image_content_sha256", None)
+        if not isinstance(image_sha256, str) or len(image_sha256) != 64:
+            raise HFSharedSurfaceLiveError(
+                "shared-surface raw image content identity is missing"
+            )
+        self._runtime_image_sha256 = _image_sha256(skeleton)
         validation = assembly.validation
         tokenizer_sha256 = getattr(assembly.components, "tokenizer_sha256", None)
         if (
@@ -1229,7 +1241,7 @@ class HFSharedSurfaceSession:
             )
         if _prompt_tokens(skeleton) != self._prompt:
             raise HFSharedSurfaceLiveError("shared-surface prompt identity drifted")
-        if _image_sha256(skeleton) != self._identity.image_sha256:
+        if _image_sha256(skeleton) != self._runtime_image_sha256:
             raise HFSharedSurfaceLiveError("shared-surface image identity drifted")
         selected_delta = getattr(
             assembly.special_token_result, "shared_embed_delta", None
@@ -1898,6 +1910,12 @@ class HFSharedSurfaceSession:
             self._close_internal("failed", primary_exception=error)
             raise error
         return self._close_internal("completed")
+
+    def close_failed(self) -> SharedSurfaceResourceReceipt:
+        """Close an aborted pre-acquisition session without claiming K16 completion."""
+
+        self._require_open()
+        return self._close_internal("failed")
 
 
 def open_hf_shared_surface(

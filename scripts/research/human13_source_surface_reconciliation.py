@@ -10,10 +10,11 @@ teacher-forced checker agree exactly.
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping, Sequence
+import copy
 from dataclasses import dataclass
 import math
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from src.artifacts.json_values import json_sha256
 from src.data.geometry import COORD_TOKEN_PATTERN
@@ -34,6 +35,14 @@ def _digest(value: object, *, field: str) -> str:
     except ValueError as error:
         raise ValueError(f"{field} must be a SHA-256 digest") from error
     return value
+
+
+def _coerce_int(value: object) -> int:
+    return int(cast(Any, value))
+
+
+def _coerce_float(value: object) -> float:
+    return float(cast(Any, value))
 
 
 def _field(value: object, name: str) -> object:
@@ -103,6 +112,104 @@ class CoordinateAliasEvidence:
             "disposition": self.disposition,
         }
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> CoordinateAliasEvidence:
+        expected = {
+            "token_position",
+            "coordinate_role",
+            "source_token",
+            "training_token",
+            "source_bin",
+            "training_bin",
+            "delta_bin",
+            "source_bbox",
+            "training_bbox",
+            "owner_id",
+            "source_iou",
+            "training_iou",
+            "disposition",
+        }
+        if set(value) != expected:
+            raise ValueError("coordinate alias evidence fields differ from schema")
+        return cls(
+            token_position=_coerce_int(value["token_position"]),
+            coordinate_role=str(value["coordinate_role"]),
+            source_token=str(value["source_token"]),
+            training_token=str(value["training_token"]),
+            source_bin=_coerce_int(value["source_bin"]),
+            training_bin=_coerce_int(value["training_bin"]),
+            delta_bin=_coerce_int(value["delta_bin"]),
+            source_bbox=cast(
+                tuple[float, float, float, float],
+                tuple(
+                    _coerce_float(item)
+                    for item in cast(Sequence[object], value["source_bbox"])
+                ),
+            ),
+            training_bbox=cast(
+                tuple[float, float, float, float],
+                tuple(
+                    _coerce_float(item)
+                    for item in cast(Sequence[object], value["training_bbox"])
+                ),
+            ),
+            owner_id=str(value["owner_id"]),
+            source_iou=_coerce_float(value["source_iou"]),
+            training_iou=_coerce_float(value["training_iou"]),
+            disposition=str(value["disposition"]),
+        )
+
+
+@dataclass(frozen=True)
+class CoordinateAliasFailureEvidence:
+    """Compact, offline-replayable evidence for a rejected alias attempt."""
+
+    payload: Mapping[str, object]
+
+    _EXPECTED_FIELDS = frozenset(
+        {
+            "schema_version",
+            "repetition_penalty",
+            "source_tokens",
+            "training_tokens",
+            "source_token_count",
+            "training_token_count",
+            "source_token_ids",
+            "training_token_ids",
+            "mismatch_positions",
+            "source_owner_set",
+            "training_owner_set",
+            "symmetric_owner_set_difference",
+            "source_owner_rows",
+            "training_owner_rows",
+            "source_membership",
+            "training_membership",
+            "source_protected_g",
+            "training_protected_g",
+            "token_mismatches",
+            "affected_rows",
+            "source_boxes",
+            "training_boxes",
+            "gt_boxes",
+        }
+    )
+
+    def __post_init__(self) -> None:
+        if set(self.payload) != self._EXPECTED_FIELDS:
+            raise ValueError("coordinate alias failure evidence fields differ from schema")
+        if self.payload.get("schema_version") != "human13_coordinate_alias_failure.v1":
+            raise ValueError("coordinate alias failure evidence schema differs")
+        # Force a JSON-addressability check at the constructor boundary so a
+        # receipt can never carry an opaque object that cannot be reloaded.
+        json_sha256(dict(self.payload))
+
+    def to_dict(self) -> dict[str, object]:
+        return copy.deepcopy(dict(self.payload))
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> CoordinateAliasFailureEvidence:
+        return cls(copy.deepcopy(dict(value)))
+
 
 @dataclass(frozen=True)
 class CoordinateAliasReconciliation:
@@ -112,6 +219,7 @@ class CoordinateAliasReconciliation:
     mismatch_count: int
     failure_reason: str | None
     evidence: tuple[CoordinateAliasEvidence, ...] = ()
+    failure_evidence: CoordinateAliasFailureEvidence | None = None
 
     @property
     def content_sha256(self) -> str:
@@ -124,6 +232,11 @@ class CoordinateAliasReconciliation:
             "mismatch_count": self.mismatch_count,
             "failure_reason": self.failure_reason,
             "evidence": [item.to_dict() for item in self.evidence],
+            "failure_evidence": (
+                self.failure_evidence.to_dict()
+                if self.failure_evidence is not None
+                else None
+            ),
         }
 
     def to_dict(self) -> dict[str, object]:
@@ -131,11 +244,58 @@ class CoordinateAliasReconciliation:
         payload["content_sha256"] = self.content_sha256
         return payload
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> CoordinateAliasReconciliation:
+        expected = {
+            "schema_version",
+            "admitted",
+            "mismatch_count",
+            "failure_reason",
+            "evidence",
+            "failure_evidence",
+            "content_sha256",
+        }
+        if set(value) != expected or value.get("schema_version") != (
+            "human13_coordinate_alias_reconciliation.v1"
+        ):
+            raise ValueError("coordinate alias reconciliation fields differ from schema")
+        raw_evidence = value.get("evidence")
+        if not isinstance(raw_evidence, list) or not all(
+            isinstance(item, Mapping) for item in raw_evidence
+        ):
+            raise ValueError("coordinate alias evidence is malformed")
+        raw_failure = value.get("failure_evidence")
+        failure = (
+            CoordinateAliasFailureEvidence.from_dict(raw_failure)
+            if isinstance(raw_failure, Mapping)
+            else None
+        )
+        receipt = cls(
+            admitted=bool(value["admitted"]),
+            mismatch_count=_coerce_int(value["mismatch_count"]),
+            failure_reason=(
+                str(value["failure_reason"])
+                if value["failure_reason"] is not None
+                else None
+            ),
+            evidence=tuple(
+                CoordinateAliasEvidence.from_dict(item) for item in raw_evidence
+            ),
+            failure_evidence=failure,
+        )
+        if value.get("content_sha256") != receipt.content_sha256:
+            raise ValueError("coordinate alias reconciliation content hash differs")
+        return receipt
+
 
 def reconcile_coordinate_alias(
     *,
     source_tokens: Sequence[object],
     training_tokens: Sequence[object],
+    source_token_ids: Sequence[object] | None = None,
+    training_token_ids: Sequence[object] | None = None,
+    repetition_penalty: float | None = None,
+    forced_failure_reason: str | None = None,
     coordinate_roles: Mapping[int, tuple[str, str]],
     source_boxes: Mapping[str, Sequence[float]],
     training_boxes: Mapping[str, Sequence[float]],
@@ -158,38 +318,210 @@ def reconcile_coordinate_alias(
 
     source = tuple(str(item) for item in source_tokens)
     training = tuple(str(item) for item in training_tokens)
-    if len(source) != len(training):
+
+    def _token_ids(
+        values: Sequence[object] | None, *, length: int
+    ) -> tuple[int | None, ...]:
+        if values is None:
+            return tuple(None for _ in range(length))
+        result: list[int | None] = []
+        for value in values:
+            if isinstance(value, bool) or not isinstance(value, int):
+                result.append(None)
+            else:
+                result.append(value)
+        return tuple(result)
+
+    source_ids = _token_ids(source_token_ids, length=len(source))
+    training_ids = _token_ids(training_token_ids, length=len(training))
+
+    def _raw_box(value: object) -> object:
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return [item for item in value]
+        return None
+
+    def _safe_iou(first: object, second: object) -> float | None:
+        try:
+            return _iou(cast(Sequence[float], first), cast(Sequence[float], second))
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+
+    source_owner_set = tuple(sorted(str(owner_id) for owner_id in source_boxes))
+    training_owner_set = tuple(sorted(str(owner_id) for owner_id in training_boxes))
+    source_owner_rows_payload = tuple(
+        sorted((str(owner_id), int(row)) for owner_id, row in source_owner_rows.items())
+    )
+    training_owner_rows_payload = tuple(
+        sorted(
+            (str(owner_id), int(row)) for owner_id, row in training_owner_rows.items()
+        )
+    )
+
+    def _failure_evidence() -> CoordinateAliasFailureEvidence:
+        mismatches: list[dict[str, object]] = []
+        for position in range(max(len(source), len(training))):
+            source_token = source[position] if position < len(source) else None
+            training_token = training[position] if position < len(training) else None
+            if source_token == training_token:
+                continue
+            binding = coordinate_roles.get(position)
+            source_match = (
+                _COORDINATE_TOKEN.fullmatch(source_token)
+                if source_token is not None
+                else None
+            )
+            training_match = (
+                _COORDINATE_TOKEN.fullmatch(training_token)
+                if training_token is not None
+                else None
+            )
+            source_bin = int(source_match.group(1)) if source_match else None
+            training_bin = int(training_match.group(1)) if training_match else None
+            mismatches.append(
+                {
+                    "token_position": position,
+                    "source_token_id": source_ids[position]
+                    if position < len(source_ids)
+                    else None,
+                    "training_token_id": training_ids[position]
+                    if position < len(training_ids)
+                    else None,
+                    "source_token": source_token,
+                    "training_token": training_token,
+                    "is_coordinate": binding is not None
+                    or source_match is not None
+                    or training_match is not None,
+                    "coordinate_role": binding[1] if binding is not None else None,
+                    "owner_id": binding[0] if binding is not None else None,
+                    "source_bin": source_bin,
+                    "training_bin": training_bin,
+                    "delta_bin": (
+                        training_bin - source_bin
+                        if source_bin is not None and training_bin is not None
+                        else None
+                    ),
+                    "disposition": (
+                        "coordinate_alias_candidate"
+                        if (
+                            source_match is not None
+                            and training_match is not None
+                            and binding is not None
+                        )
+                        else "non_coordinate_token_diff"
+                    ),
+                }
+            )
+        affected = sorted(set(source_owner_set) | set(training_owner_set))
+        affected_rows: list[dict[str, object]] = []
+        for owner_id in affected:
+            source_box = source_boxes.get(owner_id)
+            training_box = training_boxes.get(owner_id)
+            candidate_ious: list[dict[str, object]] = []
+            for gt_owner_id in sorted(str(item) for item in gt_boxes):
+                gt_box = gt_boxes.get(gt_owner_id)
+                candidate_ious.append(
+                    {
+                        "gt_owner_id": gt_owner_id,
+                        "source_iou": _safe_iou(source_box, gt_box),
+                        "training_iou": _safe_iou(training_box, gt_box),
+                    }
+                )
+            affected_rows.append(
+                {
+                    "owner_id": owner_id,
+                    "source_generated_order": dict(source_owner_rows).get(owner_id),
+                    "training_generated_order": dict(training_owner_rows).get(owner_id),
+                    "source_bbox": _raw_box(source_box),
+                    "training_bbox": _raw_box(training_box),
+                    "candidate_gt_ious": candidate_ious,
+                }
+            )
+        payload = {
+            "schema_version": "human13_coordinate_alias_failure.v1",
+            "repetition_penalty": repetition_penalty,
+            "source_tokens": list(source),
+            "training_tokens": list(training),
+            "source_token_count": len(source),
+            "training_token_count": len(training),
+            "source_token_ids": list(source_ids),
+            "training_token_ids": list(training_ids),
+            "mismatch_positions": [
+                _coerce_int(item["token_position"]) for item in mismatches
+            ],
+            "source_owner_set": list(source_owner_set),
+            "training_owner_set": list(training_owner_set),
+            "symmetric_owner_set_difference": sorted(
+                set(source_owner_set) ^ set(training_owner_set)
+            ),
+            "source_owner_rows": [list(item) for item in source_owner_rows_payload],
+            "training_owner_rows": [
+                list(item) for item in training_owner_rows_payload
+            ],
+            "source_membership": [
+                list(item)
+                for item in sorted(
+                    (str(owner_id), str(member))
+                    for owner_id, member in source_membership.items()
+                )
+            ],
+            "training_membership": [
+                list(item)
+                for item in sorted(
+                    (str(owner_id), str(member))
+                    for owner_id, member in training_membership.items()
+                )
+            ],
+            "source_protected_g": sorted(str(owner_id) for owner_id in source_protected_g),
+            "training_protected_g": sorted(
+                str(owner_id) for owner_id in training_protected_g
+            ),
+            "token_mismatches": mismatches,
+            "affected_rows": affected_rows,
+            "source_boxes": [
+                [str(owner_id), _raw_box(value)]
+                for owner_id, value in sorted(source_boxes.items())
+            ],
+            "training_boxes": [
+                [str(owner_id), _raw_box(value)]
+                for owner_id, value in sorted(training_boxes.items())
+            ],
+            "gt_boxes": [
+                [str(owner_id), _raw_box(value)]
+                for owner_id, value in sorted(gt_boxes.items())
+            ],
+        }
+        return CoordinateAliasFailureEvidence(payload)
+
+    def _failed(
+        reason: str,
+        *,
+        mismatch_count: int = 1,
+    ) -> CoordinateAliasReconciliation:
         return CoordinateAliasReconciliation(
             admitted=False,
-            mismatch_count=1,
-            failure_reason="token_length_differs",
+            mismatch_count=max(1, mismatch_count),
+            failure_reason=reason,
+            failure_evidence=_failure_evidence(),
         )
+
+    if forced_failure_reason is not None:
+        return _failed(forced_failure_reason)
+
+    if any(role not in {"x1", "y1", "x2", "y2"} for _owner, role in coordinate_roles.values()):
+        return _failed("coordinate role is not canonical")
+
+    if len(source) != len(training):
+        return _failed("token_length_differs")
     if dict(owner_match) != {
         owner_id: owner_id for owner_id in source_boxes
     } or set(training_boxes) != set(source_boxes):
-        return CoordinateAliasReconciliation(
-            admitted=False,
-            mismatch_count=1,
-            failure_reason="canonical owner assignment differs",
-        )
+        return _failed("canonical owner assignment differs")
     if dict(source_owner_rows) != dict(training_owner_rows):
-        return CoordinateAliasReconciliation(
-            admitted=False,
-            mismatch_count=1,
-            failure_reason="canonical owner row assignment differs",
-        )
+        return _failed("canonical owner row assignment differs")
     if dict(source_membership) != dict(training_membership):
-        return CoordinateAliasReconciliation(
-            admitted=False,
-            mismatch_count=1,
-            failure_reason="G/H/M membership differs",
-        )
+        return _failed("G/H/M membership differs")
     if set(source_protected_g) != set(training_protected_g):
-        return CoordinateAliasReconciliation(
-            admitted=False,
-            mismatch_count=1,
-            failure_reason="protected-G identity differs",
-        )
+        return _failed("protected-G identity differs")
     boxes: dict[str, tuple[float, float, float, float]] = {}
     training_box_values: dict[str, tuple[float, float, float, float]] = {}
     gt: dict[str, tuple[float, float, float, float]] = {}
@@ -207,55 +539,30 @@ def reconcile_coordinate_alias(
             for owner_id, value in gt_boxes.items()
         }
     except (TypeError, ValueError) as error:
-        return CoordinateAliasReconciliation(
-            admitted=False,
-            mismatch_count=1,
-            failure_reason=str(error),
-        )
+        return _failed(str(error))
     if set(boxes) - set(gt):
-        return CoordinateAliasReconciliation(
-            admitted=False,
-            mismatch_count=1,
-            failure_reason="matched owner lacks ground-truth binding",
-        )
+        return _failed("matched owner lacks ground-truth binding")
     evidence: list[CoordinateAliasEvidence] = []
     for position, (source_token, training_token) in enumerate(zip(source, training)):
         if source_token == training_token:
             continue
         role_binding = coordinate_roles.get(position)
         if role_binding is None:
-            return CoordinateAliasReconciliation(
-                admitted=False,
-                mismatch_count=1,
-                failure_reason=f"non-coordinate token differs at position {position}",
-            )
+            return _failed(f"non-coordinate token differs at position {position}")
         owner_id, role = role_binding
         source_match = _COORDINATE_TOKEN.fullmatch(source_token)
         training_match = _COORDINATE_TOKEN.fullmatch(training_token)
         if source_match is None or training_match is None:
-            return CoordinateAliasReconciliation(
-                admitted=False,
-                mismatch_count=1,
-                failure_reason=f"non-coordinate token differs at position {position}",
-            )
+            return _failed(f"non-coordinate token differs at position {position}")
         source_bin = int(source_match.group(1))
         training_bin = int(training_match.group(1))
         delta_bin = training_bin - source_bin
         if abs(delta_bin) > 5:
-            return CoordinateAliasReconciliation(
-                admitted=False,
-                mismatch_count=1,
-                failure_reason=(
-                    f"coordinate delta exceeds five at position {position}: "
-                    f"{delta_bin}"
-                ),
+            return _failed(
+                f"coordinate delta exceeds five at position {position}: {delta_bin}"
             )
         if owner_id not in boxes or owner_id not in training_box_values:
-            return CoordinateAliasReconciliation(
-                admitted=False,
-                mismatch_count=1,
-                failure_reason=f"coordinate owner {owner_id} is not matched",
-            )
+            return _failed(f"coordinate owner {owner_id} is not matched")
         evidence.append(
             CoordinateAliasEvidence(
                 token_position=position,
@@ -513,6 +820,104 @@ class SourceSurfaceReconciliationReceipt:
         payload["content_sha256"] = self.content_sha256
         return payload
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> SourceSurfaceReconciliationReceipt:
+        expected = set(cls.__dataclass_fields__) | {
+            "schema_version",
+            "content_sha256",
+        }
+        if set(value) != expected or value.get("schema_version") != SCHEMA_VERSION:
+            raise ValueError("Source reconciliation receipt fields differ from schema")
+        raw_alias = value.get("coordinate_alias")
+        alias = (
+            CoordinateAliasReconciliation.from_dict(raw_alias)
+            if isinstance(raw_alias, Mapping)
+            else None
+        )
+        receipt = cls(
+            admitted=bool(value["admitted"]),
+            source_surface=str(value["source_surface"]),
+            training_surface=str(value["training_surface"]),
+            training_model_object_id=(
+                _coerce_int(value["training_model_object_id"])
+                if value["training_model_object_id"] is not None
+                else None
+            ),
+            training_checkpoint_payload_sha256=(
+                str(value["training_checkpoint_payload_sha256"])
+                if value["training_checkpoint_payload_sha256"] is not None
+                else None
+            ),
+            source_checkpoint_payload_sha256s=tuple(
+                str(item)
+                for item in cast(
+                    Sequence[object], value["source_checkpoint_payload_sha256s"]
+                )
+            ),
+            source_checkpoint_paths=tuple(
+                str(item)
+                for item in cast(Sequence[object], value["source_checkpoint_paths"])
+            ),
+            training_checkpoint_path=str(value["training_checkpoint_path"]),
+            source_adapter_sha256s=tuple(
+                str(item)
+                for item in cast(Sequence[object], value["source_adapter_sha256s"])
+            ),
+            source_embedding_delta_sha256s=tuple(
+                str(item)
+                for item in cast(
+                    Sequence[object], value["source_embedding_delta_sha256s"]
+                )
+            ),
+            source_base_model_paths=tuple(
+                str(item)
+                for item in cast(Sequence[object], value["source_base_model_paths"])
+            ),
+            training_base_model_path=str(value["training_base_model_path"]),
+            source_manifest_sha256s=tuple(
+                str(item)
+                for item in cast(Sequence[object], value["source_manifest_sha256s"])
+            ),
+            manifest_image_sha256=str(value["manifest_image_sha256"]),
+            training_image_sha256=(
+                str(value["training_image_sha256"])
+                if value["training_image_sha256"] is not None
+                else None
+            ),
+            source_image_sha256s=tuple(
+                str(item)
+                for item in cast(Sequence[object], value["source_image_sha256s"])
+            ),
+            training_parameter_state_sha256=(
+                str(value["training_parameter_state_sha256"])
+                if value["training_parameter_state_sha256"] is not None
+                else None
+            ),
+            manifest_sha256=str(value["manifest_sha256"]),
+            image_id=_coerce_int(value["image_id"]),
+            source_audit_sha256s=tuple(
+                (_coerce_float(item[0]), str(item[1]))
+                for item in cast(
+                    Sequence[Sequence[object]], value["source_audit_sha256s"]
+                )
+            ),
+            source_runtime_identity_sha256=str(
+                value["source_runtime_identity_sha256"]
+            ),
+            checked_decode_count=_coerce_int(value["checked_decode_count"]),
+            checked_token_count=_coerce_int(value["checked_token_count"]),
+            mismatch_count=_coerce_int(value["mismatch_count"]),
+            failure_reason=(
+                str(value["failure_reason"])
+                if value["failure_reason"] is not None
+                else None
+            ),
+            coordinate_alias=alias,
+        )
+        if value.get("content_sha256") != receipt.content_sha256:
+            raise ValueError("Source reconciliation receipt content hash differs")
+        return receipt
+
 
 def _receipt(
     request: SourceSurfaceReconciliationRequest,
@@ -594,6 +999,7 @@ def reconcile_source_surface(
         "checkpoint_payload_sha256",
         "tokenizer_sha256",
         "prompt_sha256",
+        "image_sha256",
     ):
         value = _field(identity, name)
         if not isinstance(value, str):
@@ -773,6 +1179,7 @@ __all__ = [
     "SourceSurfaceReconciliationReceipt",
     "SourceSurfaceReconciliationRequest",
     "CoordinateAliasEvidence",
+    "CoordinateAliasFailureEvidence",
     "CoordinateAliasReconciliation",
     "reconcile_coordinate_alias",
     "reconcile_source_surface",

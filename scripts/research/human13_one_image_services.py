@@ -1224,12 +1224,27 @@ class ExistingOwnersProductionBackend:
         _fsync_directory(private_root.parent)
 
     def close_training(self, session: object) -> object:
+        return self._close_training(session, aborted=False)
+
+    def close_training_failed(self, session: object) -> object:
+        """Close a source-only abort without claiming completed K16."""
+
+        return self._close_training(session, aborted=True)
+
+    def _close_training(self, session: object, *, aborted: bool) -> object:
         if not isinstance(session, _LiveTrainingHandle):
             raise TypeError("close requires the live training handle")
         if self._active_training_handle is not session:
             raise ValueError("close training handle differs from the active owner")
         try:
             try:
+                if aborted:
+                    close_failed = getattr(session.session, "close_failed", None)
+                    if not callable(close_failed):
+                        raise TypeError(
+                            "shared-surface session lacks the source-only failed close"
+                        )
+                    return close_failed()
                 return session.session.close()
             except Exception as error:
                 try:
@@ -1297,6 +1312,7 @@ class ProductionOneImageServices:
         self._rollback_attempted = False
         self._source_reproduced = False
         self._close_called = False
+        self._source_only_close_requested = False
         self._audit_session: object | None = None
         self._source_audits: dict[float, Mapping[str, Any]] = {}
         self._pending_context_failure: Task5ProductionContextFailureReceipt | None = (
@@ -1533,6 +1549,7 @@ class ProductionOneImageServices:
         try:
             result = self._backend.source_audit(audit_session, repetition_penalty)
         except BaseException as error:
+            self._source_only_close_requested = True
             if bool(getattr(error, "_source_audit_forward_observed", False)):
                 observed = getattr(error, "_source_audit_result", None)
                 observed_rp = getattr(
@@ -1994,7 +2011,11 @@ class ProductionOneImageServices:
                         )
             if training_session is not None:
                 try:
-                    receipt = self._backend.close_training(training_session)
+                    close_failed = getattr(self._backend, "close_training_failed", None)
+                    if self._source_only_close_requested and callable(close_failed):
+                        receipt = close_failed(training_session)
+                    else:
+                        receipt = self._backend.close_training(training_session)
                     if receipt is None:
                         if self._pending_context_failure is not None:
                             raise RuntimeError(

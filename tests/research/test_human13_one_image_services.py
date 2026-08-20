@@ -135,6 +135,8 @@ class _Backend(ProductionOneImageBackend):
     ) -> dict[str, Any]:
         del session
         self.events.append(f"source_audit:{repetition_penalty}")
+        if self.fail == "source_audit":
+            raise RuntimeError("source reconciliation failure")
         return {"rp": repetition_penalty}
 
     def acquire_and_replay(
@@ -214,6 +216,30 @@ class _Backend(ProductionOneImageBackend):
         self.events.append("close_training")
         if self.fail == "close_training":
             raise RuntimeError("training close failure")
+
+    def close_training_failed(self, session: object) -> object:
+        del session
+        self.events.append("close_training_failed")
+        payload = {
+            "sample_forward_count": 0,
+            "replay_forward_count": 0,
+            "source_owner_forward_count": 2,
+            "total_forward_count": 2,
+            "no_cache_forward_count": 2,
+            "sampled_group_sha256s": [],
+            "replay_group_sha256s": [],
+            "model_object_id": 17,
+            "retained_graph_count": 0,
+            "session_held_reference_count": 0,
+            "cleanup_state": "closed",
+            "cleanup_reason": "failed",
+            "cleanup_failures": [],
+            "cleanup_call_count": 1,
+        }
+        return SimpleNamespace(
+            to_dict=lambda: payload
+            | {"content_sha256": json_sha256(payload)}
+        )
 
     def close_audit(self, session: object) -> None:
         del session
@@ -502,6 +528,27 @@ def test_source_audit_forward_is_receipted_when_owner_prepare_fails(
     assert failed["status"] == "failed"
     assert failed["evidence"]["source_audit_forward_observed"] is True
     assert failed["evidence"]["repetition_penalty"] == 1.1
+
+
+def test_source_only_failure_uses_aborted_training_close_without_k16_claim(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend(fail="source_audit")
+    services, _stale_path, _successor = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    training = services.open_training(config, resources)
+    audit = services.open_audit(config, resources)
+
+    with pytest.raises(RuntimeError, match="source reconciliation failure"):
+        services.source_audit(audit, 1.0)
+
+    services.close(training, audit)
+
+    assert backend.events[-2:] == ["close_audit", "close_training_failed"]
+    assert services.action_counters()["backwards"] == 0
+    assert services.action_counters()["optimizer_steps"] == 0
 
 
 def test_production_owner_orders_apply_checkpoint_audits_then_one_rollback_and_reproduction(

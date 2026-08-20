@@ -8,8 +8,8 @@ older vLLM ``AdmittedPublication`` contract.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass, replace
 import math
 from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 from weakref import ReferenceType, ref
@@ -55,6 +55,79 @@ class HFNativeOneImageOwnerError(RuntimeError):
         self.disposition = disposition
         self.reconciliation_receipt = reconciliation_receipt
         super().__init__(f"{disposition}: {reason}")
+
+
+@dataclass(frozen=True)
+class _CoordinateAliasDiagnosticContext:
+    """One immutable snapshot used by every coordinate-alias failure path."""
+
+    repetition_penalty: float | None = None
+    source_tokens: tuple[str, ...] = ()
+    training_tokens: tuple[str, ...] = ()
+    source_token_ids: tuple[int, ...] = ()
+    training_token_ids: tuple[int, ...] = ()
+    coordinate_roles: tuple[tuple[int, str, str], ...] = ()
+    source_boxes: tuple[tuple[str, tuple[float, ...]], ...] = ()
+    training_boxes: tuple[tuple[str, tuple[float, ...]], ...] = ()
+    source_owner_rows: tuple[tuple[str, int], ...] = ()
+    training_owner_rows: tuple[tuple[str, int], ...] = ()
+    source_membership: tuple[tuple[str, str], ...] = ()
+    training_membership: tuple[tuple[str, str], ...] = ()
+    source_protected_g: tuple[str, ...] = ()
+    training_protected_g: tuple[str, ...] = ()
+
+    @staticmethod
+    def _boxes(
+        values: Mapping[str, Sequence[float]],
+    ) -> tuple[tuple[str, tuple[float, ...]], ...]:
+        return tuple(
+            (str(owner_id), tuple(float(value) for value in box))
+            for owner_id, box in sorted(values.items())
+        )
+
+    @staticmethod
+    def _rows(values: Mapping[str, int]) -> tuple[tuple[str, int], ...]:
+        return tuple(
+            (str(owner_id), int(row))
+            for owner_id, row in sorted(values.items())
+        )
+
+    @staticmethod
+    def _membership(values: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
+        return tuple(
+            (str(owner_id), str(member))
+            for owner_id, member in sorted(values.items())
+        )
+
+    @staticmethod
+    def _roles(
+        values: Mapping[int, tuple[str, str]],
+    ) -> tuple[tuple[int, str, str], ...]:
+        return tuple(
+            (int(position), str(owner_id), str(role))
+            for position, (owner_id, role) in sorted(values.items())
+        )
+
+    def to_kwargs(self) -> dict[str, object]:
+        return {
+            "repetition_penalty": self.repetition_penalty,
+            "source_tokens": self.source_tokens,
+            "training_tokens": self.training_tokens,
+            "source_token_ids": self.source_token_ids,
+            "training_token_ids": self.training_token_ids,
+            "coordinate_roles": {
+                position: (owner_id, role)
+                for position, owner_id, role in self.coordinate_roles
+            },
+            "source_boxes": dict(self.source_boxes),
+            "training_boxes": dict(self.training_boxes),
+            "source_owner_rows": dict(self.source_owner_rows),
+            "training_owner_rows": dict(self.training_owner_rows),
+            "source_membership": dict(self.source_membership),
+            "training_membership": dict(self.training_membership),
+            "source_protected_g": self.source_protected_g,
+            "training_protected_g": self.training_protected_g,
+        }
 
 
 def _project_coordinate_bbox(
@@ -1109,6 +1182,10 @@ def prepare_repository_source_owners(
     )
     frozen_bank: dict[str, Any] = {}
     alias_cache: dict[str, CoordinateAliasReconciliation] = {}
+    canonical_gt_boxes = {
+        str(owner.owner_id): tuple(float(value) for value in owner.bbox)
+        for owner in manifest_image.owners
+    }
 
     def _token_labels(token_ids: tuple[int, ...]) -> tuple[str, ...]:
         tokenizer = getattr(surface, "_tokenizer", None)
@@ -1139,11 +1216,136 @@ def prepare_repository_source_owners(
             else None
         )
 
+    def _diagnostic_failure(
+        reason: str,
+        *,
+        repetition_penalty: float | None = None,
+        source_tokens: Sequence[object] = (),
+        training_tokens: Sequence[object] = (),
+        source_token_ids: Sequence[object] = (),
+        training_token_ids: Sequence[object] = (),
+        coordinate_roles: Mapping[int, tuple[str, str]] | None = None,
+        source_boxes: Mapping[str, Sequence[float]] | None = None,
+        training_boxes: Mapping[str, Sequence[float]] | None = None,
+        source_owner_rows: Mapping[str, int] | None = None,
+        training_owner_rows: Mapping[str, int] | None = None,
+        source_membership: Mapping[str, str] | None = None,
+        training_membership: Mapping[str, str] | None = None,
+        source_protected_g: Collection[str] = (),
+        training_protected_g: Collection[str] = (),
+    ) -> CoordinateAliasReconciliation:
+        source_box_values = source_boxes or {}
+        training_box_values = training_boxes or {}
+        source_row_values = source_owner_rows or {}
+        training_row_values = training_owner_rows or {}
+        source_membership_values = source_membership or {}
+        training_membership_values = training_membership or {}
+        return reconcile_coordinate_alias(
+            source_tokens=source_tokens,
+            training_tokens=training_tokens,
+            source_token_ids=source_token_ids,
+            training_token_ids=training_token_ids,
+            repetition_penalty=repetition_penalty,
+            forced_failure_reason=reason,
+            coordinate_roles=coordinate_roles or {},
+            source_boxes=source_box_values,
+            training_boxes=training_box_values,
+            gt_boxes=canonical_gt_boxes,
+            owner_match={owner_id: owner_id for owner_id in source_box_values},
+            source_owner_rows=source_row_values,
+            training_owner_rows=training_row_values,
+            source_membership=source_membership_values,
+            training_membership=training_membership_values,
+            source_protected_g=source_protected_g,
+            training_protected_g=training_protected_g,
+        )
+
+    def _diagnostic_failure_from_context(
+        reason: str, context: _CoordinateAliasDiagnosticContext
+    ) -> CoordinateAliasReconciliation:
+        values = context.to_kwargs()
+        return _diagnostic_failure(
+            reason,
+            repetition_penalty=cast(float | None, values["repetition_penalty"]),
+            source_tokens=cast(Sequence[object], values["source_tokens"]),
+            training_tokens=cast(Sequence[object], values["training_tokens"]),
+            source_token_ids=cast(Sequence[object], values["source_token_ids"]),
+            training_token_ids=cast(Sequence[object], values["training_token_ids"]),
+            coordinate_roles=cast(
+                Mapping[int, tuple[str, str]], values["coordinate_roles"]
+            ),
+            source_boxes=cast(
+                Mapping[str, Sequence[float]], values["source_boxes"]
+            ),
+            training_boxes=cast(
+                Mapping[str, Sequence[float]], values["training_boxes"]
+            ),
+            source_owner_rows=cast(
+                Mapping[str, int], values["source_owner_rows"]
+            ),
+            training_owner_rows=cast(
+                Mapping[str, int], values["training_owner_rows"]
+            ),
+            source_membership=cast(
+                Mapping[str, str], values["source_membership"]
+            ),
+            training_membership=cast(
+                Mapping[str, str], values["training_membership"]
+            ),
+            source_protected_g=cast(
+                Collection[str], values["source_protected_g"]
+            ),
+            training_protected_g=cast(
+                Collection[str], values["training_protected_g"]
+            ),
+        )
+
     def coordinate_alias_check() -> CoordinateAliasReconciliation:
         cached = alias_cache.get("result")
         if cached is not None:
             return cached
+        diagnostic_context = _CoordinateAliasDiagnosticContext()
         try:
+            if source_surface_snapshots:
+                first_snapshot = source_surface_snapshots[0]
+                first_source_ids = tuple(first_snapshot[1])
+                first_match = first_snapshot[3]
+                first_owner_matches = first_match.get("owner_matches", {})
+                if isinstance(first_owner_matches, Mapping):
+                    first_source_boxes = {
+                        str(owner_id): cast(Sequence[float], receipt["bbox"])
+                        for owner_id, receipt in first_owner_matches.items()
+                    }
+                    first_source_rows = {
+                        str(owner_id): int(receipt["generated_order"])
+                        for owner_id, receipt in first_owner_matches.items()
+                    }
+                    first_source_membership = {
+                        owner_id: str(owners[owner_id].stratum)
+                        for owner_id in first_source_boxes
+                        if owner_id in owners
+                    }
+                    first_source_protected_g = tuple(
+                        owner_id
+                        for owner_id, stratum in first_source_membership.items()
+                        if stratum == "G"
+                    )
+                    diagnostic_context = replace(
+                        diagnostic_context,
+                        repetition_penalty=float(first_snapshot[0]),
+                        source_tokens=tuple(str(value) for value in first_source_ids),
+                        source_token_ids=first_source_ids,
+                        source_boxes=_CoordinateAliasDiagnosticContext._boxes(
+                            first_source_boxes
+                        ),
+                        source_owner_rows=_CoordinateAliasDiagnosticContext._rows(
+                            first_source_rows
+                        ),
+                        source_membership=_CoordinateAliasDiagnosticContext._membership(
+                            first_source_membership
+                        ),
+                        source_protected_g=first_source_protected_g,
+                    )
             free_running = getattr(surface, "free_running_greedy_token_ids", None)
             if not callable(free_running):
                 raise HFNativeOneImageOwnerError(
@@ -1161,18 +1363,40 @@ def prepare_repository_source_owners(
                 for snapshot in source_surface_snapshots
             )
             if len(training_sequences) != len(source_surface_snapshots):
-                raise HFNativeOneImageOwnerError(
-                    "training greedy surface count differs from Source audits",
-                    disposition="source_surface_coordinate_alias_unavailable",
+                source_snapshot = (
+                    source_surface_snapshots[0]
+                    if source_surface_snapshots
+                    else None
                 )
+                source_ids = source_snapshot[1] if source_snapshot is not None else ()
+                result = _diagnostic_failure(
+                    "training greedy surface count differs from Source audits",
+                    repetition_penalty=(
+                        source_snapshot[0] if source_snapshot is not None else None
+                    ),
+                    source_tokens=tuple(str(value) for value in source_ids),
+                    source_token_ids=source_ids,
+                )
+                alias_cache["result"] = result
+                return result
             all_evidence = []
             if source_image_dimensions is None:
-                result = CoordinateAliasReconciliation(
-                    admitted=False,
-                    mismatch_count=1,
-                    failure_reason=(
-                        "Source audit lacks canonical image_width/image_height"
+                source_snapshot = (
+                    source_surface_snapshots[0]
+                    if source_surface_snapshots
+                    else None
+                )
+                source_ids = source_snapshot[1] if source_snapshot is not None else ()
+                training_ids = training_sequences[0] if training_sequences else ()
+                result = _diagnostic_failure(
+                    "Source audit lacks canonical image_width/image_height",
+                    repetition_penalty=(
+                        source_snapshot[0] if source_snapshot is not None else None
                     ),
+                    source_tokens=tuple(str(value) for value in source_ids),
+                    training_tokens=tuple(str(value) for value in training_ids),
+                    source_token_ids=source_ids,
+                    training_token_ids=training_ids,
                 )
                 alias_cache["result"] = result
                 return result
@@ -1183,14 +1407,61 @@ def prepare_repository_source_owners(
                 source_predictions,
                 source_match,
             ) in enumerate(source_surface_snapshots):
+                source_ids = tuple(source_ids)
                 training_ids = tuple(training_sequences[snapshot_index])
+                source_boxes = {
+                    str(owner_id): cast(Sequence[float], receipt["bbox"])
+                    for owner_id, receipt in source_match["owner_matches"].items()
+                }
+                source_owner_rows = {
+                    str(owner_id): int(receipt["generated_order"])
+                    for owner_id, receipt in source_match["owner_matches"].items()
+                }
+                source_membership = {
+                    owner_id: str(owners[owner_id].stratum)
+                    for owner_id in source_boxes
+                    if owner_id in owners
+                }
+                source_protected_g = tuple(
+                    owner_id
+                    for owner_id, stratum in source_membership.items()
+                    if stratum == "G"
+                )
+                diagnostic_context = replace(
+                    diagnostic_context,
+                    repetition_penalty=float(_rp),
+                    source_tokens=tuple(str(value) for value in source_ids),
+                    training_tokens=tuple(str(value) for value in training_ids),
+                    source_token_ids=source_ids,
+                    training_token_ids=training_ids,
+                    source_boxes=_CoordinateAliasDiagnosticContext._boxes(source_boxes),
+                    source_owner_rows=_CoordinateAliasDiagnosticContext._rows(
+                        source_owner_rows
+                    ),
+                    source_membership=_CoordinateAliasDiagnosticContext._membership(
+                        source_membership
+                    ),
+                    source_protected_g=source_protected_g,
+                )
                 source_labels = _token_labels(source_ids)
                 training_labels = _token_labels(training_ids)
+                diagnostic_context = replace(
+                    diagnostic_context,
+                    source_tokens=source_labels,
+                    training_tokens=training_labels,
+                )
                 if len(source_labels) != len(training_labels):
-                    result = CoordinateAliasReconciliation(
-                        admitted=False,
-                        mismatch_count=1,
-                        failure_reason="training greedy token length differs",
+                    result = _diagnostic_failure(
+                        "training greedy token length differs",
+                        repetition_penalty=_rp,
+                        source_tokens=source_labels,
+                        training_tokens=training_labels,
+                        source_token_ids=source_ids,
+                        training_token_ids=training_ids,
+                        source_boxes=source_boxes,
+                        source_owner_rows=source_owner_rows,
+                        source_membership=source_membership,
+                        source_protected_g=source_protected_g,
                     )
                     alias_cache["result"] = result
                     return result
@@ -1212,12 +1483,17 @@ def prepare_repository_source_owners(
                         and _coordinate_bin(source_labels[position]) is not None
                     ]
                     if len(coordinate_positions) != 4:
-                        result = CoordinateAliasReconciliation(
-                            admitted=False,
-                            mismatch_count=1,
-                            failure_reason=(
-                                f"row {order} lacks four canonical coordinate tokens"
-                            ),
+                        result = _diagnostic_failure(
+                            f"row {order} lacks four canonical coordinate tokens",
+                            repetition_penalty=_rp,
+                            source_tokens=source_labels,
+                            training_tokens=training_labels,
+                            source_token_ids=source_ids,
+                            training_token_ids=training_ids,
+                            source_boxes=source_boxes,
+                            source_owner_rows=source_owner_rows,
+                            source_membership=source_membership,
+                            source_protected_g=source_protected_g,
                         )
                         alias_cache["result"] = result
                         return result
@@ -1229,17 +1505,28 @@ def prepare_repository_source_owners(
                         source_bin = _coordinate_bin(source_labels[position])
                         training_bin = _coordinate_bin(training_labels[position])
                         if source_bin is None or training_bin is None:
-                            result = CoordinateAliasReconciliation(
-                                admitted=False,
-                                mismatch_count=1,
-                                failure_reason=(
-                                    f"row {order} has a non-canonical coordinate token"
-                                ),
+                            result = _diagnostic_failure(
+                                f"row {order} has a non-canonical coordinate token",
+                                repetition_penalty=_rp,
+                                source_tokens=source_labels,
+                                training_tokens=training_labels,
+                                source_token_ids=source_ids,
+                                training_token_ids=training_ids,
+                                source_boxes=source_boxes,
+                                source_owner_rows=source_owner_rows,
+                                source_membership=source_membership,
+                                source_protected_g=source_protected_g,
                             )
                             alias_cache["result"] = result
                             return result
                         if owner_id is not None:
                             coordinate_roles[position] = (owner_id, role)
+                    diagnostic_context = replace(
+                        diagnostic_context,
+                        coordinate_roles=_CoordinateAliasDiagnosticContext._roles(
+                            coordinate_roles
+                        ),
+                    )
                     training_box = _project_coordinate_bbox(
                         training_labels,
                         coordinate_positions,
@@ -1250,6 +1537,40 @@ def prepare_repository_source_owners(
                     training_row = dict(row)
                     training_row["bbox"] = list(training_box)
                     training_predictions.append(training_row)
+                provisional_training_boxes = {
+                    owner_id: cast(Sequence[float], row["bbox"])
+                    for row in training_predictions
+                    for owner_id in [owner_by_order.get(int(row["generated_order"]))]
+                    if owner_id is not None
+                }
+                provisional_training_rows = {
+                    owner_id: int(row["generated_order"])
+                    for row in training_predictions
+                    for owner_id in [owner_by_order.get(int(row["generated_order"]))]
+                    if owner_id is not None
+                }
+                provisional_training_membership = {
+                    owner_id: str(owners[owner_id].stratum)
+                    for owner_id in provisional_training_boxes
+                    if owner_id in owners
+                }
+                diagnostic_context = replace(
+                    diagnostic_context,
+                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(
+                        provisional_training_boxes
+                    ),
+                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(
+                        provisional_training_rows
+                    ),
+                    training_membership=_CoordinateAliasDiagnosticContext._membership(
+                        provisional_training_membership
+                    ),
+                    training_protected_g=tuple(
+                        owner_id
+                        for owner_id, stratum in provisional_training_membership.items()
+                        if stratum == "G"
+                    ),
+                )
                 training_match = _match_prefix(
                     manifest_image,
                     training_predictions,
@@ -1286,9 +1607,29 @@ def prepare_repository_source_owners(
                     for owner_id in training_boxes
                     if owner_id in owners
                 }
+                diagnostic_context = replace(
+                    diagnostic_context,
+                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(
+                        training_boxes
+                    ),
+                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(
+                        training_owner_rows
+                    ),
+                    training_membership=_CoordinateAliasDiagnosticContext._membership(
+                        training_membership
+                    ),
+                    training_protected_g=tuple(
+                        owner_id
+                        for owner_id, stratum in training_membership.items()
+                        if stratum == "G"
+                    ),
+                )
                 result = reconcile_coordinate_alias(
                     source_tokens=source_labels,
                     training_tokens=training_labels,
+                    source_token_ids=source_ids,
+                    training_token_ids=training_ids,
+                    repetition_penalty=float(_rp),
                     coordinate_roles=coordinate_roles,
                     source_boxes=source_boxes,
                     training_boxes=training_boxes,
@@ -1320,12 +1661,9 @@ def prepare_repository_source_owners(
                 evidence=tuple(all_evidence),
             )
         except BaseException as error:
-            result = CoordinateAliasReconciliation(
-                admitted=False,
-                mismatch_count=1,
-                failure_reason=(
-                    f"coordinate_alias_checker_error:{type(error).__name__}: {error}"
-                ),
+            result = _diagnostic_failure_from_context(
+                f"coordinate_alias_checker_error:{type(error).__name__}: {error}",
+                diagnostic_context,
             )
         alias_cache["result"] = result
         return result

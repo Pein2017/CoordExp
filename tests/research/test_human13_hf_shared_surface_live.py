@@ -799,6 +799,21 @@ def test_resource_receipt_is_sealed_and_rejects_incomplete_completion() -> None:
         copy.copy(failed).to_dict()
 
 
+def test_source_only_failed_close_does_not_require_k16_completion() -> None:
+    session, _assembly_value, _skeleton = _open()
+
+    failed = session.close_failed()
+
+    assert failed.cleanup_reason == "failed"
+    assert failed.sampled_groups == ()
+    assert failed.replay_groups == ()
+    assert failed.sample_forward_count == 0
+    assert failed.replay_forward_count == 0
+    assert failed.cleanup_call_count == 1
+    with pytest.raises(RuntimeError, match="already closed"):
+        session.close_failed()
+
+
 def test_open_rejects_unadmitted_or_wrong_language_surface() -> None:
     from scripts.research.human13_hf_shared_surface_live import (
         open_hf_shared_surface,

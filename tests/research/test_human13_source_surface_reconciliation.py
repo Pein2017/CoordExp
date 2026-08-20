@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
+
+import pytest
 
 from scripts.research.human13_hf_shared_surface import HFSharedSurfaceIdentity
 from scripts.research.human13_rp_crossover_witness import SealedSourceDecode
 from scripts.research.human13_source_surface_reconciliation import (
     CoordinateAliasReconciliation,
+    SourceSurfaceReconciliationReceipt,
     SourceSurfaceReconciliationRequest,
     reconcile_coordinate_alias,
     reconcile_source_surface,
@@ -171,6 +174,24 @@ def test_source_image_digest_must_bind_manifest_image() -> None:
     assert "image identity" in (receipt.failure_reason or "")
 
 
+def test_training_image_digest_must_bind_source_manifest_image() -> None:
+    request = _request(check=lambda: (_ for _ in ()).throw(AssertionError("called")))
+    identity = HFSharedSurfaceIdentity(
+        **{
+            **request.training_identity.__dict__,
+            "image_sha256": "0" * 64,
+        }
+    )
+    request = SourceSurfaceReconciliationRequest(
+        **{**request.__dict__, "training_identity": identity}
+    )
+
+    receipt = reconcile_source_surface(request)
+
+    assert receipt.admitted is False
+    assert "Source/training image_sha256 differs" in (receipt.failure_reason or "")
+
+
 def _alias_kwargs(*, training_token: str = "<|coord_616|>") -> dict[str, Any]:
     return {
         "source_tokens": ("<|box|>", "<|coord_615|>", "<|end|>"),
@@ -240,6 +261,16 @@ def test_coordinate_alias_requires_canonical_token_wrapper() -> None:
     assert "non-coordinate" in (receipt.failure_reason or "")
 
 
+def test_coordinate_alias_rejects_noncanonical_role_label() -> None:
+    kwargs = _alias_kwargs()
+    kwargs["coordinate_roles"] = {1: ("gt:1584:2", "category")}
+    receipt = reconcile_coordinate_alias(**kwargs)
+
+    assert receipt.admitted is False
+    assert receipt.failure_reason == "coordinate role is not canonical"
+    assert receipt.failure_evidence is not None
+
+
 def test_coordinate_alias_rejects_noncanonical_leading_zero_token() -> None:
     kwargs = _alias_kwargs(training_token="<|coord_001|>")
     receipt = reconcile_coordinate_alias(**kwargs)
@@ -296,6 +327,80 @@ def test_coordinate_alias_two_row_owner_exchange_fails_even_with_small_deltas() 
     assert "row assignment" in (receipt.failure_reason or "")
 
 
+def test_owner_assignment_failure_publishes_compact_diagnostic_evidence() -> None:
+    kwargs = _alias_kwargs()
+    kwargs.update(
+        {
+            "source_token_ids": (101, 615, 102),
+            "training_token_ids": (101, 616, 102),
+            "repetition_penalty": 1.1,
+            "training_boxes": {"gt:1584:4": (130.0, 630.0, 162.0, 722.0)},
+            "training_owner_rows": {"gt:1584:4": 0},
+            "training_membership": {"gt:1584:4": "H"},
+            "training_protected_g": (),
+        }
+    )
+
+    receipt = reconcile_coordinate_alias(**kwargs)
+
+    assert receipt.admitted is False
+    assert receipt.failure_reason == "canonical owner assignment differs"
+    diagnostic = receipt.failure_evidence
+    assert diagnostic is not None
+    payload = cast(dict[str, Any], diagnostic.to_dict())
+    assert payload["repetition_penalty"] == 1.1
+    assert payload["source_owner_set"] == ["gt:1584:2"]
+    assert payload["training_owner_set"] == ["gt:1584:4"]
+    assert payload["symmetric_owner_set_difference"] == [
+        "gt:1584:2",
+        "gt:1584:4",
+    ]
+    assert payload["source_owner_rows"] == [["gt:1584:2", 0]]
+    assert payload["training_owner_rows"] == [["gt:1584:4", 0]]
+    mismatches = cast(list[dict[str, Any]], payload["token_mismatches"])
+    assert mismatches[0]["source_token_id"] == 615
+    assert mismatches[0]["training_token_id"] == 616
+    affected_rows = cast(list[dict[str, Any]], payload["affected_rows"])
+    affected = {
+        row["owner_id"]: row for row in affected_rows
+    }
+    assert affected["gt:1584:2"]["source_bbox"] == [
+        130.0,
+        630.0,
+        162.0,
+        722.0,
+    ]
+    assert affected["gt:1584:4"]["training_bbox"] == [
+        130.0,
+        630.0,
+        162.0,
+        722.0,
+    ]
+
+
+def test_coordinate_alias_failure_receipt_reload_and_tamper_fail_closed() -> None:
+    from scripts.research.human13_source_surface_reconciliation import (
+        CoordinateAliasReconciliation,
+    )
+
+    kwargs = _alias_kwargs(training_token="<|coord_621|>")
+    kwargs.update(
+        {
+            "source_token_ids": (101, 615, 102),
+            "training_token_ids": (101, 621, 102),
+            "repetition_penalty": 1.0,
+            "training_boxes": {"gt:1584:2": (130.0, 636.0, 162.0, 722.0)},
+        }
+    )
+    receipt = reconcile_coordinate_alias(**kwargs)
+    restored = CoordinateAliasReconciliation.from_dict(receipt.to_dict())
+    assert restored.to_dict() == receipt.to_dict()
+    tampered = cast(dict[str, Any], receipt.to_dict())
+    tampered["failure_evidence"]["token_mismatches"][0]["training_token_id"] = 620
+    with __import__("pytest").raises((TypeError, ValueError), match="hash|schema"):
+        CoordinateAliasReconciliation.from_dict(tampered)
+
+
 def test_surface_receipt_publishes_coordinate_alias_evidence() -> None:
     alias = reconcile_coordinate_alias(**_alias_kwargs())
     request = _request(check=lambda: 0)
@@ -309,3 +414,25 @@ def test_surface_receipt_publishes_coordinate_alias_evidence() -> None:
     published = receipt.to_dict()["coordinate_alias"]
     assert isinstance(published, dict)
     assert published["evidence"][0]["delta_bin"] == 1
+
+
+def test_source_surface_failure_receipt_reload_and_content_tamper_fail_closed() -> None:
+    alias = reconcile_coordinate_alias(
+        **_alias_kwargs(training_token="<|coord_621|>"),
+        source_token_ids=(101, 615, 102),
+        training_token_ids=(101, 621, 102),
+        repetition_penalty=1.1,
+    )
+    request = _request(check=lambda: 0)
+    request = SourceSurfaceReconciliationRequest(
+        **{**request.__dict__, "coordinate_alias_check": lambda: alias}
+    )
+
+    receipt = reconcile_source_surface(request)
+    assert receipt.admitted is False
+    restored = SourceSurfaceReconciliationReceipt.from_dict(receipt.to_dict())
+    assert restored.to_dict() == receipt.to_dict()
+    tampered = receipt.to_dict()
+    tampered["content_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="content hash"):
+        SourceSurfaceReconciliationReceipt.from_dict(tampered)
