@@ -207,6 +207,20 @@
     "wave1-residue-search": "coord_gaussian_rps only in the 2 expected configs under losses.auxiliary; zero dynamic-hook hits",
     "determinant-invariant": "train 8f11237f\u2026 / eval 3b30c157\u2026 and baseline_sha256 b2d9595f\u2026 byte-identical post-migration; 24 owner files zero diff"
    }
+  },
+  {
+   "id": "amend-7-pin-wave2-gate",
+   "amendment_of": "wave2-composition-gate",
+   "date": "2026-08-20",
+   "reason": "pin observed Wave-2 acceptance counts (lead independent replay)",
+   "observed": {
+    "wave2-composition-gate": "417 passed / 0 failed / 0 skipped (380 before the wave)",
+    "wave2-residue-search": "31 hits all inside src/losses/runner.py closed composition path; 0 in supervised_trainer.py",
+    "builder-supplementary-wide-sweep": "2285 passed / 132 skipped over tests/{training,runtime,eval,artifacts,supervision,packing} + packed_parity",
+    "composition-probe": "LossRunner composed from all 25 supported configs (19 ablation, 4 enabled, 2 enabled+auxiliary)",
+    "determinant-invariant": "fingerprints and baseline_sha256 byte-identical; 24 owner files zero diff",
+    "red-receipts": "bindings module collection error; 10 failed zero-policy nodes incl. the F-2 raw-vs-weighted finite RED observed against the weighted-keyed implementation; 2.4 probes proven sensitive via three reverted source mutations"
+   }
   }
  ]
 }

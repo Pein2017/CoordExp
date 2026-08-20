@@ -96,11 +96,41 @@
 
 ## 2. Wave 2 - Closed Loss Composition And Zero Policies
 
-- [ ] 2.1 Add interface-level failing tests for the closed binding inventory and its exact protected/auxiliary role, `segment_balanced` normalizer, and `forbid`/`detached_diagnostic`/`omit` zero policies.
-- [ ] 2.2 Introduce the private frozen `TokenLossBinding` metadata and refactor loss construction to one explicit closed composition path without registry discovery, import-by-name, callable config, or pass-through factories.
-- [ ] 2.3 Implement base-CE forbidden-zero behavior, the gate-ablation no-grad diagnostic path, and complete optional-auxiliary omission from construction, denominators, calls, bundles, finite checks, and metrics; delete the superseded ad hoc coordinate/protected branching.
-- [ ] 2.4 Add correctness probes using construction/call sentinels and autograd saved-tensor or graph inspection to prove an omitted auxiliary creates no term work or retained graph and a gate ablation creates no objective autograd edge; record explicitly that this is not an efficiency or peak-memory claim.
-- [ ] 2.5 Gate Wave 2 with loss/config unit tests, the executed zero-policy probes, strict OpenSpec validation, and residue searches for old branching and public extension hooks; do not begin Wave 3 with an unresolved test or validation failure.
+- [x] 2.1 Add interface-level failing tests for the closed binding inventory and its exact protected/auxiliary role, `segment_balanced` normalizer, and `forbid`/`detached_diagnostic`/`omit` zero policies.
+- [x] 2.2 Introduce the private frozen `TokenLossBinding` metadata and refactor loss construction to one explicit closed composition path without registry discovery, import-by-name, callable config, or pass-through factories.
+- [x] 2.3 Implement base-CE forbidden-zero behavior, the gate-ablation no-grad diagnostic path, and complete optional-auxiliary omission from construction, denominators, calls, bundles, finite checks, and metrics; delete the superseded ad hoc coordinate/protected branching.
+- [x] 2.4 Add correctness probes using construction/call sentinels and autograd saved-tensor or graph inspection to prove an omitted auxiliary creates no term work or retained graph and a gate ablation creates no objective autograd edge; record explicitly that this is not an efficiency or peak-memory claim.
+- [x] 2.5 Gate Wave 2 with loss/config unit tests, the executed zero-policy probes, strict OpenSpec validation, and residue searches for old branching and public extension hooks; do not begin Wave 3 with an unresolved test or validation failure.
+
+> **Wave 2 closed (2026-08-20, opus builder, zero correction rounds):**
+> private frozen `TokenLossBinding` inventory in `src/losses/bindings.py`
+> (base_ce/protected/forbid, token_type_gate/protected/detached_diagnostic,
+> coord_gaussian_rps/auxiliary/omit; not re-exported), single composition
+> path `LossRunner._active_token_losses()`; seven ad hoc branches deleted
+> (enumerated in the builder report). Zero policies: forbid raises
+> `loss.base_ce_weight_forbidden` at construction; ablation runs
+> denominator+fp32 math under no-grad with weighted = exact detached 0.0
+> and no objective autograd edge; omit = no instance/denominator/call/
+> bundle/finite/metric (instance at weight 0 is now a hard error).
+> **Entry-audit F-2 discharged with RED receipt**: the weighted-keyed
+> finite path was observed labelling raw=NaN ablation bundles safe before
+> the fix; finite derivation moved to RAW at all four sites including
+> `src/runtime/finite_gates.py:45` (`RankScalarFiniteReport` gate — the
+> one edit outside src/losses, mandated by F-2's all-rank clause;
+> behaviour-preserving for objective terms where weighted = raw x finite
+> positive weight). 2.4 probes proven sensitive via three reverted source
+> mutations (objective-edge, detached-flag, omit-constructs). Accepted
+> unrequested fail-fast: `loss.streaming_plan_runner_mismatch` making the
+> plan-from-this-runner invariant explicit. Field names unchanged (Wave 4
+> owns the rename); omitted-auxiliary fields now absent per spec, with
+> tests/losses/test_runner.py + tests/eval/test_forward_eval.py re-pinned
+> to base_ce weight 1.0 as forced by the contract. Trainer and
+> src/eval/forward.py byte-unchanged (F-4 respected). Gate (lead
+> independent replay) 417/0/0; residue 31 hits all in the closed path;
+> strict validation valid; determinant fingerprints + payload baseline
+> byte-identical; 24 owner files zero diff. Note: commit `e6f923534`
+> (user's own AGENTS.md contract update) interleaved before this wave's
+> commit — no owner-surface overlap.
 
 ## 3. Wave 3 - Global Objective And DDP Parity
 

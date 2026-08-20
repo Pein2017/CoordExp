@@ -13,6 +13,15 @@ import torch
 from src.common.errors import LossContractError
 from src.config.models import LossesConfig
 from src.losses.base_ce import BaseTokenCE
+from src.losses.bindings import (
+    BASE_CE_BINDING,
+    COORD_GAUSSIAN_RPS_BINDING,
+    COORDINATE_TOKEN_TYPES,
+    PROTECTED_BASE_CE_WEIGHT,
+    TOKEN_LOSS_BINDINGS,
+    TOKEN_TYPE_GATE_BINDING,
+    TokenLossBinding,
+)
 from src.losses.context import LossContext
 from src.losses.coord_gaussian_rps import CoordGaussianRPSLoss
 from src.losses.normalizers import (
@@ -101,6 +110,27 @@ class PlannedStepLossPlan:
 
 
 @dataclass(frozen=True)
+class _ActiveTokenLoss:
+    """One composed term: closed binding metadata + its resolved runtime inputs."""
+
+    binding: TokenLossBinding
+    weight: float
+    term: BaseTokenCE | TokenTypeGateLoss | CoordGaussianRPSLoss
+    token_types: tuple[str, ...] | None
+
+    @property
+    def is_detached_diagnostic(self) -> bool:
+        """True only for a zero-weight `detached_diagnostic` protected term.
+
+        Strict config makes gate weight `0.0` and the named
+        `zero_weight_ablation` mode equivalent, so the resolved weight is the
+        runner-side identity of that ablation.
+        """
+
+        return self.binding.zero_policy == "detached_diagnostic" and self.weight == 0.0
+
+
+@dataclass(frozen=True)
 class LossRunner:
     base_ce_weight: float
     token_type_gate_weight: float
@@ -109,16 +139,107 @@ class LossRunner:
     coord_gaussian_rps: CoordGaussianRPSLoss | None = None
 
     def __post_init__(self) -> None:
-        _validate_weight("base_ce", self.base_ce_weight)
-        _validate_weight("token_type_gate", self.token_type_gate_weight)
-        _validate_weight("coord_gaussian_rps", self.coord_gaussian_rps_weight)
+        _validate_weight(BASE_CE_BINDING.name, self.base_ce_weight)
+        _validate_weight(TOKEN_TYPE_GATE_BINDING.name, self.token_type_gate_weight)
+        _validate_weight(
+            COORD_GAUSSIAN_RPS_BINDING.name, self.coord_gaussian_rps_weight
+        )
         _validate_token_type_groups(self.token_type_gate_groups)
-        if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is None:
-            raise LossContractError(
-                "coord_gaussian_rps weight requires a configured loss term",
-                code="loss.coord_gaussian_rps_missing_term",
-                context={"weight": self.coord_gaussian_rps_weight},
-            )
+        # Fail closed at construction: the composition path is the only place
+        # zero policies are decided, so run it once here.
+        self._active_token_losses()
+
+    def _active_token_losses(self) -> tuple[_ActiveTokenLoss, ...]:
+        """THE single closed composition path.
+
+        Walks the compiled `TOKEN_LOSS_BINDINGS` inventory in canonical order
+        and resolves each binding's zero policy. There is no registry lookup,
+        import-by-name, callable configuration, or pass-through factory: a
+        term that is not in this function is not composable at all.
+        """
+
+        active: list[_ActiveTokenLoss] = []
+        for binding in TOKEN_LOSS_BINDINGS:
+            if binding is BASE_CE_BINDING:
+                # `forbid`: strict config already rejects omission/reweighting;
+                # this is the runtime backstop at composition.
+                if float(self.base_ce_weight) != PROTECTED_BASE_CE_WEIGHT:
+                    raise LossContractError(
+                        "base_ce is a protected loss with zero policy 'forbid': "
+                        "its weight must be exactly 1.0 and it can never be "
+                        "omitted, zeroed, or reweighted",
+                        code="loss.base_ce_weight_forbidden",
+                        context={
+                            "term": binding.name,
+                            "zero_policy": binding.zero_policy,
+                            "weight": float(self.base_ce_weight),
+                            "required_weight": PROTECTED_BASE_CE_WEIGHT,
+                        },
+                    )
+                active.append(
+                    _ActiveTokenLoss(
+                        binding=binding,
+                        weight=float(self.base_ce_weight),
+                        term=BaseTokenCE(),
+                        token_types=None,
+                    )
+                )
+            elif binding is TOKEN_TYPE_GATE_BINDING:
+                # `detached_diagnostic`: always composed. At weight zero the
+                # term still computes its denominator and fp32 per-atom math
+                # inside a no-grad boundary (see `compute_micro_step`).
+                active.append(
+                    _ActiveTokenLoss(
+                        binding=binding,
+                        weight=float(self.token_type_gate_weight),
+                        term=TokenTypeGateLoss(),
+                        token_types=tuple(self.token_type_gate_groups),
+                    )
+                )
+            elif binding is COORD_GAUSSIAN_RPS_BINDING:
+                weight = float(self.coord_gaussian_rps_weight)
+                term = self.coord_gaussian_rps
+                if weight == 0.0:
+                    # `omit`: nothing is instantiated, so nothing may exist.
+                    if term is not None:
+                        raise LossContractError(
+                            "an omitted auxiliary loss must not be instantiated: "
+                            "zero policy 'omit' builds no term, denominator, "
+                            "math, bundle entry, finite check, or metric field",
+                            code="loss.auxiliary_omitted_term_instantiated",
+                            context={
+                                "term": binding.name,
+                                "zero_policy": binding.zero_policy,
+                                "weight": weight,
+                            },
+                        )
+                    continue
+                if term is None:
+                    raise LossContractError(
+                        "coord_gaussian_rps weight requires a configured loss term",
+                        code="loss.coord_gaussian_rps_missing_term",
+                        context={"weight": weight},
+                    )
+                active.append(
+                    _ActiveTokenLoss(
+                        binding=binding,
+                        weight=weight,
+                        term=term,
+                        token_types=COORDINATE_TOKEN_TYPES,
+                    )
+                )
+            else:  # pragma: no cover - defended closed inventory
+                raise LossContractError(
+                    "token loss binding has no composition branch",
+                    code="loss.binding_unhandled",
+                    context={"term": binding.name},
+                )
+        return tuple(active)
+
+    def active_bindings(self) -> tuple[TokenLossBinding, ...]:
+        """The closed bindings this runner composes, in canonical order."""
+
+        return tuple(active.binding for active in self._active_token_losses())
 
     @classmethod
     def from_config(cls, config: LossesConfig) -> "LossRunner":
@@ -130,14 +251,8 @@ class LossRunner:
             )
         auxiliary = config.auxiliary
         coord_cfg = auxiliary.coord_gaussian_rps if auxiliary is not None else None
-        if coord_cfg is None:
-            return cls(
-                base_ce_weight=config.protected.base_ce.weight,
-                token_type_gate_weight=config.protected.token_type_gate.weight,
-                token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
-                coord_gaussian_rps_weight=0.0,
-                coord_gaussian_rps=None,
-            )
+        coord_weight = 0.0 if coord_cfg is None else float(coord_cfg.weight)
+        # `omit`: an absent or zero-weight auxiliary is never instantiated.
         coord_term = (
             CoordGaussianRPSLoss(
                 gaussian_weight=coord_cfg.gaussian_weight,
@@ -148,14 +263,14 @@ class LossRunner:
                 gaussian_r95_min_bins=coord_cfg.gaussian_r95_min_bins,
                 gaussian_r95_fallback_bins=coord_cfg.gaussian_r95_fallback_bins,
             )
-            if coord_cfg.weight > 0.0
+            if coord_cfg is not None and coord_weight > 0.0
             else None
         )
         return cls(
             base_ce_weight=config.protected.base_ce.weight,
             token_type_gate_weight=config.protected.token_type_gate.weight,
             token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
-            coord_gaussian_rps_weight=coord_cfg.weight,
+            coord_gaussian_rps_weight=coord_weight,
             coord_gaussian_rps=coord_term,
         )
 
@@ -181,28 +296,18 @@ class LossRunner:
                 code="loss.streaming_empty_window",
                 context={},
             )
-        base_denominator = _build_denominator_from_token_sequences(
-            "base_ce",
-            token_sequences,
-            token_types=None,
-        )
-        gate_denominator = _build_denominator_from_token_sequences(
-            "token_type_gate",
-            token_sequences,
-            token_types=self.token_type_gate_groups,
-        )
+        # One denominator per composed binding, in canonical order. An omitted
+        # auxiliary is absent from the composition, so no local or global
+        # denominator is built or gathered for it and it can never raise a
+        # zero-eligible failure for the planned step.
         local_denominators = {
-            "base_ce": base_denominator,
-            "token_type_gate": gate_denominator,
-        }
-        if self.coord_gaussian_rps_weight > 0.0:
-            local_denominators["coord_gaussian_rps"] = (
-                _build_denominator_from_token_sequences(
-                    "coord_gaussian_rps",
-                    token_sequences,
-                    token_types=("coordinate",),
-                )
+            active.binding.name: _build_denominator_from_token_sequences(
+                active.binding.name,
+                token_sequences,
+                token_types=active.token_types,
             )
+            for active in self._active_token_losses()
+        }
         denominators, denominator_scope, backend_gradient_scale = (
             _resolve_streaming_denominators(
                 local_denominators,
@@ -215,7 +320,7 @@ class LossRunner:
             denominators=denominators,
             counts=_build_counts_from_token_sequences(
                 token_sequences,
-                denominators["base_ce"],
+                denominators[BASE_CE_BINDING.name],
             ),
             token_type_gate_groups=self.token_type_gate_groups,
             denominator_scope=denominator_scope,
@@ -237,54 +342,50 @@ class LossRunner:
                 code="loss.streaming_context_type",
                 context={"value_type": type(context).__name__},
             )
-        base_result = _compute_token_term_contribution(
-            name="base_ce",
-            context=context,
-            weight=self.base_ce_weight,
-            term=BaseTokenCE(),
-            token_types=None,
-            denominator=plan.denominators["base_ce"],
-            local_micro_step_index=local_micro_step_index,
-            backend_gradient_scale=plan.backend_gradient_scale,
-        )
-        gate_grad_context = (
-            torch.no_grad() if self.token_type_gate_weight == 0.0 else nullcontext()
-        )
-        with gate_grad_context:
-            gate_result = _compute_token_term_contribution(
-                name="token_type_gate",
-                context=context,
-                weight=self.token_type_gate_weight,
-                term=TokenTypeGateLoss(),
-                token_types=plan.token_type_gate_groups,
-                denominator=plan.denominators["token_type_gate"],
-                local_micro_step_index=local_micro_step_index,
-                backend_gradient_scale=plan.backend_gradient_scale,
+        active_losses = self._active_token_losses()
+        if plan.token_type_gate_groups != tuple(self.token_type_gate_groups):
+            raise LossContractError(
+                "planned-step plan was built by a differently configured runner",
+                code="loss.streaming_plan_runner_mismatch",
+                context={
+                    "plan_groups": list(plan.token_type_gate_groups),
+                    "runner_groups": list(self.token_type_gate_groups),
+                },
             )
-        terms_list = [base_result, gate_result]
-        if (
-            self.coord_gaussian_rps_weight > 0.0
-            and self.coord_gaussian_rps is not None
-            and "coord_gaussian_rps" in plan.denominators
-        ):
-            terms_list.append(
-                _compute_token_term_contribution(
-                    name="coord_gaussian_rps",
-                    context=context,
-                    weight=self.coord_gaussian_rps_weight,
-                    term=self.coord_gaussian_rps,
-                    token_types=("coordinate",),
-                    denominator=plan.denominators["coord_gaussian_rps"],
-                    local_micro_step_index=local_micro_step_index,
-                    backend_gradient_scale=plan.backend_gradient_scale,
+        results: list[LossTermResult] = []
+        for active in active_losses:
+            # `detached_diagnostic` at weight zero: denominator and fp32
+            # per-atom math still run, but entirely inside a no-grad boundary.
+            grad_context = (
+                torch.no_grad() if active.is_detached_diagnostic else nullcontext()
+            )
+            with grad_context:
+                results.append(
+                    _compute_token_term_contribution(
+                        name=active.binding.name,
+                        context=context,
+                        weight=active.weight,
+                        term=active.term,
+                        token_types=active.token_types,
+                        denominator=plan.denominators[active.binding.name],
+                        local_micro_step_index=local_micro_step_index,
+                        backend_gradient_scale=plan.backend_gradient_scale,
+                        detached_diagnostic=active.is_detached_diagnostic,
+                    )
                 )
-            )
-        terms = tuple(terms_list)
+        terms = tuple(results)
+        # Protected base CE is always composed (`forbid` zero policy), so this
+        # lookup cannot miss; counts are defined against its denominator.
+        base_result = next(
+            term for term in terms if term.name == BASE_CE_BINDING.name
+        )
+        # Only objective terms enter `total_loss`; a detached diagnostic never
+        # contributes a tensor to the optimized objective or its graph.
         total_loss = sum(
             (
-                term.weighted_loss
-                for term in terms
-                if not (term.name == "token_type_gate" and term.weight == 0.0)
+                term_result.weighted_loss
+                for active, term_result in zip(active_losses, terms, strict=True)
+                if not active.is_detached_diagnostic
             ),
             terms[0].weighted_loss.new_zeros(()),
         )
@@ -298,8 +399,11 @@ class LossRunner:
         finite_status = _build_finite_status(total_loss=total_loss, terms=terms)
         metrics["finite/total_loss"] = _finite_metric(total_loss)
         for term_result in terms:
+            # Keyed on the RAW semantic value, never the configured-weight
+            # product: a detached diagnostic's weighted value is a literal
+            # zero and would mask a non-finite protected diagnostic.
             metrics[f"finite/{term_result.name}"] = _finite_metric(
-                term_result.weighted_loss
+                term_result.raw_loss
             )
         diagnostics = {
             "normalizer": "segment_balanced",
@@ -362,10 +466,10 @@ class LossRunner:
             metrics[name] = float(value)
         finite_status = {
             "total_loss": _finite_label_from_float(total_loss),
+            # Raw-keyed for the same reason as the micro-step labels: a
+            # detached diagnostic's weighted value is a literal zero.
             "terms": {
-                str(term["name"]): _finite_label_from_float(
-                    float(term["weighted_loss"])
-                )
+                str(term["name"]): _finite_label_from_float(float(term["raw_loss"]))
                 for term in terms
             },
         }
@@ -406,6 +510,7 @@ def _compute_token_term_contribution(
     denominator: SegmentBalancedDenominator,
     local_micro_step_index: int,
     backend_gradient_scale: float = 1.0,
+    detached_diagnostic: bool = False,
 ) -> LossTermResult:
     term_context = (
         context
@@ -424,7 +529,13 @@ def _compute_token_term_contribution(
     )
     raw = segment_balanced_contribution(loss_slice, denominator=denominator)
     raw = raw * float(backend_gradient_scale)
-    weighted = raw * float(weight)
+    if detached_diagnostic:
+        # Exactly 0.0, never `raw * 0.0`: a non-finite raw diagnostic must not
+        # leak into the weighted value or the objective. Its finite status is
+        # carried by `raw_loss` (see `_build_finite_status`).
+        weighted = raw.detach().new_zeros(())
+    else:
+        weighted = raw * float(weight)
     if len(term_context.atoms) > 0:
         token_weighted = per_atom_losses.detach().mean()
         segment_mean_numerator = raw.detach() * float(
@@ -1162,9 +1273,19 @@ def _build_finite_status(
     total_loss: torch.Tensor,
     terms: tuple[LossTermResult, ...],
 ) -> dict[str, Any]:
+    """Per-term finite labels derived from the RAW semantic value.
+
+    For every objective term `weighted = raw * finite_positive_weight`, so raw
+    and weighted are non-finite together and this is behaviour-preserving.
+    It differs exactly for the zero-weight protected gate ablation, whose
+    weighted value is a literal zero: keying that term on `weighted` would
+    report a non-finite protected diagnostic as finite and let an unsafe
+    planned step proceed to backward (entry-audit F-2).
+    """
+
     return {
         "total_loss": _finite_label(total_loss),
-        "terms": {term.name: _finite_label(term.weighted_loss) for term in terms},
+        "terms": {term.name: _finite_label(term.raw_loss) for term in terms},
     }
 
 

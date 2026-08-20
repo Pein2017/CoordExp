@@ -42,7 +42,13 @@ class RankScalarFiniteReport:
         term_selected: dict[str, int] = {}
         term_segments: dict[str, int] = {}
         for term in bundle.terms:
-            term_finite[term.name] = _tensor_is_finite(term.weighted_loss)
+            # Keyed on the RAW semantic value, not the configured-weight
+            # product. For objective terms the two are non-finite together;
+            # for a zero-weight protected gate ablation the weighted value is
+            # a literal zero, so weighted-keying would hide a non-finite
+            # protected diagnostic from this all-rank pre-backward decision
+            # (entry-audit F-2).
+            term_finite[term.name] = _tensor_is_finite(term.raw_loss)
             term_weighted[term.name] = _optional_float(term.weighted_loss)
             term_raw[term.name] = _optional_float(term.raw_loss)
             term_selected[term.name] = int(term.selected_count)

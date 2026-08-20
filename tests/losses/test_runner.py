@@ -76,7 +76,10 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
             pack_index=1,
         ),
     )
-    runner = _runner(base_ce_weight=2.0, token_type_gate_weight=0.5)
+    # Base CE is a protected term with zero policy `forbid`: weight is always
+    # exactly 1.0 (enforced at composition), so the non-trivial configured
+    # weight proving raw-to-weighted arithmetic here is the gate's 0.5.
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.5)
 
     plan = runner.prepare_planned_step(
         tuple(context.token_sequence for context in contexts)
@@ -110,7 +113,7 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
             for context in contexts
         )
     )
-    expected_total = expected_base.loss * 2.0 + expected_gate.loss * 0.5
+    expected_total = expected_base.loss * 1.0 + expected_gate.loss * 0.5
 
     base_term = next(term for term in bundle["terms"] if term["name"] == "base_ce")
     gate_term = next(
@@ -118,16 +121,16 @@ def test_loss_runner_streaming_planned_step_reproduces_weighted_metrics_and_top_
     )
 
     assert bundle["total_loss"] == pytest.approx(float(expected_total.detach()))
-    assert base_term["weight"] == 2.0
+    assert base_term["weight"] == 1.0
     assert base_term["raw_loss"] == pytest.approx(float(expected_base.loss.detach()))
     assert base_term["weighted_loss"] == pytest.approx(
-        float((expected_base.loss * 2.0).detach())
+        float((expected_base.loss * 1.0).detach())
     )
     assert bundle["metrics"]["loss/total"] == pytest.approx(
         float(expected_total.detach())
     )
     assert bundle["metrics"]["loss/base_ce"] == pytest.approx(
-        float((expected_base.loss * 2.0).detach())
+        float((expected_base.loss * 1.0).detach())
     )
     assert bundle["metrics"]["loss/token_type_gate"] == pytest.approx(
         float((expected_gate.loss * 0.5).detach())
@@ -626,7 +629,9 @@ def test_nonzero_gate_matches_reference_values_and_all_gradients() -> None:
         (_segment(0, 0, 2),),
         (_atom(segment_index=0, target_position=1, token_id=7),),
     )
-    runner = _runner(base_ce_weight=1.3, token_type_gate_weight=0.4)
+    # Protected base CE is pinned to 1.0 by the `forbid` zero policy; the
+    # gate's 0.4 carries the non-trivial weighting arithmetic here.
+    runner = _runner(base_ce_weight=1.0, token_type_gate_weight=0.4)
     plan = runner.prepare_planned_step((context.token_sequence,))
     reference_base_raw = _reference_raw_token_term(
         context,
@@ -642,7 +647,7 @@ def test_nonzero_gate_matches_reference_values_and_all_gradients() -> None:
         denominator=plan.denominators["token_type_gate"],
         backend_gradient_scale=plan.backend_gradient_scale,
     )
-    reference_total = reference_base_raw * 1.3 + reference_gate_raw * 0.4
+    reference_total = reference_base_raw * 1.0 + reference_gate_raw * 0.4
 
     bundle = runner.compute_micro_step(context, plan, local_micro_step_index=0)
     base_term = bundle.term_by_name("base_ce")
@@ -650,7 +655,7 @@ def test_nonzero_gate_matches_reference_values_and_all_gradients() -> None:
 
     assert projection_calls == 1
     assert torch.equal(base_term.raw_loss, reference_base_raw)
-    assert torch.equal(base_term.weighted_loss, reference_base_raw * 1.3)
+    assert torch.equal(base_term.weighted_loss, reference_base_raw * 1.0)
     assert torch.equal(gate_term.raw_loss, reference_gate_raw)
     assert torch.equal(gate_term.weighted_loss, reference_gate_raw * 0.4)
     assert torch.equal(bundle.total_loss, reference_total)

@@ -517,8 +517,11 @@ _WAVE4_NUM_EXAMPLES_BY_PACK = {0: 2, 1: 1, 2: 2}
 
 
 def _wave4_loss_runner() -> LossRunner:
+    # Protected base CE is pinned to exactly 1.0 by the `forbid` zero policy
+    # (enforced at LossRunner composition); the gate's 0.5 supplies the
+    # non-trivial configured weight these reduction tests exercise.
     return LossRunner(
-        base_ce_weight=2.0,
+        base_ce_weight=1.0,
         token_type_gate_weight=0.5,
         token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
     )
@@ -542,7 +545,7 @@ def _wave4_loss_runner_with_globally_unselected_gate_term() -> LossRunner:
     """
 
     return LossRunner(
-        base_ce_weight=2.0,
+        base_ce_weight=1.0,
         token_type_gate_weight=0.5,
         token_type_gate_groups=("schema",),
     )
