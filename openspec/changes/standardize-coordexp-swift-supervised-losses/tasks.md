@@ -53,11 +53,46 @@
 
 ## 1. Wave 1 - Strict Supervised Config Contract
 
-- [ ] 1.1 Add config-first failing tests for base CE omission/reweighting, the exact gate group tuple, `enabled: 0.1`, `zero_weight_ablation: 0`, every incompatible mode/weight mutation, legacy protected coordinate placement, typed auxiliary placement, optional auxiliary zero, unknown loss names, and import/callable-style hooks.
-- [ ] 1.2 Implement the strict protected and auxiliary config models, including the discriminated gate mode, exact constants and groups, and migration-oriented validation errors without a legacy alias.
-- [ ] 1.3 Enumerate the catalog-supported/current CoordExp-Swift production, smoke, and measurement configs; migrate enabled gates to `0.1`, mark zero gates as `zero_weight_ablation`, move coordinate Gaussian/RPS under the typed auxiliary surface, and inspect every config diff without modifying historical/archive roots.
-- [ ] 1.4 Add an inventory test that resolves every current supported training config and separately proves representative historical configs remain provenance rather than accepted current inputs.
-- [ ] 1.5 Gate Wave 1 with focused config tests, a dry config-resolution probe over the full supported inventory, strict OpenSpec validation, and searches for legacy protected-coordinate placement/dynamic hooks in current roots; do not begin Wave 2 with an unresolved test or validation failure.
+- [x] 1.1 Add config-first failing tests for base CE omission/reweighting, the exact gate group tuple, `enabled: 0.1`, `zero_weight_ablation: 0`, every incompatible mode/weight mutation, legacy protected coordinate placement, typed auxiliary placement, optional auxiliary zero, unknown loss names, and import/callable-style hooks.
+- [x] 1.2 Implement the strict protected and auxiliary config models, including the discriminated gate mode, exact constants and groups, and migration-oriented validation errors without a legacy alias.
+- [x] 1.3 Enumerate the catalog-supported/current CoordExp-Swift production, smoke, and measurement configs; migrate enabled gates to `0.1`, mark zero gates as `zero_weight_ablation`, move coordinate Gaussian/RPS under the typed auxiliary surface, and inspect every config diff without modifying historical/archive roots.
+- [x] 1.4 Add an inventory test that resolves every current supported training config and separately proves representative historical configs remain provenance rather than accepted current inputs.
+- [x] 1.5 Gate Wave 1 with focused config tests, a dry config-resolution probe over the full supported inventory, strict OpenSpec validation, and searches for legacy protected-coordinate placement/dynamic hooks in current roots; do not begin Wave 2 with an unresolved test or validation failure.
+
+> **Wave 1 closed (2026-08-20, opus builder + one bundled correction round +
+> lead module-level disposition):** strict contract implemented in
+> `src/config/models.py` (BaseCELossConfig weight==1.0; gate `mode`
+> enabled<->0.1 / zero_weight_ablation<->0.0 with migration-oriented errors;
+> canonical group tuple validated via deferred in-validator import of
+> `V1_TOKEN_TYPES` per entry-audit F-1, plus an equality test;
+> `losses.auxiliary.coord_gaussian_rps` typed surface; protected placement
+> rejected by name). `src/losses/runner.py` config-read seam only. RED first:
+> 51 failed / 30 passed observed before implementation. Migration: 25
+> supported configs (6 enabled gates 0.2/0.25 -> 0.1 [3 prod + 3 smoke,
+> exactly F-3's scope]; 19 -> zero_weight_ablation; 2 coord blocks ->
+> auxiliary); `infer/` untouched; declared deviation: the live loader-input
+> fixture `tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml`
+> gained `mode: enabled` beside its existing canonical 0.1 (the frozen
+> `tests/fixtures/training_orchestration/` set is byte-untouched). New
+> inventory test + model-free probe
+> (`scripts/probes/coordexp_swift/losses_config_inventory_probe.py`): 25
+> resolved strictly, 1 historical rejected. **Blocking finding + disposition
+> (manifest amend-5):** four frozen config-identity pin families
+> (parity FROZEN_V3 fingerprint, wave3 zero-weight, wave7 bundle byte pin,
+> reconcile packet-executor Attempt-6 byte pin) authenticate completed GPU
+> evidence against the two migrated configs; constants NEVER re-pinned; 19
+> nodes flipped to typed fail-closed refusal assertions; the executor
+> mechanism suite (126 nodes, already path-bound to this worktree) is
+> conditionally historicized behind a live-byte-drift skipif with the live
+> refusal proof in a new 4-node module; 6 now-vacuous parity mutation params
+> skipped with reason. Entry-audit gap recorded: config-IDENTITY consumers
+> were missed by F-3/F-5/F-6. Gate (lead independent replay): config gate
+> 436/0/0; pin-family bundle 416 passed / 132 skipped / 0 failed;
+> entry-baseline argv 898/0; trainer+assembly 125/0; residue searches clean;
+> `openspec validate --strict` valid. **Cache invariant receipts:**
+> recomputed determinant fingerprints and the canonical payload
+> baseline_sha256 are byte-identical to Wave 0 post-migration; the 24
+> owner files show zero diff.
 
 ## 2. Wave 2 - Closed Loss Composition And Zero Policies
 

@@ -63,12 +63,14 @@ losses:
     base_ce:
       weight: 1.0
     token_type_gate:
-      weight: 0.2
+      mode: enabled
+      weight: 0.1
       groups:
         - desc_text
         - schema
         - coordinate
         - eos
+  auxiliary:
     coord_gaussian_rps:
       weight: 1.0
       gaussian_weight: 0.5

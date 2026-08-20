@@ -55,7 +55,7 @@ INFRASTRUCTURE_DELETION_ALLOWLIST = (
     "resume.checkpoint_dir=null",
 )
 ACTIVE_PROFILE_BASELINE = Path(
-    "tests/config/fixtures/active_profile_wave2_baseline.json"
+    "tests/config/fixtures/active_profile_losses_wave1_baseline.json"
 )
 
 
@@ -109,12 +109,12 @@ def test_coord_gaussian_rps_loss_config_rejects_tiny_temperature() -> None:
         ("adapter.dropout", float("inf")),
         ("losses.protected.base_ce.weight", float("inf")),
         ("losses.protected.token_type_gate.weight", float("inf")),
-        ("losses.protected.coord_gaussian_rps.weight", float("inf")),
-        ("losses.protected.coord_gaussian_rps.gaussian_weight", float("inf")),
-        ("losses.protected.coord_gaussian_rps.rps_weight", float("inf")),
-        ("losses.protected.coord_gaussian_rps.temperature", float("inf")),
+        ("losses.auxiliary.coord_gaussian_rps.weight", float("inf")),
+        ("losses.auxiliary.coord_gaussian_rps.gaussian_weight", float("inf")),
+        ("losses.auxiliary.coord_gaussian_rps.rps_weight", float("inf")),
+        ("losses.auxiliary.coord_gaussian_rps.temperature", float("inf")),
         (
-            "losses.protected.coord_gaussian_rps.gaussian_r95_axis_fraction",
+            "losses.auxiliary.coord_gaussian_rps.gaussian_r95_axis_fraction",
             float("inf"),
         ),
         ("optimizer.epsilon", float("inf")),
@@ -719,7 +719,17 @@ def test_coord_gaussian_rps_loss_config_defaults_disabled_and_loads_plugin_param
     _write_yaml(default_path, payload)
 
     default_config = load_train_config(default_path).config
-    default_coord_loss = default_config.losses.protected.coord_gaussian_rps
+    assert default_config.losses.auxiliary is None
+
+    zero_path = tmp_path / "zero.yaml"
+    payload = _minimal_config()
+    payload["losses"]["auxiliary"] = {"coord_gaussian_rps": {"weight": 0.0}}
+    _write_yaml(zero_path, payload)
+
+    zero_auxiliary = load_train_config(zero_path).config.losses.auxiliary
+    assert zero_auxiliary is not None
+    default_coord_loss = zero_auxiliary.coord_gaussian_rps
+    assert default_coord_loss is not None
     assert default_coord_loss.weight == 0.0
     assert default_coord_loss.gaussian_weight == pytest.approx(0.5)
     assert default_coord_loss.rps_weight == pytest.approx(0.2)
@@ -730,7 +740,8 @@ def test_coord_gaussian_rps_loss_config_defaults_disabled_and_loads_plugin_param
 
     enabled_path = tmp_path / "enabled.yaml"
     payload = _minimal_config()
-    payload["losses"]["protected"]["coord_gaussian_rps"] = {
+    payload["losses"]["auxiliary"] = {}
+    payload["losses"]["auxiliary"]["coord_gaussian_rps"] = {
         "weight": 1.0,
         "gaussian_weight": 0.5,
         "rps_weight": 0.2,
@@ -742,9 +753,10 @@ def test_coord_gaussian_rps_loss_config_defaults_disabled_and_loads_plugin_param
     }
     _write_yaml(enabled_path, payload)
 
-    enabled_coord_loss = load_train_config(
-        enabled_path
-    ).config.losses.protected.coord_gaussian_rps
+    enabled_auxiliary = load_train_config(enabled_path).config.losses.auxiliary
+    assert enabled_auxiliary is not None
+    enabled_coord_loss = enabled_auxiliary.coord_gaussian_rps
+    assert enabled_coord_loss is not None
     assert enabled_coord_loss.weight == pytest.approx(1.0)
     assert enabled_coord_loss.gaussian_weight == pytest.approx(0.5)
     assert enabled_coord_loss.rps_weight == pytest.approx(0.2)
@@ -1016,7 +1028,7 @@ def test_production_relaunch_configs_load_strictly() -> None:
 def test_active_profile_migration_changes_only_infrastructure_allowlist() -> None:
     """Guard the migration against scientific drift in every active profile."""
     baseline = json.loads(ACTIVE_PROFILE_BASELINE.read_text(encoding="utf-8"))
-    assert baseline["baseline_revision"] == "d86be1b3"
+    assert baseline["baseline_revision"] == "2a297a93a"
     assert tuple(baseline["normalization_allowlist"]) == (
         INFRASTRUCTURE_DELETION_ALLOWLIST
     )
@@ -1125,22 +1137,25 @@ def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
 
     protected = smoke.losses.protected
     assert protected.base_ce.weight == pytest.approx(1.0)
-    assert protected.token_type_gate.weight == pytest.approx(0.25)
+    assert protected.token_type_gate.mode == "enabled"
+    assert protected.token_type_gate.weight == pytest.approx(0.1)
     assert protected.token_type_gate.groups == (
         "desc_text",
         "schema",
         "coordinate",
         "eos",
     )
-    assert protected.coord_gaussian_rps.weight == pytest.approx(1.0)
-    assert protected.coord_gaussian_rps.gaussian_weight == pytest.approx(0.5)
-    assert protected.coord_gaussian_rps.rps_weight == pytest.approx(0.2)
-    assert protected.coord_gaussian_rps.gaussian_r95_axis_fraction == pytest.approx(
-        0.04
-    )
-    assert protected.coord_gaussian_rps.gaussian_r95_cap_bins == 8
-    assert protected.coord_gaussian_rps.gaussian_r95_min_bins == 1
-    assert protected.coord_gaussian_rps.gaussian_r95_fallback_bins == 8
+    auxiliary = smoke.losses.auxiliary
+    assert auxiliary is not None
+    coord = auxiliary.coord_gaussian_rps
+    assert coord is not None
+    assert coord.weight == pytest.approx(1.0)
+    assert coord.gaussian_weight == pytest.approx(0.5)
+    assert coord.rps_weight == pytest.approx(0.2)
+    assert coord.gaussian_r95_axis_fraction == pytest.approx(0.04)
+    assert coord.gaussian_r95_cap_bins == 8
+    assert coord.gaussian_r95_min_bins == 1
+    assert coord.gaussian_r95_fallback_bins == 8
 
 
 def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
@@ -1197,23 +1212,26 @@ def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
 
     protected = prod.losses.protected
     assert protected.base_ce.weight == pytest.approx(1.0)
-    assert protected.token_type_gate.weight == pytest.approx(0.2)
+    assert protected.token_type_gate.mode == "enabled"
+    assert protected.token_type_gate.weight == pytest.approx(0.1)
     assert protected.token_type_gate.groups == (
         "desc_text",
         "schema",
         "coordinate",
         "eos",
     )
-    assert protected.coord_gaussian_rps.weight == pytest.approx(1.0)
-    assert protected.coord_gaussian_rps.gaussian_weight == pytest.approx(0.5)
-    assert protected.coord_gaussian_rps.rps_weight == pytest.approx(0.2)
-    assert protected.coord_gaussian_rps.temperature == pytest.approx(1.0)
-    assert protected.coord_gaussian_rps.gaussian_r95_axis_fraction == pytest.approx(
-        0.04
-    )
-    assert protected.coord_gaussian_rps.gaussian_r95_cap_bins == 8
-    assert protected.coord_gaussian_rps.gaussian_r95_min_bins == 1
-    assert protected.coord_gaussian_rps.gaussian_r95_fallback_bins == 8
+    auxiliary = prod.losses.auxiliary
+    assert auxiliary is not None
+    coord = auxiliary.coord_gaussian_rps
+    assert coord is not None
+    assert coord.weight == pytest.approx(1.0)
+    assert coord.gaussian_weight == pytest.approx(0.5)
+    assert coord.rps_weight == pytest.approx(0.2)
+    assert coord.temperature == pytest.approx(1.0)
+    assert coord.gaussian_r95_axis_fraction == pytest.approx(0.04)
+    assert coord.gaussian_r95_cap_bins == 8
+    assert coord.gaussian_r95_min_bins == 1
+    assert coord.gaussian_r95_fallback_bins == 8
 
 
 def test_random_ordering_pure_ce_typegate_configs_are_matched_and_prompt_neutral() -> (
@@ -1350,7 +1368,8 @@ def _minimal_config() -> dict[str, Any]:
             "protected": {
                 "base_ce": {"weight": 1.0},
                 "token_type_gate": {
-                    "weight": 1.0,
+                    "mode": "enabled",
+                    "weight": 0.1,
                     "groups": ["desc_text", "schema", "coordinate", "eos"],
                 },
             },

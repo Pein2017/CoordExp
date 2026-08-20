@@ -57,6 +57,7 @@ losses:
     base_ce:
       weight: 1.0
     token_type_gate:
+      mode: zero_weight_ablation
       weight: 0.0
       groups:
         - desc_text

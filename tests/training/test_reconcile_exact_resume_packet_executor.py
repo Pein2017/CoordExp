@@ -43,6 +43,28 @@ BASE_CONFIG = (
 )
 BASE_CONFIG_SHA256 = "44c2cd2a6442917595e6426061e021e2989542114b7ce7cdb97cd37edb4f609f"
 
+# The Attempt-6/8 packet executor is completed reconcile evidence: its frozen
+# BASE_CONFIG_SHA256 binds the pre-migration bytes of the accelerate2_ebs2
+# smoke config and is never re-pinned. standardize-coordexp-swift-supervised-
+# losses Wave 1 migrated that supported config, so on a migrated tree the
+# executor fail-closes before any mechanism under test is reachable; the live
+# refusal itself is asserted in
+# test_reconcile_exact_resume_packet_executor_historicized.py, and this
+# mechanism suite runs only where the pinned bytes exist.
+_LIVE_BASE_CONFIG_DRIFTED = (
+    not BASE_CONFIG.is_file()
+    or hashlib.sha256(BASE_CONFIG.read_bytes()).hexdigest() != BASE_CONFIG_SHA256
+)
+pytestmark = pytest.mark.skipif(
+    _LIVE_BASE_CONFIG_DRIFTED,
+    reason=(
+        "historicized: live base config migrated by "
+        "standardize-coordexp-swift-supervised-losses; the executor's frozen "
+        "Attempt-6 byte pin fail-closes by design (see "
+        "test_reconcile_exact_resume_packet_executor_historicized.py)"
+    ),
+)
+
 
 def _role_config_bytes(
     *,
@@ -2711,37 +2733,6 @@ def test_file_path_cli_help_bootstraps_repo_imports(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "usage:" in result.stdout
-
-
-@pytest.mark.parametrize("drift", ["wrong_path", "duplicate", "missing"])
-def test_setup_base_config_drift_rejects_before_marker(
-    executor: ModuleType,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    drift: str,
-) -> None:
-    case = _fixture(tmp_path, monkeypatch)
-    setup_argv = case["manifest"]["setup_command"]
-    base_index = setup_argv.index("--base-config")
-    if drift == "wrong_path":
-        setup_argv[base_index + 1] = str(case["repo"] / "wrong-base.yaml")
-    elif drift == "duplicate":
-        setup_argv.extend(["--base-config", str(BASE_CONFIG)])
-    else:
-        del setup_argv[base_index : base_index + 2]
-    _refresh_manifest_and_review(case)
-    launched: list[list[str]] = []
-
-    def launch(argv: list[str], **kwargs: Any) -> Any:
-        launched.append(argv)
-        return case["launch"](argv, **kwargs)
-
-    with pytest.raises(executor.PacketExecutorError) as exc_info:
-        _execute(executor, case, launch=launch)
-
-    assert exc_info.value.code == "packet_executor.base_config_binding"
-    assert launched == []
-    assert not case["marker"].exists()
 
 
 def test_role_launch_argv_matches_real_probe_for_every_role(

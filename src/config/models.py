@@ -272,23 +272,81 @@ class PackingConfig(StrictConfigModel):
         return self
 
 
+TokenTypeGroupName = Literal["desc_text", "schema", "coordinate", "eos"]
+TokenTypeGateMode = Literal["enabled", "zero_weight_ablation"]
+
+# Canonical ordered gate group tuple. Pinned to `src.losses.vocab.V1_TOKEN_TYPES`
+# by an equality test; the constant is duplicated here (rather than imported at
+# module scope) because `src.losses` imports this module.
+CANONICAL_TOKEN_TYPE_GROUPS: tuple[TokenTypeGroupName, ...] = (
+    "desc_text",
+    "schema",
+    "coordinate",
+    "eos",
+)
+# The only supported (mode, weight) pairs for the protected token-type gate.
+TOKEN_TYPE_GATE_MODE_WEIGHTS: dict[str, float] = {
+    "enabled": 0.1,
+    "zero_weight_ablation": 0.0,
+}
+BASE_CE_WEIGHT = 1.0
+
+
 class WeightedLossConfig(StrictConfigModel):
     weight: float = Field(ge=0.0, allow_inf_nan=False)
 
 
-class TokenTypeGateLossConfig(WeightedLossConfig):
-    groups: tuple[Literal["desc_text", "schema", "coordinate", "eos"], ...]
+class BaseCELossConfig(WeightedLossConfig):
+    @model_validator(mode="after")
+    def _weight_is_exactly_one(self) -> "BaseCELossConfig":
+        if self.weight != BASE_CE_WEIGHT:
+            raise ValueError(
+                "losses.protected.base_ce.weight must be exactly 1.0; "
+                f"got {self.weight}. Base CE is a protected term and cannot be "
+                "reweighted or omitted."
+            )
+        return self
 
-    @field_validator("groups")
+
+class TokenTypeGateLossConfig(WeightedLossConfig):
+    mode: TokenTypeGateMode
+    groups: tuple[TokenTypeGroupName, ...]
+
+    @model_validator(mode="before")
     @classmethod
-    def _groups_not_empty(
-        cls, value: tuple[Literal["desc_text", "schema", "coordinate", "eos"], ...]
-    ) -> tuple[Literal["desc_text", "schema", "coordinate", "eos"], ...]:
-        if not value:
-            raise ValueError("token_type_gate.groups must not be empty")
-        if len(set(value)) != len(value):
-            raise ValueError("token_type_gate.groups must not contain duplicates")
+    def _mode_is_authored_explicitly(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "mode" not in value:
+            raise ValueError(
+                "losses.protected.token_type_gate.mode is required: author "
+                "mode: enabled with weight 0.1, or mode: zero_weight_ablation "
+                "with weight 0.0. A gate weight without a mode identity is no "
+                "longer accepted."
+            )
         return value
+
+    @model_validator(mode="after")
+    def _mode_pairs_with_weight_and_canonical_groups(
+        self,
+    ) -> "TokenTypeGateLossConfig":
+        from src.losses.vocab import V1_TOKEN_TYPES
+
+        canonical = tuple(V1_TOKEN_TYPES)
+        if tuple(self.groups) != canonical:
+            raise ValueError(
+                "losses.protected.token_type_gate.groups must be exactly the "
+                f"ordered tuple {list(canonical)}; got {list(self.groups)}. "
+                "Omitting, duplicating, adding, or reordering a group is not "
+                "supported."
+            )
+        expected_weight = TOKEN_TYPE_GATE_MODE_WEIGHTS[self.mode]
+        if self.weight != expected_weight:
+            raise ValueError(
+                f"losses.protected.token_type_gate.mode: {self.mode} pairs only "
+                f"with weight exactly {expected_weight}; got {self.weight}. "
+                "Use mode: enabled with weight 0.1 or mode: zero_weight_ablation "
+                "with weight 0.0."
+            )
+        return self
 
 
 class CoordGaussianRPSLossConfig(WeightedLossConfig):
@@ -324,16 +382,29 @@ class CoordGaussianRPSLossConfig(WeightedLossConfig):
 
 
 class ProtectedLossesConfig(StrictConfigModel):
-    base_ce: WeightedLossConfig
+    base_ce: BaseCELossConfig
     token_type_gate: TokenTypeGateLossConfig
-    coord_gaussian_rps: CoordGaussianRPSLossConfig = Field(
-        default_factory=CoordGaussianRPSLossConfig
-    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_coordinate_placement(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "coord_gaussian_rps" in value:
+            raise ValueError(
+                "coord_gaussian_rps is not a protected loss: move the block to "
+                "losses.auxiliary.coord_gaussian_rps. There is no compatibility "
+                "alias for losses.protected.coord_gaussian_rps."
+            )
+        return value
+
+
+class AuxiliaryLossesConfig(StrictConfigModel):
+    coord_gaussian_rps: CoordGaussianRPSLossConfig | None = None
 
 
 class LossesConfig(StrictConfigModel):
     normalizer: Literal["segment_balanced"]
     protected: ProtectedLossesConfig
+    auxiliary: AuxiliaryLossesConfig | None = None
 
 
 class OptimizerGroupConfig(StrictConfigModel):

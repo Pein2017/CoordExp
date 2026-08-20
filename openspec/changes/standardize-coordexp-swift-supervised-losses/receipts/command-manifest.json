@@ -173,6 +173,40 @@
    "date": "2026-08-20",
    "reason": "authorization basis changed by an explicit user grant in-session 2026-08-20",
    "new_authorization": "standing user GPU grant 2026-08-20: the host stress-test skips occupied GPUs; idle GPUs may be used without per-action requests ('\u603b\u6709 GPUs \u662f\u7a7a\u7684.\u4f60\u53ef\u4ee5\u653e\u5fc3\u5730\u4f7f\u7528\u2026\u65e0\u9700\u7533\u8bf7'). Applies equally to wave5-vertical-smoke. Per-action packets with frozen argv, device selection by observed idleness, and numeric bounds remain REQUIRED; this amendment replaces only the 'fresh user grant per action' clause."
+  },
+  {
+   "id": "amend-5-config-identity-pin-disposition",
+   "amendment_of": null,
+   "date": "2026-08-20",
+   "reason": "Wave-1 blocking finding: four frozen config-identity pin families authenticate completed GPU evidence against two migrated supported configs; entry audit F-3/F-5/F-6 enumerated config-content and telemetry consumers but missed config-IDENTITY consumers",
+   "disposition": {
+    "rule": "frozen pin constants are provenance and are NEVER re-pinned to migrated bytes; the asserted post-migration behavior is each owner's typed fail-closed refusal of the live config (decompose arm-D precedent)",
+    "owners_untouched": [
+     "src/qwen/parity.py",
+     "scripts/probes/coordexp_swift/wave3_zero_weight_gpu.py",
+     "scripts/probes/coordexp_swift/wave7_exact_resume_config_bundle.py",
+     "scripts/probes/coordexp_swift/reconcile_exact_resume_packet_executor.py"
+    ],
+    "test_flips": "19 nodes flipped RED->GREEN to refusal/archived-identity assertions (families 1-3 + 3 executor drift variants)",
+    "module_historicized": "tests/training/test_reconcile_exact_resume_packet_executor.py gains a conditional module-level skipif (live base-config byte drift): 126 mechanism nodes skip with a self-describing reason on migrated trees and run wherever the pinned bytes exist; the live refusal proof moved to test_reconcile_exact_resume_packet_executor_historicized.py (4 nodes)",
+    "vacuous_mutations_skipped": "tests/qwen/test_packed_parity.py::test_v3_config_projection_rejects_any_live_config_drift (6 params) skip with reason: unmutated baseline already drifts; refusal covered by the renamed unconditional node. The five in-node wave3 mutators still raise (drift) and are retained as harmless assertions, documented here.",
+    "coverage_losses_disclosed": "wave7 bundle atomic-publication-error wrapping and post-commit-fsync success path are historicized (mechanism asserted via direct helper calls instead)"
+   }
+  },
+  {
+   "id": "amend-6-pin-wave1-gate",
+   "amendment_of": "wave1-config-gate",
+   "date": "2026-08-20",
+   "reason": "pin observed Wave-1 acceptance counts (lead independent replay)",
+   "observed": {
+    "wave1-config-gate": "436 passed / 0 failed / 0 skipped",
+    "pin-family-bundle (packed_parity + wave7 bundle + executor + historicized + wave3 contract)": "416 passed / 0 failed / 132 skipped (126 historicized executor + 6 vacuous parity mutations)",
+    "entry-baseline argv at wave-1": "898 passed / 0 failed (817 at base + 81 new nodes)",
+    "wave1-inventory-probe": "exit 0: 25 supported configs resolved strictly, 1 historical rejected",
+    "collateral trainer+assembly": "125 passed",
+    "wave1-residue-search": "coord_gaussian_rps only in the 2 expected configs under losses.auxiliary; zero dynamic-hook hits",
+    "determinant-invariant": "train 8f11237f\u2026 / eval 3b30c157\u2026 and baseline_sha256 b2d9595f\u2026 byte-identical post-migration; 24 owner files zero diff"
+   }
   }
  ]
 }

@@ -1424,9 +1424,17 @@ def test_v3_schema_and_simple_fp32_tolerance_contract_rejects_stale_v2() -> None
         )
 
 
-def test_v3_config_projection_authenticates_exact_later_compatibility_defaults() -> (
-    None
-):
+def test_v3_config_projection_refuses_the_migrated_live_config() -> None:
+    """The Wave-2 v3 runtime identity is completed GPU evidence.
+
+    `standardize-coordexp-swift-supervised-losses` deliberately migrated this
+    supported config (gate `mode`/`0.1`, coordinate term moved to
+    `losses.auxiliary`), so the live file is a different experiment from the one
+    that was launched. The frozen constant is NOT re-pinned: the projection must
+    fail closed on the live file, while the archived identity still
+    authenticates the exact enumerated projection without touching it.
+    """
+
     from src.config import load_train_config
 
     config_path = (
@@ -1435,14 +1443,23 @@ def test_v3_config_projection_authenticates_exact_later_compatibility_defaults()
         "llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml"
     )
     resolved = load_train_config(config_path)
-    projection = config_compatibility_projection(resolved.config_dict)
-    assert resolved.fingerprint == FROZEN_V3_RUNTIME_CONFIG_FINGERPRINT
+    assert resolved.fingerprint != FROZEN_V3_RUNTIME_CONFIG_FINGERPRINT
     assert resolved.config.training.forward_input_provider_mode == "synchronous"
+
+    with pytest.raises(ParityContractError) as caught:
+        config_compatibility_projection(resolved.config_dict)
+    assert caught.value.code == "qwen.parity.runtime_config_drift"
+    assert caught.value.context["expected"] == FROZEN_V3_RUNTIME_CONFIG_FINGERPRINT
+    assert caught.value.context["observed"] == resolved.fingerprint
+
+    archived = _v3_config_identity()
+    assert validate_v3_config_identity(archived) == archived
+    archived_projection = archived["compatibility_projection"]
     assert (
-        projection["schema"]
+        archived_projection["schema"]
         == "coordexp-swift-wave2-config-compatibility-projection-v2"
     )
-    assert projection["removed_path_values"] == [
+    assert archived_projection["removed_path_values"] == [
         {
             "path": "training.forward_input_provider_mode",
             "value": "synchronous",
@@ -1462,8 +1479,10 @@ def test_v3_config_projection_authenticates_exact_later_compatibility_defaults()
         },
         {"path": "runtime.determinism", "value": {"mode": "legacy"}},
     ]
-    assert projection["projected_config_sha256"] == FROZEN_PARENT_V2_CONFIG_FINGERPRINT
-    assert validate_v3_config_identity(_v3_config_identity()) == (_v3_config_identity())
+    assert (
+        archived_projection["projected_config_sha256"]
+        == FROZEN_PARENT_V2_CONFIG_FINGERPRINT
+    )
 
 
 @pytest.mark.parametrize(
@@ -1476,6 +1495,15 @@ def test_v3_config_projection_authenticates_exact_later_compatibility_defaults()
         "missing_resume",
         "unrelated_config_drift",
     ],
+)
+@pytest.mark.skip(
+    reason=(
+        "historicized: standardize-coordexp-swift-supervised-losses migrated "
+        "the live patchproof config, so the unmutated baseline already drifts "
+        "from FROZEN_V3_RUNTIME_CONFIG_FINGERPRINT and every mutation would "
+        "pass vacuously; the unconditional drift refusal is asserted by "
+        "test_v3_config_projection_refuses_the_migrated_live_config"
+    )
 )
 def test_v3_config_projection_rejects_any_live_config_drift(mutation: str) -> None:
     from src.config import load_train_config

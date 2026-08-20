@@ -7,11 +7,12 @@ import torch
 
 from src.common.errors import LossContractError
 from src.config.models import (
+    AuxiliaryLossesConfig,
+    BaseCELossConfig,
     CoordGaussianRPSLossConfig,
     LossesConfig,
     ProtectedLossesConfig,
     TokenTypeGateLossConfig,
-    WeightedLossConfig,
 )
 from src.coordinate_targets import CoordinateLossTarget
 from src.losses import (
@@ -460,11 +461,14 @@ def test_loss_runner_requires_explicit_configured_weights() -> None:
     config = LossesConfig(
         normalizer="segment_balanced",
         protected=ProtectedLossesConfig(
-            base_ce=WeightedLossConfig(weight=1.7),
+            base_ce=BaseCELossConfig(weight=1.0),
             token_type_gate=TokenTypeGateLossConfig(
-                weight=0.25,
-                groups=("coordinate", "eos"),
+                mode="enabled",
+                weight=0.1,
+                groups=("desc_text", "schema", "coordinate", "eos"),
             ),
+        ),
+        auxiliary=AuxiliaryLossesConfig(
             coord_gaussian_rps=CoordGaussianRPSLossConfig(
                 weight=0.5,
                 gaussian_weight=0.5,
@@ -480,9 +484,14 @@ def test_loss_runner_requires_explicit_configured_weights() -> None:
 
     runner = LossRunner.from_config(config)
 
-    assert runner.base_ce_weight == 1.7
-    assert runner.token_type_gate_weight == 0.25
-    assert runner.token_type_gate_groups == ("coordinate", "eos")
+    assert runner.base_ce_weight == 1.0
+    assert runner.token_type_gate_weight == 0.1
+    assert runner.token_type_gate_groups == (
+        "desc_text",
+        "schema",
+        "coordinate",
+        "eos",
+    )
     assert runner.coord_gaussian_rps_weight == 0.5
     assert runner.coord_gaussian_rps is not None
     with pytest.raises(TypeError):

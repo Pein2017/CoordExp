@@ -128,7 +128,16 @@ class LossRunner:
                 code="loss.normalizer_unsupported",
                 context={"normalizer": config.normalizer},
             )
-        coord_cfg = config.protected.coord_gaussian_rps
+        auxiliary = config.auxiliary
+        coord_cfg = auxiliary.coord_gaussian_rps if auxiliary is not None else None
+        if coord_cfg is None:
+            return cls(
+                base_ce_weight=config.protected.base_ce.weight,
+                token_type_gate_weight=config.protected.token_type_gate.weight,
+                token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
+                coord_gaussian_rps_weight=0.0,
+                coord_gaussian_rps=None,
+            )
         coord_term = (
             CoordGaussianRPSLoss(
                 gaussian_weight=coord_cfg.gaussian_weight,

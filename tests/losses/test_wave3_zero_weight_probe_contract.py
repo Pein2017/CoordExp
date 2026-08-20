@@ -939,6 +939,15 @@ def test_historical_r3_v3_failed_chain_is_exact_and_non_executable() -> None:
 def test_worker_fresh_weight_drift_fails_before_model_load_gpu_or_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Fails closed before model load, GPU, or marker.
+
+    Since `standardize-coordexp-swift-supervised-losses` migrated the pinned
+    supported config, the frozen config-identity gate now refuses the live file
+    strictly before the model-weight rehash this node used to trigger, so the
+    observed refusal is `wave3.config_identity`. The zero-side-effect claim
+    (no component load, no GPU probe, no marker) is unchanged.
+    """
+
     probe = _load_probe_module()
     plan = _valid_plan(probe, tmp_path)
     evidence = probe._empty_evidence(
@@ -996,7 +1005,7 @@ def test_worker_fresh_weight_drift_fails_before_model_load_gpu_or_marker(
             shared_gpu_baseline={},
             emit=lambda _event: None,
         )
-    assert caught.value.code == "wave3.model_weight_identity"
+    assert caught.value.code == "wave3.config_identity"
     assert evidence["runtime"]["status"] == "not_started"
     assert evidence["attempt_marker"]["status"] == "not_published"
     assert not Path(plan["artifact_targets"]["attempt_marker"]).exists()
@@ -1135,19 +1144,27 @@ def test_plan_hash_detects_unfinalized_mutation(tmp_path: Path) -> None:
     assert caught.value.code == "wave3.hash"
 
 
-def test_config_identity_allows_only_exact_enumerated_compatibility_projection(
+def test_config_identity_refuses_migrated_live_config_and_keeps_frozen_projection(
     tmp_path: Path,
 ) -> None:
     probe = _load_probe_module()
     resolved = probe.load_train_config(probe.FROZEN_CONFIG_PATH)
-    assert resolved.fingerprint == probe.FROZEN_CONFIG_FINGERPRINT
-    assert probe.sha256_json(resolved.config_dict) == probe.FROZEN_CONFIG_FINGERPRINT
+    # `standardize-coordexp-swift-supervised-losses` migrated this supported
+    # config (gate `mode`/`0.1`, coordinate term under `losses.auxiliary`), so the
+    # live file is no longer the launched Wave-3 experiment. The frozen constants
+    # stay pinned to the completed GPU evidence and the projection fails closed.
+    assert resolved.fingerprint != probe.FROZEN_CONFIG_FINGERPRINT
+    assert probe.sha256_json(resolved.config_dict) != probe.FROZEN_CONFIG_FINGERPRINT
     assert (
         resolved.config.training.forward_input_provider_mode
         == probe.FORWARD_INPUT_PROVIDER_VALUE
     )
-    projection = probe.build_config_compatibility_projection(resolved.config_dict)
-    assert projection == probe.frozen_config_compatibility_projection()
+    with pytest.raises(probe.Wave3ProbeError) as live_refusal:
+        probe.build_config_compatibility_projection(resolved.config_dict)
+    assert live_refusal.value.code == "wave3.config_identity"
+
+    projection = probe.frozen_config_compatibility_projection()
+    assert projection["current_config_sha256"] == probe.FROZEN_CONFIG_FINGERPRINT
     assert projection["schema"] == (
         "coordexp-swift-wave3-config-compatibility-projection-v2"
     )
@@ -2093,7 +2110,12 @@ def test_marker_publication_occurs_after_cpu_install_inventory_and_before_gpu_se
         raise probe.Wave3ProbeError("stop", code="wave3.test_stop")
 
     monkeypatch.setattr(probe, "_build_exact_one_rank_accelerator", gpu_setup)
-    with pytest.raises(probe.Wave3ProbeError, match="stop"):
+    # The pinned supported config was migrated by
+    # `standardize-coordexp-swift-supervised-losses`, so the fresh pre-marker
+    # reload legitimately refuses. CPU install/inventory ordering is still
+    # asserted, and the refusal is proven to land BEFORE marker publication and
+    # before any GPU setup.
+    with pytest.raises(probe.Wave3ProbeError) as caught:
         probe._execute_gpu_probe(
             plan,
             device=torch.device("cuda:0"),
@@ -2114,6 +2136,7 @@ def test_marker_publication_occurs_after_cpu_install_inventory_and_before_gpu_se
             shared_gpu_baseline=_fake_shared_gpu_baseline(probe),
             emit=lambda _event: None,
         )
+    assert caught.value.code == "wave3.config_identity"
     assert calls == [
         "config_loaded_1",
         "config_attested_1",
@@ -2123,11 +2146,10 @@ def test_marker_publication_occurs_after_cpu_install_inventory_and_before_gpu_se
         "delta_cpu",
         "inventory_589",
         "config_loaded_2",
-        "config_attested_2",
-        "accelerator_admitted",
-        "marker_published",
-        "gpu_setup",
     ]
+    assert "marker_published" not in calls
+    assert "gpu_setup" not in calls
+    assert not Path(plan["artifact_targets"]["attempt_marker"]).exists()
 
 
 def test_fresh_pre_marker_config_reload_rejects_post_setup_drift(
