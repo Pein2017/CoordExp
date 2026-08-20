@@ -1,0 +1,101 @@
+{
+ "commit": "d598f8894a3e2d0f3a5c407b685b344813a58dd3",
+ "comparisons": {
+  "completed_step_row": {
+   "fixture_protected_keys": [
+    "acc_top1",
+    "acc_top5",
+    "accuracy_stats",
+    "finite_status",
+    "input_build_seconds",
+    "input_wait_seconds",
+    "loss/total",
+    "lr/group_0",
+    "micro_step_count",
+    "non_finite_fields",
+    "optimizer_update_status",
+    "split",
+    "step",
+    "step_duration_seconds"
+   ],
+   "missing_from_production_train_row": [],
+   "production_extra_key_note": "production extras are config-shaped (per-loss keys for base_ce/token_type_gate, second optimizer lr group, count/*) plus per-rank resource keys the minimal harness never emitted",
+   "protected_schema_subset_holds": true
+  },
+  "eval_row": {
+   "has_eval_markers": true,
+   "present": true,
+   "step": 1
+  },
+  "lifecycle": {
+   "collision_outcome": "fail",
+   "completed_steps": 1,
+   "consumed_packs": 1,
+   "final_finite_status": "finite",
+   "final_optimizer_update_status": "applied",
+   "status_fields_equal_to_fixture": true,
+   "terminal_error": null
+  },
+  "run_state_phase_execution_order": {
+   "fixture_is_exact_prefix_of_production": true,
+   "fixture_order": [
+    "config_provenance_resolution",
+    "cache_identity_resolution",
+    "cache_publication_admission",
+    "train_rank_hydration",
+    "cache_admission",
+    "cache_preparation",
+    "cache_publication"
+   ],
+   "method": "production run.json records the authoritative execution order in measurement.phase_order; compared directly against the fixture's run_state_phase_order",
+   "production_phase_order": [
+    "config_provenance_resolution",
+    "cache_identity_resolution",
+    "cache_publication_admission",
+    "train_rank_hydration",
+    "cache_admission",
+    "cache_preparation",
+    "cache_publication",
+    "model_loading",
+    "optimizer_runtime_assembly",
+    "evaluation_hydration",
+    "first_optimizer_step",
+    "checkpoint_publication",
+    "steady_state",
+    "evaluation_execution"
+   ]
+  },
+  "run_state_phase_status": {
+   "extra_phase_note": "extra phases are the model-bearing lifetime (model_loading, optimizer_runtime_assembly, first_optimizer_step, steady_state, evaluation_*, checkpoint_publication) absent from the model-free characterization harness by construction",
+   "fixture_phases": 7,
+   "mismatches": {},
+   "observed_equal": true,
+   "observed_extra_phases": [
+    "checkpoint_publication",
+    "evaluation_execution",
+    "evaluation_hydration",
+    "first_optimizer_step",
+    "model_loading",
+    "optimizer_runtime_assembly",
+    "steady_state"
+   ]
+  },
+  "steady_state_note": "steady_state is not_run because max_steps=1 leaves only first_optimizer_step; config-shaped, matches resolved_max_steps=1"
+ },
+ "intentional_differences": [
+  {
+   "detail": "run consumes Wave-7 fingerprints 8f11237f/3b30c157; projections receipt proves content identities unchanged",
+   "evidenced": true,
+   "kind": "cache_identity_turnover"
+  },
+  {
+   "detail": "forward_input_provider resolution source is strict_config; legacy_fused deleted in Wave 6",
+   "evidenced": true,
+   "kind": "legacy_selector_removal"
+  }
+ ],
+ "method_note": "phase execution order derived from per-phase started_at (run.json phases dict is key-sorted, not execution-ordered); fixture completed-step rows are the minimal 14-key characterization schema and are asserted as a subset of the production train row; the eval row has no fixture comparator and is checked for presence/step only. Code-level phase/collective/row fixture replay is separately proven by the green tests/training/test_orchestration_compatibility.py suite at the same commit.",
+ "run_dir": "outputs/smoke/wave8_vertical_smoke_r1/wave8_vertical_smoke",
+ "schema": "coordexp-swift-wave8-compatibility-comparison-v2",
+ "unexplained_differences": []
+}

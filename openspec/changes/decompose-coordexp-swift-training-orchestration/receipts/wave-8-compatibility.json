@@ -1,0 +1,13 @@
+{
+ "argv": "conda run -n ms pytest tests/training/test_orchestration_compatibility.py tests/training/test_training_module_boundaries.py tests/artifacts/test_identity_compatibility.py tests/artifacts/test_run_artifacts.py tests/training/test_pack_cache_determinant_registry.py tests/runtime/test_rank_report_collective.py -q (plus non-collecting -p no:cacheprovider --junitxml; PYTHONDONTWRITEBYTECODE=1; required_absent selectors unset)",
+ "commit": "d598f8894a3e2d0f3a5c407b685b344813a58dd3",
+ "date": "2026-08-20",
+ "duration_seconds": 47.16,
+ "errors": 0,
+ "failures": 0,
+ "independent_replay": "the final completion audit independently replayed this argv at 231/0/0/0 (receipts/wave-8-final-audit.md)",
+ "receipt_sha256": "2f23edbefb2cbab6c27c14eef391c96ff5befef978789cd59cda48737ff08406",
+ "schema": "coordexp-swift-wave8-final-compatibility-gate-receipt-v1",
+ "skipped": 0,
+ "tests": 231
+}

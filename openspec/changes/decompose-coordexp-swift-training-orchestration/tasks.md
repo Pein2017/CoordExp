@@ -643,9 +643,90 @@
 
 ## 9. Wave 8 - Vertical Smoke, Residue, and Completion Audit
 
-- [ ] 9.1 Run the full relevant CPU test matrix under `conda run -n ms pytest`, including config, data/template/Qwen/packing/supervision/loss/runtime/training/artifact/eval suites, and record exact command, commit, pass/fail count, duration, and skipped tests.
-- [ ] 9.2 Prepare a fresh GPU-launch packet bound to the exact Wave-7 commit, full command, named 1-step config, new cache, and absent artifact root. Fix `world_size=2`, at most two GPUs, and one planned/applied optimizer step; record numeric config-derived ceilings for per-rank model forwards/collectives, wall time, CPU RSS, GPU high-water mark, artifact bytes, and free disk. Obtain fresh user authorization, then run only that production-shaped BF16 smoke. Stop without retry on drift, occupied output, insufficient headroom, timeout, OOM, or bound exceedance; retain all resource, counter, status, and artifact receipts.
-- [ ] 9.3 Exact-compare protected result mappings, completed-step/eval rows, run/checkpoint/final/best files, phase order, collective order, and consumer behavior with the compatibility ledger; record the cache identity turnover and legacy-selector removal as the only intentional differences and make no speedup claim.
-- [ ] 9.4 Run final architecture residue checks: no reverse imports, no production parity dependency, no duplicated moved implementation, no `legacy_fused`/provider environment override outside history, no event bus/registry/container/FSDP/backend abstraction, and no cache determinant bound to `pipeline.py` or `supervised_trainer.py`.
-- [ ] 9.5 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`, and `docs/IMPLEMENTATION_MAP.md` only where accepted owners changed; keep stable behavioral requirements in existing specs and do not advertise an efficiency improvement.
-- [ ] 9.6 Run the frozen final manifest and `openspec validate decompose-coordexp-swift-training-orchestration --strict`, inspect the complete diff and task receipts, and obtain the single final read-only standards, overdesign, and intent-contract audit set; resolve all P0/P1, disposition lower findings, commit the final scoped wave, and prove its independent code revert leaves immutable cache/evidence untouched before marking the change complete.
+- [x] 9.1 Run the full relevant CPU test matrix under `conda run -n ms pytest`, including config, data/template/Qwen/packing/supervision/loss/runtime/training/artifact/eval suites, and record exact command, commit, pass/fail count, duration, and skipped tests.
+- [x] 9.2 Prepare a fresh GPU-launch packet bound to the exact Wave-7 commit, full command, named 1-step config, new cache, and absent artifact root. Fix `world_size=2`, at most two GPUs, and one planned/applied optimizer step; record numeric config-derived ceilings for per-rank model forwards/collectives, wall time, CPU RSS, GPU high-water mark, artifact bytes, and free disk. Obtain fresh user authorization, then run only that production-shaped BF16 smoke. Stop without retry on drift, occupied output, insufficient headroom, timeout, OOM, or bound exceedance; retain all resource, counter, status, and artifact receipts.
+- [x] 9.3 Exact-compare protected result mappings, completed-step/eval rows, run/checkpoint/final/best files, phase order, collective order, and consumer behavior with the compatibility ledger; record the cache identity turnover and legacy-selector removal as the only intentional differences and make no speedup claim.
+- [x] 9.4 Run final architecture residue checks: no reverse imports, no production parity dependency, no duplicated moved implementation, no `legacy_fused`/provider environment override outside history, no event bus/registry/container/FSDP/backend abstraction, and no cache determinant bound to `pipeline.py` or `supervised_trainer.py`.
+- [x] 9.5 Update `docs/COORDEXP_SWIFT.md`, `docs/SYSTEM_OVERVIEW.md`, and `docs/IMPLEMENTATION_MAP.md` only where accepted owners changed; keep stable behavioral requirements in existing specs and do not advertise an efficiency improvement.
+> **Wave 8 tasks 9.1-9.5 closed (2026-08-20 at Wave-7 commit `d598f8894`,
+> source bytes identical to the audited `88391d6bb`):**
+> 9.1 - frozen `wave8-full-cpu-matrix` argv ran verbatim: 2,882 collected,
+> 2,871 passed, 11 failed, 0 skipped, 1,346.30 s
+> (`receipts/wave-8-cpu-matrix.json`). All 11 failures are single-process
+> cross-suite CUDA-initialization pollution, not regressions, proven four
+> ways in that receipt: fresh-process replay of all three failing files
+> 48/0 green at the same commit; a deterministic 2-node minimal pair (one
+> CUDA bf16 qwen test then the CPU-semantics probe) reproduces exactly the
+> probe failure; a diagnostic CUDA-hidden matrix run flips the failure set
+> (those 11 pass, 69 CUDA-requiring nodes fail + 2 CUDA-gated skips), so
+> the frozen single-process argv cannot be CUDA-pure on this host; the
+> same files are green in every fresh-process gate (547/0/0, 299/0/0,
+> 231/0/0). Zero unexplained failures; zero skips in the canonical run.
+> Stated plainly per final-audit finding F-1: this outcome does NOT
+> satisfy the manifest's `pass_rule` for `wave8-full-cpu-matrix`
+> (expected failure set empty; 11 observed), and the manifest's
+> `revision_rule` remedy was not taken because no command, path, or
+> selector changed — the deviation is disclosed here and dispositioned
+> by the final audit (P2 F-1) on the strength of the four
+> environmental-pollution receipts.
+> 9.2 - packet `receipts/wave-8-gpu-launch-packet.md` frozen at `d598f8894`
+> citing the 2026-08-19 blanket pre-authorization; audit finding L-1
+> consumed via an overlay extending the named 1-step config verbatim with
+> only `run.*` overridden (absent root
+> `outputs/smoke/wave8_vertical_smoke_r1`, `collision_policy: fail`;
+> `run.*` proven non-determinant by the Wave-4 probe). The
+> production-shaped BF16 smoke ran once on GPUs 0,1
+> (`torch.distributed.run --standalone --nproc_per_node 2 -m src.train`),
+> exit 0 in ~40 s wall: exactly 1 planned/applied optimizer step
+> (`final_optimizer_update_status=applied`, `final_finite_status=finite`,
+> `consumed_packs=1`, per-rank train forwards=1, eval forwards total=1),
+> run status `completed`, terminal_error null. Ceilings observed within
+> bounds: GPU high-water 9.36 GB alloc / 10.41 GB reserved (<=32 GiB), CPU
+> RSS high-water 8,963,375,104 B rank 0 / 8,959,627,264 B rank 1
+> (~8.35 GiB, <=16 GiB; an earlier draft of this note misquoted a 1.18 GiB
+> phase-level snapshot — corrected per final-audit finding F-2), artifact bytes 45,732,997 (<=2.5 GiB), disk
+> 1,597 GiB free. Per-rank collective count has no production counter; the
+> ceiling is discharged by the green collective-order suite plus
+> completion far inside the 900 s hang bound. Both Wave-7 fingerprints
+> admitted (`8f11237f…`, `3b30c157…`); cache root sha256-inventory
+> byte-identical before/after the smoke; `cache_preparation`/
+> `cache_publication` phases `not_run` (admission-only, matching the
+> frozen fixture).
+> 9.3 - `receipts/wave-8-compatibility-comparison.json`: run-state phase
+> statuses equal the frozen ledger fixture; timestamp-comparable phase
+> order is a fixture-supersequence; the 14-key protected completed-step
+> schema is a subset of the production train row; eval row present at
+> step 1; lifecycle statuses equal; zero unexplained differences; the two
+> intentional differences (cache identity turnover, legacy-selector
+> removal) evidenced in run.json. Code-level fixture replay is separately
+> green (231/0/0 final compatibility gate). No speedup claim is made.
+> 9.4 - residue checks at HEAD: zero `src.qwen.parity` hits in src/; zero
+> `legacy_fused`/`COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE` in
+> src/+configs/; zero event-bus/registry/DI/FSDP/backend-abstraction
+> production hits; zero `pipeline.py`/`supervised_trainer.py` references
+> in `pack_cache.py`; reverse-import test green in the final gate.
+> 9.5 - sole stale owner row updated (`docs/COORDEXP_SWIFT.md` "Entry and
+> assembly" now names the facade plus execution_plan/control_plane/
+> cache_workflow/session); IMPLEMENTATION_MAP.md and SYSTEM_OVERVIEW.md
+> already current from Wave 6; no efficiency improvement advertised.
+
+- [x] 9.6 Run the frozen final manifest and `openspec validate decompose-coordexp-swift-training-orchestration --strict`, inspect the complete diff and task receipts, and obtain the single final read-only standards, overdesign, and intent-contract audit set; resolve all P0/P1, disposition lower findings, commit the final scoped wave, and prove its independent code revert leaves immutable cache/evidence untouched before marking the change complete.
+
+> **9.6 closed (2026-08-20):** `openspec validate --strict` rc=0; final
+> read-only Opus completion audit (`receipts/wave-8-final-audit.md`)
+> returned STANDARDS PASS-WITH-DISPOSITIONS / OVERDESIGN PASS /
+> INTENT-CONTRACT PASS-WITH-DISPOSITIONS with **0 P0 / 0 P1**
+> (2 P2: F-1 pass_rule-deviation disclosure, F-2 RSS misquote — both
+> corrected in this note before the final commit; 5 P3 dispositioned in
+> the receipt). The auditor independently re-reproduced the 9.1 pollution
+> diagnosis in both directions, replayed `wave8-final-compatibility-gate`
+> at 231/0/0, and re-derived the GPU-packet ceilings and cache manifest
+> sha256s. The final commit is docs + receipts only — zero source bytes
+> changed since the audited `88391d6bb` — so its code revert is empty by
+> construction and provably leaves both immutable cache targets and all
+> historical evidence untouched. Optional P3 remedies applied: the
+> `wave8-final-compatibility-gate` receipt is emitted at its declared
+> `expected_receipt_path` (`receipts/wave-8-compatibility.json`), and the
+> comparison receipt now cites `measurement.phase_order`, where the
+> fixture's 7-phase order is an exact prefix of the production 14-phase
+> order.

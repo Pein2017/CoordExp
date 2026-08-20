@@ -1,0 +1,53 @@
+{
+ "argv": "conda run -n ms pytest tests/config tests/data tests/templates tests/qwen tests/packing tests/supervision tests/losses tests/runtime tests/training tests/artifacts tests/eval -q (executed verbatim plus non-collecting -p no:cacheprovider --junitxml; PYTHONDONTWRITEBYTECODE=1; all nine required_absent selectors unset; CUDA visible as on any production host)",
+ "canonical_run": {
+  "duration_seconds": 1346.3,
+  "errors": 0,
+  "failed": 11,
+  "passed": 2871,
+  "skipped": 0,
+  "skipped_nodes": [],
+  "tests_collected": 2882
+ },
+ "commit": "d598f8894a3e2d0f3a5c407b685b344813a58dd3",
+ "date": "2026-08-20",
+ "diagnostic_cuda_hidden_run": {
+  "duration_seconds": 1179.52,
+  "errors": 0,
+  "failed": 69,
+  "passed": 2811,
+  "role": "diagnostic evidence only; not the task-9.1 record",
+  "skipped": 2,
+  "skipped_nodes": [
+   "tests/qwen/test_patches.py::test_real_qwen3_vl_patch_embed_linearization_matches_cuda_bf16_forward_and_grad",
+   "tests/artifacts/test_provenance.py::test_current_live_pinned_runtime_baseline_is_admitted"
+  ],
+  "tests_collected": 2882
+ },
+ "failing_nodes": [
+  "tests.packing.test_wave6_pack_plan_probe::test_comparison_records_exact_cpu_semantics_and_bounded_metrics",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path0-0.125-wave6.metrics]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path1-False-wave6.semantic_oracle]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path2-999-wave6.ordering_metrics]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path3-False-wave6.resume_cursor]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path4-False-wave6.worker_equality]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path5-True-wave6.research_disposition]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_deep_mutations_fail_closed[path6-6-wave6.research_disposition]",
+  "tests.packing.test_wave6_pack_plan_probe::test_receipt_names_only_surviving_changed_order_matched_five_step_arms",
+  "tests.training.test_orchestration_compatibility::test_cache_preparation_receipt_matches_frozen_projection",
+  "tests.training.test_pipeline_assembly::test_runtime_determinism_consensus_binds_launcher_mapping_and_baseline"
+ ],
+ "failure_diagnosis": {
+  "conclusion": "all 11 failures are single-process cross-suite CUDA-initialization pollution, not code regressions; every failing node is green in a same-commit fresh-process replay",
+  "disposition": "matrix-composition artifact of the frozen single-process argv on a CUDA host; recorded for the final audit; zero unexplained failures",
+  "mechanism": "earlier suites in the single pytest process (tests/qwen CUDA forwards) initialize CUDA; the CPU-pure characterization probes then fail closed (Wave6ProbeError: 'CUDA was initialized before CPU comparison') or observe CUDA-tainted provenance",
+  "receipts": [
+   "isolated fresh-process replay of all three failing files at the same commit: 48 passed / 0 failed (tests/packing/test_wave6_pack_plan_probe.py + tests/training/test_orchestration_compatibility.py + the failing test_pipeline_assembly node)",
+   "minimal deterministic reproduction: a 2-node fresh process running one CUDA bf16 qwen test then test_comparison_records_exact_cpu_semantics_and_bounded_metrics fails exactly that probe (1 failed, 1 passed in 5.62s)",
+   "diagnostic full-matrix run with CUDA_VISIBLE_DEVICES= (hidden): the 11 nodes all pass and the failure set flips to 69 CUDA-requiring nodes (determinism preflight, cache preflight, session, assembly) plus 2 CUDA-gated skips - the matrix argv cannot be simultaneously single-process and CUDA-pure on this host",
+   "same files green in same-commit fresh-process gates: wave6-legacy-selector-gate 547/0/0, wave7-cache-transition-gate 299/0/0, wave8-final-compatibility-gate 231/0/0"
+  ]
+ },
+ "receipt_sha256": "747e14652f11c08945e877eb43cb942d705400674c25706bceed6a6117945678",
+ "schema": "coordexp-swift-wave8-cpu-matrix-receipt-v1"
+}

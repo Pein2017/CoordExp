@@ -44,7 +44,7 @@ framework. Current ownership is:
 
 | Surface | Owner | Responsibility |
 | --- | --- | --- |
-| Entry and assembly | `src/train.py`, `src/training/pipeline.py` | Resolve config and assemble model, adapters, embedding deltas, pack cache, schedule, losses, optimizer/scheduler, runtime, eval, checkpoints, and artifacts |
+| Entry and assembly | `src/train.py`, `src/training/pipeline.py` (facade), `src/training/execution_plan.py`, `src/training/control_plane.py`, `src/training/cache_workflow.py`, `src/training/session.py` | Resolve config, build the immutable model-free plan, converge ranks, admit the pack cache, then assemble model, adapters, embedding deltas, schedule, losses, optimizer/scheduler, runtime, eval, checkpoints, and artifacts inside one `TrainingSession` |
 | Planned-step training | `src/training/supervised_trainer.py` | Iterate micro-steps and planned steps through explicit runtime and loss interfaces |
 | Config | `src/config/loader.py`, `src/config/models.py`, `src/config/resolve.py` | YAML extends resolution, strict typed validation, path resolution, and resolved-config fingerprinting |
 | Data and geometry | `src/data/` | Validate JSONL examples, images, object identity, descriptions, dimensions, and geometry |
