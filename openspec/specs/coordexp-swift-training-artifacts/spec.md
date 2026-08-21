@@ -721,6 +721,19 @@ Arbitrary exception text MUST NOT be stored in either list.
 - **AND** the corresponding truncation-count field MUST report the omitted
   distinct-name count without retaining arbitrary error text.
 
+#### Scenario: Declared fp16 without an active GradScaler
+
+- **WHEN** resolved training precision declares fp16 and no rank can resolve an
+  active, enabled GradScaler through the runtime's declared scaler lookup
+- **THEN** the run MUST fail closed with a typed contract error at or before
+  the first optimizer boundary, uniformly on every rank, before any rank enters
+  the optimizer wrapper
+- **AND** the boundary MUST NOT be reclassified as the retained bf16/non-scaler
+  path, MUST NOT silently `apply`, and MUST NOT publish a completed-boundary
+  row for that planned step
+- **AND** a rank-divergent scaler-candidacy state remains governed by the
+  existing terminal pre-wrapper divergence decision rather than this refusal.
+
 ### Requirement: Bounded Training Result
 
 `SupervisedTrainer` SHALL retain only the current planned-step state, compact
@@ -941,4 +954,3 @@ be called during that run.
 - **THEN** it MUST participate in required metric collectives
 - **AND** it MUST NOT print the shared progress update or create a TensorBoard
   event file.
-

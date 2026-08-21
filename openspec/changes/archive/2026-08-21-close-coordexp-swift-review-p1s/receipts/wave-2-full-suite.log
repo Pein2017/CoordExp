@@ -1,0 +1,60 @@
+START=2026-08-21T03:44:22+00:00
+ARGV=conda run -n ms pytest tests/config tests/losses tests/runtime tests/training tests/artifacts tests/eval -q
+........................................................................ [  2%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [ 10%]
+........................................................................ [ 13%]
+........................................................................ [ 15%]
+........................................................................ [ 18%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 26%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 39%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+.................................sssssssssssssssssssssssssssssssssssssss [ 47%]
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss [ 50%]
+sssssssssssssss......................................................... [ 52%]
+........................................................................ [ 55%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 63%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 76%]
+........................................................................ [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+..............................................................           [100%]
+=============================== warnings summary ===============================
+tests/runtime/test_finite_gates.py::test_build_gradient_report_rejects_compressed_sparse_gradients
+  /data/CoordExp/.worktrees/CoordExp-swift/tests/runtime/test_finite_gates.py:358: UserWarning: Sparse CSR tensor support is in beta state. If you miss a functionality in the sparse tensor support, please submit a feature request to https://github.com/pytorch/pytorch/issues. (Triggered internally at /pytorch/aten/src/ATen/SparseCsrTensorImpl.cpp:53.)
+    grad=torch.sparse_csr_tensor(
+
+tests/training/test_exact_resume.py::test_two_rank_gloo_pre_manifest_failures_abort_owned_stage_without_residue[contribute]
+tests/training/test_exact_resume.py::test_two_rank_gloo_pre_manifest_failures_abort_owned_stage_without_residue[contribute]
+tests/training/test_exact_resume.py::test_two_rank_gloo_pre_manifest_failures_abort_owned_stage_without_residue[commit]
+tests/training/test_exact_resume.py::test_two_rank_gloo_pre_manifest_failures_abort_owned_stage_without_residue[commit]
+tests/training/test_exact_resume.py::test_two_rank_gloo_apply_failure_rolls_back_every_runtime_owner
+tests/training/test_exact_resume.py::test_two_rank_gloo_apply_failure_rolls_back_every_runtime_owner
+  /root/miniconda3/envs/ms/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=522254) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2600 passed, 126 skipped, 7 warnings in 969.22s (0:16:09)
+
+WALL_SECONDS=973
+END=2026-08-21T04:00:35+00:00
+EXIT=0
