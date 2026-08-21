@@ -70,7 +70,9 @@ E       AssertionError: assert ['split', 'se..., 'pack_plan'] == ['split', 'pa..
 E         At index 1 diff: 'sensitivity_probe' != 'pack_id'
 ```
 Perturbations reverted (git diff clean); green-after with zero fixture edits:
-`4 passed in 5.55s` — the payload-byte-equality acceptance proof.
+`4 passed in 5.55s` — the canonical semantic-payload projection equality
+acceptance proof. This is deliberately not a claim that raw production pickle
+chunk bytes are reproducible across processes.
 
 First-attempt failure kept honest: raw `pickle.dumps` of the payload is
 byte-nondeterministic within one process (torch tensor storage keys are

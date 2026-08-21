@@ -33,8 +33,12 @@ recreates the false-invalidation problem the `cache_contract.py` narrowing
 
 **Acceptance evidence flips**: the fingerprint changes BY DESIGN, so
 fingerprint equality can no longer be the proof. The proof obligation is
-payload-byte equality on a fixture — identical inputs through the pre-change
-and post-change assembler produce byte-identical serialized micro-steps.
+canonical semantic-payload equality on a fixture — identical inputs through
+the pre-change and post-change assembler produce the same deterministic
+projection of every serialized micro-step field. Raw production pickle chunk
+bytes are not a cross-run oracle because PyTorch storage identifiers are not
+deterministic; their published digest remains an integrity check for that one
+artifact.
 
 **Material consequence (user-acknowledged)**: the next training launch
 publishes under a new semantic fingerprint and performs a one-time cache
@@ -113,5 +117,5 @@ in `receipts/p2-triage.md`. Not merge-blocking alongside the P1s:
 - Affected code: `src/losses/runner.py`, `src/runtime/train_runtime.py`,
   `src/runtime/finite_gates.py`, `src/training/cache_workflow.py`,
   `src/training/pack_cache.py`, one new assembler owner module, tests.
-- Fingerprint identity: future fingerprints change (new determinant); payload
-  bytes proven unchanged.
+- Fingerprint identity: future fingerprints change (new determinant); the
+  canonical semantic payload projection is unchanged.

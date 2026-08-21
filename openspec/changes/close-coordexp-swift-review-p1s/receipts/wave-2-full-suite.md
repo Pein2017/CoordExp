@@ -84,6 +84,12 @@ This matches the expected P1/P2 fix footprint: P1-1 new `src/training/micro_step
 
 **EMPTY.** Zero failed tests, zero errors, zero collection errors. Full pytest progress output (dots/`s` markers by percentage) and the summary line are captured verbatim in `wave-2-full-suite.log`.
 
+The raw `.log` is ignored by repository policy and is not part of the commit.
+At final acceptance the local file was 4,845 bytes with SHA256
+`5d0d0e61dfe7abb85260aa14f1683af26bae4fdd05eb765871844df8b12434d2`;
+this tracked receipt, not the ignored local file, is the portable close-out
+record.
+
 ## Fresh-process replays
 
 Not applicable — no failures to replay. The tracked flake `test_gate_ablation_creates_no_autograd_edge_into_the_objective` did not fail in this run (no occurrence; tripwire count remains at 2, unchanged, not triggered).

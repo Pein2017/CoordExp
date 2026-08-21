@@ -197,45 +197,45 @@ is what selected the real-Accelerator route over the stand-in.
 [case a] REAL Accelerator, fp16 declared, scaler absent
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "fp16", "num_processes": 1, "scaler_is_enabled": null, "scaler_module": null, "scaler_type": null}
   PASS a.accelerator_is_real_accelerate :: accelerate.accelerator
-  PASS a.declares_fp16 :: 
-  PASS a.scaler_is_absent :: 
-  PASS a.validate_accelerator_runtime_refuses :: 
+  PASS a.declares_fp16 ::
+  PASS a.scaler_is_absent ::
+  PASS a.validate_accelerator_runtime_refuses ::
   error=RuntimeContractError[runtime.fp16_scaler_missing]: training declares fp16 mixed precision but no active, enabled GradScaler is reachable through the declared scaler lookup | context: {"mixed_precision": "fp16", "scaler_enabled": null, "scaler_present": false, "scaler_type": null}
   PASS a.code_is_expected :: runtime.fp16_scaler_missing
   PASS a.context_reports_absent_scaler :: {"mixed_precision": "fp16", "scaler_present": false, "scaler_enabled": null, "scaler_type": null}
-  PASS a.train_runtime_construction_refuses :: 
+  PASS a.train_runtime_construction_refuses ::
   PASS a.train_runtime_code_is_expected :: runtime.fp16_scaler_missing
   PASS a.refusal_precedes_accelerator_prepare :: {"calls": 0}
 
 [case b] REAL Accelerator, fp16 declared, REAL disabled GradScaler
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "fp16", "num_processes": 1, "scaler_is_enabled": false, "scaler_module": "torch.amp.grad_scaler", "scaler_type": "GradScaler"}
   PASS b.scaler_is_a_real_torch_gradscaler :: torch.amp.grad_scaler.GradScaler
-  PASS b.scaler_is_disabled :: 
-  PASS b.validate_accelerator_runtime_refuses :: 
+  PASS b.scaler_is_disabled ::
+  PASS b.validate_accelerator_runtime_refuses ::
   error=RuntimeContractError[runtime.fp16_scaler_missing]: training declares fp16 mixed precision but no active, enabled GradScaler is reachable through the declared scaler lookup | context: {"mixed_precision": "fp16", "scaler_enabled": false, "scaler_present": true, "scaler_type": "GradScaler"}
   PASS b.code_is_expected :: runtime.fp16_scaler_missing
   PASS b.context_reports_present_but_disabled_scaler :: {"mixed_precision": "fp16", "scaler_present": true, "scaler_enabled": false, "scaler_type": "GradScaler"}
-  PASS b.train_runtime_construction_refuses :: 
+  PASS b.train_runtime_construction_refuses ::
   PASS b.train_runtime_code_is_expected :: runtime.fp16_scaler_missing
   PASS b.refusal_precedes_accelerator_prepare :: {"calls": 0}
 
 [case c] CONTROL: REAL Accelerator, bf16 declared, no scaler
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "bf16", "num_processes": 1, "scaler_is_enabled": null, "scaler_module": null, "scaler_type": null}
-  PASS c.declares_bf16 :: 
-  PASS c.scaler_is_absent :: 
+  PASS c.declares_bf16 ::
+  PASS c.scaler_is_absent ::
   PASS c.validate_accelerator_runtime_accepts :: no refusal
   PASS c.train_runtime_constructs :: ok
-  PASS c.declared_fp16_is_false :: 
-  PASS c.no_active_fp16_scaler :: 
+  PASS c.declared_fp16_is_false ::
+  PASS c.no_active_fp16_scaler ::
   PASS c.accelerator_prepare_was_reached :: {"calls": 1}
 
 [case d] OVER-REFUSAL CONTROL: fp16 declared, REAL enabled GradScaler
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "fp16", "num_processes": 1, "scaler_is_enabled": true, "scaler_module": "torch.amp.grad_scaler", "scaler_type": "GradScaler"}
-  PASS d.scaler_is_enabled :: 
+  PASS d.scaler_is_enabled ::
   PASS d.validate_accelerator_runtime_accepts :: no refusal
   PASS d.train_runtime_constructs :: ok
-  PASS d.declared_fp16_is_true :: 
-  PASS d.resolves_that_exact_scaler :: 
+  PASS d.declared_fp16_is_true ::
+  PASS d.resolves_that_exact_scaler ::
   PASS d.accelerator_prepare_was_reached :: {"calls": 1}
 
 [probe] --- summary ---
@@ -260,37 +260,37 @@ sys	0m1.044s
 [case a] REAL Accelerator, fp16 declared, scaler absent
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "fp16", "num_processes": 1, "scaler_is_enabled": null, "scaler_module": null, "scaler_type": null}
   PASS a.accelerator_is_real_accelerate :: accelerate.accelerator
-  PASS a.declares_fp16 :: 
-  PASS a.scaler_is_absent :: 
-  FAIL a.validate_accelerator_runtime_refuses :: 
-  FAIL a.train_runtime_construction_refuses :: 
+  PASS a.declares_fp16 ::
+  PASS a.scaler_is_absent ::
+  FAIL a.validate_accelerator_runtime_refuses ::
+  FAIL a.train_runtime_construction_refuses ::
   FAIL a.refusal_precedes_accelerator_prepare :: {"calls": 1}
 
 [case b] REAL Accelerator, fp16 declared, REAL disabled GradScaler
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "fp16", "num_processes": 1, "scaler_is_enabled": false, "scaler_module": "torch.amp.grad_scaler", "scaler_type": "GradScaler"}
   PASS b.scaler_is_a_real_torch_gradscaler :: torch.amp.grad_scaler.GradScaler
-  PASS b.scaler_is_disabled :: 
-  FAIL b.validate_accelerator_runtime_refuses :: 
-  FAIL b.train_runtime_construction_refuses :: 
+  PASS b.scaler_is_disabled ::
+  FAIL b.validate_accelerator_runtime_refuses ::
+  FAIL b.train_runtime_construction_refuses ::
   FAIL b.refusal_precedes_accelerator_prepare :: {"calls": 1}
 
 [case c] CONTROL: REAL Accelerator, bf16 declared, no scaler
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "bf16", "num_processes": 1, "scaler_is_enabled": null, "scaler_module": null, "scaler_type": null}
-  PASS c.declares_bf16 :: 
-  PASS c.scaler_is_absent :: 
+  PASS c.declares_bf16 ::
+  PASS c.scaler_is_absent ::
   PASS c.validate_accelerator_runtime_accepts :: no refusal
   PASS c.train_runtime_constructs :: ok
-  PASS c.declared_fp16_is_false :: 
-  PASS c.no_active_fp16_scaler :: 
+  PASS c.declared_fp16_is_false ::
+  PASS c.no_active_fp16_scaler ::
   PASS c.accelerator_prepare_was_reached :: {"calls": 1}
 
 [case d] OVER-REFUSAL CONTROL: fp16 declared, REAL enabled GradScaler
   accelerator={"accelerator_type": "accelerate.accelerator.Accelerator", "device": "cpu", "distributed_type": "DistributedType.NO", "mixed_precision": "fp16", "num_processes": 1, "scaler_is_enabled": true, "scaler_module": "torch.amp.grad_scaler", "scaler_type": "GradScaler"}
-  PASS d.scaler_is_enabled :: 
+  PASS d.scaler_is_enabled ::
   PASS d.validate_accelerator_runtime_accepts :: no refusal
   PASS d.train_runtime_constructs :: ok
-  PASS d.declared_fp16_is_true :: 
-  PASS d.resolves_that_exact_scaler :: 
+  PASS d.declared_fp16_is_true ::
+  PASS d.resolves_that_exact_scaler ::
   PASS d.accelerator_prepare_was_reached :: {"calls": 1}
 
 [probe] --- summary ---

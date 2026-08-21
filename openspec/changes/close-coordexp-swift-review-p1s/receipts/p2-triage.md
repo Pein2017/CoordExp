@@ -139,17 +139,16 @@ to avoid a merge race on `train_runtime.py`.
 
 ## Claim 2 — `TrainingExecutionPlan` is only shallowly immutable
 
-**VERDICT: CONFIRMED (structurally true), but no reachable mutation path
-exists in current production code — theoretical, not actual.**
+**VERDICT: CONFIRMED. PARTIALLY MITIGATED, then DEFERRED.**
 
 ### Evidence
 
 `src/training/execution_plan.py:76-88` — `TrainingExecutionPlan` is
-`@dataclass(frozen=True)`. Its own container fields are properly deep-frozen:
-`measurement_context` and `entry_resources` are wrapped in
-`MappingProxyType(dict(...))` at construction
-(`execution_plan.py:108, 111`), and the underlying dict is never aliased
-elsewhere (a fresh `dict(...)` copy feeds the proxy).
+`@dataclass(frozen=True)`. Its outer `measurement_context` and
+`entry_resources` dictionaries are wrapped in `MappingProxyType(dict(...))` at
+construction (`execution_plan.py:108, 111`), but this is shallow: nested
+mutable values are still shared with the caller and remain mutable through the
+plan.
 
 But `resolved_config: ResolvedTrainConfig` is itself a frozen dataclass
 (`src/config/models.py:579-588`) whose own fields include two **plain mutable
@@ -175,7 +174,7 @@ mutated the returned payload (rather than only reading/serializing it) would
 silently corrupt the plan's own state for every other holder of the same
 instance.
 
-I checked for an actual mutation path and found none in production code:
+I checked for a production writer and found none:
 
 ```
 grep -rn 'config_dict\[.*\]\s*=|config_dict\.update|path_origins\[.*\]\s*=|...' src/
@@ -189,37 +188,38 @@ already-frozen plan. The two callers of `to_artifact_dict()`
 (`src/config/writer.py:30`, `src/training/session.py:1049, 2112`) only read
 the payload for JSON/YAML serialization; none mutates it.
 
+The absence of a current production writer does not make the state immutable.
+Final acceptance reproduced both public mutation paths directly:
+
+```
+plan.resolved_config.config_dict["run"]["name"] = "mutated-after-freeze"
+source["nested"]["arm"] = "mutated-via-caller"
+```
+
+The first changes the supposedly frozen plan through its public field. The
+second changes `plan.measurement_context["nested"]["arm"]` because the outer
+copy preserves the caller's nested object. Mutation through that nested value
+also succeeds from the plan itself.
+
 ### Severity / reachable scenario
 
-No currently-reachable mutation exists. The risk is latent: `config_dict`
-travels as a live reference through `to_artifact_dict()`, and any future
-caller that treats the returned payload as an owned copy (e.g. to patch a
-field before re-dumping it) would silently corrupt the shared frozen plan for
-every other consumer in the same process — a hard-to-diagnose spooky-action
-bug precisely because the type signature (`@dataclass(frozen=True)`) implies
-full immutability. Bounded severity today; real API-safety debt.
+No current production writer was found, so the severity remains bounded P2.
+The public state is nevertheless directly mutable and the type-level
+`frozen=True` promise remains shallow. A future caller can silently corrupt the
+shared plan without using an alias returned by `to_artifact_dict()`.
 
-### Cheap-fix proposal
+### Initial cheap-fix proposal and disposition
 
-- In `ResolvedTrainConfig.__post_init__` (needs adding —
-  `src/config/models.py`), wrap `config_dict` and `path_origins` in
-  `MappingProxyType`, mirroring the pattern `execution_plan.py` already uses
-  for `measurement_context`/`entry_resources`. Frozen dataclasses can still
-  assign in `__post_init__` via `object.__setattr__`.
-- Alternatively/additionally, have `to_artifact_dict()` return a shallow copy
-  instead of the live dict if full proxy-wrapping is judged too invasive
-  (would need `dict(self.config_dict)`).
+The initial proposal was to wrap `config_dict` and `path_origins` in
+`MappingProxyType` and to copy the artifact payload. Execution evidence rejected
+that representation because existing deepcopy/pickle consumers cannot handle
+`mappingproxy`. The landed deep copies close constructor and artifact-return
+aliases but not direct mutation or nested execution-plan aliases. A complete
+fix is therefore not the small single-file edit first estimated; it is deferred
+to a design that preserves deepcopy/pickle compatibility across both
+`src/config/models.py` and `src/training/execution_plan.py`.
 
-**Size**: small, isolated to `src/config/models.py` (one `__post_init__`,
-type annotations become `Mapping[str, Any]` at the dataclass field level, or
-kept as `dict` with only the instance wrapped). Type-checker fallout is the
-main cost — every current reader of `.config_dict`/`.path_origins` that
-assumes a plain `dict` (e.g. `.get`, iteration) still works against
-`MappingProxyType`; only a caller that assumes write access would break, and
-none currently does per the grep above.
-
-**Overlap flag**: none. `src/config/models.py` is not owned by any Wave-1
-builder.
+**Overlap flag**: no Wave-1 write overlap; deferred on architecture scope.
 
 ---
 
@@ -460,7 +460,7 @@ repo — the snippet above is illustrative only, per the task instructions.
 | # | Claim | Verdict | Cheap fix? | Files | Builder-B overlap |
 |---|---|---|---|---|---|
 | 1 | Terminal row loses known finite truth | CONFIRMED (finite_status only) | Yes, small | `optimizer_boundary.py`, `train_runtime.py`, `reporting.py`, 2 tests | Yes — `train_runtime.py`; land after B per `tasks.md` |
-| 2 | `TrainingExecutionPlan` shallow immutability | CONFIRMED (structural), no reachable mutation found | Yes, small | `src/config/models.py` | None |
+| 2 | `TrainingExecutionPlan` shallow immutability | CONFIRMED; partially mitigated, direct and nested mutation remain | DEFER (cross-owner value design) | `src/config/models.py`, `src/training/execution_plan.py` | None |
 | 3 | Phase finalization dual owners | PARTLY — sequencing prevents in-process divergence; real gap is resume-time reconciliation | DEFER (resume-semantics decision needed) | `session.py`/`run_writer.py` docstring wording is a free cheap fix if wanted | None |
 | 4 | Import guard misses `from package import member` | CONFIRMED — reproducible from guard's own test fixture, matching style already at `reporting.py:84` | Yes, small | `tests/training/test_training_module_boundaries.py` | None |
 
@@ -503,16 +503,22 @@ repo — the snippet above is illustrative only, per the task instructions.
   protection is retained and re-asserted (the value travels in the receipt,
   never from the lifecycle mirror). tests/training/test_reporting.py +
   tests/runtime/test_fp16_scaler_contract.py: 62 passed.
-- **Claim 2 (shallow immutability): FIXED (alias-severing variant).** The
+- **Claim 2 (shallow immutability): PARTIALLY MITIGATED, DEFERRED.** The
   proposed `MappingProxyType` wrap was implemented, then REJECTED on evidence:
   27 test errors (`TypeError: cannot pickle 'mappingproxy' object`) proved
   deep-copying `config_dict` is a legitimate existing consumer pattern.
   Landed instead: `ResolvedTrainConfig.__post_init__` deep-copies both mapping
   fields at construction (severs every caller alias) and `to_artifact_dict`
-  returns a deep copy (severs consumer aliases). New isolation test in
-  tests/config/test_train_config.py; tests/config/ + input attestation:
+  returns a deep copy (severs artifact-consumer aliases). This closes the
+  concrete artifact-return alias, but direct mutation of `config_dict` and
+  nested `TrainingExecutionPlan.measurement_context` aliasing remain
+  reproducible. A separate architecture change owned by
+  `src/config/models.py` and `src/training/execution_plan.py` must choose a
+  recursively immutable representation that stays deepcopy- and
+  pickle-compatible, with direct-mutation and nested-alias tests. New isolation
+  test in tests/config/test_train_config.py; tests/config/ + input attestation:
   263 passed. Sibling `ResolvedInferenceConfig` has the same latent pattern
-  and was intentionally left out of scope (observed, not fixed).
+  and remains out of scope.
 - **Claim 4 (import-guard bypass): FIXED.** RED-first (both widened parser
   expectation tests failed against the old parser). `imported_modules` now
   also records `{module}.{member}` for every `ImportFrom` alias (safe
