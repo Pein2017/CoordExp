@@ -92,9 +92,13 @@
   config, model assembly, BF16-native Source projection/witness/compiler,
   sampler/replay, backward, private checkpoint, paired fp32 audit, analyzer,
   rollback, and consumer interfaces; verify the shared independent-baseline
-  choke point, diagnostic-only divergence receipt, and unchanged internal
-  replay parity; resolve only conclusion-changing P0/P1 findings before
-  execution.
+  choke point, diagnostic-only divergence receipt, unchanged internal replay
+  parity, and the post-prepare AdamW runtime ownership/pre-acquisition
+  admission boundary; resolve only conclusion-changing P0/P1 findings before
+  execution.  This ownership correction is production admission evidence,
+  not algorithm evidence; the phase must also persist the ownership receipt
+  digest and reject missing backend hooks, non-cosine schedulers, or live
+  param-group hyperparameter drift before K16.
 
 ## 5. Bounded execution and closure
 

@@ -259,6 +259,35 @@ not search more seeds, tune LR from owner outcomes, or run the full panel.
 
 Stop durably on any rollback mismatch; no later action is valid.
 
+## Production admission correction: post-prepare AdamW ownership
+
+The first committed image-1584 attempt reached K16 acquisition and replay but
+stopped before objective construction because the adapter treated Accelerate's
+execution wrapper as if it were the raw optimizer.  CPU reproduction with the
+real `Accelerator(cpu=True, mixed_precision="bf16")` showed a genuinely fresh
+one-layer `AcceleratedOptimizer` whose inner object was the exact empty
+`torch.optim.AdamW`; parameter order, scheduler binding, frozen hyperparameters,
+and state were otherwise correct.  This is a representation/lifecycle
+admission blocker, not scientific or algorithm evidence.
+
+The bounded correction adds one content-addressed runtime ownership receipt at
+the live model boundary.  It binds the exact wrapper/base/scheduler/parameter
+objects, fixed AdamW hyperparameters, empty state, world-one BF16 sync-neutral
+accelerator, zero counters, and CUDA RNG capture.  The wrapper remains the
+runtime execution handle; proposal capture and `TrainingStateTransaction` use
+the same exact base AdamW.  Existing optimizer math, learning rate, objective,
+K16, BF16 internal parity, surface ownership, rollback, and dual-RP gate are
+unchanged.  A production pre-acquisition hook checks this ownership plus the
+BF16 witness/probe owner after Source freeze and before any sample group; the
+same receipt is revalidated after K16 before objective/backward.
+
+The correction's CPU evidence is not an algorithm result: real Accelerate
+vertical ownership and one tiny private projected apply/rollback pass, while
+negative wrapper/base/scheduler/state/parameter/hyperparameter/counter/
+scaler/sync/device/dtype cases fail closed.  GPU/model/K16 execution remains
+blocked pending a later lead-authorized launch after this correction is
+committed and reviewed.
+
 ## Claim boundary
 
 A passing one-image result would establish only that one compute-heavy
@@ -270,3 +299,8 @@ set coverage, K-miss learning, or superiority to CE/RL baselines.
 A null or negative result would reject this exact one-update construction on
 image 1584; it would not prove multi-trajectory credit impossible.  A parity
 failure would be infrastructure/surface evidence only.
+
+The follow-up correction makes the same receipt phase-bound: exact cosine
+LambdaLR semantics and live group `betas`/`eps` are checked independently of
+defaults, and a missing backend hook or unhashed ownership return fails before
+the first K16 call. The service writes the ownership digest before acquisition.

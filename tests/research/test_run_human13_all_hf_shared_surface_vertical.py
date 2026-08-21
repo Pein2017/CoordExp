@@ -443,6 +443,17 @@ def test_typed_runtime_context_failure_terminal_binds_observed_shared_surface_co
             del session
             return _row(repetition_penalty=repetition_penalty)
 
+        def pre_acquisition_admission(
+            self,
+            training_session: object,
+            source_outputs: Mapping[float, Mapping[str, Any]],
+        ) -> object:
+            del training_session, source_outputs
+            return SimpleNamespace(
+                content_sha256="f" * 64,
+                to_artifact_dict=lambda: {"content_sha256": "f" * 64},
+            )
+
         def acquire_and_replay(
             self, session: object, config: EntryConfig
         ) -> Any:
@@ -722,6 +733,42 @@ def test_phase_order_binds_gpu_roles_and_cleans_private_proposal(
     assert result.private_proposal_cleaned is True
 
 
+def test_pre_acquisition_admission_failure_happens_before_k16_call(
+    tmp_path: Path,
+) -> None:
+    class PreAcquisitionFailure(_FakeServices):
+        def pre_acquisition_admission(
+            self,
+            training_session: object,
+            source_outputs: Mapping[float, Mapping[str, Any]],
+        ) -> None:
+            del training_session, source_outputs
+            self.events.append("pre_acquisition_admission")
+            raise RuntimeError("deterministic runtime ownership failure")
+
+        def acquire_and_replay(
+            self, training_session: object, config: EntryConfig
+        ) -> object:
+            self.events.append("acquire_replay")
+            raise AssertionError("K16 must not start after pre-acquisition failure")
+
+    config = _config(tmp_path)
+    services = PreAcquisitionFailure()
+    result = run_one_image(
+        config,
+        authority=ExecutionAuthority(user_model_gpu_authority=True),
+        resources=_resources(),
+        output_root=Path(config.output_root),
+        services=services,
+        manifest_image=_image(),
+    )
+
+    assert result.terminal_status == "update_failure"
+    assert "deterministic runtime ownership failure" in (result.failure_reason or "")
+    assert services.events[-1] == "close"
+    assert "acquire_replay" not in services.events
+
+
 def test_source_audit_owner_failure_preserves_observed_forward_phase(
     tmp_path: Path,
 ) -> None:
@@ -896,6 +943,17 @@ def test_post_apply_journal_failure_is_integrated_typed_terminal_with_one_rollba
 
     class Backend(_FakeServices):
         adapter = Adapter()
+
+        def pre_acquisition_admission(
+            self,
+            training_session: object,
+            source_outputs: Mapping[float, Mapping[str, Any]],
+        ) -> object:
+            del training_session, source_outputs
+            return SimpleNamespace(
+                content_sha256="f" * 64,
+                to_artifact_dict=lambda: {"content_sha256": "f" * 64},
+            )
 
         def acquire_and_replay(
             self, training_session: object, config: EntryConfig

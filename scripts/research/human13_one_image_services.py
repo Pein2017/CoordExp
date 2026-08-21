@@ -640,7 +640,21 @@ def default_task5_runtime_factory(
             "admitted Task2/Task3 runtime evidence lacks preservation witnesses"
         )
     model = getattr(assembly, "model", None)
-    optimizer = getattr(assembly, "optimizer", None)
+    runtime_ownership = getattr(assembly, "runtime_ownership", None)
+    if runtime_ownership is None and type(assembly).__name__ == "Human13LiveAssembly":
+        raise Task5RuntimeEvidenceError(
+            "live Human13 assembly lacks post-prepare AdamW ownership"
+        )
+    optimizer = (
+        getattr(runtime_ownership, "base_optimizer", None)
+        if runtime_ownership is not None
+        else getattr(assembly, "optimizer", None)
+    )
+    execution_optimizer = (
+        getattr(runtime_ownership, "execution_optimizer", None)
+        if runtime_ownership is not None
+        else getattr(assembly, "optimizer", None)
+    )
     if model is None or optimizer is None:
         raise Task5RuntimeEvidenceError(
             "admitted Task2/Task3 runtime evidence lacks live model ownership"
@@ -656,7 +670,11 @@ def default_task5_runtime_factory(
     transaction = TrainingStateTransaction(
         named,
         optimizer=optimizer,
-        scheduler=getattr(assembly, "scheduler", None),
+        scheduler=(
+            getattr(runtime_ownership, "scheduler", None)
+            if runtime_ownership is not None
+            else getattr(assembly, "scheduler", None)
+        ),
         update_counter=counter,
         runtime=getattr(assembly, "runtime", None),
         capture_cuda=True,
@@ -688,6 +706,8 @@ def default_task5_runtime_factory(
         trajectory_ledger=trajectory,
         compiler_ledger=compiler,
         compiler_compact_logits=cast(Any, evidence.compiler_compact_logits),
+        runtime_optimizer=execution_optimizer,
+        runtime_ownership=runtime_ownership,
     )
     surface = replace(
         surface,
@@ -750,6 +770,12 @@ class ProductionOneImageBackend(Protocol):
     def source_audit(
         self, session: object, /, repetition_penalty: float
     ) -> Mapping[str, Any]: ...
+
+    def pre_acquisition_admission(
+        self,
+        training_session: object,
+        source_outputs: Mapping[float, Mapping[str, Any]],
+    ) -> object: ...
 
     def acquire_and_replay(
         self, session: object, /, config: EntryConfig
@@ -1133,6 +1159,72 @@ class ExistingOwnersProductionBackend:
                     raise
         return result
 
+    def pre_acquisition_admission(
+        self,
+        training_session: object,
+        source_outputs: Mapping[float, Mapping[str, Any]],
+    ) -> object:
+        """Admit deterministic update ownership before the first K16 call."""
+
+        handle = self._active_training_handle
+        if handle is None or training_session is not handle:
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition admission lost the live training handle"
+            )
+        assembly = handle.assembly
+        ownership = getattr(assembly, "runtime_ownership", None)
+        if ownership is None:
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition admission lacks post-prepare AdamW ownership"
+            )
+        source = self._pre_acquisition_source
+        if source is None:
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition admission lacks frozen BF16 witness/probe owner"
+            )
+        try:
+            from scripts.research.human13_live_model import (
+                revalidate_human13_adamw_runtime_ownership,
+            )
+
+            named = tuple(
+                (name, parameter)
+                for name, parameter in assembly.model.named_parameters()
+                if bool(getattr(parameter, "requires_grad", False))
+            )
+            validated_ownership = revalidate_human13_adamw_runtime_ownership(
+                ownership,
+                named,
+                expected_learning_rate=assembly.plan.learning_rate,
+                expected_betas=assembly.plan.betas,
+                expected_epsilon=assembly.plan.epsilon,
+                expected_weight_decay=assembly.plan.weight_decay,
+            )
+        except BaseException as error:
+            if isinstance(error, Task5RuntimeEvidenceError):
+                raise
+            raise Task5RuntimeEvidenceError(
+                f"pre-acquisition AdamW ownership is not admitted: {error}"
+            ) from error
+        if (
+            source.session_object_id != id(handle.session)
+            or source.model_object_id != id(assembly.model)
+            or source.sample_group_count_at_freeze != 0
+            or source.replay_group_count_at_freeze != 0
+            or source.frozen_before_acquisition is not True
+            or not callable(source.realized_margin_probe)
+            or source.witness_bank is None
+            or source.compiler_source_context is None
+        ):
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition witness/probe ownership differs from live session"
+            )
+        if tuple(sorted(float(rp) for rp in source_outputs)) != (1.0, 1.1):
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition Source audits are incomplete"
+            )
+        return validated_ownership
+
     @property
     def source_surface_reconciliation_receipt(
         self,
@@ -1326,8 +1418,30 @@ class ProductionOneImageServices:
         pid_is_alive: Callable[[int], bool] = _pid_is_alive,
         phase_writer: PhaseWriter | None = None,
     ) -> None:
-        if not isinstance(backend, ProductionOneImageBackend):
-            raise TypeError("production services require a complete backend")
+        required_backend_methods = (
+            "preflight_source_assembly",
+            "open_training",
+            "open_audit",
+            "source_audit",
+            "acquire_and_replay",
+            "build_cuda_adapter",
+            "write_private_checkpoint",
+            "proposal_audit",
+            "reproduce_source",
+            "cleanup_private_checkpoint",
+            "close_training",
+            "close_audit",
+        )
+        missing_backend_methods = tuple(
+            name
+            for name in required_backend_methods
+            if not callable(getattr(backend, name, None))
+        )
+        if missing_backend_methods:
+            raise TypeError(
+                "production services require a complete backend: "
+                + ", ".join(missing_backend_methods)
+            )
         if not isinstance(attempt_id, str) or not attempt_id:
             raise ValueError("attempt_id must be nonempty")
         if reservation_mode not in {"fresh_primary", "lost_owner_recovery"}:
@@ -1778,6 +1892,41 @@ class ProductionOneImageServices:
                 },
             )
         return result
+
+    def pre_acquisition_admission(
+        self,
+        training_session: object,
+        source_outputs: Mapping[float, Mapping[str, Any]],
+    ) -> object:
+        admission = getattr(self._backend, "pre_acquisition_admission", None)
+        if not callable(admission):
+            raise Task5RuntimeEvidenceError(
+                "production backend must implement pre-acquisition admission"
+            )
+        receipt = admission(training_session, source_outputs)
+        if receipt is None:
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition admission must return an ownership receipt"
+            )
+        content_sha256 = getattr(receipt, "content_sha256", None)
+        if not isinstance(content_sha256, str) or len(content_sha256) != 64:
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition ownership receipt lacks a content hash"
+            )
+        to_artifact_dict = getattr(receipt, "to_artifact_dict", None)
+        receipt_payload = (
+            to_artifact_dict()
+            if callable(to_artifact_dict)
+            else {"content_sha256": content_sha256}
+        )
+        self._record(
+            "pre_acquisition_update_admission",
+            evidence={
+                "ownership_receipt_sha256": content_sha256,
+                "ownership_receipt": receipt_payload,
+            },
+        )
+        return receipt
 
     def request_source_only_close(self) -> None:
         """Mark a no-update preflight for the typed aborted close path."""

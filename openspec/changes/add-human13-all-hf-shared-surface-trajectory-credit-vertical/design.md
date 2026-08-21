@@ -231,6 +231,29 @@ The one-image entry defaults to dry-run and requires explicit model/GPU
 authority.  The full-panel entry additionally requires the exact passing
 one-image terminal hash.  There are no adaptive retries.
 
+### 8. Admit the post-prepare AdamW ownership boundary before acquisition
+
+The live BF16 assembly has two intentionally distinct optimizer handles after
+`Accelerator.prepare`: the runtime keeps one exact
+`accelerate.optimizer.AcceleratedOptimizer` execution wrapper, while proposal
+capture and `TrainingStateTransaction` bind the wrapper's one exact inner
+`torch.optim.AdamW`.  A content-addressed ownership receipt records the wrapper
+and base object identities, scheduler-to-base identity, parameter order and
+objects, frozen group hyperparameters, empty optimizer state, world-one BF16
+and sync-neutral accelerator semantics, zero runtime/scheduler counters, and
+CUDA RNG capture capability.  Nested/foreign wrappers, AdamW subclasses,
+foreign schedulers, stale state/gradients/counters, and device/dtype drift fail
+closed; no generic unwrapping is allowed.
+
+The production entry validates this receipt, and the BF16 witness/probe owner,
+after Source freeze but before the first K16 sample.  The same receipt is
+revalidated after acquisition and before objective materialization/backward.
+Private projected apply continues to use the exact base AdamW without
+advancing the runtime wrapper or scheduler.  This is a production admission
+correction for the previously observed Accelerate representation blocker, not
+algorithm evidence and does not change the objective, learning rate, K16, or
+dual-RP gate.
+
 ## Risks / Trade-offs
 
 - **[No-cache HF sampling is slow]** → Limit the first execution to one image,
@@ -272,3 +295,10 @@ Implementation rollback is deletion of successor-only scripts, configs,
 tests, and active-change artifacts.  Runtime rollback is the existing complete
 training-state transaction plus removal of private checkpoint bytes; Source
 and predecessor artifacts remain immutable.
+
+The ownership receipt is phase-bound: it also admits the exact frozen
+cosine-with-warmup `LambdaLR` semantics and checks live param-group `betas` and
+`eps` independently of optimizer defaults. The production backend must return
+this content-addressed receipt from the pre-acquisition hook; the service
+persists its digest before the first K16 sample and fails closed when the hook
+or receipt is absent.

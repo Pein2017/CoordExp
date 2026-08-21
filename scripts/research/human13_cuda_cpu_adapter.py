@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass, field
 import hashlib
-from typing import Literal, NoReturn
+from typing import Any, Literal, NoReturn
 import weakref
 
 import torch
@@ -396,6 +396,11 @@ def _objective_binding_sha256(
             "schema_version": "human13_cuda_objective_binding.v1",
             "surface_identity": surface.surface_identity.to_dict(),
             "full_model_source_sha256": full_model_source_sha256,
+            "runtime_ownership_sha256": (
+                None
+                if surface.runtime_ownership is None
+                else getattr(surface.runtime_ownership, "content_sha256", None)
+            ),
             "witness_bank_sha256": surface.witness_bank.bank_sha256,
             "sampled_group_sha256s": [
                 group.content_sha256 for group in surface.sampled_groups
@@ -462,6 +467,8 @@ class CudaProposalInput:
     trajectory_ledger: TrajectoryCreditLedger | None = None
     compiler_ledger: CompilerLedger | None = None
     compiler_compact_logits: AdmittedCompilerCompactLogits | None = None
+    runtime_optimizer: Any | None = None
+    runtime_ownership: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -709,7 +716,40 @@ class CudaHFVerticalAdapter:
             raise CudaAdapterError("proposal surface must be CPU or CUDA")
         if any(not parameter.requires_grad for _, parameter in self._named):
             raise CudaAdapterError("all adapter parameters must require gradients")
-        optimizer = surface.optimizer
+        runtime_ownership = surface.runtime_ownership
+        if runtime_ownership is not None:
+            from scripts.research.human13_live_model import (
+                Human13AdamWRuntimeOwnership,
+                Human13LiveModelError,
+                revalidate_human13_adamw_runtime_ownership,
+            )
+
+            if type(runtime_ownership) is not Human13AdamWRuntimeOwnership:
+                raise CudaAdapterError("runtime ownership receipt has the wrong type")
+            if surface.optimizer is not runtime_ownership.base_optimizer:
+                raise CudaAdapterError(
+                    "proposal optimizer must be the exact base AdamW"
+                )
+            if surface.runtime_optimizer is not runtime_ownership.execution_optimizer:
+                raise CudaAdapterError(
+                    "proposal runtime optimizer must be the exact execution wrapper"
+                )
+            try:
+                revalidate_human13_adamw_runtime_ownership(
+                    runtime_ownership,
+                    self._named,
+                    expected_learning_rate=FROZEN_LEARNING_RATE,
+                    expected_betas=FROZEN_BETAS,
+                    expected_epsilon=FROZEN_EPSILON,
+                    expected_weight_decay=FROZEN_WEIGHT_DECAY,
+                )
+            except Human13LiveModelError as error:
+                raise CudaAdapterError(
+                    f"post-prepare AdamW runtime ownership drifted: {error}"
+                ) from error
+            optimizer = runtime_ownership.base_optimizer
+        else:
+            optimizer = surface.optimizer
         if type(optimizer) is not torch.optim.AdamW:
             raise CudaAdapterError("adapter requires exact fresh AdamW")
         if optimizer.state:

@@ -8,6 +8,8 @@ from typing import Any, cast
 
 import pytest
 import torch
+from transformers import get_cosine_schedule_with_warmup
+from accelerate import Accelerator
 
 import scripts.research.human13_greedy_compiler as compiler_owner
 from scripts.research.human13_adamw_proposal_preservation import (
@@ -36,6 +38,11 @@ from scripts.research.human13_cuda_cpu_adapter import (
     compute_cuda_objective_binding_sha256,
     require_admitted_receipt,
 )
+from scripts.research.human13_live_model import (
+    build_human13_adamw_runtime_ownership,
+)
+from src.config.models import RuntimeBatchResolution, RuntimeConfig
+from src.runtime import TrainRuntime
 
 
 class _FrozenLinear(torch.nn.Linear):
@@ -126,6 +133,87 @@ def _surface(*, device: str = "cpu", capture_cuda: bool = True) -> CudaProposalI
         proposal_binding=_proposal_binding(),
         realized_margin_probe=lambda: {"u_intersect_s_1.0|1584|g-1": 0.0},
     )
+
+
+def test_real_accelerated_wrapper_uses_base_adamw_for_private_rollback() -> None:
+    model = _FrozenLinear(device="cpu").to(dtype=torch.bfloat16)
+    model.eval()
+    named = tuple(
+        (name, parameter)
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    )
+    base_optimizer = torch.optim.AdamW(
+        [parameter for _, parameter in named],
+        lr=FROZEN_LEARNING_RATE,
+        betas=FROZEN_BETAS,
+        eps=FROZEN_EPSILON,
+        weight_decay=FROZEN_WEIGHT_DECAY,
+    )
+    base_optimizer.param_groups[0]["name"] = "adapter.language"
+    scheduler = get_cosine_schedule_with_warmup(
+        base_optimizer,
+        num_warmup_steps=0,
+        num_training_steps=1,
+    )
+    accelerator = Accelerator(cpu=True, mixed_precision="bf16")
+    runtime = TrainRuntime(
+        runtime_config=RuntimeConfig(seed=17),
+        runtime_batch=RuntimeBatchResolution(1, 1, 1),
+        model=model,
+        optimizer=base_optimizer,
+        scheduler=scheduler,
+        expected_mixed_precision="bf16",
+        max_grad_norm=1.0,
+        accelerator=accelerator,
+        rank_report_gatherer=None,
+    )
+    ownership = build_human13_adamw_runtime_ownership(
+        runtime,
+        named,
+        expected_learning_rate=FROZEN_LEARNING_RATE,
+        expected_betas=FROZEN_BETAS,
+        expected_epsilon=FROZEN_EPSILON,
+        expected_weight_decay=FROZEN_WEIGHT_DECAY,
+        capture_cuda=True,
+    )
+    counter = UpdateCounter()
+    transaction = TrainingStateTransaction(
+        named,
+        optimizer=ownership.base_optimizer,
+        scheduler=ownership.scheduler,
+        update_counter=counter,
+        runtime=runtime,
+        capture_cuda=True,
+    )
+    surface = CudaProposalInput(
+        model=model,
+        named_trainable_parameters=named,
+        optimizer=ownership.base_optimizer,
+        runtime_optimizer=ownership.execution_optimizer,
+        runtime_ownership=ownership,
+        transaction=transaction,
+        update_counter=counter,
+        objective=(model.weight.square()).sum(),
+        witness_bank=_witness_bank(named),
+        proposal_binding=_proposal_binding(),
+        realized_margin_probe=lambda: {"u_intersect_s_1.0|1584|g-1": 0.0},
+    )
+    adapter = CudaHFVerticalAdapter(surface)
+    before = model.weight.detach().clone()
+    receipt = adapter.apply_and_rollback()
+
+    assert receipt.status == "applied_and_rolled_back"
+    assert torch.equal(model.weight, before)
+    assert ownership.base_optimizer.state == {}
+    assert runtime.optimizer is ownership.execution_optimizer
+    assert runtime.optimizer_step_count == 0
+    assert runtime.scheduler_step_count == 0
+
+    runtime.optimizer_step_count = 1
+    with pytest.raises(CudaAdapterError, match="runtime ownership drifted"):
+        CudaHFVerticalAdapter(surface)
+    assert model.weight.grad is None
 
 
 def _task2_surface(*, module_name: str) -> tuple[CudaProposalInput, Any]:

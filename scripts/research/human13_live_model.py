@@ -10,9 +10,10 @@ Only ``assemble_human13_live_model`` crosses the live boundary.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol, cast
 from weakref import ReferenceType, ref
@@ -261,6 +262,387 @@ class Human13PlanValidationReceipt:
 
 
 @dataclass(frozen=True)
+class Human13AdamWRuntimeOwnership:
+    """Content-addressed post-Accelerate AdamW ownership receipt.
+
+    The live runtime keeps the Accelerate wrapper as its execution handle, but
+    proposal capture and rollback must use the exact inner AdamW.  This value
+    object records that one-layer relationship and the deterministic state
+    required before the first stochastic acquisition.
+    """
+
+    schema_version: Literal["human13_adamw_runtime_ownership.v1"]
+    runtime: Any = field(repr=False, compare=False)
+    accelerator: Any = field(repr=False, compare=False)
+    execution_optimizer: Any = field(repr=False, compare=False)
+    base_optimizer: Any = field(repr=False, compare=False)
+    scheduler: Any = field(repr=False, compare=False)
+    model_object_id: int
+    execution_optimizer_object_id: int
+    base_optimizer_object_id: int
+    scheduler_object_id: int
+    scheduler_optimizer_object_id: int
+    parameter_names: tuple[str, ...]
+    parameter_object_ids: tuple[int, ...]
+    group_parameter_object_ids: tuple[int, ...]
+    learning_rate: float
+    betas: tuple[float, float]
+    epsilon: float
+    weight_decay: float
+    optimizer_state_entries: int
+    wrapper_state_entries: int
+    wrapper_type: str
+    base_type: str
+    scheduler_type: str
+    scheduler_name: str
+    scheduler_warmup_steps: int
+    scheduler_horizon_updates: int
+    world_size: int
+    device: str
+    parameter_dtype: str
+    mixed_precision: str
+    distributed_type: str
+    scaler_present: bool
+    sync_gradients: bool
+    runtime_optimizer_step_count: int
+    scheduler_step_count: int
+    scheduler_internal_step_count: int
+    runtime_zero_grad_count: int
+    capture_cuda: bool
+
+    @property
+    def scheduler_optimizer(self) -> Any:
+        return getattr(self.scheduler, "optimizer", None)
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema_version": self.schema_version,
+            "model_object_id": self.model_object_id,
+            "execution_optimizer_object_id": self.execution_optimizer_object_id,
+            "base_optimizer_object_id": self.base_optimizer_object_id,
+            "scheduler_object_id": self.scheduler_object_id,
+            "scheduler_optimizer_object_id": self.scheduler_optimizer_object_id,
+            "parameter_names": list(self.parameter_names),
+            "parameter_object_ids": list(self.parameter_object_ids),
+            "group_parameter_object_ids": list(self.group_parameter_object_ids),
+            "learning_rate": self.learning_rate,
+            "betas": list(self.betas),
+            "epsilon": self.epsilon,
+            "weight_decay": self.weight_decay,
+            "optimizer_state_entries": self.optimizer_state_entries,
+            "wrapper_state_entries": self.wrapper_state_entries,
+            "wrapper_type": self.wrapper_type,
+            "base_type": self.base_type,
+            "scheduler_type": self.scheduler_type,
+            "scheduler_name": self.scheduler_name,
+            "scheduler_warmup_steps": self.scheduler_warmup_steps,
+            "scheduler_horizon_updates": self.scheduler_horizon_updates,
+            "world_size": self.world_size,
+            "device": self.device,
+            "parameter_dtype": self.parameter_dtype,
+            "mixed_precision": self.mixed_precision,
+            "distributed_type": self.distributed_type,
+            "scaler_present": self.scaler_present,
+            "sync_gradients": self.sync_gradients,
+            "runtime_optimizer_step_count": self.runtime_optimizer_step_count,
+            "scheduler_step_count": self.scheduler_step_count,
+            "scheduler_internal_step_count": self.scheduler_internal_step_count,
+            "runtime_zero_grad_count": self.runtime_zero_grad_count,
+            "capture_cuda": self.capture_cuda,
+        }
+        return payload | {
+            "content_sha256": hashlib.sha256(
+                (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode()
+            ).hexdigest()
+        }
+
+    @property
+    def content_sha256(self) -> str:
+        return str(self.to_artifact_dict()["content_sha256"])
+
+
+def build_human13_adamw_runtime_ownership(
+    runtime: Any,
+    named_trainable_parameters: tuple[tuple[str, Any], ...],
+    *,
+    expected_learning_rate: float,
+    expected_betas: tuple[float, float],
+    expected_epsilon: float,
+    expected_weight_decay: float,
+    capture_cuda: bool,
+    expected_scheduler_name: str = "cosine_with_warmup",
+    expected_scheduler_warmup_steps: int = 0,
+    expected_scheduler_horizon_updates: int = 1,
+) -> Human13AdamWRuntimeOwnership:
+    """Admit the exact post-prepare Accelerate/AdamW ownership boundary.
+
+    This deliberately does not unwrap arbitrary optimizer-like objects.  The
+    only accepted representation is one exact AcceleratedOptimizer containing
+    one exact ``torch.optim.AdamW`` whose scheduler, parameters, and state are
+    all joined by identity.
+    """
+
+    try:
+        import torch
+        from accelerate.optimizer import AcceleratedOptimizer
+    except ImportError as exc:  # pragma: no cover - live dependency contract
+        raise Human13LiveModelError(
+            "post-prepare AdamW ownership requires Accelerate and torch"
+        ) from exc
+
+    model = getattr(runtime, "model", None)
+    execution_optimizer = getattr(runtime, "optimizer", None)
+    scheduler = getattr(runtime, "scheduler", None)
+    accelerator = getattr(runtime, "accelerator", None)
+    if model is None or accelerator is None:
+        raise Human13LiveModelError("runtime ownership is missing model or accelerator")
+    if type(execution_optimizer) is not AcceleratedOptimizer:
+        raise Human13LiveModelError(
+            "runtime optimizer must be exactly one AcceleratedOptimizer wrapper"
+        )
+    base_optimizer = getattr(execution_optimizer, "optimizer", None)
+    if type(base_optimizer) is not torch.optim.AdamW:
+        raise Human13LiveModelError(
+            "runtime optimizer must wrap an exact fresh AdamW"
+        )
+    if hasattr(base_optimizer, "optimizer"):
+        raise Human13LiveModelError("nested optimizer wrappers are forbidden")
+    if scheduler is None or getattr(scheduler, "optimizer", None) is not base_optimizer:
+        raise Human13LiveModelError(
+            "scheduler must be bound to the exact base AdamW"
+        )
+    if type(scheduler) is not torch.optim.lr_scheduler.LambdaLR:
+        raise Human13LiveModelError(
+            "scheduler type must be the exact cosine LambdaLR"
+        )
+    if expected_scheduler_name != "cosine_with_warmup":
+        raise Human13LiveModelError("scheduler name is not the frozen cosine contract")
+    if (
+        int(expected_scheduler_warmup_steps) < 0
+        or int(expected_scheduler_horizon_updates) <= 0
+        or int(expected_scheduler_warmup_steps)
+        > int(expected_scheduler_horizon_updates)
+    ):
+        raise Human13LiveModelError("scheduler horizon is invalid")
+    if int(getattr(runtime, "world_size", -1)) != 1:
+        raise Human13LiveModelError("AdamW runtime ownership requires world size one")
+    mixed_precision = str(getattr(accelerator, "mixed_precision", ""))
+    if mixed_precision != "bf16":
+        raise Human13LiveModelError("AdamW runtime requires bf16 mixed precision")
+    distributed_type = str(
+        getattr(getattr(accelerator, "distributed_type", None), "name", "")
+    )
+    if distributed_type != "NO":
+        raise Human13LiveModelError("AdamW runtime requires sync-neutral world-one mode")
+    if getattr(accelerator, "scaler", None) is not None:
+        raise Human13LiveModelError("AdamW runtime must not use a gradient scaler")
+    if getattr(execution_optimizer, "scaler", None) is not None:
+        raise Human13LiveModelError("AcceleratedOptimizer must not use a gradient scaler")
+    if getattr(execution_optimizer, "_is_accelerate_prepared", False) is not True:
+        raise Human13LiveModelError("AcceleratedOptimizer is not post-prepare")
+    gradient_state = getattr(accelerator, "gradient_state", None)
+    sync_gradients = bool(getattr(gradient_state, "sync_gradients", True))
+    if not sync_gradients:
+        raise Human13LiveModelError("AdamW runtime must start with synchronized gradients")
+    wrapper_sync_gradients = bool(
+        getattr(getattr(execution_optimizer, "gradient_state", None), "sync_gradients", True)
+    )
+    if wrapper_sync_gradients is not sync_gradients:
+        raise Human13LiveModelError("AcceleratedOptimizer sync semantics drifted")
+    if not isinstance(capture_cuda, bool) or not capture_cuda:
+        raise Human13LiveModelError("AdamW runtime requires CUDA RNG capture capability")
+    scheduler_internal_step_count = int(getattr(scheduler, "_step_count", 0))
+    scheduler_last_epoch = int(getattr(scheduler, "last_epoch", -1))
+    if scheduler_internal_step_count != 1 or scheduler_last_epoch != 0:
+        raise Human13LiveModelError("scheduler has already advanced")
+    lr_lambdas = getattr(scheduler, "lr_lambdas", None)
+    if not isinstance(lr_lambdas, list) or len(lr_lambdas) != 1:
+        raise Human13LiveModelError("scheduler cosine LambdaLR shape drifted")
+    schedule = lr_lambdas[0]
+    warmup_steps = int(expected_scheduler_warmup_steps)
+    horizon_updates = int(expected_scheduler_horizon_updates)
+    probe_steps = {0, warmup_steps, horizon_updates}
+    for step in probe_steps:
+        if step < warmup_steps:
+            expected_factor = float(step) / float(max(1, warmup_steps))
+        else:
+            progress = min(
+                max(
+                    (float(step) - float(warmup_steps))
+                    / float(max(1, horizon_updates - warmup_steps)),
+                    0.0,
+                ),
+                1.0,
+            )
+            expected_factor = 0.5 * (1.0 + math.cos(math.pi * progress))
+        try:
+            observed_factor = float(schedule(step))
+        except (TypeError, ValueError) as error:
+            raise Human13LiveModelError(
+                "scheduler cosine LambdaLR is not callable"
+            ) from error
+        if not math.isfinite(observed_factor) or not math.isclose(
+            observed_factor, expected_factor, rel_tol=0.0, abs_tol=1.0e-12
+        ):
+            raise Human13LiveModelError("scheduler cosine semantics drifted")
+    optimizer_step_count = int(getattr(runtime, "optimizer_step_count", -1))
+    scheduler_step_count = int(getattr(runtime, "scheduler_step_count", -1))
+    zero_grad_count = int(getattr(runtime, "zero_grad_count", -1))
+    if (optimizer_step_count, scheduler_step_count, zero_grad_count) != (0, 0, 0):
+        raise Human13LiveModelError("runtime and scheduler counters must start at zero")
+
+    observed_named = tuple(
+        (str(name), parameter)
+        for name, parameter in model.named_parameters()
+        if bool(getattr(parameter, "requires_grad", False))
+    )
+    if tuple((name, id(parameter)) for name, parameter in observed_named) != tuple(
+        (str(name), id(parameter))
+        for name, parameter in named_trainable_parameters
+    ):
+        raise Human13LiveModelError("runtime trainable parameter order or identity drifted")
+    if not observed_named:
+        raise Human13LiveModelError("runtime trainable surface is empty")
+    parameter_names = tuple(name for name, _ in observed_named)
+    parameter_ids = tuple(id(parameter) for _, parameter in observed_named)
+    devices = {str(parameter.device) for _, parameter in observed_named}
+    dtypes = {str(parameter.dtype) for _, parameter in observed_named}
+    if len(devices) != 1 or len(dtypes) != 1 or dtypes != {"torch.bfloat16"}:
+        raise Human13LiveModelError("runtime trainable parameters must share bf16 device surface")
+    if str(getattr(accelerator, "device", "")) not in devices:
+        raise Human13LiveModelError("runtime accelerator device differs from trainable surface")
+
+    groups = list(getattr(base_optimizer, "param_groups", ()))
+    if len(groups) != 1:
+        raise Human13LiveModelError("runtime AdamW must contain one adapter.language group")
+    group = groups[0]
+    group_parameters = tuple(group.get("params", ()))
+    if tuple(id(parameter) for parameter in group_parameters) != parameter_ids:
+        raise Human13LiveModelError("AdamW parameter order or identity drifted")
+    if group.get("name") != "adapter.language":
+        raise Human13LiveModelError("AdamW group must remain adapter.language")
+    wrapper_groups = list(getattr(execution_optimizer, "param_groups", ()))
+    if len(wrapper_groups) != 1:
+        raise Human13LiveModelError("AcceleratedOptimizer group structure drifted")
+    wrapper_group_parameters = tuple(wrapper_groups[0].get("params", ()))
+    if tuple(id(parameter) for parameter in wrapper_group_parameters) != parameter_ids:
+        raise Human13LiveModelError("AcceleratedOptimizer parameter identity drifted")
+    if any(
+        wrapper_groups[0].get(name) != group.get(name)
+        for name in ("name", "lr", "weight_decay", "betas", "eps")
+    ):
+        raise Human13LiveModelError("AcceleratedOptimizer group hyperparameters drifted")
+    defaults = getattr(base_optimizer, "defaults", {})
+    if (
+        float(group.get("lr", -1.0)) != float(expected_learning_rate)
+        or float(group.get("weight_decay", -1.0)) != float(expected_weight_decay)
+        or tuple(group.get("betas", ())) != tuple(expected_betas)
+        or float(group.get("eps", -1.0)) != float(expected_epsilon)
+        or tuple(defaults.get("betas", ())) != tuple(expected_betas)
+        or float(defaults.get("eps", -1.0)) != float(expected_epsilon)
+        or float(wrapper_groups[0].get("lr", -1.0))
+        != float(expected_learning_rate)
+        or float(wrapper_groups[0].get("weight_decay", -1.0))
+        != float(expected_weight_decay)
+        or tuple(wrapper_groups[0].get("betas", ())) != tuple(expected_betas)
+        or float(wrapper_groups[0].get("eps", -1.0)) != float(expected_epsilon)
+    ):
+        raise Human13LiveModelError("fresh AdamW group hyperparameters drifted")
+    if any(
+        bool(defaults.get(name, False))
+        for name in ("amsgrad", "maximize", "capturable", "differentiable")
+    ) or defaults.get("fused", None) not in (None, False):
+        raise Human13LiveModelError("fresh AdamW execution flags drifted")
+    if len(getattr(base_optimizer, "state", {})) != 0:
+        raise Human13LiveModelError("fresh AdamW state must be empty")
+    if len(getattr(execution_optimizer, "state", {})) != 0:
+        raise Human13LiveModelError("AcceleratedOptimizer observed state must be empty")
+    if any(parameter.grad is not None for _, parameter in observed_named):
+        raise Human13LiveModelError("runtime trainable gradients must be empty")
+
+    observed_betas = defaults.get("betas", ())
+    if not isinstance(observed_betas, tuple) or len(observed_betas) != 2:
+        raise Human13LiveModelError("AdamW betas must be one exact pair")
+    betas = (float(observed_betas[0]), float(observed_betas[1]))
+    return Human13AdamWRuntimeOwnership(
+        schema_version="human13_adamw_runtime_ownership.v1",
+        runtime=runtime,
+        accelerator=accelerator,
+        execution_optimizer=execution_optimizer,
+        base_optimizer=base_optimizer,
+        scheduler=scheduler,
+        model_object_id=id(model),
+        execution_optimizer_object_id=id(execution_optimizer),
+        base_optimizer_object_id=id(base_optimizer),
+        scheduler_object_id=id(scheduler),
+        scheduler_optimizer_object_id=id(getattr(scheduler, "optimizer")),
+        parameter_names=parameter_names,
+        parameter_object_ids=parameter_ids,
+        group_parameter_object_ids=tuple(id(parameter) for parameter in group_parameters),
+        learning_rate=float(group["lr"]),
+        betas=betas,
+        epsilon=float(defaults["eps"]),
+        weight_decay=float(group["weight_decay"]),
+        optimizer_state_entries=len(getattr(base_optimizer, "state", {})),
+        wrapper_state_entries=len(getattr(execution_optimizer, "state", {})),
+        wrapper_type=f"{type(execution_optimizer).__module__}.{type(execution_optimizer).__qualname__}",
+        base_type=f"{type(base_optimizer).__module__}.{type(base_optimizer).__qualname__}",
+        scheduler_type=f"{type(scheduler).__module__}.{type(scheduler).__qualname__}",
+        scheduler_name=expected_scheduler_name,
+        scheduler_warmup_steps=warmup_steps,
+        scheduler_horizon_updates=horizon_updates,
+        world_size=1,
+        device=next(iter(devices)),
+        parameter_dtype=next(iter(dtypes)),
+        mixed_precision=mixed_precision,
+        distributed_type=distributed_type,
+        scaler_present=False,
+        sync_gradients=sync_gradients,
+        runtime_optimizer_step_count=optimizer_step_count,
+        scheduler_step_count=scheduler_step_count,
+        scheduler_internal_step_count=scheduler_internal_step_count,
+        runtime_zero_grad_count=zero_grad_count,
+        capture_cuda=capture_cuda,
+    )
+
+
+def revalidate_human13_adamw_runtime_ownership(
+    ownership: Human13AdamWRuntimeOwnership,
+    named_trainable_parameters: tuple[tuple[str, Any], ...],
+    *,
+    expected_learning_rate: float,
+    expected_betas: tuple[float, float],
+    expected_epsilon: float,
+    expected_weight_decay: float,
+) -> Human13AdamWRuntimeOwnership:
+    """Recheck the same post-prepare ownership after acquisition/replay."""
+
+    if type(ownership) is not Human13AdamWRuntimeOwnership:
+        raise Human13LiveModelError("runtime ownership receipt has the wrong type")
+    observed = build_human13_adamw_runtime_ownership(
+        ownership.runtime,
+        named_trainable_parameters,
+        expected_learning_rate=expected_learning_rate,
+        expected_betas=expected_betas,
+        expected_epsilon=expected_epsilon,
+        expected_weight_decay=expected_weight_decay,
+        capture_cuda=ownership.capture_cuda,
+        expected_scheduler_name=ownership.scheduler_name,
+        expected_scheduler_warmup_steps=ownership.scheduler_warmup_steps,
+        expected_scheduler_horizon_updates=ownership.scheduler_horizon_updates,
+    )
+    if observed.content_sha256 != ownership.content_sha256:
+        raise Human13LiveModelError("post-prepare AdamW runtime ownership drifted")
+    if (
+        observed.base_optimizer is not ownership.base_optimizer
+        or observed.execution_optimizer is not ownership.execution_optimizer
+        or observed.scheduler is not ownership.scheduler
+    ):
+        raise Human13LiveModelError("post-prepare AdamW object ownership drifted")
+    return observed
+
+
+@dataclass(frozen=True)
 class Human13LiveAssembly:
     plan: Human13LiveModelPlan
     validation: Human13PlanValidationReceipt
@@ -276,6 +658,7 @@ class Human13LiveAssembly:
     runtime: Any
     memory_saver_receipt: Any
     parameter_state_receipt: Human13ParameterStateReceipt
+    runtime_ownership: Human13AdamWRuntimeOwnership | None = None
 
 
 @dataclass(frozen=True)
@@ -523,6 +906,11 @@ def _live_assembly_fingerprint(
             None,
         ),
         "parameter_state": observed_parameter_state.to_artifact_dict(),
+        "runtime_ownership": (
+            assembly.runtime_ownership.to_artifact_dict()
+            if assembly.runtime_ownership is not None
+            else None
+        ),
     }
     return hashlib.sha256(
         (json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str) + "\n").encode()
@@ -570,6 +958,26 @@ def validate_human13_live_assembly_values(
     require_admitted_human13_live_assembly(assembly)
     _require_frozen_plan(assembly.plan)
     _require_language_only_surface(assembly.trainable_surface_receipt)
+    if (
+        assembly.runtime_ownership is None
+        and type(assembly.runtime).__module__ == "src.runtime.train_runtime"
+    ):
+        raise Human13LiveModelError(
+            "live TrainRuntime assembly lacks post-prepare AdamW ownership"
+        )
+    if assembly.runtime_ownership is not None:
+        revalidate_human13_adamw_runtime_ownership(
+            assembly.runtime_ownership,
+            tuple(
+                (name, parameter)
+                for name, parameter in assembly.model.named_parameters()
+                if bool(getattr(parameter, "requires_grad", False))
+            ),
+            expected_learning_rate=assembly.plan.learning_rate,
+            expected_betas=assembly.plan.betas,
+            expected_epsilon=assembly.plan.epsilon,
+            expected_weight_decay=assembly.plan.weight_decay,
+        )
     validation = assembly.validation
     if (
         type(validation) is not Human13PlanValidationReceipt
@@ -1245,6 +1653,32 @@ def assemble_human13_live_model(
     if int(getattr(runtime, "world_size", -1)) != 1:
         raise Human13LiveModelError("TrainRuntime must remain world size one")
     prepared_model = getattr(runtime, "model", model)
+    runtime_ownership: Human13AdamWRuntimeOwnership | None = None
+    if (
+        plan.unit_id == ALL_HF_VERTICAL_UNIT_ID
+        and plan.mixed_precision == "bf16"
+        and (
+            type(runtime).__module__ == "src.runtime.train_runtime"
+            or type(getattr(runtime, "optimizer", None)).__module__
+            == "accelerate.optimizer"
+        )
+    ):
+        runtime_ownership = build_human13_adamw_runtime_ownership(
+            runtime,
+            tuple(
+                (name, parameter)
+                for name, parameter in prepared_model.named_parameters()
+                if bool(getattr(parameter, "requires_grad", False))
+            ),
+            expected_learning_rate=plan.learning_rate,
+            expected_betas=plan.betas,
+            expected_epsilon=plan.epsilon,
+            expected_weight_decay=plan.weight_decay,
+            capture_cuda=True,
+            expected_scheduler_name=plan.scheduler_name,
+            expected_scheduler_warmup_steps=plan.scheduler_warmup_steps,
+            expected_scheduler_horizon_updates=plan.scheduler_horizon_updates,
+        )
     parameter_state_receipt = _build_parameter_state_receipt(
         prepared_model, special_result
     )
@@ -1263,6 +1697,7 @@ def assemble_human13_live_model(
         runtime=runtime,
         memory_saver_receipt=memory_saver_receipt,
         parameter_state_receipt=parameter_state_receipt,
+        runtime_ownership=runtime_ownership,
     ))
 
 
@@ -2173,6 +2608,7 @@ __all__ = [
     "CHECKPOINT_STEPS",
     "DefaultHuman13AssemblyBackend",
     "Human13AssemblyBackend",
+    "Human13AdamWRuntimeOwnership",
     "Human13CheckpointReadback",
     "Human13LiveAssembly",
     "Human13LoadedSpecialTokenResult",
@@ -2210,11 +2646,13 @@ __all__ = [
     "build_human13_checkpoint_kwargs",
     "build_human13_checkpoint_writer",
     "build_human13_all_hf_vertical_source_plan",
+    "build_human13_adamw_runtime_ownership",
     "build_human13_live_model_plan",
     "build_human13_parity_skeleton",
     "build_human13_processor_skeletons",
     "build_human13_update_schedule",
     "readback_human13_checkpoint",
+    "revalidate_human13_adamw_runtime_ownership",
     "require_admitted_human13_live_assembly",
     "validate_human13_live_model_plan",
     "validate_human13_live_assembly_values",

@@ -238,3 +238,62 @@ same-panel probe.
 - **THEN** one shared-surface K16-per-image update is evaluated and reported
   without a validation, generalization, deployment, or scalable-throughput
   claim
+
+### Requirement: Post-prepare AdamW runtime ownership admission
+
+Before the first K16 sampling call, the live BF16 training boundary SHALL
+publish a content-addressed ownership receipt for exactly one
+`AcceleratedOptimizer` wrapper around exactly one `torch.optim.AdamW` base.
+The receipt SHALL bind the scheduler to that same base, parameter order and
+object identity, frozen group hyperparameters, empty wrapper/base state,
+world-one BF16 sync-neutral accelerator semantics, zero runtime and scheduler
+counters, and CUDA RNG capture capability.  Nested or foreign wrappers,
+subclasses, foreign schedulers, stale state/gradients/counters, and device or
+dtype drift SHALL fail closed.  The runtime wrapper SHALL remain the execution
+handle, while proposal capture and `TrainingStateTransaction` SHALL bind the
+exact base AdamW without scheduler or runtime-counter advancement.
+
+#### Scenario: Accelerate wrapper and base are admitted
+
+- **WHEN** a real post-prepare world-one BF16 runtime has an empty fresh base
+  AdamW and a scheduler bound to that base
+- **THEN** the receipt is content-addressed, the transaction binds the base,
+  and the runtime wrapper remains available only as the execution handle
+
+#### Scenario: Deterministic ownership drift occurs before acquisition
+
+- **WHEN** the wrapper/base type, scheduler identity, parameter order, state,
+  hyperparameters, counters, RNG capability, device, dtype, scaler, or sync
+  semantics drift before the first sample group
+- **THEN** the entry emits a typed admission failure with zero K16 sampling,
+  replay, backward, or optimizer actions
+
+#### Scenario: Ownership is revalidated after K16
+
+- **WHEN** a deterministic runtime field drifts after the four K16 groups but
+  before objective materialization
+- **THEN** the proposal fails before backward and no objective component is
+  silently substituted or dropped
+
+### Requirement: Pre-acquisition ownership receipt is phase-bound
+
+The production entry MUST validate the exact post-prepare Accelerate/AdamW
+ownership, frozen cosine-with-warmup scheduler semantics, and live optimizer
+group hyperparameters before the first sample. The backend MUST expose the
+pre-acquisition hook and return a content-addressed ownership receipt. The
+service MUST persist that receipt digest in an immutable pre-acquisition phase
+before K16 acquisition.
+
+#### Scenario: Missing hook or receipt fails before acquisition
+
+- **WHEN** a production backend omits the pre-acquisition hook or returns a
+  receipt without a 64-character content hash
+- **THEN** the entry emits a typed admission failure, records no sample/replay
+  call, and does not mask the primary ownership error with persistence errors
+
+#### Scenario: Scheduler and group semantics are exact
+
+- **WHEN** the scheduler is a same-base non-cosine scheduler, or a live
+  optimizer group changes `betas`/`eps` while defaults remain unchanged
+- **THEN** ownership admission rejects before acquisition and the receipt hash
+  cannot remain valid

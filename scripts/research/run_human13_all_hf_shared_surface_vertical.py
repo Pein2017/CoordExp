@@ -2512,6 +2512,12 @@ def run_one_image(
                 expected_source_identity=source_identity,
             )
             phases.append(f"source_audit_rp_{rp:g}")
+        pre_acquisition_admission = getattr(
+            services, "pre_acquisition_admission", None
+        )
+        if callable(pre_acquisition_admission):
+            pre_acquisition_admission(training_session, source_outputs)
+            phases.append("pre_acquisition_update_admission")
         if preflight_only:
             phases.append("preflight_source_surfaces_admitted")
             request_source_only_close = getattr(

@@ -20,6 +20,7 @@ from scripts.research.human13_one_image_services import (
     ProductionOneImageServices,
     Task5ProductionContextFailureReceipt,
     Task5ProductionContextUnavailable,
+    Task5RuntimeEvidenceError,
 )
 import scripts.research.human13_one_image_services as service_owner
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
@@ -140,6 +141,18 @@ class _Backend(ProductionOneImageBackend):
         if self.fail == "source_audit":
             raise RuntimeError("source reconciliation failure")
         return {"rp": repetition_penalty}
+
+    def pre_acquisition_admission(
+        self,
+        training_session: object,
+        source_outputs: Any,
+    ) -> object:
+        del training_session, source_outputs
+        self.events.append("pre_acquisition_admission")
+        return SimpleNamespace(
+            content_sha256="f" * 64,
+            to_artifact_dict=lambda: {"content_sha256": "f" * 64},
+        )
 
     def acquire_and_replay(
         self, session: object, config: EntryConfig
@@ -451,6 +464,32 @@ def test_fresh_primary_reservation_precedes_backend_and_binds_phase_identity(
     first_phase = json.loads(next((root / "receipts").glob("*.json")).read_text())
     assert first_phase["reservation_identity"] == identity.to_dict()
     assert backend.events == ["preflight_source"]
+
+
+def test_pre_acquisition_hook_is_required_and_persists_ownership_digest(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend()
+    services, _stale, successor = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+
+    receipt = services.pre_acquisition_admission(object(), {})
+    assert getattr(receipt, "content_sha256") == "f" * 64
+    phase_path = next(
+        successor.glob("receipts/*-pre_acquisition_update_admission.json")
+    )
+    phase = json.loads(phase_path.read_text())
+    assert phase["evidence"]["ownership_receipt_sha256"] == "f" * 64
+    assert phase["evidence"]["ownership_receipt"]["content_sha256"] == "f" * 64
+
+    missing = _Backend()
+    missing.pre_acquisition_admission = None  # type: ignore[method-assign]
+    missing_services, _stale, _successor = _services(tmp_path / "missing", missing)
+    missing_services.preflight_source_assembly(config, resources)
+    with pytest.raises(Task5RuntimeEvidenceError, match="must implement"):
+        missing_services.pre_acquisition_admission(object(), {})
 
 
 def test_fresh_primary_collision_has_zero_actions_and_no_admitted_identity(

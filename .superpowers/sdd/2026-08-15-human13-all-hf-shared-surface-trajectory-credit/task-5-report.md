@@ -352,3 +352,44 @@ or add a CE/vLLM fallback.  A subsequent run must use a fresh immutable root;
 the historical failed roots remain untouched.  Only after independent baseline
 admission and strict internal BF16 parity pass may one private K16 update,
 dual-RP fp32 audit, rollback, and Source reproduction execute.
+
+## AdamW/Accelerate production-admission correction
+
+The cbb844e-v1 attempt remains an immutable pre-gradient production blocker:
+the live adapter rejected the post-prepare `AcceleratedOptimizer` even though
+its inner optimizer was a fresh, correctly bound AdamW.  This is not algorithm
+evidence and no GPU/model/K16 retry is part of this correction.
+
+The owned correction adds a content-addressed
+`human13_adamw_runtime_ownership.v1` receipt at the live assembly boundary.
+It admits only one exact `accelerate.optimizer.AcceleratedOptimizer` layer over
+one exact `torch.optim.AdamW`, with the scheduler bound to that base, exact
+parameter order/object IDs, fixed group/default hyperparameters, empty wrapper
+and base state, world-one BF16/no-scaler/sync-neutral semantics, zero runtime
+and scheduler counters, and CUDA RNG capture capability.  Nested/foreign
+wrappers, AdamW subclasses, foreign schedulers, stale state/gradients/counters,
+and device/dtype/sync/scaler drift fail closed.  Proposal capture and
+`TrainingStateTransaction` bind the base; the wrapper remains the execution
+handle and manual projected apply does not advance scheduler/runtime counters.
+
+The production entry calls the deterministic ownership and BF16 witness/probe
+admission after Source freeze and before the first K16 sample.  The adapter
+revalidates the same content-addressed context after K16 and before objective
+materialization/backward.  Real Accelerate CPU evidence covers the positive
+wrapper/base/scheduler relationship, tiny private apply/rollback, and the
+fault matrix; it is production admission evidence only.  Focused and adjacent
+scientific suites must remain unchanged in objective, LR, K16, parity, surface
+ownership, rollback, and dual-RP gate semantics.
+
+Task 4.6 and Tasks 5.1–5.5 remain unchecked.  No live GPU/model/network,
+checkpoint, or algorithm update is authorized by this correction.
+
+The localized follow-up correction closes three shared admission gaps found by
+review: same-base non-cosine schedulers are rejected; authoritative optimizer
+group `betas`/`eps` are checked independently of defaults; and the production
+backend hook is mandatory at the service boundary. A successful hook returns
+the content-addressed ownership receipt, which is written as the immutable
+`pre_acquisition_update_admission` phase before any K16 call. Missing hooks or
+unhashed receipts fail closed before acquisition. Real Accelerate CPU tests and
+the private apply/rollback vertical remain green; this is lifecycle evidence,
+not an algorithm result.
