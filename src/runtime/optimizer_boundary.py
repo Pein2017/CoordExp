@@ -55,6 +55,10 @@ MUTATION_STATES: tuple[str, ...] = (
 TERMINAL_PRE_WRAPPER_SCALER_CANDIDACY_DIVERGENT = "pre_wrapper_scaler_candidacy_divergent"
 TERMINAL_PRE_WRAPPER_MIXED_SCALER_OVERFLOW = "pre_wrapper_mixed_scaler_overflow"
 TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE = "pre_wrapper_unrelated_unsafe"
+# Declared fp16 with no reachable, enabled GradScaler on any rank. The launch
+# gate refuses this state, so a boundary that still observes it is post-launch
+# drift and must not be reclassified as the retained bf16/non-scaler path.
+TERMINAL_PRE_WRAPPER_FP16_SCALER_MISSING = "pre_wrapper_fp16_scaler_missing"
 TERMINAL_POST_WRAPPER_MIXED = "post_wrapper_mixed"
 TERMINAL_POST_WRAPPER_APPLY_ALL_SKIPPED = "post_wrapper_apply_all_skipped"
 TERMINAL_POST_WRAPPER_SCALER_SKIP_NONE_SKIPPED = "post_wrapper_scaler_skip_none_skipped"
@@ -63,6 +67,7 @@ TERMINAL_REASONS: tuple[str, ...] = (
     TERMINAL_PRE_WRAPPER_SCALER_CANDIDACY_DIVERGENT,
     TERMINAL_PRE_WRAPPER_MIXED_SCALER_OVERFLOW,
     TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE,
+    TERMINAL_PRE_WRAPPER_FP16_SCALER_MISSING,
     TERMINAL_POST_WRAPPER_MIXED,
     TERMINAL_POST_WRAPPER_APPLY_ALL_SKIPPED,
     TERMINAL_POST_WRAPPER_SCALER_SKIP_NONE_SKIPPED,
@@ -125,6 +130,11 @@ class AppliedUpdateReceipt:
     reason: str | None
     post_wrapper_outcome: str | None
     group_learning_rates: tuple[float | None, ...]
+    # The gate decision's finite_status at the moment the terminal converged.
+    # It is always computed before a terminal reason is chosen, so terminal
+    # constructors receive the known value; "unavailable" remains only for
+    # receipts whose construction path genuinely never saw a gate decision.
+    finite_status: str = "unavailable"
     construction_token: Any = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -169,6 +179,12 @@ class AppliedUpdateReceipt:
             raise RuntimeContractError(
                 "a receipt cannot report an applied update without a wrapper call",
                 code="runtime.update_receipt_inconsistent",
+            )
+        if self.finite_status not in ("finite", "non_finite", "unavailable"):
+            raise RuntimeContractError(
+                "receipt finite_status is not in the closed set",
+                code="runtime.update_receipt_finite_status_invalid",
+                context={"finite_status": self.finite_status},
             )
 
     # -- normal completed boundaries --------------------------------------
@@ -272,6 +288,7 @@ class AppliedUpdateReceipt:
         reason: str,
         *,
         unscale_completed: bool,
+        finite_status: str = "unavailable",
     ) -> "AppliedUpdateReceipt":
         """Terminal BEFORE any wrapper call.
 
@@ -300,6 +317,7 @@ class AppliedUpdateReceipt:
             reason=terminal_reason,
             post_wrapper_outcome=None,
             group_learning_rates=(None,) * groups,
+            finite_status=finite_status,
             construction_token=_CONSTRUCTOR_TOKEN,
         )
 
@@ -312,6 +330,7 @@ class AppliedUpdateReceipt:
         action: str,
         outcome: str,
         pre_call_learning_rates: Sequence[float | None],
+        finite_status: str = "unavailable",
     ) -> "AppliedUpdateReceipt":
         """Terminal AFTER every rank's wrapper returned.
 
@@ -371,6 +390,7 @@ class AppliedUpdateReceipt:
             reason=terminal_reason,
             post_wrapper_outcome=outcome,
             group_learning_rates=learning_rates,
+            finite_status=finite_status,
             construction_token=_CONSTRUCTOR_TOKEN,
         )
 
@@ -387,6 +407,7 @@ class AppliedUpdateReceipt:
             "terminal_reason": self.terminal_reason,
             "post_wrapper_outcome": self.post_wrapper_outcome,
             "group_learning_rates": list(self.group_learning_rates),
+            "finite_status": self.finite_status,
         }
 
 
@@ -506,6 +527,7 @@ __all__ = [
     "TERMINAL_POST_WRAPPER_APPLY_ALL_SKIPPED",
     "TERMINAL_POST_WRAPPER_MIXED",
     "TERMINAL_POST_WRAPPER_SCALER_SKIP_NONE_SKIPPED",
+    "TERMINAL_PRE_WRAPPER_FP16_SCALER_MISSING",
     "TERMINAL_PRE_WRAPPER_MIXED_SCALER_OVERFLOW",
     "TERMINAL_PRE_WRAPPER_SCALER_CANDIDACY_DIVERGENT",
     "TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE",

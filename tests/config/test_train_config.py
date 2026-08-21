@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import sys
@@ -1687,3 +1688,21 @@ def _profile_digest_mismatches(
         if actual != expected:
             mismatches[path] = {"expected": expected, "actual": actual}
     return mismatches
+
+
+def test_resolved_train_config_state_is_isolated_from_outside_references() -> None:
+    """2026-08-21 review claim 2: the frozen identity must not share live
+    mutable state with its artifact consumers — `to_artifact_dict` hands out
+    a deep copy, and construction severs the caller's aliases."""
+
+    resolved = load_train_config(FIXTURE_CONFIG)
+    artifact = resolved.to_artifact_dict()
+    original_run = copy.deepcopy(resolved.config_dict["run"])
+
+    artifact["config"]["run"] = {"mutated": True}
+    artifact["resolution"]["path_origins"].clear()
+
+    assert resolved.config_dict["run"] == original_run
+    fresh = resolved.to_artifact_dict()
+    assert fresh["config"]["run"] == original_run
+    assert fresh["resolution"]["path_origins"]

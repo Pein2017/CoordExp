@@ -499,3 +499,21 @@ def test_cache_contract_imports_no_orchestration_owner() -> None:
     assert "src.training.cache_workflow" not in imported
     assert "src.training.session" not in imported
     assert "src.training.pack_cache" not in imported
+    assert "src.training.micro_step_assembler" not in imported
+
+
+def test_micro_step_assembler_is_a_registered_determinant_owner() -> None:
+    owner = pack_cache.PACKING_CACHE_DETERMINANT_OWNERS["micro_step_assembler"]
+
+    assert owner == "src/training/micro_step_assembler.py"
+    assert (REPO_ROOT / owner).is_file()
+    assert pack_cache._DETERMINANT_REASONS["micro_step_assembler"]
+
+
+def test_micro_step_assembler_imports_no_orchestration_owner() -> None:
+    imported = _imported_modules(REPO_ROOT / "src/training/micro_step_assembler.py")
+
+    assert "src.training.pipeline" not in imported
+    assert "src.training.cache_workflow" not in imported
+    assert "src.training.session" not in imported
+    assert "src.training.pack_cache" not in imported

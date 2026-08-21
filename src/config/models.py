@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -587,9 +588,21 @@ class ResolvedTrainConfig:
     sources: tuple[ConfigSource, ...]
     path_origins: dict[str, PathOrigin]
 
+    def __post_init__(self) -> None:
+        # The frozen dataclass only freezes the field bindings. Deep-copying
+        # the mapping payloads at construction severs every alias the caller
+        # still holds, so no outside reference can mutate this identity's
+        # resolved state after the fact (2026-08-21 review claim 2). A full
+        # MappingProxyType wrap was rejected: consumers legitimately
+        # deep-copy `config_dict`, and mappingproxy is not deep-copyable.
+        object.__setattr__(self, "config_dict", copy.deepcopy(dict(self.config_dict)))
+        object.__setattr__(self, "path_origins", dict(self.path_origins))
+
     def to_artifact_dict(self) -> dict[str, Any]:
         return {
-            "config": self.config_dict,
+            # A fresh deep copy: the artifact writer must never hold a live
+            # reference into this frozen identity.
+            "config": copy.deepcopy(dict(self.config_dict)),
             "resolution": {
                 "schema_version": self.schema_version,
                 "loader_version": self.loader_version,

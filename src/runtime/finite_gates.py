@@ -12,6 +12,7 @@ import torch
 from src.common.errors import RuntimeContractError
 from src.losses import LossBundle
 from src.runtime.optimizer_boundary import (
+    TERMINAL_PRE_WRAPPER_FP16_SCALER_MISSING,
     TERMINAL_PRE_WRAPPER_MIXED_SCALER_OVERFLOW,
     TERMINAL_PRE_WRAPPER_SCALER_CANDIDACY_DIVERGENT,
     TERMINAL_PRE_WRAPPER_UNRELATED_UNSAFE,
@@ -156,6 +157,11 @@ class RankGradientFiniteReport:
     unscale_completed: bool = False
     scaler_found_inf: bool = False
     report_error_code: str | None = None
+    # The rank's resolved precision DECLARATION, carried so the all-rank
+    # consensus can distinguish a genuine bf16/fp32 boundary from a
+    # declared-fp16 boundary whose scaler is unreachable. It is never a
+    # rank-local raise condition: the refusal converges after the gather.
+    declared_fp16: bool = False
 
     def is_safe(self) -> bool:
         return (
@@ -198,6 +204,7 @@ class RankGradientFiniteReport:
             "scaler_active": self.scaler_active,
             "unscale_completed": self.unscale_completed,
             "scaler_found_inf": self.scaler_found_inf,
+            "declared_fp16": self.declared_fp16,
             "report_error_code": self.report_error_code,
         }
 
@@ -379,6 +386,16 @@ def _reduce_boundary_action(
 
     scaler_ranks = {report.rank for report in checked if report.scaler_active}
     if not scaler_ranks:
+        if all(report.declared_fp16 for report in checked):
+            # Every rank declares fp16 and NO rank can resolve a scaler. The
+            # launch gate refuses this state, so observing it here is
+            # post-launch scaler drift. It is terminal on every rank: this
+            # boundary is not the retained bf16/non-scaler path, so it may
+            # neither `apply` (unprotected, possibly still-scaled gradients)
+            # nor be reclassified as a SUPPORTED `not_attempted` completed
+            # boundary -- the regime itself is broken, not just this step's
+            # finiteness.
+            return (None, TERMINAL_PRE_WRAPPER_FP16_SCALER_MISSING)
         # Retained bf16/non-scaler path, unchanged: safe applies, unsafe is a
         # SUPPORTED `not_attempted` completed boundary.
         return ("apply" if all_safe else "not_attempted", None)
@@ -414,6 +431,7 @@ def build_gradient_finite_report(
     unscale_completed: bool = False,
     scaler_found_inf: bool = False,
     report_error_code: str | None = None,
+    declared_fp16: bool = False,
 ) -> RankGradientFiniteReport:
     squared_norm = 0.0
     saw_grad = False
@@ -460,6 +478,7 @@ def build_gradient_finite_report(
         unscale_completed=bool(unscale_completed),
         scaler_found_inf=bool(scaler_found_inf),
         report_error_code=report_error_code,
+        declared_fp16=bool(declared_fp16),
     )
 
 

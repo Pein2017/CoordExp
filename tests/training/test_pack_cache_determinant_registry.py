@@ -91,6 +91,7 @@ EXPECTED_DETERMINANT_OWNERS = {
     "qwen_fa2_boundaries": "src/qwen/fa2.py",
     "qwen_forward_payload": "src/qwen/forward.py",
     "micro_step_runtime_config": "src/training/cache_contract.py",
+    "micro_step_assembler": "src/training/micro_step_assembler.py",
     "micro_step_schema": "src/training/micro_steps.py",
     "cache_serializer": "src/training/pack_cache.py",
 }
@@ -1249,6 +1250,11 @@ WAVE0_DETERMINANT_OWNERS = {
     # owner entry and the registry schema version stay equal to Wave 0.
     "micro_step_runtime_config": "src/training/cache_contract.py",
     "micro_step_schema": "src/training/micro_steps.py",
+    # `close-coordexp-swift-review-p1s` P1-1 adds one determinant: the
+    # micro-step assembly owner extracted out of the cache workflow.  Wave-0
+    # bindings are otherwise unchanged; the addition is a declared
+    # fingerprint-changing conformance fix, not a rebinding.
+    "micro_step_assembler": "src/training/micro_step_assembler.py",
     "model_config_assets": "src/qwen/runtime_loading.py",
     "mrope_position_ids": "src/qwen/positions.py",
     "ordering_config": "src/data/examples.py",

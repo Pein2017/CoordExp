@@ -743,10 +743,11 @@ def build_terminal_boundary_row(
         "step": receipt.planned_step_id,
         "split": cache_workflow.TRAIN_SPLIT,
         "optimizer_update_status": receipt.optimizer_update_status,
-        # The terminal receipt carries no finite observation of its own and
-        # the gate decision is gone by this point, so the only truthful value
-        # is an explicit unavailability.
-        "finite_status": "unavailable",
+        # The receipt carries the gate decision's finite_status from the
+        # moment the terminal converged; it never comes from the previous
+        # completed step's lifecycle mirror. "unavailable" survives only for
+        # construction paths that genuinely never saw a gate decision.
+        "finite_status": receipt.finite_status,
         "optimizer_boundary_terminal": True,
         "optimizer_terminal_reason": receipt.terminal_reason,
         **_boundary_truth_fields(receipt),

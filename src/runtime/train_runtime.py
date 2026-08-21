@@ -70,6 +70,10 @@ def validate_accelerator_runtime(
                 "observed_mixed_precision": observed_precision,
             },
         )
+    _validate_fp16_scaler_contract(
+        accelerator,
+        mixed_precision=observed_precision,
+    )
     world_size = int(accelerator.num_processes)
     rank = int(accelerator.process_index)
     if world_size <= 0:
@@ -95,6 +99,67 @@ def validate_accelerator_runtime(
                 "accelerator_gradient_accumulation_steps": accelerator_accumulation,
             },
         )
+
+
+def _resolve_active_fp16_scaler(accelerator: Any) -> Any | None:
+    """The active fp16 GradScaler, or None for bf16/fp32/no-scaler runs.
+
+    This is the ONE declared scaler lookup. The launch gate below and the
+    per-boundary candidacy field both read it, so a scaler this lookup cannot
+    see is refused at launch instead of silently disappearing at the boundary.
+    """
+
+    if (
+        _normalize_mixed_precision(getattr(accelerator, "mixed_precision", None))
+        != "fp16"
+    ):
+        return None
+    scaler = getattr(accelerator, "scaler", None)
+    if scaler is None:
+        return None
+    if not getattr(scaler, "is_enabled", lambda: True)():
+        return None
+    return scaler
+
+
+def _validate_fp16_scaler_contract(
+    accelerator: Any,
+    *,
+    mixed_precision: str,
+) -> None:
+    """Declared fp16 REQUIRES an active, enabled GradScaler.
+
+    Decided from rank-local state only -- the resolved precision declaration
+    and the constructed Accelerator are identical on every rank by
+    construction -- so every rank refuses identically before the first
+    training collective and before any training-side mutation.
+
+    Without this gate a run that declares fp16 while its scaler is missing or
+    disabled resolves no scaler candidate at the optimizer boundary, takes the
+    retained bf16/non-scaler path, and applies optimizer updates with no
+    loss-scaling protection while telemetry misdeclares the regime.
+    """
+
+    if mixed_precision != "fp16":
+        return
+    if _resolve_active_fp16_scaler(accelerator) is not None:
+        return
+    scaler = getattr(accelerator, "scaler", None)
+    raise RuntimeContractError(
+        "training declares fp16 mixed precision but no active, enabled "
+        "GradScaler is reachable through the declared scaler lookup",
+        code="runtime.fp16_scaler_missing",
+        context={
+            "mixed_precision": mixed_precision,
+            "scaler_present": scaler is not None,
+            "scaler_enabled": (
+                None
+                if scaler is None
+                else bool(getattr(scaler, "is_enabled", lambda: True)())
+            ),
+            "scaler_type": None if scaler is None else type(scaler).__name__,
+        },
+    )
 
 
 class TrainRuntime:
@@ -128,6 +193,13 @@ class TrainRuntime:
         self.scheduler_step_count = 0
         self.zero_grad_count = 0
         self._unscaled_planned_step_id: int | None = None
+        # The resolved precision DECLARATION, independent of whether a scaler
+        # can currently be resolved. It travels on every gradient report so the
+        # all-rank boundary consensus can tell a genuine bf16/fp32 run apart
+        # from a declared-fp16 run whose scaler went missing.
+        self.declared_fp16 = (
+            _normalize_mixed_precision(expected_mixed_precision) == "fp16"
+        )
         self._validate_runtime_contract(
             runtime_batch=runtime_batch,
             expected_mixed_precision=expected_mixed_precision,
@@ -228,6 +300,11 @@ class TrainRuntime:
             unscale_completed=unscale_completed,
             scaler_found_inf=scaler_found_inf,
             report_error_code=report_error_code,
+            # The declaration, not the lookup result. It never raises here:
+            # the declared-fp16-without-a-scaler refusal converges from the
+            # gathered all-rank reports, so this rank enters the same
+            # collective every other rank is already in.
+            declared_fp16=self.declared_fp16,
         )
         return reduce_gradient_overflow_reports(self._gather_rank_reports(report))
 
@@ -256,6 +333,7 @@ class TrainRuntime:
                     group_count,
                     decision.terminal_reason,
                     unscale_completed=decision.unscale_completed,
+                    finite_status=decision.finite_status,
                 )
             )
         action = decision.optimizer_boundary_action
@@ -312,6 +390,7 @@ class TrainRuntime:
                 action=action,
                 outcome=outcome,
                 pre_call_learning_rates=pre_call_learning_rates,
+                finite_status=decision.finite_status,
             )
         )
 
@@ -544,14 +623,7 @@ class TrainRuntime:
     def _active_fp16_scaler(self) -> Any | None:
         """The active fp16 GradScaler, or None for bf16/fp32/no-scaler runs."""
 
-        if _normalize_mixed_precision(getattr(self.accelerator, "mixed_precision", None)) != "fp16":
-            return None
-        scaler = getattr(self.accelerator, "scaler", None)
-        if scaler is None:
-            return None
-        if not getattr(scaler, "is_enabled", lambda: True)():
-            return None
-        return scaler
+        return _resolve_active_fp16_scaler(self.accelerator)
 
     def _unscale_gradients_once(self, *, planned_step_id: int) -> None:
         if self._unscaled_planned_step_id == int(planned_step_id):

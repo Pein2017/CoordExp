@@ -92,6 +92,7 @@ PACKING_CACHE_DETERMINANT_OWNERS = {
     "qwen_fa2_boundaries": "src/qwen/fa2.py",
     "qwen_forward_payload": "src/qwen/forward.py",
     "micro_step_runtime_config": "src/training/cache_contract.py",
+    "micro_step_assembler": "src/training/micro_step_assembler.py",
     "micro_step_schema": "src/training/micro_steps.py",
     "cache_serializer": "src/training/pack_cache.py",
 }
@@ -127,6 +128,10 @@ _DETERMINANT_REASONS = {
     "qwen_forward_payload": "forward payload owner defines cached input consumption",
     "micro_step_runtime_config": (
         "production constructor config determines fields serialized into each micro-step"
+    ),
+    "micro_step_assembler": (
+        "assembler source composes config, identity, and stage outputs into each "
+        "serialized micro-step"
     ),
     "micro_step_schema": "SupervisedMicroStep schema defines the serialized payload shape",
     "cache_serializer": "serializer source defines committed payload representation",

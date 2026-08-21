@@ -1208,6 +1208,44 @@ def test_terminal_boundary_row_publishes_once_without_advancing_counters(
     assert runtime.batches == []
 
 
+def test_terminal_boundary_row_preserves_the_decisions_known_finite_status(
+    tmp_path: Path,
+) -> None:
+    """P2-1 (2026-08-21 review): the gate decision always computes a
+    finite_status before any terminal reason is chosen, so a terminal row
+    must carry that known truth instead of hardcoding "unavailable". The
+    stale-lifecycle protection stays: the value travels inside the receipt,
+    never from the previous completed step's lifecycle mirror."""
+
+    writer = _writer(tmp_path)
+    lifecycle: dict[str, object] = {
+        "completed_steps": 41,
+        "consumed_packs": 82,
+        # A stale mirror from the last COMPLETED step; must never leak.
+        "finite_status": "finite",
+    }
+    runtime = _TwoRankRuntime()
+    receipt = AppliedUpdateReceipt.terminal_not_attempted(
+        42,
+        2,
+        "pre_wrapper_mixed_scaler_overflow",
+        unscale_completed=True,
+        finite_status="non_finite",
+    )
+
+    reporting.publish_terminal_boundary_row(
+        writer=writer,
+        runtime=runtime,
+        lifecycle=lifecycle,
+        terminal=OptimizerBoundaryTerminal(receipt),
+    )
+
+    row = _row(writer)
+    assert row["finite_status"] == "non_finite"
+    assert row["optimizer_boundary_terminal"] is True
+    assert row["optimizer_terminal_reason"] == "pre_wrapper_mixed_scaler_overflow"
+
+
 def test_terminal_row_publication_failure_preserves_the_primary_boundary_code(
     tmp_path: Path,
 ) -> None:

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 import src.training.cache_workflow as cache_workflow
+import src.training.micro_step_assembler as micro_step_assembler
 from src.augmentation.processor import AugmentationMaterializationResult
 from src.config.models import PackingConfig
 from src.losses.vocab import TokenVocabularyGroups
@@ -110,8 +111,10 @@ def test_production_micro_step_constructor_serializes_runtime_determinants(
         "_build_encoded_examples_for_dataset",
         lambda *_args, **_kwargs: (encoded_example,),
     )
+    # Position construction now lives with the micro-step assembler owner; the
+    # substitution follows the call, the attested constructor fields do not.
     monkeypatch.setattr(
-        cache_workflow,
+        micro_step_assembler,
         "build_qwen_position_inputs",
         lambda pack, _examples, **_kwargs: {"pack_index": pack.pack_index},
     )

@@ -235,6 +235,13 @@ def imported_modules(path: Path, *, repo_root: Path) -> tuple[str, ...]:
                 module = node.module or ""
             if module:
                 names.add(module)
+                # `from <pkg> import <member>` may import a SUBMODULE under a
+                # plain-name alias; record the dotted form too so exact-match
+                # forbidden-target sets cannot be evaded (P2-4). Non-module
+                # members are a harmless over-approximation.
+                for alias in node.names:
+                    if alias.name != "*":
+                        names.add(f"{module}.{alias.name}")
     return tuple(sorted(names))
 
 
@@ -409,10 +416,18 @@ def test_import_parser_reads_absolute_and_relative_imports(tmp_path: Path) -> No
 
     observed = imported_modules(package / "probe.py", repo_root=tmp_path)
 
+    # P2-4 (2026-08-21 review): `from <pkg> import <member>` must also record
+    # the dotted member form — `from . import pack_cache` previously collapsed
+    # to just "src.training", letting a forbidden submodule import evade the
+    # exact-match target sets. Members that are plain names (functions) are a
+    # harmless over-approximation.
     assert observed == (
         "src.artifacts",
+        "src.artifacts.run_writer",
         "src.qwen.parity",
+        "src.qwen.parity.canonical_json_bytes",
         "src.training",
+        "src.training.pack_cache",
         "src.training.pipeline",
     )
 
@@ -434,5 +449,13 @@ def test_import_parser_resolves_relative_imports_inside_a_package_init(
     # A package `__init__.py` is its own package.  Resolving it as a plain module
     # would report `src.pipeline` for the first edge (hiding a forbidden reverse
     # import of `src.training.pipeline`), `src` for the second, and would drop the
-    # third entirely.
-    assert observed == ("src", "src.training", "src.training.pipeline")
+    # third entirely.  Member forms are recorded too (P2-4), so
+    # `from . import pack_cache` here surfaces `src.training.pack_cache`.
+    assert observed == (
+        "src",
+        "src.artifacts",
+        "src.training",
+        "src.training.pack_cache",
+        "src.training.pipeline",
+        "src.training.pipeline.run_training_pipeline",
+    )

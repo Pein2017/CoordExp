@@ -340,6 +340,10 @@ class LossRunner:
         # auxiliary is absent from the composition, so no local or global
         # denominator is built or gathered for it and it can never raise a
         # zero-eligible failure for the planned step.
+        # These local denominators MAY carry a zero eligible count: the
+        # zero-eligible decision belongs to `_resolve_streaming_denominators`,
+        # which makes it collectively when a gatherer exists (see that
+        # function's contract note).
         local_denominators = {
             active.binding.name: _build_denominator_from_token_sequences(
                 active.binding.name,
@@ -728,17 +732,17 @@ def _build_denominator_from_token_sequences(
                 eligible_segment_count += 1
             else:
                 skipped_segment_count += 1
-    if eligible_segment_count == 0:
-        raise LossContractError(
-            "segment_balanced reducer requires at least one eligible segment",
-            code="loss.segment_balanced_zero_eligible",
-            context={
-                "term": term_name,
-                "context_count": len(token_sequences),
-                "selected_atom_count": selected_atom_count,
-                "skipped_segment_count": skipped_segment_count,
-            },
-        )
+    # DELIBERATELY NO ZERO-ELIGIBLE RAISE HERE. This runs on every rank
+    # BEFORE `_resolve_streaming_denominators` reaches the cross-rank gather,
+    # so raising here would abort one rank while its peers are already inside
+    # the collective (spec `coordexp-swift-supervision-losses`, scenario "Zero
+    # eligible protected atoms on one rank": the rank-local eligible count
+    # MUST enter the all-rank decision before any rank raises, without
+    # deadlock). A zero count is therefore a legal carrier value here and
+    # nothing else: `_resolve_streaming_denominators` fails the planned step
+    # for it either locally (no collective to desync) or after the gather.
+    # Nothing downstream can silently consume it -- `segment_balanced_
+    # contribution` fails closed on a non-positive eligible count.
     return SegmentBalancedDenominator(
         term_name=term_name,
         denominator_scope="planned_step",
@@ -747,6 +751,31 @@ def _build_denominator_from_token_sequences(
         skipped_segment_count=skipped_segment_count,
         context_count=len(token_sequences),
     )
+
+
+def _raise_first_local_zero_eligible(
+    local_denominators: Mapping[str, SegmentBalancedDenominator],
+) -> None:
+    """Fail the planned step locally when no collective can be desynced.
+
+    Used only at world size one and when no gatherer exists; the raise is the
+    pre-existing one (same code, message, and context fields) moved out of
+    `_build_denominator_from_token_sequences`, in the same canonical term
+    order, so the first zero term is still the one reported.
+    """
+
+    for term_name, denominator in local_denominators.items():
+        if denominator.eligible_segment_count == 0:
+            raise LossContractError(
+                "segment_balanced reducer requires at least one eligible segment",
+                code="loss.segment_balanced_zero_eligible",
+                context={
+                    "term": term_name,
+                    "context_count": denominator.context_count,
+                    "selected_atom_count": denominator.selected_atom_count,
+                    "skipped_segment_count": denominator.skipped_segment_count,
+                },
+            )
 
 
 def _resolve_streaming_denominators(
@@ -760,12 +789,25 @@ def _resolve_streaming_denominators(
     world_size: int,
     rank: int,
 ) -> tuple[dict[str, SegmentBalancedDenominator], str, float]:
+    """THE single owner of the zero-eligible planned-step decision.
+
+    A rank-local zero eligible count is always a planned-step failure (the set
+    of failing runs is unchanged by the collective repair). The only thing the
+    world decides is WHEN the failure is raised: with a gatherer present every
+    rank -- zero-count ones included -- enters the gather first, and the
+    identical typed failure is converged from the gathered per-rank counts
+    afterwards. Without a collective there is nothing to desync, so the
+    pre-existing local raise stands.
+    """
+
     checked_world_size = _checked_world_size(world_size)
     checked_rank = _checked_rank(rank, world_size=checked_world_size)
     local = {str(name): denominator for name, denominator in local_denominators.items()}
     if checked_world_size == 1:
+        _raise_first_local_zero_eligible(local)
         return local, "planned_step", 1.0
     if denominator_gatherer is None:
+        _raise_first_local_zero_eligible(local)
         raise LossContractError(
             "multi-rank streaming segment-balanced losses require denominator gathering",
             code="loss.global_denominator_gather_unavailable",
@@ -802,6 +844,7 @@ def _merge_global_denominators(
         selected_atom_count = 0
         skipped_segment_count = 0
         context_count = 0
+        zero_eligible_ranks: list[int] = []
         for rank_index, rank_payload in enumerate(gathered_payloads):
             if not isinstance(rank_payload, Mapping):
                 raise LossContractError(
@@ -845,12 +888,15 @@ def _merge_global_denominators(
                         "rank_index": rank_index,
                     },
                 )
-            eligible_segment_count += _int_payload_field(
+            rank_eligible_segment_count = _int_payload_field(
                 term_payload,
                 "eligible_segment_count",
                 term=term_name,
                 rank_index=rank_index,
             )
+            if rank_eligible_segment_count == 0:
+                zero_eligible_ranks.append(rank_index)
+            eligible_segment_count += rank_eligible_segment_count
             selected_atom_count += _int_payload_field(
                 term_payload,
                 "selected_atom_count",
@@ -875,6 +921,27 @@ def _merge_global_denominators(
                 code="loss.segment_balanced_zero_eligible",
                 context={
                     "term": term_name,
+                    "selected_atom_count": selected_atom_count,
+                    "skipped_segment_count": skipped_segment_count,
+                    "context_count": context_count,
+                },
+            )
+        if zero_eligible_ranks:
+            # The collective half of the pre-existing rank-local check: a rank
+            # with zero eligible segments still fails the planned step (the
+            # failing-run set is unchanged), but the failure is now converged
+            # AFTER the gather, so every rank raises this identical typed
+            # error instead of one rank aborting into a hung collective.
+            # Built purely from gathered facts, so it is rank-symmetric.
+            raise LossContractError(
+                "segment_balanced reducer requires at least one eligible segment "
+                "on every rank",
+                code="loss.segment_balanced_zero_eligible",
+                context={
+                    "term": term_name,
+                    "zero_eligible_ranks": list(zero_eligible_ranks),
+                    "rank_count": len(gathered_payloads),
+                    "eligible_segment_count": eligible_segment_count,
                     "selected_atom_count": selected_atom_count,
                     "skipped_segment_count": skipped_segment_count,
                     "context_count": context_count,

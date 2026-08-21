@@ -1010,10 +1010,13 @@ def test_disjoint_shard_globally_zero_selected_term_matches_replicated_zero_weig
     below): driving the identical "globally zero selected term" scenario
     through the REAL `LossRunner.prepare_planned_step` shows it can never
     actually reach this code -- a pre-existing, Wave-4-independent
-    "at least one eligible segment" check in
-    `_build_denominator_from_token_sequences` fails closed first, on every
-    rank, before any forward/compute happens, in BOTH reduction modes
-    identically. The zero-denominator branch this test exercises is
+    "at least one eligible segment" check fails closed first, before any
+    forward/compute happens, in BOTH reduction modes identically. (Since
+    the 2026-08-21 zero-eligible fix the check is owned by
+    `_resolve_streaming_denominators`: replicated/ws==1 still raises
+    rank-locally, while disjoint_shard carries the zero counts through the
+    denominator gather and every rank converges the same typed failure
+    post-gather instead of desyncing.) The zero-denominator branch this test exercises is
     therefore defensive/convention-matching code, not a live correctness
     fix; it does not by itself establish production reachability -- see the
     end-to-end test below for that.
@@ -1074,19 +1077,20 @@ def test_disjoint_shard_eval_globally_zero_selected_term_is_rejected_identically
 
     Driving this through the real production `LossRunner` reveals that a
     globally-zero-selected term is actually UNREACHABLE past
-    `prepare_planned_step`: `_build_denominator_from_token_sequences`
-    (`src/losses/runner.py`) has a pre-existing, Wave-4-independent
-    "at least one eligible segment" fail-closed check that fires on the
-    RANK-LOCAL token sequences before any forward/compute happens -- and
-    since `eligible_segment_count > 0` necessarily implies
+    `prepare_planned_step`: a pre-existing, Wave-4-independent
+    "at least one eligible segment" fail-closed check (since the 2026-08-21
+    zero-eligible fix, owned by `_resolve_streaming_denominators` in
+    `src/losses/runner.py`) fires before any forward/compute happens -- in
+    `replicated` mode it raises on the rank-local counts directly, while in
+    `disjoint_shard` mode each rank carries its counts through the
+    denominator gather and every rank converges the same typed failure
+    post-gather. Since `eligible_segment_count > 0` necessarily implies
     `selected_atom_count > 0` for that same rank (a segment only becomes
     eligible by having at least one selected atom), no rank can ever reach
     `compute_micro_step`/`finalize_planned_step` with a term whose rank-local
-    `selected_count` is zero. This holds identically for `replicated` mode
-    (a single "rank" over the full set) and every rank of `disjoint_shard`
-    mode, so a *globally* zero-selected term (every rank locally zero) means
-    EVERY rank fails this same pre-existing check -- symmetrically, with the
-    identical error code, in both reduction modes.
+    `selected_count` is zero. A *globally* zero-selected term (every rank
+    locally zero) therefore fails this same check on every rank --
+    symmetrically, with the identical error code, in both reduction modes.
 
     Consequently, `_finalize_disjoint_shard_scalars`'s `weight <= 0.0`
     handling (the fix from the prior same-day review, kept unchanged

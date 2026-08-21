@@ -73,17 +73,14 @@ from src.packing import (
 from src.qwen import (
     QwenImageEncoding,
     attach_qwen_image_processor,
-    build_qwen_position_inputs,
     encode_rendered_example,
     load_qwen_components,
 )
 from src.runtime import TrainingSeedReceipt, seed_training_runtime
-from src.supervision import (
-    build_token_sequence_from_packed_supervision,
-    index_token_atoms_by_pack,
-)
+from src.supervision import index_token_atoms_by_pack
 from src.templates import render_example
 from src.training import control_plane
+from src.training.micro_step_assembler import assemble_micro_steps
 from src.training.micro_steps import SupervisedMicroStep
 from src.training.pack_cache import (
     DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
@@ -2056,42 +2053,18 @@ def _build_micro_steps_for_dataset(
     )
     supervision = build_packed_supervision(packs, encoded_examples)
     token_atoms_by_pack = index_token_atoms_by_pack(supervision)
-    micro_steps: list[SupervisedMicroStep] = []
-    for pack in packs:
-        pack_examples = _encoded_examples_for_pack(pack, encoded_examples)
-        position_inputs = build_qwen_position_inputs(
-            pack,
-            pack_examples,
-            image_token_id=_image_token_id(components),
-        )
-        token_sequence = build_token_sequence_from_packed_supervision(
-            pack,
-            token_atoms_by_pack.get(pack.pack_index, ()),
-        )
-        micro_steps.append(
-            SupervisedMicroStep(
-                pack=pack,
-                encoded_examples=pack_examples,
-                position_inputs=position_inputs,
-                token_sequence=token_sequence,
-                vocab_groups=vocab_groups,
-                metadata={
-                    "split": split,
-                    "pack_id": pack.pack_index,
-                    "example_ids": [segment.example_id for segment in pack.segments],
-                    "augmentation_receipt": augmentation_result.receipt,
-                    "pack_plan": {
-                        **pack_plan_receipt,
-                        "fragment_sha256": fragment_by_pack[pack.pack_index],
-                    },
-                },
-                expected_vocab_size=components.token_identity.tokenizer_vocab_size,
-                fa2_model_dtype=config.training.precision,
-                capture_fa2_branch=config.model.fa2_branch_proof == "every_forward",
-                require_fa2_branch_proof=config.model.fa2_branch_proof
-                == "every_forward",
-            )
-        )
+    micro_steps = assemble_micro_steps(
+        config,
+        components,
+        vocab_groups,
+        split=split,
+        packs=packs,
+        encoded_examples=encoded_examples,
+        augmentation_receipt=augmentation_result.receipt,
+        pack_plan_receipt=pack_plan_receipt,
+        fragment_by_pack=fragment_by_pack,
+        token_atoms_by_pack=token_atoms_by_pack,
+    )
     if not micro_steps:
         raise RuntimeContractError(
             "micro-step construction produced no packs",
@@ -2114,27 +2087,8 @@ def _augmentation_receipt_from_micro_steps(
     return None
 
 
-def _encoded_examples_for_pack(
-    pack: PackedSequence,
-    encoded_examples: Sequence[Any],
-) -> tuple[Any, ...]:
-    examples_by_id = {
-        str(getattr(example, "example_id")): example for example in encoded_examples
-    }
-    return tuple(examples_by_id[segment.example_id] for segment in pack.segments)
-
-
 def _object_order_seed(config: Any, example_id: str) -> int | None:
     del example_id
     if config.template.object_ordering == "random":
         return int(config.runtime.seed)
     return None
-
-
-def _image_token_id(components: Any) -> int | None:
-    tokenizer = getattr(components, "tokenizer", None)
-    convert = getattr(tokenizer, "convert_tokens_to_ids", None)
-    if not callable(convert):
-        return None
-    token_id = convert("<|image_pad|>")
-    return None if token_id is None else int(token_id)
