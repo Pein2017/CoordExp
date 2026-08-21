@@ -41,6 +41,10 @@ from scripts.research.human13_cuda_cpu_adapter import (
 from scripts.research.human13_live_model import (
     build_human13_adamw_runtime_ownership,
 )
+from scripts.research.human13_hf_shared_surface import (
+    admit_gradient_replay,
+    admit_sampled_group,
+)
 from src.config.models import RuntimeBatchResolution, RuntimeConfig
 from src.runtime import TrainRuntime
 
@@ -557,6 +561,87 @@ def test_cuda_adapter_binds_admitted_task2_groups_and_task3_ledgers() -> None:
 
     assert receipt.status == "applied_and_rolled_back"
     assert receipt.source_parameter_sha256 == receipt.restored_parameter_sha256
+
+
+def test_cuda_adapter_separates_runtime_composite_from_canonical_source_lineage() -> None:
+    surface, fixture = _task2_surface(module_name="_vertical_lineage_fixture_module")
+    runtime_composite = (
+        "7075330407046683df3616bfe31a5af9b87d0dd58edd87b1f205fce844cc4bf8"
+    )
+    canonical_source = fixture.trajectory_ledger.source_sha256
+    assert runtime_composite != canonical_source
+
+    sampled_groups = []
+    replay_groups = []
+    replay_tensors = {}
+    for sampled, replay in zip(
+        fixture.sampled_groups, fixture.replay_groups, strict=True
+    ):
+        identity = replace(
+            sampled.identity,
+            checkpoint_payload_sha256=runtime_composite,
+        )
+        rebuilt_sampled = admit_sampled_group(
+            plan=sampled.plan,
+            group_index=sampled.group_index,
+            expected_identity=identity,
+            identity=identity,
+            policy=sampled.policy,
+            requests=sampled.requests,
+            active_batch_steps=sampled.active_batch_steps,
+        )
+        rebuilt_replay = admit_gradient_replay(
+            sampled_group=rebuilt_sampled,
+            replay_identity=identity,
+            replayed_tokens=replay.replayed_tokens,
+            replay_processor_order=replay.replay_processor_order,
+            causal_gathers=replay.causal_gathers,
+        )
+        sampled_groups.append(rebuilt_sampled)
+        replay_groups.append(rebuilt_replay)
+        replay_tensors[rebuilt_replay.content_sha256] = fixture.replay_tensors[
+            replay.content_sha256
+        ]
+
+    separated = replace(
+        surface,
+        surface_identity=sampled_groups[0].identity,
+        sampled_groups=tuple(sampled_groups),
+        replay_groups=tuple(replay_groups),
+        replay_logprob_tensors=replay_tensors,
+    )
+    separated = replace(
+        separated,
+        proposal_binding=replace(
+            separated.proposal_binding,
+            source_checkpoint_sha256=canonical_source,
+            objective_ledger_sha256=compute_cuda_objective_binding_sha256(separated),
+        ),
+    )
+
+    drifted = replace(
+        separated,
+        proposal_binding=replace(
+            separated.proposal_binding,
+            source_checkpoint_sha256="e" * 64,
+            objective_ledger_sha256="0" * 64,
+        ),
+    )
+    drifted = replace(
+        drifted,
+        proposal_binding=replace(
+            drifted.proposal_binding,
+            objective_ledger_sha256=compute_cuda_objective_binding_sha256(drifted),
+        ),
+    )
+    with pytest.raises(
+        CudaAdapterError,
+        match="proposal and witness Source lineage differs",
+    ):
+        CudaHFVerticalAdapter(drifted)
+
+    receipt = CudaHFVerticalAdapter(separated).apply_and_rollback()
+    assert receipt.status == "applied_and_rolled_back"
 
 
 def test_cuda_adapter_rejects_detached_compiler_logits() -> None:

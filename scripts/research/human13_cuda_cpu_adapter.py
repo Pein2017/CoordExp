@@ -900,7 +900,8 @@ class CudaHFVerticalAdapter:
                 raise CudaAdapterError("Task2 replay graph owner differs from parameters")
         admitted = _require_scientific_ledger_admission(surface.trajectory_ledger)
         if (
-            admitted.source_sha256 != surface.surface_identity.checkpoint_payload_sha256
+            admitted.source_sha256
+            != surface.proposal_binding.source_checkpoint_sha256
             or admitted.logical_image_count != 1
             or admitted.logical_k != 16
             or tuple(image.image_id for image in admitted.images) != (1584,)

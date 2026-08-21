@@ -33,7 +33,11 @@ from scripts.research.human13_source_surface_reconciliation import (
     reconcile_source_surface,
 )
 from src.artifacts.json_values import json_sha256
-from src.data.geometry import COORD_TOKEN_PATTERN, coord_bins_to_pixel_xyxy, parse_coord_token
+from src.data.geometry import (
+    COORD_TOKEN_PATTERN,
+    coord_bins_to_pixel_xyxy,
+    parse_coord_token,
+)
 
 if TYPE_CHECKING:
     from scripts.research.human13_adamw_proposal_preservation import FrozenWitnessBank
@@ -91,15 +95,13 @@ class _CoordinateAliasDiagnosticContext:
     @staticmethod
     def _rows(values: Mapping[str, int]) -> tuple[tuple[str, int], ...]:
         return tuple(
-            (str(owner_id), int(row))
-            for owner_id, row in sorted(values.items())
+            (str(owner_id), int(row)) for owner_id, row in sorted(values.items())
         )
 
     @staticmethod
     def _membership(values: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
         return tuple(
-            (str(owner_id), str(member))
-            for owner_id, member in sorted(values.items())
+            (str(owner_id), str(member)) for owner_id, member in sorted(values.items())
         )
 
     @staticmethod
@@ -163,9 +165,7 @@ def _digest(value: object, *, field: str) -> str:
     try:
         int(value, 16)
     except ValueError as error:
-        raise HFNativeOneImageOwnerError(
-            f"{field} must be a SHA-256 digest"
-        ) from error
+        raise HFNativeOneImageOwnerError(f"{field} must be a SHA-256 digest") from error
     return value
 
 
@@ -245,7 +245,8 @@ class AdmittedPostApplyMarginProbe:
                 "schema_version": "human13_hf_native_post_apply_margin_probe.v1",
                 "source_parameter_state_sha256": self.source_parameter_state_sha256,
                 "source_decode_keys": [
-                    getattr(decode, "surface_key", None) for decode in self.source_decodes
+                    getattr(decode, "surface_key", None)
+                    for decode in self.source_decodes
                 ],
                 "witness_site_keys": [
                     getattr(site, "canonical_key", None) for site in self.witness_sites
@@ -292,9 +293,7 @@ class AdmittedPostApplyMarginProbe:
                 disposition="post_apply_margin_result_untyped",
             )
         result = {str(key): float(value) for key, value in measured.items()}
-        expected = {
-            str(getattr(site, "canonical_key")) for site in self.witness_sites
-        }
+        expected = {str(getattr(site, "canonical_key")) for site in self.witness_sites}
         if set(result) != expected or any(
             not math.isfinite(value) for value in result.values()
         ):
@@ -345,6 +344,7 @@ def construct_hf_native_one_image_trajectory_ledger(
     manifest_image: object,
     replay_groups: tuple[GradientReplayGroup, ...],
     canonical_projections: tuple[object, ...],
+    source_checkpoint_sha256: str,
 ) -> TrajectoryCreditLedger:
     """Build admitted K16 credit from HF replay and canonical parser spans.
 
@@ -358,12 +358,20 @@ def construct_hf_native_one_image_trajectory_ledger(
         Human13KUnionManifest,
     )
 
+    _digest(source_checkpoint_sha256, field="source_checkpoint_sha256")
     if not isinstance(manifest, Human13KUnionManifest):
-        raise HFNativeOneImageOwnerError("native trajectory requires canonical manifest")
+        raise HFNativeOneImageOwnerError(
+            "native trajectory requires canonical manifest"
+        )
     if getattr(manifest_image, "image_id", None) != 1584:
         raise HFNativeOneImageOwnerError("native trajectory image differs from 1584")
-    if tuple(getattr(image, "image_id", None) for image in manifest.images).count(1584) != 1:
-        raise HFNativeOneImageOwnerError("native trajectory manifest image is ambiguous")
+    if (
+        tuple(getattr(image, "image_id", None) for image in manifest.images).count(1584)
+        != 1
+    ):
+        raise HFNativeOneImageOwnerError(
+            "native trajectory manifest image is ambiguous"
+        )
     groups = tuple(replay_groups)
     if (
         len(groups) != 4
@@ -448,9 +456,7 @@ def construct_hf_native_one_image_trajectory_ledger(
 
     matcher = manifest.binding.matcher
     owners = tuple(getattr(manifest_image, "owners", ()))
-    trusted = tuple(
-        owner.owner_id for owner in owners if owner.stratum in {"G", "H"}
-    )
+    trusted = tuple(owner.owner_id for owner in owners if owner.stratum in {"G", "H"})
     legacy = tuple(owner.owner_id for owner in owners if owner.stratum == "M")
     if not trusted:
         raise HFNativeOneImageOwnerError("native trajectory has no trusted owners")
@@ -469,9 +475,7 @@ def construct_hf_native_one_image_trajectory_ledger(
         for item, projection in zip(evidence, parsed, strict=True)
     )
     trajectories, position_returns = credit._attach_rloo(trajectories)
-    sampled_hashes = tuple(
-        group.sampled_group.content_sha256 for group in groups
-    )
+    sampled_hashes = tuple(group.sampled_group.content_sha256 for group in groups)
     replay_hashes = tuple(group.content_sha256 for group in groups)
     projection_sha256 = json_sha256(
         [projection.to_dict() for projection in projections_live]
@@ -500,9 +504,8 @@ def construct_hf_native_one_image_trajectory_ledger(
         ),
         parser_projection_sha256=projection_sha256,
     )
-    identity = groups[0].sampled_group.identity
     ledger = credit._construct_trajectory_credit_ledger(
-        source_sha256=identity.checkpoint_payload_sha256,
+        source_sha256=source_checkpoint_sha256,
         manifest_sha256=credit._manifest_sha256(manifest),
         acquisition_sha256=acquisition_sha256,
         logical_image_count=1,
@@ -543,6 +546,7 @@ class PreAcquisitionSourceOwners:
     parameter_state_sha256: str
     manifest_sha256: str
     image_sha256: str
+    source_checkpoint_sha256: str
     source_audit_sha256s: tuple[tuple[float, str], ...]
     compiler_source_context: object
     witness_bank: object
@@ -555,8 +559,11 @@ class PreAcquisitionSourceOwners:
     surface_reconciliation: SourceSurfaceReconciliationReceipt | None = None
 
     def __post_init__(self) -> None:
+        _digest(self.source_checkpoint_sha256, field="source_checkpoint_sha256")
         if self.frozen_before_acquisition is not True:
-            raise HFNativeOneImageOwnerError("witness owner was frozen after acquisition")
+            raise HFNativeOneImageOwnerError(
+                "witness owner was frozen after acquisition"
+            )
         if self.sample_group_count_at_freeze or self.replay_group_count_at_freeze:
             raise HFNativeOneImageOwnerError(
                 "source compiler/witness owner must precede every sample/replay group"
@@ -600,6 +607,7 @@ class PreAcquisitionSourceOwners:
                 "parameter_state_sha256": self.parameter_state_sha256,
                 "manifest_sha256": self.manifest_sha256,
                 "image_sha256": self.image_sha256,
+                "source_checkpoint_sha256": self.source_checkpoint_sha256,
                 "source_audit_sha256s": [
                     [rp, digest] for rp, digest in self.source_audit_sha256s
                 ],
@@ -660,16 +668,14 @@ class HFNativeAdmissionRequest:
     replay_logprob_tensors: Mapping[str, object]
 
     def __post_init__(self) -> None:
-        if (
-            len(self.sampled_groups) != 4
-            or any(type(group) is not SampledHFGroup for group in self.sampled_groups)
+        if len(self.sampled_groups) != 4 or any(
+            type(group) is not SampledHFGroup for group in self.sampled_groups
         ):
             raise HFNativeOneImageOwnerError(
                 "HF-native admission rejects old/native-publication surrogates"
             )
-        if (
-            len(self.replay_groups) != 4
-            or any(type(group) is not GradientReplayGroup for group in self.replay_groups)
+        if len(self.replay_groups) != 4 or any(
+            type(group) is not GradientReplayGroup for group in self.replay_groups
         ):
             raise HFNativeOneImageOwnerError(
                 "HF-native admission requires four exact gradient replay groups"
@@ -722,7 +728,9 @@ class HFNativeTrajectoryAdmission:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise HFNativeOneImageOwnerError(f"{field} must be an object identity")
         if self.image_id != 1584:
-            raise HFNativeOneImageOwnerError("trajectory admission image differs from 1584")
+            raise HFNativeOneImageOwnerError(
+                "trajectory admission image differs from 1584"
+            )
         if len(self.sampled_group_sha256s) != 4 or len(self.replay_group_sha256s) != 4:
             raise HFNativeOneImageOwnerError(
                 "trajectory admission requires the same four sample/replay groups"
@@ -812,7 +820,9 @@ class HFNativeCompilerAdmission:
             if isinstance(value, bool) or not isinstance(value, int):
                 raise HFNativeOneImageOwnerError(f"{field} must be an object identity")
         if self.image_id != 1584:
-            raise HFNativeOneImageOwnerError("compiler admission image differs from 1584")
+            raise HFNativeOneImageOwnerError(
+                "compiler admission image differs from 1584"
+            )
         if len(self.source_boundary_sha256s) != 1:
             raise HFNativeOneImageOwnerError(
                 "one-image compiler requires one exact Source boundary"
@@ -887,14 +897,20 @@ class HFNativeOneImageAdmission:
 
     def __post_init__(self) -> None:
         if len(self.sampled_group_sha256s) != 4 or len(self.replay_group_sha256s) != 4:
-            raise HFNativeOneImageOwnerError("HF-native admission requires exact 4+4 hashes")
+            raise HFNativeOneImageOwnerError(
+                "HF-native admission requires exact 4+4 hashes"
+            )
         if self.runtime_evidence is None:
-            raise HFNativeOneImageOwnerError("HF-native admission lacks runtime evidence")
+            raise HFNativeOneImageOwnerError(
+                "HF-native admission lacks runtime evidence"
+            )
 
 
 @runtime_checkable
 class HFNativeOneImageOwner(Protocol):
-    def prepare_source(self, request: SourceOwnerRequest) -> PreAcquisitionSourceOwners: ...
+    def prepare_source(
+        self, request: SourceOwnerRequest
+    ) -> PreAcquisitionSourceOwners: ...
 
     def admit_after_replay(
         self,
@@ -915,9 +931,12 @@ class RepositoryHFNativeOneImageOwner:
     def __init__(
         self,
         *,
-        prepare_source_owner: Callable[[SourceOwnerRequest], PreAcquisitionSourceOwners],
+        prepare_source_owner: Callable[
+            [SourceOwnerRequest], PreAcquisitionSourceOwners
+        ],
         admit_hf_owners: Callable[
-            [HFNativeAdmissionRequest, PreAcquisitionSourceOwners], HFNativeOneImageAdmission
+            [HFNativeAdmissionRequest, PreAcquisitionSourceOwners],
+            HFNativeOneImageAdmission,
         ],
     ) -> None:
         if not callable(prepare_source_owner) or not callable(admit_hf_owners):
@@ -931,10 +950,9 @@ class RepositoryHFNativeOneImageOwner:
             raise HFNativeOneImageOwnerError(
                 "source owner returned an untyped pre-acquisition context"
             )
-        if (
-            result.session_object_id != id(request.session)
-            or result.model_object_id != id(getattr(request.assembly, "model"))
-        ):
+        if result.session_object_id != id(
+            request.session
+        ) or result.model_object_id != id(getattr(request.assembly, "model")):
             raise HFNativeOneImageOwnerError("source owner substituted live objects")
         return result
 
@@ -944,10 +962,14 @@ class RepositoryHFNativeOneImageOwner:
         source: PreAcquisitionSourceOwners,
     ) -> HFNativeOneImageAdmission:
         if source.session_object_id != id(request.session):
-            raise HFNativeOneImageOwnerError("acquisition session differs from Source owner")
+            raise HFNativeOneImageOwnerError(
+                "acquisition session differs from Source owner"
+            )
         result = self._admit(request, source)
         if type(result) is not HFNativeOneImageAdmission:
-            raise HFNativeOneImageOwnerError("HF-native owner returned an untyped admission")
+            raise HFNativeOneImageOwnerError(
+                "HF-native owner returned an untyped admission"
+            )
         sampled_live = cast(tuple[SampledHFGroup, ...], request.sampled_groups)
         replay_live = cast(tuple[GradientReplayGroup, ...], request.replay_groups)
         sampled_hashes = tuple(group.content_sha256 for group in sampled_live)
@@ -999,7 +1021,9 @@ def prepare_repository_source_owners(
     )
 
     identity = getattr(request.session, "source_owner_identity", None)
-    if identity is None or not callable(getattr(request.session, "raw_logit_rows", None)):
+    if identity is None or not callable(
+        getattr(request.session, "raw_logit_rows", None)
+    ):
         raise HFNativeOneImageOwnerError(
             "shared session lacks the public Source raw-logit owner surface"
         )
@@ -1118,9 +1142,7 @@ def prepare_repository_source_owners(
         for rp in (1.0, 1.1):
             generated = tuple(
                 int(value)
-                for value in cast(
-                    Sequence[Any], free_running(repetition_penalty=rp)
-                )
+                for value in cast(Sequence[Any], free_running(repetition_penalty=rp))
             )
             labels = _token_labels(generated)
             text = str(
@@ -1180,8 +1202,12 @@ def prepare_repository_source_owners(
         generated = output.get("generated_token_ids")
         predictions = output.get("predictions")
         provenance = output.get("provenance")
-        if not all(isinstance(value, list) for value in (prompt, generated, predictions)) or not isinstance(provenance, Mapping):
-            raise HFNativeOneImageOwnerError("Source audit lacks prompt/token/span evidence")
+        if not all(
+            isinstance(value, list) for value in (prompt, generated, predictions)
+        ) or not isinstance(provenance, Mapping):
+            raise HFNativeOneImageOwnerError(
+                "Source audit lacks prompt/token/span evidence"
+            )
         prompt_values = cast(list[Any], prompt)
         generated_values = cast(list[Any], generated)
         prediction_values = cast(list[Mapping[str, Any]], predictions)
@@ -1248,9 +1274,7 @@ def prepare_repository_source_owners(
                 surface=SOURCE_SURFACE,
                 repetition_penalty=float(rp),
                 canonical_payload=cast(Mapping[str, object], output),
-                owner_map=cast(
-                    Mapping[str, object], matched.get("owner_matches", {})
-                ),
+                owner_map=cast(Mapping[str, object], matched.get("owner_matches", {})),
             )
         )
         source_surface_snapshots.append(
@@ -1268,7 +1292,9 @@ def prepare_repository_source_owners(
         generated = output.get("generated_token_ids")
         predictions = output.get("predictions")
         provenance = output.get("provenance")
-        if not all(isinstance(value, list) for value in (prompt, generated, predictions)) or not isinstance(provenance, Mapping):
+        if not all(
+            isinstance(value, list) for value in (prompt, generated, predictions)
+        ) or not isinstance(provenance, Mapping):
             raise HFNativeOneImageOwnerError(
                 "BF16-native Source audit lacks prompt/token/span evidence"
             )
@@ -1315,9 +1341,7 @@ def prepare_repository_source_owners(
                 surface=TRAINING_SURFACE,
                 repetition_penalty=float(rp),
                 canonical_payload=cast(Mapping[str, object], output),
-                owner_map=cast(
-                    Mapping[str, object], matched.get("owner_matches", {})
-                ),
+                owner_map=cast(Mapping[str, object], matched.get("owner_matches", {})),
             )
         )
         training_surface_snapshots.append(
@@ -1493,30 +1517,16 @@ def prepare_repository_source_owners(
             coordinate_roles=cast(
                 Mapping[int, tuple[str, str]], values["coordinate_roles"]
             ),
-            source_boxes=cast(
-                Mapping[str, Sequence[float]], values["source_boxes"]
-            ),
+            source_boxes=cast(Mapping[str, Sequence[float]], values["source_boxes"]),
             training_boxes=cast(
                 Mapping[str, Sequence[float]], values["training_boxes"]
             ),
-            source_owner_rows=cast(
-                Mapping[str, int], values["source_owner_rows"]
-            ),
-            training_owner_rows=cast(
-                Mapping[str, int], values["training_owner_rows"]
-            ),
-            source_membership=cast(
-                Mapping[str, str], values["source_membership"]
-            ),
-            training_membership=cast(
-                Mapping[str, str], values["training_membership"]
-            ),
-            source_protected_g=cast(
-                Collection[str], values["source_protected_g"]
-            ),
-            training_protected_g=cast(
-                Collection[str], values["training_protected_g"]
-            ),
+            source_owner_rows=cast(Mapping[str, int], values["source_owner_rows"]),
+            training_owner_rows=cast(Mapping[str, int], values["training_owner_rows"]),
+            source_membership=cast(Mapping[str, str], values["source_membership"]),
+            training_membership=cast(Mapping[str, str], values["training_membership"]),
+            source_protected_g=cast(Collection[str], values["source_protected_g"]),
+            training_protected_g=cast(Collection[str], values["training_protected_g"]),
         )
 
     def coordinate_alias_check() -> CoordinateAliasReconciliation:
@@ -1525,7 +1535,10 @@ def prepare_repository_source_owners(
             return cached
         diagnostic_context = _CoordinateAliasDiagnosticContext()
         try:
-            if len(source_surface_snapshots) != 2 or len(training_surface_snapshots) != 2:
+            if (
+                len(source_surface_snapshots) != 2
+                or len(training_surface_snapshots) != 2
+            ):
                 result = _diagnostic_failure(
                     "independent Source baseline count differs",
                     source_token_ids=(
@@ -1543,8 +1556,12 @@ def prepare_repository_source_owners(
                 return result
             all_evidence: list[object] = []
             for snapshot_index, source_snapshot in enumerate(source_surface_snapshots):
-                source_rp, source_ids_raw, source_predictions, source_match = source_snapshot
-                training_rp, training_ids_raw, _training_predictions, training_match = training_surface_snapshots[snapshot_index]
+                source_rp, source_ids_raw, source_predictions, source_match = (
+                    source_snapshot
+                )
+                training_rp, training_ids_raw, _training_predictions, training_match = (
+                    training_surface_snapshots[snapshot_index]
+                )
                 if float(source_rp) != float(training_rp):
                     result = _diagnostic_failure(
                         "independent Source repetition-penalty baselines differ",
@@ -1652,11 +1669,21 @@ def prepare_repository_source_owners(
                         coordinate_roles
                     ),
                     source_boxes=_CoordinateAliasDiagnosticContext._boxes(source_boxes),
-                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(training_boxes),
-                    source_owner_rows=_CoordinateAliasDiagnosticContext._rows(source_owner_rows),
-                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(training_owner_rows),
-                    source_membership=_CoordinateAliasDiagnosticContext._membership(source_membership),
-                    training_membership=_CoordinateAliasDiagnosticContext._membership(training_membership),
+                    training_boxes=_CoordinateAliasDiagnosticContext._boxes(
+                        training_boxes
+                    ),
+                    source_owner_rows=_CoordinateAliasDiagnosticContext._rows(
+                        source_owner_rows
+                    ),
+                    training_owner_rows=_CoordinateAliasDiagnosticContext._rows(
+                        training_owner_rows
+                    ),
+                    source_membership=_CoordinateAliasDiagnosticContext._membership(
+                        source_membership
+                    ),
+                    training_membership=_CoordinateAliasDiagnosticContext._membership(
+                        training_membership
+                    ),
                     source_protected_g=source_protected_g,
                     training_protected_g=training_protected_g,
                 )
@@ -1697,9 +1724,7 @@ def prepare_repository_source_owners(
         return result
 
     def freeze_and_check() -> int:
-        frozen_bank["bank"] = measurement.freeze_witness_bank(
-            binding=witness_binding
-        )
+        frozen_bank["bank"] = measurement.freeze_witness_bank(binding=witness_binding)
         # Cross-surface token/row/owner divergence is diagnostic-only.  The
         # checker is still executed and persisted, but it cannot block the
         # independent BF16 policy baseline after the witness has frozen.
@@ -1710,9 +1735,7 @@ def prepare_repository_source_owners(
         SourceSurfaceReconciliationRequest(
             training_identity=identity,
             source_runtime_identities=tuple(source_runtime_identities),
-            source_checkpoint_payload_sha256s=tuple(
-                source_checkpoint_payload_sha256s
-            ),
+            source_checkpoint_payload_sha256s=tuple(source_checkpoint_payload_sha256s),
             source_checkpoint_paths=tuple(source_checkpoint_paths),
             training_checkpoint_path=str(
                 getattr(
@@ -1729,7 +1752,9 @@ def prepare_repository_source_owners(
                     request.config,
                     "base_model_path",
                     getattr(
-                        getattr(getattr(request.assembly, "plan", None), "source", None),
+                        getattr(
+                            getattr(request.assembly, "plan", None), "source", None
+                        ),
                         "base_model_path",
                         None,
                     ),
@@ -1771,10 +1796,13 @@ def prepare_repository_source_owners(
         parameter_state_sha256=identity.parameter_state_sha256,
         manifest_sha256=getattr(request.config, "manifest_sha256"),
         image_sha256=identity.image_sha256,
+        source_checkpoint_sha256=witness_binding.source_checkpoint_sha256,
         source_audit_sha256s=tuple(training_audit_hashes),
-        compiler_source_context=tuple(boundaries), witness_bank=bank,
+        compiler_source_context=tuple(boundaries),
+        witness_bank=bank,
         realized_margin_probe=realized_margin_probe,
-        frozen_before_acquisition=True, sample_group_count_at_freeze=0,
+        frozen_before_acquisition=True,
+        sample_group_count_at_freeze=0,
         replay_group_count_at_freeze=0,
         source_decodes=tuple(sealed),
         compiler_raw_logits=compiler_raw_logits,
@@ -1795,8 +1823,8 @@ def admit_repository_hf_native_trajectory(
         manifest_image=request.manifest_image,
         replay_groups=replayed,
         canonical_projections=canonical_projections,
+        source_checkpoint_sha256=source.source_checkpoint_sha256,
     )
-    identity = sampled[0].identity
     return HFNativeTrajectoryAdmission(
         source_owner_sha256=source.content_sha256,
         session_object_id=id(request.session),
@@ -1805,13 +1833,11 @@ def admit_repository_hf_native_trajectory(
         manifest_sha256=source.manifest_sha256,
         image_id=1584,
         image_sha256=source.image_sha256,
-        source_checkpoint_sha256=identity.checkpoint_payload_sha256,
-        parameter_state_sha256=identity.parameter_state_sha256,
+        source_checkpoint_sha256=source.source_checkpoint_sha256,
+        parameter_state_sha256=sampled[0].identity.parameter_state_sha256,
         sampled_group_sha256s=tuple(group.content_sha256 for group in sampled),
         replay_group_sha256s=tuple(group.content_sha256 for group in replayed),
-        parser_projection_sha256=cast(Any, ledger).images[
-            0
-        ].parser_projection_sha256,
+        parser_projection_sha256=cast(Any, ledger).images[0].parser_projection_sha256,
         trajectory_ledger=ledger,
     )
 
@@ -1848,7 +1874,6 @@ def admit_repository_hf_native_compiler(
         boundary,
         raw_logits=cast(Any, raw_logits),
     )
-    identity = cast(SampledHFGroup, request.sampled_groups[0]).identity
     return HFNativeCompilerAdmission(
         source_owner_sha256=source.content_sha256,
         trajectory_admission_sha256=trajectory.content_sha256,
@@ -1858,7 +1883,7 @@ def admit_repository_hf_native_compiler(
         manifest_sha256=source.manifest_sha256,
         image_id=1584,
         image_sha256=source.image_sha256,
-        source_checkpoint_sha256=identity.checkpoint_payload_sha256,
+        source_checkpoint_sha256=source.source_checkpoint_sha256,
         source_boundary_sha256s=(boundary.source_decode_sha256,),
         compiler_ledger=ledger,
         compiler_compact_logits=compact,
@@ -1897,9 +1922,7 @@ def build_repository_hf_native_owner(
             request: HFNativeAdmissionRequest,
             _source: PreAcquisitionSourceOwners,
         ) -> tuple[object, ...]:
-            projector = getattr(
-                request.session, "canonical_replay_projections", None
-            )
+            projector = getattr(request.session, "canonical_replay_projections", None)
             if not callable(projector):
                 raise HFNativeOneImageOwnerError(
                     "shared session lacks the HF-native canonical projector"
@@ -1927,6 +1950,7 @@ def build_repository_hf_native_owner(
         canonical_projection_provider = project_canonical_replays
 
     if admit_trajectory is None and canonical_projection_provider is not None:
+
         def admit_native_trajectory(
             request: HFNativeAdmissionRequest,
             source: PreAcquisitionSourceOwners,
@@ -1976,7 +2000,10 @@ def build_repository_hf_native_owner(
             raise HFNativeOneImageOwnerError(
                 "HF-native sampled groups differ from the four replay groups"
             )
-        if tuple(group.sampled_group.content_sha256 for group in replayed) != sampled_hashes:
+        if (
+            tuple(group.sampled_group.content_sha256 for group in replayed)
+            != sampled_hashes
+        ):
             raise HFNativeOneImageOwnerError(
                 "HF-native replay groups differ from sampled group lineage"
             )
@@ -1998,7 +2025,7 @@ def build_repository_hf_native_owner(
             manifest_sha256,
             1584,
             image_sha256,
-            identity.checkpoint_payload_sha256,
+            source.source_checkpoint_sha256,
             identity.parameter_state_sha256,
             sampled_hashes,
             replay_hashes,
@@ -2050,7 +2077,7 @@ def build_repository_hf_native_owner(
             manifest_sha256,
             1584,
             image_sha256,
-            identity.checkpoint_payload_sha256,
+            source.source_checkpoint_sha256,
             boundary_hashes,
         )
         observed_compiler = (
@@ -2099,6 +2126,7 @@ def build_repository_hf_native_owner(
         prepare_source_owner=prepare_source_owner,
         admit_hf_owners=admit_hf_owners,
     )
+
 
 __all__ = [
     "AdmittedPostApplyMarginProbe",

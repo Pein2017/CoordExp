@@ -61,6 +61,13 @@ _FRONTIER_PATH = Path(
     "source/rp100/frontier.json"
 )
 
+_SOURCE_ASSEMBLY_COMPOSITE_SHA256 = (
+    "7075330407046683df3616bfe31a5af9b87d0dd58edd87b1f205fce844cc4bf8"
+)
+_SOURCE_CHECKPOINT_TREE_SHA256 = (
+    "99678ea954c4b37abbf704432dbf43a8df5ce37cd07ebcef4e11f263782dca47"
+)
+
 
 def _shared_groups() -> tuple[
     tuple[SampledHFGroup, ...], tuple[GradientReplayGroup, ...]
@@ -101,6 +108,7 @@ def _source(*, session: object, model: object) -> PreAcquisitionSourceOwners:
         parameter_state_sha256="a" * 64,
         manifest_sha256="b" * 64,
         image_sha256="c" * 64,
+        source_checkpoint_sha256="d" * 64,
         source_audit_sha256s=(
             (1.0, json_sha256({"rp": 1.0})),
             (1.1, json_sha256({"rp": 1.1})),
@@ -176,12 +184,8 @@ def test_public_owner_seam_preserves_exact_live_objects_and_phase_order() -> Non
             source_owner_sha256=frozen.content_sha256,
             session_object_id=id(session),
             model_object_id=id(model),
-            sampled_group_sha256s=tuple(
-                group.content_sha256 for group in sampled_live
-            ),
-            replay_group_sha256s=tuple(
-                group.content_sha256 for group in replay_live
-            ),
+            sampled_group_sha256s=tuple(group.content_sha256 for group in sampled_live),
+            replay_group_sha256s=tuple(group.content_sha256 for group in replay_live),
             runtime_evidence=admitted_evidence,
         )
 
@@ -272,6 +276,7 @@ def test_public_backend_freezes_source_owner_before_sampling(tmp_path: Path) -> 
             parameter_state_sha256="a" * 64,
             manifest_sha256=config.manifest_sha256 or "b" * 64,
             image_sha256=image.image_sha256,
+            source_checkpoint_sha256="d" * 64,
             source_audit_sha256s=tuple(
                 (rp, json_sha256(output))
                 for rp, output in request.source_audits.items()
@@ -296,12 +301,8 @@ def test_public_backend_freezes_source_owner_before_sampling(tmp_path: Path) -> 
             source_owner_sha256=_source.content_sha256,
             session_object_id=id(session),
             model_object_id=id(model),
-            sampled_group_sha256s=tuple(
-                group.content_sha256 for group in sampled_live
-            ),
-            replay_group_sha256s=tuple(
-                group.content_sha256 for group in replay_live
-            ),
+            sampled_group_sha256s=tuple(group.content_sha256 for group in sampled_live),
+            replay_group_sha256s=tuple(group.content_sha256 for group in replay_live),
             runtime_evidence=evidence,
         )
 
@@ -433,7 +434,9 @@ def test_pre_acquisition_owner_failure_stops_before_k16(tmp_path: Path) -> None:
 
 def _complete_owner_fixture() -> Any:
     fixture_path = Path(__file__).with_name("test_human13_all_hf_vertical.py")
-    spec = importlib.util.spec_from_file_location("_complete_owner_fixture", fixture_path)
+    spec = importlib.util.spec_from_file_location(
+        "_complete_owner_fixture", fixture_path
+    )
     assert spec is not None and spec.loader is not None
     fixture = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = fixture
@@ -459,6 +462,7 @@ def test_repository_builder_joins_exact_native_trajectory_and_compiler_graph() -
         parameter_state_sha256=identity.parameter_state_sha256,
         manifest_sha256=complete.trajectory_ledger.manifest_sha256,
         image_sha256=identity.image_sha256,
+        source_checkpoint_sha256=identity.checkpoint_payload_sha256,
         source_audit_sha256s=(
             (1.0, json_sha256({"rp": 1.0})),
             (1.1, json_sha256({"rp": 1.1})),
@@ -625,8 +629,15 @@ def test_native_adapters_build_one_image_registry_ledgers_and_graph_compact() ->
         manifest_image=image,
         replay_groups=complete.replay_groups,
         canonical_projections=tuple(projections),
+        source_checkpoint_sha256=_SOURCE_CHECKPOINT_TREE_SHA256,
     )
     assert _require_scientific_ledger_admission(trajectory) is trajectory
+    assert (
+        complete.replay_groups[0].sampled_group.identity.checkpoint_payload_sha256
+        != _SOURCE_CHECKPOINT_TREE_SHA256
+    )
+    assert _SOURCE_ASSEMBLY_COMPOSITE_SHA256 != _SOURCE_CHECKPOINT_TREE_SHA256
+    assert trajectory.source_sha256 == _SOURCE_CHECKPOINT_TREE_SHA256
     assert trajectory.logical_image_count == 1
     assert trajectory.logical_k == 16
 
@@ -643,9 +654,7 @@ def test_native_adapters_build_one_image_registry_ledgers_and_graph_compact() ->
     )
     site = compiler.images[0].site
     assert site is not None
-    raw_logits = torch.zeros(
-        (1, max(site.compact_token_ids) + 1), requires_grad=True
-    )
+    raw_logits = torch.zeros((1, max(site.compact_token_ids) + 1), requires_grad=True)
     compact = admit_hf_native_compiler_compact_logits(
         compiler, boundary, raw_logits=raw_logits
     )
@@ -779,6 +788,7 @@ def test_default_native_callbacks_use_same_session_source_graph(tmp_path: Path) 
         parameter_state_sha256=identity.parameter_state_sha256,
         manifest_sha256=_manifest_sha256(manifest),
         image_sha256=cast(str, image.image_sha256),
+        source_checkpoint_sha256=identity.checkpoint_payload_sha256,
         source_audit_sha256s=(
             (1.0, json_sha256({"rp": 1.0})),
             (1.1, json_sha256({"rp": 1.1})),
@@ -891,9 +901,7 @@ def test_default_native_callbacks_use_same_session_source_graph(tmp_path: Path) 
             trajectory_ledger_sha256=cast(
                 Any, observed.trajectory_ledger
             ).content_sha256,
-            compiler_ledger_sha256=cast(
-                Any, observed.compiler_ledger
-            ).content_sha256,
+            compiler_ledger_sha256=cast(Any, observed.compiler_ledger).content_sha256,
         )
 
     backend = ExistingOwnersProductionBackend(
@@ -1043,8 +1051,10 @@ def test_backend_close_releases_training_and_pre_acquisition_owner_graph(
             parameter_state_sha256="a" * 64,
             manifest_sha256=config.manifest_sha256 or "b" * 64,
             image_sha256="c" * 64,
+            source_checkpoint_sha256="d" * 64,
             source_audit_sha256s=tuple(
-                (rp, json_sha256(output)) for rp, output in request.source_audits.items()
+                (rp, json_sha256(output))
+                for rp, output in request.source_audits.items()
             ),
             compiler_source_context=object(),
             witness_bank=object(),

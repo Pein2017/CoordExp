@@ -107,7 +107,7 @@
 
 ## 5. Bounded execution and closure
 
-- [ ] 5.1 Inspect live GPU/process/artifact state, reserve two suitable cards and
+- [x] 5.1 Inspect live GPU/process/artifact state, reserve two suitable cards and
   the immutable one-image root, and run the guarded no-update image-1584
   preflight: freeze the BF16-native Source witness/compiler inputs and fp32
   Source baselines, publish cross-surface divergence as diagnostic-only, and

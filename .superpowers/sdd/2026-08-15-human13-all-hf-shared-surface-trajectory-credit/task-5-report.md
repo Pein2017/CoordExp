@@ -449,3 +449,36 @@ Human-13 CPU/injected set passes 415 tests with two warnings. Ruff, scoped Pyrig
 compileall, strict OpenSpec, Serena diagnostics, and diff checks are clean.
 The review correction remains CPU/injected evidence only: no GPU/model/network,
 K16, backward, optimizer, checkpoint, or update action was run.
+
+## Admitted preflight and canonical Source-lineage correction
+
+The committed-HEAD production preflight at
+`2026-08-21-human13-all-hf-shared-surface-trajectory-credit-vertical/one-image-preflight-fresh-primary-6aa30b7-v1/`
+completed with `preflight_admitted`.  It loaded the BF16/FA2 training surface
+and fp32/SDPA audit surface, admitted the canonical CUDA and fresh-AdamW
+ownership receipts, froze both Source audit RPs, and stopped before K16 with
+sample/replay/backward/optimizer counts all zero.  Task 5.1 is therefore
+complete; this remains preflight evidence rather than algorithm evidence.
+
+The subsequent single authorized scientific root
+`one-image-scientific-fresh-primary-6aa30b7-v1/` completed all four K16
+sample/replay groups with 463/463 forwards and strict internal parity, then
+failed before backward with `proposal and witness Source lineage differs`.
+The failure was a representation mismatch: Task2 used the runtime assembly
+composite `7075330407046683df3616bfe31a5af9b87d0dd58edd87b1f205fce844cc4bf8`,
+whereas the BF16 Source witness used the canonical checkpoint-tree digest
+`99678ea954c4b37abbf704432dbf43a8df5ce37cd07ebcef4e11f263782dca47`.
+Checkpoint path, base model, adapter, embedding delta, manifest, image, and
+protected owners were otherwise unchanged.
+
+The bounded correction keeps those identities separate.  The composite still
+owns exact sampling/replay surface admission; the canonical checkpoint-tree
+digest now flows once from the frozen Source owner through the trajectory,
+compiler, proposal, and witness lineage.  The CUDA adapter compares trajectory
+Source to proposal Source while retaining the independent strict
+proposal-versus-witness and sampled/replay composite checks.  The exact-constant
+regression was observed RED at the old join and is GREEN after the correction;
+mutating canonical Source still fails closed.  Focused and adjacent CPU tests
+pass 81 cases, scoped Pyright and Serena report no diagnostics, strict OpenSpec
+and diff checks pass, and an independent localized recheck reports no P0/P1.
+No new GPU/model/K16/backward/update execution is part of this correction.
