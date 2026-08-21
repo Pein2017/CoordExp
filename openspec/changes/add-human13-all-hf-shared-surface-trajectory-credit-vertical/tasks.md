@@ -99,6 +99,11 @@
   not algorithm evidence; the phase must also persist the ownership receipt
   digest and reject missing backend hooks, non-cosine schedulers, or live
   param-group hyperparameter drift before K16.
+- [x] 4.6a Add the strict canonical CUDA logical-device identity receipt and
+  revalidation, plus append-only training/audit/evaluator action-attempt
+  accounting with explicit legacy terminal schema dispatch. This is CPU-only
+  production-admission evidence; it does not mark the real prelaunch or any
+  scientific Task-5 execution complete.
 
 ## 5. Bounded execution and closure
 

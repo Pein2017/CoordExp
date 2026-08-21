@@ -19,6 +19,7 @@ import errno
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
 from typing import Any, Literal, Protocol, cast, runtime_checkable
@@ -40,6 +41,7 @@ from scripts.research.human13_source_surface_reconciliation import (
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
+    ActionAttemptReceipt,
     OneImageTerminalReceipt,
     RunReservationIdentity,
     SourceAssemblyReceipt,
@@ -64,6 +66,29 @@ def _digest(value: object, field: str) -> str:
     except ValueError as error:
         raise ValueError(f"{field} must be a SHA-256 digest") from error
     return value
+
+
+_SENSITIVE_OUTPUT_RE = re.compile(
+    r"(?i)((?:authorization|api[_-]?key|token|password|secret)\s*[:=]\s*)"
+    r"(?:bearer\s+)?[^\s,;]+"
+)
+
+
+def _bounded_output_provenance(value: object) -> tuple[str | None, str | None]:
+    if value is None:
+        return None, None
+    if isinstance(value, bytes):
+        raw = value
+        text = value.decode("utf-8", errors="replace")
+    else:
+        text = str(value)
+        raw = text.encode("utf-8", errors="replace")
+    redacted = _SENSITIVE_OUTPUT_RE.sub(r"\1<redacted>", text)
+    return hashlib_sha256(raw), redacted[-512:]
+
+
+def _exception_message_sha256(error: BaseException) -> str:
+    return hashlib_sha256(str(error).encode("utf-8", errors="replace"))
 
 
 def _canonical_bytes(value: Mapping[str, Any]) -> bytes:
@@ -1491,6 +1516,8 @@ class ProductionOneImageServices:
         self._reserved = False
         self._phase_index = 0
         self._phase_hashes: list[str] = []
+        self._phase_names: list[str] = []
+        self._action_attempts: list[ActionAttemptReceipt] = []
         self._adapter: SplitCudaAdapter | None = None
         self._proposal: object | None = None
         self._rollback_attempted = False
@@ -1528,6 +1555,13 @@ class ProductionOneImageServices:
 
     def action_counters(self) -> dict[str, int]:
         return dict(self._actions)
+
+    def action_attempts(self) -> tuple[ActionAttemptReceipt, ...]:
+        return tuple(self._action_attempts)
+
+    @property
+    def phase_receipts(self) -> tuple[str, ...]:
+        return tuple(self._phase_names)
 
     @property
     def source_reproduced(self) -> bool:
@@ -1585,6 +1619,7 @@ class ProductionOneImageServices:
             payload | {"content_sha256": content},
         )
         self._phase_hashes.append(content)
+        self._phase_names.append(phase)
         return content
 
     def _reservation_payload(
@@ -1805,31 +1840,235 @@ class ProductionOneImageServices:
         )
         return receipt
 
+    def _known_device_identity_sha256(self, session: object | None = None) -> str | None:
+        for owner in (session, self._backend):
+            if owner is None:
+                continue
+            for name in (
+                "cuda_device_identity_sha256",
+                "canonical_device_identity_sha256",
+            ):
+                candidate = getattr(owner, name, None)
+                if isinstance(candidate, str) and len(candidate) == 64:
+                    try:
+                        int(candidate, 16)
+                    except ValueError:
+                        continue
+                    return candidate
+            identity = getattr(owner, "cuda_device_identity", None)
+            candidate = getattr(identity, "content_sha256", None)
+            if isinstance(candidate, str) and len(candidate) == 64:
+                return candidate
+            assembly = getattr(owner, "assembly", None)
+            ownership = getattr(assembly, "runtime_ownership", None)
+            nested_identity = getattr(ownership, "cuda_identity", None)
+            candidate = getattr(nested_identity, "content_sha256", None)
+            if isinstance(candidate, str) and len(candidate) == 64:
+                return candidate
+        return None
+
+    def _start_action_attempt(
+        self,
+        boundary: Literal["training_open", "audit_open", "audit_evaluator"],
+        resource_role: Literal["gpu0_training", "gpu1_audit"],
+    ) -> None:
+        if self._reserved:
+            self._record(
+                f"{boundary}_attempt",
+                status="started",
+                evidence={
+                    "boundary": boundary,
+                    "resource_role": resource_role,
+                    "attempted_count": 1,
+                },
+            )
+
+    def _finish_action_attempt(
+        self,
+        boundary: Literal["training_open", "audit_open", "audit_evaluator"],
+        resource_role: Literal["gpu0_training", "gpu1_audit"],
+        *,
+        session: object | None = None,
+        error: BaseException | None = None,
+    ) -> ActionAttemptReceipt:
+        stdout_hash, stdout_tail = _bounded_output_provenance(
+            None if error is None else getattr(error, "stdout", None)
+        )
+        stderr_hash, stderr_tail = _bounded_output_provenance(
+            None if error is None else getattr(error, "stderr", None)
+        )
+        completed = error is None
+        receipt = ActionAttemptReceipt(
+            schema_version="human13_action_attempt.v1",
+            boundary=boundary,
+            resource_role=resource_role,
+            attempted_count=1,
+            completed_count=int(completed),
+            failed_count=int(not completed),
+            session_admitted=boundary in {"training_open", "audit_open"} and completed,
+            canonical_device_identity_sha256=self._known_device_identity_sha256(session),
+            exception_type=None if error is None else type(error).__name__,
+            exception_message_sha256=(
+                None if error is None else _exception_message_sha256(error)
+            ),
+            stdout_sha256=stdout_hash,
+            stdout_tail=stdout_tail,
+            stderr_sha256=stderr_hash,
+            stderr_tail=stderr_tail,
+        )
+        self._action_attempts.append(receipt)
+        if self._reserved:
+            self._record(
+                f"{boundary}_{'admitted' if completed else 'failed'}",
+                status="completed" if completed else "failed",
+                evidence={"action_attempt": receipt.to_dict()},
+            )
+        return receipt
+
+    def _close_unpublished_training_handle(
+        self, session: object, *, primary: BaseException
+    ) -> None:
+        """Release a backend handle when phase publication fails before return."""
+
+        close = getattr(self._backend, "close_training", None)
+        if not callable(close):
+            primary.add_note("training handle could not be closed: backend has no close_training")
+            return
+        try:
+            close(session)
+        except BaseException as error:
+            primary.add_note(
+                "training handle cleanup failed: "
+                f"{type(error).__name__}: {error}"
+            )
+
+    def _close_unpublished_audit_handle(
+        self, session: object, *, primary: BaseException
+    ) -> None:
+        close = getattr(self._backend, "close_audit", None)
+        if not callable(close):
+            primary.add_note("audit handle could not be closed: backend has no close_audit")
+            return
+        try:
+            close(session)
+        except BaseException as error:
+            primary.add_note(
+                "audit handle cleanup failed: "
+                f"{type(error).__name__}: {error}"
+            )
+
+    def _mark_unpublished_attempt_failed(
+        self,
+        boundary: Literal["training_open", "audit_open"],
+        resource_role: Literal["gpu0_training", "gpu1_audit"],
+        error: BaseException,
+        session: object | None = None,
+    ) -> None:
+        phase = f"{boundary}_admitted"
+        if phase in self._phase_names:
+            return
+        previous = self._action_attempts[-1] if self._action_attempts else None
+        if previous is not None and (
+            previous.boundary != boundary or previous.resource_role != resource_role
+        ):
+            previous = None
+        canonical_identity = (
+            previous.canonical_device_identity_sha256
+            if previous is not None
+            else self._known_device_identity_sha256(session)
+        )
+        failed = ActionAttemptReceipt(
+            schema_version="human13_action_attempt.v1",
+            boundary=boundary,
+            resource_role=resource_role,
+            attempted_count=1,
+            completed_count=0,
+            failed_count=1,
+            session_admitted=False,
+            canonical_device_identity_sha256=canonical_identity,
+            exception_type=type(error).__name__,
+            exception_message_sha256=_exception_message_sha256(error),
+        )
+        if previous is None:
+            self._action_attempts.append(failed)
+            return
+        self._action_attempts[-1] = failed
+
     def open_training(
         self, config: EntryConfig, resources: DualGPUResourceReceipt
     ) -> object:
-        session = self._backend.open_training(config, resources)
+        self._start_action_attempt("training_open", "gpu0_training")
+        try:
+            session = self._backend.open_training(config, resources)
+        except BaseException as error:
+            try:
+                self._finish_action_attempt(
+                    "training_open", "gpu0_training", error=error
+                )
+            except BaseException as evidence_error:
+                error.add_note(
+                    "training-open failure evidence publication failed: "
+                    f"{type(evidence_error).__name__}: {evidence_error}"
+                )
+            raise
+        try:
+            self._record("gpu0_training_open")
+            self._finish_action_attempt("training_open", "gpu0_training", session=session)
+        except BaseException as error:
+            self._close_unpublished_training_handle(session, primary=error)
+            self._mark_unpublished_attempt_failed(
+                "training_open", "gpu0_training", error, session
+            )
+            raise
         self._actions["model_loads"] += 1
         self._actions["gpu_allocations"] += 1
-        self._record("gpu0_training_open")
         return session
 
     def open_audit(
         self, config: EntryConfig, resources: DualGPUResourceReceipt
     ) -> object:
-        session = self._backend.open_audit(config, resources)
+        self._start_action_attempt("audit_open", "gpu1_audit")
+        try:
+            session = self._backend.open_audit(config, resources)
+        except BaseException as error:
+            try:
+                self._finish_action_attempt("audit_open", "gpu1_audit", error=error)
+            except BaseException as evidence_error:
+                error.add_note(
+                    "audit-open failure evidence publication failed: "
+                    f"{type(evidence_error).__name__}: {evidence_error}"
+                )
+            raise
+        try:
+            self._record("gpu1_fp32_sdpa_audit_open")
+            self._finish_action_attempt("audit_open", "gpu1_audit", session=session)
+        except BaseException as error:
+            self._close_unpublished_audit_handle(session, primary=error)
+            self._mark_unpublished_attempt_failed(
+                "audit_open", "gpu1_audit", error, session
+            )
+            raise
         self._audit_session = session
         self._actions["model_loads"] += 1
         self._actions["gpu_allocations"] += 1
-        self._record("gpu1_fp32_sdpa_audit_open")
         return session
 
     def source_audit(
         self, audit_session: object, repetition_penalty: float
     ) -> Mapping[str, Any]:
+        self._start_action_attempt("audit_evaluator", "gpu1_audit")
         try:
             result = self._backend.source_audit(audit_session, repetition_penalty)
         except BaseException as error:
+            try:
+                self._finish_action_attempt(
+                    "audit_evaluator", "gpu1_audit", session=audit_session, error=error
+                )
+            except BaseException as evidence_error:
+                error.add_note(
+                    "source-audit failure evidence publication failed: "
+                    f"{type(evidence_error).__name__}: {evidence_error}"
+                )
             self._source_only_close_requested = True
             if bool(getattr(error, "_source_audit_forward_observed", False)):
                 observed = getattr(error, "_source_audit_result", None)
@@ -1874,6 +2113,9 @@ class ProductionOneImageServices:
                         except BaseException:
                             pass
             raise
+        self._finish_action_attempt(
+            "audit_evaluator", "gpu1_audit", session=audit_session
+        )
         self._source_audits[repetition_penalty] = result
         self._actions["forwards"] += 1
         self._record(f"source_audit_rp_{repetition_penalty:g}")
@@ -2256,17 +2498,36 @@ class ProductionOneImageServices:
     def proposal_audit(
         self, audit_session: object, private: object, repetition_penalty: float
     ) -> Mapping[str, Any]:
+        self._start_action_attempt("audit_evaluator", "gpu1_audit")
         try:
             result = self._backend.proposal_audit(
                 audit_session, private, repetition_penalty
             )
         except Exception as error:
-            self._record(
-                f"proposal_audit_rp_{repetition_penalty:g}",
-                status="failed",
-                evidence={"error": f"{type(error).__name__}: {error}"},
-            )
+            try:
+                self._finish_action_attempt(
+                    "audit_evaluator", "gpu1_audit", session=audit_session, error=error
+                )
+            except BaseException as evidence_error:
+                error.add_note(
+                    "proposal-audit failure evidence publication failed: "
+                    f"{type(evidence_error).__name__}: {evidence_error}"
+                )
+            try:
+                self._record(
+                    f"proposal_audit_rp_{repetition_penalty:g}",
+                    status="failed",
+                    evidence={"error": f"{type(error).__name__}: {error}"},
+                )
+            except BaseException as evidence_error:
+                error.add_note(
+                    "proposal-audit failure phase publication failed: "
+                    f"{type(evidence_error).__name__}: {evidence_error}"
+                )
             raise
+        self._finish_action_attempt(
+            "audit_evaluator", "gpu1_audit", session=audit_session
+        )
         self._actions["forwards"] += 1
         self._record(f"proposal_audit_rp_{repetition_penalty:g}")
         return result
@@ -2419,6 +2680,10 @@ class ProductionOneImageServices:
         ):
             raise ValueError(
                 "terminal phase ledger differs from durable phase evidence"
+            )
+        if tuple(terminal.action_attempts) != tuple(self._action_attempts):
+            raise ValueError(
+                "terminal action attempts differ from durable physical-boundary evidence"
             )
         context_failure = self._pending_context_failure
         observed_failure = self._observed_acquisition_failure

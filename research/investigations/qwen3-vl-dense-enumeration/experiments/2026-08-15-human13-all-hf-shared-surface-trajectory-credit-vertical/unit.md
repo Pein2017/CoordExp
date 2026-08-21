@@ -304,3 +304,22 @@ The follow-up correction makes the same receipt phase-bound: exact cosine
 LambdaLR semantics and live group `betas`/`eps` are checked independently of
 defaults, and a missing backend hook or unhashed ownership return fails before
 the first K16 call. The service writes the ownership digest before acquisition.
+
+## CPU-only production admission correction: device identity and action attempts
+
+The post-prepare ownership receipt now binds a canonical CUDA logical-device
+identity. The only accepted indexless Accelerate representation is the
+world-one/process-zero/`DistributedType.NO` current logical CUDA device with
+one explicitly indexed trainable surface and an unambiguous local visibility
+mapping. Explicit conflicts and multi-device or ambiguous visibility remain
+fail-closed. The identity is revalidated after acquisition; CPU ownership
+verticals retain their existing CPU contract and do not fabricate CUDA proof.
+
+The service separately records typed append-only attempts around training open,
+audit open, and audit evaluator/loader boundaries. Admitted counters increase
+only after a handle is published; failed physical loaders retain exception and
+bounded redacted output provenance while reporting no admitted session or
+close. New terminals use an explicit v2 dispatch with the attempt list, while
+legacy v1 terminals reload unchanged and do not receive inferred counters.
+This correction is infrastructure/admission evidence only: no GPU/model/K16,
+objective, learning-rate, surface, or scientific outcome was run or changed.

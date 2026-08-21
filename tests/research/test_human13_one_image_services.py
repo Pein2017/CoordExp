@@ -26,6 +26,7 @@ import scripts.research.human13_one_image_services as service_owner
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
+    LEGACY_TERMINAL_SCHEMA_VERSION,
     GPUResource,
     OneImageTerminalReceipt,
     OutputRootReceipt,
@@ -853,6 +854,13 @@ def test_production_owner_orders_apply_checkpoint_audits_then_one_rollback_and_r
     assert services.fallback_used is False
     assert services.action_counters()["backwards"] == 1
     assert services.action_counters()["optimizer_steps"] == 1
+    evaluator_attempts = [
+        attempt
+        for attempt in services.action_attempts()
+        if attempt.boundary == "audit_evaluator"
+    ]
+    assert len(evaluator_attempts) == 4
+    assert all(attempt.completed_count == 1 for attempt in evaluator_attempts)
     phase_files = sorted((successor / "receipts").glob("*.json"))
     assert phase_files
 
@@ -1182,6 +1190,34 @@ def test_terminal_receipt_is_written_immutably_with_recovery_lineage(
     assert payload["phase_receipt_count"] == len(services.phase_receipt_sha256s)
     assert payload["phase_ledger_sha256"] == services.phase_ledger_sha256
     with pytest.raises(FileExistsError):
+        services.persist_terminal(terminal)
+
+
+def test_terminal_persistence_requires_action_attempt_lineage(tmp_path: Path) -> None:
+    backend = _Backend()
+    services, _stale_path, successor = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    services.open_training(config, resources)
+    resource = ResourceReceipt(
+        resources,
+        OutputRootReceipt(str(successor.resolve()), False),
+        phase_count=len(services.phase_receipt_sha256s),
+        retry_count=0,
+        promoted_checkpoint=False,
+        reservation_identity=services.reservation_identity,
+    )
+    terminal = OneImageTerminalReceipt(
+        terminal_status="update_failure",
+        resource_receipt=resource,
+        model_actions=services.action_counters(),
+        phase_receipt_sha256s=services.phase_receipt_sha256s,
+        phase_ledger_sha256=services.phase_ledger_sha256,
+        failure_reason="unbound action attempt",
+    )
+
+    with pytest.raises(ValueError, match="action attempts"):
         services.persist_terminal(terminal)
 
 
@@ -1633,3 +1669,248 @@ def root_for_checkpoint(tmp_path: Path) -> Path:
     path = tmp_path / "private" / "checkpoints" / "step-1"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def test_loader_failure_records_truthful_attempt_without_admitted_session(
+    tmp_path: Path,
+) -> None:
+    class LoaderError(RuntimeError):
+        stdout = (
+            "Loading checkpoint shards: 1/2\n"
+            "secret=redact-me Authorization: Bearer fake-review-secret"
+        )
+        stderr = "cuda allocation failed"
+
+    class LoaderFailureBackend(_Backend):
+        def open_training(self, config: EntryConfig, resources: Any) -> object:
+            del config, resources
+            self.events.append("open_training")
+            raise LoaderError("checkpoint loader failed")
+
+    backend = LoaderFailureBackend()
+    services, _, _ = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+
+    with pytest.raises(RuntimeError, match="checkpoint loader failed"):
+        services.open_training(config, resources)
+
+    attempts = services.action_attempts()
+    assert len(attempts) == 1
+    attempt = attempts[0]
+    assert attempt.boundary == "training_open"
+    assert attempt.attempted_count == 1
+    assert attempt.completed_count == 0
+    assert attempt.failed_count == 1
+    assert attempt.session_admitted is False
+    assert attempt.exception_type == "LoaderError"
+    assert attempt.stdout_tail is not None
+    assert len(attempt.stdout_tail) <= 512
+    assert "secret=redact-me" not in attempt.stdout_tail
+    assert "fake-review-secret" not in attempt.stdout_tail
+    assert services.action_counters()["model_loads"] == 0
+    assert services.action_counters()["gpu_allocations"] == 0
+    assert "training_open_attempt" in services.phase_receipts
+    assert "training_open_failed" in services.phase_receipts
+
+
+def test_successful_open_records_one_admitted_session_attempt(
+    tmp_path: Path,
+) -> None:
+    backend = _Backend()
+    services, _, _ = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+
+    services.open_training(config, resources)
+    services.open_audit(config, resources)
+
+    attempts = services.action_attempts()
+    assert [(item.boundary, item.session_admitted) for item in attempts] == [
+        ("training_open", True),
+        ("audit_open", True),
+    ]
+    assert all(item.attempted_count == 1 for item in attempts)
+    assert all(item.completed_count == 1 for item in attempts)
+    assert all(item.failed_count == 0 for item in attempts)
+    assert services.action_counters()["model_loads"] == 2
+
+
+def test_nested_runtime_ownership_device_hash_is_recorded(tmp_path: Path) -> None:
+    class NestedIdentityBackend(_Backend):
+        def open_training(self, config: EntryConfig, resources: Any) -> object:
+            del config, resources
+            self.events.append("open_training")
+            identity = SimpleNamespace(content_sha256="a" * 64)
+            ownership = SimpleNamespace(cuda_identity=identity)
+            assembly = SimpleNamespace(runtime_ownership=ownership)
+            return SimpleNamespace(assembly=assembly)
+
+    backend = NestedIdentityBackend()
+    services, _, _ = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    services.open_training(config, resources)
+
+    assert services.action_attempts()[0].canonical_device_identity_sha256 == "a" * 64
+
+
+def test_phase_publication_preserves_loader_error_and_closes_unpublished_handle(
+    tmp_path: Path,
+) -> None:
+    class LoaderError(RuntimeError):
+        pass
+
+    class JournalFailureBackend(_Backend):
+        def open_training(self, config: EntryConfig, resources: Any) -> object:
+            del config, resources
+            self.events.append("open_training")
+            raise LoaderError("primary-loader-error")
+
+    def phase_writer(path: Path, value: dict[str, Any]) -> None:
+        del value
+        if path.name.endswith("training_open_failed.json"):
+            raise OSError("secondary-journal-error")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    backend = JournalFailureBackend()
+    services, _, _ = _services(tmp_path, backend, phase_writer=phase_writer)
+    services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    with pytest.raises(LoaderError, match="primary-loader-error") as raised:
+        services.open_training(_config(tmp_path), _resources())
+
+    assert any("evidence publication failed" in note for note in raised.value.__notes__)
+    assert "close_training" not in backend.events
+
+
+def test_phase_publication_failure_closes_opened_training_handle(
+    tmp_path: Path,
+) -> None:
+    def phase_writer(path: Path, value: dict[str, Any]) -> None:
+        del value
+        if path.name.endswith("training_open_admitted.json"):
+            raise OSError("secondary-journal-error")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    backend = _Backend()
+    services, _, _ = _services(tmp_path, backend, phase_writer=phase_writer)
+    services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    with pytest.raises(OSError, match="secondary-journal-error"):
+        services.open_training(_config(tmp_path), _resources())
+
+    assert backend.events[-1] == "close_training"
+    assert services.action_counters()["model_loads"] == 0
+    attempt = services.action_attempts()[0]
+    assert attempt.completed_count == 0
+    assert attempt.failed_count == 1
+    assert attempt.session_admitted is False
+
+
+def test_followup_open_phase_failure_also_marks_attempt_failed(
+    tmp_path: Path,
+) -> None:
+    def phase_writer(path: Path, value: dict[str, Any]) -> None:
+        del value
+        if path.name.endswith("gpu0_training_open.json"):
+            raise OSError("open-phase-journal-error")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+
+    backend = _Backend()
+    services, _, _ = _services(tmp_path, backend, phase_writer=phase_writer)
+    services.preflight_source_assembly(_config(tmp_path), _resources())
+
+    with pytest.raises(OSError, match="open-phase-journal-error"):
+        services.open_training(_config(tmp_path), _resources())
+
+    assert backend.events[-1] == "close_training"
+    attempt = services.action_attempts()[0]
+    assert attempt.completed_count == 0
+    assert attempt.failed_count == 1
+    assert attempt.session_admitted is False
+
+
+def test_evaluator_failure_records_failed_audit_attempt(tmp_path: Path) -> None:
+    backend = _Backend(fail="source_audit")
+    services, _, _ = _services(tmp_path, backend)
+    config = _config(tmp_path)
+    resources = _resources()
+    services.preflight_source_assembly(config, resources)
+    audit = services.open_audit(config, resources)
+
+    with pytest.raises(RuntimeError, match="source reconciliation failure"):
+        services.source_audit(audit, 1.0)
+
+    failed = [item for item in services.action_attempts() if item.failed_count]
+    assert len(failed) == 1
+    assert failed[0].boundary == "audit_evaluator"
+    assert failed[0].session_admitted is False
+    assert services.action_counters()["model_loads"] == 1
+
+
+def test_pre_reservation_loader_failure_keeps_original_error_and_zero_actions(
+    tmp_path: Path,
+) -> None:
+    class PreReservationFailureBackend(_Backend):
+        def open_training(self, config: EntryConfig, resources: Any) -> object:
+            del config, resources
+            raise RuntimeError("original loader failure")
+
+    backend = PreReservationFailureBackend()
+    services, _, root = _services(tmp_path, backend)
+    with pytest.raises(RuntimeError, match="original loader failure"):
+        services.open_training(_config(tmp_path), _resources())
+
+    assert not root.exists()
+    assert all(value == 0 for value in services.action_counters().values())
+    assert services.action_attempts()[0].failed_count == 1
+
+
+def test_legacy_terminal_schema_dispatches_without_action_attempts(tmp_path: Path) -> None:
+    terminal = OneImageTerminalReceipt(
+        terminal_status="update_failure",
+        resource_receipt=ResourceReceipt(
+            _resources(),
+            OutputRootReceipt(str(tmp_path / "root"), False),
+            phase_count=0,
+            retry_count=0,
+            promoted_checkpoint=False,
+            sampled_request_count=0,
+            sampled_group_count=0,
+            sample_forward_count=0,
+            replay_forward_count=0,
+            total_forward_count=0,
+            no_cache_forward_count=0,
+            backward_count=0,
+        ),
+        model_actions={
+            "model_loads": 0,
+            "forwards": 0,
+            "backwards": 0,
+            "optimizer_steps": 0,
+            "gpu_allocations": 0,
+            "network_actions": 0,
+            "output_creations": 0,
+        },
+        failure_reason="historical failure",
+    )
+    legacy = terminal.to_dict()
+    legacy.pop("action_attempts")
+    legacy.pop("action_attempt_count")
+    legacy["schema_version"] = LEGACY_TERMINAL_SCHEMA_VERSION
+    legacy.pop("content_sha256")
+    legacy["content_sha256"] = json_sha256(legacy)
+
+    restored = OneImageTerminalReceipt.from_dict(legacy)
+    assert restored.action_attempts == ()
+    assert restored.failure_reason == "historical failure"
+    assert restored.schema_version == LEGACY_TERMINAL_SCHEMA_VERSION
+    assert restored.content_sha256 == legacy["content_sha256"]
+    assert restored.to_dict() == legacy

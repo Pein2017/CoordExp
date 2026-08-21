@@ -393,3 +393,59 @@ the content-addressed ownership receipt, which is written as the immutable
 unhashed receipts fail closed before acquisition. Real Accelerate CPU tests and
 the private apply/rollback vertical remain green; this is lifecycle evidence,
 not an algorithm result.
+
+## CPU-only device identity and physical-action accounting correction
+
+The next bounded correction is explicitly prelaunch infrastructure evidence;
+it does not reopen a GPU/model/K16 attempt and does not modify any historical
+root.  The live Accelerate representation that caused the prior blocker was
+the indexless logical `cuda` device under world-one `DistributedType.NO`, while
+the trainable surface exposed `cuda:0`.  The shared ownership boundary now
+publishes `Human13CudaLogicalDeviceIdentity`, a content-addressed receipt that
+retains the raw accelerator string/index, every trainable parameter device,
+current CUDA index, visibility tokens, and process/distribution evidence.  An
+indexless device resolves only under that exact single-process, one-indexed,
+unambiguous visibility contract; explicit conflicts, multi-device trainables,
+ambiguous visibility, unavailable current indices, or process drift reject
+before K16.  The same canonical identity is rebuilt after acquisition.
+
+Training-open, audit-open, and audit-evaluator/loader boundaries now publish
+append-only `ActionAttemptReceipt` records.  Attempted, completed/admitted, and
+failed counts are separate from admitted model/GPU counters; counters advance
+only after a handle is published.  A loader exception therefore records one
+attempt, zero completed, one failed, its exception type/message hash, and
+bounded redacted stdout/stderr provenance without claiming a close for a
+nonexistent session.  New terminals use explicit v2 dispatch with the typed
+attempt list; legacy v1 terminal payloads reload against their original hash
+without inferred counters or artifact rewriting.
+
+Observed CPU evidence: the focused live-model/service/entry/AdamW suites pass
+166 tests; target Ruff, scoped Pyright, compileall, strict OpenSpec validation,
+and diff checks are clean. Fault-first tests cover indexless `cuda` -> `cuda:0`,
+true index/multi-device/visibility rejection, loader and evaluator failures,
+bounded redaction, pre-reservation zero-action behavior, successful admitted
+sessions, and v1 terminal reload. No GPU/model/network/K16/backward/update or
+checkpoint action occurred. Task 4.6 and Tasks 5.1–5.5 remain unchecked; this
+correction is production-admission telemetry only.
+
+### Localized review correction
+
+The independent review found one shared publication seam rather than a
+scientific issue. The correction now requires the terminal's typed action
+attempt tuple to equal the service's append-only attempt ledger before
+`terminal.json` is written. Legacy v1 objects retain v1 serialization and
+their original content hash when reloaded; v2 alone carries the attempt list.
+Training/audit open failures preserve the primary loader exception when a
+secondary phase write fails, and a phase publication failure after a backend
+handle is created closes that unpublished handle before returning. Proposal
+audits are counted as evaluator attempts as well as source audits. Nested
+live assembly ownership now contributes the canonical CUDA identity hash, and
+unset visibility is rejected instead of being treated as an implicit alias.
+Bearer and key-like output tails are bounded and redacted before persistence.
+
+The final focused device/service suite passes 80 tests; the combined
+live-model/AdamW/service/entry suite passes 172 tests. The broader adjacent
+Human-13 CPU/injected set passes 415 tests with two warnings. Ruff, scoped Pyright,
+compileall, strict OpenSpec, Serena diagnostics, and diff checks are clean.
+The review correction remains CPU/injected evidence only: no GPU/model/network,
+K16, backward, optimizer, checkpoint, or update action was run.

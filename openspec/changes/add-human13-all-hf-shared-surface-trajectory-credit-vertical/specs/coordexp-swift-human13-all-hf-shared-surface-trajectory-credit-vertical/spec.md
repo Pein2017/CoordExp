@@ -297,3 +297,51 @@ before K16 acquisition.
   optimizer group changes `betas`/`eps` while defaults remain unchanged
 - **THEN** ownership admission rejects before acquisition and the receipt hash
   cannot remain valid
+
+### Requirement: Canonical CUDA identity and physical-boundary attempt receipts
+
+The live runtime SHALL bind a canonical logical CUDA identity to the
+post-prepare ownership receipt. Indexless `cuda` SHALL resolve only under
+world-one, process/local-process zero, `DistributedType.NO`, available current
+logical CUDA, one explicitly indexed trainable device, and an unambiguous local
+visibility mapping. Explicit index conflicts, multi-device trainables,
+process/index drift, unavailable current indices, and ambiguous mappings SHALL
+fail closed. The entry SHALL rebuild and compare this identity after K16.
+
+Training-open, audit-open, and audit-evaluator/loader boundaries SHALL publish
+append-only typed attempt receipts with attempted/completed/failed counts,
+admitted-session status, exception type/message hash, canonical device hash when
+known, and bounded redacted stdout/stderr provenance when available. Admitted
+model/GPU counters SHALL increment only after a handle is published. A failed
+loader SHALL report one attempt, zero completed, one failed, and no close claim
+for a nonexistent session.
+
+#### Scenario: Indexless Accelerate device is the current logical CUDA device
+
+- **WHEN** world-one `DistributedType.NO` exposes `cuda`, the current logical
+  index is zero, visibility is `0,1`, and every trainable parameter is on
+  `cuda:0`
+- **THEN** the receipt resolves canonical `cuda:0` and binds all raw evidence
+  without accepting a generic string alias
+
+#### Scenario: Physical loader fails before handle publication
+
+- **WHEN** training assembly/checkpoint loading raises before returning a
+  handle
+- **THEN** the durable phase and terminal contain attempt=1, completed=0,
+  failed=1, exception/provenance evidence, admitted model/GPU counters remain
+  zero, and no training-session close is claimed
+
+#### Scenario: Historical terminal receipt is reloaded
+
+- **WHEN** a legacy v1 terminal lacks the new attempt list
+- **THEN** explicit schema dispatch reloads its original hash without inferring
+  or rewriting action counters
+
+#### Scenario: Action-attempt lineage and publication failure are fail-closed
+
+The terminal SHALL carry exactly the action-attempt tuple published by the
+service phase ledger. If phase publication fails after a backend returns a
+handle, the service SHALL close that unpublished handle before surfacing the
+phase error; a loader exception SHALL remain the primary exception when its
+failed-evidence write also fails.

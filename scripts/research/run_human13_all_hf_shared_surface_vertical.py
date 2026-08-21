@@ -29,7 +29,8 @@ ALL_HF_VERTICAL_UNIT_ID = (
     "2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical"
 )
 CONFIG_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_config.v1"
-TERMINAL_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_terminal.v1"
+TERMINAL_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_terminal.v2"
+LEGACY_TERMINAL_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_terminal.v1"
 PHASE_LEDGER_SCHEMA_VERSION = "human13_all_hf_phase_ledger.v1"
 RESOURCE_SCHEMA_VERSION = "human13_all_hf_shared_surface_vertical_resource.v1"
 RESERVATION_IDENTITY_SCHEMA_VERSION = "human13_one_image_reservation_identity.v1"
@@ -1089,6 +1090,116 @@ class ResourceReceipt:
 
 
 @dataclass(frozen=True)
+class ActionAttemptReceipt:
+    """Append-only physical-boundary attempt evidence.
+
+    ``model_actions`` remains the admitted-session counter. This receipt is
+    separate so a loader that touched a checkpoint and then failed cannot be
+    mistaken for an admitted model/session.
+    """
+
+    schema_version: Literal["human13_action_attempt.v1"]
+    boundary: Literal["training_open", "audit_open", "audit_evaluator"]
+    resource_role: Literal["gpu0_training", "gpu1_audit"]
+    attempted_count: int
+    completed_count: int
+    failed_count: int
+    session_admitted: bool
+    canonical_device_identity_sha256: str | None = None
+    exception_type: str | None = None
+    exception_message_sha256: str | None = None
+    stdout_sha256: str | None = None
+    stdout_tail: str | None = None
+    stderr_sha256: str | None = None
+    stderr_tail: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "human13_action_attempt.v1":
+            raise ValueError("action attempt schema differs")
+        if self.boundary not in {"training_open", "audit_open", "audit_evaluator"}:
+            raise ValueError("action attempt boundary is unsupported")
+        if self.resource_role not in {"gpu0_training", "gpu1_audit"}:
+            raise ValueError("action attempt resource role is unsupported")
+        for field in ("attempted_count", "completed_count", "failed_count"):
+            _nonnegative_int(getattr(self, field), field=field)
+        if self.attempted_count != 1 or self.completed_count + self.failed_count != 1:
+            raise ValueError("one action attempt must be exactly completed or failed")
+        expected_admitted = self.boundary in {"training_open", "audit_open"} and (
+            self.completed_count == 1
+        )
+        if self.session_admitted is not expected_admitted:
+            raise ValueError("admitted-session status differs from attempt outcome")
+        for field in (
+            "canonical_device_identity_sha256",
+            "exception_message_sha256",
+            "stdout_sha256",
+            "stderr_sha256",
+        ):
+            value = getattr(self, field)
+            if value is not None:
+                _digest(value, field=field)
+        if self.failed_count and (
+            not self.exception_type or self.exception_message_sha256 is None
+        ):
+            raise ValueError("failed action attempt lacks exception evidence")
+        for field in ("stdout_tail", "stderr_tail"):
+            value = getattr(self, field)
+            if value is not None and len(value) > 512:
+                raise ValueError(f"{field} exceeds bounded provenance tail")
+
+    def _payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "boundary": self.boundary,
+            "resource_role": self.resource_role,
+            "attempted_count": self.attempted_count,
+            "completed_count": self.completed_count,
+            "failed_count": self.failed_count,
+            "session_admitted": self.session_admitted,
+            "canonical_device_identity_sha256": self.canonical_device_identity_sha256,
+            "exception_type": self.exception_type,
+            "exception_message_sha256": self.exception_message_sha256,
+            "stdout_sha256": self.stdout_sha256,
+            "stdout_tail": self.stdout_tail,
+            "stderr_sha256": self.stderr_sha256,
+            "stderr_tail": self.stderr_tail,
+        }
+
+    @property
+    def content_sha256(self) -> str:
+        return _sha256(self._payload())
+
+    def to_dict(self) -> dict[str, Any]:
+        return self._payload() | {"content_sha256": self.content_sha256}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> ActionAttemptReceipt:
+        if value.get("schema_version") != "human13_action_attempt.v1":
+            raise ValueError("action attempt schema differs")
+        result = cls(
+            schema_version=value["schema_version"],
+            boundary=value["boundary"],
+            resource_role=value["resource_role"],
+            attempted_count=value["attempted_count"],
+            completed_count=value["completed_count"],
+            failed_count=value["failed_count"],
+            session_admitted=value["session_admitted"],
+            canonical_device_identity_sha256=value.get(
+                "canonical_device_identity_sha256"
+            ),
+            exception_type=value.get("exception_type"),
+            exception_message_sha256=value.get("exception_message_sha256"),
+            stdout_sha256=value.get("stdout_sha256"),
+            stdout_tail=value.get("stdout_tail"),
+            stderr_sha256=value.get("stderr_sha256"),
+            stderr_tail=value.get("stderr_tail"),
+        )
+        if value.get("content_sha256") != result.content_sha256:
+            raise ValueError("action attempt content hash differs")
+        return result
+
+
+@dataclass(frozen=True)
 class AuditAnalysis:
     repetition_penalty: float
     source_owner_ids: tuple[str, ...]
@@ -2083,8 +2194,20 @@ class OneImageTerminalReceipt:
     private_proposal_cleaned: bool = False
     source_reproduced: bool = False
     failure_reason: str | None = None
+    action_attempts: tuple[ActionAttemptReceipt, ...] = ()
+    schema_version: Literal[
+        "human13_all_hf_shared_surface_vertical_terminal.v1",
+        "human13_all_hf_shared_surface_vertical_terminal.v2",
+    ] = TERMINAL_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if self.schema_version not in {
+            LEGACY_TERMINAL_SCHEMA_VERSION,
+            TERMINAL_SCHEMA_VERSION,
+        }:
+            raise ValueError("terminal receipt schema differs")
+        if self.schema_version == LEGACY_TERMINAL_SCHEMA_VERSION and self.action_attempts:
+            raise ValueError("legacy terminal cannot carry action attempts")
         if self.terminal_status not in {
             "dry_run",
             "preflight_admitted",
@@ -2103,6 +2226,9 @@ class OneImageTerminalReceipt:
         object.__setattr__(
             self, "phase_receipt_sha256s", tuple(self.phase_receipt_sha256s)
         )
+        object.__setattr__(self, "action_attempts", tuple(self.action_attempts))
+        if any(not isinstance(value, ActionAttemptReceipt) for value in self.action_attempts):
+            raise ValueError("terminal action attempts are malformed")
         if any(
             isinstance(value, bool) or not isinstance(value, int) or value < 0
             for value in self.model_actions.values()
@@ -2139,7 +2265,7 @@ class OneImageTerminalReceipt:
 
     def to_dict(self, *, include_hash: bool = True) -> dict[str, Any]:
         value = {
-            "schema_version": TERMINAL_SCHEMA_VERSION,
+            "schema_version": self.schema_version,
             "terminal_status": self.terminal_status,
             "resource_receipt": self.resource_receipt.to_dict(),
             "resource_receipt_sha256": self.resource_receipt.content_sha256,
@@ -2155,13 +2281,22 @@ class OneImageTerminalReceipt:
             "source_reproduced": self.source_reproduced,
             "failure_reason": self.failure_reason,
         }
+        if self.schema_version == TERMINAL_SCHEMA_VERSION:
+            value["action_attempts"] = [
+                action.to_dict() for action in self.action_attempts
+            ]
+            value["action_attempt_count"] = len(self.action_attempts)
         if include_hash:
             value["content_sha256"] = _sha256(value)
         return value
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> OneImageTerminalReceipt:
-        if value.get("schema_version") != TERMINAL_SCHEMA_VERSION:
+        schema_version = value.get("schema_version")
+        if schema_version not in {
+            LEGACY_TERMINAL_SCHEMA_VERSION,
+            TERMINAL_SCHEMA_VERSION,
+        }:
             raise ValueError("terminal receipt schema differs")
         resource_value = value.get("resource_receipt")
         if not isinstance(resource_value, Mapping):
@@ -2177,6 +2312,21 @@ class OneImageTerminalReceipt:
             or serialized_count != len(phase_hashes)
         ):
             raise ValueError("terminal phase receipt count differs")
+        action_values = value.get("action_attempts", ())
+        if schema_version == LEGACY_TERMINAL_SCHEMA_VERSION and (
+            "action_attempts" in value or "action_attempt_count" in value
+        ):
+            raise ValueError("legacy terminal cannot carry action attempts")
+        if not isinstance(action_values, (list, tuple)):
+            raise ValueError("terminal action attempts must be an array")
+        action_count = value.get("action_attempt_count", 0)
+        if (
+            isinstance(action_count, bool)
+            or not isinstance(action_count, int)
+            or action_count != len(action_values)
+        ):
+            raise ValueError("terminal action attempt count differs")
+        action_attempts = tuple(ActionAttemptReceipt.from_dict(item) for item in action_values)
         result = cls(
             terminal_status=value["terminal_status"],
             resource_receipt=resource,
@@ -2190,9 +2340,11 @@ class OneImageTerminalReceipt:
             private_proposal_cleaned=value.get("private_proposal_cleaned", False),
             source_reproduced=value.get("source_reproduced", False),
             failure_reason=value.get("failure_reason"),
+            action_attempts=action_attempts,
+            schema_version=schema_version,
         )
         expected = value.get("content_sha256")
-        if expected != _sha256(result.to_dict(include_hash=False)):
+        if expected != result.content_sha256:
             raise ValueError("terminal receipt content hash differs")
         return result
 
@@ -2722,6 +2874,7 @@ def run_one_image(
             private_proposal_cleaned=cleaned,
             source_reproduced=reproduced,
             failure_reason=None if failure is None else _error_text(failure),
+            action_attempts=tuple(getattr(services, "action_attempts", lambda: ())()),
         ),
         issuer=_TERMINAL_ISSUER_TOKEN,
     )
@@ -3045,6 +3198,7 @@ if __name__ == "__main__":  # pragma: no cover
 __all__ = [
     "ALL_HF_VERTICAL_UNIT_ID",
     "AUDIT_REPETITION_PENALTIES",
+    "ActionAttemptReceipt",
     "AuditAnalysis",
     "AuditPairAnalysis",
     "ContinuationGateInput",
@@ -3057,6 +3211,7 @@ __all__ = [
     "ManifestImageContext",
     "OneImageServices",
     "OneImageTerminalReceipt",
+    "LEGACY_TERMINAL_SCHEMA_VERSION",
     "OutputRootReceipt",
     "ProductionExecution",
     "ResourceReceipt",

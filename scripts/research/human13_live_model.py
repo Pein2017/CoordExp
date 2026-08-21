@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field, replace
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol, cast
 from weakref import ReferenceType, ref
@@ -132,6 +133,190 @@ _UPDATED_ARM_IDS = frozenset(
 
 class Human13LiveModelError(RuntimeError):
     """Raised before or during an invalid Human-13 live assembly."""
+
+
+@dataclass(frozen=True)
+class Human13CudaLogicalDeviceIdentity:
+    """Content-addressed identity for one logical CUDA training device.
+
+    Accelerate may expose ``torch.device("cuda")`` while the model carries
+    ``cuda:0``. We resolve that representation only with an explicit
+    world-one/current-device/visibility witness; arbitrary string aliases are
+    never admitted.
+    """
+
+    schema_version: Literal["human13_cuda_logical_device_identity.v1"]
+    canonical_device_type: Literal["cuda"]
+    canonical_index: int
+    accelerator_device: str
+    accelerator_device_index: int | None
+    parameter_device_strings: tuple[str, ...]
+    parameter_device_indices: tuple[int, ...]
+    current_cuda_index: int
+    cuda_visible_devices: str | None
+    visible_device_tokens: tuple[str, ...]
+    world_size: int
+    process_index: int
+    local_process_index: int
+    distributed_type: str
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = {
+            "schema_version": self.schema_version,
+            "canonical_device_type": self.canonical_device_type,
+            "canonical_index": self.canonical_index,
+            "accelerator_device": self.accelerator_device,
+            "accelerator_device_index": self.accelerator_device_index,
+            "parameter_device_strings": list(self.parameter_device_strings),
+            "parameter_device_indices": list(self.parameter_device_indices),
+            "current_cuda_index": self.current_cuda_index,
+            "cuda_visible_devices": self.cuda_visible_devices,
+            "visible_device_tokens": list(self.visible_device_tokens),
+            "world_size": self.world_size,
+            "process_index": self.process_index,
+            "local_process_index": self.local_process_index,
+            "distributed_type": self.distributed_type,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return payload | {"content_sha256": hashlib.sha256(encoded.encode()).hexdigest()}
+
+    @property
+    def content_sha256(self) -> str:
+        return str(self.to_artifact_dict()["content_sha256"])
+
+
+def _cuda_device_parts(value: Any, *, field: str) -> tuple[str, int | None]:
+    try:
+        import torch
+
+        device = torch.device(value)
+    except (TypeError, ValueError) as error:
+        raise Human13LiveModelError(f"{field} is not a valid CUDA device") from error
+    if device.type != "cuda":
+        raise Human13LiveModelError(f"{field} must be a CUDA device")
+    return str(value), device.index
+
+
+def _cuda_visibility_tokens(raw: str | None) -> tuple[str, ...]:
+    if raw is None:
+        raise Human13LiveModelError(
+            "CUDA visibility mapping is required for logical device admission"
+        )
+    if not isinstance(raw, str) or not raw.strip():
+        raise Human13LiveModelError("CUDA visibility mapping is ambiguous")
+    tokens = tuple(part.strip() for part in raw.split(","))
+    if any(not token for token in tokens) or len(set(tokens)) != len(tokens):
+        raise Human13LiveModelError("CUDA visibility mapping is ambiguous")
+    return tokens
+
+
+def build_human13_cuda_logical_device_identity(
+    accelerator: Any,
+    named_trainable_parameters: tuple[tuple[str, Any], ...],
+    *,
+    cuda_available: bool | None = None,
+    current_cuda_index: int | None = None,
+    cuda_visible_devices: str | None = None,
+) -> Human13CudaLogicalDeviceIdentity:
+    """Build the strict logical CUDA identity used by live ownership receipts."""
+
+    try:
+        import torch
+    except ImportError as error:  # pragma: no cover - live dependency contract
+        raise Human13LiveModelError("CUDA device identity requires torch") from error
+    available = torch.cuda.is_available() if cuda_available is None else cuda_available
+    if available is not True:
+        raise Human13LiveModelError("CUDA logical device is unavailable")
+    world_size = int(getattr(accelerator, "num_processes", -1))
+    process_index = int(getattr(accelerator, "process_index", -1))
+    local_process_index = int(getattr(accelerator, "local_process_index", -1))
+    distributed_type = str(
+        getattr(getattr(accelerator, "distributed_type", None), "name", "")
+    )
+    if (world_size, process_index, local_process_index, distributed_type) != (
+        1,
+        0,
+        0,
+        "NO",
+    ):
+        raise Human13LiveModelError(
+            "CUDA logical device requires world-one process-zero DistributedType.NO"
+        )
+    if current_cuda_index is None:
+        try:
+            current_cuda_index = int(torch.cuda.current_device())
+        except (RuntimeError, TypeError, ValueError) as error:
+            raise Human13LiveModelError("current logical CUDA index is unavailable") from error
+    if isinstance(current_cuda_index, bool) or current_cuda_index < 0:
+        raise Human13LiveModelError("current logical CUDA index is unavailable")
+    raw_visibility = (
+        os.environ.get("CUDA_VISIBLE_DEVICES")
+        if cuda_visible_devices is None
+        else cuda_visible_devices
+    )
+    visible_tokens = _cuda_visibility_tokens(raw_visibility)
+    if visible_tokens and current_cuda_index >= len(visible_tokens):
+        raise Human13LiveModelError("current logical CUDA index is outside visible devices")
+
+    accelerator_raw, accelerator_index = _cuda_device_parts(
+        getattr(accelerator, "device", None), field="accelerator device"
+    )
+    observed_devices: list[str] = []
+    observed_indices: list[int] = []
+    if not named_trainable_parameters:
+        raise Human13LiveModelError("runtime trainable surface is empty")
+    for name, parameter in named_trainable_parameters:
+        del name
+        raw, index = _cuda_device_parts(
+            getattr(parameter, "device", None), field="trainable parameter device"
+        )
+        if index is None:
+            raise Human13LiveModelError(
+                "trainable parameter CUDA device must carry an explicit index"
+            )
+        observed_devices.append(raw)
+        observed_indices.append(index)
+    unique_indices = tuple(sorted(set(observed_indices)))
+    if len(unique_indices) != 1:
+        raise Human13LiveModelError("trainable parameters span multiple CUDA devices")
+    parameter_index = unique_indices[0]
+    if parameter_index != current_cuda_index:
+        raise Human13LiveModelError("current CUDA index differs from trainable surface")
+    if accelerator_index is not None and accelerator_index != current_cuda_index:
+        raise Human13LiveModelError(
+            "explicit accelerator device conflicts with current CUDA index"
+        )
+    return Human13CudaLogicalDeviceIdentity(
+        schema_version="human13_cuda_logical_device_identity.v1",
+        canonical_device_type="cuda",
+        canonical_index=current_cuda_index,
+        accelerator_device=accelerator_raw,
+        accelerator_device_index=accelerator_index,
+        parameter_device_strings=tuple(observed_devices),
+        parameter_device_indices=tuple(observed_indices),
+        current_cuda_index=current_cuda_index,
+        cuda_visible_devices=raw_visibility,
+        visible_device_tokens=visible_tokens,
+        world_size=world_size,
+        process_index=process_index,
+        local_process_index=local_process_index,
+        distributed_type=distributed_type,
+    )
+
+
+def revalidate_human13_cuda_logical_device_identity(
+    identity: Human13CudaLogicalDeviceIdentity,
+    accelerator: Any,
+    named_trainable_parameters: tuple[tuple[str, Any], ...],
+) -> Human13CudaLogicalDeviceIdentity:
+    """Rebuild and require byte-identical logical CUDA evidence."""
+
+    observed = build_human13_cuda_logical_device_identity(
+        accelerator, named_trainable_parameters
+    )
+    if observed.content_sha256 != identity.content_sha256:
+        raise Human13LiveModelError("logical CUDA device identity drifted")
+    return observed
 
 
 @dataclass(frozen=True)
@@ -299,6 +484,7 @@ class Human13AdamWRuntimeOwnership:
     scheduler_horizon_updates: int
     world_size: int
     device: str
+    cuda_identity: Human13CudaLogicalDeviceIdentity | None
     parameter_dtype: str
     mixed_precision: str
     distributed_type: str
@@ -339,6 +525,9 @@ class Human13AdamWRuntimeOwnership:
             "scheduler_horizon_updates": self.scheduler_horizon_updates,
             "world_size": self.world_size,
             "device": self.device,
+            "cuda_identity": None
+            if self.cuda_identity is None
+            else self.cuda_identity.to_artifact_dict(),
             "parameter_dtype": self.parameter_dtype,
             "mixed_precision": self.mixed_precision,
             "distributed_type": self.distributed_type,
@@ -509,7 +698,15 @@ def build_human13_adamw_runtime_ownership(
     dtypes = {str(parameter.dtype) for _, parameter in observed_named}
     if len(devices) != 1 or len(dtypes) != 1 or dtypes != {"torch.bfloat16"}:
         raise Human13LiveModelError("runtime trainable parameters must share bf16 device surface")
-    if str(getattr(accelerator, "device", "")) not in devices:
+    cuda_identity: Human13CudaLogicalDeviceIdentity | None = None
+    if next(iter(devices)).startswith("cuda"):
+        cuda_identity = build_human13_cuda_logical_device_identity(
+            accelerator, observed_named
+        )
+        canonical_device = f"cuda:{cuda_identity.canonical_index}"
+        if devices != {canonical_device}:
+            raise Human13LiveModelError("runtime accelerator device differs from trainable surface")
+    elif str(getattr(accelerator, "device", "")) not in devices:
         raise Human13LiveModelError("runtime accelerator device differs from trainable surface")
 
     groups = list(getattr(base_optimizer, "param_groups", ()))
@@ -593,6 +790,7 @@ def build_human13_adamw_runtime_ownership(
         scheduler_horizon_updates=horizon_updates,
         world_size=1,
         device=next(iter(devices)),
+        cuda_identity=cuda_identity,
         parameter_dtype=next(iter(dtypes)),
         mixed_precision=mixed_precision,
         distributed_type=distributed_type,
@@ -2609,6 +2807,7 @@ __all__ = [
     "DefaultHuman13AssemblyBackend",
     "Human13AssemblyBackend",
     "Human13AdamWRuntimeOwnership",
+    "Human13CudaLogicalDeviceIdentity",
     "Human13CheckpointReadback",
     "Human13LiveAssembly",
     "Human13LoadedSpecialTokenResult",
@@ -2647,12 +2846,14 @@ __all__ = [
     "build_human13_checkpoint_writer",
     "build_human13_all_hf_vertical_source_plan",
     "build_human13_adamw_runtime_ownership",
+    "build_human13_cuda_logical_device_identity",
     "build_human13_live_model_plan",
     "build_human13_parity_skeleton",
     "build_human13_processor_skeletons",
     "build_human13_update_schedule",
     "readback_human13_checkpoint",
     "revalidate_human13_adamw_runtime_ownership",
+    "revalidate_human13_cuda_logical_device_identity",
     "require_admitted_human13_live_assembly",
     "validate_human13_live_model_plan",
     "validate_human13_live_assembly_values",

@@ -302,3 +302,30 @@ cosine-with-warmup `LambdaLR` semantics and checks live param-group `betas` and
 this content-addressed receipt from the pre-acquisition hook; the service
 persists its digest before the first K16 sample and fails closed when the hook
 or receipt is absent.
+
+### 9. Canonical CUDA identity and truthful physical-boundary attempts
+
+The post-prepare ownership receipt also carries one strict logical CUDA
+identity. An indexless Accelerate `cuda` device may resolve to the current
+logical index only under world-one, process/local-process zero,
+`DistributedType.NO`, available CUDA, one explicitly indexed trainable device,
+and a non-ambiguous `CUDA_VISIBLE_DEVICES` mapping. Explicit index conflicts,
+multi-device trainables, unavailable/current-index drift, and ambiguous
+visibility fail closed; generic string aliases are not accepted. The same
+content-addressed identity is rebuilt after K16.
+
+Physical model boundaries publish separate append-only `ActionAttemptReceipt`
+records for training open, audit open, and audit evaluator/loader attempts.
+Attempted, completed/admitted, and failed counts are distinct from admitted
+session counters. A loader failure therefore records attempt=1, completed=0,
+failed=1, bounded redacted stdout/stderr provenance, exception type/message
+hash, and no close claim for a nonexistent handle. Proposal evaluators are
+included in the same evaluator-attempt boundary. Terminal publication binds
+the complete attempt tuple to the service phase ledger; a phase write failure
+after a backend handle is returned closes that unpublished handle before the
+caller receives an error. Terminal schema dispatch keeps historical v1
+objects serializing with their original schema and content hash without
+inferring new counters; new v2 terminals include the typed attempt list. This
+is production admission/
+telemetry evidence only and does not alter the scientific objective, surface
+ownership, K16, learning rate, or outcome gate.

@@ -1445,3 +1445,77 @@ def test_plan_constants_are_not_caller_mutable() -> None:
     plan = _plan()
     with pytest.raises(live.Human13LiveModelError, match="frozen live-model contract"):
         live.validate_human13_live_model_plan(replace(plan, learning_rate=3.0e-5))
+
+
+def _device_identity_accelerator(device: str = "cuda") -> Any:
+    return SimpleNamespace(
+        device=device,
+        num_processes=1,
+        process_index=0,
+        local_process_index=0,
+        distributed_type=SimpleNamespace(name="NO"),
+    )
+
+
+def _device_identity_parameter(device: str) -> Any:
+    return SimpleNamespace(device=device, requires_grad=True, grad=None)
+
+
+def test_cuda_logical_device_identity_resolves_indexless_accelerate_device() -> None:
+    receipt = live.build_human13_cuda_logical_device_identity(
+        _device_identity_accelerator("cuda"),
+        (("adapter.language.weight", _device_identity_parameter("cuda:0")),),
+        cuda_available=True,
+        current_cuda_index=0,
+        cuda_visible_devices="0,1",
+    )
+
+    assert receipt.canonical_device_type == "cuda"
+    assert receipt.canonical_index == 0
+    assert receipt.accelerator_device_index is None
+    assert receipt.parameter_device_indices == (0,)
+    assert receipt.visible_device_tokens == ("0", "1")
+    assert receipt.content_sha256 == receipt.to_artifact_dict()["content_sha256"]
+
+
+def test_cuda_logical_device_identity_rejects_missing_visibility_contract() -> None:
+    with pytest.raises(live.Human13LiveModelError, match="visibility mapping"):
+        live.build_human13_cuda_logical_device_identity(
+            _device_identity_accelerator("cuda"),
+            (("adapter.language.weight", _device_identity_parameter("cuda:0")),),
+            cuda_available=True,
+            current_cuda_index=0,
+            cuda_visible_devices=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("accelerator_device", "parameter_devices", "visible_devices", "message"),
+    (
+        ("cuda:1", ("cuda:0",), "0,1", "explicit accelerator device conflicts"),
+        (
+            "cuda",
+            ("cuda:0", "cuda:1"),
+            "0,1",
+            "trainable parameters span multiple CUDA devices",
+        ),
+        ("cuda", ("cuda:0",), "0,,1", "CUDA visibility mapping is ambiguous"),
+    ),
+)
+def test_cuda_logical_device_identity_rejects_ambiguous_mapping(
+    accelerator_device: str,
+    parameter_devices: tuple[str, ...],
+    visible_devices: str,
+    message: str,
+) -> None:
+    with pytest.raises(live.Human13LiveModelError, match=message):
+        live.build_human13_cuda_logical_device_identity(
+            _device_identity_accelerator(accelerator_device),
+            tuple(
+                (f"adapter.language.{index}", _device_identity_parameter(device))
+                for index, device in enumerate(parameter_devices)
+            ),
+            cuda_available=True,
+            current_cuda_index=0,
+            cuda_visible_devices=visible_devices,
+        )
