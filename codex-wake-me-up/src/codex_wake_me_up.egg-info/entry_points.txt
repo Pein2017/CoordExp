@@ -1,0 +1,2 @@
+[console_scripts]
+codex-wake-me-up = codex_wake_me_up.cli:main
