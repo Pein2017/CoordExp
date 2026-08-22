@@ -9,44 +9,33 @@
 !src/
 !configs/
 !docs/
-!ops/
-!repo_lifecycle/
 !scripts/
 !manifests/
 !openspec/
-!reference/
-!vis_tools/
 !tests/
 !public_data/
-!progress/
 !research/
-!.planning/
 !README.md
 
 # Track files in the tracked folders
 !src/**
 !configs/**
 !docs/**/*
-!ops/**
-!repo_lifecycle/**
 !scripts/**
 !manifests/**
 !openspec/**
-!reference/**
-!vis_tools/**
 !tests/**
 !.cursorignore
 !.cursorindexingignore
 !pytest.ini
 !pyrightconfig.json
+!pyproject.toml
 !*.md
 !public_data/**/
 !public_data/**/*.py
 !public_data/**/*.md
 !public_data/**/*.sh
-!progress/**
 !research/**
-!.planning/**
 
 # Hard local-only workspace roots. These patterns are intentionally explicit
 # even though the repo uses an allowlist, so future allowlist edits do not

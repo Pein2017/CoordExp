@@ -1,4 +1,4 @@
-"""Canonical COCO-80 category registry for CoordExp-swift detection eval."""
+"""Canonical COCO-80 category registry for CoordExp detection eval."""
 
 from __future__ import annotations
 

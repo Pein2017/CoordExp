@@ -1,4 +1,4 @@
-"""Qwen tokenizer identity checks for CoordExp-swift."""
+"""Qwen tokenizer identity checks for CoordExp."""
 
 from __future__ import annotations
 

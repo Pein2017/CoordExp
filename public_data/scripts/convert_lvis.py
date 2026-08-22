@@ -16,7 +16,7 @@ from typing import Any, Dict, MutableMapping, cast
 
 from public_data.converters.lvis_converter import ConversionConfig, LVISConverter
 from public_data.converters.sorting import canonicalize_poly, sort_objects_tlbr
-from src.datasets.preprocessors.resize import SmartResizeParams, SmartResizePreprocessor
+from public_data.resize import SmartResizeParams, SmartResizePreprocessor
 
 
 def _relativize_images(row: MutableMapping[str, Any], base_dir: Path) -> Dict[str, Any]:

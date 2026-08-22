@@ -18,7 +18,7 @@ from src.coordinate_targets import (
     coordinate_target_to_artifact,
 )
 from src.data import RawExample, RawObject
-from src.templates.spans import RenderedSpan, validate_rendered_spans
+from src.templates.spans import RenderedSpan, RenderedSpanKind, validate_rendered_spans
 
 
 OBJECT_REF_START_TOKEN = "<|object_ref_start|>"
@@ -397,7 +397,9 @@ def _append_suffix_spans(
     )
 
 
-def _validate_assistant_suffix(assistant_content: str, supervised_response_text: str) -> None:
+def _validate_assistant_suffix(
+    assistant_content: str, supervised_response_text: str
+) -> None:
     if IM_END_TOKEN in assistant_content:
         raise TemplateContractError(
             "assistant content must not contain an explicit im_end token before suffix insertion",
@@ -458,7 +460,9 @@ def _messages(
         system_text = template_config.prompt.system.strip()
         if system_text:
             _validate_prompt_text(system_text, "template.prompt.system")
-            messages.append({"role": "system", "content": [{"type": "text", "text": system_text}]})
+            messages.append(
+                {"role": "system", "content": [{"type": "text", "text": system_text}]}
+            )
     messages.append(
         {
             "role": "user",

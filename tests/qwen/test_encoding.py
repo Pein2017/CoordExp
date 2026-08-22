@@ -173,8 +173,9 @@ def test_tokenizer_offset_crossing_span_boundary_fails() -> None:
 
 
 def test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisect() -> None:
-    """Permanent regression guard for the Wave 5 (task 5.3) rejected bisect
-    candidate: `_token_indices_for_char_range` MUST stay a full linear scan.
+    """Regression guard for the rejected bisect candidate.
+
+    `_token_indices_for_char_range` MUST stay a full linear scan.
     A bisect/binary-search shortcut over `offset_mapping` silently assumes
     monotonically non-decreasing token offsets, but a zero-width
     special-token-like `(0, 0)` entry can appear mid-sequence, breaking that
@@ -182,8 +183,7 @@ def test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisec
     `[(0, 5), (5, 10), (0, 0), (10, 15)]` must resolve to the two real
     overlapping tokens at indices (1, 3), correctly skipping the mid-sequence
     `(0, 0)` entry (its `token_end=0 <= char_start=5`), with no spurious
-    `qwen.span_token_coverage` error. See `implementation-notes.md` "M5a" for
-    the full rejected-bisect writeup."""
+    `qwen.span_token_coverage` error."""
 
     offset_mapping = [(0, 5), (5, 10), (0, 0), (10, 15)]
 

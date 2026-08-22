@@ -224,9 +224,6 @@ def test_dependency_provenance_records_versions_origins_and_hashes(
 
     monkeypatch.setattr(provenance, "_import_module", modules.__getitem__)
     monkeypatch.setattr(
-        provenance, "_find_module_spec", lambda name: modules[name].__spec__
-    )
-    monkeypatch.setattr(
         provenance,
         "_distribution_file_path",
         lambda distribution, relative_path: resolved_native_paths[
@@ -251,7 +248,6 @@ def test_dependency_provenance_records_versions_origins_and_hashes(
         provenance,
         "_distribution_version",
         lambda distribution: {
-            "ms-swift": "4.2.2",
             "transformers": "4.57.1",
             "flash-attn": "2.8.3",
             "torch": "2.8.0",
@@ -269,16 +265,8 @@ def test_dependency_provenance_records_versions_origins_and_hashes(
         _available(component["distribution_version"])
         digest = _available(component["sha256"])["value"]
         assert len(str(digest)) == 64
-        if name == "ms-swift":
-            assert component["role"] == "reference_only_not_imported_by_training_route"
-            _available(component["selected_module_origin"])
-            assert component["imported_origin"] == {
-                "status": "unavailable",
-                "reason": "reference_only_not_imported",
-            }
-        else:
-            assert component["role"] == "runtime_dependency"
-            _available(component["imported_origin"])
+        assert component["role"] == "runtime_dependency"
+        _available(component["imported_origin"])
     assert receipt["flash_attn_2_cuda"]["origin_kind"] == "binary"
     cuda_runtime = receipt["cuda-runtime"]
     assert cuda_runtime["distribution"] == "nvidia-cuda-runtime-cu12"
@@ -408,79 +396,6 @@ def test_dependency_provenance_records_versions_origins_and_hashes(
     }
 
 
-def test_ms_swift_is_reference_only_and_resolved_without_import(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    reference_repo = tmp_path / "ms-swift-reference"
-    reference_repo.mkdir()
-    _git(reference_repo, "init", "--quiet")
-    _git(reference_repo, "config", "user.email", "tests@example.invalid")
-    _git(reference_repo, "config", "user.name", "CoordExp Tests")
-    swift_root = reference_repo / "swift"
-    swift_root.mkdir()
-    swift_origin = swift_root / "__init__.py"
-    swift_origin.write_text("__version__ = '4.2.2'\n", encoding="utf-8")
-    (reference_repo / "setup.py").write_text("# reference fixture\n", encoding="utf-8")
-    _git(reference_repo, "add", "swift/__init__.py", "setup.py")
-    _git(reference_repo, "commit", "--quiet", "-m", "reference fixture")
-
-    runtime_modules: dict[str, object] = {}
-    for component, (
-        _distribution,
-        import_name,
-    ) in provenance._DEPENDENCY_IMPORTS.items():
-        if component == "ms-swift":
-            continue
-        suffix = ".so" if import_name == "flash_attn_2_cuda" else ".py"
-        origin = tmp_path / f"{import_name}{suffix}"
-        origin.write_bytes(f"identity:{import_name}".encode())
-        runtime_modules[import_name] = SimpleNamespace(
-            __spec__=SimpleNamespace(origin=str(origin)), __file__=str(origin)
-        )
-
-    imported: list[str] = []
-
-    def import_runtime(name: str) -> object:
-        imported.append(name)
-        if name == "swift":
-            pytest.fail("reference-only ms-swift must not be imported")
-        return runtime_modules[name]
-
-    monkeypatch.setattr(provenance, "_import_module", import_runtime)
-    monkeypatch.setattr(
-        provenance,
-        "_find_module_spec",
-        lambda name: SimpleNamespace(origin=str(swift_origin))
-        if name == "swift"
-        else None,
-        raising=False,
-    )
-    monkeypatch.setattr(provenance, "_distribution_version", lambda _name: "1.0")
-    monkeypatch.setattr(provenance, "_distribution_record_text", lambda _name: "record")
-
-    receipt = provenance.collect_dependency_provenance()
-
-    assert "swift" not in imported
-    reference = receipt["ms-swift"]
-    assert reference["role"] == "reference_only_not_imported_by_training_route"
-    assert reference["origin_resolution"] == "import_spec_without_import"
-    assert reference["imported_origin"] == {
-        "status": "unavailable",
-        "reason": "reference_only_not_imported",
-    }
-    assert _available(reference["selected_module_origin"])["value"] == str(
-        swift_origin.resolve()
-    )
-    source_repository = _available(reference["source_repository"])["value"]
-    assert source_repository["state"] == "clean"
-    assert len(str(source_repository["commit"])) == 40
-    assert all(
-        component["role"] == "runtime_dependency"
-        for name, component in receipt.items()
-        if name != "ms-swift"
-    )
-
-
 def test_dependency_failures_are_per_component_and_do_not_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -491,7 +406,6 @@ def test_dependency_failures_are_per_component_and_do_not_crash(
         raise provenance.PackageNotFoundError
 
     monkeypatch.setattr(provenance, "_import_module", fail_import)
-    monkeypatch.setattr(provenance, "_find_module_spec", lambda _name: None)
     monkeypatch.setattr(provenance, "_distribution_version", fail_version)
     monkeypatch.setattr(
         provenance,
@@ -514,21 +428,7 @@ def test_dependency_failures_are_per_component_and_do_not_crash(
             "status": "unavailable",
             "reason": "distribution_not_found",
         }
-        if name == "ms-swift":
-            assert component["role"] == "reference_only_not_imported_by_training_route"
-            assert component["imported_origin"] == {
-                "status": "unavailable",
-                "reason": "reference_only_not_imported",
-            }
-            assert component["selected_module_origin"] == {
-                "status": "unavailable",
-                "reason": "reference_spec_resolution_failed",
-            }
-            assert component["sha256"] == {
-                "status": "unavailable",
-                "reason": "reference_spec_resolution_failed",
-            }
-        elif name == "cuda-runtime":
+        if name == "cuda-runtime":
             assert component["role"] == "runtime_dependency"
             assert component["imported_origin"] == {
                 "status": "unavailable",
@@ -582,7 +482,6 @@ def test_full_provenance_is_deterministic_strict_json_and_non_secret(
         raise RuntimeError(secret)
 
     monkeypatch.setattr(provenance, "_import_module", fail_import)
-    monkeypatch.setattr(provenance, "_find_module_spec", fail_import)
     monkeypatch.setattr(provenance, "_distribution_version", fail_version)
 
     first = provenance.collect_execution_provenance(repository_root=repo)
@@ -726,35 +625,6 @@ def _runtime_dependency(
 def _pinned_runtime_observation() -> dict[str, object]:
     flash_record = "fee009739702fa997fa85c07f134ad54636d042475235515b90afdcfffd299a5"
     dependencies = {
-        "ms-swift": {
-            "distribution": "ms-swift",
-            "import_name": "swift",
-            "distribution_version": _available_identity("4.2.2"),
-            "distribution_record": {
-                "status": "unavailable",
-                "reason": "distribution_record_absent",
-            },
-            "role": "reference_only_not_imported_by_training_route",
-            "origin_resolution": "import_spec_without_import",
-            "selected_module_origin": _available_identity(
-                "/reference/swift/__init__.py"
-            ),
-            "imported_origin": {
-                "status": "unavailable",
-                "reason": "reference_only_not_imported",
-            },
-            "origin_kind": "source",
-            "sha256": _available_identity(
-                "d345fd8f68077d11730ffe56747a52b1858550e8c21067ed55a1db2f79ab5caf"
-            ),
-            "size_bytes": _available_identity(3529),
-            "source_repository": _available_identity(
-                {
-                    "commit": "f2797138dba0e224cfff735cd89a528a08d8732a",
-                    "state": "clean",
-                }
-            ),
-        },
         "transformers": _runtime_dependency(
             distribution="transformers",
             import_name="transformers",
@@ -1150,11 +1020,8 @@ def _pinned_runtime_observation() -> dict[str, object]:
     }
 
 
-def test_pinned_runtime_baseline_admits_exact_runtime_and_reports_reference_drift(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_pinned_runtime_baseline_admits_exact_runtime() -> None:
     observed = _pinned_runtime_observation()
-    observed["dependencies"]["ms-swift"]["sha256"] = _available_identity("0" * 64)
 
     result = provenance.compare_pinned_runtime_baseline(
         provenance=observed,
@@ -1163,13 +1030,10 @@ def test_pinned_runtime_baseline_admits_exact_runtime_and_reports_reference_drif
 
     assert result["admitted"] is True, result["mismatches"]
     assert result["mismatches"] == []
-    assert result["reference_only"]["ms-swift"] == {
-        "matches_recorded_reference": False,
-        "mismatches": ["dependencies.ms-swift.sha256.value"],
-    }
+    assert result["reference_only"] == {}
     assert result["schema_version"] == 3
     assert result["baseline_sha256"] == (
-        "cc486f03edb88e4fa1c9d41dc6fa98c97f25a633400e6baf98077e8beaf2b784"
+        "996b0718b63e98a3a5d74f590247affe0e953b0c234402e6d8063b1ca961aef2"
     )
     assert provenance.pinned_runtime_baseline()["schema_version"] == 3
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Unified public dataset preparation runner for CoordExp.
-# See: openspec/changes/refactor-public-data-pipeline-factory
+# Retained COCO/LVIS preparation entry.
 
 set -euo pipefail
 
@@ -45,14 +45,12 @@ Commands:
   convert    Dataset-specific conversion into public_data/<dataset>/raw/{train,val}.jsonl
   rescale    Shared smart-resize into public_data/<dataset>/<preset>/
   coord      Shared coord-token conversion inside public_data/<dataset>/<preset>/
-  bbox-format  Offline bbox-format branch derivation under public_data/<dataset>/<preset>/bbox_formats/
   validate   Validate raw and/or preset artifacts; also sanity-check chat template on *.coord.jsonl
   all        download -> convert -> rescale -> coord -> validate
   help       Print this message and exit 0
 
 Runner flags:
-  --preset <name>          Preset dir name under public_data/<dataset>/ (used by rescale|coord|bbox-format|validate|all)
-  --conda-env <name>       Conda env name for python steps (default: ms)
+  --preset <name>          Preset dir name under public_data/<dataset>/
   --skip-image-check       Skip image existence checks during validation
   --raw-only               For validate: validate only raw artifacts (no preset required)
   --preset-only            For validate: validate only preset artifacts
@@ -65,55 +63,27 @@ Passthrough args:
   For `all`, passthrough args are forwarded ONLY to dataset plugin steps (download/convert).
 
 Examples:
-  ./public_data/run.sh vg all --preset rescale_32_768_bbox -- --objects-version 1.2.0
   ./public_data/run.sh lvis all --preset rescale_32_768_bbox
-  ./public_data/run.sh lvis all --preset rescale_32_768_poly_20 -- --use-polygon
-  ./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcy_logw_logh
-  ./public_data/run.sh coco bbox-format --preset rescale_32_1024_bbox_max60_lvis_proxy -- --bbox-format cxcywh
+  ./public_data/run.sh coco all --preset rescale_32_1024_bbox
 EOF
 }
 
-_resolve_conda_exe() {
-  if command -v conda >/dev/null 2>&1; then
-    echo "conda"
-    return 0
-  fi
-  if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
-    echo "${CONDA_EXE}"
-    return 0
-  fi
-  die "Missing 'conda' on PATH (and CONDA_EXE is unset); required for python steps."
-}
-
 run_py() {
-  local conda_exe
-  conda_exe="$(_resolve_conda_exe)"
-  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python $*" >&2
-  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python "$@"
-}
-
-run_py_best_effort() {
-  set +e
-  local conda_exe
-  conda_exe="$(_resolve_conda_exe)"
-  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python $*" >&2
-  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python "$@"
-  local rc=$?
-  set -e
-  return $rc
+  local python_bin="${PYTHON:-python}"
+  echo "+ PYTHONPATH=. ${python_bin} $*" >&2
+  PYTHONPATH=. "${python_bin}" "$@"
 }
 
 PIPELINE_LAST_OUTPUT_DIR=""
 
 run_pipeline_factory_capture_output_dir() {
-  local conda_exe
-  conda_exe="$(_resolve_conda_exe)"
   local tmp_log
   tmp_log="$(mktemp)"
 
-  echo "+ PYTHONPATH=. ${conda_exe} run -n ${CONDA_ENV} python public_data/scripts/run_pipeline_factory.py $*" >&2
+  local python_bin="${PYTHON:-python}"
+  echo "+ PYTHONPATH=. ${python_bin} -m public_data.scripts.run_pipeline_factory $*" >&2
   set +e
-  PYTHONPATH=. "${conda_exe}" run -n "${CONDA_ENV}" python public_data/scripts/run_pipeline_factory.py "$@" 2>&1 | tee "${tmp_log}"
+  PYTHONPATH=. "${python_bin}" -m public_data.scripts.run_pipeline_factory "$@" 2>&1 | tee "${tmp_log}"
   local rc=${PIPESTATUS[0]}
   set -e
   if [[ ${rc} -ne 0 ]]; then
@@ -123,22 +93,6 @@ run_pipeline_factory_capture_output_dir() {
 
   PIPELINE_LAST_OUTPUT_DIR="$(sed -n 's/^\[pipeline\] output_dir=//p' "${tmp_log}" | tail -n 1)"
   rm -f "${tmp_log}"
-}
-
-choose_inspect_model() {
-  # Prefer smaller processors when available; fall back to 8B; otherwise skip.
-  local candidates=(
-    "${REPO_ROOT}/model_cache/Qwen3-VL-4B-Instruct-coordexp"
-    "${REPO_ROOT}/model_cache/Qwen3-VL-8B-Instruct-coordexp"
-  )
-  local c
-  for c in "${candidates[@]}"; do
-    if [[ -d "${c}" ]]; then
-      echo "${c}"
-      return 0
-    fi
-  done
-  return 1
 }
 
 require_file() {
@@ -201,7 +155,6 @@ fi
 
 # Runner flags (parsed before --). Only this small surface area is supported.
 PRESET=""
-CONDA_ENV="ms"
 SKIP_IMAGE_CHECK="false"
 RAW_ONLY="false"
 PRESET_ONLY="false"
@@ -218,12 +171,6 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || die "--preset requires a value"
       PRESET="$1"
-      shift
-      ;;
-    --conda-env)
-      shift
-      [[ $# -gt 0 ]] || die "--conda-env requires a value"
-      CONDA_ENV="$1"
       shift
       ;;
     --skip-image-check)
@@ -273,11 +220,11 @@ case "${COMMAND}" in
       --raw-dir "${RAW_DIR}"
     )
     if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
-      run_py public_data/scripts/run_pipeline_factory.py \
+      run_py -m public_data.scripts.run_pipeline_factory \
         "${PIPELINE_ARGS[@]}" \
         -- "${PASSTHROUGH_ARGS[@]}"
     else
-      run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
+      run_py -m public_data.scripts.run_pipeline_factory "${PIPELINE_ARGS[@]}"
     fi
     ;;
   convert)
@@ -290,11 +237,11 @@ case "${COMMAND}" in
       --raw-dir "${RAW_DIR}"
     )
     if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
-      run_py public_data/scripts/run_pipeline_factory.py \
+      run_py -m public_data.scripts.run_pipeline_factory \
         "${PIPELINE_ARGS[@]}" \
         -- "${PASSTHROUGH_ARGS[@]}"
     else
-      run_py public_data/scripts/run_pipeline_factory.py "${PIPELINE_ARGS[@]}"
+      run_py -m public_data.scripts.run_pipeline_factory "${PIPELINE_ARGS[@]}"
     fi
     ;;
   rescale)
@@ -312,7 +259,7 @@ case "${COMMAND}" in
       --raw-dir "${RAW_DIR}"
       --preset "${PRESET}"
     )
-    run_py public_data/scripts/run_pipeline_factory.py \
+    run_py -m public_data.scripts.run_pipeline_factory \
       "${PIPELINE_ARGS[@]}" \
       "${PASSTHROUGH_ARGS[@]}"
     set_paths_for_preset
@@ -331,35 +278,10 @@ case "${COMMAND}" in
     if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
       PIPELINE_ARGS+=(--max-objects "${PIPELINE_MAX_OBJECTS}")
     fi
-    run_py public_data/scripts/run_pipeline_factory.py \
+    run_py -m public_data.scripts.run_pipeline_factory \
       "${PIPELINE_ARGS[@]}" \
       "${PASSTHROUGH_ARGS[@]}"
     set_paths_for_preset
-    ;;
-  bbox-format)
-    [[ -n "${PRESET}" ]] || die "bbox-format requires --preset <name>"
-    set_paths_for_preset
-    banner "[${DATASET}] bbox-format -> derived preset root"
-    if [[ ! -f "${PRESET_TRAIN_JSONL}" && ! -f "${PRESET_TRAIN_COORD_JSONL}" ]]; then
-      die "bbox-format requires canonical preset source files. Expected ${PRESET_TRAIN_JSONL} or ${PRESET_TRAIN_COORD_JSONL}"
-    fi
-    if [[ -n "${PIPELINE_MAX_OBJECTS}" ]]; then
-      die "PUBLIC_DATA_MAX_OBJECTS is only supported for 'coord'. Run bbox-format directly on the canonical preset."
-    fi
-    PIPELINE_ARGS=(
-      --mode bbox-format
-      --dataset-id "${DATASET}"
-      --dataset-dir "${DATASET_DIR}"
-      --raw-dir "${RAW_DIR}"
-      --preset "${PRESET}"
-    )
-    if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
-      run_py public_data/scripts/run_pipeline_factory.py \
-        "${PIPELINE_ARGS[@]}" \
-        -- "${PASSTHROUGH_ARGS[@]}"
-    else
-      die "bbox-format requires '-- --bbox-format <format>'"
-    fi
     ;;
   validate)
     if [[ "${RAW_ONLY}" == "true" && "${PRESET_ONLY}" == "true" ]]; then
@@ -412,17 +334,6 @@ case "${COMMAND}" in
         PRESET_DIR="${PIPELINE_LAST_OUTPUT_DIR}"
         PRESET_TRAIN_COORD_JSONL="${PRESET_DIR}/train.coord.jsonl"
       fi
-      # Prompt/template sanity check on coord-token JSONL.
-      if INSPECT_MODEL="$(choose_inspect_model)"; then
-        if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
-          --jsonl "${PRESET_TRAIN_COORD_JSONL}" \
-          --index 0 \
-          --model "${INSPECT_MODEL}"; then
-          warn "inspect_chat_template.py failed (model/deps missing?); skipping template check."
-        fi
-      else
-        warn "Skipping inspect_chat_template.py (no cached model found under model_cache/)."
-      fi
     fi
     ;;
   all)
@@ -450,23 +361,23 @@ case "${COMMAND}" in
       --raw-dir "${RAW_DIR}"
     )
     if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
-      run_py public_data/scripts/run_pipeline_factory.py \
+      run_py -m public_data.scripts.run_pipeline_factory \
         --mode download \
         "${PIPELINE_INGEST_ARGS[@]}" \
         -- "${PASSTHROUGH_ARGS[@]}"
     else
-      run_py public_data/scripts/run_pipeline_factory.py \
+      run_py -m public_data.scripts.run_pipeline_factory \
         --mode download \
         "${PIPELINE_INGEST_ARGS[@]}"
     fi
     banner "[${DATASET}] stage: convert"
     if [[ ${#PASSTHROUGH_ARGS[@]} -gt 0 ]]; then
-      run_py public_data/scripts/run_pipeline_factory.py \
+      run_py -m public_data.scripts.run_pipeline_factory \
         --mode convert \
         "${PIPELINE_INGEST_ARGS[@]}" \
         -- "${PASSTHROUGH_ARGS[@]}"
     else
-      run_py public_data/scripts/run_pipeline_factory.py \
+      run_py -m public_data.scripts.run_pipeline_factory \
         --mode convert \
         "${PIPELINE_INGEST_ARGS[@]}"
     fi
@@ -488,21 +399,6 @@ case "${COMMAND}" in
     run_pipeline_factory_capture_output_dir "${PIPELINE_ARGS[@]}"
     set_paths_for_preset
 
-    # Prompt/template sanity check on coord-token JSONL.
-    if [[ -n "${PIPELINE_LAST_OUTPUT_DIR}" ]]; then
-      PRESET_DIR="${PIPELINE_LAST_OUTPUT_DIR}"
-      PRESET_TRAIN_COORD_JSONL="${PRESET_DIR}/train.coord.jsonl"
-    fi
-    if INSPECT_MODEL="$(choose_inspect_model)"; then
-      if ! run_py_best_effort scripts/tools/inspect_chat_template.py \
-        --jsonl "${PRESET_TRAIN_COORD_JSONL}" \
-        --index 0 \
-        --model "${INSPECT_MODEL}"; then
-        warn "inspect_chat_template.py failed (model/deps missing?); skipping template check."
-      fi
-    else
-      warn "Skipping inspect_chat_template.py (no cached model found under model_cache/)."
-    fi
     ;;
   *)
     echo "[error] Unknown command '${COMMAND}'." >&2

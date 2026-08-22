@@ -1,4 +1,4 @@
-"""CoordExp-swift offline inference pipeline orchestration."""
+"""CoordExp offline inference pipeline orchestration."""
 
 from __future__ import annotations
 
@@ -58,7 +58,11 @@ from src.inference.image_plan import plan_image_batch, verify_processor_model_vi
 from src.inference.merge import merge_shard_artifacts
 from src.inference.parsing import PARSER_POLICY, parse_compact_object_box_closed
 from src.inference.prompt import TEMPLATE_ID, build_prompt_record, verify_prompt_token_parity
-from src.inference.runtime import InferenceFrontend, assemble_frontend
+from src.inference.runtime import (
+    InferenceFrontend,
+    assemble_frontend,
+    prepare_backend_launch,
+)
 from src.inference.scoring import SCORE_POLICY_FINGERPRINT
 
 
@@ -126,6 +130,17 @@ def run(
         execution_model = _resolve_execution_model_for_run(resolved)
         if execution_model is not None:
             metadata["execution_model"] = execution_model
+        if resolved.config.backend.type == "vllm":
+            qualification_launch = prepare_backend_launch(
+                resolved.config,
+                generation_config_fingerprint=metadata[
+                    "generation_config_fingerprint"
+                ],
+                execution_model=execution_model,
+            )
+            metadata["backend_qualification"] = qualify_vllm_backend_launch(
+                qualification_launch
+            )
     except CoordExpError as exc:
         _write_terminal_contract_failure(
             output_dir=run_dir,
@@ -527,6 +542,14 @@ def _resolve_execution_model_for_run(
             None if config.embedding_delta is None else config.embedding_delta.path
         ),
     )
+
+
+def qualify_vllm_backend_launch(launch: Any) -> dict[str, object]:
+    """Run the same fail-closed qualification used by the rank-local opener."""
+
+    from src.inference.vllm_backend import qualify_vllm_backend_launch as qualify
+
+    return qualify(launch)
 
 
 def _write_execution_model_artifact(

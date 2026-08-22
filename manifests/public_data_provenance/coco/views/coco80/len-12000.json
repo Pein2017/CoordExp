@@ -3,8 +3,14 @@
   "artifact_type": "annotation_view",
   "relative_path": "public_data/coco/views/coco80/len-12000",
   "producer_script": "public_data/scripts/build_coco_views.py",
+  "regeneration_status": "ready",
+  "validator_module": "public_data.provenance",
   "working_dir": ".",
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_views.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --legacy-max-objects-source public_data/coco/rescale_32_1024_bbox_max60 --proxy-source public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --splits train val --views coco80/full coco80/len-12000 --max-total-tokens 12000 --image-store-mode reuse-existing",
+  "command": "python -m public_data.scripts.build_coco_views --source-preset public_data/coco/rescale_32_1024_bbox --image-store-root public_data/coco/images/res-1024 --views-root public_data/coco/views --splits train val --views coco80/len-12000 --max-total-tokens 12000 --image-store-mode reuse-existing",
+  "dependencies": [
+    {"kind": "python_module", "path": "public_data/scripts/build_coco_views.py", "required": true},
+    {"kind": "view_contract", "path": "public_data/view_contracts.py", "required": true}
+  ],
   "inputs": [
     {
       "kind": "image_store_manifest",
@@ -16,11 +22,7 @@
       "path": "manifests/public_data_provenance/coco/views/coco80/full.json",
       "notes": "Canonical full COCO80 view filtered by the compact detection length-budget policy."
     },
-    {
-      "kind": "training_config",
-      "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml",
-      "notes": "Latest compact-full prompt/model/template contract used for total-token length estimation."
-    }
+    {"kind": "transform_contract", "path": "public_data/scripts/build_coco_views.py", "notes": "Deterministic public-data length-budget estimator."}
   ],
   "key_params": {
     "dataset": "coco",
@@ -37,13 +39,12 @@
       999
     ],
     "assistant_coordinate_rendering": "qwen_coord_tokens",
-    "length_budget_template_id": "compact-detection-v1",
+    "length_budget_template_id": "public-data-deterministic-v1",
     "routine_sync_policy": "regenerate_from_raw_plus_manifest",
     "view_summary": {
       "records": 122218,
       "rendered_object_count": 886282,
       "support_sidecar_count": 0,
-      "rendered_proxy_candidate_count": 0,
       "object_supervision_count": 0
     },
     "length_budget_scope": {

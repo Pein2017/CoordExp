@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
-from typing import Any
+from pathlib import Path
 
 import pytest
 
 from src.common.errors import EncodingContractError
 from src.config.loader import load_train_config
+from src.data import load_raw_examples
 from src.qwen.loading import load_qwen_components
 from src.qwen.tokens import (
     DEFAULT_COORDINATE_TOKENS,
@@ -16,13 +16,11 @@ from src.qwen.tokens import (
     reject_invalid_qwen_aliases,
     validate_qwen_token_identity,
 )
+from src.templates import render_example
 
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
-PROD_CONFIG = Path(
-    "configs/coordexp_swift/prod/"
-    "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml"
-)
+PROD_CONFIG = Path("configs/train/production.yaml")
 
 
 class FakeTokenizer:
@@ -40,7 +38,9 @@ class FakeTokenizer:
 
     def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
         if add_special_tokens:
-            raise AssertionError("Qwen preflight must encode without extra special tokens")
+            raise AssertionError(
+                "Qwen preflight must encode without extra special tokens"
+            )
         if text in self.encodings:
             return self.encodings[text]
         if text in self.token_ids:
@@ -127,12 +127,17 @@ def test_real_local_qwen_components_load_without_model_and_preflight_tokens() ->
 
     assert components.model is None
     assert components.model_identity.model_type == "qwen3_vl"
-    assert components.model_identity.architectures == ("Qwen3VLForConditionalGeneration",)
+    assert components.model_identity.architectures == (
+        "Qwen3VLForConditionalGeneration",
+    )
     assert components.model_identity.tie_word_embeddings is True
     assert components.model_identity.text_vocab_size == 152670
     assert components.processor_identity.processor_class == "Qwen3VLProcessor"
     assert components.processor_identity.tokenizer_class == "Qwen2TokenizerFast"
-    assert components.processor_identity.image_processor_class == "Qwen2VLImageProcessorFast"
+    assert (
+        components.processor_identity.image_processor_class
+        == "Qwen2VLImageProcessorFast"
+    )
     assert components.processor_identity.patch_size == 16
     assert components.processor_identity.merge_size == 2
     assert components.processor_identity.temporal_patch_size == 2
@@ -155,20 +160,15 @@ def test_real_local_qwen_components_load_without_model_and_preflight_tokens() ->
 def test_production_prompt_examples_use_real_single_token_wrappers() -> None:
     resolved = load_train_config(PROD_CONFIG)
     components = load_qwen_components(resolved.config, load_model=False)
-    prompt_text = "\n".join(
-        item
-        for item in (
-            resolved.config.template.prompt.system,
-            resolved.config.template.prompt.user,
-        )
-        if item
-    )
+    raw = load_raw_examples(load_train_config(FIXTURE_CONFIG).config.data.train)[0]
+    rendered = render_example(raw, resolved.config.template)
+    prompt_text = rendered.supervised_response_text
 
     assert "coord_x1" not in prompt_text
     assert "coord_y1" not in prompt_text
     assert "coord_x2" not in prompt_text
     assert "coord_y2" not in prompt_text
-    assert "<|coord_100|><|coord_200|><|coord_300|><|coord_400|>" in prompt_text
+    assert "<|coord_319|><|coord_72|><|coord_718|><|coord_830|>" in prompt_text
 
     tokenizer = components.tokenizer
     special_token_texts = sorted(set(re.findall(r"<\|[^>\s]+\|>", prompt_text)))
@@ -202,10 +202,5 @@ def _token_ids() -> dict[str, int]:
         "<|box_start|>": 151648,
         "<|box_end|>": 151649,
     }
-    token_ids.update(
-        {
-            f"<|coord_{index}|>": 151670 + index
-            for index in range(1000)
-        }
-    )
+    token_ids.update({f"<|coord_{index}|>": 151670 + index for index in range(1000)})
     return token_ids

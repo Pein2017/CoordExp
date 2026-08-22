@@ -1056,7 +1056,6 @@ def _warm_start_expand_dora_adapter(
         "base_model_path": None
         if plan.base_model_path is None
         else str(plan.base_model_path),
-        "source_gate": plan.source_gate.to_artifact_dict(),
         "target_towers": list(target_receipt.target_towers),
         "target_policy": target_receipt.target_policy,
         "target_discovery": target_receipt.to_artifact_dict(),
@@ -1314,8 +1313,7 @@ def _inspect_dora_tensor_payloads(
         "tensor_key_count": len(tensor_records),
         "target_count": target_count,
         "target_names": sorted(
-            _execution_dora_model_target_name(target)
-            for target in tensors_by_target
+            _execution_dora_model_target_name(target) for target in tensors_by_target
         ),
         "lora_A_count": target_count,
         "lora_B_count": target_count,

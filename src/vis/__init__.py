@@ -1,4 +1,4 @@
-"""Lightweight CoordExp-Swift detection visualizations."""
+"""Lightweight CoordExp detection visualizations."""
 
 from __future__ import annotations
 

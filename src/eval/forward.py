@@ -35,7 +35,7 @@ EVAL_FORWARD_SPLIT = "eval"
 # Rank-sharded eval.forward (design Seam C). Under `EVAL_REDUCTION_REPLICATED`
 # every rank evaluates the full eval set, so every rank already holds the same
 # global value and cross-rank reduction is an explicit identical-value check
-# (Wave 2 replaced the implicit mean over those identical values).
+# rather than averaging those identical values implicitly.
 # `EVAL_REDUCTION_DISJOINT_SHARD` partitions eval packs disjointly by
 # `sequence_ordinal % world_size == rank` (the canonical micro-step
 # sequence position, not the `pack_index` identity label -- see
@@ -61,8 +61,8 @@ def resolve_eval_reduction_control() -> str:
     """Internal reduction-mode override (env var, not YAML).
 
     Disjoint-shard eval reduction is implemented and its full-row exactness
-    against the replicated evaluator is proven by test (tasks.md 4.1-4.3)
-    and the exact 8-rank M4 gate recorded in `implementation-notes.md`.
+    against the replicated evaluator is covered by maintained multi-rank
+    tests across the supported one-to-four-process topology.
     `auto` is therefore the shipped default and selects disjoint-shard
     reduction whenever the eval pack count is at least the world size. The
     automatic `pack_count < world_size` replicated fallback stays active

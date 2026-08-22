@@ -55,7 +55,7 @@ def _receipt_payload(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Prepare CoordExp-Swift packing caches without loading the model."
+        description="Prepare CoordExp packing caches without loading the model."
     )
     parser.add_argument("--config", required=True, help="Path to runnable YAML config.")
     parser.add_argument(

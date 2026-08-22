@@ -37,7 +37,6 @@ except ImportError:  # pragma: no cover - exercised only in stripped environment
 
 from src.adapters import (
     build_adapter_setup_plan,
-    load_default_adapter_source_gate_evidence,
     setup_dora_adapter,
 )
 from src.artifacts import CheckpointWriter, RunWriter
@@ -89,7 +88,6 @@ from src.qwen import (
     load_qwen_components,
 )
 from src.qwen.special_token_embeddings import (
-    load_default_special_token_embedding_source_gate_evidence,
     install_special_token_embedding_deltas,
     load_special_token_embedding_deltas,
 )
@@ -161,7 +159,9 @@ def _resolve_profile_sync_timing_selector() -> dict[str, bool | str]:
 
     return {
         "enabled": os.environ.get(cache_workflow._PROFILE_SYNC_TIMINGS_ENV) == "1",
-        "source": cache_workflow._environment_selector_source(cache_workflow._PROFILE_SYNC_TIMINGS_ENV),
+        "source": cache_workflow._environment_selector_source(
+            cache_workflow._PROFILE_SYNC_TIMINGS_ENV
+        ),
     }
 
 
@@ -1107,7 +1107,7 @@ def _initialize_artifact_owner(
                     finite_status=None,
                     terminal_error=(
                         "artifact initialization handshake failed: "
-                        f"{type(exc).__name__[:control_plane._CACHE_PREFLIGHT_IDENTITY_LIMIT]}"
+                        f"{type(exc).__name__[: control_plane._CACHE_PREFLIGHT_IDENTITY_LIMIT]}"
                     ),
                 )
             except BaseException:
@@ -1153,7 +1153,9 @@ def _resolve_resume_continuation_lineage(
             "parent_checkpoint_identity": {
                 "resolved_path": str(checkpoint_dir),
                 "checkpoint_step": manifest.checkpoint_step,
-                "training_state_manifest_file_sha256": cache_workflow._file_sha256(manifest_path),
+                "training_state_manifest_file_sha256": cache_workflow._file_sha256(
+                    manifest_path
+                ),
                 "training_state_aggregate_digest": manifest.aggregate_digest,
             },
             "parent_continuation_index": manifest.continuation_index,
@@ -1646,9 +1648,7 @@ class TrainingSession:
             ],
             provenance=self.run_identity.provenance,
             continuation_lineage=self.run_identity.continuation_lineage,
-            pinned_runtime_baseline=self.admitted_policies[
-                "pinned_runtime_baseline"
-            ],
+            pinned_runtime_baseline=self.admitted_policies["pinned_runtime_baseline"],
             profile_sync_timings=self.admitted_policies["profile_sync_timings"],
         )
 
@@ -1687,7 +1687,9 @@ def _run_initialized_training(
     profile_sync_timings: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if preflight is None:
-        pack_cache_root, pack_cache_root_receipt = cache_workflow._resolve_pack_cache_root(repo_root)
+        pack_cache_root, pack_cache_root_receipt = (
+            cache_workflow._resolve_pack_cache_root(repo_root)
+        )
     else:
         if int(preflight["rank"]) != int(accelerator.process_index) or int(
             preflight["world_size"]
@@ -1746,10 +1748,8 @@ def _run_initialized_training(
                         "observed": observed_identity,
                     },
                 )
-        adapter_evidence = load_default_adapter_source_gate_evidence(repo_root)
         adapter_plan = build_adapter_setup_plan(
             config.adapter,
-            adapter_evidence,
             base_model_path=components.base_model_path,
         )
         adapter_result = setup_dora_adapter(components.model, adapter_plan)
@@ -1759,13 +1759,9 @@ def _run_initialized_training(
             config.model.special_token_embeddings,
             components.token_identity,
         )
-        special_token_evidence = (
-            load_default_special_token_embedding_source_gate_evidence(repo_root)
-        )
         special_token_result = install_special_token_embedding_deltas(
             model,
             special_token_selection,
-            source_gate=special_token_evidence,
         )
         model = special_token_result.model
         if getattr(adapter_plan, "mode", None) == "warm_start_expand_dora":
@@ -1877,7 +1873,9 @@ def _run_initialized_training(
         train_micro_steps,
         image_processor=cache_workflow._qwen_image_processor(components),
     )
-    train_micro_steps = cache_workflow._apply_fa2_branch_proof_policy(train_micro_steps, config)
+    train_micro_steps = cache_workflow._apply_fa2_branch_proof_policy(
+        train_micro_steps, config
+    )
     if preflight is None:
         _finish_run_phase(writer, lifecycle, "cache_admission")
     if writer is not None and preflight is None:
@@ -1934,13 +1932,15 @@ def _run_initialized_training(
         )
         return loss_runner, runtime, trainable_surface_receipt
 
-    loss_runner, runtime, trainable_surface_receipt = control_plane._run_rank_converged_phase(
-        "optimizer_runtime_assembly",
-        rank=int(accelerator.process_index),
-        world_size=int(accelerator.num_processes),
-        rank_report_gatherer=rank_report_gatherer,
-        body=assemble_optimizer_runtime,
-        receipt_sink=_phase_receipt_sink(lifecycle, "optimizer_runtime_assembly"),
+    loss_runner, runtime, trainable_surface_receipt = (
+        control_plane._run_rank_converged_phase(
+            "optimizer_runtime_assembly",
+            rank=int(accelerator.process_index),
+            world_size=int(accelerator.num_processes),
+            rank_report_gatherer=rank_report_gatherer,
+            body=assemble_optimizer_runtime,
+            receipt_sink=_phase_receipt_sink(lifecycle, "optimizer_runtime_assembly"),
+        )
     )
     _finish_run_phase(writer, lifecycle, "optimizer_runtime_assembly")
 
@@ -2053,7 +2053,9 @@ def _run_initialized_training(
         reduction_mode=eval_reduction_mode,
         pack_count=eval_pack_count_for_consensus,
     )
-    eval_micro_steps = cache_workflow._apply_fa2_branch_proof_policy(eval_micro_steps, config)
+    eval_micro_steps = cache_workflow._apply_fa2_branch_proof_policy(
+        eval_micro_steps, config
+    )
     _finish_run_phase(writer, lifecycle, "evaluation_hydration")
     if writer is not None:
         writer.bind_policy_identity(
@@ -3328,9 +3330,7 @@ def _eval_forward_handler(
                     # slowest rank owns the critical path, so each of these is
                     # an all-rank maximum.
                     samples=tuple(
-                        ScalarSample(
-                            name=name, reducer=REDUCER_MAX, value=float(value)
-                        )
+                        ScalarSample(name=name, reducer=REDUCER_MAX, value=float(value))
                         for name, value in sorted(local_measurement.items())
                     ),
                 )

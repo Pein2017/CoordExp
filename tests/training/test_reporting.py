@@ -14,6 +14,7 @@ directly rather than the deleted pipeline factory function).
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +25,10 @@ from src.artifacts import observation_publisher
 from src.artifacts.run_writer import RunWriter
 from src.common.errors import RuntimeContractError
 from src.runtime.metrics import reduce_rank_payloads
+from src.runtime.optimizer_boundary import (
+    AppliedUpdateReceipt,
+    OptimizerBoundaryTerminal,
+)
 from src.training import reporting
 from src.training.supervised_trainer import CompletedStepObservation
 
@@ -149,7 +154,9 @@ def test_reporter_is_keyword_only_constructed_and_callable(tmp_path: Path) -> No
 
 def test_reporter_exposes_no_configurable_sinks_or_metric_registry() -> None:
     public_class_attributes = {
-        name for name in dir(reporting.CompletedStepReporter) if not name.startswith("_")
+        name
+        for name in dir(reporting.CompletedStepReporter)
+        if not name.startswith("_")
     }
     assert public_class_attributes == set()
     forbidden_surface = {
@@ -192,7 +199,12 @@ def test_reporter_mutates_lifecycle_counters_exactly(tmp_path: Path) -> None:
 
 def test_scheduler_lr_metrics_extracts_named_group_rates() -> None:
     metrics = reporting._scheduler_lr_metrics(
-        {"learning_rates": [{"group_index": 0, "lr": 1e-4}, {"group_index": 1, "lr": 2e-4}]}
+        {
+            "learning_rates": [
+                {"group_index": 0, "lr": 1e-4},
+                {"group_index": 1, "lr": 2e-4},
+            ]
+        }
     )
     assert metrics == {"lr/group_0": 1e-4, "lr/group_1": 2e-4}
 
@@ -200,9 +212,12 @@ def test_scheduler_lr_metrics_extracts_named_group_rates() -> None:
 def test_scheduler_lr_metrics_tolerates_missing_or_malformed_artifact() -> None:
     assert reporting._scheduler_lr_metrics(None) == {}
     assert reporting._scheduler_lr_metrics({"learning_rates": "not-a-sequence"}) == {}
-    assert reporting._scheduler_lr_metrics(
-        {"learning_rates": [{"group_index": None, "lr": 1.0}]}
-    ) == {}
+    assert (
+        reporting._scheduler_lr_metrics(
+            {"learning_rates": [{"group_index": None, "lr": 1.0}]}
+        )
+        == {}
+    )
 
 
 def test_resource_scalar_metrics_selects_bounded_cpu_and_gpu_fields() -> None:
@@ -296,7 +311,9 @@ def test_reporter_requests_split_and_accuracy_stats_from_runtime_gather(
     assert batch.accuracy.atom_count == 2
     # The producer declares one exact reducer per sample; the reduction
     # boundary never infers one from a key name.
-    declared = {sample.name: getattr(sample, "reducer", "RATIO") for sample in batch.samples}
+    declared = {
+        sample.name: getattr(sample, "reducer", "RATIO") for sample in batch.samples
+    }
     assert declared == {
         "loss/total": "SUM",
         "lr/group_0": "IDENTICAL",
@@ -582,14 +599,6 @@ def test_reporter_does_not_touch_phase_lifecycle_when_no_phase_is_active(
 # ===========================================================================
 
 
-import copy
-
-from src.runtime.optimizer_boundary import (
-    AppliedUpdateReceipt,
-    OptimizerBoundaryTerminal,
-)
-
-
 def _denominator(name: str, **overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "term_name": name,
@@ -762,9 +771,9 @@ def test_train_row_exposes_configured_weight_and_denominator_inputs(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation())
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation()
+    )
 
     row = _row(writer)
 
@@ -782,9 +791,9 @@ def test_train_row_retains_a_computed_zero_weight_gate_diagnostic(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation())
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation()
+    )
 
     row = _row(writer)
 
@@ -799,9 +808,9 @@ def test_train_row_has_no_field_family_for_an_omitted_optional_term(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation(loss_bundle_artifact=_loss_artifact(include_gate=False)))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation(loss_bundle_artifact=_loss_artifact(include_gate=False))
+    )
 
     row = _row(writer)
 
@@ -813,9 +822,9 @@ def test_train_row_does_not_reconstruct_loss_from_backend_scaled_statistics(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation())
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation()
+    )
 
     row = _row(writer)
 
@@ -841,9 +850,9 @@ def test_asymmetric_two_rank_row_uses_declared_sum_max_and_ratio_reducers(
             "count/packs": 4.0,
         }
     )
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=runtime
-    )(_loss_observation())
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=runtime)(
+        _loss_observation()
+    )
 
     row = _row(writer)
 
@@ -872,9 +881,9 @@ def test_train_row_derives_throughput_from_summed_work_over_rank_max_duration(
             "count/packs": 4.0,
         }
     )
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=runtime
-    )(_loss_observation())
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=runtime)(
+        _loss_observation()
+    )
 
     row = _row(writer)
 
@@ -888,9 +897,9 @@ def test_train_row_derives_throughput_from_summed_work_over_rank_max_duration(
 
 def test_throughput_is_unavailable_without_a_work_count(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation(physical_token_count=None))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation(physical_token_count=None)
+    )
 
     row = _row(writer)
 
@@ -904,9 +913,9 @@ def test_throughput_is_unavailable_without_a_positive_step_duration(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation(step_duration_seconds=0.0))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation(step_duration_seconds=0.0)
+    )
 
     row = _row(writer)
 
@@ -926,9 +935,9 @@ def test_throughput_is_unavailable_without_a_positive_step_duration(
 
 def test_train_row_publishes_a_resolved_h2d_measurement(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation(input_h2d_seconds=0.02))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation(input_h2d_seconds=0.02)
+    )
 
     row = _row(writer)
 
@@ -940,9 +949,9 @@ def test_train_row_marks_an_unmeasurable_h2d_unavailable_without_a_zero(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation(input_h2d_unavailable_reason="h2d_target_not_cuda"))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation(input_h2d_unavailable_reason="h2d_target_not_cuda")
+    )
 
     row = _row(writer)
 
@@ -954,9 +963,9 @@ def test_train_row_publishes_the_all_rank_pre_clip_gradient_norm(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_loss_observation(pre_clip_grad_norm_rank_max=2.25))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _loss_observation(pre_clip_grad_norm_rank_max=2.25)
+    )
 
     row = _row(writer)
 
@@ -965,9 +974,7 @@ def test_train_row_publishes_the_all_rank_pre_clip_gradient_norm(
 
 def test_an_unsafe_branch_marks_the_pre_clip_norm_unavailable(tmp_path: Path) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
         _loss_observation(
             pre_clip_grad_norm_rank_max=None,
             update_receipt=AppliedUpdateReceipt.not_attempted(
@@ -1103,9 +1110,7 @@ def test_train_row_publishes_the_receipt_applied_learning_rates(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
         _loss_observation(
             update_receipt=AppliedUpdateReceipt.applied_update(
                 1, group_learning_rates=(1e-4,), post_wrapper_outcome="none_skipped"
@@ -1130,9 +1135,7 @@ def test_a_scaler_skip_nulls_group_lrs_and_names_them_unavailable(
 ) -> None:
     writer = _writer(tmp_path)
     receipt = AppliedUpdateReceipt.scaler_skipped(1, 2)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
         _loss_observation(
             update_receipt=receipt,
             optimizer_update_status=receipt.optimizer_update_status,
@@ -1266,9 +1269,9 @@ def test_terminal_row_publication_failure_preserves_the_primary_boundary_code(
 
 
 def test_session_publishes_the_terminal_row_before_failed_finalization() -> None:
-    source = (
-        Path(reporting.__file__).resolve().parent / "session.py"
-    ).read_text(encoding="utf-8")
+    source = (Path(reporting.__file__).resolve().parent / "session.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "except OptimizerBoundaryTerminal as" in source
     assert "publish_terminal_boundary_row(" in source
@@ -1286,9 +1289,9 @@ def test_an_observation_without_wave3_inputs_gains_no_row_key(
     tmp_path: Path,
 ) -> None:
     writer = _writer(tmp_path)
-    reporting.CompletedStepReporter(
-        writer=writer, lifecycle={}, runtime=_Runtime()
-    )(_observation(1, step_duration_seconds=0.25))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=_Runtime())(
+        _observation(1, step_duration_seconds=0.25)
+    )
 
     row = _row(writer)
 

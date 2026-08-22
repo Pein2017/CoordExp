@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from public_data.scripts.validate_jsonl import JSONLValidator
-from src.common.geometry.bbox_parameterization import (
+from public_data.geometry import (
     CXCY_LOGW_LOGH_CONVERSION_VERSION,
     CXCY_LOGW_LOGH_SLOT_ORDER,
     CXCYWH_CONVERSION_VERSION,
@@ -47,7 +47,6 @@ def _write_view_meta(path: Path, image_store: Path) -> None:
         "summary": {
             "records": 1,
             "rendered_object_count": 1,
-            "rendered_proxy_candidate_count": 0,
             "support_sidecar_count": 0,
             "object_supervision_count": 0,
         },

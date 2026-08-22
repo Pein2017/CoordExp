@@ -11,11 +11,9 @@ from typing import Any
 from src.common.errors import RuntimeContractError
 
 
-EXECUTION_MODEL_COMPOSITION_VERSION = "coordexp-swift-execution-model-composition-v1"
+EXECUTION_MODEL_COMPOSITION_VERSION = "coordexp-swift-execution-model-composition-v2"
 EXECUTION_MODEL_COMPOSITION_NAME = "coordexp_composition_fidelity.json"
-COMPOSITION_PROBE_RELATIVE_PATH = Path(
-    "scripts/probes/coordexp_swift/execution_model_composition.py"
-)
+COMPOSITION_SOURCE_RELATIVE_PATH = Path("src/inference/execution_model_composition.py")
 FULL_LOGIT_RTOL = 1e-4
 FULL_LOGIT_ATOL = 5e-3
 SELECTED_LOGIT_RTOL = 1e-4
@@ -192,7 +190,7 @@ def build_execution_model_composition_receipt(
     *,
     execution_model: Mapping[str, object],
     fixture_identity: Mapping[str, object],
-    probe_identity: Mapping[str, object],
+    composition_source_identity: Mapping[str, object],
     resolved_config_identity: Mapping[str, object],
     comparison: Mapping[str, object],
 ) -> dict[str, Any]:
@@ -223,7 +221,7 @@ def build_execution_model_composition_receipt(
         ),
         "materialization_identity": materialization_identity,
         "fixture_identity": dict(fixture_identity),
-        "probe_identity": dict(probe_identity),
+        "composition_source_identity": dict(composition_source_identity),
         "resolved_config_identity": dict(resolved_config_identity),
         "comparison": dict(comparison),
         "thresholds": {
@@ -239,7 +237,7 @@ def build_execution_model_composition_receipt(
         target_dtype=receipt["target_dtype"],
     )
     _validate_fixture_identity(receipt["fixture_identity"])
-    _validate_probe_identity(receipt["probe_identity"])
+    _validate_composition_source_identity(receipt["composition_source_identity"])
     _validate_resolved_config_identity(receipt["resolved_config_identity"])
     _validate_owner_binding(
         receipt["comparison"],
@@ -283,7 +281,9 @@ def validate_execution_model_composition_receipt(
         target_dtype=_require_string(payload, "target_dtype"),
     )
     _validate_fixture_identity(_require_mapping(payload, "fixture_identity"))
-    _validate_probe_identity(_require_mapping(payload, "probe_identity"))
+    _validate_composition_source_identity(
+        _require_mapping(payload, "composition_source_identity")
+    )
     _validate_resolved_config_identity(
         _require_mapping(payload, "resolved_config_identity")
     )
@@ -345,19 +345,19 @@ def _validate_fixture_identity(value: Mapping[str, object]) -> None:
         _fail("fixture_identity.prompt_ids", "mismatch")
 
 
-def _validate_probe_identity(value: Mapping[str, object]) -> None:
+def _validate_composition_source_identity(value: Mapping[str, object]) -> None:
     relative_path = value.get("path")
-    if relative_path != COMPOSITION_PROBE_RELATIVE_PATH.as_posix():
-        _fail("probe_identity.path", relative_path)
+    if relative_path != COMPOSITION_SOURCE_RELATIVE_PATH.as_posix():
+        _fail("composition_source_identity.path", relative_path)
     expected = _require_sha256(value, "sha256")
-    probe_path = Path(__file__).resolve().parents[2] / COMPOSITION_PROBE_RELATIVE_PATH
-    observed = _sha256_file(probe_path)
+    source_path = Path(__file__).resolve().parents[2] / COMPOSITION_SOURCE_RELATIVE_PATH
+    observed = _sha256_file(source_path)
     if observed != expected:
         raise RuntimeContractError(
-            "execution-model composition probe source differs from receipt",
-            code="inference.execution_model_composition_probe_drift",
+            "execution-model composition implementation differs from receipt",
+            code="inference.execution_model_composition_source_drift",
             context={
-                "path": str(probe_path),
+                "path": str(source_path),
                 "expected": expected,
                 "observed": observed,
             },

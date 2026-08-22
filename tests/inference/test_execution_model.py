@@ -211,6 +211,123 @@ def test_base_only_receipt_revalidates_snapshot_bytes(tmp_path: Path) -> None:
         validate_execution_model_receipt(receipt)
 
 
+def test_composed_materialization_requires_an_explicit_external_cache_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.delenv("COORDEXP_EXECUTION_MODEL_CACHE_ROOT", raising=False)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        resolve_execution_model(
+            base_model_path=base,
+            target_dtype="bf16",
+            adapter_identity=_identity("adapter", "adapter-a"),
+            materialize_snapshot=lambda snapshot_root: _materialization_evidence(
+                adapter_identity=_identity("adapter", "adapter-a")
+            ),
+        )
+
+    assert exc_info.value.code == "inference.execution_model_cache_root"
+    assert "COORDEXP_EXECUTION_MODEL_CACHE_ROOT" in str(exc_info.value)
+    assert not (cwd / "model_cache").exists()
+
+
+@pytest.mark.parametrize("cache_root", ["", "relative-cache"])
+def test_composed_materialization_rejects_blank_or_relative_environment_cache_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cache_root: str,
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    monkeypatch.setenv("COORDEXP_EXECUTION_MODEL_CACHE_ROOT", cache_root)
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        resolve_execution_model(
+            base_model_path=base,
+            target_dtype="bf16",
+            adapter_identity=_identity("adapter", "adapter-a"),
+            materialize_snapshot=lambda snapshot_root: _materialization_evidence(
+                adapter_identity=_identity("adapter", "adapter-a")
+            ),
+        )
+
+    assert exc_info.value.code == "inference.execution_model_cache_root"
+    assert not (cwd / "model_cache").exists()
+
+
+def test_composed_materialization_uses_absolute_environment_cache_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+    external_cache_root = tmp_path / "external-cache"
+    adapter_identity = _identity("adapter", "adapter-a")
+    monkeypatch.setenv(
+        "COORDEXP_EXECUTION_MODEL_CACHE_ROOT", str(external_cache_root)
+    )
+
+    receipt = resolve_execution_model(
+        base_model_path=base,
+        target_dtype="bf16",
+        adapter_identity=adapter_identity,
+        materialize_snapshot=lambda snapshot_root: (
+            _write_snapshot(snapshot_root, weight=b"derived")
+            and _materialization_evidence(adapter_identity=adapter_identity)
+        ),
+    )
+
+    receipt_path = Path(receipt["receipt_path"]).resolve()
+    assert external_cache_root.resolve() in receipt_path.parents
+    assert not (tmp_path / "model_cache").exists()
+
+
+def test_explicit_cache_root_takes_priority_over_environment_cache_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+    environment_cache_root = tmp_path / "environment-cache"
+    explicit_cache_root = tmp_path / "explicit-cache"
+    adapter_identity = _identity("adapter", "adapter-a")
+    monkeypatch.setenv(
+        "COORDEXP_EXECUTION_MODEL_CACHE_ROOT", str(environment_cache_root)
+    )
+
+    receipt = resolve_execution_model(
+        base_model_path=base,
+        target_dtype="bf16",
+        adapter_identity=adapter_identity,
+        cache_root=explicit_cache_root,
+        materialize_snapshot=lambda snapshot_root: (
+            _write_snapshot(snapshot_root, weight=b"derived")
+            and _materialization_evidence(adapter_identity=adapter_identity)
+        ),
+    )
+
+    assert explicit_cache_root.resolve() in Path(receipt["receipt_path"]).resolve().parents
+    assert not environment_cache_root.exists()
+
+
+def test_base_only_resolution_does_not_require_environment_cache_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _write_snapshot(tmp_path / "base")
+    monkeypatch.setenv("COORDEXP_EXECUTION_MODEL_CACHE_ROOT", "relative-cache")
+
+    receipt = resolve_execution_model(base_model_path=base, target_dtype="bf16")
+
+    assert receipt["mode"] == "base_only"
+    assert receipt["model_path"] == str(base.resolve())
+
+
 def test_composed_cache_hit_reuses_published_snapshot(tmp_path: Path) -> None:
     base = _write_snapshot(tmp_path / "base")
     builds: list[Path] = []

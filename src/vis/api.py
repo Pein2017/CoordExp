@@ -1,4 +1,4 @@
-"""Public visualization APIs for CoordExp-Swift detection artifacts."""
+"""Public visualization APIs for CoordExp detection artifacts."""
 
 from __future__ import annotations
 

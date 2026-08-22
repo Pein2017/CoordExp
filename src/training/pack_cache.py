@@ -751,45 +751,6 @@ def load_rank_eval_micro_steps_from_cache(
         raise PackingCacheInvalidError(f"invalid packing cache: {exc}") from exc
 
 
-def _load_all_eval_micro_steps_from_cache_for_test(
-    cache_dir: str | Path,
-    *,
-    cache_root: str | Path,
-    expected_fingerprint: str,
-) -> tuple[EvalCacheEntry, ...]:
-    """Full-hydration compatibility oracle; tests only, never a fallback."""
-
-    try:
-        root = _validate_canonical_cache_dir(
-            cache_dir,
-            cache_root=cache_root,
-            fingerprint=expected_fingerprint,
-        )
-        manifest = _load_validated_manifest(
-            root, expected_fingerprint=expected_fingerprint
-        )
-        index = _validated_eval_ordinal_index(manifest)
-        chunks = {
-            chunk_index: chunk_steps
-            for chunk_index, (_start, chunk_steps) in enumerate(
-                _iter_validated_chunks(root, manifest)
-            )
-        }
-        return tuple(
-            EvalCacheEntry(
-                canonical_ordinal=int(entry["ordinal"]),
-                micro_step=chunks[int(entry["chunk_index"])][
-                    int(entry["chunk_offset"])
-                ],
-            )
-            for entry in index
-        )
-    except PackingCacheInvalidError:
-        raise
-    except _INVALID_CACHE_ERRORS as exc:
-        raise PackingCacheInvalidError(f"invalid packing cache: {exc}") from exc
-
-
 def _rank_local_pack_indices(
     schedule: ResolvedStepSchedule,
     *,
@@ -1215,7 +1176,7 @@ class _RestrictedCacheUnpickler(pickle.Unpickler):
         imported = importlib.import_module(module)
         return getattr(imported, name)
 
-    def persistent_load(self, pid: Any) -> Any:
+    def persistent_load(self, _pid: Any) -> Any:
         raise pickle.UnpicklingError(
             "packing cache pickle persistent IDs are forbidden"
         )

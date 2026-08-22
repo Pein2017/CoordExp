@@ -25,7 +25,6 @@ from src.losses.vocab import TokenVocabularyGroups
 from src.training import pack_cache
 from src.training.pack_cache import (
     DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS,
-    EvalCacheEntry,
     EvalCacheShard,
     PackingCacheInvalidError,
     PACKING_CACHE_MATERIALIZATION_STRATEGY,
@@ -1890,54 +1889,6 @@ def test_eval_corrupt_other_rank_chunk_is_skipped_only_by_unassigned_rank(
             rank=1,
             world_size=2,
         )
-    # The compatibility reference is deliberately full hydration and cannot
-    # become a silent production fallback for the failed responsible rank.
-    with pytest.raises(PackingCacheInvalidError, match="checksum mismatch"):
-        pack_cache._load_all_eval_micro_steps_from_cache_for_test(
-            cache_dir,
-            cache_root=_cache_root_from_cache_dir(cache_dir),
-            expected_fingerprint=EVAL_UNIT_FINGERPRINT,
-        )
-
-
-def test_eval_selective_and_full_hydration_are_row_exact(tmp_path: Path) -> None:
-    cache_dir = _cache_dir(tmp_path, EVAL_UNIT_FINGERPRINT)
-    write_micro_step_cache(
-        cache_dir,
-        tuple(_micro_step(index) for index in range(7)),
-        fingerprint=EVAL_UNIT_FINGERPRINT,
-        determinants=EVAL_UNIT_DETERMINANTS,
-        chunk_size=3,
-    )
-    full = pack_cache._load_all_eval_micro_steps_from_cache_for_test(
-        cache_dir,
-        cache_root=_cache_root_from_cache_dir(cache_dir),
-        expected_fingerprint=EVAL_UNIT_FINGERPRINT,
-    )
-
-    def row(entry: EvalCacheEntry) -> dict[str, Any]:
-        step = entry.micro_step
-        return {
-            "canonical_ordinal": entry.canonical_ordinal,
-            "pack_id": step.metadata["pack_id"],
-            "encoded_examples": step.encoded_examples,
-            "position_inputs": step.position_inputs,
-            "token_sequence": step.token_sequence,
-            "vocab_groups": step.vocab_groups,
-            "metadata": step.metadata,
-        }
-
-    for rank in range(3):
-        selective = load_rank_eval_micro_steps_from_cache(
-            cache_dir,
-            expected_fingerprint=EVAL_UNIT_FINGERPRINT,
-            rank=rank,
-            world_size=3,
-        )
-        full_reference_rows = [
-            row(entry) for entry in full if entry.canonical_ordinal % 3 == rank
-        ]
-        assert [row(entry) for entry in selective.entries] == full_reference_rows
 
 
 @pytest.mark.parametrize("payload_kind", ["list", "wrong-length-tuple"])

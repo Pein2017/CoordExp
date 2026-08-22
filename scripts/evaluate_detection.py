@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Evaluate CoordExp-Swift scored detection artifacts with COCO bbox metrics."""
+"""Evaluate CoordExp scored detection artifacts with COCO bbox metrics."""
 
 from __future__ import annotations
 
@@ -13,32 +13,21 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.common.errors import CoordExpError
-from src.eval.detection_consumer import SCORED_NAME, evaluate_scored_detection_artifacts
+from src.eval.detection_consumer import evaluate_scored_detection_artifacts
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate a CoordExp-Swift inference artifact directory containing "
+            "Evaluate a CoordExp inference artifact directory containing "
             "gt_vs_pred.jsonl, gt_vs_pred_scored.jsonl, and the scored provenance sidecar."
         )
     )
     parser.add_argument(
         "--artifact-dir",
         type=Path,
-        default=None,
+        required=True,
         help="Inference artifact directory to evaluate.",
-    )
-    parser.add_argument(
-        "--pred-jsonl",
-        "--pred_jsonl",
-        dest="pred_jsonl",
-        type=Path,
-        default=None,
-        help=(
-            "Compatibility alias for a path ending in gt_vs_pred_scored.jsonl; "
-            "the parent directory is evaluated."
-        ),
     )
     parser.add_argument(
         "--out-dir",
@@ -56,25 +45,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_artifact_dir(args: argparse.Namespace) -> Path:
-    if args.artifact_dir is not None and args.pred_jsonl is not None:
-        raise ValueError("provide only one of --artifact-dir or --pred-jsonl")
-    if args.artifact_dir is not None:
-        return args.artifact_dir
-    if args.pred_jsonl is not None:
-        if args.pred_jsonl.name != SCORED_NAME:
-            raise ValueError(
-                f"--pred-jsonl must point to {SCORED_NAME}, got {args.pred_jsonl.name!r}"
-            )
-        return args.pred_jsonl.parent
-    raise ValueError("one of --artifact-dir or --pred-jsonl is required")
-
-
 def main() -> None:
     try:
         args = parse_args()
         result = evaluate_scored_detection_artifacts(
-            artifact_dir=_resolve_artifact_dir(args),
+            artifact_dir=args.artifact_dir,
             output_dir=args.out_dir,
             metrics_name=str(args.metrics_name),
         )

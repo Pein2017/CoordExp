@@ -1,0 +1,25 @@
+# vLLM uses the same deterministic data/template contract as HF. Its runtime
+# qualification remains a required entrypoint check, not a config-only claim.
+schema_version: 1
+extends: production.yaml
+
+run:
+  name: qwen3-vl-2b-coco-vllm-infer
+
+backend:
+  type: vllm
+  vllm:
+    gpu_memory_utilization: 0.7
+    max_model_len: 2048
+
+data:
+  input_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+
+generation:
+  batch_size: 4
+  max_new_tokens: 512
+  temperature: 0.0
+  top_p: 1.0
+
+scoring:
+  enabled: true

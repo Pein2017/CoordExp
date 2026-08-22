@@ -569,37 +569,6 @@ def test_evaluate_detection_cli_consumes_swift_artifact_dir(tmp_path: Path) -> N
     assert completed.stdout.splitlines()[0].startswith("metrics: ")
 
 
-def test_evaluate_detection_cli_consumes_swift_pred_jsonl_alias(tmp_path: Path) -> None:
-    artifact_dir = _write_scored_fixture(
-        tmp_path / "artifacts",
-        rows=[_raw_row("row-1", 0, text=OBJECT_TEXT)],
-    )
-    output_dir = tmp_path / "eval"
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "scripts/evaluate_detection.py",
-            "--pred-jsonl",
-            str(artifact_dir / "gt_vs_pred_scored.jsonl"),
-            "--out-dir",
-            str(output_dir),
-        ],
-        cwd=Path(__file__).resolve().parents[2],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert (output_dir / "metrics.json").is_file()
-    assert (output_dir / "coco_gt.json").is_file()
-    assert (output_dir / "coco_predictions.json").is_file()
-    stdout_lines = completed.stdout.splitlines()
-    assert stdout_lines[0].startswith("metrics: ")
-    assert json.loads(stdout_lines[1])["mAP"] == pytest.approx(1.0)
-
-
 def test_evaluate_detection_cli_reports_contract_error_without_traceback(tmp_path: Path) -> None:
     output_dir = tmp_path / "eval"
 

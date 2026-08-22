@@ -3,9 +3,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Keep the canonical Swift test suite bound to this checkout. The former
-# MS-Swift path injection belonged to the archived mainline test bootstrap and
-# made the rebuilt suite depend on a sibling checkout.
+# Keep the canonical test suite bound to this checkout rather than an unrelated
+# editable package that may already be present in the host environment.
 root_str = str(ROOT)
 sys.path = [root_str] + [
     p for p in sys.path if p != root_str and "Qwen3-VL" not in p

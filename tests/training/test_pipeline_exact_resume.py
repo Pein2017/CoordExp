@@ -23,7 +23,6 @@ from src.training.session import (
     _apply_exact_resume_cursor_state,
     _build_exact_resume_publication_plan,
     _build_pipeline_exact_resume_identities,
-    _exact_resume_dependency_identity,
     _exact_resume_policy_payload,
     _read_only_admit_pipeline_exact_resume,
     _restored_exact_resume_cursor_state,
@@ -216,9 +215,7 @@ def test_train_logging_persists_validated_global_integer_accuracy_stats(
                 "atom_count": 5,
             }
             return {
-                "metrics": {
-                    sample.name: sample.value for sample in batch.samples
-                },
+                "metrics": {sample.name: sample.value for sample in batch.samples},
                 "accuracy_stats": dict(global_accuracy_stats),
             }
 
@@ -847,38 +844,6 @@ def test_restored_cursor_owner_envelopes_are_unwrapped_without_metadata_leakage(
         "data": {"position": 4},
         "pack": {"pack_index": 4},
     }
-
-
-def test_dependency_identity_excludes_reference_only_ms_swift_observation() -> None:
-    admitted = {
-        "schema_version": 3,
-        "baseline_sha256": "a" * 64,
-        "attention_backend": "flash_attention_2",
-        "admitted": True,
-        "mismatches": [],
-        "reference_only": {
-            "ms-swift": {"matches_recorded_reference": True, "mismatches": []}
-        },
-    }
-    drifted_reference = {
-        **admitted,
-        "reference_only": {
-            "ms-swift": {
-                "matches_recorded_reference": False,
-                "mismatches": ["commit"],
-            }
-        },
-    }
-
-    assert _exact_resume_dependency_identity(admitted) == (
-        _exact_resume_dependency_identity(drifted_reference)
-    )
-    rejected_runtime = {**admitted, "admitted": False, "mismatches": ["torch.sha256"]}
-    with pytest.raises(Exception) as error:
-        _exact_resume_dependency_identity(rejected_runtime)
-    assert (
-        getattr(error.value, "code", None) == "training.resume_dependency_not_admitted"
-    )
 
 
 def test_wrong_cursor_is_rejected_by_read_only_admission_before_state_mutation(

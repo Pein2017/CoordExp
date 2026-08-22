@@ -20,7 +20,6 @@ from src.adapters.dora import (
 )
 from src.adapters.source_gates import (
     AdapterSetupPlan,
-    AdapterSourceGateEvidence,
     build_adapter_setup_plan,
 )
 from src.common.errors import RuntimeContractError
@@ -456,11 +455,6 @@ def test_warm_start_expand_dora_requires_source_adapter_and_embedding_payload() 
 
     plan = build_adapter_setup_plan(
         adapter,
-        AdapterSourceGateEvidence(
-            dora_source_study_passed=True,
-            dora_probe_passed=True,
-            dora_probe_receipt=_probe_receipt_for_towers(("language",)),
-        ),
         base_model_path=Path("/models/qwen-base"),
     )
 
@@ -487,11 +481,6 @@ def test_warm_start_expand_dora_uses_configured_target_subset() -> None:
 
     plan = build_adapter_setup_plan(
         adapter,
-        AdapterSourceGateEvidence(
-            dora_source_study_passed=True,
-            dora_probe_passed=True,
-            dora_probe_receipt=_probe_receipt_for_towers(("language",)),
-        ),
         base_model_path=Path("/models/qwen-base"),
     )
 
@@ -703,11 +692,6 @@ def _setup_plan(
     )
     return build_adapter_setup_plan(
         adapter,
-        AdapterSourceGateEvidence(
-            dora_source_study_passed=True,
-            dora_probe_passed=True,
-            dora_probe_receipt=_probe_receipt_for_towers(target_towers),
-        ),
         base_model_path=base_model_path,
     )
 
@@ -762,11 +746,6 @@ def _warm_start_plan(*, source_adapter_path: Path) -> AdapterSetupPlan:
     )
     return build_adapter_setup_plan(
         adapter,
-        AdapterSourceGateEvidence(
-            dora_source_study_passed=True,
-            dora_probe_passed=True,
-            dora_probe_receipt=_probe_receipt_for_towers(("language",)),
-        ),
         base_model_path=Path("/models/qwen-base"),
     )
 

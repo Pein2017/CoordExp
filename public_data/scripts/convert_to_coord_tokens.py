@@ -37,7 +37,7 @@ import math
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
-from src.coord_tokens.codec import int_to_token, is_coord_token, token_to_int
+from public_data.geometry import int_to_token, is_coord_token, token_to_int
 from public_data.converters.sorting import canonicalize_poly, sort_objects_tlbr
 
 MAX_VALUE = 999

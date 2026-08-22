@@ -3,8 +3,14 @@
   "artifact_type": "processed_directory",
   "relative_path": "public_data/coco/rescale_32_1024_bbox",
   "producer_script": "public_data/run.sh",
+  "regeneration_status": "ready",
+  "validator_module": "public_data.provenance",
   "working_dir": ".",
-  "command": "./public_data/run.sh coco rescale --preset rescale_32_1024_bbox -- --max-pixels 1048576 --min-pixels 4096 --image-factor 32 --num-workers 1",
+  "command": "python -m public_data.scripts.run_pipeline_factory --mode full --dataset-id coco --dataset-dir public_data/coco --raw-dir public_data/coco/raw --preset rescale_32_1024_bbox --image-factor 32 --max-pixels 1048576 --min-pixels 4096 --num-workers 1",
+  "dependencies": [
+    {"kind": "python_module", "path": "public_data/scripts/run_pipeline_factory.py", "required": true},
+    {"kind": "dataset_adapter", "path": "public_data/pipeline/adapters/coco.py", "required": true}
+  ],
   "inputs": [
     {
       "kind": "raw_dataset",

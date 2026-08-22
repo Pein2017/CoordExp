@@ -1,60 +1,14 @@
-# Scripts
+# Operational entrypoints
 
-This directory contains user-facing entrypoints plus compatibility wrappers and
-historical diagnostics. The canonical training/inference implementation is
-owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
-`docs/COORDEXP_SWIFT.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+Use module entrypoints for training and inference:
 
-## Stable entrypoints
+- `python -m src.train --config <config>`
+- `python -m src.infer --config <config>`
 
-- Training (canonical Swift): `python -m src.train --config configs/coordexp_swift/...`.
-- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_swift/infer/...`.
-- Offline CoordExp-Swift detection evaluation (direct artifact reducer):
-  `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
-- Proxy-expanded COCO/LVIS eval views (one scored artifact, several GT views):
-  `scripts/evaluate_proxy_detection_bundle.py --config ...`.
-- Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
+The remaining operational scripts are Python modules, not shell wrappers:
 
-## Compatibility / debug wrappers
+- `python -m scripts.evaluate_detection --help`
+- `python -m scripts.visualize_detection --help`
 
-- `scripts/train.sh`, `scripts/train_stage2.sh`, `scripts/run_infer.py`, and
-  `scripts/postop_confidence.py`: legacy/mainline wrappers.
-  They are not the canonical Swift entrypoints and should be used only for
-  explicit compatibility or historical reproduction.
-- `scripts/run_infer_eval.sh`: legacy/mainline environment-variable wrapper.
-- `scripts/run_vis.sh`: manual/debug visualization wrapper for an explicitly
-  supplied prediction artifact and image root. Prefer evaluator overlays or
-  `vis_resources/` artifacts tied to resolved pipeline provenance for
-  reportable evidence.
-
-## Shared helpers
-
-- `scripts/_lib/backbone.sh`: shared bash helpers (repo root resolution, `ensure_required`, python runner).
-
-## External transfer helpers
-
-Baidu Netdisk upload/download helpers live in the repo-local Codex skill:
-
-- `.codex/skills/baidupcsgo-upload/scripts/upload_dir.sh`
-- `.codex/skills/baidupcsgo-upload/scripts/download_dir.sh`
-
-Use them for `output/` backups under `/CoordExp/output/`. Do not use Baidu
-Netdisk as the default sync surface for `model_cache/`, raw `public_data/`, or
-processed `public_data/` contents.
-
-## Utilities (organized)
-
-- Analysis helpers: `scripts/analysis/`
-- Tooling helpers: `scripts/tools/`
-- Small pipelines / workflow wrappers and diagnostics: `scripts/pipelines/`
-  - tmux queue manager for sequential training jobs: `scripts/pipelines/train_task_manager.sh`
-    (Python core: `scripts/pipelines/train_task_manager.py`)
-  - historical rollout parser/stability diagnostic:
-    `scripts/pipelines/run_rollout_stability_probe.sh`; this delegates to the
-    legacy/debug `run_infer_eval.sh` wrapper and is not a stable benchmark
-    pipeline.
-
-## Deprecated
-
-Deprecated wrappers are removed. Prefer stable YAML-first entrypoints for
-inference, scoring, evaluation, and reportable visualization artifacts.
+Historical experiments are documentation-only under `research/`; they are not
+part of the default runtime or test surface.

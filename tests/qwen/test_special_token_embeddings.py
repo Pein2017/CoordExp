@@ -20,14 +20,12 @@ from src.qwen.special_token_embeddings import (
     SPECIAL_TOKEN_EMBEDDINGS_JSON,
     SPECIAL_TOKEN_EMBEDDINGS_SAFE_TENSORS,
     SelectedDeltaOutputHead,
-    SpecialTokenEmbeddingSourceGateEvidence,
     SpecialTokenSelection,
     build_default_special_token_selection,
     fold_special_token_embedding_delta_for_execution,
     inspect_special_token_embedding_delta_payload,
     install_special_token_embedding_deltas,
     load_inference_embedding_delta,
-    load_default_special_token_embedding_source_gate_evidence,
     load_special_token_embedding_deltas,
     save_special_token_embedding_deltas,
     validate_inference_embedding_delta_identity,
@@ -60,89 +58,6 @@ def test_default_special_token_selection_uses_wrappers_then_coordinates() -> Non
     assert artifact["coord_token_ids_contiguous"] is True
 
 
-def test_default_special_token_embedding_source_gate_loads_canonical_evidence() -> None:
-    evidence = load_default_special_token_embedding_source_gate_evidence(
-        Path(__file__).resolve().parents[2]
-    )
-
-    assert evidence.source_study_passed is True
-    assert evidence.roundtrip_probe_passed is True
-    assert evidence.probe_receipt is not None
-    assert evidence.probe_receipt["ok"] is True
-    assert evidence.probe_receipt["semantics"] == "additive_delta"
-    assert evidence.probe_receipt["num_selected_tokens"] == 1004
-    assert evidence.probe_receipt["runtime_tied_input_lm_head_identity"] is True
-
-
-def test_special_token_embedding_install_requires_source_gate() -> None:
-    model = TinyTiedQwenModel()
-    selection = SpecialTokenSelection(token_strings=("<a>",), token_ids=(2,))
-
-    with pytest.raises(RuntimeContractError) as missing_study:
-        install_special_token_embedding_deltas(
-            model,
-            selection,
-            source_gate=SpecialTokenEmbeddingSourceGateEvidence(
-                source_study_passed=False,
-                roundtrip_probe_passed=True,
-                probe_receipt={"ok": True},
-            ),
-        )
-
-    assert missing_study.value.code == "special_token_embeddings.source_gate_missing"
-
-    with pytest.raises(RuntimeContractError) as missing_receipt:
-        install_special_token_embedding_deltas(
-            TinyTiedQwenModel(),
-            selection,
-            source_gate=SpecialTokenEmbeddingSourceGateEvidence(
-                source_study_passed=True,
-                roundtrip_probe_passed=True,
-                probe_receipt=None,
-            ),
-        )
-
-    assert missing_receipt.value.code == "special_token_embeddings.source_gate_missing"
-
-
-@pytest.mark.parametrize(
-    ("receipt_patch", "expected_code"),
-    [
-        (
-            {"semantics": "absolute_rows"},
-            "special_token_embeddings.source_gate_semantics",
-        ),
-        (
-            {"num_selected_tokens": 2},
-            "special_token_embeddings.source_gate_selected_count",
-        ),
-    ],
-)
-def test_special_token_embedding_source_gate_rejects_drifted_probe_receipts(
-    receipt_patch: dict[str, object],
-    expected_code: str,
-) -> None:
-    receipt = {
-        "ok": True,
-        "semantics": "additive_delta",
-        "num_selected_tokens": 1,
-    }
-    receipt.update(receipt_patch)
-
-    with pytest.raises(RuntimeContractError) as exc_info:
-        install_special_token_embedding_deltas(
-            TinyTiedQwenModel(),
-            SpecialTokenSelection(token_strings=("<a>",), token_ids=(2,)),
-            source_gate=SpecialTokenEmbeddingSourceGateEvidence(
-                source_study_passed=True,
-                roundtrip_probe_passed=True,
-                probe_receipt=receipt,
-            ),
-        )
-
-    assert exc_info.value.code == expected_code
-
-
 def test_tied_special_token_deltas_affect_only_selected_inputs_and_logits() -> None:
     torch.manual_seed(3)
     model = TinyTiedQwenModel(vocab_size=8, hidden_size=4)
@@ -151,7 +66,6 @@ def test_tied_special_token_deltas_affect_only_selected_inputs_and_logits() -> N
     result = install_special_token_embedding_deltas(
         model,
         selection,
-        source_gate=_source_gate(selected_count=2),
     )
 
     assert result.receipt.tie_word_embeddings is True
@@ -207,7 +121,6 @@ def test_special_token_embedding_delta_owner_dtype_is_fp32_for_bf16_base() -> No
     result = install_special_token_embedding_deltas(
         model,
         selection,
-        source_gate=_source_gate(selected_count=2),
     )
 
     assert result.input_wrapper.base.weight.dtype == torch.bfloat16
@@ -250,7 +163,6 @@ def test_special_token_embedding_install_preserves_existing_trainable_adapters()
     result = install_special_token_embedding_deltas(
         model,
         selection,
-        source_gate=_source_gate(selected_count=1),
     )
 
     trainable_names = {
@@ -273,7 +185,6 @@ def test_special_token_embedding_install_rejects_selected_id_outside_vocab() -> 
         install_special_token_embedding_deltas(
             model,
             selection,
-            source_gate=_source_gate(selected_count=1),
         )
 
     assert exc_info.value.code == "special_token_embeddings.token_id_out_of_range"
@@ -284,7 +195,6 @@ def test_special_token_embedding_compact_payload_round_trips(tmp_path: Path) -> 
     result = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=2),
     )
     with torch.no_grad():
         result.shared_embed_delta.copy_(
@@ -314,7 +224,6 @@ def test_special_token_embedding_compact_payload_round_trips(tmp_path: Path) -> 
     reloaded = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=2),
     )
     load_receipt = load_special_token_embedding_deltas(
         reloaded,
@@ -430,7 +339,6 @@ def test_fold_execution_delta_rejects_wrappers_and_out_of_range_ids(
     wrapped = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         SpecialTokenSelection(token_strings=("<a>", "<b>"), token_ids=(2, 5)),
-        source_gate=_source_gate(selected_count=2),
     ).model
 
     with pytest.raises(RuntimeContractError) as wrapper_error:
@@ -481,7 +389,6 @@ def test_special_token_embedding_load_requires_matching_identity(
     result = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=1),
     )
     save_special_token_embedding_deltas(
         result,
@@ -493,7 +400,6 @@ def test_special_token_embedding_load_requires_matching_identity(
     reloaded = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=1),
     )
 
     with pytest.raises(RuntimeContractError) as exc_info:
@@ -509,7 +415,6 @@ def test_special_token_embedding_load_rejects_tensor_dtype_mismatch(
     result = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=1),
     )
     metadata = result.receipt.to_metadata_dict(
         base_model_path=Path("/models/qwen-base"),
@@ -544,7 +449,6 @@ def test_special_token_embedding_load_converts_self_consistent_bf16_payload_to_f
     result = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=1),
     )
     expected = torch.tensor([[0.125, -0.5, 1.75, 3.0]], dtype=torch.bfloat16)
     metadata = result.receipt.to_metadata_dict(
@@ -586,7 +490,6 @@ def test_special_token_embedding_load_rejects_full_embedding_payload(
     result = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=1),
     )
     metadata = result.receipt.to_metadata_dict(
         base_model_path=Path("/models/qwen-base"),
@@ -652,7 +555,6 @@ def test_inference_embedding_delta_load_installs_wrappers_and_payload(
     payload_result = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=152670, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=len(selection)),
     )
     with torch.no_grad():
         payload_result.shared_embed_delta.fill_(0.125)
@@ -824,7 +726,6 @@ def _write_execution_delta(path: Path) -> tuple[Path, torch.Tensor]:
     installed = install_special_token_embedding_deltas(
         TinyTiedQwenModel(vocab_size=8, hidden_size=4),
         selection,
-        source_gate=_source_gate(selected_count=2),
     )
     delta = torch.tensor(
         [[0.5, 0.25, -0.125, 0.75], [-0.5, 0.75, 0.25, -0.25]],
@@ -840,23 +741,6 @@ def _write_execution_delta(path: Path) -> tuple[Path, torch.Tensor]:
         tokenizer_sha256="tokenizer-sha",
     )
     return path, delta
-
-
-def _source_gate(*, selected_count: int) -> SpecialTokenEmbeddingSourceGateEvidence:
-    return SpecialTokenEmbeddingSourceGateEvidence(
-        source_study_passed=True,
-        roundtrip_probe_passed=True,
-        probe_receipt={
-            "ok": True,
-            "semantics": "additive_delta",
-            "num_selected_tokens": selected_count,
-            "runtime_tied_input_lm_head_identity": True,
-            "payload": {
-                "safetensors": "special_token_embeddings.safetensors",
-                "metadata": "special_token_embeddings.json",
-            },
-        },
-    )
 
 
 def _token_identity() -> QwenTokenIdentity:

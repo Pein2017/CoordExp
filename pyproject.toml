@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=80,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coordexp-infra-base"
+version = "0.1.0"
+description = "Topology-neutral CoordExp Qwen vision-language training and evaluation infrastructure."
+readme = {text = "CoordExp infrastructure package.", content-type = "text/plain"}
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "jsonschema>=4.25,<5",
+  "numpy>=2.1,<3",
+  "Pillow>=11,<12",
+  "pycocotools>=2.0.10,<3",
+  "pydantic==2.13.4",
+  "PyYAML==6.0.2",
+  "tqdm>=4.67,<5",
+]
+
+[project.optional-dependencies]
+train = [
+  "accelerate==1.10.1",
+  "flash-attn==2.8.3",
+  "peft==0.17.1",
+  "torch==2.9.1",
+  "transformers==4.57.1",
+]
+vllm = [
+  "vllm==0.14.1",
+]
+dev = [
+  "pytest>=8.3,<9",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*", "public_data", "public_data.*"]
+exclude = ["research", "research.*", "tests", "tests.*", "public_data.tests", "public_data.tests.*"]
+namespaces = false

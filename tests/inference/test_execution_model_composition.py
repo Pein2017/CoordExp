@@ -240,8 +240,8 @@ def _fixture() -> dict[str, object]:
     }
 
 
-def _probe_identity() -> dict[str, object]:
-    path = Path("scripts/probes/coordexp_swift/execution_model_composition.py")
+def _composition_source_identity() -> dict[str, object]:
+    path = Path("src/inference/execution_model_composition.py")
     return {
         "path": path.as_posix(),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -260,7 +260,7 @@ def _build_receipt(execution_model: dict[str, object]) -> dict[str, object]:
     return build_execution_model_composition_receipt(
         execution_model=execution_model,
         fixture_identity=_fixture(),
-        probe_identity=_probe_identity(),
+        composition_source_identity=_composition_source_identity(),
         resolved_config_identity=_config_identity(),
         comparison=_comparison(),
     )
@@ -336,7 +336,7 @@ def test_composition_receipt_accepts_fp32_execution_evidence(
     composition = build_execution_model_composition_receipt(
         execution_model=execution_model,
         fixture_identity=_fixture(),
-        probe_identity=_probe_identity(),
+        composition_source_identity=_composition_source_identity(),
         resolved_config_identity=_config_identity(),
         comparison=_comparison(native_dtype="torch.float32"),
     )
@@ -364,7 +364,7 @@ def test_composition_receipt_supports_independently_optional_payloads(
     composition = build_execution_model_composition_receipt(
         execution_model=execution_model,
         fixture_identity=_fixture(),
-        probe_identity=_probe_identity(),
+        composition_source_identity=_composition_source_identity(),
         resolved_config_identity=_config_identity(),
         comparison=_comparison(
             with_adapter=with_adapter,
@@ -445,7 +445,7 @@ def test_composition_builder_rejects_identity_detached_from_materializer(
         build_execution_model_composition_receipt(
             execution_model=execution_model,
             fixture_identity=_fixture(),
-            probe_identity=_probe_identity(),
+            composition_source_identity=_composition_source_identity(),
             resolved_config_identity=_config_identity(),
             comparison=comparison,
         )
@@ -479,7 +479,7 @@ def test_composition_builder_rejects_incomplete_fixture_identity(
         build_execution_model_composition_receipt(
             execution_model=execution_model,
             fixture_identity=fixture,
-            probe_identity=_probe_identity(),
+            composition_source_identity=_composition_source_identity(),
             resolved_config_identity=_config_identity(),
             comparison=_comparison(),
         )

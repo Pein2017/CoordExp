@@ -6,7 +6,6 @@ from typing import Dict, Iterable, Sequence
 from .base import DatasetAdapter
 from .coco import CocoAdapter
 from .lvis import LvisAdapter
-from .vg import VgAdapter
 
 
 class AdapterRegistry:
@@ -56,16 +55,10 @@ def build_default_registry() -> AdapterRegistry:
     reg = AdapterRegistry()
     coco = CocoAdapter()
     lvis = LvisAdapter()
-    vg = VgAdapter()
-
     reg.register(coco)
     reg.register(lvis)
-    reg.register(vg)
-    reg.register(AliasAdapter(dataset_id="vg_ref", delegate=vg))
 
     # Smoke aliases keep synthetic-runner tests isolated from real dataset folders.
     reg.register(AliasAdapter(dataset_id="smoke_coco", delegate=coco))
     reg.register(AliasAdapter(dataset_id="smoke_lvis", delegate=lvis))
-    reg.register(AliasAdapter(dataset_id="smoke_vg", delegate=vg))
-    reg.register(AliasAdapter(dataset_id="smoke_vg_ref", delegate=vg))
     return reg

@@ -1224,16 +1224,13 @@ def _micro_step() -> SupervisedMicroStep:
 
 
 # ---------------------------------------------------------------------------
-# Wave-0 pre-move characterization for
-# `decompose-coordexp-swift-training-orchestration`.
-#
-# The determinant-owner registry is the surface Wave 3 narrows.  These additions
-# freeze the exact current inventory, the two evidenced overbroad owners, and the
-# four declared determinant sources whose identity is allowed to turn over.
+# Determinant-owner registry characterization. These assertions freeze the exact
+# current inventory, retired overbroad owners, and determinant sources whose
+# identity is allowed to turn over.
 # ---------------------------------------------------------------------------
 
 
-WAVE0_DETERMINANT_OWNERS = {
+BASELINE_DETERMINANT_OWNERS = {
     "augmentation_config": "src/augmentation/geometry.py",
     "augmentation_factory": "src/augmentation/factory.py",
     "augmentation_processor": "src/augmentation/processor.py",
@@ -1245,14 +1242,12 @@ WAVE0_DETERMINANT_OWNERS = {
     "dataset_jsonl_loader": "src/data/jsonl.py",
     "encoding_runtime": "src/qwen/encoding.py",
     "image_loader": "src/qwen/images.py",
-    # Wave 3 rebound these two entries under the frozen manifest's declared
-    # flip for `test_wave0_determinant_owner_registry_is_frozen`.  Every other
-    # owner entry and the registry schema version stay equal to Wave 0.
+    # These two entries are bound to their narrow runtime owners. Every other
+    # owner entry and the registry schema version remain part of the baseline.
     "micro_step_runtime_config": "src/training/cache_contract.py",
     "micro_step_schema": "src/training/micro_steps.py",
-    # `close-coordexp-swift-review-p1s` P1-1 adds one determinant: the
-    # micro-step assembly owner extracted out of the cache workflow.  Wave-0
-    # bindings are otherwise unchanged; the addition is a declared
+    # The micro-step assembly owner is extracted out of the cache workflow.
+    # Baseline bindings are otherwise unchanged; the addition is a declared
     # fingerprint-changing conformance fix, not a rebinding.
     "micro_step_assembler": "src/training/micro_step_assembler.py",
     "model_config_assets": "src/qwen/runtime_loading.py",
@@ -1276,49 +1271,47 @@ WAVE0_DETERMINANT_OWNERS = {
 }
 
 #: The four determinant sources the change declares may change identity.
-WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES = (
+DECLARED_DETERMINANT_SOURCE_CHANGES = (
     "cache_serializer",
     "micro_step_runtime_config",
     "micro_step_schema",
     "supervision_tokens",
 )
 
-#: The two owner paths Wave 3 retired; no determinant may bind them again.
-WAVE3_RETIRED_OVERBROAD_OWNER_PATHS = frozenset(
+#: Retired overbroad owner paths; no determinant may bind them again.
+RETIRED_OVERBROAD_OWNER_PATHS = frozenset(
     {"src/training/pipeline.py", "src/training/supervised_trainer.py"}
 )
 
 
-def test_wave0_determinant_owner_registry_is_frozen() -> None:
+def test_determinant_owner_registry_is_frozen() -> None:
     assert dict(pack_cache.PACKING_CACHE_DETERMINANT_OWNERS) == (
-        WAVE0_DETERMINANT_OWNERS
+        BASELINE_DETERMINANT_OWNERS
     )
     assert pack_cache.PACKING_CACHE_DETERMINANT_REGISTRY_VERSION == 1
 
 
-def test_wave0_overbroad_owners_are_exactly_the_two_declared_entries() -> None:
-    # Wave-3 revision under the frozen manifest's declared flip: the node is
-    # inverted from "exactly these two overbroad bindings exist" to "no
-    # determinant is bound to either retired owner" (tasks.md 9.4 residue).
+def test_retired_overbroad_owners_are_absent() -> None:
+    # No determinant may be bound to either retired overbroad owner.
     observed = {
         name: owner
         for name, owner in pack_cache.PACKING_CACHE_DETERMINANT_OWNERS.items()
-        if owner in WAVE3_RETIRED_OVERBROAD_OWNER_PATHS
+        if owner in RETIRED_OVERBROAD_OWNER_PATHS
     }
 
     assert observed == {}
 
 
-def test_wave0_declared_source_changes_are_current_registry_names() -> None:
-    assert set(WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES) <= set(
+def test_declared_source_changes_are_current_registry_names() -> None:
+    assert set(DECLARED_DETERMINANT_SOURCE_CHANGES) <= set(
         pack_cache.PACKING_CACHE_DETERMINANT_OWNERS
     )
-    assert sorted(WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES) == list(
-        WAVE0_DECLARED_DETERMINANT_SOURCE_CHANGES
+    assert sorted(DECLARED_DETERMINANT_SOURCE_CHANGES) == list(
+        DECLARED_DETERMINANT_SOURCE_CHANGES
     )
 
 
-def test_wave0_determinant_owner_reasons_cover_every_owner_exactly() -> None:
+def test_determinant_owner_reasons_cover_every_owner_exactly() -> None:
     assert set(pack_cache._DETERMINANT_REASONS) == set(
         pack_cache.PACKING_CACHE_DETERMINANT_OWNERS
     )

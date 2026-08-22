@@ -32,6 +32,7 @@ from src.training.pack_cache import (
 )
 from src.training.supervised_trainer import SupervisedMicroStep
 
+
 def _patch_shared_cache_import(
     monkeypatch: pytest.MonkeyPatch, name: str, value: object
 ) -> None:
@@ -496,12 +497,7 @@ def test_pinned_runtime_baseline_admission_broadcasts_rank_zero_receipt(
         "attention_backend": "flash_attention_2",
         "admitted": True,
         "mismatches": [],
-        "reference_only": {
-            "ms-swift": {
-                "matches_recorded_reference": True,
-                "mismatches": [],
-            }
-        },
+        "reference_only": {},
     }
     calls: list[dict[str, object]] = []
     _patch_shared_cache_import(
@@ -1280,10 +1276,12 @@ def _distributed_preflight_failure_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
-        lambda **kwargs: _runtime_baseline_receipt()
-    )
+    cache_workflow.collect_execution_provenance = (
+        session.collect_execution_provenance
+    ) = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = (
+        session.require_pinned_runtime_baseline
+    ) = lambda **kwargs: _runtime_baseline_receipt()
 
     def load_components(config: object, *, load_model: bool) -> object:
         model_load_calls.append(load_model)
@@ -1292,10 +1290,16 @@ def _distributed_preflight_failure_worker(
         return components
 
     cache_workflow.load_qwen_components = session.load_qwen_components = load_components
-    cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_token_vocabulary_groups = (
+        session.build_token_vocabulary_groups
+    ) = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = (
+        session.resolve_qwen_runtime_controls
+    ) = lambda *args, **kwargs: object()
     cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.resolve_planned_step_schedule = (
+        session.resolve_planned_step_schedule
+    ) = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1359,10 +1363,12 @@ def _distributed_provider_resolution_mismatch_worker(
         to_artifact_dict=lambda: {"test": True},
     )
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
-        lambda **kwargs: _runtime_baseline_receipt()
-    )
+    cache_workflow.collect_execution_provenance = (
+        session.collect_execution_provenance
+    ) = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = (
+        session.require_pinned_runtime_baseline
+    ) = lambda **kwargs: _runtime_baseline_receipt()
     cache_workflow._resolve_model_free_training_preflight = lambda **kwargs: (
         (_ for _ in ()).throw(
             AssertionError("cache admission must not run after provider mismatch")
@@ -1435,19 +1441,29 @@ def _distributed_preflight_success_worker(
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     observations: dict[str, object] = {}
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
-        lambda **kwargs: _runtime_baseline_receipt()
+    cache_workflow.collect_execution_provenance = (
+        session.collect_execution_provenance
+    ) = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = (
+        session.require_pinned_runtime_baseline
+    ) = lambda **kwargs: _runtime_baseline_receipt()
+    cache_workflow.load_qwen_components = session.load_qwen_components = (
+        lambda config, *, load_model: (
+            (_ for _ in ()).throw(AssertionError("model load must remain stubbed"))
+            if load_model
+            else components
+        )
     )
-    cache_workflow.load_qwen_components = session.load_qwen_components = lambda config, *, load_model: (
-        (_ for _ in ()).throw(AssertionError("model load must remain stubbed"))
-        if load_model
-        else components
-    )
-    cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_token_vocabulary_groups = (
+        session.build_token_vocabulary_groups
+    ) = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = (
+        session.resolve_qwen_runtime_controls
+    ) = lambda *args, **kwargs: object()
     cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.resolve_planned_step_schedule = (
+        session.resolve_planned_step_schedule
+    ) = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,
@@ -1544,10 +1560,12 @@ def _distributed_accelerator_identity_mismatch_worker(
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
     execution_plan.load_train_config = lambda path: resolved
-    cache_workflow.collect_execution_provenance = session.collect_execution_provenance = lambda **kwargs: {"schema_version": 1}
-    cache_workflow.require_pinned_runtime_baseline = session.require_pinned_runtime_baseline = (
-        lambda **kwargs: _runtime_baseline_receipt()
-    )
+    cache_workflow.collect_execution_provenance = (
+        session.collect_execution_provenance
+    ) = lambda **kwargs: {"schema_version": 1}
+    cache_workflow.require_pinned_runtime_baseline = (
+        session.require_pinned_runtime_baseline
+    ) = lambda **kwargs: _runtime_baseline_receipt()
 
     def load_components(config: object, *, load_model: bool) -> object:
         model_load_calls.append(load_model)
@@ -1556,10 +1574,16 @@ def _distributed_accelerator_identity_mismatch_worker(
         return components
 
     cache_workflow.load_qwen_components = session.load_qwen_components = load_components
-    cache_workflow.build_token_vocabulary_groups = session.build_token_vocabulary_groups = lambda *args, **kwargs: object()
-    cache_workflow.resolve_qwen_runtime_controls = session.resolve_qwen_runtime_controls = lambda *args, **kwargs: object()
+    cache_workflow.build_token_vocabulary_groups = (
+        session.build_token_vocabulary_groups
+    ) = lambda *args, **kwargs: object()
+    cache_workflow.resolve_qwen_runtime_controls = (
+        session.resolve_qwen_runtime_controls
+    ) = lambda *args, **kwargs: object()
     cache_workflow.build_packing_cache_fingerprint = lambda *args, **kwargs: FINGERPRINT
-    cache_workflow.resolve_planned_step_schedule = session.resolve_planned_step_schedule = lambda *args, **kwargs: SimpleNamespace(
+    cache_workflow.resolve_planned_step_schedule = (
+        session.resolve_planned_step_schedule
+    ) = lambda *args, **kwargs: SimpleNamespace(
         resolved_max_steps=1,
         runtime_batch=SimpleNamespace(
             world_size=_WORLD_SIZE,

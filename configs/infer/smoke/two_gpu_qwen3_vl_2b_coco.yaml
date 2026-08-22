@@ -1,0 +1,16 @@
+schema_version: 1
+extends: ../production.yaml
+
+run:
+  name: qwen3-vl-2b-coco-smoke-infer
+
+data:
+  input_jsonl: ../../../tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl
+
+generation:
+  batch_size: 1
+  max_new_tokens: 64
+
+debug:
+  smoke: true
+  dry_run: false

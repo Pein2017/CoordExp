@@ -1,15 +1,27 @@
 {
   "artifact_type": "processed_directory",
+  "regeneration_status": "ready",
+  "validator_module": "public_data.provenance",
+  "dependencies": [
+    {"kind": "python_module", "path": "public_data/refinement_replay.py", "required": true},
+    {"kind": "authority_validator", "path": "public_data/provenance.py", "required": true}
+  ],
+  "excluded_local_jsonl": [
+    {
+      "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.smoke_b8_source_order.jsonl",
+      "reason": "Preserved local diagnostic data; not a canonical train/val regeneration output or routine checksum target."
+    }
+  ],
   "checksums": {
-    "aggregate_sha256": "d56e565e5fdc292860a2942391f37a3ff89ca61fedd330b51c34a1628c62c5f6",
+    "aggregate_sha256": "d23663daf3022b18268d3627102110df45c5be3896f42ae303d9c020b7ee0448",
     "aggregate_source": "sorted path sha256 size_bytes records lines",
     "algorithm": "sha256",
     "files": [
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl",
         "records": 117266,
-        "sha256": "e61a7f7e2bddadeb3ffe5550f83feac1ecccc99149c7f98271113e9a3f9580f8",
-        "size_bytes": 172531224
+        "sha256": "4bc00be57d78d4d76e0874cd83f89329d1dc2cd471c208f3f2e30e0365dd96ee",
+        "size_bytes": 159723517
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.jsonl",
@@ -20,14 +32,14 @@
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl",
         "records": 117266,
-        "sha256": "d64edc553bdc4d725cb9c3a504f369a9799e8bdde20c8fef0787a09cec33c16a",
-        "size_bytes": 131733768
+        "sha256": "f1ab7912556a744a2d81a886020b4577e3a4c26a139d66750d9c0f26104a007c",
+        "size_bytes": 118925869
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
         "records": 4952,
-        "sha256": "b5100edc926c1adbffdb7b7976477a3489902ef9fd58c7d75aaf3c7bce3a3d27",
-        "size_bytes": 7331214
+        "sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894",
+        "size_bytes": 6808307
       },
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.jsonl",
@@ -38,51 +50,112 @@
       {
         "path": "public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl",
         "records": 4952,
-        "sha256": "a34afb33c567690f56fa3704e213cfc00dc3c000f018d2bb89a7f60139efd795",
-        "size_bytes": 5587134
+        "sha256": "44ab9fd985890129128bdacb07081cc00bd4affe8c6768d5e49609ca20a72e52",
+        "size_bytes": 5056739
       }
     ],
     "scope": "jsonl_training_samples_only"
   },
   "code_ref": {
-    "git_commit": "82eb100ae186ee084339e4e9cd4b821623581f50",
-    "git_dirty_allowed": true
+    "current_owner": "public_data/refinement_replay.py",
+    "historical_producer_git_commit": "93517eadf6679cad0a0e87288df4097ed95e066e"
   },
-  "command": "PYTHONPATH=. conda run -n ms python public_data/scripts/build_coco_length_budget_artifacts.py --config configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml --model-path model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp --source-preset public_data/coco/rescale_32_1024_bbox --coco-output public_data/coco/rescale_32_1024_bbox_len12000 --proxy-output public_data/coco/rescale_32_1024_bbox_lvis_proxy_len12000 --projection-root temp/coco_lvis_projection_length_budget --mapping-csv openspec/changes/add-lvis-coco-proxy-supervision/artifacts/determined_proxy_mappings_val2017.csv --max-total-tokens 12000 --splits train val --force",
-  "generated_at_utc": "2026-05-17T07:44:10Z",
+  "command": "python -m public_data.refinement_replay --working-norm /data/CoordExp/outputs/coco_refinement/gate-a-20260717/{split}/working.norm.jsonl --destination /explicit/new/destination --image-root /data/CoordExp/public_data/coco/rescale_32_1024_bbox/images --split {split}",
+  "generated_at_utc": "2026-07-20T11:45:57Z",
   "inputs": [
     {
       "kind": "processed_base",
       "notes": "COCO 1024 resized pixel-space base preset.",
       "path": "public_data/coco/rescale_32_1024_bbox"
     },
-    {
-      "kind": "training_config",
-      "notes": "Latest compact-full prompt/model/template contract.",
-      "path": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
-    }
+    {"kind": "refinement_runtime", "notes": "Read-only terminal runtime authority for the July norm/coord publication.", "path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717"},
+    {"kind": "replay_contract", "notes": "Tracked minimal deterministic serializer; it does not own annotations or the May pixel/image stage.", "path": "public_data/refinement_replay.py"}
   ],
   "key_params": {
     "image_factor": 32,
     "image_storage_policy": "share_same_resolution_image_root",
-    "lvis_proxy": false,
     "max_objects": null,
     "max_pixels": 1048576,
     "max_total_tokens": 12000,
     "routine_sync_policy": "regenerate_from_raw_plus_manifest",
     "shared_image_root": "public_data/coco/rescale_32_1024_bbox/images",
-    "template": "compact_full",
-    "token_budget_components": [
-      "image_patch_tokens_post_merge",
-      "system_prompt_tokens",
-      "user_chat_tokens",
-      "assistant_compact_full_detection_tokens"
-    ],
-    "tokenizer": "model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp",
-    "training_config": "configs/stage1/recursive_detection_ce_latest/prod/compact_full_support2.yaml"
+    "length_budget_contract": "public_data_deterministic_v1",
+    "refinement_publication_contract": "coco-refinement-dataset-publisher-v1",
+    "refinement_replay_overwrite_policy": "refuse_by_default"
   },
-  "notes": "COCO 1024 compact-full dataset filtered by total 12k token budget.",
-  "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
+  "notes": "The May pixel JSONLs and shared image root remain preserved base-stage outputs. The July terminal refinement receipts prove the active norm/coord lineage, including ordered object membership and synthetic negative-ID ownership. The recorded July training config is a historical receipt identity, not the current canonical training config. The retained replay ports only deterministic serialization; public_data.provenance validates the immutable external runtime authority before reporting readiness.",
+  "producer_script": "public_data/refinement_replay.py",
+  "refinement_authority": {
+    "base_stage": {
+      "generated_at_utc": "2026-05-17T07:44:10Z",
+      "producer_script": "public_data/scripts/build_coco_length_budget_artifacts.py",
+      "preserved_outputs": ["train.jsonl", "val.jsonl", "images"],
+      "notes": "Pixel-space JSONLs and the shared 1024px image store are preserved; refinement replay does not rewrite or copy them."
+    },
+    "historical_producer": {
+      "git_commit": "93517eadf6679cad0a0e87288df4097ed95e066e",
+      "publisher_version": "coco-refinement-dataset-publisher-v1",
+      "source_paths": [
+        "src/coco_refinement/dataset_publisher.py",
+        "scripts/publish_coco_refinement_dataset.py",
+        "src/label_studio_coco_refinement/models.py",
+        "src/label_studio_coco_refinement/store.py"
+      ]
+    },
+    "runtime_root": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717",
+    "selected_generation_policy": "max_succeeded_terminal",
+    "historical_training_config": {
+      "identity_mode": "recorded_receipt_only",
+      "recorded_path": "/data/CoordExp/configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml",
+      "sha256": "b2749ac74d303aa432d751b9370de96b679df151ef0b36bc5835e227b5412012"
+    },
+    "tokenizer": {
+      "path": "/data/CoordExp/model_cache_remote/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp/tokenizer.json",
+      "sha256": "ca7e80dee65c629af3b314e76a7587490db3f4e6412df4af9f3b690a9e9916f8"
+    },
+    "splits": {
+      "train": {
+        "generation": 1,
+        "published_at_utc": "2026-07-20T08:25:45Z",
+        "row_count": 117266,
+        "object_count": 849951,
+        "negative_object_count": 9,
+        "canonical_manifest_sha256": "c079e8a8395d6f8a8e6b3f2202e3028b59d36493445f7f623e1e877bd38588d9",
+        "terminal_record_hash": "055632bc094a8183eb0e0c2a2a9a9901c6847f65778c69b5aa0de912d35da2a3",
+        "files": {
+          "receipt": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/train/training.publish.receipt.json", "sha256": "685e6fa5abc7f621aa33335b4bcc680fa8d54036ea1716c1e2b33a3db96cd6c7"},
+          "project": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/train/project.json", "sha256": "458c1baeda717202c445c583b8906ce6ad1a3c5e3b10204ba09b16c0df15f37b"},
+          "journal": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/train/journal.jsonl", "sha256": "eccc162da6bf8de985d8edeab7184adb7060b75999c4b03e42c0a7841fa8cbf2"},
+          "working": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/train/working.norm.jsonl", "sha256": "b31989ccd0238edfc040efe5aa824958c8f67eb8648997ce26d953d7fd10eed3"},
+          "task_index": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/train/task_index.json", "sha256": "d9aaf45be2e4ce994a223e6c5d4e885080f29c93164767a55934fd8c4ac3ead2"}
+        },
+        "outputs": {
+          "norm": {"path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.norm.jsonl", "sha256": "f1ab7912556a744a2d81a886020b4577e3a4c26a139d66750d9c0f26104a007c", "size_bytes": 118925869, "records": 117266},
+          "coord": {"path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/train.coord.jsonl", "sha256": "4bc00be57d78d4d76e0874cd83f89329d1dc2cd471c208f3f2e30e0365dd96ee", "size_bytes": 159723517, "records": 117266}
+        }
+      },
+      "val": {
+        "generation": 7,
+        "published_at_utc": "2026-07-20T11:45:57Z",
+        "row_count": 4952,
+        "object_count": 36491,
+        "negative_object_count": 197,
+        "canonical_manifest_sha256": "c71677e3f152b56b11b6736ae8b18ff9f09efcbcbc55b695021bb147d8f5cbbd",
+        "terminal_record_hash": "b5cf452e6d9b7ae9a0f48527f539756d29d4fff2522415b12248e21d8bb6639f",
+        "files": {
+          "receipt": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/val/training.publish.receipt.json", "sha256": "07615024cc6e2fb151549204a6f252a4dce785baea7c5bbfff6a363d1ad89080"},
+          "project": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/val/project.json", "sha256": "4e88f8f8f75e00c09dda88fb4377e350ba543f8d49d3dcf038f092f41ea0d675"},
+          "journal": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/val/journal.jsonl", "sha256": "f67a720f0f23e92112891b250561c9599e2e88c4f1795f2366e9dccbab638230"},
+          "working": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/val/working.norm.jsonl", "sha256": "67dd6ff08b56c6de869a56fa22a57ef4c6b77a093d1c0ad87b8041fd418b98f2"},
+          "task_index": {"path": "/data/CoordExp/outputs/coco_refinement/gate-a-20260717/val/task_index.json", "sha256": "35c5a65787e05495db5c824615d43f7bc79491d9cdfcdd69a9fe5ae6f5367680"}
+        },
+        "outputs": {
+          "norm": {"path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.norm.jsonl", "sha256": "44ab9fd985890129128bdacb07081cc00bd4affe8c6768d5e49609ca20a72e52", "size_bytes": 5056739, "records": 4952},
+          "coord": {"path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl", "sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894", "size_bytes": 6808307, "records": 4952}
+        }
+      }
+    }
+  },
   "relative_path": "public_data/coco/rescale_32_1024_bbox_len12000",
   "schema_version": 1,
   "working_dir": "."

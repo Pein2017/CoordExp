@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+import src.runtime.seeding as runtime_seeding
 import src.training.cache_workflow as cache_workflow
 import src.training.control_plane as control_plane
 import src.training.execution_plan as execution_plan
@@ -28,6 +29,7 @@ from src.training.supervised_trainer import (
 from src.training.forward_input_provider import build_forward_input_provider
 from src.runtime.metrics import reduce_rank_payloads
 from src.runtime.seeding import seed_training_runtime
+
 
 def _patch_shared_cache_import(
     monkeypatch: pytest.MonkeyPatch, name: str, value: object
@@ -161,6 +163,7 @@ def test_runtime_determinism_consensus_binds_launcher_mapping_and_baseline(
 ) -> None:
     monkeypatch.setenv("LOCAL_RANK", "0")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-a,GPU-b")
+    monkeypatch.setattr(runtime_seeding.torch.cuda, "is_initialized", lambda: False)
 
     converged = cache_workflow._establish_converged_runtime_determinism(
         SimpleNamespace(
@@ -365,7 +368,9 @@ def test_five_train_and_two_eval_callbacks_write_exact_wide_rows(
     writer = _writer(tmp_path)
     lifecycle: dict[str, object] = {}
     runtime = _Runtime()
-    train = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=runtime)
+    train = reporting.CompletedStepReporter(
+        writer=writer, lifecycle=lifecycle, runtime=runtime
+    )
 
     class FakeEvalRunner:
         def __init__(self, **kwargs: object) -> None:
@@ -490,7 +495,9 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
         )
     )
     runtime = Runtime()
-    train_handler = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=runtime)
+    train_handler = reporting.CompletedStepReporter(
+        writer=writer, lifecycle=lifecycle, runtime=runtime
+    )
     eval_handler = session._eval_forward_handler(
         model=object(),
         runtime=runtime,
@@ -748,7 +755,9 @@ def test_failed_lifecycle_state_keeps_progress_before_original_error(
 ) -> None:
     writer = _writer(tmp_path)
     lifecycle: dict[str, object] = {"checkpoint_event_count": 1}
-    callback = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=_Runtime())
+    callback = reporting.CompletedStepReporter(
+        writer=writer, lifecycle=lifecycle, runtime=_Runtime()
+    )
     callback(_observation(1))
     callback(_observation(2))
     original = RuntimeError("injected after two steps")
@@ -798,7 +807,9 @@ def test_train_logging_uses_all_rank_reduced_scalars_and_preserves_nonfinite(
                 },
             }
 
-    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(_observation(1))
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(
+        _observation(1)
+    )
     row = json.loads(writer.logging_path.read_text())
     # _observation() does not measure timing (production-dead batch-path
     # shape): the timing fields must be entirely absent, not fabricated 0.0.
@@ -840,7 +851,9 @@ def test_train_row_carries_timing_fields_additively(tmp_path: Path) -> None:
         def gather_metrics(self, batch: object) -> object:
             return super().gather_metrics(batch)
 
-    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(
+        observation
+    )
     row = json.loads(writer.logging_path.read_text())
 
     # Presence: the three new timing scalars appear in the row.
@@ -879,7 +892,9 @@ def test_train_row_normalizes_non_finite_timing_fields(tmp_path: Path) -> None:
         def gather_metrics(self, batch: object) -> object:
             return super().gather_metrics(batch)
 
-    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(
+        observation
+    )
     row = json.loads(writer.logging_path.read_text())
 
     assert row["step_duration_seconds"] is None
@@ -2142,15 +2157,14 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         device="cuda:0",
     )
 
-    monkeypatch.setattr(cache_workflow, "seed_training_runtime", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        cache_workflow, "seed_training_runtime", lambda *args, **kwargs: None
+    )
     _patch_shared_cache_import(
         monkeypatch, "load_qwen_components", lambda *args, **kwargs: components
     )
     _patch_shared_cache_import(
         monkeypatch, "resolve_qwen_runtime_controls", lambda *args, **kwargs: None
-    )
-    monkeypatch.setattr(
-        session, "load_default_adapter_source_gate_evidence", lambda root: object()
     )
     monkeypatch.setattr(
         session,
@@ -2169,15 +2183,8 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
     )
     monkeypatch.setattr(
         session,
-        "load_default_special_token_embedding_source_gate_evidence",
-        lambda root: object(),
-    )
-    monkeypatch.setattr(
-        session,
         "install_special_token_embedding_deltas",
-        lambda model, selection, source_gate: SimpleNamespace(
-            model=model, receipt=object()
-        ),
+        lambda model, selection: SimpleNamespace(model=model, receipt=object()),
     )
     monkeypatch.setattr(session, "enable_training_memory_savers", lambda model: None)
     monkeypatch.setattr(
@@ -2212,7 +2219,9 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         lambda steps, **kwargs: tuple(steps),
     )
     monkeypatch.setattr(
-        cache_workflow, "_apply_fa2_branch_proof_policy", lambda steps, config: tuple(steps)
+        cache_workflow,
+        "_apply_fa2_branch_proof_policy",
+        lambda steps, config: tuple(steps),
     )
     monkeypatch.setattr(session.LossRunner, "from_config", lambda config: object())
     monkeypatch.setattr(
@@ -2620,7 +2629,9 @@ def test_train_logging_persists_real_loss_runner_accuracy_stats(
         optimizer_update_status="applied",
         finite_status="finite",
     )
-    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(observation)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=Runtime())(
+        observation
+    )
 
     # DECLARED FLIP (Wave 2, task 2.3): the exact integer statistics now
     # travel as a typed batch field rather than a `gather_metrics` kwarg.
@@ -2703,9 +2714,9 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
         input_build_seconds=0.11,
         input_wait_seconds=0.03,
     )
-    reporting.CompletedStepReporter(writer=timed_writer, lifecycle={}, runtime=Runtime())(
-        timed_observation
-    )
+    reporting.CompletedStepReporter(
+        writer=timed_writer, lifecycle={}, runtime=Runtime()
+    )(timed_observation)
     timed_row = json.loads(timed_writer.logging_path.read_text())
 
     timing_keys = {"step_duration_seconds", "input_build_seconds", "input_wait_seconds"}
@@ -2878,13 +2889,15 @@ def test_wave0_completed_step_row_key_set_matches_the_frozen_fixture(
     tmp_path: Path,
 ) -> None:
     frozen = json.loads(
-        WAVE0_ORCHESTRATION_FIXTURE_ROOT.joinpath(
-            "completed_step_rows.json"
-        ).read_text(encoding="utf-8")
+        WAVE0_ORCHESTRATION_FIXTURE_ROOT.joinpath("completed_step_rows.json").read_text(
+            encoding="utf-8"
+        )
     )
     writer = _writer(tmp_path)
     lifecycle: dict[str, object] = {"consumed_packs": 0}
-    handle = reporting.CompletedStepReporter(writer=writer, lifecycle=lifecycle, runtime=_Runtime())
+    handle = reporting.CompletedStepReporter(
+        writer=writer, lifecycle=lifecycle, runtime=_Runtime()
+    )
 
     handle(_observation(1))
 

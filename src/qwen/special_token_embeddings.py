@@ -31,13 +31,6 @@ SPECIAL_TOKEN_EMBEDDING_SEMANTICS = "additive_delta"
 SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
     "coordexp-swift-special-token-embedding-delta-v1"
 )
-DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
-    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/"
-    "special-token-embeddings.md"
-)
-DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(
-    "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
-)
 
 
 @dataclass(frozen=True)
@@ -114,32 +107,6 @@ class SpecialTokenSelection:
                 code="special_token_embeddings.negative_token_id",
                 context={"token_ids": list(self.token_ids)},
             )
-
-
-@dataclass(frozen=True)
-class SpecialTokenEmbeddingSourceGateEvidence:
-    source_study_passed: bool
-    roundtrip_probe_passed: bool
-    probe_receipt: Mapping[str, Any] | None = None
-
-
-def load_default_special_token_embedding_source_gate_evidence(
-    repo_root: str | Path,
-) -> SpecialTokenEmbeddingSourceGateEvidence:
-    root = Path(repo_root).expanduser().resolve()
-    source_study_path = root / DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH
-    probe_receipt_path = root / DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH
-    source_study_passed = _special_token_embedding_source_study_is_passed(
-        source_study_path
-    )
-    probe_receipt = (
-        _load_probe_receipt(probe_receipt_path) if probe_receipt_path.exists() else None
-    )
-    return SpecialTokenEmbeddingSourceGateEvidence(
-        source_study_passed=source_study_passed,
-        roundtrip_probe_passed=_special_token_embedding_probe_is_passed(probe_receipt),
-        probe_receipt=probe_receipt,
-    )
 
 
 @dataclass(frozen=True)
@@ -642,9 +609,6 @@ def load_inference_embedding_delta(
     install_result = install_special_token_embedding_deltas(
         model,
         selection,
-        source_gate=load_default_special_token_embedding_source_gate_evidence(
-            Path.cwd()
-        ),
     )
     payload_dir = _inference_delta_payload_dir(Path(config.embedding_delta.path))
     load_receipt = load_special_token_embedding_deltas(
@@ -764,10 +728,7 @@ def build_default_special_token_selection(
 def install_special_token_embedding_deltas(
     model: nn.Module,
     selection: SpecialTokenSelection,
-    *,
-    source_gate: SpecialTokenEmbeddingSourceGateEvidence,
 ) -> SpecialTokenEmbeddingInstallResult:
-    _validate_source_gate(source_gate, selection)
     preexisting_trainable_ids = {
         id(parameter) for parameter in model.parameters() if parameter.requires_grad
     }
@@ -936,89 +897,6 @@ def load_special_token_embedding_deltas(
         tensor_dtype=_dtype_name(result.shared_embed_delta.dtype),
         source_tensor_dtype=_dtype_name(loaded_delta.dtype),
         runtime_tensor_dtype=_dtype_name(result.shared_embed_delta.dtype),
-    )
-
-
-def _validate_source_gate(
-    evidence: SpecialTokenEmbeddingSourceGateEvidence,
-    selection: SpecialTokenSelection,
-) -> None:
-    missing: list[str] = []
-    if not evidence.source_study_passed:
-        missing.append("source_study")
-    if not evidence.roundtrip_probe_passed:
-        missing.append("roundtrip_probe")
-    receipt = dict(evidence.probe_receipt or {})
-    if not receipt:
-        missing.append("probe_receipt")
-    elif receipt.get("ok") is not True:
-        missing.append("probe_receipt_ok")
-    if missing:
-        raise RuntimeContractError(
-            "special-token embedding source gate has not passed",
-            code="special_token_embeddings.source_gate_missing",
-            context={"missing": missing},
-        )
-    expected_semantics = receipt.get("semantics")
-    if expected_semantics != SPECIAL_TOKEN_EMBEDDING_SEMANTICS:
-        raise RuntimeContractError(
-            "special-token embedding source gate records unsupported semantics",
-            code="special_token_embeddings.source_gate_semantics",
-            context={
-                "expected_semantics": SPECIAL_TOKEN_EMBEDDING_SEMANTICS,
-                "actual_semantics": expected_semantics,
-            },
-        )
-    selected_count = receipt.get("num_selected_tokens")
-    if selected_count is not None and int(selected_count) != len(selection):
-        raise RuntimeContractError(
-            "special-token embedding source gate selected-token count mismatch",
-            code="special_token_embeddings.source_gate_selected_count",
-            context={
-                "expected_selected_count": len(selection),
-                "actual_selected_count": selected_count,
-            },
-        )
-
-
-def _special_token_embedding_source_study_is_passed(path: Path) -> bool:
-    if not path.exists():
-        return False
-    text = path.read_text(encoding="utf-8")
-    required_phrases = (
-        "custom Qwen wrapper pair as V1 recommendation",
-        "semantics: additive_delta",
-        "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json",
-    )
-    return all(phrase in text for phrase in required_phrases)
-
-
-def _load_probe_receipt(path: Path) -> Mapping[str, Any]:
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        raise RuntimeContractError(
-            "special-token embedding probe receipt must be a JSON object",
-            code="special_token_embeddings.probe_receipt_shape",
-            context={"path": str(path), "value_type": type(payload).__name__},
-        )
-    return payload
-
-
-def _special_token_embedding_probe_is_passed(
-    probe_receipt: Mapping[str, Any] | None,
-) -> bool:
-    if probe_receipt is None:
-        return False
-    payload = probe_receipt.get("payload")
-    return (
-        probe_receipt.get("ok") is True
-        and probe_receipt.get("semantics") == SPECIAL_TOKEN_EMBEDDING_SEMANTICS
-        and probe_receipt.get("num_selected_tokens") == 1004
-        and probe_receipt.get("runtime_tied_input_lm_head_identity") is True
-        and isinstance(payload, Mapping)
-        and payload.get("safetensors") is not None
-        and payload.get("metadata") is not None
     )
 
 

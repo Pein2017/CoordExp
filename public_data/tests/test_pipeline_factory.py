@@ -12,7 +12,6 @@ from public_data.pipeline import PipelineConfig, PipelinePlanner
 from public_data.pipeline.naming import (
     apply_max_suffix,
     infer_rescale_contract_from_preset,
-    resolve_bbox_format_preset,
     resolve_effective_preset,
 )
 from public_data.pipeline.types import SplitArtifactPaths
@@ -71,9 +70,8 @@ def test_adapter_registry_known_and_unknown() -> None:
     from public_data.pipeline.adapters import build_default_registry
 
     reg = build_default_registry()
-    assert set(reg.ids()) >= {"coco", "lvis", "vg", "vg_ref"}
+    assert set(reg.ids()) == {"coco", "lvis", "smoke_coco", "smoke_lvis"}
     assert reg.get("coco").dataset_id == "coco"
-    assert reg.get("vg_ref").dataset_id == "vg_ref"
 
     with pytest.raises(KeyError, match="Unknown dataset id"):
         reg.get("unknown_dataset")
@@ -305,25 +303,6 @@ def test_suffix_policy_and_legacy_equivalence(tmp_path: Path) -> None:
     assert apply_max_suffix("rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max60"
     assert apply_max_suffix("rescale_32_768_bbox_max60", 60) == "rescale_32_768_bbox_max60"
     assert resolve_effective_preset("rescale_32_768_bbox", 60) == "rescale_32_768_bbox_max60"
-    assert (
-        resolve_bbox_format_preset("rescale_32_768_bbox_max60", "cxcy_logw_logh")
-        == "rescale_32_768_bbox_max60_cxcy_logw_logh"
-    )
-    assert (
-        resolve_bbox_format_preset(
-            "rescale_32_768_bbox_max60_cxcy_logw_logh", "cxcy_logw_logh"
-        )
-        == "rescale_32_768_bbox_max60_cxcy_logw_logh"
-    )
-    assert (
-        resolve_bbox_format_preset("rescale_32_768_bbox_max60", "cxcywh")
-        == "rescale_32_768_bbox_max60_cxcywh"
-    )
-    assert (
-        resolve_bbox_format_preset("rescale_32_768_bbox_max60_cxcywh", "cxcywh")
-        == "rescale_32_768_bbox_max60_cxcywh"
-    )
-    assert resolve_bbox_format_preset("rescale_32_768_bbox", "xyxy") == "rescale_32_768_bbox"
 
 
 def test_infer_rescale_contract_from_preset_handles_derived_suffixes() -> None:
@@ -1074,108 +1053,6 @@ def test_run_pipeline_factory_cli_wires_run_validation_stage_flag(
     run_pipeline_factory.main()
 
     assert captured_run_validation == [True, False]
-
-
-def test_run_pipeline_factory_bbox_format_mode_dispatches_offline_derivation(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from public_data.scripts import run_pipeline_factory
-
-    dataset_dir = tmp_path / "public_data" / "coco"
-    raw_dir = dataset_dir / "raw"
-    dataset_dir.mkdir(parents=True, exist_ok=True)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-
-    captured: dict[str, object] = {}
-
-    def _fake_derive(*, preset_dir: Path, bbox_format: str) -> Path:
-        captured["preset_dir"] = preset_dir
-        captured["bbox_format"] = bbox_format
-        out_dir = dataset_dir / "rescale_32_768_bbox_cxcy_logw_logh"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        return out_dir
-
-    monkeypatch.setattr(run_pipeline_factory, "derive_bbox_format_branch", _fake_derive)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "run_pipeline_factory.py",
-            "--mode",
-            "bbox-format",
-            "--dataset-id",
-            "coco",
-            "--dataset-dir",
-            str(dataset_dir),
-            "--raw-dir",
-            str(raw_dir),
-            "--preset",
-            "rescale_32_768_bbox",
-            "--",
-            "--bbox-format",
-            "cxcy_logw_logh",
-        ],
-    )
-
-    run_pipeline_factory.main()
-    out = capsys.readouterr().out
-
-    assert captured["preset_dir"] == dataset_dir / "rescale_32_768_bbox"
-    assert captured["bbox_format"] == "cxcy_logw_logh"
-    assert "[pipeline] preset=rescale_32_768_bbox_cxcy_logw_logh" in out
-
-
-def test_run_pipeline_factory_bbox_format_mode_dispatches_offline_derivation_for_cxcywh(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from public_data.scripts import run_pipeline_factory
-
-    dataset_dir = tmp_path / "public_data" / "coco"
-    raw_dir = dataset_dir / "raw"
-    dataset_dir.mkdir(parents=True, exist_ok=True)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-
-    captured: dict[str, object] = {}
-
-    def _fake_derive(*, preset_dir: Path, bbox_format: str) -> Path:
-        captured["preset_dir"] = preset_dir
-        captured["bbox_format"] = bbox_format
-        out_dir = dataset_dir / "rescale_32_768_bbox_cxcywh"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        return out_dir
-
-    monkeypatch.setattr(run_pipeline_factory, "derive_bbox_format_branch", _fake_derive)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "run_pipeline_factory.py",
-            "--mode",
-            "bbox-format",
-            "--dataset-id",
-            "coco",
-            "--dataset-dir",
-            str(dataset_dir),
-            "--raw-dir",
-            str(raw_dir),
-            "--preset",
-            "rescale_32_768_bbox",
-            "--",
-            "--bbox-format",
-            "cxcywh",
-        ],
-    )
-
-    run_pipeline_factory.main()
-    out = capsys.readouterr().out
-
-    assert captured["preset_dir"] == dataset_dir / "rescale_32_768_bbox"
-    assert captured["bbox_format"] == "cxcywh"
-    assert "[pipeline] preset=rescale_32_768_bbox_cxcywh" in out
 
 
 def test_run_pipeline_factory_cli_rejects_max_objects_outside_coord(

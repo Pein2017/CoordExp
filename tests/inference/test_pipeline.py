@@ -63,6 +63,57 @@ def test_pipeline_validates_owned_data_path_before_cuda_or_jsonl_loading(
     )
 
 
+def test_canonical_entry_qualifies_vllm_before_worker_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src import infer
+    from src.inference import pipeline
+
+    config_path = _write_config(
+        tmp_path,
+        batch_size=1,
+        row_count=1,
+        backend_type="vllm",
+    )
+    Path(yaml.safe_load(config_path.read_text(encoding="utf-8"))["model"]["base_model"]).mkdir(
+        parents=True,
+    )
+    execution_model = {
+        "mode": "base_only",
+        "model_path": str(tmp_path / "model_cache" / "qwen"),
+        "composition_key": "a" * 64,
+        "snapshot_fingerprint": "b" * 64,
+        "receipt_fingerprint": "c" * 64,
+        "source_identity": {"base": {"fingerprint": "d" * 64}},
+    }
+    calls: list[str] = []
+    monkeypatch.setattr(
+        pipeline,
+        "resolve_execution_model",
+        lambda **_: dict(execution_model),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "qualify_vllm_backend_launch",
+        lambda launch: calls.append(f"qualify:{launch.backend}") or {"status": "passed"},
+        raising=False,
+    )
+
+    def reject_worker_launch(**_: object) -> None:
+        assert calls == ["qualify:vllm"]
+        calls.append("worker_launch")
+
+    monkeypatch.setattr(
+        pipeline,
+        "_execute_controller_worker_path",
+        reject_worker_launch,
+    )
+
+    assert infer.main(["--config", str(config_path)]) == 0
+    assert calls == ["qualify:vllm", "worker_launch"]
+
+
 class FakeTokenizer:
     image_pad_id = 151655
 
@@ -288,14 +339,7 @@ def test_pipeline_keeps_tiny_non_smoke_run_out_of_benchmark_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.config import inference as inference_config
     from src.inference import pipeline
-
-    monkeypatch.setattr(
-        inference_config,
-        "_validate_canonical_namespace",
-        lambda config, entry_path: None,
-    )
 
     config_path = _write_config(
         tmp_path,
@@ -1070,6 +1114,11 @@ def test_pipeline_vllm_controller_worker_failures_publish_shard_and_controller_d
         pipeline,
         "validate_execution_model_receipt",
         lambda receipt: dict(receipt),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "qualify_vllm_backend_launch",
+        lambda _: {"status": "passed"},
     )
 
     class FailedWorkerProcess:

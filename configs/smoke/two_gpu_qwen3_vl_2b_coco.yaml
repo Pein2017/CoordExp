@@ -1,0 +1,35 @@
+# Small production-shaped overlay for the later two-process vertical gate.
+# Launch topology remains external, for example with an accelerate launcher.
+schema_version: 1
+extends: ../train/production.yaml
+
+run:
+  name: qwen3-vl-2b-coco-two-gpu-smoke
+  output_dir: two-gpu-smoke
+
+model:
+  fa2_branch_proof: every_forward
+
+data:
+  train:
+    sample_limit: 12
+  eval:
+    sample_limit: 2
+
+training:
+  max_steps: 4
+  effective_batch_size: 2
+
+runtime:
+  determinism:
+    mode: strict_cuda_replay_v1
+
+eval:
+  forward:
+    steps: [2, 4]
+
+checkpoint:
+  steps: [2, 4]
+
+observability:
+  steps: 1

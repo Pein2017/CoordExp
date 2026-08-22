@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -20,7 +19,15 @@ from src.data.images import (
 )
 
 
-JsonFrozen = str | int | float | bool | None | tuple["JsonFrozen", ...] | Mapping[str, "JsonFrozen"]
+JsonFrozen = (
+    str
+    | int
+    | float
+    | bool
+    | None
+    | tuple["JsonFrozen", ...]
+    | Mapping[str, "JsonFrozen"]
+)
 
 CANONICAL_TOP_LEVEL_FIELDS = frozenset({"example_id", "image", "objects", "metadata"})
 CURRENT_COORD_JSONL_FIELDS = frozenset(
@@ -41,7 +48,10 @@ class SourceProvenance:
             raise DataContractError(
                 "source row number must be an integer",
                 code="data.source_row_number_type",
-                context={"value": self.row_number, "value_type": type(self.row_number).__name__},
+                context={
+                    "value": self.row_number,
+                    "value_type": type(self.row_number).__name__,
+                },
             )
         if self.row_number <= 0:
             raise DataContractError(
@@ -164,7 +174,9 @@ class RawExample:
                 code="data.image_ref_type",
                 context={"value_type": type(self.image).__name__},
             )
-        if not isinstance(self.objects, Sequence) or isinstance(self.objects, (str, bytes)):
+        if not isinstance(self.objects, Sequence) or isinstance(
+            self.objects, (str, bytes)
+        ):
             raise DataContractError(
                 "RawExample.objects must be a sequence of RawObject values",
                 code="data.objects_shape",
@@ -172,7 +184,9 @@ class RawExample:
             )
         objects = tuple(self.objects)
         if not objects:
-            raise DataContractError("objects must not be empty", code="data.objects_empty")
+            raise DataContractError(
+                "objects must not be empty", code="data.objects_empty"
+            )
         for index, obj in enumerate(objects):
             if not isinstance(obj, RawObject):
                 raise DataContractError(
@@ -190,7 +204,9 @@ class RawExample:
                 )
             seen_object_ids.add(obj.object_id)
         object.__setattr__(self, "objects", objects)
-        object.__setattr__(self, "metadata", _optional_metadata(self.metadata, field="metadata"))
+        object.__setattr__(
+            self, "metadata", _optional_metadata(self.metadata, field="metadata")
+        )
         if not isinstance(self.source, SourceProvenance):
             raise DataContractError(
                 "RawExample.source must be SourceProvenance",
@@ -253,10 +269,14 @@ def raw_example_from_jsonl_row(
 def _detect_source_format(row: Mapping[str, Any]) -> str:
     fields = frozenset(str(key) for key in row.keys())
     if "image" in row or "example_id" in row:
-        _reject_unknown_fields(fields, CANONICAL_TOP_LEVEL_FIELDS, source_format="canonical_raw_example")
+        _reject_unknown_fields(
+            fields, CANONICAL_TOP_LEVEL_FIELDS, source_format="canonical_raw_example"
+        )
         return "canonical_raw_example"
     if fields & CURRENT_COORD_JSONL_FIELDS:
-        _reject_unknown_fields(fields, CURRENT_COORD_JSONL_FIELDS, source_format="coord_jsonl_len12000")
+        _reject_unknown_fields(
+            fields, CURRENT_COORD_JSONL_FIELDS, source_format="coord_jsonl_len12000"
+        )
         return "coord_jsonl_len12000"
     return "unknown"
 
@@ -299,7 +319,10 @@ def _current_coord_jsonl_example(
         raise DataContractError(
             "current coord JSONL row must contain images as a list",
             code="data.images_shape",
-            context={"row_number": source.row_number, "value_type": type(images).__name__},
+            context={
+                "row_number": source.row_number,
+                "value_type": type(images).__name__,
+            },
         )
     if len(images) != 1:
         raise DataContractError(
@@ -348,7 +371,9 @@ def _canonical_image_ref(value: Any, *, jsonl_path: Path) -> ImageRef:
             context={"field": "image", "value_type": type(value).__name__},
         )
     fields = frozenset(str(key) for key in value.keys())
-    _reject_unknown_fields(fields, frozenset({"path", "width", "height"}), source_format="image")
+    _reject_unknown_fields(
+        fields, frozenset({"path", "width", "height"}), source_format="image"
+    )
     declared_path, resolved_path = resolve_image_path(
         value.get("path"),
         root=jsonl_path.parent,
@@ -383,7 +408,10 @@ def _canonical_objects(value: Any) -> tuple[RawObject, ...]:
             raise DataContractError(
                 "object entry must be an object",
                 code="data.object_shape",
-                context={"field": f"objects[{index}]", "value_type": type(item).__name__},
+                context={
+                    "field": f"objects[{index}]",
+                    "value_type": type(item).__name__,
+                },
             )
         fields = frozenset(str(key) for key in item.keys())
         _reject_unknown_fields(
@@ -397,9 +425,13 @@ def _canonical_objects(value: Any) -> tuple[RawObject, ...]:
                 seen=seen_ids,
                 field=f"objects[{index}].object_id",
             ),
-            description=_description(item.get("description"), field=f"objects[{index}].description"),
+            description=_description(
+                item.get("description"), field=f"objects[{index}].description"
+            ),
             bbox=validate_bbox_bins(item.get("bbox"), field=f"objects[{index}].bbox"),
-            metadata=_optional_metadata(item.get("metadata"), field=f"objects[{index}].metadata"),
+            metadata=_optional_metadata(
+                item.get("metadata"), field=f"objects[{index}].metadata"
+            ),
         )
         objects.append(obj)
     return tuple(objects)
@@ -421,10 +453,20 @@ def _current_source_objects(value: Any) -> tuple[RawObject, ...]:
             raise DataContractError(
                 "object entry must be an object",
                 code="data.object_shape",
-                context={"field": f"objects[{index}]", "value_type": type(item).__name__},
+                context={
+                    "field": f"objects[{index}]",
+                    "value_type": type(item).__name__,
+                },
             )
         allowed = frozenset(
-            {"bbox_2d", "desc", "category_id", "category_name", "coco_ann_id", "metadata"}
+            {
+                "bbox_2d",
+                "desc",
+                "category_id",
+                "category_name",
+                "coco_ann_id",
+                "metadata",
+            }
         )
         _reject_unknown_fields(
             frozenset(str(key) for key in item.keys()),
@@ -463,7 +505,9 @@ def _current_source_objects(value: Any) -> tuple[RawObject, ...]:
                     seen=seen_ids,
                     field=f"objects[{index}].coco_ann_id",
                 ),
-                description=_description(item.get("desc"), field=f"objects[{index}].desc"),
+                description=_description(
+                    item.get("desc"), field=f"objects[{index}].desc"
+                ),
                 bbox=bbox,
                 metadata=freeze_json(metadata),
             )
@@ -554,7 +598,9 @@ def _normalize_identifier(value: Any, *, field: str) -> str:
             code="data.object_id_type",
             context={"field": field, "value": value},
         )
-    return _required_non_empty_str(str(value) if not isinstance(value, str) else value, field=field)
+    return _required_non_empty_str(
+        str(value) if not isinstance(value, str) else value, field=field
+    )
 
 
 def _optional_metadata(value: Any, *, field: str) -> Mapping[str, JsonFrozen]:
@@ -569,7 +615,9 @@ def _optional_metadata(value: Any, *, field: str) -> Mapping[str, JsonFrozen]:
     return freeze_json(value)
 
 
-def _reject_unknown_fields(fields: frozenset[str], allowed: frozenset[str], *, source_format: str) -> None:
+def _reject_unknown_fields(
+    fields: frozenset[str], allowed: frozenset[str], *, source_format: str
+) -> None:
     unknown = sorted(fields - allowed)
     if unknown:
         raise DataContractError(

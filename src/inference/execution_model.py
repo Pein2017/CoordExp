@@ -24,9 +24,7 @@ from src.inference.model_assets import (
 EXECUTION_MODEL_RECEIPT_VERSION = "coordexp-swift-execution-model-v1"
 MATERIALIZATION_ALGORITHM_VERSION = "coordexp-swift-dora-delta-fold-v4"
 MATERIALIZATION_RECEIPT_NAME = "coordexp_materialization.json"
-DEFAULT_EXECUTION_MODEL_CACHE_ROOT = Path(
-    "model_cache/coordexp_swift/vllm_materialized"
-)
+EXECUTION_MODEL_CACHE_ROOT_ENV = "COORDEXP_EXECUTION_MODEL_CACHE_ROOT"
 DURABLE_COMPOSITION_RECEIPT_ROOT = Path(__file__).resolve().with_name(
     "qualification_receipts"
 )
@@ -134,7 +132,7 @@ def resolve_execution_model(
         )
         return validate_execution_model_receipt(receipt)
 
-    root = Path(cache_root or DEFAULT_EXECUTION_MODEL_CACHE_ROOT).expanduser().resolve()
+    root = _resolve_composition_cache_root(cache_root)
     final_root = root / composition_key
     receipt_path = final_root / MATERIALIZATION_RECEIPT_NAME
     snapshot_root = final_root / "snapshot"
@@ -212,6 +210,32 @@ def resolve_execution_model(
             raise
 
     return validate_execution_model_receipt(_load_receipt(receipt_path))
+
+
+def _resolve_composition_cache_root(cache_root: str | Path | None) -> Path:
+    """Require an external absolute root before any composition cache I/O."""
+
+    source = "cache_root"
+    configured_root: str | Path | None = cache_root
+    if configured_root is None:
+        source = EXECUTION_MODEL_CACHE_ROOT_ENV
+        configured_root = os.environ.get(EXECUTION_MODEL_CACHE_ROOT_ENV)
+        if configured_root is None or not configured_root.strip():
+            _cache_root_error(source, configured_root)
+
+    root = Path(configured_root).expanduser()
+    if not root.is_absolute():
+        _cache_root_error(source, configured_root)
+    return root.resolve()
+
+
+def _cache_root_error(source: str, value: str | Path | None) -> None:
+    raise RuntimeContractError(
+        "execution-model materialization requires an explicit absolute cache root; "
+        f"pass cache_root= or set {EXECUTION_MODEL_CACHE_ROOT_ENV}",
+        code="inference.execution_model_cache_root",
+        context={"source": source, "value": None if value is None else str(value)},
+    )
 
 
 def _validate_live_source_identity(
@@ -976,7 +1000,7 @@ def _sha256_json(payload: Any) -> str:
 
 
 __all__ = [
-    "DEFAULT_EXECUTION_MODEL_CACHE_ROOT",
+    "EXECUTION_MODEL_CACHE_ROOT_ENV",
     "EXECUTION_MODEL_RECEIPT_VERSION",
     "DURABLE_COMPOSITION_RECEIPT_ROOT",
     "MATERIALIZATION_ALGORITHM_VERSION",

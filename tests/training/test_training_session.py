@@ -26,7 +26,13 @@ import pytest
 
 from src.common.errors import RuntimeContractError
 from src.config.models import RunDirectory
-from src.training import cache_workflow, control_plane, execution_plan, pipeline, session
+from src.training import (
+    cache_workflow,
+    control_plane,
+    execution_plan,
+    pipeline,
+    session,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -128,9 +134,7 @@ class _ScriptedEntry:
             return real_build_plan(path, **kwargs)
 
         monkeypatch.setattr(execution_plan, "load_train_config", lambda path: resolved)
-        monkeypatch.setattr(
-            execution_plan, "build_training_execution_plan", build_plan
-        )
+        monkeypatch.setattr(execution_plan, "build_training_execution_plan", build_plan)
 
         real_open = control_plane.RankControlPlane.open
 
@@ -155,9 +159,7 @@ class _ScriptedEntry:
             events.append("writer")
             return real_run_owner(**kwargs)
 
-        monkeypatch.setattr(
-            session, "_initialize_model_free_run_owner", run_owner
-        )
+        monkeypatch.setattr(session, "_initialize_model_free_run_owner", run_owner)
         monkeypatch.setattr(
             session,
             "collect_execution_provenance",
@@ -254,9 +256,7 @@ class _ScriptedEntry:
 
 
 @pytest.fixture
-def scripted_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> _ScriptedEntry:
+def scripted_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ScriptedEntry:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
     for name in ("RANK", "LOCAL_RANK", "WORLD_SIZE"):
@@ -663,7 +663,7 @@ def test_facade_holds_no_pass_through_helper_layer() -> None:
     assert republished == []
 
 
-def test_session_takes_the_parity_import_repointed_to_the_identity_owner() -> None:
+def test_session_imports_model_identity_from_the_current_owner() -> None:
     tree = ast.parse(SESSION_SOURCE.read_text(encoding="utf-8"))
     sources = {
         alias.name: node.module
@@ -673,11 +673,6 @@ def test_session_takes_the_parity_import_repointed_to_the_identity_owner() -> No
     }
 
     assert sources["base_model_weight_identity"] == "src.artifacts.identity"
-    assert not any(
-        module == "src.qwen.parity"
-        for module in sources.values()
-        if module is not None
-    )
 
 
 def test_session_introduces_no_phase_subclass_registry_or_backend() -> None:
@@ -696,9 +691,7 @@ def test_session_introduces_no_phase_subclass_registry_or_backend() -> None:
     (training_session,) = [node for node in classes if node.name == "TrainingSession"]
     assert training_session.bases == []
     assert [
-        node.name
-        for node in training_session.body
-        if isinstance(node, ast.FunctionDef)
+        node.name for node in training_session.body if isinstance(node, ast.FunctionDef)
     ] == ["__init__", "run", "fail", "close"]
 
 
@@ -795,7 +788,9 @@ def test_session_owns_cache_hydration_and_the_facade_does_not() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _terminal_seam_config(root: Path, *, observability_steps: int = 1) -> SimpleNamespace:
+def _terminal_seam_config(
+    root: Path, *, observability_steps: int = 1
+) -> SimpleNamespace:
     dataset = SimpleNamespace(path=root / "train.jsonl", sample_limit=2)
     dataset.path.write_text("{}\n", encoding="utf-8")
     return SimpleNamespace(
@@ -925,18 +920,19 @@ class _TerminalSeamHarness:
         )
         for module in (session, cache_workflow):
             monkeypatch.setattr(
-                module, "load_qwen_components", lambda *a, **k: components,
+                module,
+                "load_qwen_components",
+                lambda *a, **k: components,
                 raising=False,
             )
         monkeypatch.setattr(
-            session, "load_default_adapter_source_gate_evidence", lambda root: object()
-        )
-        monkeypatch.setattr(
-            session, "build_adapter_setup_plan",
+            session,
+            "build_adapter_setup_plan",
             lambda *a, **k: SimpleNamespace(mode="fresh"),
         )
         monkeypatch.setattr(
-            session, "setup_dora_adapter",
+            session,
+            "setup_dora_adapter",
             lambda m, plan: SimpleNamespace(
                 model=model, receipt=SimpleNamespace(adapter_name="default")
             ),
@@ -946,14 +942,8 @@ class _TerminalSeamHarness:
         )
         monkeypatch.setattr(
             session,
-            "load_default_special_token_embedding_source_gate_evidence",
-            lambda root: object(),
-        )
-        monkeypatch.setattr(
-            session, "install_special_token_embedding_deltas",
-            lambda m, selection, source_gate: SimpleNamespace(
-                model=model, receipt=object()
-            ),
+            "install_special_token_embedding_deltas",
+            lambda m, selection: SimpleNamespace(model=model, receipt=object()),
         )
         monkeypatch.setattr(session, "enable_training_memory_savers", lambda m: None)
         monkeypatch.setattr(
@@ -977,7 +967,8 @@ class _TerminalSeamHarness:
         )
         monkeypatch.setattr(session, "build_scheduler_plan", lambda *a, **k: object())
         monkeypatch.setattr(
-            session, "build_optimizer_and_scheduler",
+            session,
+            "build_optimizer_and_scheduler",
             lambda *a, **k: (object(), object()),
         )
         monkeypatch.setattr(
@@ -1027,9 +1018,7 @@ class _TerminalSeamHarness:
             },
             "components": self.components,
             "vocab_groups": object(),
-            "schedule": SimpleNamespace(
-                resolved_max_steps=100, runtime_batch=object()
-            ),
+            "schedule": SimpleNamespace(resolved_max_steps=100, runtime_batch=object()),
             "train_cache": {
                 "cache_dir": self.root / "cache",
                 "micro_step_count": 1,

@@ -57,14 +57,10 @@ RATIO_FORM = "ratio"
 
 METRIC_PAYLOAD_KIND = "metrics"
 
-#: Absolute tolerance for the `IDENTICAL` reducer. Exact equality is the
-#: declared contract: the two-process gloo probe
-#: `scripts/probes/coordexp_swift/obs_wave2_gloo_probe.py` measured a maximum
-#: cross-rank divergence of exactly 0.0 for a replicated-eval-shaped
-#: computation over identical data under the enforced deterministic
-#: environment, so no bounded-tolerance variant is warranted. A future
-#: measured divergence would raise this constant and be recorded with its
-#: receipt rather than silently softening the comparison at a call site.
+#: Absolute tolerance for the `IDENTICAL` reducer. Exact equality remains the
+#: declared contract. A future measured divergence must change this constant
+#: with current qualification evidence rather than silently softening the
+#: comparison at a call site.
 IDENTICAL_ABS_TOLERANCE = 0.0
 
 

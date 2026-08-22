@@ -157,7 +157,7 @@ case "${SUBCMD}" in
   download)
     [[ -n "${RAW_DIR}" ]] || die "Missing required flag: --raw-dir"
     mkdir -p "${RAW_DIR}"
-    run_py public_data/scripts/download_coco2017.py \
+    run_py -m public_data.scripts.download_coco2017 \
       "${PASSTHROUGH[@]}" \
       --raw_dir "${RAW_DIR}"
     ;;
@@ -167,14 +167,14 @@ case "${SUBCMD}" in
     [[ -n "${RAW_TRAIN_JSONL}" ]] || die "Missing required flag: --raw-train-jsonl"
     [[ -n "${RAW_VAL_JSONL}" ]] || die "Missing required flag: --raw-val-jsonl"
 
-    run_py public_data/scripts/convert_coco2017_instances.py \
+    run_py -m public_data.scripts.convert_coco2017_instances \
       "${PASSTHROUGH[@]}" \
       --split train \
       --raw_dir "${DATASET_DIR}/raw" \
       --image_dir_name "train2017" \
       --output "${RAW_TRAIN_JSONL}"
 
-    run_py public_data/scripts/convert_coco2017_instances.py \
+    run_py -m public_data.scripts.convert_coco2017_instances \
       "${PASSTHROUGH[@]}" \
       --split val \
       --raw_dir "${DATASET_DIR}/raw" \
@@ -191,7 +191,7 @@ case "${SUBCMD}" in
 
       for split in "${TEST_SPLITS[@]}"; do
         test_output="${DATASET_DIR}/raw/${split}.jsonl"
-        run_py public_data/scripts/convert_coco2017_instances.py \
+        run_py -m public_data.scripts.convert_coco2017_instances \
           "${PASSTHROUGH[@]}" \
           --split "${split}" \
           --raw_dir "${DATASET_DIR}/raw" \

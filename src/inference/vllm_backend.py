@@ -11,7 +11,6 @@ import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from importlib import metadata
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -43,6 +42,7 @@ _FORCED_REPLAY_IDS_KEY = "coordexp_expected_token_ids"
 EngineFactory = Callable[[Mapping[str, object]], Any]
 ComponentsLoader = Callable[[BackendLaunch], Any]
 RawReplayQualifier = Callable[[BackendLaunch, Mapping[str, object]], Mapping[str, object]]
+LaunchQualifier = Callable[[BackendLaunch, Mapping[str, object]], Mapping[str, object]]
 
 
 class VLLMBackendSession:
@@ -73,6 +73,7 @@ class VLLMBackendSession:
         self._forced_replay_processor = forced_replay_processor
         self._raw_replay_qualifier = raw_replay_qualifier
         self._raw_replay_evidence: dict[str, dict[str, object]] = {}
+        self._raw_replay_qualification_evidence: Mapping[str, object] | None = None
         self._closed = False
 
     @property
@@ -102,7 +103,7 @@ class VLLMBackendSession:
             max_model_len=self._max_model_len,
         )
         if policy.include_raw_model_logprob:
-            self._require_known_raw_replay_semantics()
+            self._ensure_raw_replay_qualified()
         if self._engine is None:
             self._engine = self._engine_factory(self._engine_kwargs)
         prompts, media_hashes = self._generation_prompts(checked)
@@ -198,18 +199,6 @@ class VLLMBackendSession:
         self._close_owned_engine(engine, scope="session_close")
         self._record_cleanup_complete()
 
-    def _require_known_raw_replay_semantics(self) -> None:
-        preflight = self._receipt.effective_settings.get("runtime_preflight")
-        if not isinstance(preflight, Mapping):
-            return
-        version = preflight.get("version")
-        if isinstance(version, Mapping) and version.get("status") == "unverified":
-            raise RuntimeContractError(
-                "raw-model likelihood semantics are unverified for this vLLM version",
-                code="vllm_backend.raw_replay_version_unverified",
-                context={"version": dict(version)},
-            )
-
     def _close_owned_engine(self, engine: Any | None, *, scope: str) -> None:
         try:
             evidence = _close_vllm_engine(engine)
@@ -296,9 +285,7 @@ class VLLMBackendSession:
             requests,
             max_model_len=self._max_model_len,
         )
-        processor = self._resolve_forced_replay_processor()
-        processor_identity = _processor_source_identity(processor)
-        qualification = self._qualify_raw_replay(processor_identity)
+        processor, qualification = self._ensure_raw_replay_qualified()
         processed_engine = self._engine
         self._engine = None
         self._close_owned_engine(
@@ -462,6 +449,16 @@ class VLLMBackendSession:
         )
         return tuple(channels)
 
+    def _ensure_raw_replay_qualified(
+        self,
+    ) -> tuple[type[Any], Mapping[str, object]]:
+        processor = self._resolve_forced_replay_processor()
+        if self._raw_replay_qualification_evidence is None:
+            self._raw_replay_qualification_evidence = self._qualify_raw_replay(
+                _processor_source_identity(processor)
+            )
+        return processor, self._raw_replay_qualification_evidence
+
     def _qualify_raw_replay(
         self,
         processor_identity: Mapping[str, object],
@@ -469,18 +466,19 @@ class VLLMBackendSession:
         qualifier = self._raw_replay_qualifier
         if qualifier is None:
             from src.inference.vllm_qualification import (
-                inspect_vllm_raw_replay_preflight,
+                validate_vllm_forced_replay_qualification,
             )
 
             def qualifier(
                 launch: BackendLaunch,
                 identity: Mapping[str, object],
             ) -> Mapping[str, object]:
-                return inspect_vllm_raw_replay_preflight(
+                return validate_vllm_forced_replay_qualification(
                     launch=launch,
                     processor_identity=identity,
                 )
-        return qualifier(self._launch, processor_identity)
+        qualification_launch = replace(self._launch, batch_size=1)
+        return qualifier(qualification_launch, processor_identity)
 
     def _resolve_forced_replay_processor(self) -> type[Any]:
         if self._forced_replay_processor is None:
@@ -685,6 +683,7 @@ def open_vllm_backend_session(
     engine_factory: EngineFactory | None = None,
     components_loader: ComponentsLoader | None = None,
     raw_replay_qualifier: RawReplayQualifier | None = None,
+    launch_qualifier: LaunchQualifier | None = None,
 ) -> VLLMBackendSession:
     """Open one rank-local vLLM engine over an immutable execution model."""
 
@@ -699,22 +698,22 @@ def open_vllm_backend_session(
             "vLLM session requires a validated execution-model identity",
             code="vllm_backend.execution_model_required",
         )
-    observed_version = metadata.version("vllm")
-    process_evidence = _configure_process_mode()
-    cuda_evidence = _validate_rank_local_cuda()
     options = _vllm_options(launch)
     engine_kwargs = _engine_kwargs(launch, options=options)
-    from src.inference.vllm_qualification import (
-        inspect_vllm_operational_preflight,
+    qualification = (
+        qualify_vllm_backend_launch(launch, engine_kwargs=engine_kwargs)
+        if launch_qualifier is None
+        else dict(launch_qualifier(launch, engine_kwargs))
     )
-
-    preflight = inspect_vllm_operational_preflight(
-        launch=launch,
-        engine_kwargs=engine_kwargs,
-        observed_version=observed_version,
-        process_evidence=process_evidence,
-        cuda_evidence=cuda_evidence,
-    )
+    process_evidence = _configure_process_mode()
+    cuda_evidence = _validate_rank_local_cuda()
+    preflight = {
+        **qualification,
+        "status": "ready_for_engine_construction",
+        "process": process_evidence,
+        "cuda": cuda_evidence,
+    }
+    observed_version = str(qualification["candidate_version"])
     resolved_engine_factory = engine_factory or _default_engine_factory
     engine = resolved_engine_factory(engine_kwargs)
     try:
@@ -765,6 +764,44 @@ def open_vllm_backend_session(
     except BaseException:
         _close_vllm_engine(engine)
         raise
+
+
+def qualify_vllm_backend_launch(
+    launch: BackendLaunch,
+    *,
+    engine_kwargs: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Validate the executable vLLM envelope without constructing an engine."""
+
+    if launch.backend != "vllm":
+        raise RuntimeContractError(
+            "vLLM qualification received a non-vLLM launch",
+            code="vllm_backend.launch_backend",
+            context={"backend": launch.backend},
+        )
+    if launch.execution_model_identity is None:
+        raise RuntimeContractError(
+            "vLLM qualification requires a validated execution-model identity",
+            code="vllm_backend.execution_model_required",
+        )
+    resolved_engine_kwargs = (
+        _engine_kwargs(launch, options=_vllm_options(launch))
+        if engine_kwargs is None
+        else dict(engine_kwargs)
+    )
+    from src.inference.vllm_qualification import (
+        validate_vllm_runtime_qualification,
+    )
+
+    validated = validate_vllm_runtime_qualification(
+        launch=launch,
+        engine_kwargs=resolved_engine_kwargs,
+    )
+    return {
+        "candidate_version": validated["candidate_version"],
+        "engine_settings": resolved_engine_kwargs,
+        "runtime_qualification": validated,
+    }
 
 
 def _engine_kwargs(

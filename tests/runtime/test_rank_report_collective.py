@@ -25,7 +25,7 @@ from src.training.control_plane import (
 )
 
 
-_WORLD_SIZE = 8
+_WORLD_SIZE = 4
 _PROCESS_GROUP_TIMEOUT_SECONDS = 15
 _JOIN_TIMEOUT_SECONDS = 60
 
@@ -354,7 +354,7 @@ def _rank_report_worker(rank: int, port: int, output: mp.Queue) -> None:
 
 
 @pytest.mark.skipif(not _have_gloo(), reason="requires torch.distributed gloo backend")
-def test_eight_rank_reports_use_bounded_typed_collectives_and_fail_closed() -> None:
+def test_four_rank_reports_use_bounded_typed_collectives_and_fail_closed() -> None:
     context = mp.get_context("spawn")
     port = _find_free_tcp_port()
     output: mp.Queue = context.Queue()

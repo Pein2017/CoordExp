@@ -1,4 +1,4 @@
-"""Small contract-error vocabulary for CoordExp-swift."""
+"""Small contract-error vocabulary for CoordExp."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 
 class CoordExpError(Exception):
-    """Base class for CoordExp-swift contract failures."""
+    """Base class for CoordExp contract failures."""
 
     def __init__(
         self,

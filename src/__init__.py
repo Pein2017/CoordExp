@@ -1,1 +1,1 @@
-"""CoordExp-swift active source package."""
+"""CoordExp infrastructure source package."""

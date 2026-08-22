@@ -1,4 +1,4 @@
-"""Config-first training entrypoint for CoordExp-swift."""
+"""Config-first training entrypoint for CoordExp infrastructure."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def main(
     *,
     runner: TrainingRunner = run_training_pipeline,
 ) -> int:
-    parser = argparse.ArgumentParser(description="Run CoordExp-swift supervised training.")
+    parser = argparse.ArgumentParser(description="Run CoordExp infrastructure supervised training.")
     parser.add_argument("--config", required=True, help="Path to runnable YAML config.")
     args = parser.parse_args(argv)
 

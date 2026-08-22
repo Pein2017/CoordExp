@@ -1,4 +1,4 @@
-"""Strict CoordExp-swift inference configuration."""
+"""Strict CoordExp inference configuration."""
 
 from __future__ import annotations
 
@@ -217,9 +217,9 @@ class InferConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def _vllm_dtype_must_be_qualified(self) -> "InferConfig":
-        if self.backend.type == "vllm" and self.model.dtype == "fp16":
+        if self.backend.type == "vllm" and self.model.dtype != "bf16":
             raise ConfigContractError(
-                "vLLM inference supports only the executed bf16 and fp32 qualification envelopes",
+                "vLLM inference requires the executed BF16 qualification envelope",
                 code="config.vllm_dtype_unqualified",
                 context={"model.dtype": self.model.dtype},
             )
@@ -256,7 +256,6 @@ class ResolvedInferConfig:
 
 def load_infer_config(path: str | Path) -> ResolvedInferConfig:
     entry_path = Path(path).expanduser().resolve()
-    _reject_legacy_infer_path(entry_path)
     merged, origins, sources = _load_with_extends(entry_path, stack=())
     if merged.get("schema_version") != 1:
         raise ConfigContractError(
@@ -272,7 +271,6 @@ def load_infer_config(path: str | Path) -> ResolvedInferConfig:
         raise
     except ValidationError as exc:
         _raise_validation_error(exc, entry_path)
-    _validate_canonical_namespace(config, entry_path)
     _validate_leaf_authorship(config, entry_path, origins)
     config_dict = config.model_dump(mode="json")
     fingerprint = sha256_json(config_dict)
@@ -399,35 +397,6 @@ def resolve_infer_run_directory(
         run_dir=run_dir.resolve(),
         collision_policy=config.run.collision_policy,
     )
-
-
-def _reject_legacy_infer_path(path: Path) -> None:
-    parts = path.parts
-    for index in range(len(parts) - 1):
-        if parts[index] == "configs" and parts[index + 1] == "infer":
-            raise ConfigContractError(
-                "legacy configs/infer files are reference-only for CoordExp-swift V1 inference",
-                code="config.legacy_infer_path",
-                context={"path": str(path)},
-            )
-
-
-def _validate_canonical_namespace(config: InferConfig, entry_path: Path) -> None:
-    if config.debug.smoke or config.debug.dry_run:
-        return
-    canonical_root = Path.cwd().resolve() / "configs" / "coordexp_swift" / "infer"
-    try:
-        entry_path.relative_to(canonical_root)
-    except ValueError as exc:
-        raise ConfigContractError(
-            "production inference configs must live under configs/coordexp_swift/infer",
-            code="config.noncanonical_infer_path",
-            context={
-                "path": str(entry_path),
-                "canonical_root": str(canonical_root),
-            },
-            cause=exc,
-        ) from exc
 
 
 def _load_with_extends(

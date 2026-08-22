@@ -9,7 +9,7 @@ Takes an existing JSONL that already follows the CoordExp contract
   - Optionally relativizes image paths to the output JSONL location
 
 Example:
-  PYTHONPATH=. /root/miniconda3/envs/ms/bin/python public_data/scripts/rescale_jsonl.py \\
+  python -m public_data.scripts.rescale_jsonl \\
     --input-jsonl public_data/lvis/raw/train.jsonl \\
     --output-jsonl public_data/lvis/rescale_32_768/train.jsonl \\
     --output-images public_data/lvis/rescale_32_768 \\
@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, MutableMapping, cast
 
 from public_data.defaults import DEFAULT_NUM_WORKERS
-from src.datasets.preprocessors.resize import SmartResizeParams, SmartResizePreprocessor
+from public_data.resize import SmartResizeParams, SmartResizePreprocessor
 
 
 def _relativize_images(row: MutableMapping[str, Any], base_dir: Path) -> Dict[str, Any]:

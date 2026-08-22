@@ -1,4 +1,4 @@
-"""Runtime seed control for CoordExp-Swift training."""
+"""Runtime seed control for CoordExp training."""
 
 from __future__ import annotations
 

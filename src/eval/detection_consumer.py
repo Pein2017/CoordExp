@@ -1,4 +1,4 @@
-"""Minimal CoordExp-swift detection consumer for scored inference artifacts."""
+"""Minimal CoordExp detection consumer for scored inference artifacts."""
 
 from __future__ import annotations
 

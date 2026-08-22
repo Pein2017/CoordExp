@@ -8,8 +8,11 @@
     "artifact_type",
     "relative_path",
     "producer_script",
+    "regeneration_status",
+    "validator_module",
     "working_dir",
     "command",
+    "dependencies",
     "inputs",
     "key_params",
     "checksums",
@@ -41,13 +44,47 @@
       "type": "string",
       "minLength": 1
     },
+    "regeneration_status": {
+      "type": "string",
+      "enum": ["ready", "hold_unresolved_source_parity"]
+    },
+    "validator_module": {
+      "type": "string",
+      "const": "public_data.provenance"
+    },
     "working_dir": {
       "type": "string",
       "minLength": 1
     },
     "command": {
       "type": "string",
-      "minLength": 1
+      "pattern": "python -m public_data\\."
+    },
+    "dependencies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "required"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "required": {"type": "boolean"}
+        }
+      }
+    },
+    "excluded_local_jsonl": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "reason"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^public_data/.+\\.jsonl$"},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
     },
     "inputs": {
       "type": "array",
@@ -150,6 +187,9 @@
         }
       }
     },
+    "refinement_authority": {
+      "$ref": "#/$defs/refinement_authority"
+    },
     "code_ref": {
       "type": ["string", "object", "null"]
     },
@@ -161,6 +201,138 @@
     }
   },
   "$defs": {
+    "external_file_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "recorded_receipt_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity_mode", "recorded_path", "sha256"],
+      "properties": {
+        "identity_mode": {"type": "string", "const": "recorded_receipt_only"},
+        "recorded_path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "external_output_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size_bytes", "records"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "records": {"type": "integer", "minimum": 0}
+      }
+    },
+    "refinement_split_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "published_at_utc",
+        "row_count",
+        "object_count",
+        "negative_object_count",
+        "canonical_manifest_sha256",
+        "terminal_record_hash",
+        "files",
+        "outputs"
+      ],
+      "properties": {
+        "generation": {"type": "integer", "minimum": 1},
+        "published_at_utc": {"type": "string", "minLength": 1},
+        "row_count": {"type": "integer", "minimum": 1},
+        "object_count": {"type": "integer", "minimum": 0},
+        "negative_object_count": {"type": "integer", "minimum": 0},
+        "canonical_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "terminal_record_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["receipt", "project", "journal", "working", "task_index"],
+          "properties": {
+            "receipt": {"$ref": "#/$defs/external_file_identity"},
+            "project": {"$ref": "#/$defs/external_file_identity"},
+            "journal": {"$ref": "#/$defs/external_file_identity"},
+            "working": {"$ref": "#/$defs/external_file_identity"},
+            "task_index": {"$ref": "#/$defs/external_file_identity"}
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["norm", "coord"],
+          "properties": {
+            "norm": {"$ref": "#/$defs/external_output_identity"},
+            "coord": {"$ref": "#/$defs/external_output_identity"}
+          }
+        }
+      }
+    },
+    "refinement_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base_stage",
+        "historical_producer",
+        "runtime_root",
+        "selected_generation_policy",
+        "historical_training_config",
+        "tokenizer",
+        "splits"
+      ],
+      "properties": {
+        "base_stage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["generated_at_utc", "producer_script", "preserved_outputs", "notes"],
+          "properties": {
+            "generated_at_utc": {"type": "string", "minLength": 1},
+            "producer_script": {"type": "string", "minLength": 1},
+            "preserved_outputs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "notes": {"type": "string"}
+          }
+        },
+        "historical_producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["git_commit", "publisher_version", "source_paths"],
+          "properties": {
+            "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+            "publisher_version": {"type": "string", "const": "coco-refinement-dataset-publisher-v1"},
+            "source_paths": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "runtime_root": {"type": "string", "minLength": 1},
+        "selected_generation_policy": {"type": "string", "const": "max_succeeded_terminal"},
+        "historical_training_config": {"$ref": "#/$defs/recorded_receipt_identity"},
+        "tokenizer": {"$ref": "#/$defs/external_file_identity"},
+        "splits": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "train": {"$ref": "#/$defs/refinement_split_authority"},
+            "val": {"$ref": "#/$defs/refinement_split_authority"}
+          }
+        }
+      }
+    },
     "sidecar_file": {
       "type": "object",
       "additionalProperties": false,

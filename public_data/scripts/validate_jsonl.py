@@ -25,14 +25,15 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.coord_tokens.codec import is_coord_token, token_to_int  # noqa: E402
-from src.common.geometry.bbox_parameterization import (  # noqa: E402
+from public_data.geometry import (  # noqa: E402
     MAX_BIN,
     cxcy_logw_logh_norm1000_to_xyxy_norm1000,
     cxcywh_norm1000_to_xyxy_norm1000,
+    ints_to_pixels_norm1000,
+    is_coord_token,
     normalize_bbox_format,
+    token_to_int,
 )
-from src.common.geometry.coord_utils import ints_to_pixels_norm1000  # noqa: E402
 from public_data.view_contracts import (  # noqa: E402
     COORDINATE_STORAGE_INTEGER,
     ViewMetadata,

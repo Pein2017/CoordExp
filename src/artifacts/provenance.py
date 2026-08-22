@@ -14,7 +14,6 @@ from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import distribution as _metadata_distribution
 from importlib.metadata import version as _metadata_version
-from importlib.util import find_spec as _stdlib_find_spec
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
@@ -35,7 +34,6 @@ _CUDA_RUNTIME_SONAME: Final = "libcudart.so.12"
 
 # Receipt component -> (installed distribution, selected module).
 _DEPENDENCY_IMPORTS: Final[dict[str, tuple[str, str]]] = {
-    "ms-swift": ("ms-swift", "swift"),
     "transformers": ("transformers", "transformers"),
     "flash-attn": ("flash-attn", "flash_attn"),
     "flash_attn_2_cuda": ("flash-attn", "flash_attn_2_cuda"),
@@ -747,33 +745,6 @@ _PINNED_DRIVER_NATIVE_IDENTITY: Final[dict[str, Any]] = {
     "elf_build_id": "6451f06a1c8a877b03a1523720126f0421b57293",
 }
 
-_PINNED_REFERENCE_ONLY: Final[dict[str, dict[str, Any]]] = {
-    "ms-swift": {
-        "distribution": "ms-swift",
-        "import_name": "swift",
-        "distribution_version": {"status": "available", "value": "4.2.2"},
-        "role": "reference_only_not_imported_by_training_route",
-        "origin_resolution": "import_spec_without_import",
-        "imported_origin": {
-            "status": "unavailable",
-            "reason": "reference_only_not_imported",
-        },
-        "origin_kind": "source",
-        "sha256": {
-            "status": "available",
-            "value": "d345fd8f68077d11730ffe56747a52b1858550e8c21067ed55a1db2f79ab5caf",
-        },
-        "size_bytes": {"status": "available", "value": 3529},
-        "source_repository": {
-            "status": "available",
-            "value": {
-                "commit": "f2797138dba0e224cfff735cd89a528a08d8732a",
-                "state": "clean",
-            },
-        },
-    }
-}
-
 _PINNED_RUNTIME: Final[dict[str, Any]] = {
     "python": {"implementation": "CPython", "version": "3.12.11"},
     "torch_cuda": {
@@ -793,7 +764,7 @@ _PINNED_RUNTIME_BASELINE: Final[dict[str, Any]] = {
     "attention_backend": _PINNED_ATTENTION_BACKEND,
     "dependencies": _PINNED_RUNTIME_DEPENDENCIES,
     "runtime": _PINNED_RUNTIME,
-    "reference_only": _PINNED_REFERENCE_ONLY,
+    "reference_only": {},
 }
 PINNED_RUNTIME_BASELINE_SHA256: Final = hashlib.sha256(
     json.dumps(
@@ -861,8 +832,7 @@ def compare_pinned_runtime_baseline(
     Absolute import paths and CUDA device count remain recorded observations, not
     portable admission keys. Runtime dependency content, package manifests,
     named implementation owners, Python/Torch/CUDA/cuDNN/driver facts, and the
-    configured attention backend are exact admission keys. The selected
-    ms-swift checkout is reported independently and never affects admission.
+    configured attention backend are exact admission keys.
     """
 
     mismatches: list[str] = []
@@ -918,21 +888,6 @@ def compare_pinned_runtime_baseline(
                         f"dependencies.{component_name}.{owner_group}.{owner_name}"
                     )
 
-    reference_result: dict[str, Any] = {}
-    for name, expected in _PINNED_REFERENCE_ONLY.items():
-        reference_mismatches: list[str] = []
-        observed = dependencies.get(name) if isinstance(dependencies, Mapping) else None
-        _compare_expected(
-            expected,
-            observed,
-            path=f"dependencies.{name}",
-            mismatches=reference_mismatches,
-        )
-        reference_result[name] = {
-            "matches_recorded_reference": not reference_mismatches,
-            "mismatches": sorted(set(reference_mismatches)),
-        }
-
     unique_mismatches = sorted(set(mismatches))
     return {
         "schema_version": 3,
@@ -940,7 +895,7 @@ def compare_pinned_runtime_baseline(
         "attention_backend": attention_backend,
         "admitted": not unique_mismatches,
         "mismatches": unique_mismatches,
-        "reference_only": reference_result,
+        "reference_only": {},
     }
 
 
@@ -1330,7 +1285,7 @@ def collect_repository_provenance(repository_root: str | Path) -> dict[str, Any]
 
 
 def collect_dependency_provenance() -> dict[str, dict[str, Any]]:
-    """Collect runtime imports and reference-only dependencies independently."""
+    """Collect the runtime dependency identities used by training."""
 
     receipt: dict[str, dict[str, Any]] = {}
     for component, (distribution, import_name) in _DEPENDENCY_IMPORTS.items():
@@ -1342,18 +1297,12 @@ def collect_dependency_provenance() -> dict[str, dict[str, Any]]:
             "distribution_version": distribution_version,
             "distribution_record": distribution_record,
         }
-        if component == "ms-swift":
-            receipt[component] = {
-                **common,
-                **_collect_reference_dependency(import_name),
-            }
-        else:
-            receipt[component] = {
-                **common,
-                **_collect_runtime_dependency(import_name),
-                "source_identities": _collect_dependency_source_identities(component),
-                "native_identities": _collect_dependency_native_identities(component),
-            }
+        receipt[component] = {
+            **common,
+            **_collect_runtime_dependency(import_name),
+            "source_identities": _collect_dependency_source_identities(component),
+            "native_identities": _collect_dependency_native_identities(component),
+        }
     receipt["cuda-runtime"] = _collect_loaded_cuda_runtime_dependency()
     return receipt
 
@@ -1415,41 +1364,6 @@ def _collect_loaded_cuda_runtime_dependency() -> dict[str, Any]:
         "source_repository": _unavailable("not_source_origin"),
         "source_identities": {},
         "native_identities": {},
-    }
-
-
-def _collect_reference_dependency(import_name: str) -> dict[str, Any]:
-    """Resolve a comparison dependency without executing its import surface."""
-
-    origin = _reference_module_origin(import_name)
-    if origin is None:
-        selected_origin = _unavailable("reference_spec_resolution_failed")
-        sha256 = _unavailable("reference_spec_resolution_failed")
-        origin_kind = "unavailable"
-        source_repository = _unavailable("reference_origin_unavailable")
-    else:
-        selected_origin = _available(str(origin))
-        sha256 = _sha256_path(origin, max_bytes=_MAX_DEPENDENCY_FILE_BYTES)
-        size_bytes = _path_size(origin, max_bytes=_MAX_DEPENDENCY_FILE_BYTES)
-        origin_kind = _origin_kind(origin)
-        source_repository = (
-            _source_repository_identity(origin)
-            if origin_kind == "source"
-            else _unavailable("not_source_origin")
-        )
-    return {
-        "role": "reference_only_not_imported_by_training_route",
-        "origin_resolution": "import_spec_without_import",
-        "selected_module_origin": selected_origin,
-        "imported_origin": _unavailable("reference_only_not_imported"),
-        "origin_kind": origin_kind,
-        "sha256": sha256,
-        "size_bytes": (
-            size_bytes
-            if origin is not None
-            else _unavailable("reference_spec_resolution_failed")
-        ),
-        "source_repository": source_repository,
     }
 
 
@@ -1997,14 +1911,6 @@ def _module_origin(module: object) -> Path | None:
     return _resolved_origin(value)
 
 
-def _reference_module_origin(import_name: str) -> Path | None:
-    try:
-        spec = _find_module_spec(import_name)
-    except Exception:
-        return None
-    return _resolved_origin(getattr(spec, "origin", None))
-
-
 def _resolved_origin(value: object) -> Path | None:
     if not isinstance(value, str) or not value or value in {"built-in", "frozen"}:
         return None
@@ -2028,10 +1934,6 @@ def _origin_kind(origin: Path) -> str:
 
 def _import_module(name: str) -> object:
     return importlib.import_module(name)
-
-
-def _find_module_spec(name: str) -> object:
-    return _stdlib_find_spec(name)
 
 
 def _distribution_version(distribution: str) -> str:

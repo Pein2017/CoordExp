@@ -21,9 +21,11 @@ from src.artifacts.checkpoint_payload import (
 from src.artifacts.training_state import (
     RankTrainingStatePayload,
     TrainingStateExpectations,
-    TrainingStatePublication,
+    TrainingStatePublicationPlan,
     admit_training_state,
-    publish_training_state,
+    begin_training_state_contributions,
+    commit_training_state_contributions,
+    publish_rank_training_state_contribution,
 )
 from src.adapters.dora import inspect_dora_adapter_payload
 from src.artifacts.run_writer import RunWriter
@@ -310,7 +312,7 @@ def test_inference_reader_ignores_real_committed_training_state_without_opening_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A checkpoint with a REAL committed ``training_state/`` (built via the real
-    ``publish_training_state``) must produce an inference-payload manifest and
+    rank-contribution protocol) must produce an inference-payload manifest and
     identity byte/dict-identical to a sibling-free control, and the inference
     reader must never open a ``training_state`` file while doing so. Exact
     admission of that same directory's ``training_state/`` must independently
@@ -323,8 +325,14 @@ def test_inference_reader_ignores_real_committed_training_state_without_opening_
 
     paired = _write_checkpoint_payload(tmp_path / "paired")
     write_inference_checkpoint_payload_manifest(paired)
-    publication = _real_training_state_publication()
-    publish_training_state(paired, publication)
+    publication, payload = _real_training_state_publication()
+    contribution = begin_training_state_contributions(paired, publication)
+    publish_rank_training_state_contribution(
+        paired,
+        contribution,
+        payload,
+    )
+    commit_training_state_contributions(paired, contribution)
     assert (paired / "training_state" / "manifest.json").is_file()
 
     opened_paths: list[str] = []
@@ -352,12 +360,12 @@ def test_inference_reader_ignores_real_committed_training_state_without_opening_
     # (c) file-access proof: real payload files were opened (non-vacuous), and no
     # opened path ever touched the training_state sibling.
     assert opened_paths
-    assert any(path.endswith("inference_payload_manifest.json") for path in opened_paths)
+    assert any(
+        path.endswith("inference_payload_manifest.json") for path in opened_paths
+    )
     assert any(path.endswith("adapter_config.json") for path in opened_paths)
     assert any(path.endswith("adapter_model.safetensors") for path in opened_paths)
-    assert any(
-        path.endswith("special_token_embeddings.json") for path in opened_paths
-    )
+    assert any(path.endswith("special_token_embeddings.json") for path in opened_paths)
     assert any(
         path.endswith("special_token_embeddings.safetensors") for path in opened_paths
     )
@@ -367,7 +375,7 @@ def test_inference_reader_ignores_real_committed_training_state_without_opening_
     # interception window above.
     admitted_state = admit_training_state(
         paired,
-        _real_training_state_expectations(publication),
+        _real_training_state_expectations(publication, payload),
         current_rank=0,
     )
     assert admitted_state.manifest.parent_run_id == publication.parent_run_id
@@ -449,7 +457,9 @@ def _real_training_state_rank_payload(rank: int) -> RankTrainingStatePayload:
     )
 
 
-def _real_training_state_publication() -> TrainingStatePublication:
+def _real_training_state_publication() -> tuple[
+    TrainingStatePublicationPlan, RankTrainingStatePayload
+]:
     resolved_config = _real_training_state_resolved_config()
     resume_compatibility = training_state.build_resume_compatibility_projection(
         resolved_config
@@ -461,7 +471,7 @@ def _real_training_state_publication() -> TrainingStatePublication:
     identities["resume_compatibility"] = training_state._sha256(
         training_state._canonical_json_bytes(resume_compatibility) + b"\n"
     )
-    return TrainingStatePublication(
+    plan = TrainingStatePublicationPlan(
         parent_run_id="run-parent",
         parent_segment_id="segment-1",
         checkpoint_step=17,
@@ -470,16 +480,17 @@ def _real_training_state_publication() -> TrainingStatePublication:
         identities=identities,
         scheduler_applicable=True,
         scaler_applicable=False,
-        rank_payloads=[_real_training_state_rank_payload(0)],
         resolved_config=resolved_config,
         resume_compatibility=resume_compatibility,
     )
+    return plan, _real_training_state_rank_payload(0)
 
 
 def _real_training_state_expectations(
-    publication: TrainingStatePublication,
+    publication: TrainingStatePublicationPlan,
+    payload: RankTrainingStatePayload,
 ) -> TrainingStateExpectations:
-    decoded = training_state._decode_rank_payload(publication.rank_payloads[0])
+    decoded = training_state._decode_rank_payload(payload)
     return TrainingStateExpectations(
         checkpoint_step=publication.checkpoint_step,
         world_size=publication.world_size,

@@ -1,6 +1,0 @@
-extends: ./coord_soft_ce_gate_4b.yaml
-
-# 2B sibling of the canonical Stage-1 coord-token baseline.
-
-model:
-  model: model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp

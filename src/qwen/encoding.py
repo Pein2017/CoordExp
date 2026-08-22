@@ -443,8 +443,7 @@ def _token_indices_for_char_range(
     # Must stay a full linear scan, not a bisect/binary search: zero-width
     # special-token offsets (e.g. (0, 0)) can appear non-monotonically inside
     # offset_mapping, which would silently break a sorted-search shortcut.
-    # See openspec/changes/archive/2026-08-06-streamline-coordexp-swift-base-infrastructure/
-    # implementation-notes.md "M5a" and
+    # The active configuration contract is docs/contracts/train.md. See
     # test_token_span_lookup_handles_non_monotonic_zero_width_offset_without_bisect
     # for the concrete counterexample.
     indices: list[int] = []

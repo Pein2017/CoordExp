@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.config.models import OptimizerConfig, OptimizerGroupConfig, SchedulerConfig
+from src.config.models import OptimizerConfig, SchedulerConfig
 from src.optim.factory import build_optimizer_and_scheduler, build_scheduler_plan
 from src.optim.parameter_groups import OptimizerGroupAssignment, OptimizerGroupPlan
 

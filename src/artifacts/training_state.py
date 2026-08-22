@@ -210,24 +210,6 @@ class RankTrainingStatePayload:
 
 
 @dataclass(frozen=True)
-class TrainingStatePublication:
-    """Complete caller-owned input needed to build one immutable publication."""
-
-    parent_run_id: str
-    parent_segment_id: str
-    checkpoint_step: int
-    continuation_index: int
-    world_size: int
-    identities: Mapping[str, str]
-    scheduler_applicable: bool
-    scaler_applicable: bool
-    rank_payloads: Sequence[RankTrainingStatePayload]
-    accumulation_microstep: int = 0
-    resolved_config: Mapping[str, Any] | None = None
-    resume_compatibility: Mapping[str, Any] | None = None
-
-
-@dataclass(frozen=True)
 class TrainingStatePublicationPlan:
     """Small rank-shared publication metadata with no runtime payload bytes."""
 
@@ -242,34 +224,6 @@ class TrainingStatePublicationPlan:
     resolved_config: Mapping[str, Any]
     resume_compatibility: Mapping[str, Any]
     accumulation_microstep: int = 0
-
-    @classmethod
-    def from_publication(
-        cls, publication: TrainingStatePublication
-    ) -> TrainingStatePublicationPlan:
-        if publication.resolved_config is None:
-            _fail(
-                "publication has no resolved configuration",
-                code="training_state.incomplete",
-            )
-        if publication.resume_compatibility is None:
-            _fail(
-                "publication has no resume compatibility projection",
-                code="training_state.incomplete",
-            )
-        return cls(
-            parent_run_id=publication.parent_run_id,
-            parent_segment_id=publication.parent_segment_id,
-            checkpoint_step=publication.checkpoint_step,
-            continuation_index=publication.continuation_index,
-            world_size=publication.world_size,
-            identities=publication.identities,
-            scheduler_applicable=publication.scheduler_applicable,
-            scaler_applicable=publication.scaler_applicable,
-            resolved_config=publication.resolved_config,
-            resume_compatibility=publication.resume_compatibility,
-            accumulation_microstep=publication.accumulation_microstep,
-        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -724,32 +678,6 @@ class AdmittedTrainingState:
             context={"rank": rank, "role": role},
         )
         raise AssertionError("unreachable")
-
-
-class TrainingStatePublicationError(ArtifactContractError):
-    """Publication failed with explicit ownership and reload evidence."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        installed_by_this_call: bool,
-        reloaded_exact: bool,
-        cause: BaseException,
-        context: Mapping[str, Any] | None = None,
-    ) -> None:
-        self.installed_by_this_call = installed_by_this_call
-        self.reloaded_exact = reloaded_exact
-        super().__init__(
-            message,
-            code="training_state.publication_failed",
-            context={
-                **dict(context or {}),
-                "installed_by_this_call": installed_by_this_call,
-                "reloaded_exact": reloaded_exact,
-            },
-            cause=cause,
-        )
 
 
 class TrainingStateContributionError(ArtifactContractError):
@@ -1311,239 +1239,6 @@ def commit_training_state_contributions(
         anchor.close()
 
 
-def build_training_state_manifest(
-    publication: TrainingStatePublication,
-) -> tuple[TrainingStateManifest, Mapping[str, bytes]]:
-    """Validate caller inputs and construct deterministic manifest/file bytes."""
-
-    _validate_publication(publication)
-    assert publication.resolved_config is not None
-    resolved_config_bytes = _canonical_json_bytes(publication.resolved_config) + b"\n"
-    resolved_config_digest = _sha256(resolved_config_bytes)
-    if publication.identities["resolved_config"] != resolved_config_digest:
-        _fail(
-            "resolved configuration content does not match its identity",
-            code="training_state.incompatible",
-            context={
-                "mismatches": [
-                    {
-                        "checkpoint": resolved_config_digest,
-                        "current": publication.identities["resolved_config"],
-                        "field": "identities.resolved_config",
-                    }
-                ]
-            },
-        )
-    assert publication.resume_compatibility is not None
-    resume_compatibility_bytes = (
-        _canonical_json_bytes(publication.resume_compatibility) + b"\n"
-    )
-    resume_compatibility_digest = _sha256(resume_compatibility_bytes)
-    if publication.identities["resume_compatibility"] != resume_compatibility_digest:
-        _fail(
-            "resume compatibility content does not match its identity",
-            code="training_state.incompatible",
-            context={"field": "identities.resume_compatibility"},
-        )
-    resolved_config_record = TrainingStateFile(
-        path=TRAINING_STATE_RESOLVED_CONFIG,
-        role="resolved_config",
-        size=len(resolved_config_bytes),
-        sha256=resolved_config_digest,
-    )
-    resume_compatibility_record = TrainingStateFile(
-        path=TRAINING_STATE_RESUME_COMPATIBILITY,
-        role="resume_compatibility",
-        size=len(resume_compatibility_bytes),
-        sha256=resume_compatibility_digest,
-    )
-    file_bytes: dict[str, bytes] = {
-        TRAINING_STATE_RESOLVED_CONFIG: resolved_config_bytes,
-        TRAINING_STATE_RESUME_COMPATIBILITY: resume_compatibility_bytes,
-    }
-    ranks: list[TrainingStateRank] = []
-    for payload in sorted(publication.rank_payloads, key=lambda item: item.rank):
-        decoded = _decode_rank_payload(payload, world_size=publication.world_size)
-        prefix = f"rank-{payload.rank:05d}"
-        components: dict[str, bytes] = {
-            "optimizer": bytes(payload.optimizer),
-            "trainable_model": bytes(payload.trainable_model),
-        }
-        if publication.scheduler_applicable:
-            assert payload.scheduler is not None
-            components["scheduler"] = bytes(payload.scheduler)
-        if publication.scaler_applicable:
-            assert payload.scaler is not None
-            components["scaler"] = bytes(payload.scaler)
-        for kind in REQUIRED_RNG_KINDS:
-            components[f"rng:{kind}"] = bytes(payload.rng[kind])
-        cursor_bytes = _cursor_envelope_bytes(payload)
-        components["cursor"] = cursor_bytes
-
-        records: list[TrainingStateFile] = []
-        for role, content in components.items():
-            name = _filename_for_role(role)
-            relative_path = f"{prefix}/{name}"
-            file_bytes[relative_path] = content
-            records.append(
-                TrainingStateFile(
-                    path=relative_path,
-                    role=role,
-                    size=len(content),
-                    sha256=_sha256(content),
-                )
-            )
-        ranks.append(
-            TrainingStateRank(
-                rank=payload.rank,
-                rng_kinds=REQUIRED_RNG_KINDS,
-                next_rank_local_micro_step=payload.next_rank_local_micro_step,
-                runtime_signature=decoded.signature,
-                files=tuple(sorted(records, key=lambda item: item.path)),
-            )
-        )
-    runtime_signatures = {rank.runtime_signature for rank in ranks}
-    if len(runtime_signatures) != 1:
-        _runtime_fail(
-            "runtime.signature",
-            "all rank payloads must have one exact runtime-state signature",
-            context={
-                "ranks": {str(rank.rank): rank.runtime_signature for rank in ranks}
-            },
-        )
-
-    manifest = TrainingStateManifest(
-        schema=TRAINING_STATE_SCHEMA,
-        schema_version=TRAINING_STATE_SCHEMA_VERSION,
-        artifact_type=TRAINING_STATE_ARTIFACT_TYPE,
-        commit_status=TRAINING_STATE_COMMIT_STATUS,
-        parent_run_id=publication.parent_run_id,
-        parent_segment_id=publication.parent_segment_id,
-        checkpoint_step=publication.checkpoint_step,
-        continuation_index=publication.continuation_index,
-        world_size=publication.world_size,
-        save_boundary=TRAINING_STATE_SAVE_BOUNDARY,
-        identities=MappingProxyType(dict(sorted(publication.identities.items()))),
-        optimizer_applicable=True,
-        scheduler_applicable=publication.scheduler_applicable,
-        scaler_applicable=publication.scaler_applicable,
-        resolved_config=resolved_config_record,
-        resume_compatibility=resume_compatibility_record,
-        ranks=tuple(ranks),
-        aggregate_digest="0" * _SHA256_LENGTH,
-    )
-    manifest = replace(
-        manifest,
-        aggregate_digest=manifest.computed_aggregate_digest(),
-    )
-    # Round-trip through the strict loader before any filesystem mutation.
-    manifest = TrainingStateManifest.from_dict(manifest.to_dict())
-    return manifest, MappingProxyType(file_bytes)
-
-
-def publish_training_state(
-    checkpoint_dir: Path | str,
-    publication: TrainingStatePublication,
-    *,
-    before_install: Callable[[], None] | None = None,
-    on_installed: Callable[[], None] | None = None,
-) -> PublishedTrainingState:
-    """Atomically install a complete ``training_state/`` child without replacement."""
-
-    anchor = _CheckpointAnchor.open(checkpoint_dir)
-    target = anchor.path / TRAINING_STATE_DIRECTORY
-    stage_name = f".{TRAINING_STATE_DIRECTORY}.{uuid.uuid4().hex}.tmp"
-    installed = False
-    manifest: TrainingStateManifest | None = None
-    try:
-        if _entry_exists_at(anchor.descriptor, TRAINING_STATE_DIRECTORY):
-            _fail(
-                "exact training-state target already exists",
-                code="training_state.immutable_collision",
-                context={"path": str(target)},
-            )
-        manifest, payloads = build_training_state_manifest(publication)
-        os.mkdir(stage_name, mode=0o700, dir_fd=anchor.descriptor)
-        stage_fd = _open_directory_at(anchor.descriptor, stage_name)
-        rank_directories = sorted(
-            {
-                PurePosixPath(relative).parts[0]
-                for relative in payloads
-                if len(PurePosixPath(relative).parts) > 1
-            }
-        )
-        try:
-            for rank_directory in rank_directories:
-                os.mkdir(rank_directory, mode=0o700, dir_fd=stage_fd)
-            for relative_path, content in payloads.items():
-                _write_new_file_durable_at(stage_fd, relative_path, content)
-            _write_new_file_durable_at(
-                stage_fd,
-                TRAINING_STATE_MANIFEST,
-                _canonical_json_bytes(manifest.to_dict()) + b"\n",
-            )
-            for rank_directory in rank_directories:
-                rank_fd = _open_directory_at(stage_fd, rank_directory)
-                try:
-                    os.fsync(rank_fd)
-                finally:
-                    os.close(rank_fd)
-            os.fsync(stage_fd)
-        finally:
-            os.close(stage_fd)
-        if before_install is not None:
-            before_install()
-        anchor.assert_path_owner_unchanged()
-        try:
-            _rename_directory_no_replace_at(
-                anchor.descriptor,
-                stage_name,
-                TRAINING_STATE_DIRECTORY,
-            )
-        except FileExistsError as exc:
-            _fail(
-                "exact training-state target was concurrently published",
-                code="training_state.immutable_collision",
-                context={"path": str(target)},
-                cause=exc,
-            )
-        installed = True
-        if on_installed is not None:
-            on_installed()
-        os.fsync(anchor.descriptor)
-        admitted = _admit_training_state_at(
-            anchor,
-            _expectations_from_manifest(manifest),
-            current_rank=0,
-            expected_manifest=manifest,
-        )
-        if admitted.manifest.aggregate_digest != manifest.aggregate_digest:
-            _fail(
-                "published training state did not reload exactly",
-                code="training_state.publication_reload_mismatch",
-            )
-        return PublishedTrainingState(path=target, manifest=manifest)
-    except BaseException as exc:
-        if isinstance(exc, ArtifactContractError) and not installed:
-            raise
-        reloaded_exact = (
-            installed
-            and manifest is not None
-            and _reload_matches_manifest_at(anchor, manifest)
-        )
-        raise TrainingStatePublicationError(
-            "exact training-state publication failed",
-            installed_by_this_call=installed,
-            reloaded_exact=reloaded_exact,
-            cause=exc,
-            context={"path": str(target), "error_type": type(exc).__name__},
-        ) from exc
-    finally:
-        if not installed:
-            _remove_tree_at(anchor.descriptor, stage_name)
-        anchor.close()
-
-
 def admit_training_state(
     checkpoint_dir: Path | str,
     expectations: TrainingStateExpectations,
@@ -2029,61 +1724,6 @@ def _load_training_state_manifest_at(state_fd: int) -> TrainingStateManifest:
     return TrainingStateManifest.from_dict(_require_mapping(raw, field="manifest"))
 
 
-def _validate_publication(publication: TrainingStatePublication) -> None:
-    _require_nonempty_string(publication.parent_run_id, field="parent_run_id")
-    _require_nonempty_string(publication.parent_segment_id, field="parent_segment_id")
-    _require_positive_int(publication.checkpoint_step, field="checkpoint_step")
-    _require_nonnegative_int(publication.continuation_index, field="continuation_index")
-    _require_positive_int(publication.world_size, field="world_size")
-    _validate_identities(publication.identities)
-    if not isinstance(publication.resolved_config, Mapping):
-        _fail(
-            "resolved_config must be a string-keyed mapping",
-            code="training_state.incomplete",
-        )
-    _normalize_json_value(publication.resolved_config, field="resolved_config")
-    _validate_resume_compatibility_binding(
-        resolved_config=publication.resolved_config,
-        resume_compatibility=publication.resume_compatibility,
-        identities=publication.identities,
-        field="publication",
-    )
-    _require_bool(publication.scheduler_applicable, field="scheduler_applicable")
-    _require_bool(publication.scaler_applicable, field="scaler_applicable")
-    accumulation = _require_nonnegative_int(
-        publication.accumulation_microstep, field="accumulation_microstep"
-    )
-    if accumulation != 0:
-        _fail(
-            "mid-accumulation exact training-state publication is unsupported",
-            code="training_state.unsupported_mid_accumulation",
-            context={"accumulation_microstep": accumulation},
-        )
-    if not isinstance(publication.rank_payloads, Sequence) or isinstance(
-        publication.rank_payloads, (str, bytes, bytearray)
-    ):
-        _fail("rank_payloads must be a sequence", code="training_state.schema")
-    for payload in publication.rank_payloads:
-        if not isinstance(payload, RankTrainingStatePayload):
-            _fail(
-                "rank_payloads must contain RankTrainingStatePayload values",
-                code="training_state.schema",
-                context={"value_type": type(payload).__name__},
-            )
-    observed_ranks = [payload.rank for payload in publication.rank_payloads]
-    if sorted(observed_ranks) != list(range(publication.world_size)):
-        _fail(
-            "publication requires exactly one payload from every rank",
-            code="training_state.incomplete_rank_set",
-            context={
-                "expected_ranks": list(range(publication.world_size)),
-                "observed_ranks": observed_ranks,
-            },
-        )
-    for payload in publication.rank_payloads:
-        _validate_rank_payload(payload, publication=publication)
-
-
 def _validate_publication_plan(plan: TrainingStatePublicationPlan) -> None:
     if not isinstance(plan, TrainingStatePublicationPlan):
         _fail(
@@ -2310,21 +1950,12 @@ def _authenticate_contribution_session(
 def _build_rank_record_and_components(
     payload: RankTrainingStatePayload, plan: TrainingStatePublicationPlan
 ) -> tuple[TrainingStateRank, Mapping[str, bytes]]:
-    publication = TrainingStatePublication(
-        parent_run_id=plan.parent_run_id,
-        parent_segment_id=plan.parent_segment_id,
-        checkpoint_step=plan.checkpoint_step,
-        continuation_index=plan.continuation_index,
+    _validate_rank_payload(
+        payload,
         world_size=plan.world_size,
-        identities=plan.identities,
         scheduler_applicable=plan.scheduler_applicable,
         scaler_applicable=plan.scaler_applicable,
-        rank_payloads=(payload,),
-        accumulation_microstep=plan.accumulation_microstep,
-        resolved_config=plan.resolved_config,
-        resume_compatibility=plan.resume_compatibility,
     )
-    _validate_rank_payload(payload, publication=publication)
     decoded = _decode_rank_payload(payload, world_size=plan.world_size)
     components: dict[str, bytes] = {
         "optimizer": bytes(payload.optimizer),
@@ -2513,19 +2144,29 @@ def _manifest_from_plan(
 
 
 def _validate_rank_payload(
-    payload: RankTrainingStatePayload, *, publication: TrainingStatePublication
+    payload: RankTrainingStatePayload,
+    *,
+    world_size: int,
+    scheduler_applicable: bool,
+    scaler_applicable: bool,
 ) -> None:
-    _require_nonnegative_int(payload.rank, field="rank_payload.rank")
+    rank = _require_nonnegative_int(payload.rank, field="rank_payload.rank")
+    if rank >= world_size:
+        _fail(
+            "rank payload is outside the publication world size",
+            code="training_state.incomplete_rank_set",
+            context={"rank": rank, "world_size": world_size},
+        )
     _require_bytes(payload.trainable_model, field="rank_payload.trainable_model")
     _require_bytes(payload.optimizer, field="rank_payload.optimizer")
     _validate_optional_component(
         payload.scheduler,
-        applicable=publication.scheduler_applicable,
+        applicable=scheduler_applicable,
         field="rank_payload.scheduler",
     )
     _validate_optional_component(
         payload.scaler,
-        applicable=publication.scaler_applicable,
+        applicable=scaler_applicable,
         field="rank_payload.scaler",
     )
     if not isinstance(payload.rng, Mapping) or set(payload.rng) != set(
@@ -4390,34 +4031,6 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def _expectations_from_manifest(
-    manifest: TrainingStateManifest,
-) -> TrainingStateExpectations:
-    return TrainingStateExpectations(
-        checkpoint_step=manifest.checkpoint_step,
-        world_size=manifest.world_size,
-        identities=manifest.identities,
-        scheduler_applicable=manifest.scheduler_applicable,
-        scaler_applicable=manifest.scaler_applicable,
-        rng_kinds=REQUIRED_RNG_KINDS,
-    )
-
-
-def _reload_matches_manifest_at(
-    anchor: _CheckpointAnchor, expected_manifest: TrainingStateManifest
-) -> bool:
-    try:
-        admitted = _admit_training_state_at(
-            anchor,
-            _expectations_from_manifest(expected_manifest),
-            current_rank=0,
-            expected_manifest=expected_manifest,
-        )
-    except BaseException:
-        return False
-    return admitted.manifest.to_dict() == expected_manifest.to_dict()
-
-
 def _fail(
     message: str,
     *,
@@ -4455,19 +4068,15 @@ __all__ = [
     "TrainingStateContributionSession",
     "TrainingStateFile",
     "TrainingStateManifest",
-    "TrainingStatePublication",
-    "TrainingStatePublicationError",
     "TrainingStatePublicationPlan",
     "TrainingStateRank",
     "admit_training_state",
     "begin_training_state_contributions",
     "build_resume_compatibility_projection",
-    "build_training_state_manifest",
     "capture_runtime_state_expectations",
     "commit_training_state_contributions",
     "load_training_state_manifest",
     "publish_rank_training_state_contribution",
-    "publish_training_state",
     "restore_decoded_rank_training_state",
     "serialize_rank_training_state",
 ]
