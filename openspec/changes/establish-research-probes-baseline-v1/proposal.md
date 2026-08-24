@@ -11,10 +11,14 @@ or prematurely deleting reproducibility-critical producers.
 
 - Establish `research-probes` as the canonical research baseline after the
   accepted target-binding infra change is integrated and revalidated. The
-  current clean predecessor is `67ad6586bcf3ba5583de5d5d1498b57cfa8c75f5`.
+  historical clean predecessor is `67ad6586bcf3ba5583de5d5d1498b57cfa8c75f5`.
+  The sole post-infra cutover input is
+  `f337de5d0bd016b79aa012acfc491544e6313333`, captured and revalidated as a
+  clean actual target tree with identity fingerprint
+  `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`.
   `research-base-v1` does not exist before the final, user-approved lifecycle
-  task: that task creates an annotated tag at the exact post-infra commit
-  frozen by the cutover input and records the tag object and peeled commit.
+  task: that task creates an annotated tag at that frozen commit and records
+  the tag object and peeled commit.
 - Declare `coordexp-swift` a wholly separate production-infrastructure line:
   it is neither a research authority nor a prerequisite source for this
   baseline, and this change does not reconcile, merge, or retire it.

@@ -47,13 +47,18 @@
 
 ## 4. Integration gate
 
-- [ ] 4.1 Submit the verified infra change for user review; do not merge, tag,
+- [x] 4.1 Submit the verified infra change for user review; do not merge, tag,
   push, or alter either fixed worktree directory without the next explicit
-  authorization.
+  authorization. User authorization was then received for the actual merge;
+  no tag, push, or fixed-directory alteration occurred.
 - [ ] 4.2 After an explicit bounded-GPU authorization, run the existing
   single-GPU mechanics smoke from the merged `research-probes` target with a
   fresh external output root; bind its exact target/runtime/device identities
   and keep its result mechanics-only.
-- [ ] 4.3 Revalidate the accepted merged target tree, sync the approved delta
+- [x] 4.3 Revalidate the accepted merged target tree, sync the approved delta
   spec, and hand the actual merged identity to
   `establish-research-probes-baseline-v1` for its post-infra cutover ledger.
+  The actual target was clean `f337de5d0bd016b79aa012acfc491544e6313333`
+  with identity fingerprint
+  `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`;
+  approved delta sync is `30c29ed69d9ec3a74e8b96a7c8ec8a509146a765`.

@@ -1,11 +1,13 @@
 ## 1. Freeze the post-infra baseline input
 
-- [ ] 1.1 After the infra change's own approved integration gate has accepted,
+- [x] 1.1 After the infra change's own approved integration gate has accepted,
   merged, and revalidated `harden-research-probe-target-binding` in
   `research-probes`, record the exact resulting commit as the only cutover
   input; do not treat the historical infra branch or a dirty tree as baseline
   evidence. If revalidation fails, stop the cutover with no tag until a fresh
-  accepted infra result exists.
+  accepted infra result exists. Recorded on 2026-08-24: clean actual target
+  `f337de5d0bd016b79aa012acfc491544e6313333`, identity fingerprint
+  `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`.
 - [ ] 1.2 Inventory the smallest current router/configuration documents and
   OpenSpec context that still direct research work to root `main` or
   `coordexp-swift`; distinguish current authority, the independent production
@@ -63,9 +65,9 @@
   path -> currently resolved ref/commit pair rather than enforcing a permanent
   branch name; retain current observed evidence for
   `/data/CoordExp/.worktrees/research-probes` ->
-  `refs/heads/research-probes` @ `67ad658...` and
+  `refs/heads/research-probes` @ `f337de5...` and
   `/data/CoordExp/.worktrees/research-probe-infras` ->
-  `refs/heads/codex/research-probe-infra-foundation` @ `67ad658...`.
+  `refs/heads/codex/research-probe-infra-foundation` @ `baaa01e...`.
 - [ ] 4.1a Prove every active worktree HEAD and every probe/final lifecycle tip
   resolves from at least one named ref. Keep the detached
   `/data/CoordExp/.worktrees/permanent-owner-bridge-cache-validation` at

@@ -1,15 +1,21 @@
 ## Context
 
-See [proposal.md](proposal.md) for motivation. The clean `research-probes`
-head is now `67ad6586bcf3ba5583de5d5d1498b57cfa8c75f5`, following explicit
-Human13 graph-owner and retirement-closeout commits. The root repository
-documentation and OpenSpec context still describe `main` or `coordexp-swift` as
-the accepted implementation, while the user has selected `research-probes` as
-the canonical research line and has explicitly kept both production lines
-separate. `coordexp-swift` is a wholly independent production infrastructure
-line, not a shadow research authority or a source that must be reconciled before
-this baseline. The target-binding infra change is a prerequisite for the final
-baseline tag, not for this planning change.
+See [proposal.md](proposal.md) for motivation. The clean historical
+`research-probes` predecessor is
+`67ad6586bcf3ba5583de5d5d1498b57cfa8c75f5`, following explicit Human13
+graph-owner and retirement-closeout commits. The accepted post-infra cutover
+input is exclusively `f337de5d0bd016b79aa012acfc491544e6313333`: on
+2026-08-24 its actual fixed target tree was captured and revalidated clean by
+the target-binding contract, with identity fingerprint
+`abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`.
+Later planning records do not change that frozen source input. The root
+repository documentation and OpenSpec context still describe `main` or
+`coordexp-swift` as the accepted implementation, while the user has selected
+`research-probes` as the canonical research line and has explicitly kept both
+production lines separate. `coordexp-swift` is a wholly independent production
+infrastructure line, not a shadow research authority or a source that must be
+reconciled before this baseline. The target-binding infra change is a
+prerequisite for the final baseline tag, not for this planning change.
 
 ## Goals / Non-Goals
 
@@ -64,15 +70,16 @@ choose or discard any of its commits.
 
 ### Baseline promotion has two explicit gates and a later tag action
 
-`67ad658` is the clean predecessor for the infra successor. The final
-`research-base-v1` tag does not exist before its dedicated lifecycle task. That
-task runs only after (1) target-binding infra is merged and revalidated in the
-actual `research-probes` tree, (2) this change's authority/retention gate is
-accepted, and (3) the user explicitly approves tag creation. It creates an
-annotated tag at the exact post-infra commit frozen by task 1.1 and records the
-tag object and peeled commit in the implemented lifecycle record. The pre-infra
-image-2299 probe remains bound to its declared `9f902d5ab` source and is not
-silently rebased.
+`67ad658` is the historical clean predecessor for the infra successor.
+`f337de5d0bd016b79aa012acfc491544e6313333` is the only revalidated
+post-infra input frozen by task 1.1. The final `research-base-v1` tag does not
+exist before its dedicated lifecycle task. That task runs only after (1)
+target-binding infra is merged and revalidated in the actual `research-probes`
+tree, (2) this change's authority/retention gate is accepted, and (3) the user
+explicitly approves tag creation. It creates an annotated tag at that frozen
+commit and records the tag object and peeled commit in the implemented
+lifecycle record. The pre-infra image-2299 probe remains bound to its declared
+`9f902d5ab` source and is not silently rebased.
 
 This avoids claiming that an unverified infra branch or a dirty working tree is
 the new baseline. It also preserves the exact base of concurrent research.
