@@ -90,20 +90,23 @@
   is presently a Git root, so this unrelated HOLD does not block baseline-tag
   review; record that future worktree removal/prune plus reflog expiry requires
   its own preservation decision. See [pre-tag-gate.md](pre-tag-gate.md).
-- [ ] 4.2 Freeze the complete clean baseline-candidate diff that descends from
+- [x] 4.2 Freeze the complete clean baseline-candidate diff that descends from
   the 1.1 anchor and obtain a `claude-opus-5` leaf, `write:false`
   lifecycle/compatibility review on that exact candidate; lead disposition owns
   one bundled correction round and independently replays decisive checks. The
   user-selected CPU-only target-binding evidence is sufficient for this tag
   gate; `harden-research-probe-target-binding` task 4.2 remains a separate,
-  unexecuted GPU mechanics smoke and must not be presented as GPU evidence.
-- [ ] 4.3 Submit the verified baseline-cutover packet for user approval. That
+  unexecuted GPU mechanics smoke and must not be presented as GPU evidence. The
+  exact-candidate review and replay are recorded in
+  [post-tag-lifecycle-receipt.md](post-tag-lifecycle-receipt.md).
+- [x] 4.3 Submit the verified baseline-cutover packet for user approval. That
   approval may authorize only creation of `research-base-v1`. Any
   quarantine/removal, worktree retirement, branch deletion, or raw-artifact
   reclamation requires a separate explicit approval; the fixed
   `.worktrees/research-probes` and `.worktrees/research-probe-infras`
-  directories are never retirement targets.
-- [ ] 4.4 Only after the explicit approval from 4.3, create the annotated
+  directories are never retirement targets. The approval and its narrow scope
+  are recorded in [post-tag-lifecycle-receipt.md](post-tag-lifecycle-receipt.md).
+- [x] 4.4 Only after the explicit approval from 4.3, create the annotated
   `research-base-v1` tag at the exact final candidate frozen by 4.2, not at the
   1.1 infra anchor; the tag does not exist before this task. Verify
   `git cat-file -t research-base-v1` returns `tag`, verify
@@ -111,4 +114,4 @@
   post-tag lifecycle receipt that records both resolved values. No remote/off-
   host replication is claimed; generic-ref movement/deletion, tag deletion,
   Git garbage collection, and artifact reclamation remain separately user-
-  gated.
+  gated. See [post-tag-lifecycle-receipt.md](post-tag-lifecycle-receipt.md).
