@@ -77,7 +77,7 @@ SUPPORT_CENSUS = Path(
 )
 SUPPORT_COMPATIBILITY_RECEIPT = Path(
     "/data/CoordExp/outputs/research-probe-infras/"
-    "2026-08-24-target-binding-cpu-compatibility-v1/"
+    "2026-08-24-research-probes-target-binding-cpu-compatibility-v1/"
     "support-cpu-compatibility.json"
 )
 CROSSOVER_RUNNER = (
@@ -103,7 +103,7 @@ CROSSOVER_ACCEPTED_EVIDENCE = Path(
 )
 CROSSOVER_COMPATIBILITY_RECEIPT = Path(
     "/data/CoordExp/outputs/research-probe-infras/"
-    "2026-08-24-target-binding-cpu-compatibility-v1/"
+    "2026-08-24-research-probes-target-binding-cpu-compatibility-v1/"
     "crossover-cpu-compatibility.json"
 )
 
