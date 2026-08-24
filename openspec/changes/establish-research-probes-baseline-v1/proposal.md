@@ -12,21 +12,25 @@ or prematurely deleting reproducibility-critical producers.
 - Establish `research-probes` as the canonical research baseline after the
   accepted target-binding infra change is integrated and revalidated. The
   historical clean predecessor is `67ad6586bcf3ba5583de5d5d1498b57cfa8c75f5`.
-  The sole post-infra cutover input is
+  The sole post-infra revalidation anchor is
   `f337de5d0bd016b79aa012acfc491544e6313333`, captured and revalidated as a
   clean actual target tree with identity fingerprint
-  `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`.
-  `research-base-v1` does not exist before the final, user-approved lifecycle
-  task: that task creates an annotated tag at that frozen commit and records
-  the tag object and peeled commit.
+  `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`. It is
+  not the final tag target: the final clean candidate must descend from it and
+  contain this change's completed routing, lifecycle, disposition, and entropy
+  records before its exact review. `research-base-v1` does not exist before the
+  final, user-approved lifecycle task; that task creates an annotated tag at
+  the reviewed final candidate and records the tag object and peeled commit in
+  a follow-up lifecycle receipt.
 - Declare `coordexp-swift` a wholly separate production-infrastructure line:
   it is neither a research authority nor a prerequisite source for this
   baseline, and this change does not reconcile, merge, or retire it.
 - Update the smallest current router/configuration guidance that still names
   repository `main` or `coordexp-swift` as the default research implementation,
   while keeping the separate production lines distinct and preserving the fixed
-  directory names
-  `.worktrees/research-probes` and `.worktrees/research-probe-infras`.
+  directory names `.worktrees/research-probes` and
+  `.worktrees/research-probe-infras`. Both fixed worktrees are locally protected
+  by native Git worktree locks; no off-host copy is implied.
 - Define the probe lifecycle: fork an ephemeral `probe/<ticket>` worktree from
   the tagged research baseline; merge research documents, conclusions, and
   provenance manifests back; promote code only after a real second consumer;
@@ -66,4 +70,6 @@ does not change a supported runtime/API/schema behavior.
   model/GPU work, push, or publish results. Task 4.4 is the separately explicit,
   post-approval future tag-creation action; off-host replication, generic-ref
   movement/deletion, tag deletion, Git garbage collection, and artifact
-  reclamation remain separately user-gated.
+  reclamation remain separately user-gated. The current user-approved durability
+  boundary is local-only Git plus the two worktree locks; a remote push or
+  off-host durability claim is deferred to a separate authorization.

@@ -3,12 +3,13 @@
 See [proposal.md](proposal.md) for motivation. The clean historical
 `research-probes` predecessor is
 `67ad6586bcf3ba5583de5d5d1498b57cfa8c75f5`, following explicit Human13
-graph-owner and retirement-closeout commits. The accepted post-infra cutover
-input is exclusively `f337de5d0bd016b79aa012acfc491544e6313333`: on
-2026-08-24 its actual fixed target tree was captured and revalidated clean by
+graph-owner and retirement-closeout commits. The accepted post-infra
+revalidation anchor is exclusively `f337de5d0bd016b79aa012acfc491544e6313333`:
+on 2026-08-24 its actual fixed target tree was captured and revalidated clean by
 the target-binding contract, with identity fingerprint
 `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`.
-Later planning records do not change that frozen source input. The root
+Later planning records do not change that frozen source anchor; a later clean
+candidate that descends from it is the tag target. The root
 repository documentation and OpenSpec context still describe `main` or
 `coordexp-swift` as the accepted implementation, while the user has selected
 `research-probes` as the canonical research line and has explicitly kept both
@@ -68,18 +69,24 @@ to adopt behavior from `coordexp-swift` must be an explicit compatibility
 change with its own evidence and approval; this cutover does not silently
 choose or discard any of its commits.
 
+The `coordexp-swift-*` prefix in stable OpenSpec capability names identifies
+the retained production codebase contracts; it does not make the
+`coordexp-swift` branch a research entrypoint.
+
 ### Baseline promotion has two explicit gates and a later tag action
 
 `67ad658` is the historical clean predecessor for the infra successor.
 `f337de5d0bd016b79aa012acfc491544e6313333` is the only revalidated
-post-infra input frozen by task 1.1. The final `research-base-v1` tag does not
-exist before its dedicated lifecycle task. That task runs only after (1)
-target-binding infra is merged and revalidated in the actual `research-probes`
-tree, (2) this change's authority/retention gate is accepted, and (3) the user
-explicitly approves tag creation. It creates an annotated tag at that frozen
-commit and records the tag object and peeled commit in the implemented
-lifecycle record. The pre-infra image-2299 probe remains bound to its declared
-`9f902d5ab` source and is not silently rebased.
+post-infra anchor frozen by task 1.1, not the final baseline-tag target: it
+predates the route, lifecycle, disposition, and entropy records this change
+must deliver. After those records are complete, task 4.2 freezes a clean final
+candidate that descends from the anchor and obtains an exact-candidate review.
+The final `research-base-v1` tag does not exist before task 4.3's separate user
+approval. Task 4.4 creates an annotated tag at that reviewed candidate and
+records its tag object and peeled commit in a post-tag lifecycle receipt; that
+receipt is necessarily a later commit and not an excuse to move the tag. The
+pre-infra image-2299 probe remains bound to its declared `9f902d5ab` source and
+is not silently rebased.
 
 This avoids claiming that an unverified infra branch or a dirty working tree is
 the new baseline. It also preserves the exact base of concurrent research.
@@ -92,10 +99,17 @@ returns do not themselves require a new baseline tag.
 Here, "immutable" is an operational retention contract: a reserved
 annotated-tag namespace (`research-base-vN` for baselines and
 `probe-final/<ticket>` for probe finals) and its target SHA must be recorded in
-the merged provenance manifest. Local Git alone is not an off-host immutable
-store, and this change claims no off-host replication. Generic-ref
-movement/deletion, tag deletion, Git garbage collection, and raw-artifact
-reclamation remain separate, explicitly user-approved lifecycle actions.
+the merged provenance manifest. The current user-approved durability boundary
+is local Git plus native worktree locks for the two fixed directories. Local Git
+alone is not an off-host immutable store; this change claims no off-host
+replication, and no remote publication occurs. Generic-ref movement/deletion,
+tag deletion, Git garbage collection, and raw-artifact reclamation remain
+separate, explicitly user-approved lifecycle actions.
+
+The target-binding GPU mechanics smoke remains unexecuted and is explicitly
+non-blocking for this governance tag: CPU-only fail-closed capture and replay
+are the evidence boundary here. A later GPU authorization may run that smoke,
+but neither this tag nor its records may claim GPU execution from CPU receipts.
 
 ### Probe lifecycle is asymmetric by artifact type
 
@@ -121,24 +135,29 @@ resolved branch/ref, source commit `9f902d5ab`, clean-status evidence, and
 replay entry, while explicitly stating that it is not evidence for the new
 baseline.
 
-### Fixed paths and reachability are captured, not inferred from branch names
+### Fixed paths and reachability are captured, not inferred from names
 
 The fixed directories are stable paths, not permanent branch-name contracts.
-At the acceptance gate, capture each exact absolute fixed path and its
-currently resolved ref and commit. Current observed evidence is
-`/data/CoordExp/.worktrees/research-probes` ->
-`refs/heads/research-probes` @ `67ad658...`, and
-`/data/CoordExp/.worktrees/research-probe-infras` ->
-`refs/heads/codex/research-probe-infra-foundation` @ `67ad658...`.
+At the acceptance gate, capture each exact absolute fixed path, resolved Git
+admin directory, currently resolved named ref, and gate-time commit. The admin
+directory name is implementation-owned and may not resemble the worktree
+basename, so path-only or basename-only protection is insufficient. The two
+fixed worktrees are also protected by native `git worktree lock` records; their
+reasons are part of the gate evidence, and unlocking them requires a separate
+lifecycle decision. Do not make a self-invalidating evergreen claim about the
+current head of a moving branch.
 
 The gate must also prove every active worktree HEAD and every probe/final
 lifecycle tip resolves from at least one named ref. The detached
 `/data/CoordExp/.worktrees/permanent-owner-bridge-cache-validation` at
 `477b376a3e31a5dbedf5a87ecafcb372e75a73a9` is an explicit HOLD: this change
-does not create a ref for it or prune/remove it, so the acceptance gate remains
-HOLD unless separately resolved. The stale, unmounted
-`research-probe-infras` branch at `62274a97...` is a content-equivalent,
-superseded HOLD in the disposition ledger, not a deletion target.
+does not create a ref for it or prune/remove it. Its registered worktree HEAD
+is currently a Git root, so the unrelated HOLD does not block baseline-tag
+review; the future risk is separate worktree removal/prune followed by reflog
+expiry. The other detached checkouts must be recorded with their containing
+refs rather than collapsed into this HOLD. The stale, unmounted
+`research-probe-infras` branch at `62274a97...` is a superseded HOLD in the
+disposition ledger, not content-equivalent and not a deletion target.
 
 ### Entropy reduction uses a provenance ledger, not static reachability
 
@@ -158,6 +177,32 @@ active. It never checks incomplete research tasks merely to obtain a clean
 dashboard. The table is frozen against the post-infra target so it cannot
 silently omit integration changes.
 
+| Item | Disposition | Reason and boundary |
+| --- | --- | --- |
+| `add-human13-k-union-greedy-overfit-probe` | archive-eligible | 34/34 tasks are complete; retain its evidence unless a separate archive action is approved. |
+| `add-human13-on-policy-first-bottleneck-successor` | archive-eligible | 19/19 tasks are complete; it remains a bounded negative/mechanics result. |
+| `add-human13-row-contrast-geometry-preservation-successor` | archive-eligible | 14/14 tasks are complete; retain its bounded benchmark record. |
+| `add-human13-k-trajectory-rp-crossover-screen` | retired-but-open / superseded | 28/37 tasks; later work does not complete its unchecked matrix path. |
+| `add-human13-all-hf-shared-surface-trajectory-credit-vertical` | retired-but-open / superseded | 24/29 tasks; no private update or model-quality result can be inferred. |
+| `harden-research-probe-target-binding` | retain active / GPU HOLD | CPU contract integration is complete; task 4.2 is a separately authorized, unexecuted GPU mechanics smoke. |
+| `establish-research-probes-baseline-v1` | retain active | This change remains the current cutover owner until its final tag gate. |
+| `coordexp-swift` | retain independent production infrastructure | It is neither research authority nor a retirement candidate. |
+| `research-probe-infras` @ `62274a97...` | superseded HOLD | Its relevant agent-contract sync is upstream, but it differs materially from the target and has no deletion authorization. |
+
+### Current entropy ledger has no admitted deletion
+
+The candidate ledger intentionally produces no removal in this change:
+
+| Candidate | Disposition | Minimum preservation condition before any later action |
+| --- | --- | --- |
+| `docs/history/{worktree-cleanup,research-intake,worktree-union}/**/snapshots/**` | quarantine candidate, high risk | Byte-exact manifest, immutable archive, manifest rebinding, and replay proof; current snapshot/path count is insufficient. |
+| `reference/legacy_src/**` | keep | It is an intentional reference-only recovery quarantine; an approved replacement recovery source and import/path audit would be required. |
+| `scripts/research/analyze_native_sibling_branch_value.py` | HOLD | Retain a replacement capable of replaying every documented result artifact. |
+| `scripts/research/run_static_dynamic_owner_interface_experiment.py` | keep | Dynamic and direct successor loading remains active. |
+| target-binding admission core and consumer adapters | keep | Two consumer-owned, fail-closed source/receipt identities are load-bearing. |
+| fixed `research-probe-infras` integration lane | HOLD | Its same-looking support seam is deliberate two-consumer integration, not a shadow surface. |
+| superseded external output/log roots | HOLD | Every locator needs producer, claim-owner, hash, and replay preservation before archival or reclamation. |
+
 ## Risks / Trade-offs
 
 - [Router drift continues to send work to root `main`] → Treat exact
@@ -166,6 +211,10 @@ silently omit integration changes.
   per-candidate replay discriminator; lack of evidence means HOLD.
 - [The infra merge changes the candidate inventory] → Freeze the ledger and
   baseline tasks only after the merged target is revalidated.
+- [A tag points at an unimplemented plan] → Keep the 1.1 infra anchor separate
+  from the 4.2 final candidate and tag only the latter after exact review.
+- [Local-only retention is mistaken for off-host durability] → Record the
+  boundary and two worktree locks; require a separate approval for publication.
 - [A probe needs code retained before a second consumer exists] → Keep it in
   the ephemeral worktree or return it as explicitly experiment-local code;
   promotion remains a separate review decision.
@@ -182,13 +231,14 @@ silently omit integration changes.
    revalidation fails, stop this cutover with no tag until a fresh accepted
    infra result exists.
 3. Identify and update the smallest current authority/router set, then freeze
-   the Human13 disposition table and candidate provenance ledger on that merged
-   target.
-4. Apply only individually accepted quarantine/removal decisions, preserving
-   research records and external-artifact locators.
+   the Human13 disposition table and candidate provenance ledger on the
+   revalidated lineage.
+4. Make no removal in this change: separately scope any archive, quarantine, or
+   reclamation candidate only after its preservation/replay proof is accepted.
 5. Verify clean status, router consistency, ledger receipts, live
-   external-artifact locators/checksums, fixed-path-to-current-ref/commit
-   capture, and named-ref reachability for every active worktree HEAD and
-   probe/final lifecycle tip. The detached cache-validation worktree remains a
-   HOLD, so do not request tag approval unless it is separately resolved. Then
-   request user approval to create the `research-base-v1` tag.
+   external-artifact locators/checksums, fixed-path-to-admin-dir-to-current-ref
+   capture, native lock state, and named-ref reachability for every active
+   worktree HEAD and probe/final lifecycle tip. Preserve the cache-validation
+   checkout as a separate HOLD without treating its current registered HEAD as
+   a baseline-tag blocker. Freeze and exact-review the resulting candidate,
+   then request user approval to create `research-base-v1` at that candidate.
