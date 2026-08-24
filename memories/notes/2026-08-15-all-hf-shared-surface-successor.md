@@ -1,5 +1,16 @@
 # All-HF shared-surface successor
 
+## Retired (2026-08-24) — historical continuity only
+
+This note is superseded and is not current authority. The route it describes
+executed partially and is retired; see the closeout status in
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/unit.md`.
+Durable partial-execution evidence is the 2026-08-21 K16 acquisition/replay
+receipt bound in that unit's closeout. Current successor authority is
+`memories/current.md` plus
+`memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`. Do not use
+the line below as evidence that no GPU action ever occurred on this route.
+
 The user selected the shared-surface fork after the cross-engine exact-policy
 unit closed.  The new authority is
 `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/unit.md`
@@ -17,4 +28,8 @@ Continuity only:
 - one-image completion is decision-bearing even if null/unsafe; only zero G
   loss plus positive protected H/net gain and no new duplicate/malformed/cap
   burden may expand to 13 images;
-- no implementation, model, or GPU action has occurred yet.
+- historical framing at the time this note was written: no implementation,
+  model, or GPU action had occurred yet. This is no longer true — the route
+  later executed partially (Source audits and K16 acquisition/replay) and was
+  then retired before an admitted objective/backward/optimizer step; see the
+  retirement banner above.

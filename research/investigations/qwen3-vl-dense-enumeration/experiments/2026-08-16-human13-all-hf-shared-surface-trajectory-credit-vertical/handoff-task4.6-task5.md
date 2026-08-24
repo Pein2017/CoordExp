@@ -1,5 +1,17 @@
 # Handoff: Task 4.6 / Task 5 boundary
 
+## Retired (2026-08-24) — historical raw provenance, not a continuation instruction
+
+The all-HF shared-surface route this handoff describes is retired after
+partial execution; see the closeout status in
+[`unit.md`](../2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/unit.md).
+Current successor authority is `memories/current.md` plus
+`memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`. Nothing
+below is an instruction to resume this route. Item 6 of the "Open blocker and
+stop rule" section (the stale `one-image/run-reservation.json` PID 377949
+reservation) is a separate open infrastructure follow-up, not a live blocker
+on this now-retired unit.
+
 ## Semantic supersession (2026-08-20)
 
 The former cross-surface exact-token/coordinate-alias admission rule is

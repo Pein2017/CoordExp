@@ -142,7 +142,10 @@
 The closeout changes only the two checkboxes whose exact task text is now
 satisfied by durable execution or documentary closure:
 
-- Task 3.2 is complete as a materialization task. The durable K16 receipt
+- Task 3.2 is complete as a materialization task. The durable K16 receipt at
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-21-human13-all-hf-shared-surface-trajectory-credit-vertical/one-image-scientific-fresh-primary-6aa30b7-v1/receipts/017-k16_acquisition_replay.json`
+  (content SHA-256
+  `f6cf74ffd752589c63c2075c921a8fe13d812845f5b4dabdec35cf13ff885989`)
   records 463 sampling plus 463 replay forwards and binds compiler ledger
   SHA-256
   `55c7794cf64c7f5be909471fc1eb119f39ab05738622b10d87c07bc353f99072`.

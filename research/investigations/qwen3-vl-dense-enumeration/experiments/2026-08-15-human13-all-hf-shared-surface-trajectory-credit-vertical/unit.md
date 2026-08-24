@@ -25,21 +25,24 @@ diagnostic evidence rather than an admission gate.
 ## Closeout status (2026-08-24)
 
 This unit executed partially and is retired. Durable Source audits and K16
-acquisition/replay exist. In
-`one-image-scientific-fresh-primary-6aa30b7-v1`, receipt
-`017-k16_acquisition_replay.json` records 463 sampling forwards, 463 replay
-forwards, and compiler ledger SHA-256
+acquisition/replay exist. The receipt at
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-21-human13-all-hf-shared-surface-trajectory-credit-vertical/one-image-scientific-fresh-primary-6aa30b7-v1/receipts/017-k16_acquisition_replay.json`
+(content SHA-256
+`f6cf74ffd752589c63c2075c921a8fe13d812845f5b4dabdec35cf13ff885989`) records
+463 sampling forwards, 463 replay forwards, and compiler ledger SHA-256
 `55c7794cf64c7f5be909471fc1eb119f39ab05738622b10d87c07bc353f99072`.
 That compiler ledger completes the OpenSpec compiler-materialization task. It
 is not evidence that the compiler objective, backward, or update was admitted.
 
 The official route stopped before an admitted objective, backward, optimizer
-step, proposal audit, or post-update owner result. The terminal for
-`one-image-scientific-fresh-primary-5f3df478-v1` records the typed replay graph
-ownership blocker with zero backward and optimizer steps. Four canonical
-Source baselines were durably admitted in the executed route, but no proposal
-audit or gained/lost output completed, so the compound baseline task remains
-incomplete.
+step, proposal audit, or post-update owner result. The terminal at
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-21-human13-all-hf-shared-surface-trajectory-credit-vertical/one-image-scientific-fresh-primary-5f3df478-v1/terminal.json`
+(SHA-256
+`285b658d447761cc901ae999db90b050859b0425cd34ab2242cde77c91f95320`) records
+the typed replay graph ownership blocker with zero backward and optimizer
+steps. Four canonical Source baselines were durably admitted in the executed
+route, but no proposal audit or gained/lost output completed, so the compound
+baseline task remains incomplete.
 
 Later standalone N=1, N=4, and N=13 probes are separate simplified treatments.
 They supersede further infrastructure repair as the program direction but do
