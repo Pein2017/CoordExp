@@ -345,3 +345,47 @@ service phase ledger. If phase publication fails after a backend returns a
 handle, the service SHALL close that unpublished handle before surfacing the
 phase error; a loader exception SHALL remain the primary exception when its
 failed-evidence write also fails.
+
+### Requirement: Content-addressed replay graph-owner attribution
+
+The live replay creator and CUDA adapter admission SHALL share one typed
+graph-owner attribution helper.  For every reachable autograd leaf it SHALL
+record only object identity and metadata: concrete Tensor/Parameter type,
+exact registered model name when present, registered status, requires-grad,
+device, dtype, shape, the exact model object identity, and one bounded input
+role.  Artifacts MUST NOT contain tensor values or autograd graph objects.
+Every non-model forward input SHALL be attested non-trainable before K16.
+
+Admission SHALL preserve only exact registered trainable Parameter leaves of
+the same model object.  It SHALL reject foreign Parameters, unregistered
+trainable input leaves, detached/no-grad replay, wrong model objects,
+stale/rebuilt graphs, and receipt/tensor mismatch without filtering unknown
+leaves or broadening the accepted surface.  The graph receipt or its content
+hash and bounded foreign-leaf details SHALL be bound into the phase/terminal
+lineage through explicit schema dispatch. Foreign disposition and total count
+SHALL be computed over all reachable leaves before detail truncation, with the
+full count and truncation flag serialized. Historical terminal/resource JSON
+remains immutable. A graph-evidence journal failure SHALL remain secondary to
+the original typed adapter rejection.
+
+An injected sentinel SHALL require every model parameter and buffer to be on
+CPU, receive no live session capability, return an exact admitted model-graph
+receipt, and leave bounded model/session action snapshots unchanged. Any
+attempted sample/replay/forward or mutation SHALL reject without increasing the
+separately receipted successful sentinel count.
+
+#### Scenario: Same-model replay graph is admitted
+
+- **WHEN** replay creation and adapter admission observe the same retained graph
+  whose reachable leaves are exact registered trainable Parameters of the live
+  model object
+- **THEN** one content-addressed receipt binds the tensor/leaf metadata at both
+  boundaries and backward remains eligible
+
+#### Scenario: Trainable input or graph receipt drifts
+
+- **WHEN** a non-model input requires gradients before K16, or replay contains
+  a foreign/unregistered leaf, is detached, is rebuilt, changes model object,
+  or no longer matches its creation receipt
+- **THEN** the run emits a typed attributable rejection before sampling or
+  backward as applicable, with zero optimizer steps and no tolerance widening

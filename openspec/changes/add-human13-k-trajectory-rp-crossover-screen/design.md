@@ -311,3 +311,18 @@ Implementation rollback is deletion of the successor-only scripts, configs,
 tests, and unexecuted change artifacts.  Runtime rollback is the existing full
 training-state transaction plus private-proposal cleanup; Source and historical
 artifacts remain immutable.
+
+## Closeout disposition (2026-08-24)
+
+The v5 parity-only qualification failed the unchanged RP1.0 gate before any
+backward or optimizer step, exactly activating Decision 7's retirement branch.
+The [verified result](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-14-human13-k-trajectory-rp-crossover-screen/results.md)
+is the final evidence for this design. Finite-difference Wave 4 closure, the
+passing-successor vertical, the dose ray, and the fixed eighteen-cell matrix
+are deliberately not executed.
+
+The later standalone N=13 K4/K8 experiment answers a narrower approximate
+credit-fusion question without this design's complete compiler/projection and
+exact cross-engine policy claim. It therefore supersedes the program's next
+research direction, not this change's task history. Its result does not reopen
+or complete any retired step here.

@@ -146,5 +146,14 @@
   Strict validation, the focused 105-test slice, canonical content-hash checks,
   prohibited-artifact residue checks, process cleanup, and the independent
   evidence review all pass for the bounded negative closure.  This change is
-  not archived: tasks 6.4--7.4 are intentionally unexecuted and retired rather
-  than falsely completed.
+  not archived: Task 4.5 and Tasks 6.4--7.4 are intentionally unexecuted and
+  retired rather than falsely completed.
+
+## Closeout disposition (2026-08-24)
+
+No incomplete checkbox is changed during closeout. Direct evidence in
+[`results.md`](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-14-human13-k-trajectory-rp-crossover-screen/results.md)
+shows that RP1.0 parity failed before backward/update, so Task 4.5 and Tasks
+6.4--7.4 have no admitted prerequisite and remain intentionally unexecuted.
+The later standalone N=13 K4/K8 artifact is a separate treatment and cannot be
+used to mark these exact-policy tasks complete.

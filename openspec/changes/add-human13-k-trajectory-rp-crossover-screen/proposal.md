@@ -68,3 +68,20 @@ unchanged and are reused through experiment-local adapters.
   implementation and execution behavior.
 - No new external dependency, owner architecture, generic RL trainer,
   production API, deployment checkpoint, or population-level conclusion.
+
+## Closeout disposition (2026-08-24)
+
+This change is closed as verified negative evidence at its predeclared
+sampler-versus-replay admission gate. The exact-on-policy route did not admit
+an update, so Task 4.5 and Tasks 6.4--7.4 remain intentionally unchecked and
+will not be executed. The owning evidence is the
+[bounded result](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-14-human13-k-trajectory-rp-crossover-screen/results.md).
+
+The later N=13 K4/K8 standalone result is a different, simplified treatment
+and does not retroactively complete this change's exact-policy, compiler,
+projection, dose-ray, or eighteen-cell contracts. Its bounded conclusion is
+recorded in the
+[continuity note](../../../memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md):
+under that exact cohort and four-update dual-RP screen, K8 is not supported
+over K4. Neither result supports generalization, deployment, checkpoint
+promotion, or resuming this retired matrix.

@@ -76,3 +76,26 @@ checkpoint, and evaluation contracts remain unchanged.
   forwards repeat image and prompt work for sampling and gradient replay.
 - No external dependency, stable API change, accepted checkpoint, deployment
   behavior change, or population-level conclusion.
+
+## Closeout disposition (2026-08-24)
+
+This production-shaped route is retired without a completed private update or
+model-quality result. Its live attempts established preflight, Source-audit,
+and K16/replay infrastructure evidence, but the admitted path never reached
+backward or an optimizer step. K16 receipts bind a real compiler ledger and
+complete the compiler materialization task, while four canonical Source
+baselines were durably admitted. No compiler objective/backward or proposal
+audit followed. The final prelaunch, one-update/audit, independent result
+audit, and conditional full-panel tasks remain intentionally unchecked. The
+route's bounded results, research graph, project memory, strict validation,
+residue check, and independent closeout review are complete only as
+documentary retirement, not as an algorithm result or archive.
+
+The later standalone probes deliberately removed this route's production
+admission machinery and complete compiler/projection contract in order to
+obtain direct scientific evidence. They do not complete this proposal. The
+current N=13 K4/K8 conclusion is bounded to the exact Human-13 cohort, four
+updates, LR `3e-6`, paired banks, and dual-RP physical-owner evaluation; see the
+[continuity note](../../../memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md).
+It supports keeping K4 over K8 for a future redesigned objective, not resuming
+this retired vertical, generalization, deployment, or checkpoint promotion.

@@ -329,3 +329,74 @@ inferring new counters; new v2 terminals include the typed attempt list. This
 is production admission/
 telemetry evidence only and does not alter the scientific objective, surface
 ownership, K16, learning rate, or outcome gate.
+
+### 10. Attribute retained replay graphs at creation and adapter admission
+
+One experiment-local typed helper now owns autograd-leaf traversal for the live
+HF replay creator, the CUDA adapter, and the already-existing Task-3 CPU graph
+check.  Its receipts are content-addressed and value-free: every reachable
+leaf carries object id, concrete Tensor/Parameter type, exact registered model
+name/status, requires-grad, device/dtype/shape, live model object id, and one
+bounded input role.  Unknown leaves are evidence and rejection causes; they
+are never filtered from the graph to make admission pass.
+
+The HF session attests non-model forward inputs as non-trainable before the
+first sample group and again at each forward boundary.  Replay creation binds
+each retained log-probability tensor to a graph receipt.  The CUDA adapter
+requires the exact receipt/tensor/model tuple and revalidates it across the
+realized-margin probe, distinguishing foreign Parameter, unregistered
+trainable input, detached/no-grad, wrong-model, stale/rebuilt-graph, and
+receipt-mismatch failures.  The pre-acquisition phase persists the graph-input
+receipt; K16/private-update phases bind replay receipt hashes or bounded typed
+failure details, and terminal phase-ledger binding carries them without adding
+fields to historical terminal schemas.
+
+Foreign-leaf disposition and total count are computed over the complete
+reachable leaf set before artifact detail is truncated.  The receipt retains
+only the first bounded details, plus the full count and an explicit truncation
+flag, so a late foreign Parameter cannot be hidden behind earlier input leaves.
+
+One optional injected sentinel runs only on CPU after Source admission and
+before acquisition.  Its count is separate from sample/replay/model-forward
+counters.  Every model parameter and buffer must be on CPU, the callback
+receives a constrained context without the live session, must return an exact
+`admitted_model_graph` receipt, and is bracketed by model/session action
+snapshots that reject attempted sampling, replay, forward, or mutation.  This
+round exercises that sentinel only through production-shaped injection; it
+authorizes no CUDA/model/K16 attempt and changes no objective, learning rate,
+surface, gate, or Task-3 CPU contract.  A failed graph-evidence journal write
+is attached as a note to the original typed adapter error and never replaces
+that primary rejection.
+
+## Closeout disposition (2026-08-24)
+
+This design is retired rather than repaired further. The official live route
+repeatedly reached Source audit and K16 acquisition/replay, but its immutable
+attempts stopped before backward/update; for example,
+`one-image-scientific-fresh-primary-5f3df478-v1` ended on typed replay graph
+ownership admission with zero backward and optimizer steps. Later CPU graph
+attribution work is diagnostic infrastructure evidence only and was not
+followed by a new scientific attempt.
+
+The executed K16 boundary is not erased by retirement. In
+`one-image-scientific-fresh-primary-6aa30b7-v1`, the durable acquisition/replay
+receipt records 463 sampling plus 463 replay forwards and binds compiler ledger
+SHA-256
+`55c7794cf64c7f5be909471fc1eb119f39ab05738622b10d87c07bc353f99072`.
+Four canonical Source baselines were also durably admitted. This completes
+Task 3.2's BF16-native compiler materialization contract, but the compiler
+objective, backward, and update were not admitted. Task 4.3 remains incomplete
+because no proposal audit or gained/lost output completed its compound
+contract.
+
+Tasks 4.3, 4.6, and 5.2--5.4 therefore remain unchecked. Task 5.5 is complete
+only as a reviewed documentary closeout of this partially executed retired
+route; it does not supply the missing scientific execution. Partial
+subtasks 4.6a and 4.6b do not complete 4.6. The later standalone N=1, N=4,
+and N=13 probes are separate simplified experiments; they establish that a
+trajectory-credit plus current-owner preservation update can run, but they do
+not test this design's complete compiler/projection algorithm. The N=13
+[bounded result](../../../memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md)
+shows unstable owner churn and no dual-RP case for K8 over K4 under its exact
+conditions. It supersedes further infrastructure repair as the program route
+without converting this unexecuted design into algorithm evidence.

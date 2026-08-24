@@ -44,7 +44,7 @@
 - [x] 3.1 Adapt the admitted replay rows to the existing sealed
   `TrajectoryCreditLedger` and global `N*K` numerator/denominator without
   changing first-hit, burden, STOP, RLOO, or legacy-M semantics.
-- [ ] 3.2 Materialize the existing sparse compiler on a BF16-native canonical
+- [x] 3.2 Materialize the existing sparse compiler on a BF16-native canonical
   Source projection from the same live BF16/FA2 session, including
   absent-site zero semantics, frozen alias binding, `kappa=1`, margin `1e-4`,
   coefficient `1.0`, and remaining-owner state that excludes H owners already
@@ -104,6 +104,14 @@
   accounting with explicit legacy terminal schema dispatch. This is CPU-only
   production-admission evidence; it does not mark the real prelaunch or any
   scientific Task-5 execution complete.
+- [x] 4.6b Replace opaque replay graph-owner rejection with one shared typed,
+  content-addressed graph-owner attribution at HF replay creation and CUDA
+  adapter admission; attest non-model inputs before K16, persist value-free
+  receipt lineage/bounded foreign-leaf details and full foreign count, preserve
+  typed rejection across evidence-publication failure, and cover the
+  production-shaped constrained CPU-injected sentinel separately from K16
+  counters. This is CPU/injected diagnostic evidence only and does not
+  complete 4.6 or scientific Task 5.2+.
 
 ## 5. Bounded execution and closure
 
@@ -124,7 +132,39 @@
 - [ ] 5.4 Execute one 13-image K16 shared-surface update only when the exact
   one-image continuation gate passes; otherwise record it as intentionally
   unexecuted rather than incomplete infrastructure.
-- [ ] 5.5 Publish bounded results/review, update the research graph and project
+- [x] 5.5 Publish bounded results/review, update the research graph and project
   memory, run strict OpenSpec and residue checks, and leave validation,
   scalable vLLM/off-policy work, checkpoint promotion, and archive to a new
   user-owned decision.
+
+## Closeout disposition (2026-08-24)
+
+The closeout changes only the two checkboxes whose exact task text is now
+satisfied by durable execution or documentary closure:
+
+- Task 3.2 is complete as a materialization task. The durable K16 receipt
+  records 463 sampling plus 463 replay forwards and binds compiler ledger
+  SHA-256
+  `55c7794cf64c7f5be909471fc1eb119f39ab05738622b10d87c07bc353f99072`.
+  This does not imply that the compiler objective, backward, or update was
+  admitted.
+- Task 4.3 remains incomplete. Four canonical Source baselines were durably
+  admitted, but no proposal audit or gained/lost publication completed the
+  compound task.
+- Task 4.6 remains incomplete; 4.6a and 4.6b are bounded CPU/injected
+  diagnostics and do not constitute the real prelaunch smoke.
+- Tasks 5.2--5.4 remain incomplete. No official all-HF attempt completed
+  backward, an optimizer step, proposal audit, rollback after update, or the
+  conditional 13-image continuation.
+- Task 5.5 is complete only as the bounded documentary closeout of this
+  partially executed, retired route: the owning unit and research index are
+  aligned, project memory records the successor decision, strict OpenSpec and
+  residue checks pass, and an independent closure audit reviewed the claim
+  boundary. It is not completion of Tasks 5.2--5.4, an algorithm result,
+  checkpoint promotion, or archive.
+
+These tasks are intentionally retired, not pending implementation. The later
+standalone N13 K4/K8 matrix belongs to a simplified treatment and provides no
+direct completion evidence for this change. Its strict claim boundary and
+current program decision are recorded in
+[`memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`](../../../memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md).

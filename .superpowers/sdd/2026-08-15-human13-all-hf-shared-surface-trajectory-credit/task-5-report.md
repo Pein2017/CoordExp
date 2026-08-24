@@ -336,7 +336,9 @@ authorized by this correction.
   Task-3/runtime and HF-native projection checks passed (28 trajectory-credit,
   54 shared-surface, and 13 native-owner tests).  Ruff, compileall, and scoped
   Pyright are clean for the four changed Python paths.
-- Task 4.6 and Tasks 5.1–5.5 remain unchecked in OpenSpec.
+- Task 4.6 and Tasks 5.2–5.5 remained unchecked at this correction boundary;
+  Task 5.1 was later completed by the durable no-update preflight recorded
+  below.
 
 ## Claim boundary and stop rule
 
@@ -381,7 +383,9 @@ fault matrix; it is production admission evidence only.  Focused and adjacent
 scientific suites must remain unchanged in objective, LR, K16, parity, surface
 ownership, rollback, and dual-RP gate semantics.
 
-Task 4.6 and Tasks 5.1–5.5 remain unchecked.  No live GPU/model/network,
+Task 4.6 and Tasks 5.2–5.5 remained unchecked at this correction boundary.
+Task 5.1 was later completed by the durable no-update preflight recorded
+below. No live GPU/model/network,
 checkpoint, or algorithm update is authorized by this correction.
 
 The localized follow-up correction closes three shared admission gaps found by
@@ -425,7 +429,9 @@ and diff checks are clean. Fault-first tests cover indexless `cuda` -> `cuda:0`,
 true index/multi-device/visibility rejection, loader and evaluator failures,
 bounded redaction, pre-reservation zero-action behavior, successful admitted
 sessions, and v1 terminal reload. No GPU/model/network/K16/backward/update or
-checkpoint action occurred. Task 4.6 and Tasks 5.1–5.5 remain unchecked; this
+checkpoint action occurred. Task 4.6 and Tasks 5.2–5.5 remained unchecked at
+this correction boundary; Task 5.1 was later completed by the durable
+no-update preflight recorded below. This
 correction is production-admission telemetry only.
 
 ### Localized review correction
@@ -482,3 +488,72 @@ mutating canonical Source still fails closed.  Focused and adjacent CPU tests
 pass 81 cases, scoped Pyright and Serena report no diagnostics, strict OpenSpec
 and diff checks pass, and an independent localized recheck reports no P0/P1.
 No new GPU/model/K16/backward/update execution is part of this correction.
+
+## Typed replay graph-owner attribution correction
+
+The next bounded blocker was opaque: adapter admission reported only
+`Task2 replay graph owner differs from parameters`, which could not
+distinguish a foreign registered Parameter, an unregistered trainable input,
+a detached replay, a rebuilt graph, a wrong model object, or a receipt/tensor
+mismatch.  The correction adds one experiment-local shared owner used at live
+HF replay creation, CUDA adapter admission, and the existing Task-3 CPU graph
+check.  Its content-addressed receipts contain no values or graph objects;
+they fingerprint every reachable leaf by object id, concrete Tensor/Parameter
+type, exact registered name/status, requires-grad, device/dtype/shape, model
+object id, and bounded input role.  Unknown leaves reject rather than being
+filtered.
+
+The live session also attests every actual non-model forward tensor as
+non-trainable and exposes a deterministic pre-acquisition pixel/input
+attestation.  The production admission phase joins that receipt with the
+existing AdamW ownership digest.  A production-shaped optional sentinel runs
+only on injected CPU after frozen Source ownership and before `sample_group`;
+its count is separately receipted and never increments K16/model-forward
+counters.  Replay creation binds each retained tensor to its receipt, the
+adapter revalidates the exact tensor/model/receipt tuple across the margin
+probe, and graph failures persist either the value-free receipt in the failed
+private-update phase or bounded typed details in terminal failure lineage.
+Legacy v1/v2 terminal/resource payloads remain unchanged and explicitly
+dispatched; the new receipts use their own v1 schemas.
+
+Fault-first evidence was observed before production edits: the two focused
+suites had exactly seven new failures with 73 existing passes and two expected
+CUDA skips.  After the correction those suites pass 82 tests with two skips;
+the adjacent native-owner/services/entry suites pass 116 tests; and the real
+Accelerate CPU ownership/adapter/services set passes 84 tests with two skips.
+The negatives cover grad input before sampling, foreign Parameter,
+unregistered trainable input, detached/no-grad replay, wrong model object,
+stale/rebuilt graph, and receipt/tensor mismatch; the positive retains exact
+same-model registered Parameter leaves.  This round performed no GPU/model,
+K16, backward, optimizer, checkpoint, network, output-root, or live sentinel
+action. Task 4.6 and scientific Tasks 5.2--5.4 remain open. Task 5.5 is
+addressed by the final documentary closeout receipt below.
+
+## Final documentary closeout receipt (2026-08-24)
+
+This receipt closes the partially executed all-HF vertical as a retired
+research route; it does not claim a completed update or model-quality result.
+
+- Task 3.2 is complete at its stated materialization boundary. The immutable
+  `one-image-scientific-fresh-primary-6aa30b7-v1` receipt
+  `017-k16_acquisition_replay.json` records 463 sampling forwards, 463 replay
+  forwards, and compiler ledger SHA-256
+  `55c7794cf64c7f5be909471fc1eb119f39ab05738622b10d87c07bc353f99072`.
+  No compiler objective, backward, or update was admitted.
+- Task 4.3 remains incomplete. Canonical Source baselines exist, but no
+  proposal audit or gained/lost output completed the compound task.
+- Tasks 5.2--5.4 remain intentionally unexecuted or incomplete: official
+  terminals record zero backward and optimizer steps, no promoted checkpoint,
+  and no proposal audit or conditional full-panel continuation.
+- Task 5.5 is complete only as documentary closure. The owning research unit
+  and experiment index now identify `partial_execution_retired`; project
+  memory records the successor N13 decision without using it to backfill this
+  vertical; strict OpenSpec validation and `git diff --check` pass; a residue
+  scan of the two official scientific roots found no checkpoint, proposal, or
+  promotion file, consistent with their typed zero-update terminals; and the
+  independent closure audit accepted this bounded interpretation after the
+  Task-3.2/Task-4.3 correction.
+
+Validation, scalable vLLM/off-policy work, checkpoint promotion, and archive
+remain new user-owned decisions. No archive, cleanup, commit, push, GPU/model
+execution, or data mutation is part of this closeout.

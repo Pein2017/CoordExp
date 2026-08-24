@@ -1,15 +1,15 @@
 ---
 title: Human-13 All-HF Shared-Surface K-Trajectory Credit Vertical
-description: A compute-heavy one-image successor that finally tests one complete K-trajectory-credit, greedy-compiler, and preservation update on one trainable HF surface.
+description: Retired partial execution of a compute-heavy one-image K-trajectory-credit, greedy-compiler, and preservation vertical.
 type: investigation
 role: research_unit
 authority: non_normative_research
-implementation_status: active
+implementation_status: partial_execution_retired
 unit_id: 2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical
 topic: qwen3-vl-dense-enumeration
-status: active
-evidence_status: live_diagnostic
-updated: 2026-08-20
+status: retired
+evidence_status: verified_partial_blocked_before_backward
+updated: 2026-08-24
 ---
 
 # One-sentence question
@@ -21,6 +21,30 @@ greedy without losing any Source-visible owner under either fp32/SDPA RP audit?
 The BF16/FA2 surface owns the policy and update; fp32/SDPA owns only paired
 owner-level behavioral audit, so cross-surface token/owner differences are
 diagnostic evidence rather than an admission gate.
+
+## Closeout status (2026-08-24)
+
+This unit executed partially and is retired. Durable Source audits and K16
+acquisition/replay exist. In
+`one-image-scientific-fresh-primary-6aa30b7-v1`, receipt
+`017-k16_acquisition_replay.json` records 463 sampling forwards, 463 replay
+forwards, and compiler ledger SHA-256
+`55c7794cf64c7f5be909471fc1eb119f39ab05738622b10d87c07bc353f99072`.
+That compiler ledger completes the OpenSpec compiler-materialization task. It
+is not evidence that the compiler objective, backward, or update was admitted.
+
+The official route stopped before an admitted objective, backward, optimizer
+step, proposal audit, or post-update owner result. The terminal for
+`one-image-scientific-fresh-primary-5f3df478-v1` records the typed replay graph
+ownership blocker with zero backward and optimizer steps. Four canonical
+Source baselines were durably admitted in the executed route, but no proposal
+audit or gained/lost output completed, so the compound baseline task remains
+incomplete.
+
+Later standalone N=1, N=4, and N=13 probes are separate simplified treatments.
+They supersede further infrastructure repair as the program direction but do
+not complete this unit's sparse-compiler/projection algorithm. No
+generalization, deployment, or checkpoint-promotion claim follows.
 
 ## Authority and predecessor boundary
 
