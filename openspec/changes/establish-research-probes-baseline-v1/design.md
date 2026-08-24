@@ -230,8 +230,9 @@ The candidate ledger intentionally produces no removal in this change:
    reclamation candidate only after its preservation/replay proof is accepted.
 5. Verify clean status, router consistency, ledger receipts, live
    external-artifact locators/checksums, fixed-path-to-admin-dir-to-current-ref
-   capture, native lock state, and named-ref reachability for every active
-   worktree HEAD and probe/final lifecycle tip. Preserve the cache-validation
+   capture, native lock state, and named-ref reachability for each baseline-owned
+   fixed-worktree HEAD and probe/final lifecycle tip recorded by this baseline.
+   Do not consult independent concurrent worktrees. Preserve the cache-validation
    checkout as a separate HOLD without treating its current registered HEAD as
    a baseline-tag blocker. Freeze and exact-review the resulting candidate,
    then request user approval to create `research-base-v1` at that candidate.

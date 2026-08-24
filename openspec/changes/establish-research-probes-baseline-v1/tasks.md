@@ -69,7 +69,7 @@
 
 ## 4. Baseline acceptance gate
 
-- [ ] 4.1 Run strict OpenSpec validation, routing/link checks, clean-status and
+- [x] 4.1 Run strict OpenSpec validation, routing/link checks, clean-status and
   fixed-directory invariants, and residue checks for stale research-authority
   statements in tracked paths only (never rewrite worker snapshots); attach the
   exact post-infra source identity, ledger evidence, and a liveness/checksum
@@ -78,8 +78,10 @@
   gate-time commit, rather than enforcing a permanent branch name or keeping a
   self-invalidating current-HEAD value in this task. Verify each native
   worktree lock and the explicitly local-only durability boundary; no remote
-  publication or off-host replication is implied.
-- [ ] 4.1a Prove every baseline-owned fixed-worktree HEAD and every probe/final
+  publication or off-host replication is implied. Record the captured evidence
+  in [pre-tag-gate.md](pre-tag-gate.md); it is a gate-time observation, not an
+  evergreen branch-HEAD claim.
+- [x] 4.1a Prove every baseline-owned fixed-worktree HEAD and every probe/final
   lifecycle tip recorded by this baseline resolves from at least one named ref.
   Do not consult independent concurrent worktrees. Keep the detached
   `/data/CoordExp/.worktrees/permanent-owner-bridge-cache-validation` at
@@ -87,7 +89,7 @@
   create a ref, prune, or remove it in this change. Its registered worktree HEAD
   is presently a Git root, so this unrelated HOLD does not block baseline-tag
   review; record that future worktree removal/prune plus reflog expiry requires
-  its own preservation decision.
+  its own preservation decision. See [pre-tag-gate.md](pre-tag-gate.md).
 - [ ] 4.2 Freeze the complete clean baseline-candidate diff that descends from
   the 1.1 anchor and obtain a `claude-opus-5` leaf, `write:false`
   lifecycle/compatibility review on that exact candidate; lead disposition owns
