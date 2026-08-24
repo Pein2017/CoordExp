@@ -76,6 +76,82 @@ def _crossover_cpu(output_root: Path, receipt: Path) -> StageEvidence:
     )
 
 
+def test_fixed_execution_roots_select_only_their_bound_cpu_receipt_pairs(
+    tmp_path: Path,
+) -> None:
+    selector = consumers._compatibility_receipt_pair_for_execution_root
+    canonical = Path("/data/CoordExp/.worktrees/research-probes")
+    integration = Path("/data/CoordExp/.worktrees/research-probe-infras")
+
+    assert selector(canonical) == (
+        Path(
+            "/data/CoordExp/outputs/research-probe-infras/"
+            "2026-08-24-research-probes-target-binding-cpu-compatibility-v1/"
+            "support-cpu-compatibility.json"
+        ),
+        Path(
+            "/data/CoordExp/outputs/research-probe-infras/"
+            "2026-08-24-research-probes-target-binding-cpu-compatibility-v1/"
+            "crossover-cpu-compatibility.json"
+        ),
+    )
+    if integration.exists():
+        assert selector(integration) == (
+            Path(
+                "/data/CoordExp/outputs/research-probe-infras/"
+                "2026-08-24-target-binding-cpu-compatibility-v1/"
+                "support-cpu-compatibility.json"
+            ),
+            Path(
+                "/data/CoordExp/outputs/research-probe-infras/"
+                "2026-08-24-target-binding-cpu-compatibility-v1/"
+                "crossover-cpu-compatibility.json"
+            ),
+        )
+    with pytest.raises(consumers.ConsumerAdmissionError, match="execution root"):
+        selector(tmp_path)
+
+
+def test_canonical_receipt_selection_does_not_require_integration_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    selector = consumers._compatibility_receipt_pair_for_execution_root
+    canonical = Path("/data/CoordExp/.worktrees/research-probes")
+    expected = selector(canonical)
+    monkeypatch.setattr(
+        consumers,
+        "FIXED_RESEARCH_PROBE_INFRAS_ROOT",
+        tmp_path / "retired-research-probe-infras",
+    )
+
+    assert selector(canonical) == expected
+
+
+def test_other_fixed_root_receipt_still_rejects_path_identity(
+    tmp_path: Path,
+) -> None:
+    selected_receipt_root = consumers.SUPPORT_COMPATIBILITY_RECEIPT.parent
+    canonical_receipt_root = consumers._CANONICAL_COMPATIBILITY_RECEIPT_ROOT
+    integration_receipt_root = consumers._INTEGRATION_COMPATIBILITY_RECEIPT_ROOT
+    assert selected_receipt_root in {
+        canonical_receipt_root,
+        integration_receipt_root,
+    }
+    assert consumers.CROSSOVER_COMPATIBILITY_RECEIPT.parent == selected_receipt_root
+    other_receipt_root = (
+        integration_receipt_root
+        if selected_receipt_root == canonical_receipt_root
+        else canonical_receipt_root
+    )
+    other_support = other_receipt_root / "support-cpu-compatibility.json"
+    other_crossover = other_support.with_name("crossover-cpu-compatibility.json")
+
+    with pytest.raises(consumers.ConsumerAdmissionError, match="adapter raw source"):
+        _support_cpu(tmp_path / "support", other_support)
+    with pytest.raises(consumers.ConsumerAdmissionError, match="generator raw source"):
+        _crossover_cpu(tmp_path / "crossover", other_crossover)
+
+
 def _vertical_sources(tmp_path: Path) -> tuple[Any, ...]:
     tmp_path.mkdir(parents=True, exist_ok=True)
     raw = {

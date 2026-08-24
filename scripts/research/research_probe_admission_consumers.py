@@ -40,6 +40,9 @@ from src.common.errors import ArtifactContractError
 
 INFRA_ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_RESEARCH_PROBES_ROOT = Path("/data/CoordExp/.worktrees/research-probes")
+FIXED_RESEARCH_PROBE_INFRAS_ROOT = Path(
+    "/data/CoordExp/.worktrees/research-probe-infras"
+)
 SUPPORT_CONSUMER = (
     ACTIVE_RESEARCH_PROBES_ROOT
     / "scripts/research/run_natural_boundary_support_completion.py"
@@ -75,11 +78,6 @@ SUPPORT_PLAN = Path(
 SUPPORT_CENSUS = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-06-natural-boundary-routing-history-replication/cpu-census-v2/admission-census.json"
 )
-SUPPORT_COMPATIBILITY_RECEIPT = Path(
-    "/data/CoordExp/outputs/research-probe-infras/"
-    "2026-08-24-research-probes-target-binding-cpu-compatibility-v1/"
-    "support-cpu-compatibility.json"
-)
 CROSSOVER_RUNNER = (
     ACTIVE_RESEARCH_PROBES_ROOT / "scripts/research/run_s_k10_h20_crossover_shard.py"
 )
@@ -101,15 +99,66 @@ CROSSOVER_SOURCE_PREFLIGHT = Path(
 CROSSOVER_ACCEPTED_EVIDENCE = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-07-s-k10-h20-natural-crossover/evidence-v4/evidence.json"
 )
-CROSSOVER_COMPATIBILITY_RECEIPT = Path(
-    "/data/CoordExp/outputs/research-probe-infras/"
-    "2026-08-24-research-probes-target-binding-cpu-compatibility-v1/"
-    "crossover-cpu-compatibility.json"
-)
 
 
 class ConsumerAdmissionError(ValueError):
     """A receipt or already-completed bounded surface is not mechanically exact."""
+
+
+_CANONICAL_COMPATIBILITY_RECEIPT_ROOT = Path(
+    "/data/CoordExp/outputs/research-probe-infras/"
+    "2026-08-24-research-probes-target-binding-cpu-compatibility-v1"
+)
+_INTEGRATION_COMPATIBILITY_RECEIPT_ROOT = Path(
+    "/data/CoordExp/outputs/research-probe-infras/"
+    "2026-08-24-target-binding-cpu-compatibility-v1"
+)
+
+
+def _compatibility_receipt_pair_for_execution_root(
+    execution_root: Path,
+) -> tuple[Path, Path]:
+    """Select only the sealed receipt pair for one fixed execution worktree."""
+
+    try:
+        resolved_root = execution_root.resolve(strict=True)
+    except OSError as exc:
+        raise ConsumerAdmissionError(
+            "execution root is not an approved worktree"
+        ) from exc
+    pairs = (
+        (
+            ACTIVE_RESEARCH_PROBES_ROOT,
+            (
+                _CANONICAL_COMPATIBILITY_RECEIPT_ROOT
+                / "support-cpu-compatibility.json",
+                _CANONICAL_COMPATIBILITY_RECEIPT_ROOT
+                / "crossover-cpu-compatibility.json",
+            ),
+        ),
+        (
+            FIXED_RESEARCH_PROBE_INFRAS_ROOT,
+            (
+                _INTEGRATION_COMPATIBILITY_RECEIPT_ROOT
+                / "support-cpu-compatibility.json",
+                _INTEGRATION_COMPATIBILITY_RECEIPT_ROOT
+                / "crossover-cpu-compatibility.json",
+            ),
+        ),
+    )
+    for candidate_root, pair in pairs:
+        try:
+            candidate = candidate_root.resolve(strict=True)
+        except OSError:
+            continue
+        if candidate == resolved_root:
+            return pair
+    raise ConsumerAdmissionError("execution root is not an approved worktree")
+
+
+SUPPORT_COMPATIBILITY_RECEIPT, CROSSOVER_COMPATIBILITY_RECEIPT = (
+    _compatibility_receipt_pair_for_execution_root(INFRA_ROOT)
+)
 
 
 def support_binding_requests(
