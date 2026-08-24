@@ -5,8 +5,8 @@ doc_type: root-context
 status: canonical
 domain: repo
 summary: Defines documentation ownership, contract authority, and the universal read order for CoordExp.
-tags: [precedence, docs, agents]
-updated: 2026-07-11
+tags: [precedence, docs, agents, research]
+updated: 2026-08-24
 ---
 
 # Project Context & Documentation Authority
@@ -17,17 +17,24 @@ historical implementation that remains in the tree.
 
 ## Fixed point
 
-Unless a task names another checkout, the canonical evidence root is the
-current `/data/CoordExp` checkout on `main`. Git state, executable source,
-configs, tests, artifacts, and stable specs outrank an older document or a
-different worktree. See [`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md)
-for branch and worktree boundaries. Pin a commit in a dated audit or handoff,
-not in this evergreen router.
+CoordExp has two current, non-substitutable fixed points. Git state, executable
+source, configs, tests, artifacts, and stable specs from the selected route
+outrank an older document or a different worktree. See
+[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for branch and
+worktree boundaries. Pin a commit in a dated audit or handoff, not in this
+evergreen router.
 
-CoordExp-Swift is the current implementation on `main`. The development
-worktree at `/data/CoordExp/.worktrees/CoordExp-swift` is a separate checkout
-for active feature work; it is not a substitute for the fixed point when
-answering a question about `main`.
+| Task class | Current authority | Do not substitute |
+| --- | --- | --- |
+| Official production training, evaluation, or accepted Swift implementation | `/data/CoordExp` on `main` | A research-probe or feature worktree does not alter production `main` authority. |
+| Research hypothesis, probe, experiment-local code, result, or research-mechanics reuse | `/data/CoordExp/.worktrees/research-probes` on its currently resolved research ref | Root `main` and `coordexp-swift` are not default research entrypoints. |
+
+`coordexp-swift` remains the active production-development branch at
+`/data/CoordExp/.worktrees/CoordExp-swift`; it is not a second research base.
+`research-probe-infras` is the bounded infrastructure integration lane at
+`/data/CoordExp/.worktrees/research-probe-infras`, not a place to start a new
+probe. The two research fixed worktrees are locally Git-locked and never become
+retirement targets merely because a branch name changes.
 
 ## Authority model
 
@@ -47,7 +54,7 @@ Do not duplicate a stable requirement in several canonical pages. A current doc
 should summarize and link to the owning spec; a proposal may explain why a
 direction is useful, but it must not silently become a contract.
 
-## Current implementation spine
+## Current production implementation spine
 
 The live Swift route is:
 

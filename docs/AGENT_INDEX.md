@@ -4,9 +4,9 @@ layer: docs
 doc_type: agent-router
 status: canonical
 domain: repo
-summary: Agent-first retrieval guide for current CoordExp documentation and historical evidence.
-tags: [agents, retrieval, docs]
-updated: 2026-07-11
+summary: Agent-first retrieval guide for current CoordExp production, research, and historical evidence.
+tags: [agents, retrieval, docs, research]
+updated: 2026-08-24
 ---
 
 # Agent Index
@@ -37,7 +37,8 @@ Do not read the catalog or this index's targets wholesale.
   proposal/design/tasks/apply/verify/archive lifecycle. Delta `specs/` belong
   there only when a stable compatibility-sensitive contract changes; internal
   refactors do not require invented normative deltas.
-- `research/` contains active research interpretation.
+- `research/` contains active research interpretation and probe records; the
+  fixed `research-probes` worktree is the current research source authority.
 - `research/decisions/` contains the current non-normative belief layer: use it
   to find evidence-backed route choices and their next discriminators, not as a
   runtime or architecture contract.
@@ -50,7 +51,27 @@ Do not read the catalog or this index's targets wholesale.
 - When an OpenSpec change uses PWSG, it is internal sequencing discipline:
   Program/change, Wave/task group, Slice/task, Gate (verify + audit).
 
-## Current Swift route
+## Current research-probe route
+
+For a research hypothesis, probe, experiment-local implementation, result, or
+research-mechanics reuse, start at the fixed
+`/data/CoordExp/.worktrees/research-probes` checkout and verify its live ref,
+commit, and Git worktree lock. Do not start on root `main` or the
+`coordexp-swift` development worktree merely because their source route is
+documented here.
+
+- Probe lifecycle and fixed-worktree rules:
+  [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
+- Research interpretation, units, and durable results:
+  [research/index.md](../research/index.md)
+- Reusable probe mechanics integration lane:
+  `/data/CoordExp/.worktrees/research-probe-infras`; merge accepted mechanics
+  into `research-probes`, but never use this lane as a probe fork point.
+- Once a `research-base-vN` tag exists, start an ephemeral `probe/<ticket>`
+  worktree from its newest tag. Until then, require an explicitly recorded
+  `research-probes` source commit.
+
+## Current Swift production route
 
 Current training and inference entrypoints are:
 
@@ -90,7 +111,8 @@ pre-promotion spec path to make a link look normative.
 
 ## Query routing
 
-- Current architecture or source ownership: [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md), [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md), [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
+- Current research probe or result: [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md), [research/index.md](../research/index.md), then the named bound worktree/artifact record
+- Current production architecture or source ownership: [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md), [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md), [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 - Data and preprocessing: [docs/data/README.md](data/README.md), [docs/data/CONTRACT.md](data/CONTRACT.md), [docs/data/PREPARATION.md](data/PREPARATION.md), [docs/data/PACKING.md](data/PACKING.md)
 - Current inference/evaluation: [docs/eval/README.md](eval/README.md), [docs/eval/WORKFLOW.md](eval/WORKFLOW.md), [ARTIFACTS.md](ARTIFACTS.md)
 - Training-history interpretation: [docs/training/README.md](training/README.md), marked as a legacy router for old MS-Swift/mainline runs

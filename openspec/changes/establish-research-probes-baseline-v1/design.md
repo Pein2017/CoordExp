@@ -129,11 +129,13 @@ Retirement, generic-ref deletion or movement, tag deletion, Git garbage
 collection, and raw-artifact reclamation are separate decisions; neither is
 implied by baseline-tag approval.
 
-The pre-infra image-2299 provenance manifest is created and verified only in
-the later implementation: it must record its exact worktree path, currently
-resolved branch/ref, source commit `9f902d5ab`, clean-status evidence, and
-replay entry, while explicitly stating that it is not evidence for the new
-baseline.
+The active pre-infra image-2299 probe returns its own provenance manifest only
+when its research documents return: it must record its exact worktree path,
+merge-time resolved branch/ref, source commit `9f902d5ab`, clean-status
+evidence, and replay entry, while explicitly stating that it is not evidence
+for the new baseline. This is a probe-return condition, not a v1 tag gate: the
+baseline does not copy an active probe's code or conclusions, create a tag for
+it, or authorize its retirement.
 
 ### Fixed paths and reachability are captured, not inferred from names
 

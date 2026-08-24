@@ -19,48 +19,60 @@
   `docs/README.md`, `docs/AGENT_INDEX.md`, and `docs/COORDEXP_SWIFT.md`;
   `docs/IMPLEMENTATION_MAP.md` is a retained production source map, not a
   general research router.
-- [ ] 1.3 Freeze a disposition table for every active/complete Human13 change
+- [x] 1.3 Freeze a disposition table for every active/complete Human13 change
   and relevant closeout path against that post-infra target: retain active,
   retired-but-open, archive-eligible, superseded, or otherwise held. Do not
   mark an incomplete task complete to simplify the table. Record
   `coordexp-swift` as independently retained production infrastructure, not as
-  a research-probe authority or a retirement candidate.
-- [ ] 1.4 Record the stale, unmounted `research-probe-infras` branch at
+  a research-probe authority or a retirement candidate. The frozen table is in
+  `design.md` under "Existing Human13 changes receive an explicit disposition
+  table".
+- [x] 1.4 Record the stale, unmounted `research-probe-infras` branch at
   `62274a97...` as superseded HOLD in that disposition ledger; it is not
-  content-equivalent to the current target and is not a deletion target.
+  content-equivalent to the current target and is not a deletion target. Its
+  relevant agent-contract sync is upstream, but its tree differs materially
+  from the target.
 
 ## 2. Establish research authority and lifecycle guidance
 
-- [ ] 2.1 Update only the accepted current routing/configuration surfaces so
+- [x] 2.1 Update only the accepted current routing/configuration surfaces so
   `research-probes` is the canonical research baseline, root `main` remains a
   distinct production route, and `coordexp-swift` remains independent
   production infrastructure rather than a research entrypoint; preserve both
-  fixed worktree directory names.
-- [ ] 2.2 Add concise lifecycle guidance for `probe/<ticket>` worktrees:
+  fixed worktree directory names. Updated `openspec/config.yaml`,
+  `docs/PROJECT_CONTEXT.md`, `docs/BRANCH_AND_WORKTREE_POLICY.md`,
+  `docs/README.md`, `docs/AGENT_INDEX.md`, and `docs/COORDEXP_SWIFT.md` only.
+- [x] 2.2 Add concise lifecycle guidance for `probe/<ticket>` worktrees:
   tagged-base creation, source identity, document/result/manifest return,
   second-consumer code promotion, external raw artifacts, and evidence-safe
   retirement. Before retirement, reserve the final annotated-tag namespace
   `probe-final/<ticket>` and record that tag name, final-HEAD SHA, source path,
   and replay entry in the merged manifest; generic-ref movement/deletion and
-  tag mutation remain separately user-gated.
+  tag mutation remain separately user-gated. The current implementation is the
+  "Research-probe routing" section of `docs/BRANCH_AND_WORKTREE_POLICY.md`.
 - [ ] 2.3 In the later merged research provenance manifest, record and verify
-  the pre-infra image-2299 worktree's exact path, currently resolved branch/ref,
+  the pre-infra image-2299 worktree's exact path, merge-time resolved branch/ref,
   source commit `9f902d5ab`, clean-status evidence, and replay entry. State
-  explicitly that it is not evidence for the new baseline; do not create that
-  manifest during planning.
+  explicitly that it is not evidence for the new baseline. This active probe's
+  own document return is non-blocking for `research-base-v1` and does not
+  authorize code merge, tag creation, or worktree retirement.
 
 ## 3. Build the entropy-reduction decision ledger
 
-- [ ] 3.1 For each candidate active-tree script or support surface, record its
-  exact pre-removal commit and path, produced artifacts/receipt schema, known
-  config and downstream consumers, claim owner, and a small replay, fixture,
-  or `--help` discriminator.
-- [ ] 3.2 Classify each candidate as keep, hold, quarantine candidate, or
+- [x] 3.1 For each candidate admitted for an actual removal, record its exact
+  pre-removal commit and path, produced artifacts/receipt schema, known config
+  and downstream consumers, claim owner, and a small replay, fixture, or
+  `--help` discriminator. The current ledger admits no removal; its known
+  active/support candidates and preservation gaps are recorded in `design.md`.
+- [x] 3.2 Classify each candidate as keep, hold, quarantine candidate, or
   separately removable. A missing producer-to-artifact-to-consumer proof is a
-  HOLD, not a deletion justification.
-- [ ] 3.3 Propose each accepted quarantine/removal as an explicit scoped follow-
+  HOLD, not a deletion justification. No candidate is separately removable in
+  this change.
+- [x] 3.3 Propose each accepted quarantine/removal as an explicit scoped follow-
   up with its preservation and replay plan; do not create a duplicate permanent
-  `legacy/` source tree or bulk-remove paths in this change.
+  `legacy/` source tree or bulk-remove paths in this change. There is no
+  accepted cut; snapshots remain only a separately authorized archive/replay
+  design candidate.
 
 ## 4. Baseline acceptance gate
 

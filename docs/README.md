@@ -4,9 +4,9 @@ layer: docs
 doc_type: router
 status: canonical
 domain: repo
-summary: Human-first router for the stable CoordExp documentation layer.
-tags: [entrypoint, docs]
-updated: 2026-07-11
+summary: Human-first router for current CoordExp production and research documentation.
+tags: [entrypoint, docs, research]
+updated: 2026-08-24
 ---
 
 # Documentation Index
@@ -14,16 +14,18 @@ updated: 2026-07-11
 Use this page as the human starting point for current CoordExp behavior. Agents
 start from the user-named evidence; when its owner is unclear, use
 [AGENT_INDEX.md](AGENT_INDEX.md) or [catalog.yaml](catalog.yaml) to select one
-narrow route. The canonical implementation at the current fixed point is
-CoordExp-Swift on `main`.
+narrow route. Production implementation questions start with CoordExp-Swift on
+`main`; research-probe questions start from the fixed `research-probes`
+worktree and its research records. Neither route is a substitute for the other.
 
 ## Start here
 
 1. [Project Context & Documentation Authority](PROJECT_CONTEXT.md)
 2. [Branch And Worktree Policy](BRANCH_AND_WORKTREE_POLICY.md)
-3. [CoordExp-Swift](COORDEXP_SWIFT.md)
-4. [System Overview](SYSTEM_OVERVIEW.md)
-5. [Implementation Map](IMPLEMENTATION_MAP.md)
+3. [Research knowledge index](../research/index.md) for a research question
+4. [CoordExp-Swift](COORDEXP_SWIFT.md) for a production implementation question
+5. [System Overview](SYSTEM_OVERVIEW.md)
+6. [Implementation Map](IMPLEMENTATION_MAP.md)
 
 ## Domain routers
 
@@ -54,7 +56,11 @@ CoordExp-Swift on `main`.
 
 ## Read-order rule
 
-For current behavior, read `PROJECT_CONTEXT.md`, then the Swift guide, system
-overview, implementation map, relevant domain router, and only then the exact
-stable spec needed for compatibility-sensitive semantics. Do not use an older
-plan, proposal, worktree, or progress note as a current source of truth.
+For production behavior, read `PROJECT_CONTEXT.md`, then the Swift guide,
+system overview, implementation map, relevant domain router, and only then the
+exact stable spec needed for compatibility-sensitive semantics. For research
+work, read `PROJECT_CONTEXT.md`, `BRANCH_AND_WORKTREE_POLICY.md`, the selected
+research unit or investigation, and its bound source/artifact evidence; enter
+the Swift route only when the named question actually owns that interface. Do
+not use an older plan, proposal, worktree, or progress note as a current source
+of truth.

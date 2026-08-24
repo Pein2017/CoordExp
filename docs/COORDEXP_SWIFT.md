@@ -4,16 +4,20 @@ layer: docs
 doc_type: canonical-implementation-guide
 status: canonical
 domain: repo
-summary: Current routing guide for the CoordExp-Swift training, inference, evaluation, and artifact infrastructure.
-tags: [coordexp-swift, training, inference, eval, routing]
-updated: 2026-07-11
+summary: Production routing guide for the CoordExp-Swift training, inference, evaluation, and artifact infrastructure.
+tags: [coordexp-swift, training, inference, eval, routing, production]
+updated: 2026-08-24
 ---
 
 # CoordExp-Swift Canonical Infrastructure
 
-CoordExp-Swift is the current implementation route on repository `main`. This
-page describes the live source and config ownership; stable compatibility
-semantics belong to the linked `coordexp-swift-*` OpenSpecs.
+CoordExp-Swift is the current production implementation route on repository
+`main`. This page describes the live source and config ownership; stable
+compatibility semantics belong to the linked `coordexp-swift-*` OpenSpecs. It
+is not the default entrypoint for research probes: use the fixed
+`research-probes` worktree and
+[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md) for that
+lifecycle.
 
 The public entrypoints are `src/train.py` and `src/infer.py`. Active feature
 work may be developed in a named worktree, but a worktree or an old branch does
