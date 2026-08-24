@@ -1,266 +1,103 @@
 # Current Project Memory
 
-Last verified for the dense-enumeration route: 2026-08-15.
+Last verified for the Human-13 owner-credit route: 2026-08-24.
 
 ## Authority boundary
 
-This file is continuity, not evidence. The current evidence owners are:
+This file is continuity, not scientific authority. For the latest executed
+route, the immutable artifacts and their bound commits own the evidence:
 
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md` and its `review.md` for the completed static substrate and review closure
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md` for the latest executed native consolidation result
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-14-human13-k-trajectory-rp-crossover-screen/results.md` for the latest executed admission result
-- `openspec/changes/add-human13-k-trajectory-rp-crossover-screen/` for the implemented but gate-retired experiment contract
-- `openspec/changes/add-human13-k-union-greedy-overfit-probe/` for conditional implementation scope; it is not current executed behavior
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-07-s-k10-h20-natural-crossover/results.md` and its `review.md`
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/results.md` and its `review.md`
-- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md`
+- N=1 standalone result:
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-21-human13-standalone-owner-credit-probe/full-gpu1.json`
+  at commit `32bc918d468baa41fbe218dd81998f86eb5eb226`
+- N=4/K16/T4 standalone result:
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-21-human13-standalone-owner-credit-probe/multi-image-n4-k16-t4-gpu1.json`
+  at commit `b36216f10b89f7a585b2c08dcaed6fe997b0ff9d`
+- N=13, paired K4/K8, four-replicate matrix:
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-23-human13-n13-k4k8-corrected-geometry-probe/v3`
+  at correction commit `a904e3ae38405cf018bccbc176c3497be29313c9`
 
-The completed static-dynamic unit and bundle remain immutable bounded lineage.
-The compass owns program routing; the transport handoff, worker reports,
-aggregate bundle, and this memory do not independently own scientific claims.
+The concise interpretation and integrity boundary are in
+`memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`.
+Earlier formal Human-13 units remain evidence for their own bounded questions,
+but they do not override this newer standalone route.
 
-## Latest successor disposition (executed negative)
+## Current research question
 
-The Human-13 K-trajectory RP-crossover unit is complete at its admission gate.
-Fresh `rp=1.0` K16 acquisition on image 1584 succeeded, but even fp32/SDPA
-batch-one exact-history replay failed the frozen sampler-parity contract:
-maximum error `0.1675825`, mean `0.0021683`, and `22/1573` tokens over the
-`0.02` token gate.  The first-failure rule stopped before `rp=1.10`, witness,
-dose, optimizer, owner analysis, or the eighteen-cell matrix.
+Can information from multiple sampled trajectories be combined into a scalable
+training signal that improves clean greedy physical-owner coverage, while
+retaining owners already found by the Source model?
 
-This retires the cross-engine **exact-on-policy** trajectory-credit route.  It
-does not show that trajectory credit, a greedy compiler, or Source preservation
-would fail; they were not executed.  Do not resume this unit by widening the
-tolerance, running the remaining RP, or launching matrix cells.
+The current standalone treatment is deliberately simple: sampling-derived
+trajectory credit plus masked CE preservation of current Source owners, one
+fresh AdamW instance per cell, LR `3e-6`, milestones `0/1/2/4`, and dual
+greedy evaluation at repetition penalty `1.0` and `1.10`. Physical owners are
+scored with actual-pixel, class-aware, global one-to-one IoU >= 0.5 matching.
 
-The dominant prior mismatch was numerical surface: moving replay from
-BF16/FA2 packed execution to fp32/SDPA exact history reduced mean error about
-26x and over-limit tokens from `620` to `22`.  The residual vLLM-versus-HF
-kernel/materialization difference is still too large for the sealed exact
-claim.
+## Latest durable conclusion
 
-The next decision has been made as a new unit, not an implementation
-continuation.  The planned
-`2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical` spends
-more compute on one HF BF16/FA2 model: no-cache stepwise K16 sampling,
-vectorized replay on the same live parameter object, then one complete
-trajectory-credit + compiler + preservation update on image 1584.  Dual-RP
-clean greedy owns H gain, G loss, net owners, and burden; only a protected
-positive one-image result may authorize the 13-image continuation.
+The N=13 K4/K8 matrix is valid scientific evidence, not a runtime smoke. All
+eight cells completed four updates; all losses, gradients, and parameter deltas
+were finite; exact adapter rollback passed 8/8; dual-RP Source token
+reproduction passed 208/208. Independent replay passed 16,874 checks.
 
-Documentation and planning are authorized and complete; implementation and
-model/GPU execution have not started.  Do not substitute vLLM data, reopen the
-old unit, add an LR ray, or run the full panel before the one-image gate.  See
-`memories/notes/2026-08-15-all-hf-shared-surface-successor.md`.
+At milestone 4, aggregated across four paired replicates:
 
-## Prior evidence disposition
+| Decode | K4 physical TP/FP/FN | K8 physical TP/FP/FN | K8 minus K4 |
+|---|---:|---:|---:|
+| RP 1.0 | 670 / 323 / 898 | 672 / 313 / 896 | TP +2, FP -10, FN -2 |
+| RP 1.10 | 622 / 308 / 946 | 603 / 324 / 965 | TP -19, FP +16, FN +19 |
 
-The A3 `gt:2299:2` K10 switch is narrowed to post-opener conditional
-oracle-routing sufficiency. D10/D20 pre-opener scalar changes are row-entry
-grammar effects, while their seeded conditional one- and three-row owner
-identity is null. Y10/Y11 are parser-valid but physical-owner unmatched, so the
-source-specific crossover is unqualified and matched `tau=0` is descriptive,
-not authoritative. The old S `gt:5001:15` event is a pre-actuator technical
-HOLD, not a model null. These boundaries are recorded in the
-[prior-evidence semantic audit](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md).
+K8 is therefore not supported over K4 under the required dual-RP criterion.
+K8 often discovers additional reachable H owners, but it also increases owner
+exchange. The small RP1.0 aggregate improvement is not replicate-robust; at
+RP1.10, K8 is worse in net owners in 3/4 replicates and loses materially more
+Source owners. Sampling changes are widespread owner churn rather than a broad,
+stable coverage shift.
 
-## Latest executed route
+This narrows the earlier direction:
 
-The Human-13 on-policy first-bottleneck successor is complete.  Its real
-force-reject vertical passed the full packed/HF/update/private-checkpoint/
-clean-decode/rollback chain and restored the exact model, AdamW, scheduler,
-counters, CPU/CUDA RNG, 173-owner set, 9 duplicates, and 244 rows.  The
-authoritative result is
-`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md`;
-the concise continuity note is
-`memories/notes/2026-08-13-human13-on-policy-first-bottleneck-result.md`.
+- N=1/K16/T1 was a clean null with exact G preservation.
+- N=4/K16/T1 first crossed a greedy boundary, but the positive evidence was
+  localized to image 1584 and did not establish shared cross-image learning.
+- N=13 shows that greater image breadth alone does not make the current credit
+  direction coherent, and increasing K from 4 to 8 does not solve it.
 
-The bounded pilot completed eight distinct candidates per arm (five owners on
-four images). All 16 one-update proposals lost protected Source owners and were
-rejected; every rollback reproduced Source and restored exact within-attempt
-state. O-First gained 3–6 H while losing 1–4 G per proposal; O-Full gained 1–5 H
-while losing 1–5 G. The selected target itself compiled only 4/8 and 5/8 times.
-No accepted checkpoint or K16 refresh exists. This demonstrates usable
-K-native support but a systematic fixed-dose greedy-interference problem. Do
-not resume either frozen arm or promote full-row CE. A successor must change
-the dose/preservation objective, not merely search more suffix aliases.
+## Decision and next discriminator
 
-## Prior Human-13 static substrate
+Do not enlarge K again for this objective. K4 is the safer discovery setting.
+The next scientific successor should change the credit-fusion or preservation
+objective, not add more trajectories or resume the retired production runner.
+The main unresolved mechanism is gradient conflict: extra sampled-owner credit
+can raise new H while moving probability away from existing TP, particularly
+under RP1.10 greedy decoding.
 
-The Human-13 K-union-to-greedy overfit screen on S four-coordinate
-`geo_sorted_xy` step-2444 completed its bounded same-panel matrix. The evidence
-owner is
-`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/results.md`;
-continue from its execution handoff and
-`memories/notes/2026-08-12-human13-k-union-execution-result.md`.
+A next unit, if the user authorizes it, should restart from the same Source and
+compare a small number of K4 treatments that directly address this conflict,
+for example owner-balanced/conflict-aware trajectory aggregation and stronger
+physical-owner preservation. Dual-RP clean greedy physical TP/FP/FN remains the
+decision owner. No follow-on GPU run is authorized merely by this memory.
 
-The sealed ledger has `392` owners: Source greedy `G=173`, K-hit/greedy-miss
-`H=73`, and K-miss `M=146`. The exact discovery used sixteen explicit `n=1`
-requests per image in four batches of four at repetition penalty `1.10`; final
-readout used original-prompt HF fp32/SDPA, batch one, greedy, repetition penalty
-`1.0`. Chronological class-agnostic pred-pred IoU `>0.95` exclusion precedes
-matching, so later duplicates receive no owner credit.
+## Retired and retained context
 
-Native language-tower DoRA is sufficient for an initial same-panel recall
-increase. At one exposure A3 had the largest pooled H gain among executed H
-arms (`H+6/G-3/M+1`, unique owners `173 -> 177`) but was partly same-image
-owner exchange and is not a Pareto winner; A7 reached `H+5/G-2`; A1 reached
-`H+5/G-4` with lower output burden and more safe images.
-Full-GT body CE reached `H+12/M+8/G-5` and unique owners `188`, demonstrating
-a more responsive same-panel update surface including supervised K-miss
-recovery, but also raised rows, duplicates, and unmatched predictions. It does
-not establish capacity to fit all `392` owners. No point dominates all burden
-and owner axes.
+- The long all-HF production-vertical route repeatedly exposed infrastructure
+  ownership and admission seams before science. It is superseded for this
+  question by the standalone probe and should not be repaired or resumed.
+- The 2026-08-13 on-policy first-bottleneck study remains evidence that native H
+  rows are trainable but fixed-dose updates systematically exchange owners; see
+  `memories/notes/2026-08-13-human13-on-policy-first-bottleneck-result.md`.
+- The 2026-08-12 static Human-13 screen remains evidence that one-exposure DoRA
+  can increase same-panel recall but repeated suffix CE develops owner exchange
+  and burden; see
+  `memories/notes/2026-08-12-human13-k-union-execution-result.md`.
+- The 2026-08-14 scalable-trajectory note preserves the original motivation;
+  its optimizer details are historical hypotheses, not current authorization.
 
-Repeated exposures do not snowball safely. A1/A3/A7 develop severe owner
-exchange, duplication, malformed rows, output growth, and cap stops; static
-`optimize-until-satisfied` is rejected. Source replay mitigates late output
-pathology but does not establish owner preservation. A0 is not neutral and
-must remain the attribution control.
+## Operational continuation
 
-A4 was omitted by its frozen atomic 12,000-token bound, A6 failed closed before
-model load on donor-prefix provenance, and A8-prime was unavailable because the
-no-update census produced no artifact within its repair budget. Those arms are
-mechanically unknown, not negative scientific results. No fresh-image
-validation, generalization, full-set mastery, checkpoint promotion, or
-production claim exists.
-
-If the user chooses a successor, restart Source and compare only a one-exposure
-frontier: owner-balanced H1, full residual body CE with H/M separated, and the
-same target update with stronger Source preservation. Do not resume this
-matrix, extend to 100 updates, or adapt using post-update same-batch decoding
-without a new decision.
-
-## Prior closed route
-
-S step-2444 also remains the substrate for the closed natural-boundary lineage.
-Both S natural-boundary units below are complete; their old route restrictions
-do not override the newly planned Human-13 unit.
-
-The 2026-08-06 unit completed after its serialization-only successor: gate v3
-ran on `gt:5001:15` across all fifteen arms, and the K/N/H cohort executed over
-eight shards and was sealed. Over `11` events and `8` images, K10 target
-release is `4/11` on `4` images, clearing the checkpoint floor and qualifying
-the static direction as oracle routing and target transcription sufficiency
-only — never an owner slot, owner field, or trainable soft routing. H20 is
-`9/11` qualified and `2/11` grammar-disruptive; H10/N10/N20 are `0/11`; no
-native STOP in any arm. K14 finite salience qualifies on `1` event and `1`
-image: HOLD. `training_claim_status: hold`.
-
-Support completion is audited `PASS` (`P0 0` / `P1 2` / `P2 5`): `200` frozen
-native-FN contexts, eight shards with exact assignment and exact plan order,
-realized `= expected = 77,428` scalar forwards, `resumed = 0`, `failures = 0`,
-all `200` observations `measured`. Authoritative roots are
-`support-execution-v3` for shards `0-5` and `7`, the v5 supervised root for
-shard-6 (receipt raw `375364cab328543f3a5e3e88ac6f634cd70067152cf265b92ca99aa8e213d66b`),
-and `support-merge-v6` (ledger raw `c3ab9eca420c3ee2965c7ee72bd12208cf34264ec0238c226f8d7d3b399b64f6`);
-`support-merge-v5` is orphaned and superseded. The ledger holds `220` records =
-`200` completion + `20` retained, `14` verified native-FN, narrowing to the
-`11` admitted events by a support-blind geometry predicate fixed in census-v2.
-
-Shard-6 adjudication: its v3 and v4 roots produced only transport logs with no
-failure receipt or verbatim stderr, so they are unattested transport/process
-deaths, not established operator or run-root mechanical invalidities. The user
-authorized a transport and supervision relaunch; v5 changed only external
-supervision, kept plan/census/support-rule/order, and recomputed all `13,867`
-forwards. **No exact scientific repair allowance was consumed and the lineage
-is interpretable.** Supervisor evidence: OOM counter `66 → 66`, `exit_code 0`,
-`9,736 s`; OOM attribution is inference only.
-
-Two support field-scope traps. `verified_S_count = 14` is native-FN-scoped
-while the census holds `26` S owners with `support_verified = true`. And three
-rows carry `support_verified = true` yet read
-`disposition = support_measured_not_verified`, because that label is the else
-branch of a verified-plus-eligible-plus-geometry conjunction — use
-`verified_S_count`, never a disposition tally.
-
-The 2026-08-07 S K10-H20 Natural Crossover executed once and completed.
-Evidence is artifact-valid; the source-specific crossover is `unqualified` and
-formal tau and utilities are null, not zero. It is conditional case-level
-evidence on `3` events and `3` images, not checkpoint prevalence or effect.
-The fresh implementation reproduced `9/9` source K01/K10/H20 endpoint vectors,
-so K10 target release `3/3` is deterministic cross-implementation replication
-of the selection condition, not efficacy. C11 reproduces K10's target release
-at `2/3` and is endpoint-vector-identical to C10 there; at `gt:2299:29` it
-suppresses natural admission (first token `291`, opener rank 4, logp
-`-6.34561`) and no row starts — a single-event admission interaction. A
-non-null aggregate tau was structurally impossible before launch: a
-retrospective design and power failure, with no retry. Formal identities:
-preGPU-v5 raw `7e4adff6e272dfaad8ad5bb5656c9fc0baf7f2992d3561e37edfb613991e57ec`
-self `c349258554a2e308c5a4242157eb59cbb6793cdc7476c2a3a65719b845ae4571`;
-evidence raw `29407f7cddd632999e3f720e9982fc4a52a31eea5398181f2f9d07dd28947d90`
-self `1dfa4144d094aa06f35c1cc3fb7f29b2db10efc55367f65b96c7244695d990f3`;
-formal root
-`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-07-s-k10-h20-natural-crossover/evidence-v4`.
-
-Two traps for a fresh session. First, `duplicates` in the endpoint vector
-counts strict physical-owner identity repeats only, so the byte-identical
-`gt:16228:15` C11 row pair correctly reports `0`; never read it as "no row
-content repeated". Second, `execution-v4/*/runtime_identity.json` embeds the
-sealed CPU-only preGPU identity with `gpu_used=false` and `model_loaded=false`;
-executed provenance comes from `logs-v6`, `result.json`, `terminal_summary.json`,
-and `aggregate.receipt.json` instead.
-
-Both units are closed and **documentation-certified**. The 2026-08-07 review
-ledger is complete: Fable preseal and postseal `PASS` (zero P0/P1), the formal
-scientific audit `PASS` on evidence integrity with an initial documentation
-`HOLD` at `P1 7` / `P2 5`, and the Fable post-remediation re-review `PASS` at
-`P0 0` / `P1 0` / `P2 1`, whose single wording finding — an unscoped "small
-box" description of the unmatched K10-family rows — is corrected and now scoped
-to `gt:13348:14` and `gt:16228:15` only. No formal scientific disposition
-changed at any point. At that closed fixed point, no successor unit or GPU work
-was authorized.
-
-Decisions retained for that closed lineage: A3 `DO NOT RUN`
-because S's `row_contract` has `commit_token_id: null`; P4 `DO NOT RUN`; no
-sweep, retry, re-selection, or new crossover. The dominant `unmatched` outcome
-(`9` of `12` cells, including the untreated baseline at `2/3` events) routes to
-an owner-matching and grounding validity check on existing artifacts, which is
-a later user-owned decision and is neither authorized nor executed.
-
-## Superseded: 2026-08-06 bounded technical hold
-
-Retained as lineage. The v1/v2 attempts remain immutable technical failures.
-CPU implementation, the exact 784-row census, the sealed
-200-context/77,428-forward support plan, and pre-GPU v3 receipt are complete.
-The first live S `gt:5001:15` attempt failed K01 full-vocabulary no-op parity at
-`0.00011730194` against the frozen `1e-4` tolerance. The one exact repair forced
-MATH SDPA without changing the operator or tolerance. Attempt v2 then failed at
-terminal canonical hashing because a diagnostic `FixedDoseScoreBias` object
-was persisted in callback metadata; no arm artifact survived. The exact-repair
-allowance is exhausted, so support, cohort, crossover, and A3 execution are
-closed unless the user explicitly supersedes the stop rule. Neither failure is
-model-behavior evidence.
-
-No training, A2 attribution run, wrapper/token change, architecture promotion,
-decoding change, or production launch is authorized. All eight probe GPUs were
-released after attempt v2. Any repair continuation or training route requires a
-later explicit user decision.
-
-## Superseded: serialization successor (now consumed)
-
-The user supplied the required decision and authorized one
-serialization-only successor exception, which has since run to completion; see
-the active route above. The authority owner is
-`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/serialization-successor-authority.md`.
-It permits removing `FixedDoseScoreBias` Python objects from persisted callback
-metadata only, while preserving model inputs, operators, receipts, canonical
-JSON strictness, and old roots. GPU work remains held until pre-GPU v4 and an
-independent review authorize the fresh gate-v3 root.
-
-The serialization-only code and real K14-to-gate persistence regression are
-now green. Pre-GPU v4 is sealed at
-`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-06-natural-boundary-routing-history-replication/pre-gpu-receipt-v4/pre-gpu-receipt.json`
-with file SHA-256
-`ad09d12b0fb627bd3705d8b5906cb7168e0d66df67fb56ba64213d8dd0da6cee`.
-Its CPU evidence has `110` passing tests and the installed-Qwen `16/8/2` GQA
-mask/mass/consumption proof. Independent Claude Opus/high review returned
-`PASS_FOR_ONE_S_GATE_V3` with no P0/P1, and that one authorized gate-v3 launch
-has since executed and completed. Gate v3 result self SHA-256 is
-`9719f2efe77f399ca66985659d902e33087be79bfdd29762643c6045cbed00fc`; the sealed
-cohort evidence is raw
-`77f90bc48f8126ee1b071767308db603e1b64c0d19a4ca3e5ad8906cfc837598`
-self `e04cb63540f9e3a1b27b938ada14f694f6b7208564adcaf2c82656915c62bb95`,
-with receipt raw
-`fa11800ec7ad832646162f77c9e5a6df71d2e9ca951144e40b2fd060df46bf8e`
-self `80aa70f46899474ee1f8646c02d9c061babfac9bd58534f4cfa1d75aa9df12fd`.
+The v3 run root is complete and immutable; no cells remain running. The
+producer-PID plus terminal-receipt wake monitor worked for the multi-hour smoke
+and final seven-cell matrix. A native depth-2 subtask transcribed two checksums
+incorrectly, so identity tables must be emitted mechanically or independently
+replayed by the lead; the final scientific calculations were independently
+verified.
