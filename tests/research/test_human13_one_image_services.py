@@ -6,10 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 import weakref
 
 import pytest
+import torch
 
 from src.artifacts.json_values import json_sha256
 from scripts.research.human13_one_image_services import (
@@ -23,6 +24,7 @@ from scripts.research.human13_one_image_services import (
     Task5RuntimeEvidenceError,
 )
 import scripts.research.human13_one_image_services as service_owner
+from scripts.research.human13_cuda_cpu_adapter import CudaAdapterError
 from scripts.research.run_human13_all_hf_shared_surface_vertical import (
     DualGPUResourceReceipt,
     EntryConfig,
@@ -491,6 +493,251 @@ def test_pre_acquisition_hook_is_required_and_persists_ownership_digest(
     missing_services.preflight_source_assembly(config, resources)
     with pytest.raises(Task5RuntimeEvidenceError, match="must implement"):
         missing_services.pre_acquisition_admission(object(), {})
+
+
+def test_cpu_injected_graph_owner_sentinel_runs_after_source_before_k16(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.research import human13_live_model as live_model
+    from scripts.research import human13_one_image_services as owner
+    from scripts.research.human13_graph_owner import (
+        GraphInputAttestationReceipt,
+        GraphOwnerAttributionReceipt,
+        attest_non_model_input,
+        attribute_model_graph,
+    )
+
+    model = torch.nn.Linear(1, 1, bias=False)
+    model.eval()
+    events: list[str] = []
+
+    class Session:
+        def pre_acquisition_graph_input_attestation(
+            self,
+        ) -> GraphInputAttestationReceipt:
+            events.append("graph_input_attestation")
+            return GraphInputAttestationReceipt(
+                model_object_id=id(model),
+                input_receipts=(
+                    attest_non_model_input(
+                        torch.zeros(1),
+                        model=model,
+                        input_role="pixel_values",
+                    ),
+                ),
+            )
+
+        def sample_group(self, _group: object) -> None:
+            raise AssertionError("K16 must not run during the graph sentinel")
+
+    session = Session()
+    ownership = SimpleNamespace(content_sha256="a" * 64)
+    assembly = SimpleNamespace(
+        model=model,
+        runtime_ownership=ownership,
+        plan=SimpleNamespace(
+            learning_rate=3e-6,
+            betas=(0.9, 0.999),
+            epsilon=1e-8,
+            weight_decay=0.0,
+        ),
+    )
+    backend = object.__new__(owner.ExistingOwnersProductionBackend)
+    backend._active_training_handle = owner._LiveTrainingHandle(  # type: ignore[attr-defined]
+        assembly=assembly,
+        session=session,
+    )
+    backend._pre_acquisition_source = cast(Any, SimpleNamespace(
+        session_object_id=id(session),
+        model_object_id=id(model),
+        sample_group_count_at_freeze=0,
+        replay_group_count_at_freeze=0,
+        frozen_before_acquisition=True,
+        realized_margin_probe=lambda: {},
+        witness_bank=object(),
+        compiler_source_context=object(),
+    ))
+
+    def sentinel(context: object) -> GraphOwnerAttributionReceipt:
+        assert type(context) is owner.InjectedGraphOwnerSentinelContext
+        assert context.model is model
+        assert context.admitted_model_object_id == id(model)
+        events.append("graph_owner_sentinel")
+        return attribute_model_graph(
+            model.weight.sum(),
+            model=model,
+            input_role="task2_replay_logprob",
+        )
+
+    backend._graph_owner_sentinel = sentinel
+    monkeypatch.setattr(
+        live_model,
+        "revalidate_human13_adamw_runtime_ownership",
+        lambda *_args, **_kwargs: ownership,
+    )
+
+    receipt = backend.pre_acquisition_admission(
+        backend._active_training_handle,
+        {1.0: {}, 1.1: {}},
+    )
+
+    assert type(receipt) is owner.PreAcquisitionUpdateAdmissionReceipt
+    assert receipt.injected_sentinel_count == 1
+    assert receipt.sentinel_execution == "cpu_injected"
+    assert events == ["graph_input_attestation", "graph_owner_sentinel"]
+    assert receipt.to_artifact_dict()["injected_sentinel_count"] == 1
+    assert (
+        owner.PreAcquisitionUpdateAdmissionReceipt.from_artifact_dict(
+            receipt.to_artifact_dict()
+        )
+        == receipt
+    )
+
+
+def test_cpu_injected_graph_owner_sentinel_rejects_attempted_sample_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.research import human13_live_model as live_model
+    from scripts.research import human13_one_image_services as owner
+    from scripts.research.human13_graph_owner import (
+        GraphInputAttestationReceipt,
+        GraphOwnerAttributionReceipt,
+        attest_non_model_input,
+        attribute_model_graph,
+    )
+
+    model = torch.nn.Linear(1, 1, bias=False)
+    model.eval()
+
+    class Session:
+        sample_group_count = 0
+        replay_group_count = 0
+
+        def pre_acquisition_graph_input_attestation(
+            self,
+        ) -> GraphInputAttestationReceipt:
+            return GraphInputAttestationReceipt(
+                model_object_id=id(model),
+                input_receipts=(
+                    attest_non_model_input(
+                        torch.zeros(1),
+                        model=model,
+                        input_role="pixel_values",
+                    ),
+                ),
+            )
+
+        def sample_group(self, _group: object) -> None:
+            self.sample_group_count += 1
+
+    session = Session()
+    ownership = SimpleNamespace(content_sha256="a" * 64)
+    assembly = SimpleNamespace(
+        model=model,
+        runtime_ownership=ownership,
+        plan=SimpleNamespace(
+            learning_rate=3e-6,
+            betas=(0.9, 0.999),
+            epsilon=1e-8,
+            weight_decay=0.0,
+        ),
+    )
+    backend = object.__new__(owner.ExistingOwnersProductionBackend)
+    backend._active_training_handle = owner._LiveTrainingHandle(  # type: ignore[attr-defined]
+        assembly=assembly,
+        session=session,
+    )
+    backend._pre_acquisition_source = cast(
+        Any,
+        SimpleNamespace(
+            session_object_id=id(session),
+            model_object_id=id(model),
+            sample_group_count_at_freeze=0,
+            replay_group_count_at_freeze=0,
+            frozen_before_acquisition=True,
+            realized_margin_probe=lambda: {},
+            witness_bank=object(),
+            compiler_source_context=object(),
+        ),
+    )
+
+    def sentinel(*_context: object) -> GraphOwnerAttributionReceipt:
+        session.sample_group("forbidden")
+        return attribute_model_graph(
+            model.weight.sum(),
+            model=model,
+            input_role="task2_replay_logprob",
+        )
+
+    backend._graph_owner_sentinel = sentinel
+    monkeypatch.setattr(
+        live_model,
+        "revalidate_human13_adamw_runtime_ownership",
+        lambda *_args, **_kwargs: ownership,
+    )
+
+    with pytest.raises(Task5RuntimeEvidenceError, match="sentinel.*action"):
+        backend.pre_acquisition_admission(
+            backend._active_training_handle,
+            {1.0: {}, 1.1: {}},
+        )
+
+    assert session.sample_group_count == 1
+
+
+def test_graph_owner_adapter_error_survives_phase_publication_failure(
+    tmp_path: Path,
+) -> None:
+    from scripts.research.human13_graph_owner import (
+        GraphOwnerAttributionError,
+        attribute_model_graph,
+    )
+
+    model = torch.nn.Linear(1, 1, bias=False)
+    try:
+        attribute_model_graph(
+            model.weight.detach(),
+            model=model,
+            input_role="task2_replay_logprob",
+        )
+    except GraphOwnerAttributionError as attribution_error:
+        graph_receipt = attribution_error.receipt
+    else:  # pragma: no cover - the helper is fail-closed by contract
+        raise AssertionError("detached graph must be rejected")
+    primary = CudaAdapterError(
+        "injected graph owner failure",
+        graph_owner_receipt=graph_receipt,
+    )
+
+    class GraphFailureBackend(_Backend):
+        def build_cuda_adapter(self, proposal_input: object) -> _Adapter:
+            del proposal_input
+            raise primary
+
+    def phase_writer(path: Path, value: dict[str, Any]) -> None:
+        if path.name.endswith("private_update_applied.json"):
+            raise OSError("injected graph evidence publication failure")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+    services, _stale_path, _successor = _services(
+        tmp_path,
+        GraphFailureBackend(),
+        phase_writer=phase_writer,
+    )
+    config = _config(tmp_path)
+    services.preflight_source_assembly(config, _resources())
+    training = services.open_training(config, _resources())
+    acquisition = services.acquire_and_replay(training, config)
+
+    with pytest.raises(CudaAdapterError) as captured:
+        services.apply_private_update(training, acquisition, config)
+
+    assert captured.value is primary
+    assert any(
+        "graph evidence publication failure" in note
+        for note in getattr(captured.value, "__notes__", ())
+    )
 
 
 def test_fresh_primary_collision_has_zero_actions_and_no_admitted_identity(
@@ -1590,7 +1837,11 @@ def test_default_runtime_factory_composes_existing_admitted_task2_task3_owners()
             scheduler=None,
             runtime=None,
         ),
-        session=SimpleNamespace(),
+        session=SimpleNamespace(
+            replay_graph_owner_receipts=lambda: (
+                surface.replay_graph_owner_receipts
+            )
+        ),
         sampled_groups=surface.sampled_groups,
         replay_groups=surface.replay_groups,
         replay_logprob_tensors=surface.replay_logprob_tensors,

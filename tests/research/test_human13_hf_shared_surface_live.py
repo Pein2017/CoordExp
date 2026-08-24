@@ -6,7 +6,7 @@ from dataclasses import replace
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Mapping, cast
 
 import pytest
 import torch
@@ -376,6 +376,43 @@ def test_source_owner_raw_rows_share_model_graph_and_precede_acquisition() -> No
         + receipt.source_owner_forward_count
     )
     assert receipt.no_cache_forward_count == receipt.total_forward_count
+
+
+def test_replay_creation_publishes_same_model_graph_owner_receipt() -> None:
+    session, assembly, _skeleton = _open()
+    sampled = session.sample_group(plan_image1584_k16().seed_groups[0])
+    replay = session.replay_group(sampled)
+
+    graph_receipts = getattr(session, "replay_graph_owner_receipts", None)
+    assert callable(graph_receipts)
+    receipts = cast(Mapping[str, Any], graph_receipts())
+    receipt = receipts[replay.content_sha256]
+    assert receipt.admitted is True
+    assert receipt.model_object_id == id(assembly.model)
+    assert receipt.input_role == "task2_replay_logprob"
+    assert receipt.leaves
+    assert all(leaf.registered is True for leaf in receipt.leaves)
+    assert all(leaf.registered_name == "weight" for leaf in receipt.leaves)
+    assert all(leaf.concrete_type.endswith("Parameter") for leaf in receipt.leaves)
+    assert all(leaf.requires_grad is True for leaf in receipt.leaves)
+    assert len(receipt.content_sha256) == 64
+    session.__exit__(RuntimeError, RuntimeError("test terminal"), None)
+
+
+def test_pre_acquisition_input_attestation_rejects_grad_input_before_sampling() -> None:
+    session, _assembly_value, skeleton = _open()
+    skeleton.image_encoding.pixel_values.requires_grad_(True)
+
+    attest = getattr(session, "pre_acquisition_graph_input_attestation", None)
+    assert callable(attest)
+    with pytest.raises(Exception) as captured:
+        attest()
+
+    assert "unregistered_trainable_input" in str(captured.value)
+    assert "input_role=pixel_values" in str(captured.value)
+    assert not session._sampled_groups
+    assert not session._replayed_groups
+    session.__exit__(type(captured.value), captured.value, None)
 
 
 def test_free_running_greedy_owner_uses_updated_history_and_stop() -> None:

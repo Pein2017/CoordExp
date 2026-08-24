@@ -47,6 +47,12 @@ from scripts.research.human13_hf_shared_surface import (
     SampledHFGroup,
 )
 from scripts.research.human13_hf_shared_surface_live import _observed_attention_backends
+from scripts.research.human13_graph_owner import (
+    GraphOwnerAttributionError,
+    GraphOwnerAttributionReceipt,
+    attribute_model_graph,
+    validate_expected_model_graph,
+)
 from scripts.research.human13_training_transaction import (
     TrainingStateSnapshot,
     TrainingStateTransaction,
@@ -62,6 +68,15 @@ from src.artifacts.json_values import json_sha256
 
 class CudaAdapterError(RuntimeError):
     """The CUDA/CPU adapter seam cannot be certified."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        graph_owner_receipt: GraphOwnerAttributionReceipt | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.graph_owner_receipt = graph_owner_receipt
 
 
 @dataclass(frozen=True)
@@ -111,26 +126,6 @@ class CudaAdapterRollbackError(CudaAdapterError):
     def __init__(self, message: str, *, receipt: CudaRollbackFailureReceipt) -> None:
         super().__init__(message)
         self.rollback_receipt = receipt
-
-
-def _graph_leaf_ids(value: torch.Tensor) -> frozenset[int]:
-    if not value.requires_grad:
-        return frozenset()
-    if value.is_leaf:
-        return frozenset((id(value),))
-    pending = [value.grad_fn]
-    visited: set[object] = set()
-    leaves: set[int] = set()
-    while pending:
-        node = pending.pop()
-        if node is None or node in visited:
-            continue
-        visited.add(node)
-        variable = getattr(node, "variable", None)
-        if isinstance(variable, torch.Tensor) and variable.requires_grad:
-            leaves.add(id(variable))
-        pending.extend(next_node for next_node, _ in node.next_functions)
-    return frozenset(leaves)
 
 
 def _tensor_sha256(value: torch.Tensor) -> str:
@@ -294,24 +289,40 @@ def _replay_tensor_snapshot(
         bool,
         frozenset[int],
         str,
+        GraphOwnerAttributionReceipt,
     ],
     ...,
 ]:
-    return tuple(
-        (
-            key,
-            tensor,
-            tensor.detach().clone(),
-            tuple(tensor.shape),
-            tuple(tensor.stride()),
-            tensor.dtype,
-            tensor.device,
-            tensor.requires_grad,
-            _graph_leaf_ids(tensor),
-            _tensor_sha256(tensor),
+    snapshots = []
+    expected_receipts = surface.replay_graph_owner_receipts
+    for key, tensor in sorted(surface.replay_logprob_tensors.items()):
+        try:
+            graph_receipt = validate_expected_model_graph(
+                tensor,
+                model=surface.model,
+                input_role="task2_replay_logprob",
+                expected=expected_receipts.get(key),
+            )
+        except GraphOwnerAttributionError as error:
+            raise CudaAdapterError(
+                str(error), graph_owner_receipt=error.receipt
+            ) from error
+        snapshots.append(
+            (
+                key,
+                tensor,
+                tensor.detach().clone(),
+                tuple(tensor.shape),
+                tuple(tensor.stride()),
+                tensor.dtype,
+                tensor.device,
+                tensor.requires_grad,
+                frozenset(leaf.object_id for leaf in graph_receipt.leaves),
+                _tensor_sha256(tensor),
+                graph_receipt,
+            )
         )
-        for key, tensor in sorted(surface.replay_logprob_tensors.items())
-    )
+    return tuple(snapshots)
 
 
 def _full_model_fingerprint(model: torch.nn.Module) -> str:
@@ -464,6 +475,9 @@ class CudaProposalInput:
     sampled_groups: tuple[SampledHFGroup, ...] = ()
     replay_groups: tuple[GradientReplayGroup, ...] = ()
     replay_logprob_tensors: Mapping[str, torch.Tensor] = field(default_factory=dict)
+    replay_graph_owner_receipts: Mapping[
+        str, GraphOwnerAttributionReceipt
+    ] = field(default_factory=dict)
     trajectory_ledger: TrajectoryCreditLedger | None = None
     compiler_ledger: CompilerLedger | None = None
     compiler_compact_logits: AdmittedCompilerCompactLogits | None = None
@@ -824,10 +838,16 @@ class CudaHFVerticalAdapter:
                     "Task2/Task3 lineage must derive the objective, not replace it"
                 )
             objective = _require_finite_tensor(surface.objective, field="objective")
-            if not _graph_leaf_ids(objective) <= frozenset(
-                id(parameter) for _, parameter in self._named
-            ):
-                raise CudaAdapterError("objective graph owner differs from live parameters")
+            try:
+                attribute_model_graph(
+                    objective,
+                    model=model,
+                    input_role="objective",
+                )
+            except GraphOwnerAttributionError as error:
+                raise CudaAdapterError(
+                    str(error), graph_owner_receipt=error.receipt
+                ) from error
         self._validate_task2_lineage(device)
         return device
 
@@ -880,10 +900,30 @@ class CudaHFVerticalAdapter:
         tensors = dict(surface.replay_logprob_tensors)
         if set(tensors) != set(replay_hashes):
             raise CudaAdapterError("Task2 replay tensor keys differ from admitted groups")
+        graph_receipts = dict(surface.replay_graph_owner_receipts)
+        if set(graph_receipts) != set(replay_hashes):
+            raise CudaAdapterError(
+                "receipt_tensor_mismatch: input_role=task2_replay_logprob; "
+                "graph receipt keys differ from admitted groups"
+            )
         parameter_ids = frozenset(id(parameter) for _, parameter in self._named)
         for replay in surface.replay_groups:
+            raw_tensor = tensors[replay.content_sha256]
+            if not isinstance(raw_tensor, torch.Tensor):
+                raise CudaAdapterError("Task2 replay logprob tensor must be a tensor")
+            try:
+                graph_receipt = validate_expected_model_graph(
+                    raw_tensor,
+                    model=surface.model,
+                    input_role="task2_replay_logprob",
+                    expected=graph_receipts[replay.content_sha256],
+                )
+            except GraphOwnerAttributionError as error:
+                raise CudaAdapterError(
+                    str(error), graph_owner_receipt=error.receipt
+                ) from error
             tensor = _require_finite_tensor(
-                tensors[replay.content_sha256], field="Task2 replay logprob tensor"
+                raw_tensor, field="Task2 replay logprob tensor"
             )
             if tensor.device != device or tensor.ndim != 1:
                 raise CudaAdapterError("Task2 replay tensor device/shape differs")
@@ -896,8 +936,10 @@ class CudaHFVerticalAdapter:
                 tensor.detach(), expected
             ):
                 raise CudaAdapterError("Task2 replay tensor values differ from receipt")
-            if not _graph_leaf_ids(tensor) <= parameter_ids:
-                raise CudaAdapterError("Task2 replay graph owner differs from parameters")
+            if not frozenset(leaf.object_id for leaf in graph_receipt.leaves) <= parameter_ids:
+                raise CudaAdapterError(
+                    "foreign_parameter: input_role=task2_replay_logprob"
+                )
         admitted = _require_scientific_ledger_admission(surface.trajectory_ledger)
         if (
             admitted.source_sha256
@@ -933,7 +975,17 @@ class CudaHFVerticalAdapter:
                     raise CudaAdapterError(
                         "Task3 compiler compact logits must retain a live graph"
                     ) from error
-                leaves = _graph_leaf_ids(value)
+                try:
+                    graph_receipt = attribute_model_graph(
+                        value,
+                        model=surface.model,
+                        input_role="task3_compiler_logit",
+                    )
+                except GraphOwnerAttributionError as error:
+                    raise CudaAdapterError(
+                        str(error), graph_owner_receipt=error.receipt
+                    ) from error
+                leaves = frozenset(leaf.object_id for leaf in graph_receipt.leaves)
                 if (
                     value.device != device
                     or not leaves
@@ -1123,6 +1175,7 @@ class CudaHFVerticalAdapter:
             requires_grad,
             _leaves,
             _digest,
+            graph_receipt,
         ) in self._task2_replay_source:
             current = mapping.get(key)
             if current is not tensor:
@@ -1143,6 +1196,11 @@ class CudaHFVerticalAdapter:
                 else:
                     current.copy_(saved)
                 current.requires_grad_(requires_grad)
+            receipt_mapping = self._surface.replay_graph_owner_receipts
+            if receipt_mapping.get(key) is not graph_receipt:
+                if not isinstance(receipt_mapping, MutableMapping):
+                    raise CudaAdapterError("Task2 graph receipt mapping identity drifted")
+                receipt_mapping[key] = graph_receipt
         self._validate_task2_replay_source()
 
     def _source_state(self) -> _CudaSourceState:

@@ -24,7 +24,10 @@ import shutil
 import tempfile
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 
+import torch
+
 from scripts.research.human13_cuda_cpu_adapter import (
+    CudaAdapterError,
     CudaHFVerticalAdapter,
 )
 from scripts.research.human13_hf_native_one_image_owner import (
@@ -34,6 +37,10 @@ from scripts.research.human13_hf_native_one_image_owner import (
     HFNativeOneImageOwnerError,
     PreAcquisitionSourceOwners,
     SourceOwnerRequest,
+)
+from scripts.research.human13_graph_owner import (
+    GraphInputAttestationReceipt,
+    GraphOwnerAttributionReceipt,
 )
 from scripts.research.human13_source_surface_reconciliation import (
     SourceSurfaceReconciliationReceipt,
@@ -56,6 +63,172 @@ PHASE_SCHEMA = "human13_one_image_phase.v1"
 TERMINAL_ENVELOPE_SCHEMA = "human13_one_image_terminal_envelope.v1"
 FIXED_RETRY_CEILING = 1
 PhaseWriter = Callable[[Path, Mapping[str, Any]], None]
+
+
+@dataclass(frozen=True)
+class PreAcquisitionUpdateAdmissionReceipt:
+    """Content-addressed join of runtime and graph-input ownership."""
+
+    runtime_ownership_sha256: str
+    graph_input_attestation: GraphInputAttestationReceipt
+    injected_sentinel_receipt_sha256: str | None = None
+    injected_sentinel_count: Literal[0, 1] = 0
+    sentinel_execution: Literal["not_requested", "cpu_injected"] = "not_requested"
+    schema_version: Literal["human13_pre_acquisition_update_admission.v1"] = (
+        "human13_pre_acquisition_update_admission.v1"
+    )
+
+    def __post_init__(self) -> None:
+        _digest(self.runtime_ownership_sha256, "runtime_ownership_sha256")
+        if type(self.graph_input_attestation) is not GraphInputAttestationReceipt:
+            raise ValueError("graph input attestation receipt type differs")
+        if self.injected_sentinel_count == 0:
+            if (
+                self.injected_sentinel_receipt_sha256 is not None
+                or self.sentinel_execution != "not_requested"
+            ):
+                raise ValueError("absent graph sentinel carries evidence")
+        elif (
+            self.injected_sentinel_count != 1
+            or self.sentinel_execution != "cpu_injected"
+            or self.injected_sentinel_receipt_sha256 is None
+        ):
+            raise ValueError("injected graph sentinel evidence is incomplete")
+        if self.injected_sentinel_receipt_sha256 is not None:
+            _digest(
+                self.injected_sentinel_receipt_sha256,
+                "injected_sentinel_receipt_sha256",
+            )
+
+    def _payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "runtime_ownership_sha256": self.runtime_ownership_sha256,
+            "graph_input_attestation": (
+                self.graph_input_attestation.to_artifact_dict()
+            ),
+            "graph_input_attestation_sha256": (
+                self.graph_input_attestation.content_sha256
+            ),
+            "injected_sentinel_receipt_sha256": (
+                self.injected_sentinel_receipt_sha256
+            ),
+            "injected_sentinel_count": self.injected_sentinel_count,
+            "sentinel_execution": self.sentinel_execution,
+        }
+
+    @property
+    def content_sha256(self) -> str:
+        return json_sha256(self._payload())
+
+    def to_artifact_dict(self) -> dict[str, Any]:
+        payload = self._payload()
+        payload["content_sha256"] = self.content_sha256
+        return payload
+
+    @classmethod
+    def from_artifact_dict(
+        cls, value: Mapping[str, Any]
+    ) -> PreAcquisitionUpdateAdmissionReceipt:
+        if (
+            value.get("schema_version")
+            != "human13_pre_acquisition_update_admission.v1"
+        ):
+            raise ValueError("pre-acquisition update admission schema differs")
+        graph_value = value.get("graph_input_attestation")
+        if not isinstance(graph_value, Mapping):
+            raise ValueError("pre-acquisition graph input receipt is missing")
+        graph_receipt = GraphInputAttestationReceipt.from_artifact_dict(graph_value)
+        if (
+            value.get("graph_input_attestation_sha256")
+            != graph_receipt.content_sha256
+        ):
+            raise ValueError("pre-acquisition graph input lineage differs")
+        result = cls(
+            runtime_ownership_sha256=str(value["runtime_ownership_sha256"]),
+            graph_input_attestation=graph_receipt,
+            injected_sentinel_receipt_sha256=value.get(
+                "injected_sentinel_receipt_sha256"
+            ),
+            injected_sentinel_count=value.get("injected_sentinel_count", 0),
+            sentinel_execution=value.get("sentinel_execution", "not_requested"),
+        )
+        if value.get("content_sha256") != result.content_sha256:
+            raise ValueError("pre-acquisition update admission content hash differs")
+        return result
+
+
+@dataclass(frozen=True)
+class InjectedGraphOwnerSentinelContext:
+    """Narrow CPU-only sentinel input; never exposes the live session."""
+
+    model: torch.nn.Module
+    admitted_model_object_id: int
+    graph_input_attestation_sha256: str
+
+    def __post_init__(self) -> None:
+        if id(self.model) != self.admitted_model_object_id:
+            raise ValueError("graph-owner sentinel model identity differs")
+        _digest(
+            self.graph_input_attestation_sha256,
+            "graph_input_attestation_sha256",
+        )
+
+
+_SENTINEL_SESSION_ACTION_FIELDS = (
+    "sample_group_count",
+    "replay_group_count",
+    "source_owner_forward_count",
+    "live_replay_tensor_count",
+    "_sample_forward_count",
+    "_replay_forward_count",
+    "_source_owner_forward_count",
+    "_no_cache_forward_count",
+    "_sampled_groups",
+    "_replayed_groups",
+    "_live_replay_tensors",
+    "_live_replay_graph_owner_receipts",
+)
+
+
+def _graph_owner_sentinel_action_snapshot(
+    model: torch.nn.Module,
+    session: object,
+) -> tuple[object, ...]:
+    """Capture bounded mutation/call evidence around the injected sentinel."""
+
+    tensor_state = tuple(
+        (
+            kind,
+            name,
+            id(tensor),
+            str(tensor.device),
+            str(tensor.dtype),
+            tuple(int(item) for item in tensor.shape),
+            bool(tensor.requires_grad),
+            int(tensor._version),
+        )
+        for kind, items in (
+            ("parameter", tuple(model.named_parameters())),
+            ("buffer", tuple(model.named_buffers())),
+        )
+        for name, tensor in items
+    )
+    module_state = tuple(
+        (name, id(module), bool(module.training))
+        for name, module in model.named_modules()
+    )
+    session_state: list[tuple[str, object]] = []
+    for field in _SENTINEL_SESSION_ACTION_FIELDS:
+        if not hasattr(session, field):
+            continue
+        value = getattr(session, field)
+        if isinstance(value, (Mapping, tuple, list, set, frozenset)):
+            value = len(value)
+        elif not isinstance(value, (bool, int, float, str, type(None))):
+            value = id(value)
+        session_state.append((field, value))
+    return tensor_state, module_state, tuple(session_state)
 
 
 def _digest(value: object, field: str) -> str:
@@ -179,6 +352,7 @@ class ProductionAcquisition:
     compiler_ledger_sha256: str
     sample_forward_count: int = 0
     replay_forward_count: int = 0
+    replay_graph_owner_receipt_sha256s: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for field in (
@@ -196,6 +370,8 @@ class ProductionAcquisition:
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field} must be a nonnegative integer")
+        for value in self.replay_graph_owner_receipt_sha256s:
+            _digest(value, "replay_graph_owner_receipt_sha256s")
 
 
 Task5RuntimeFactory = Callable[..., ProductionAcquisition]
@@ -614,7 +790,7 @@ def default_task5_runtime_factory(
 ) -> ProductionAcquisition:
     """Compose existing admitted owners; never synthesize objective evidence."""
 
-    del manifest, config, session
+    del manifest, config
     evidence = runtime_evidence
     if type(evidence) is not AdmittedTask5RuntimeEvidence:
         raise Task5RuntimeEvidenceError(
@@ -657,6 +833,33 @@ def default_task5_runtime_factory(
     sampled_live = cast(tuple[SampledHFGroup, ...], sampled)
     replayed_live = cast(tuple[GradientReplayGroup, ...], replayed)
     replay_tensors = cast(Mapping[str, torch.Tensor], replay_logprob_tensors)
+    replay_graph_owner_receipts_getter = getattr(
+        session, "replay_graph_owner_receipts", None
+    )
+    if not callable(replay_graph_owner_receipts_getter):
+        raise Task5RuntimeEvidenceError(
+            "live shared-surface session lacks graph-owner receipts"
+        )
+    raw_replay_graph_owner_receipts = replay_graph_owner_receipts_getter()
+    if not isinstance(raw_replay_graph_owner_receipts, Mapping):
+        raise Task5RuntimeEvidenceError(
+            "live graph-owner receipts must be a mapping"
+        )
+    replay_graph_owner_receipts = cast(
+        Mapping[str, GraphOwnerAttributionReceipt],
+        raw_replay_graph_owner_receipts,
+    )
+    replay_hashes = {group.content_sha256 for group in replayed_live}
+    if (
+        set(replay_graph_owner_receipts) != replay_hashes
+        or any(
+            type(receipt) is not GraphOwnerAttributionReceipt
+            for receipt in replay_graph_owner_receipts.values()
+        )
+    ):
+        raise Task5RuntimeEvidenceError(
+            "live graph-owner receipts differ from admitted replay groups"
+        )
     trajectory = _require_scientific_ledger_admission(evidence.trajectory_ledger)
     compiler = compiler_owner._require_compiler_admission(evidence.compiler_ledger)
     witness = evidence.witness_bank
@@ -728,6 +931,7 @@ def default_task5_runtime_factory(
         sampled_groups=sampled_live,
         replay_groups=replayed_live,
         replay_logprob_tensors=dict(replay_tensors),
+        replay_graph_owner_receipts=dict(replay_graph_owner_receipts),
         trajectory_ledger=trajectory,
         compiler_ledger=compiler,
         compiler_compact_logits=cast(Any, evidence.compiler_compact_logits),
@@ -766,6 +970,10 @@ def default_task5_runtime_factory(
         compiler_ledger_sha256=compiler.content_sha256,
         sample_forward_count=sample_forwards,
         replay_forward_count=replay_forwards,
+        replay_graph_owner_receipt_sha256s=tuple(
+            replay_graph_owner_receipts[group.content_sha256].content_sha256
+            for group in replayed_live
+        ),
     )
 
 
@@ -887,6 +1095,10 @@ class ExistingOwnersProductionBackend:
         checkpoint_readback: Callable[..., object] | None = None,
         checkpoint_hasher: Callable[[str | Path], str] | None = None,
         device_scope: Callable[[int], Any] | None = None,
+        graph_owner_sentinel: Callable[
+            [InjectedGraphOwnerSentinelContext], GraphOwnerAttributionReceipt
+        ]
+        | None = None,
     ) -> None:
         if not callable(runtime_factory):
             raise TypeError("Task-5 runtime factory must be callable")
@@ -910,6 +1122,9 @@ class ExistingOwnersProductionBackend:
         self._active_training_handle: _LiveTrainingHandle | None = None
         self._source_owner_audits: dict[float, Mapping[str, Any]] = {}
         self._pre_acquisition_source: PreAcquisitionSourceOwners | None = None
+        if graph_owner_sentinel is not None and not callable(graph_owner_sentinel):
+            raise TypeError("graph-owner sentinel must be callable")
+        self._graph_owner_sentinel = graph_owner_sentinel
         live_training_boundary = assemble_model is None
         live_audit_boundary = evaluate_checkpoint is None
         if assemble_model is None or build_skeletons is None:
@@ -1248,7 +1463,83 @@ class ExistingOwnersProductionBackend:
             raise Task5RuntimeEvidenceError(
                 "pre-acquisition Source audits are incomplete"
             )
-        return validated_ownership
+        input_attestation_owner = getattr(
+            handle.session, "pre_acquisition_graph_input_attestation", None
+        )
+        if not callable(input_attestation_owner):
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition graph input attestation is unavailable"
+            )
+        try:
+            input_attestation = input_attestation_owner()
+        except BaseException as error:
+            raise Task5RuntimeEvidenceError(
+                f"pre-acquisition graph input ownership is not admitted: {error}"
+            ) from error
+        if type(input_attestation) is not GraphInputAttestationReceipt:
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition graph input attestation returned the wrong type"
+            )
+        sentinel_receipt: GraphOwnerAttributionReceipt | None = None
+        if self._graph_owner_sentinel is not None:
+            model_tensors = tuple(assembly.model.parameters()) + tuple(
+                assembly.model.buffers()
+            )
+            if any(tensor.device.type != "cpu" for tensor in model_tensors):
+                raise Task5RuntimeEvidenceError(
+                    "injected graph-owner sentinel is CPU-only"
+                )
+            before_sentinel_actions = _graph_owner_sentinel_action_snapshot(
+                assembly.model,
+                handle.session,
+            )
+            context = InjectedGraphOwnerSentinelContext(
+                model=assembly.model,
+                admitted_model_object_id=id(assembly.model),
+                graph_input_attestation_sha256=input_attestation.content_sha256,
+            )
+            try:
+                sentinel_receipt = self._graph_owner_sentinel(context)
+            except BaseException as error:
+                after_sentinel_actions = _graph_owner_sentinel_action_snapshot(
+                    assembly.model,
+                    handle.session,
+                )
+                if after_sentinel_actions != before_sentinel_actions:
+                    raise Task5RuntimeEvidenceError(
+                        "injected graph-owner sentinel changed a forbidden action counter"
+                    ) from error
+                raise Task5RuntimeEvidenceError(
+                    f"injected graph-owner sentinel failed: {error}"
+                ) from error
+            after_sentinel_actions = _graph_owner_sentinel_action_snapshot(
+                assembly.model,
+                handle.session,
+            )
+            if after_sentinel_actions != before_sentinel_actions:
+                raise Task5RuntimeEvidenceError(
+                    "injected graph-owner sentinel changed a forbidden action counter"
+                )
+            if (
+                type(sentinel_receipt) is not GraphOwnerAttributionReceipt
+                or sentinel_receipt.admitted is not True
+                or sentinel_receipt.model_object_id != id(assembly.model)
+                or sentinel_receipt.disposition != "admitted_model_graph"
+            ):
+                raise Task5RuntimeEvidenceError(
+                    "injected graph-owner sentinel returned unadmitted evidence"
+                )
+        return PreAcquisitionUpdateAdmissionReceipt(
+            runtime_ownership_sha256=validated_ownership.content_sha256,
+            graph_input_attestation=input_attestation,
+            injected_sentinel_receipt_sha256=(
+                None if sentinel_receipt is None else sentinel_receipt.content_sha256
+            ),
+            injected_sentinel_count=0 if sentinel_receipt is None else 1,
+            sentinel_execution=(
+                "not_requested" if sentinel_receipt is None else "cpu_injected"
+            ),
+        )
 
     @property
     def source_surface_reconciliation_receipt(
@@ -2156,16 +2447,31 @@ class ProductionOneImageServices:
                 "pre-acquisition ownership receipt lacks a content hash"
             )
         to_artifact_dict = getattr(receipt, "to_artifact_dict", None)
-        receipt_payload = (
+        raw_receipt_payload = (
             to_artifact_dict()
             if callable(to_artifact_dict)
             else {"content_sha256": content_sha256}
+        )
+        if not isinstance(raw_receipt_payload, Mapping):
+            raise Task5RuntimeEvidenceError(
+                "pre-acquisition ownership artifact must be a mapping"
+            )
+        receipt_payload = cast(Mapping[str, Any], raw_receipt_payload)
+        graph_input_attestation_sha256 = receipt_payload.get(
+            "graph_input_attestation_sha256"
+        )
+        graph_owner_sentinel_count = receipt_payload.get(
+            "injected_sentinel_count", 0
         )
         self._record(
             "pre_acquisition_update_admission",
             evidence={
                 "ownership_receipt_sha256": content_sha256,
                 "ownership_receipt": receipt_payload,
+                "graph_input_attestation_sha256": (
+                    graph_input_attestation_sha256
+                ),
+                "graph_owner_sentinel_count": graph_owner_sentinel_count,
             },
         )
         return receipt
@@ -2221,6 +2527,9 @@ class ProductionOneImageServices:
                 "compiler_ledger_sha256": acquisition.compiler_ledger_sha256,
                 "sample_forward_count": acquisition.sample_forward_count,
                 "replay_forward_count": acquisition.replay_forward_count,
+                "replay_graph_owner_receipt_sha256s": list(
+                    acquisition.replay_graph_owner_receipt_sha256s
+                ),
             },
         )
         return acquisition
@@ -2424,7 +2733,32 @@ class ProductionOneImageServices:
                 },
             )
             raise
-        adapter = self._backend.build_cuda_adapter(acquisition.cuda_proposal_input)
+        try:
+            adapter = self._backend.build_cuda_adapter(
+                acquisition.cuda_proposal_input
+            )
+        except CudaAdapterError as error:
+            graph_receipt = error.graph_owner_receipt
+            evidence: dict[str, object] = {
+                "error": f"{type(error).__name__}: {error}"
+            }
+            if graph_receipt is not None:
+                evidence["graph_owner_receipt"] = graph_receipt.to_dict()
+                evidence["graph_owner_receipt_sha256"] = (
+                    graph_receipt.content_sha256
+                )
+            try:
+                self._record(
+                    "private_update_applied",
+                    status="graph_owner_admission_failure",
+                    evidence=evidence,
+                )
+            except BaseException as publication_error:
+                error.add_note(
+                    "graph-owner evidence publication failure: "
+                    f"{type(publication_error).__name__}: {publication_error}"
+                )
+            raise error
         if not isinstance(adapter, (CudaHFVerticalAdapter, SplitCudaAdapter)):
             raise TypeError("backend must build the split CUDA adapter lifecycle")
         self._adapter = adapter
@@ -2735,7 +3069,9 @@ __all__ = [
     "AdmittedTask5RuntimeEvidence",
     "ExistingOwnersProductionBackend",
     "FIXED_RETRY_CEILING",
+    "InjectedGraphOwnerSentinelContext",
     "OneImageAuditManifest",
+    "PreAcquisitionUpdateAdmissionReceipt",
     "ProductionAcquisition",
     "ProductionOneImageBackend",
     "ProductionOneImageServices",

@@ -35,6 +35,13 @@ from scripts.research.human13_hf_shared_surface import (
     causal_history_sha256,
     plan_image1584_k16,
 )
+from scripts.research.human13_graph_owner import (
+    GraphInputAttestationReceipt,
+    GraphOwnerAttributionError,
+    GraphOwnerAttributionReceipt,
+    attest_non_model_input,
+    attribute_model_graph,
+)
 from scripts.research import human13_live_model as live_model
 from scripts.research.human13_live_model import Human13LiveAssembly
 from src.artifacts.json_values import json_sha256
@@ -715,6 +722,9 @@ class HFSharedSurfaceSession:
         self._sampled_groups: list[SampledHFGroup] = []
         self._replayed_groups: list[GradientReplayGroup] = []
         self._live_replay_tensors: dict[str, torch.Tensor] = {}
+        self._live_replay_graph_owner_receipts: dict[
+            str, GraphOwnerAttributionReceipt
+        ] = {}
         self._latest_replay_group_sha256: str | None = None
         self._closed = False
         self._cleanup_reason: Literal["completed", "failed"] | None = None
@@ -819,6 +829,46 @@ class HFSharedSurfaceSession:
 
         self._require_invariants()
         return self._identity
+
+    def replay_graph_owner_receipts(
+        self,
+    ) -> Mapping[str, GraphOwnerAttributionReceipt]:
+        """Return immutable, value-free receipts for the retained replay tensors."""
+
+        self._require_open()
+        return dict(self._live_replay_graph_owner_receipts)
+
+    def pre_acquisition_graph_input_attestation(
+        self,
+    ) -> GraphInputAttestationReceipt:
+        """Attest deterministic non-model input ownership before K16 begins."""
+
+        self._require_open()
+        if self._sampled_groups or self._replayed_groups:
+            raise HFSharedSurfaceLiveError(
+                "graph input attestation must run before acquisition"
+            )
+        model = self._model
+        skeleton = self._skeleton
+        if model is None or skeleton is None:
+            raise HFSharedSurfaceLiveError(
+                "graph input attestation lost the live session"
+            )
+        pixels, _grid = _materialized_image(skeleton)
+        try:
+            receipts = (
+                attest_non_model_input(
+                    pixels,
+                    model=model,
+                    input_role="pixel_values",
+                ),
+            )
+        except GraphOwnerAttributionError as error:
+            raise HFSharedSurfaceLiveError(str(error)) from error
+        return GraphInputAttestationReceipt(
+            model_object_id=id(model),
+            input_receipts=receipts,
+        )
 
     def named_trainable_parameters(
         self,
@@ -1323,6 +1373,24 @@ class HFSharedSurfaceSession:
             image_grid_thw=image_grid_thw,
             video_grid_thw=None,
         )
+        forward_inputs: tuple[tuple[str, torch.Tensor], ...] = (
+            ("input_ids", input_ids),
+            ("attention_mask", attention_mask),
+            ("position_ids", position_ids),
+            ("pixel_values", pixel_values),
+            ("image_grid_thw", image_grid_thw),
+        )
+        if isinstance(kept_positions, torch.Tensor):
+            forward_inputs += (("logits_to_keep", kept_positions),)
+        try:
+            for input_role, value in forward_inputs:
+                attest_non_model_input(
+                    value,
+                    model=model,
+                    input_role=cast(Any, input_role),
+                )
+        except GraphOwnerAttributionError as error:
+            raise HFSharedSurfaceLiveError(str(error)) from error
         kind = accounting_kind or ("replay" if retain_grad else "sample")
         if kind == "source_owner":
             if not retain_grad:
@@ -1447,6 +1515,8 @@ class HFSharedSurfaceSession:
         try:
             self._require_open()
             self._require_invariants()
+            if not self._sampled_groups:
+                self.pre_acquisition_graph_input_attestation()
             if seeds not in self._plan.seed_groups:
                 raise HFSharedSurfaceLiveError(
                     "sample group seeds differ from the frozen image-1584 K16 plan"
@@ -1811,8 +1881,19 @@ class HFSharedSurfaceSession:
                 replay_processor_order=_PROCESSOR_ORDER,
                 causal_gathers=gathers,
             )
+            try:
+                graph_owner_receipt = attribute_model_graph(
+                    chosen_logps,
+                    model=cast(torch.nn.Module, self._model),
+                    input_role="task2_replay_logprob",
+                )
+            except GraphOwnerAttributionError as error:
+                raise HFSharedSurfaceLiveError(str(error)) from error
             self._require_invariants()
             self._live_replay_tensors[replay.content_sha256] = chosen_logps
+            self._live_replay_graph_owner_receipts[replay.content_sha256] = (
+                graph_owner_receipt
+            )
             self._latest_replay_group_sha256 = replay.content_sha256
             self._replayed_groups.append(replay)
             return replay
@@ -1862,6 +1943,7 @@ class HFSharedSurfaceSession:
                     cleanup_failures.append(f"free_memory: {type(exc).__name__}: {exc}")
         finally:
             self._live_replay_tensors.clear()
+            self._live_replay_graph_owner_receipts.clear()
             self._closed = True
             self._model = None
             self._expected_model = None

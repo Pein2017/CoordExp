@@ -45,6 +45,12 @@ from scripts.research.human13_hf_shared_surface import (
     admit_gradient_replay,
     admit_sampled_group,
 )
+from scripts.research.human13_graph_owner import (
+    GraphOwnerAttributionError,
+    GraphOwnerAttributionReceipt,
+    attribute_model_graph,
+    validate_expected_model_graph,
+)
 from src.config.models import RuntimeBatchResolution, RuntimeConfig
 from src.runtime import TrainRuntime
 
@@ -255,6 +261,14 @@ def _task2_surface(*, module_name: str) -> tuple[CudaProposalInput, Any]:
         sampled_groups=fixture.sampled_groups,
         replay_groups=tuple(fixture.replay_groups),
         replay_logprob_tensors=fixture.replay_tensors,
+        replay_graph_owner_receipts={
+            key: attribute_model_graph(
+                tensor,
+                model=fixture.model,
+                input_role="task2_replay_logprob",
+            )
+            for key, tensor in fixture.replay_tensors.items()
+        },
         trajectory_ledger=fixture.trajectory_ledger,
         compiler_ledger=fixture.compiler_ledger,
         compiler_compact_logits=fixture.compact_logits,
@@ -380,6 +394,167 @@ def test_cuda_adapter_rejects_foreign_objective_graph_before_transaction() -> No
         CudaHFVerticalAdapter(invalid)
     assert surface.update_counter.value == 0
     assert not surface.optimizer.state
+
+
+@pytest.mark.parametrize(
+    ("leaf_factory", "expected_disposition"),
+    (
+        (
+            lambda tensor: torch.nn.Parameter(
+                torch.zeros((), dtype=tensor.dtype, device=tensor.device)
+            ),
+            "foreign_parameter",
+        ),
+        (
+            lambda tensor: torch.zeros(
+                (), dtype=tensor.dtype, device=tensor.device, requires_grad=True
+            ),
+            "unregistered_trainable_input",
+        ),
+    ),
+)
+def test_cuda_adapter_attributes_foreign_task2_replay_leaf_before_backward(
+    leaf_factory: Any,
+    expected_disposition: str,
+) -> None:
+    surface, _fixture_value = _task2_surface(
+        module_name=f"_vertical_{expected_disposition}"
+    )
+    key, tensor = next(iter(surface.replay_logprob_tensors.items()))
+    foreign_leaf = leaf_factory(tensor)
+    replay_tensors = dict(surface.replay_logprob_tensors)
+    replay_tensors[key] = tensor + foreign_leaf * 0
+    invalid = replace(surface, replay_logprob_tensors=replay_tensors)
+    invalid = replace(
+        invalid,
+        proposal_binding=replace(
+            invalid.proposal_binding,
+            objective_ledger_sha256=compute_cuda_objective_binding_sha256(invalid),
+        ),
+    )
+
+    with pytest.raises(CudaAdapterError) as captured:
+        CudaHFVerticalAdapter(invalid)
+
+    assert expected_disposition in str(captured.value)
+    assert "input_role=task2_replay_logprob" in str(captured.value)
+    assert surface.update_counter.value == 0
+    assert not surface.optimizer.state
+
+
+def test_cuda_adapter_attributes_detached_task2_replay_before_backward() -> None:
+    surface, _fixture_value = _task2_surface(module_name="_vertical_detached_replay")
+    key, tensor = next(iter(surface.replay_logprob_tensors.items()))
+    replay_tensors = dict(surface.replay_logprob_tensors)
+    replay_tensors[key] = tensor.detach().clone()
+    invalid = replace(surface, replay_logprob_tensors=replay_tensors)
+    invalid = replace(
+        invalid,
+        proposal_binding=replace(
+            invalid.proposal_binding,
+            objective_ledger_sha256=compute_cuda_objective_binding_sha256(invalid),
+        ),
+    )
+
+    with pytest.raises(CudaAdapterError) as captured:
+        CudaHFVerticalAdapter(invalid)
+
+    assert "detached_or_no_grad" in str(captured.value)
+    assert "input_role=task2_replay_logprob" in str(captured.value)
+    assert surface.update_counter.value == 0
+
+
+def test_cuda_adapter_attributes_rebuilt_task2_graph_during_probe() -> None:
+    surface, _fixture_value = _task2_surface(module_name="_vertical_rebuilt_replay")
+    adapter = CudaHFVerticalAdapter(surface)
+    key, tensor = next(iter(surface.replay_logprob_tensors.items()))
+    cast(dict[str, torch.Tensor], surface.replay_logprob_tensors)[key] = tensor + 0
+
+    with pytest.raises(CudaAdapterError) as captured:
+        adapter.apply_and_rollback()
+
+    assert "stale_or_rebuilt_graph" in str(captured.value)
+    assert "input_role=task2_replay_logprob" in str(captured.value)
+    assert surface.update_counter.value == 0
+
+
+def test_cuda_adapter_rejects_graph_receipt_tensor_mismatch() -> None:
+    surface, _fixture_value = _task2_surface(module_name="_vertical_receipt_mismatch")
+    key = next(iter(surface.replay_logprob_tensors))
+    object.__setattr__(
+        surface,
+        "replay_graph_owner_receipts",
+        {key: "0" * 64},
+    )
+
+    with pytest.raises(CudaAdapterError) as captured:
+        CudaHFVerticalAdapter(surface)
+
+    assert "receipt_tensor_mismatch" in str(captured.value)
+    assert "input_role=task2_replay_logprob" in str(captured.value)
+    assert surface.update_counter.value == 0
+
+
+def test_graph_owner_receipt_rejects_wrong_model_object() -> None:
+    model = torch.nn.Linear(1, 1, bias=False)
+    model.eval()
+    value = model.weight.square().sum()
+    receipt = attribute_model_graph(
+        value,
+        model=model,
+        input_role="task2_replay_logprob",
+    )
+    foreign_model = torch.nn.Linear(1, 1, bias=False)
+    foreign_model.eval()
+
+    with pytest.raises(GraphOwnerAttributionError) as captured:
+        validate_expected_model_graph(
+            value,
+            model=foreign_model,
+            input_role="task2_replay_logprob",
+            expected=receipt,
+        )
+
+    assert "wrong_model_object" in str(captured.value)
+    assert captured.value.receipt.model_object_id == id(foreign_model)
+
+
+def test_graph_owner_receipt_has_explicit_schema_dispatch() -> None:
+    model = torch.nn.Linear(1, 1, bias=False)
+    model.eval()
+    receipt = attribute_model_graph(
+        model.weight.sum(),
+        model=model,
+        input_role="task2_replay_logprob",
+    )
+    assert GraphOwnerAttributionReceipt.from_dict(receipt.to_dict()) == receipt
+    legacy_masquerade = receipt.to_dict()
+    legacy_masquerade["schema_version"] = "human13_graph_owner_attribution.v0"
+    with pytest.raises(ValueError, match="schema"):
+        GraphOwnerAttributionReceipt.from_dict(legacy_masquerade)
+
+
+def test_graph_owner_foreign_disposition_counts_all_leaves_before_detail_bound() -> None:
+    model = torch.nn.Linear(1, 1, bias=False)
+    trainable_inputs = [torch.zeros((), requires_grad=True) for _ in range(9)]
+    foreign_parameter = torch.nn.Parameter(torch.zeros(()))
+    value = model.weight.sum()
+    for leaf in (*trainable_inputs, foreign_parameter):
+        value = value + leaf * 0
+
+    with pytest.raises(GraphOwnerAttributionError) as captured:
+        attribute_model_graph(
+            value,
+            model=model,
+            input_role="task2_replay_logprob",
+        )
+
+    receipt = captured.value.receipt
+    assert receipt.disposition == "foreign_parameter"
+    assert receipt.foreign_leaf_count == 10
+    assert len(receipt.foreign_leaves) == 8
+    assert receipt.to_dict()["foreign_leaf_count"] == 10
+    assert receipt.to_dict()["foreign_leaf_details_truncated"] is True
 
 
 def test_cuda_adapter_rejects_optimizer_or_transaction_substitution() -> None:
@@ -609,6 +784,14 @@ def test_cuda_adapter_separates_runtime_composite_from_canonical_source_lineage(
         sampled_groups=tuple(sampled_groups),
         replay_groups=tuple(replay_groups),
         replay_logprob_tensors=replay_tensors,
+        replay_graph_owner_receipts={
+            key: attribute_model_graph(
+                tensor,
+                model=fixture.model,
+                input_role="task2_replay_logprob",
+            )
+            for key, tensor in replay_tensors.items()
+        },
     )
     separated = replace(
         separated,

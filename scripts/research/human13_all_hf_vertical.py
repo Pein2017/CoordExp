@@ -49,6 +49,10 @@ from scripts.research.human13_hf_shared_surface import (
     SampledHFGroup,
     plan_image1584_k16,
 )
+from scripts.research.human13_graph_owner import (
+    GraphOwnerAttributionError,
+    attribute_model_graph,
+)
 from scripts.research.human13_training_transaction import (
     TrainingStateSnapshot,
     TrainingStateTransaction,
@@ -127,44 +131,34 @@ def _cuda_rng_sha256s(values: tuple[torch.Tensor, ...] | None) -> tuple[str, ...
     return () if values is None else tuple(_rng_sha256(value) for value in values)
 
 
-def _autograd_leaf_ids(value: torch.Tensor) -> frozenset[int]:
-    """Return every requires-grad leaf identity reachable from ``value``."""
-
-    if not value.requires_grad:
-        return frozenset()
-    if value.is_leaf:
-        return frozenset((id(value),))
-    pending = [value.grad_fn]
-    # Keep node wrappers alive while traversing.  Comparing only ``id(node)``
-    # is unsafe because PyTorch can recreate short-lived Python wrappers for
-    # successive C++ autograd nodes and Python may then reuse their ids.
-    visited: set[object] = set()
-    leaves: set[int] = set()
-    while pending:
-        node = pending.pop()
-        if node is None or node in visited:
-            continue
-        visited.add(node)
-        variable = getattr(node, "variable", None)
-        if isinstance(variable, torch.Tensor) and variable.requires_grad:
-            leaves.add(id(variable))
-        pending.extend(next_node for next_node, _ in node.next_functions)
-    return frozenset(leaves)
-
-
 def _require_graph_owner(
     values: Sequence[torch.Tensor],
     *,
+    model: torch.nn.Module,
     bound_parameter_ids: frozenset[int],
     label: str,
 ) -> tuple[tuple[int, ...], ...]:
     fingerprints: list[tuple[int, ...]] = []
+    input_role = {
+        "trajectory": "task2_replay_logprob",
+        "compiler": "task3_compiler_logit",
+        "trajectory component": "trajectory_component",
+        "compiler component": "compiler_component",
+    }.get(label)
+    if input_role is None:
+        raise ValueError("graph-owner label is outside the bounded vocabulary")
     for value in values:
-        leaves = _autograd_leaf_ids(value)
-        if not leaves or not leaves.issubset(bound_parameter_ids):
-            raise ValueError(
-                f"{label} graph owner differs from the exact model trainable surface"
+        try:
+            receipt = attribute_model_graph(
+                value,
+                model=model,
+                input_role=cast(Any, input_role),
             )
+        except GraphOwnerAttributionError as error:
+            raise ValueError(f"{label} graph owner rejected: {error}") from error
+        leaves = frozenset(leaf.object_id for leaf in receipt.leaves)
+        if not leaves.issubset(bound_parameter_ids):
+            raise ValueError(f"{label} graph owner differs from named parameters")
         fingerprints.append(tuple(sorted(leaves)))
     return tuple(fingerprints)
 
@@ -959,6 +953,7 @@ class PreparedAllHFVertical:
             replay_tensor_sha256s.append(_tensor_sha256(value))
         replay_graph_fingerprints = _require_graph_owner(
             tuple(tensors[receipt_sha256] for receipt_sha256 in replay_hashes),
+            model=model,
             bound_parameter_ids=bound_parameter_ids,
             label="trajectory",
         )
@@ -1000,6 +995,7 @@ class PreparedAllHFVertical:
             compiler_tensor_sha256s = tuple(_tensor_sha256(value) for value in raw_logits)
             compiler_graph_fingerprints = _require_graph_owner(
                 raw_logits,
+                model=model,
                 bound_parameter_ids=bound_parameter_ids,
                 label="compiler",
             )
@@ -1051,12 +1047,14 @@ class PreparedAllHFVertical:
             raise ValueError("objective components must be finite scalar graph values")
         trajectory_component_graph_fingerprint = _require_graph_owner(
             (trajectory_numerator,),
+            model=model,
             bound_parameter_ids=bound_parameter_ids,
             label="trajectory component",
         )
         compiler_component_graph_fingerprint = (
             _require_graph_owner(
                 (compiler_numerator,),
+                model=model,
                 bound_parameter_ids=bound_parameter_ids,
                 label="compiler component",
             )
@@ -1215,6 +1213,7 @@ class PreparedAllHFVertical:
                 raise ValueError("compiler live tensors drifted after preparation")
             if _require_graph_owner(
                 tuple(compact._raw_logits.values()),
+                model=self._model,
                 bound_parameter_ids=frozenset(
                     id(parameter) for _, parameter in self._named
                 ),
@@ -1231,6 +1230,7 @@ class PreparedAllHFVertical:
                 self._replay_tensors[receipt_sha]
                 for receipt_sha in self._replay_hashes
             ),
+            model=self._model,
             bound_parameter_ids=frozenset(
                 id(parameter) for _, parameter in self._named
             ),
@@ -1239,6 +1239,7 @@ class PreparedAllHFVertical:
             raise ValueError("trajectory graph owner drifted after preparation")
         if _require_graph_owner(
             (cast(torch.Tensor, self._trajectory_numerator),),
+            model=self._model,
             bound_parameter_ids=frozenset(
                 id(parameter) for _, parameter in self._named
             ),
@@ -1247,6 +1248,7 @@ class PreparedAllHFVertical:
             raise ValueError("trajectory component graph drifted after preparation")
         if self._compiler_compact_logits is not None and _require_graph_owner(
             (cast(torch.Tensor, self._compiler_numerator),),
+            model=self._model,
             bound_parameter_ids=frozenset(
                 id(parameter) for _, parameter in self._named
             ),
@@ -1279,12 +1281,14 @@ class PreparedAllHFVertical:
                 self._replay_tensors[receipt_sha]
                 for receipt_sha in self._replay_hashes
             ),
+            model=self._model,
             bound_parameter_ids=bound_parameter_ids,
             label="trajectory",
         ) != self._replay_graph_fingerprints:
             raise ValueError("trajectory graph owner drifted before projected apply")
         if _require_graph_owner(
             (cast(torch.Tensor, self._trajectory_numerator),),
+            model=self._model,
             bound_parameter_ids=bound_parameter_ids,
             label="trajectory component",
         ) != self._trajectory_component_graph_fingerprint:
@@ -1295,12 +1299,14 @@ class PreparedAllHFVertical:
             )
             if _require_graph_owner(
                 tuple(compact._raw_logits.values()),
+                model=self._model,
                 bound_parameter_ids=bound_parameter_ids,
                 label="compiler",
             ) != self._compiler_graph_fingerprints:
                 raise ValueError("compiler graph owner drifted before projected apply")
             if _require_graph_owner(
                 (cast(torch.Tensor, self._compiler_numerator),),
+                model=self._model,
                 bound_parameter_ids=bound_parameter_ids,
                 label="compiler component",
             ) != self._compiler_component_graph_fingerprint:
