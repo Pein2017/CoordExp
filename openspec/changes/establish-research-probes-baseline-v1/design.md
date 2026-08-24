@@ -84,9 +84,7 @@ candidate that descends from the anchor and obtains an exact-candidate review.
 The final `research-base-v1` tag does not exist before task 4.3's separate user
 approval. Task 4.4 creates an annotated tag at that reviewed candidate and
 records its tag object and peeled commit in a post-tag lifecycle receipt; that
-receipt is necessarily a later commit and not an excuse to move the tag. The
-pre-infra image-2299 probe remains bound to its declared `9f902d5ab` source and
-is not silently rebased.
+receipt is necessarily a later commit and not an excuse to move the tag.
 
 This avoids claiming that an unverified infra branch or a dirty working tree is
 the new baseline. It also preserves the exact base of concurrent research.
@@ -129,14 +127,6 @@ Retirement, generic-ref deletion or movement, tag deletion, Git garbage
 collection, and raw-artifact reclamation are separate decisions; neither is
 implied by baseline-tag approval.
 
-The active pre-infra image-2299 probe returns its own provenance manifest only
-when its research documents return: it must record its exact worktree path,
-merge-time resolved branch/ref, source commit `9f902d5ab`, clean-status
-evidence, and replay entry, while explicitly stating that it is not evidence
-for the new baseline. This is a probe-return condition, not a v1 tag gate: the
-baseline does not copy an active probe's code or conclusions, create a tag for
-it, or authorize its retirement.
-
 ### Fixed paths and reachability are captured, not inferred from names
 
 The fixed directories are stable paths, not permanent branch-name contracts.
@@ -149,15 +139,16 @@ reasons are part of the gate evidence, and unlocking them requires a separate
 lifecycle decision. Do not make a self-invalidating evergreen claim about the
 current head of a moving branch.
 
-The gate must also prove every active worktree HEAD and every probe/final
-lifecycle tip resolves from at least one named ref. The detached
+The gate must also prove every baseline-owned fixed-worktree HEAD and every
+probe/final lifecycle tip recorded by this baseline resolves from at least one
+named ref. Independent concurrent worktrees are out of scope and are not
+consulted. The detached
 `/data/CoordExp/.worktrees/permanent-owner-bridge-cache-validation` at
 `477b376a3e31a5dbedf5a87ecafcb372e75a73a9` is an explicit HOLD: this change
 does not create a ref for it or prune/remove it. Its registered worktree HEAD
 is currently a Git root, so the unrelated HOLD does not block baseline-tag
 review; the future risk is separate worktree removal/prune followed by reflog
-expiry. The other detached checkouts must be recorded with their containing
-refs rather than collapsed into this HOLD. The stale, unmounted
+expiry. The stale, unmounted
 `research-probe-infras` branch at `62274a97...` is a superseded HOLD in the
 disposition ledger, not content-equivalent and not a deletion target.
 

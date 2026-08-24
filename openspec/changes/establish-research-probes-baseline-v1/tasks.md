@@ -50,13 +50,6 @@
   and replay entry in the merged manifest; generic-ref movement/deletion and
   tag mutation remain separately user-gated. The current implementation is the
   "Research-probe routing" section of `docs/BRANCH_AND_WORKTREE_POLICY.md`.
-- [ ] 2.3 In the later merged research provenance manifest, record and verify
-  the pre-infra image-2299 worktree's exact path, merge-time resolved branch/ref,
-  source commit `9f902d5ab`, clean-status evidence, and replay entry. State
-  explicitly that it is not evidence for the new baseline. This active probe's
-  own document return is non-blocking for `research-base-v1` and does not
-  authorize code merge, tag creation, or worktree retirement.
-
 ## 3. Build the entropy-reduction decision ledger
 
 - [x] 3.1 For each candidate admitted for an actual removal, record its exact
@@ -86,15 +79,15 @@
   self-invalidating current-HEAD value in this task. Verify each native
   worktree lock and the explicitly local-only durability boundary; no remote
   publication or off-host replication is implied.
-- [ ] 4.1a Prove every active worktree HEAD and every probe/final lifecycle tip
-  resolves from at least one named ref. Keep the detached
+- [ ] 4.1a Prove every baseline-owned fixed-worktree HEAD and every probe/final
+  lifecycle tip recorded by this baseline resolves from at least one named ref.
+  Do not consult independent concurrent worktrees. Keep the detached
   `/data/CoordExp/.worktrees/permanent-owner-bridge-cache-validation` at
   `477b376a3e31a5dbedf5a87ecafcb372e75a73a9` as an explicit HOLD; do not
   create a ref, prune, or remove it in this change. Its registered worktree HEAD
   is presently a Git root, so this unrelated HOLD does not block baseline-tag
   review; record that future worktree removal/prune plus reflog expiry requires
-  its own preservation decision. Record other detached checkouts and their
-  containing refs separately rather than treating all detached paths alike.
+  its own preservation decision.
 - [ ] 4.2 Freeze the complete clean baseline-candidate diff that descends from
   the 1.1 anchor and obtain a `claude-opus-5` leaf, `write:false`
   lifecycle/compatibility review on that exact candidate; lead disposition owns
