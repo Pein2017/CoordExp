@@ -11,11 +11,12 @@ import json
 import hashlib
 import os
 import stat
+import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Final
+from typing import Any, Final, NoReturn
 
 from src.artifacts.evidence_journal import (
     JOURNAL_SCHEMA_VERSION,
@@ -139,6 +140,41 @@ class BindingManifest:
 
 
 @dataclass(frozen=True)
+class TargetTreeBinding:
+    """A consumer declaration of its whole Git worktree and effective inputs."""
+
+    root: Path
+    effective_binding_names: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "effective_binding_names", tuple(self.effective_binding_names)
+        )
+
+
+@dataclass(frozen=True)
+class TargetTreeIdentity:
+    """Captured target-tree metadata kept outside the binding-manifest kinds."""
+
+    root: str
+    commit: str
+    clean: bool
+    effective_inputs: tuple[Mapping[str, Any], ...]
+    content_fingerprint: str
+
+    def to_mapping(self) -> dict[str, Any]:
+        return {
+            "root": self.root,
+            "commit": self.commit,
+            "clean": self.clean,
+            "effective_inputs": [
+                _thaw_json_value(item) for item in self.effective_inputs
+            ],
+            "content_fingerprint": self.content_fingerprint,
+        }
+
+
+@dataclass(frozen=True)
 class StageEvidence:
     """Caller-supplied mechanics facts for one fixed admission stage."""
 
@@ -152,9 +188,7 @@ class StageEvidence:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "output_files", tuple(self.output_files))
-        object.__setattr__(
-            self, "assertions", _freeze_strict_value(self.assertions)
-        )
+        object.__setattr__(self, "assertions", _freeze_strict_value(self.assertions))
         object.__setattr__(self, "detail", _freeze_strict_value(self.detail))
 
 
@@ -212,6 +246,70 @@ def revalidate_binding_manifest(manifest: BindingManifest) -> None:
         )
 
 
+def capture_target_tree_binding(
+    binding: TargetTreeBinding, manifest: BindingManifest
+) -> TargetTreeIdentity:
+    """Capture one clean Git worktree plus named existing typed identities."""
+
+    if not isinstance(binding, TargetTreeBinding):
+        _fail("target tree binding must be typed", "admission.invalid_target_tree")
+    _validate_manifest(manifest)
+    root, commit = _capture_target_tree_state(binding.root)
+    names = _validate_target_effective_names(binding.effective_binding_names)
+    by_name = {str(item["name"]): item for item in manifest.bindings}
+    missing = [name for name in names if name not in by_name]
+    if missing:
+        _fail(
+            "target tree effective input is not present in the binding manifest",
+            "admission.target_tree_missing_effective_input",
+            names=missing,
+        )
+    effective_inputs = tuple(
+        _freeze_strict_value(_thaw_json_value(by_name[name])) for name in names
+    )
+    core = {
+        "root": str(root),
+        "commit": commit,
+        "clean": True,
+        "effective_inputs": [_thaw_json_value(item) for item in effective_inputs],
+    }
+    return TargetTreeIdentity(
+        root=str(root),
+        commit=commit,
+        clean=True,
+        effective_inputs=effective_inputs,
+        content_fingerprint=json_sha256(core),
+    )
+
+
+def revalidate_target_tree_binding(identity: TargetTreeIdentity) -> None:
+    """Fail closed if the target tree or any declared effective input changed."""
+
+    _validate_target_tree_identity(identity)
+    root, commit = _capture_target_tree_state(Path(identity.root))
+    requests = tuple(_request_from_binding(item) for item in identity.effective_inputs)
+    recaptured = capture_binding_manifest(requests)
+    current = {
+        "root": str(root),
+        "commit": commit,
+        "clean": True,
+        "effective_inputs": recaptured.to_mapping()["bindings"],
+    }
+    expected = {
+        "root": identity.root,
+        "commit": identity.commit,
+        "clean": identity.clean,
+        "effective_inputs": [
+            _thaw_json_value(item) for item in identity.effective_inputs
+        ],
+    }
+    if current != expected:
+        _fail(
+            "live target tree differs from the immutable target binding",
+            "admission.target_tree_drift",
+        )
+
+
 class ResearchProbeAdmission:
     """Locked writer or terminal projection over one admission dossier."""
 
@@ -221,6 +319,7 @@ class ResearchProbeAdmission:
         root: Path,
         admission_id: str,
         bindings: BindingManifest,
+        target_tree: TargetTreeIdentity | None,
         reserved_output_paths: tuple[Mapping[str, Any], ...],
         context: Mapping[str, Any],
         journal: ExecutionEvidenceJournal | None,
@@ -229,6 +328,7 @@ class ResearchProbeAdmission:
         self.root = root
         self.admission_id = admission_id
         self.bindings = bindings
+        self.target_tree = target_tree
         self.reserved_output_paths = reserved_output_paths
         self.context = context
         self._journal = journal
@@ -241,6 +341,7 @@ class ResearchProbeAdmission:
         root: Path,
         admission_id: str,
         bindings: BindingManifest,
+        target_tree: TargetTreeBinding | None = None,
         reserved_output_paths: Sequence[ReservedOutputPath],
         context: Mapping[str, Any],
     ) -> "ResearchProbeAdmission":
@@ -249,6 +350,11 @@ class ResearchProbeAdmission:
         _require_nonempty_string(admission_id, field="admission_id")
         _validate_manifest(bindings)
         revalidate_binding_manifest(bindings)
+        captured_target = (
+            capture_target_tree_binding(target_tree, bindings)
+            if target_tree is not None
+            else None
+        )
         strict_context = _strict_mapping(context, field="context")
         root_candidate = _require_path(root, field="root")
         if os.path.lexists(root_candidate):
@@ -273,11 +379,15 @@ class ResearchProbeAdmission:
                 root=str(resolved_root),
             )
         try:
-            publish_json_exclusive(resolved_root / "bindings.json", bindings.to_mapping())
+            publish_json_exclusive(
+                resolved_root / "bindings.json", bindings.to_mapping()
+            )
             journal = ExecutionEvidenceJournal.create(
                 root=resolved_root / "journal",
                 execution_id=admission_id,
-                execution_identity=_execution_identity(admission_id, bindings, reserved),
+                execution_identity=_execution_identity(
+                    admission_id, bindings, captured_target, reserved
+                ),
                 expected_work_item_ids=STAGES,
                 context=strict_context,
             )
@@ -291,6 +401,7 @@ class ResearchProbeAdmission:
             root=resolved_root,
             admission_id=admission_id,
             bindings=bindings,
+            target_tree=captured_target,
             reserved_output_paths=reserved,
             context=_freeze_strict_value(strict_context),
             journal=journal,
@@ -304,6 +415,7 @@ class ResearchProbeAdmission:
         root: Path,
         admission_id: str,
         bindings: BindingManifest,
+        target_tree: TargetTreeBinding | None = None,
         reserved_output_paths: Sequence[ReservedOutputPath],
         context: Mapping[str, Any],
     ) -> "ResearchProbeAdmission":
@@ -312,6 +424,11 @@ class ResearchProbeAdmission:
         _require_nonempty_string(admission_id, field="admission_id")
         _validate_manifest(bindings)
         revalidate_binding_manifest(bindings)
+        captured_target = (
+            capture_target_tree_binding(target_tree, bindings)
+            if target_tree is not None
+            else None
+        )
         strict_context = _strict_mapping(context, field="context")
         root_candidate = _require_path(root, field="root")
         if root_candidate.is_symlink():
@@ -340,9 +457,16 @@ class ResearchProbeAdmission:
             )
         journal_root = resolved_root / "journal"
         inspection = ExecutionEvidenceJournal.inspect_diagnostics(journal_root)
+        persisted_target = _load_target_tree_plan(journal_root)
+        if persisted_target != captured_target:
+            _fail(
+                "requested target tree does not match the published admission",
+                "admission.continuation_identity_mismatch",
+            )
         expected_plan_fingerprint = _journal_plan_fingerprint(
             admission_id=admission_id,
             bindings=bindings,
+            target_tree=captured_target,
             reserved=reserved,
             context=strict_context,
         )
@@ -367,7 +491,9 @@ class ResearchProbeAdmission:
             journal = ExecutionEvidenceJournal.open(
                 root=journal_root,
                 execution_id=admission_id,
-                execution_identity=_execution_identity(admission_id, bindings, reserved),
+                execution_identity=_execution_identity(
+                    admission_id, bindings, captured_target, reserved
+                ),
                 expected_work_item_ids=STAGES,
                 context=strict_context,
             )
@@ -375,6 +501,7 @@ class ResearchProbeAdmission:
             root=resolved_root,
             admission_id=admission_id,
             bindings=bindings,
+            target_tree=captured_target,
             reserved_output_paths=reserved,
             context=_freeze_strict_value(strict_context),
             journal=journal,
@@ -388,7 +515,10 @@ class ResearchProbeAdmission:
         resolved_root = _resolved_candidate(root, field="root")
         manifest = _load_binding_manifest(resolved_root / "bindings.json")
         revalidate_binding_manifest(manifest)
-        journal = ExecutionEvidenceJournal.inspect_diagnostics(resolved_root / "journal")
+        _load_target_tree_plan(resolved_root / "journal")
+        journal = ExecutionEvidenceJournal.inspect_diagnostics(
+            resolved_root / "journal"
+        )
         reserved = _load_reserved_plan(resolved_root, journal)
         _validate_persisted_stage_records(
             journal,
@@ -496,6 +626,17 @@ class ResearchProbeAdmission:
         )
         self._refresh_inspection()
         return output
+
+    def revalidate_target_tree(self) -> None:
+        """Revalidate the optional consumer target at its pre-model choke point."""
+
+        if self.target_tree is None:
+            _fail(
+                "admission has no target tree binding",
+                "admission.target_tree_missing",
+            )
+            return
+        revalidate_target_tree_binding(self.target_tree)
 
     def finalize(self) -> Path:
         """Close the journal and idempotently publish one mechanics-only receipt."""
@@ -609,7 +750,9 @@ def _capture_directory_tree(*, name: str, path: Path) -> dict[str, Any]:
     resolved = _resolve_existing_leaf(path, field=name, expected="directory")
     inventory: list[dict[str, Any]] = []
     try:
-        descendants = sorted(resolved.rglob("*"), key=lambda item: item.relative_to(resolved).as_posix())
+        descendants = sorted(
+            resolved.rglob("*"), key=lambda item: item.relative_to(resolved).as_posix()
+        )
     except OSError as exc:
         _fail(
             "directory tree cannot be inventoried",
@@ -955,8 +1098,7 @@ def _validate_persisted_stage_records(
             payload["stage"] != record.work_item_id
             or payload["admission_id"] != admission_id
             or payload["admission_fingerprint"] != expected_admission_fingerprint
-            or payload["binding_manifest_fingerprint"]
-            != bindings.content_fingerprint
+            or payload["binding_manifest_fingerprint"] != bindings.content_fingerprint
             or payload["producer_binding"] not in binding_by_name
             or payload["validator_binding"] not in binding_by_name
             or payload["scientific_interpretation"] is not False
@@ -1074,14 +1216,18 @@ def _request_from_binding(binding: Mapping[str, Any]) -> BindingRequest:
 def _execution_identity(
     admission_id: str,
     bindings: BindingManifest,
+    target_tree: TargetTreeIdentity | None,
     reserved: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    return {
+    identity = {
         "admission_schema_version": ADMISSION_SCHEMA_VERSION,
         "admission_id": admission_id,
         "binding_manifest_fingerprint": bindings.content_fingerprint,
         "reserved_output_paths": [_thaw_json_value(item) for item in reserved],
     }
+    if target_tree is not None:
+        identity["target_tree"] = target_tree.to_mapping()
+    return identity
 
 
 def _load_reserved_plan(
@@ -1121,15 +1267,204 @@ def _load_reserved_plan(
         require_absent=False,
         admission_root=admission_root,
     )
-    if (
-        [_thaw_json_value(item) for item in reserved] != raw_reserved
-        or plan.get("execution_id") != inspection.snapshot.execution_id
-    ):
+    if [_thaw_json_value(item) for item in reserved] != raw_reserved or plan.get(
+        "execution_id"
+    ) != inspection.snapshot.execution_id:
         _fail(
             "journal reserved output plan identity is invalid",
             "admission.invalid_persisted_evidence",
         )
     return reserved
+
+
+def _load_target_tree_plan(journal_root: Path) -> TargetTreeIdentity | None:
+    plan = load_canonical_json(journal_root / "plan.json")
+    if not isinstance(plan, Mapping) or not isinstance(
+        plan.get("execution_identity"), Mapping
+    ):
+        _fail(
+            "journal plan lacks an admission identity",
+            "admission.invalid_persisted_evidence",
+        )
+    raw = plan["execution_identity"].get("target_tree")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        _fail(
+            "journal target tree identity is invalid",
+            "admission.invalid_persisted_evidence",
+        )
+    try:
+        identity = TargetTreeIdentity(
+            root=str(raw["root"]),
+            commit=str(raw["commit"]),
+            clean=raw["clean"],
+            effective_inputs=tuple(
+                _freeze_strict_value(item) for item in raw["effective_inputs"]
+            ),
+            content_fingerprint=str(raw["content_fingerprint"]),
+        )
+    except (KeyError, TypeError) as exc:
+        _fail(
+            "journal target tree identity is invalid",
+            "admission.invalid_persisted_evidence",
+            cause=exc,
+        )
+    _validate_target_tree_identity(identity)
+    return identity
+
+
+def _capture_target_tree_state(root: Path) -> tuple[Path, str]:
+    candidate = _require_path(root, field="target_tree_root")
+    if not candidate.is_absolute():
+        _fail(
+            "target tree root must be absolute",
+            "admission.target_tree_not_absolute",
+            root=str(candidate),
+        )
+    try:
+        metadata = candidate.lstat()
+    except OSError as exc:
+        _fail(
+            "target tree root is missing or unreadable",
+            "admission.target_tree_not_worktree",
+            cause=exc,
+            root=str(candidate),
+        )
+    if stat.S_ISLNK(metadata.st_mode):
+        _fail(
+            "target tree root must not be a symlink",
+            "admission.target_tree_symlink",
+            root=str(candidate),
+        )
+    if not stat.S_ISDIR(metadata.st_mode):
+        _fail(
+            "target tree root must be a directory",
+            "admission.target_tree_not_worktree",
+            root=str(candidate),
+        )
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        _fail(
+            "target tree root cannot be resolved",
+            "admission.target_tree_not_worktree",
+            cause=exc,
+            root=str(candidate),
+        )
+    inside = _run_target_git(resolved, "rev-parse", "--is-inside-work-tree")
+    top_level = _run_target_git(resolved, "rev-parse", "--show-toplevel")
+    if inside != "true" or top_level != str(resolved):
+        _fail(
+            "target tree root is not an exact Git worktree root",
+            "admission.target_tree_not_worktree",
+            root=str(resolved),
+        )
+    if _run_target_git(resolved, "ls-files", "-u"):
+        _fail(
+            "target tree has unresolved merge entries",
+            "admission.target_tree_conflicted",
+            root=str(resolved),
+        )
+    if _run_target_git(resolved, "status", "--porcelain=v1", "--untracked-files=all"):
+        _fail(
+            "target tree must be completely clean",
+            "admission.target_tree_dirty",
+            root=str(resolved),
+        )
+    commit = _run_target_git(resolved, "rev-parse", "HEAD")
+    if not commit:
+        _fail(
+            "target tree has no full commit identity",
+            "admission.target_tree_not_worktree",
+            root=str(resolved),
+        )
+    return resolved, commit
+
+
+def _run_target_git(root: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ("git", "-C", str(root), *args),
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError as exc:
+        _fail(
+            "Git identity could not be read for target tree",
+            "admission.target_tree_not_worktree",
+            cause=exc,
+            root=str(root),
+        )
+    if completed.returncode != 0:
+        _fail(
+            "Git identity could not be read for target tree",
+            "admission.target_tree_not_worktree",
+            root=str(root),
+            git_args=list(args),
+        )
+    return completed.stdout.strip()
+
+
+def _validate_target_effective_names(value: tuple[str, ...]) -> tuple[str, ...]:
+    if not value:
+        _fail(
+            "target tree requires at least one declared effective input",
+            "admission.target_tree_missing_effective_input",
+        )
+    names: list[str] = []
+    for name in value:
+        _require_nonempty_string(name, field="target_tree_effective_input")
+        if name in names:
+            _fail(
+                "target tree effective input names must be unique",
+                "admission.target_tree_duplicate_effective_input",
+                name=name,
+            )
+        names.append(name)
+    return tuple(names)
+
+
+def _validate_target_tree_identity(identity: TargetTreeIdentity) -> None:
+    if not isinstance(identity, TargetTreeIdentity):
+        _fail("target tree identity must be typed", "admission.invalid_target_tree")
+    _require_nonempty_string(identity.root, field="target_tree_root")
+    _require_nonempty_string(identity.commit, field="target_tree_commit")
+    if identity.clean is not True:
+        _fail("target tree identity must assert clean", "admission.invalid_target_tree")
+    if (
+        not isinstance(identity.effective_inputs, tuple)
+        or not identity.effective_inputs
+    ):
+        _fail("target tree has no effective inputs", "admission.invalid_target_tree")
+    effective_inputs = [_thaw_json_value(item) for item in identity.effective_inputs]
+    if not all(isinstance(item, Mapping) for item in effective_inputs):
+        _fail(
+            "target tree effective inputs are invalid", "admission.invalid_target_tree"
+        )
+    try:
+        validate_json_value(effective_inputs)
+        for item in effective_inputs:
+            _request_from_binding(item)
+    except (ArtifactContractError, KeyError, TypeError) as exc:
+        _fail(
+            "target tree effective inputs are invalid",
+            "admission.invalid_target_tree",
+            cause=exc,
+        )
+    core = {
+        "root": identity.root,
+        "commit": identity.commit,
+        "clean": identity.clean,
+        "effective_inputs": effective_inputs,
+    }
+    if identity.content_fingerprint != json_sha256(core):
+        _fail(
+            "target tree identity fingerprint is invalid",
+            "admission.invalid_target_tree",
+        )
 
 
 def _is_output_reserved(
@@ -1147,10 +1482,11 @@ def _journal_plan_fingerprint(
     *,
     admission_id: str,
     bindings: BindingManifest,
+    target_tree: TargetTreeIdentity | None,
     reserved: Sequence[Mapping[str, Any]],
     context: Mapping[str, Any],
 ) -> str:
-    identity = _execution_identity(admission_id, bindings, reserved)
+    identity = _execution_identity(admission_id, bindings, target_tree, reserved)
     core = {
         "journal_schema_version": JOURNAL_SCHEMA_VERSION,
         "execution_id": admission_id,
@@ -1288,12 +1624,15 @@ def _read_stable_regular_file(path: Path, *, field: str) -> bytes:
         after.st_size,
         after.st_mtime_ns,
     )
-    if not (
-        identity_before
-        == identity_opened_before
-        == identity_opened_after
-        == identity_after
-    ) or len(encoded) != before.st_size:
+    if (
+        not (
+            identity_before
+            == identity_opened_before
+            == identity_opened_after
+            == identity_after
+        )
+        or len(encoded) != before.st_size
+    ):
         _fail(
             "binding file changed while its bytes were captured",
             "admission.concurrent_input_drift",
@@ -1458,7 +1797,7 @@ def _fail(
     *,
     cause: BaseException | None = None,
     **context: Any,
-) -> None:
+) -> NoReturn:
     raise ResearchProbeAdmissionError(
         message,
         code=code,
@@ -1482,6 +1821,10 @@ __all__ = [
     "ResolvedDataFileBinding",
     "StageEvidence",
     "StrictValueBinding",
+    "TargetTreeBinding",
+    "TargetTreeIdentity",
     "capture_binding_manifest",
+    "capture_target_tree_binding",
     "revalidate_binding_manifest",
+    "revalidate_target_tree_binding",
 ]

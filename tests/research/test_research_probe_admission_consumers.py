@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 import sys
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -17,7 +19,10 @@ from src.artifacts.research_probe_admission import (
     ResearchProbeAdmissionError,
     ReservedOutputPath,
     StageEvidence,
+    TargetTreeBinding,
     capture_binding_manifest,
+    capture_target_tree_binding,
+    revalidate_target_tree_binding,
 )
 
 
@@ -91,9 +96,7 @@ def _vertical_sources(tmp_path: Path) -> tuple[Any, ...]:
         "work": {
             "candidate_batch_size": 1,
             "scalar_equivalent_forward_count": 1,
-            "per_shard": [
-                {"shard_index": 0, "scalar_equivalent_forward_count": 1}
-            ],
+            "per_shard": [{"shard_index": 0, "scalar_equivalent_forward_count": 1}],
         },
     }
     raw["plan_content_sha256"] = json_sha256(raw)
@@ -185,7 +188,9 @@ def test_current_cpu_receipts_cross_shared_stage_evidence(tmp_path: Path) -> Non
         )
     assert evidence.assertions["downstream_validator_accepted"] is True
 
-    crossover_manifest = capture_binding_manifest(consumers.crossover_binding_requests())
+    crossover_manifest = capture_binding_manifest(
+        consumers.crossover_binding_requests()
+    )
     crossover_root = tmp_path / "crossover"
     with ResearchProbeAdmission.create(
         root=tmp_path / "crossover-admission",
@@ -244,8 +249,8 @@ def test_helper_only_paths_and_vertical_receipts_cannot_claim_production(
             merger_path=consumers.SUPPORT_MERGER,
             merger_test_path=consumers.SUPPORT_MERGER_TEST,
         )
-    plan, schedule, slot, identity, terminal, runtime, exit_receipt = (
-        _vertical_sources(tmp_path / "vertical")
+    plan, schedule, slot, identity, terminal, runtime, exit_receipt = _vertical_sources(
+        tmp_path / "vertical"
     )
     manifest = capture_binding_manifest(
         (
@@ -313,9 +318,7 @@ def test_vertical_snapshot_is_exactly_recoverable_and_flat_bound(
 
 
 def test_post_append_snapshot_drift_blocks_final_admission(tmp_path: Path) -> None:
-    _, _, slot, _, terminal, runtime, exit_receipt = _vertical_sources(
-        tmp_path / "raw"
-    )
+    _, _, slot, _, terminal, runtime, exit_receipt = _vertical_sources(tmp_path / "raw")
     producer = tmp_path / "producer.py"
     validator = tmp_path / "validator.py"
     producer.write_text("# producer\n", encoding="utf-8")
@@ -395,9 +398,10 @@ def test_exact_cpu_publication_retry_accepts_only_identical_single_file(
 ) -> None:
     root = tmp_path / "receipt-root"
     first = consumers._publish_fresh_receipt(root, "receipt.json", {"fixture": True})
-    assert consumers._publish_fresh_receipt(
-        root, "receipt.json", {"fixture": True}
-    ) == first
+    assert (
+        consumers._publish_fresh_receipt(root, "receipt.json", {"fixture": True})
+        == first
+    )
     first.write_text("{}", encoding="utf-8")
     with pytest.raises(consumers.ConsumerAdmissionError, match="differs"):
         consumers._publish_fresh_receipt(root, "receipt.json", {"fixture": True})
@@ -452,8 +456,7 @@ def test_binding_helpers_include_command_attestation_denominator() -> None:
     assert verifier_names <= crossover_names
 
     entries = {
-        str(entry["name"]): entry
-        for entry in support_manifest.to_mapping()["bindings"]
+        str(entry["name"]): entry for entry in support_manifest.to_mapping()["bindings"]
     }
     consumers._require_admission_runtime_bindings(entries)
 
@@ -466,3 +469,225 @@ def test_binding_helpers_include_command_attestation_denominator() -> None:
     drifted["admission_core"]["sha256"] = "0" * 64
     with pytest.raises(consumers.ConsumerAdmissionError, match="identity drifted"):
         consumers._require_admission_runtime_bindings(drifted)
+
+
+def test_consumers_declare_fixed_target_and_clean_probe_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    support_manifest = capture_binding_manifest(consumers.support_binding_requests())
+    crossover_manifest = capture_binding_manifest(
+        consumers.crossover_binding_requests()
+    )
+    support_target = consumers.support_target_tree_binding(
+        effective_binding_names=support_manifest.names
+    )
+    crossover_target = consumers.crossover_target_tree_binding(
+        effective_binding_names=crossover_manifest.names
+    )
+    assert support_target.root == consumers.ACTIVE_RESEARCH_PROBES_ROOT
+    assert crossover_target.root == consumers.ACTIVE_RESEARCH_PROBES_ROOT
+    assert support_target.effective_binding_names == support_manifest.names
+    assert crossover_target.effective_binding_names == crossover_manifest.names
+
+    probe_root = tmp_path / "probe" / "target-binding-fixture"
+    probe_root.mkdir(parents=True)
+    for args in (
+        ("init", "--initial-branch=main"),
+        ("config", "user.email", "fixture@example.invalid"),
+        ("config", "user.name", "Fixture"),
+        ("add", "."),
+    ):
+        subprocess.run(["git", "-C", str(probe_root), *args], check=True)
+    (probe_root / "README").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(probe_root), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(probe_root), "commit", "-m", "fixture"], check=True
+    )
+    monkeypatch.setattr(consumers, "ACTIVE_RESEARCH_PROBES_ROOT", probe_root)
+    for manifest, declaration in (
+        (support_manifest, consumers.support_target_tree_binding),
+        (crossover_manifest, consumers.crossover_target_tree_binding),
+    ):
+        captured = capture_target_tree_binding(
+            declaration(effective_binding_names=manifest.names), manifest
+        )
+        revalidate_target_tree_binding(captured)
+
+
+@pytest.mark.parametrize("mutate_target", (True, False), ids=("drift", "clean"))
+def test_post_cpu_target_mutation_rejects_before_vertical_launcher_and_preserves_cpu_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutate_target: bool
+) -> None:
+    """A pre-model guard must stop a changed declared target input.
+
+    Removing the guard immediately before ``launch_slot_worker`` must make this
+    test fail by reaching the launcher sentinel.
+    """
+
+    target_root = tmp_path / "target"
+    target_root.mkdir()
+    for args in (
+        ("init", "--initial-branch=main"),
+        ("config", "user.email", "fixture@example.invalid"),
+        ("config", "user.name", "Fixture"),
+    ):
+        subprocess.run(["git", "-C", str(target_root), *args], check=True)
+    producer = target_root / "producer.py"
+    validator = target_root / "validator.py"
+    producer.write_text("v1\n", encoding="utf-8")
+    validator.write_text("validator\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(target_root), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(target_root), "commit", "-m", "fixture"], check=True
+    )
+    support_manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("producer", producer),
+            RegularFileBinding("validator", validator),
+        )
+    )
+    crossover_producer = tmp_path / "crossover" / "producer.py"
+    crossover_validator = tmp_path / "crossover" / "validator.py"
+    crossover_producer.parent.mkdir(parents=True)
+    crossover_producer.write_text("producer\n", encoding="utf-8")
+    crossover_validator.write_text("validator\n", encoding="utf-8")
+    crossover_manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("producer", crossover_producer),
+            RegularFileBinding("validator", crossover_validator),
+        )
+    )
+
+    fixture_path = str(producer)
+    execution_identity = {
+        "consumer": {"path": fixture_path, "sha256": "a" * 64},
+        "logical_plan": {"path": fixture_path, "file_sha256": "b" * 64},
+        "census": {"path": fixture_path, "sha256": "c" * 64},
+        "infer_config": {"path": fixture_path, "sha256": "d" * 64},
+        "model": {
+            "base_model": {"path": fixture_path},
+            "adapter_tensor": {"path": fixture_path, "sha256": "e" * 64},
+            "embedding_delta": {"path": fixture_path, "sha256": "f" * 64},
+        },
+        "embedding_source_gate": {"root": fixture_path},
+    }
+    projected_plan = SimpleNamespace(
+        raw={"h0_lineage": {"config_fingerprint": "fixture"}},
+        file_sha256="g" * 64,
+    )
+    schedule = {"content_sha256": "h" * 64}
+
+    def evidence(output_root: Path) -> StageEvidence:
+        receipt = _write(output_root / "receipt.json", {"fixture": "cpu"})
+        return StageEvidence(
+            producer_binding="producer",
+            validator_binding="validator",
+            output_files=(RegularFileBinding("receipt", receipt),),
+            assertions={
+                "production_entrypoint_resolved": True,
+                "consumer_validator_ran": True,
+                "model_free_finalizer_ran": True,
+                "downstream_validator_accepted": True,
+                "model_loaded": False,
+                "gpu_used": False,
+            },
+            detail={"fixture": "cpu"},
+        )
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "sentinel-gpu")
+    monkeypatch.setattr(
+        vertical_driver,
+        "_expected_execution",
+        lambda **_: (execution_identity, projected_plan, schedule),
+    )
+    monkeypatch.setattr(
+        vertical_driver, "_support_bindings", lambda **_: support_manifest
+    )
+    monkeypatch.setattr(
+        consumers,
+        "support_target_tree_binding",
+        lambda **_: TargetTreeBinding(target_root, ("producer", "validator")),
+    )
+    monkeypatch.setattr(
+        consumers,
+        "crossover_target_tree_binding",
+        lambda **_: TargetTreeBinding(target_root, ("producer", "validator")),
+    )
+    monkeypatch.setattr(
+        vertical_driver,
+        "capture_binding_manifest",
+        lambda _: crossover_manifest,
+    )
+    monkeypatch.setattr(
+        consumers,
+        "build_support_cpu_evidence",
+        lambda **kwargs: evidence(kwargs["output_root"]),
+    )
+
+    cpu_record_bytes: list[bytes] = []
+
+    def mutate_after_support_cpu(**kwargs: Any) -> StageEvidence:
+        acceptance = kwargs["output_root"].parents[1]
+        records = tuple(
+            (acceptance / "support" / "admission" / "journal" / "records").glob(
+                "*.json"
+            )
+        )
+        assert len(records) == 1
+        cpu_record_bytes.append(records[0].read_bytes())
+        if mutate_target:
+            producer.write_text("v2\n", encoding="utf-8")
+        return evidence(kwargs["output_root"])
+
+    monkeypatch.setattr(
+        consumers, "build_crossover_cpu_evidence", mutate_after_support_cpu
+    )
+
+    launcher_calls: list[object] = []
+    later_calls: list[str] = []
+
+    def launcher_reached(**_: Any) -> None:
+        launcher_calls.append(object())
+        raise AssertionError("launcher reached after target mutation")
+
+    def later_vertical(*_: Any, **__: Any) -> None:
+        later_calls.append("vertical")
+        raise AssertionError("vertical evidence reached after target mutation")
+
+    def later_finalize(*_: Any, **__: Any) -> None:
+        later_calls.append("finalize")
+        raise AssertionError("finalizer reached after target mutation")
+
+    monkeypatch.setattr(support, "launch_slot_worker", launcher_reached)
+    monkeypatch.setattr(
+        support, "materialize_bounded_mechanics_terminal", later_vertical
+    )
+    monkeypatch.setattr(consumers, "build_support_vertical_evidence", later_vertical)
+    monkeypatch.setattr(ResearchProbeAdmission, "finalize", later_finalize)
+
+    acceptance = tmp_path / "acceptance"
+    if mutate_target:
+        with pytest.raises(ResearchProbeAdmissionError) as rejected:
+            vertical_driver.run(
+                output_root=acceptance,
+                physical_gpu="sentinel-gpu",
+                context_id="fixture",
+            )
+        assert rejected.value.code == "admission.target_tree_dirty"
+    else:
+        with pytest.raises(AssertionError, match="launcher reached"):
+            vertical_driver.run(
+                output_root=acceptance,
+                physical_gpu="sentinel-gpu",
+                context_id="fixture",
+            )
+    records = tuple(
+        (acceptance / "support" / "admission" / "journal" / "records").glob("*.json")
+    )
+    assert len(records) == 1
+    assert records[0].read_bytes() == cpu_record_bytes[0]
+    assert len(launcher_calls) == (0 if mutate_target else 1)
+    assert later_calls == []
+    assert not (acceptance / "support" / "vertical").exists()
+    assert not (acceptance / "support" / "admission" / "admission.json").exists()
+    assert not (acceptance / "mechanics-receipt.json").exists()

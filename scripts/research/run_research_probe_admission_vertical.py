@@ -105,7 +105,9 @@ def _expected_execution(
     adapter_tensor = ADAPTER_TENSOR.resolve(strict=True)
     embedding_delta = EMBEDDING_DELTA.resolve(strict=True)
     logical_plan = support.load_logical_plan(plan_path)
-    projected = support.project_logical_contexts(logical_plan, context_ids=(context_id,))
+    projected = support.project_logical_contexts(
+        logical_plan, context_ids=(context_id,)
+    )
     schedule = support.plan_physical_slots(projected, slot_count=1)
     _, base_model_identity = worker._require_model_root(BASE_MODEL)
     source_gate = worker._bind_source_gate_root(SOURCE_GATE_ROOT)
@@ -251,9 +253,7 @@ def _support_bindings(
     )
     runtime_root = Path(execution_identity["consumer_runtime_source"]["tree"]["root"])
     for index, path in enumerate(sorted(runtime_root.rglob("*.py"))):
-        requests.append(
-            RegularFileBinding(f"support_runtime_source_{index:04d}", path)
-        )
+        requests.append(RegularFileBinding(f"support_runtime_source_{index:04d}", path))
     source_gate_files = execution_identity["embedding_source_gate"]["files"]
     for index, reference in enumerate(
         value for _, value in sorted(source_gate_files.items())
@@ -277,6 +277,9 @@ def _append_cpu_stages(
         root=root / "support" / "admission",
         admission_id="natural-boundary-support-bounded-v1",
         bindings=support_manifest,
+        target_tree=consumers.support_target_tree_binding(
+            effective_binding_names=support_manifest.names
+        ),
         reserved_output_paths=(
             ReservedOutputPath("support_cpu", support_cpu),
             ReservedOutputPath("support_vertical", support_vertical),
@@ -310,6 +313,9 @@ def _append_cpu_stages(
         root=root / "crossover" / "admission",
         admission_id="k10-h20-crossover-cpu-v1",
         bindings=crossover_manifest,
+        target_tree=consumers.crossover_target_tree_binding(
+            effective_binding_names=crossover_manifest.names
+        ),
         reserved_output_paths=(
             ReservedOutputPath("crossover_cpu", crossover_cpu),
             ReservedOutputPath("crossover_vertical", crossover_vertical),
@@ -381,6 +387,7 @@ def run(*, output_root: Path, physical_gpu: str, context_id: str) -> Path:
         support_manifest=support_manifest,
     )
     try:
+        support_admission.revalidate_target_tree()
         support.launch_slot_worker(
             command=worker_argv,
             cwd=INFRA_ROOT,

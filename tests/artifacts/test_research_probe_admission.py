@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 from types import MappingProxyType
 
 import pytest
@@ -23,7 +24,10 @@ from src.artifacts.research_probe_admission import (
     ResolvedDataFileBinding,
     StageEvidence,
     StrictValueBinding,
+    TargetTreeBinding,
+    capture_target_tree_binding,
     capture_binding_manifest,
+    revalidate_target_tree_binding,
     revalidate_binding_manifest,
 )
 from src.common.errors import ArtifactContractError
@@ -64,12 +68,34 @@ def _fixture_manifest(tmp_path: Path):
     return manifest, producer, validator, runtime, image
 
 
+def _run_git(root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _clean_target_worktree(tmp_path: Path) -> tuple[Path, Path, Path]:
+    root = tmp_path / "target"
+    root.mkdir(parents=True)
+    _run_git(root, "init", "--initial-branch=main")
+    _run_git(root, "config", "user.email", "fixture@example.invalid")
+    _run_git(root, "config", "user.name", "Fixture")
+    source = _write(root / "source.py", "source-v1\n")
+    config = _write(tmp_path / "runtime.json", '{"version":1}\n')
+    _run_git(root, "add", "source.py")
+    _run_git(root, "commit", "-m", "fixture")
+    return root, source, config
+
+
 def _reserved(tmp_path: Path) -> tuple[ReservedOutputPath, ...]:
     return (
         ReservedOutputPath("cpu", (tmp_path / "reserved" / "cpu").resolve()),
-        ReservedOutputPath(
-            "vertical", (tmp_path / "reserved" / "vertical").resolve()
-        ),
+        ReservedOutputPath("vertical", (tmp_path / "reserved" / "vertical").resolve()),
     )
 
 
@@ -94,9 +120,7 @@ def _vertical_assertions() -> dict[str, bool | int]:
     }
 
 
-def _evidence(
-    output: Path, assertions: dict[str, object]
-) -> StageEvidence:
+def _evidence(output: Path, assertions: dict[str, object]) -> StageEvidence:
     return StageEvidence(
         producer_binding="producer",
         validator_binding="validator",
@@ -108,9 +132,7 @@ def _evidence(
 
 def _append_both(admission: ResearchProbeAdmission, tmp_path: Path) -> None:
     attempt = admission.start_attempt()
-    cpu_output = _write(
-        tmp_path / "reserved" / "cpu" / "receipt.json", '{"ok":true}\n'
-    )
+    cpu_output = _write(tmp_path / "reserved" / "cpu" / "receipt.json", '{"ok":true}\n')
     admission.append_stage(
         stage="cpu_preflight",
         evidence=_evidence(cpu_output, _cpu_assertions()),
@@ -155,7 +177,9 @@ def test_capture_all_binding_kinds_and_deterministic_full_tree(tmp_path: Path) -
             RegularFileBinding("validator", tmp_path / "source" / "validator.py"),
             DirectoryTreeBinding("runtime", runtime),
             ResolvedDataFileBinding("image", "images/one.bin", tmp_path / "data"),
-            AbsoluteExecutableBinding("python", (tmp_path / "bin" / "python").resolve()),
+            AbsoluteExecutableBinding(
+                "python", (tmp_path / "bin" / "python").resolve()
+            ),
             StrictValueBinding("policy", {"count": 1, "mode": "bounded"}),
         ]
     )
@@ -171,9 +195,7 @@ def test_capture_all_binding_kinds_and_deterministic_full_tree(tmp_path: Path) -
         lambda root: AbsoluteExecutableBinding(
             "python", _write(root / "not-executable", "x").resolve()
         ),
-        lambda root: RegularFileBinding(
-            "file", (root / "file-link")
-        ),
+        lambda root: RegularFileBinding("file", (root / "file-link")),
         lambda root: DirectoryTreeBinding("tree", root / "tree"),
     ],
 )
@@ -250,6 +272,231 @@ def test_live_revalidation_detects_every_file_and_tree_drift(tmp_path: Path) -> 
     with pytest.raises(ResearchProbeAdmissionError) as tree_drift:
         revalidate_binding_manifest(manifest)
     assert tree_drift.value.code == "admission.binding_drift"
+
+
+def test_target_tree_capture_revalidation_and_typed_dirty_rejections(
+    tmp_path: Path,
+) -> None:
+    root, source, runtime = _clean_target_worktree(tmp_path)
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("target_source", source),
+            RegularFileBinding("runtime_config", runtime),
+        )
+    )
+    target = capture_target_tree_binding(
+        TargetTreeBinding(
+            root=root,
+            effective_binding_names=("target_source", "runtime_config"),
+        ),
+        manifest,
+    )
+    mapping = target.to_mapping()
+    assert mapping["root"] == str(root.resolve())
+    assert mapping["commit"] == _run_git(root, "rev-parse", "HEAD")
+    assert mapping["clean"] is True
+    assert [entry["name"] for entry in mapping["effective_inputs"]] == [
+        "target_source",
+        "runtime_config",
+    ]
+    revalidate_target_tree_binding(target)
+
+    runtime.write_text('{"version":2}\n', encoding="utf-8")
+    with pytest.raises(ResearchProbeAdmissionError) as effective_drift:
+        revalidate_target_tree_binding(target)
+    assert effective_drift.value.code == "admission.target_tree_drift"
+
+    runtime.write_text('{"version":1}\n', encoding="utf-8")
+    _run_git(root, "commit", "--allow-empty", "-m", "new-head")
+    with pytest.raises(ResearchProbeAdmissionError) as commit_drift:
+        revalidate_target_tree_binding(target)
+    assert commit_drift.value.code == "admission.target_tree_drift"
+
+
+def test_admission_persists_target_tree_as_outer_journal_identity(
+    tmp_path: Path,
+) -> None:
+    target_root, source, runtime = _clean_target_worktree(tmp_path / "fixture")
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("producer", source),
+            RegularFileBinding("validator", runtime),
+        )
+    )
+    target = TargetTreeBinding(
+        root=target_root,
+        effective_binding_names=("producer", "validator"),
+    )
+    root = tmp_path / "admission"
+    admission = ResearchProbeAdmission.create(
+        root=root,
+        admission_id="target-outer",
+        bindings=manifest,
+        target_tree=target,
+        reserved_output_paths=_reserved(tmp_path),
+        context={"fixture": "target-tree"},
+    )
+    admission.close()
+
+    plan = load_canonical_json(root / "journal" / "plan.json")
+    target_mapping = plan["execution_identity"]["target_tree"]
+    assert target_mapping["root"] == str(target_root.resolve())
+    assert (
+        target_mapping["effective_inputs"]
+        == capture_target_tree_binding(target, manifest).to_mapping()[
+            "effective_inputs"
+        ]
+    )
+
+    reopened = ResearchProbeAdmission.open(
+        root=root,
+        admission_id="target-outer",
+        bindings=manifest,
+        target_tree=target,
+        reserved_output_paths=_reserved(tmp_path),
+        context={"fixture": "target-tree"},
+    )
+    reopened.revalidate_target_tree()
+    reopened.close()
+
+
+def test_inspect_does_not_revalidate_live_target_tree_after_completion(
+    tmp_path: Path,
+) -> None:
+    target_root, source, runtime = _clean_target_worktree(tmp_path / "fixture")
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("producer", source),
+            RegularFileBinding("validator", runtime),
+        )
+    )
+    target = TargetTreeBinding(
+        root=target_root,
+        effective_binding_names=("producer", "validator"),
+    )
+    root = tmp_path / "admission"
+    admission = ResearchProbeAdmission.create(
+        root=root,
+        admission_id="target-inspect",
+        bindings=manifest,
+        target_tree=target,
+        reserved_output_paths=_reserved(tmp_path),
+        context={"fixture": "persisted-inspection"},
+    )
+    _append_both(admission, tmp_path)
+    admission.finalize()
+    admission.close()
+
+    _write(target_root / "unrelated-untracked.py", "unrelated\n")
+
+    inspection = ResearchProbeAdmission.inspect(root)
+    assert inspection.completed_stages == ("cpu_preflight", "vertical_smoke")
+    assert inspection.mechanically_admitted is True
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda root, source: (
+            source.write_text("staged\n", encoding="utf-8"),
+            _run_git(root, "add", "source.py"),
+        ),
+        lambda root, source: source.write_text("modified\n", encoding="utf-8"),
+        lambda root, source: source.unlink(),
+        lambda root, source: _run_git(root, "mv", "source.py", "renamed.py"),
+        lambda root, source: _write(root / "untracked.py", "untracked\n"),
+    ),
+)
+def test_target_tree_capture_rejects_each_dirty_status(tmp_path: Path, mutate) -> None:
+    root, source, runtime = _clean_target_worktree(tmp_path)
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("target_source", source),
+            RegularFileBinding("runtime_config", runtime),
+        )
+    )
+    mutate(root, source)
+
+    with pytest.raises(ResearchProbeAdmissionError) as rejected:
+        capture_target_tree_binding(
+            TargetTreeBinding(
+                root=root,
+                effective_binding_names=("target_source", "runtime_config"),
+            ),
+            manifest,
+        )
+    assert rejected.value.code == "admission.target_tree_dirty"
+
+
+def test_target_tree_capture_rejects_nonworktree_symlink_and_conflict(
+    tmp_path: Path,
+) -> None:
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    source = _write(plain / "source.py", "source\n")
+    runtime = _write(tmp_path / "runtime.json", "{}\n")
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("target_source", source),
+            RegularFileBinding("runtime_config", runtime),
+        )
+    )
+    with pytest.raises(ResearchProbeAdmissionError) as nonworktree:
+        capture_target_tree_binding(
+            TargetTreeBinding(plain, ("target_source", "runtime_config")), manifest
+        )
+    assert nonworktree.value.code == "admission.target_tree_not_worktree"
+
+    with pytest.raises(ResearchProbeAdmissionError) as unresolved:
+        capture_target_tree_binding(
+            TargetTreeBinding(
+                tmp_path / "missing-target",
+                ("target_source", "runtime_config"),
+            ),
+            manifest,
+        )
+    assert unresolved.value.code == "admission.target_tree_not_worktree"
+
+    root, source, runtime = _clean_target_worktree(tmp_path / "symlink")
+    link = tmp_path / "target-link"
+    link.symlink_to(root, target_is_directory=True)
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("target_source", source),
+            RegularFileBinding("runtime_config", runtime),
+        )
+    )
+    with pytest.raises(ResearchProbeAdmissionError) as symlink:
+        capture_target_tree_binding(
+            TargetTreeBinding(link, ("target_source", "runtime_config")), manifest
+        )
+    assert symlink.value.code == "admission.target_tree_symlink"
+
+    root, source, runtime = _clean_target_worktree(tmp_path / "conflict")
+    _run_git(root, "checkout", "-b", "other")
+    source.write_text("other\n", encoding="utf-8")
+    _run_git(root, "commit", "-am", "other")
+    _run_git(root, "checkout", "main")
+    source.write_text("main\n", encoding="utf-8")
+    _run_git(root, "commit", "-am", "main")
+    merged = subprocess.run(
+        ["git", "-C", str(root), "merge", "other"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert merged.returncode != 0
+    manifest = capture_binding_manifest(
+        (
+            RegularFileBinding("target_source", source),
+            RegularFileBinding("runtime_config", runtime),
+        )
+    )
+    with pytest.raises(ResearchProbeAdmissionError) as conflict:
+        capture_target_tree_binding(
+            TargetTreeBinding(root, ("target_source", "runtime_config")), manifest
+        )
+    assert conflict.value.code == "admission.target_tree_conflicted"
 
 
 def test_reserved_paths_are_absolute_unique_absent_and_never_cleaned(
@@ -353,7 +600,10 @@ def test_stage_order_fixed_assertions_and_binding_closure_fail_before_append(
                 attempt_id=attempt,
             )
         assert binding.value.code == "admission.missing_stage_binding"
-        assert ExecutionEvidenceJournal.inspect(root / "journal").completed_work_item_ids == ()
+        assert (
+            ExecutionEvidenceJournal.inspect(root / "journal").completed_work_item_ids
+            == ()
+        )
 
 
 def test_preexisting_foreign_input_cannot_satisfy_stage_output_closure(
@@ -375,12 +625,11 @@ def test_preexisting_foreign_input_cannot_satisfy_stage_output_closure(
                 evidence=_evidence(producer, _cpu_assertions()),
                 attempt_id=attempt,
             )
-        assert foreign_output.value.code == (
-            "admission.output_outside_reserved_paths"
+        assert foreign_output.value.code == ("admission.output_outside_reserved_paths")
+        assert (
+            ExecutionEvidenceJournal.inspect(root / "journal").completed_work_item_ids
+            == ()
         )
-        assert ExecutionEvidenceJournal.inspect(
-            root / "journal"
-        ).completed_work_item_ids == ()
 
 
 def test_cpu_stage_survives_vertical_failure_and_exact_continuation(
@@ -428,7 +677,9 @@ def test_cpu_stage_survives_vertical_failure_and_exact_continuation(
         attempt_id=second_attempt,
     )
     continued.close()
-    assert ExecutionEvidenceJournal.inspect(root / "journal").completed_work_item_ids == (
+    assert ExecutionEvidenceJournal.inspect(
+        root / "journal"
+    ).completed_work_item_ids == (
         "cpu_preflight",
         "vertical_smoke",
     )
@@ -469,17 +720,15 @@ def test_input_drift_between_stages_rejects_vertical_without_losing_cpu(
         admission.append_stage(
             stage="vertical_smoke",
             evidence=_evidence(
-                _write(
-                    tmp_path / "reserved" / "vertical" / "receipt.json", "{}"
-                ),
+                _write(tmp_path / "reserved" / "vertical" / "receipt.json", "{}"),
                 _vertical_assertions(),
             ),
             attempt_id=attempt,
         )
     admission.close()
-    assert ExecutionEvidenceJournal.inspect(root / "journal").completed_work_item_ids == (
-        "cpu_preflight",
-    )
+    assert ExecutionEvidenceJournal.inspect(
+        root / "journal"
+    ).completed_work_item_ids == ("cpu_preflight",)
 
 
 def test_finalize_is_mechanics_only_idempotent_and_fresh_process_recoverable(
