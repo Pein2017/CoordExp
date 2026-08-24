@@ -34,12 +34,15 @@
 
 ## 4. Integration boundary
 
-- [ ] 4.1 Submit the verified infra change for a separate user decision on
-  merge into `research-probes`; do not merge, tag, push, move/unlock a fixed
-  worktree, regenerate receipts, or run the pending GPU smoke without that
-  explicit authorization.
-- [ ] 4.2 After a separately approved merge, rerun
+- [x] 4.1 Submit the verified infra change for a separate user decision on
+  merge into `research-probes`; the user approved a fast-forward from
+  `fffc3632c` to `74609d2b1`. No tag, push, move/unlock, receipt regeneration,
+  or GPU smoke was performed.
+- [x] 4.2 After the separately approved merge, rerun
   `tests/artifacts/test_research_probe_admission.py` plus
   `tests/research/test_research_probe_admission_consumers.py` CPU-only from the
   actual canonical target against its canonical-target receipt pair; record the
   expected 44-test result before any new fork baseline tag is considered.
+  Receipt: `CUDA_VISIBLE_DEVICES=-1 conda run -n ms pytest -q` over those paths
+  passed 44 tests in 3.20s at `74609d2b1`; external receipt digest stayed
+  `c2fe7ad1e0271c8b20c6cfe6a72c0436ab8f0550bf56a95d4c8d0fd2b26c2bf1`.
