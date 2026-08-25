@@ -26,6 +26,7 @@ OBJECT_REF_END_TOKEN = "<|object_ref_end|>"
 BOX_START_TOKEN = "<|box_start|>"
 BOX_END_TOKEN = "<|box_end|>"
 IM_END_TOKEN = "<|im_end|>"
+# Preserve Qwen's canonical serialized suffix; supervision intentionally masks the newline.
 IM_END_SUFFIX = "<|im_end|>\n"
 IMAGE_PLACEHOLDER = {"type": "image"}
 
