@@ -13,9 +13,11 @@ from pathlib import Path
 
 
 PYTHON_NAMES = {"python", "python3", "python3.10", "python3.11", "python3.12"}
+PYTEST_NAMES = {"pytest", "py.test"}
 MACHINE_OUTPUT_FLAGS = {"--json", "-json", "--porcelain", "-z"}
 MACHINE_OUTPUT_FLAG_PREFIXES = ("--json=", "--porcelain=")
 SHELL_NAMES = {"bash", "dash", "sh", "zsh"}
+SHELL_EXPANSION_MARKERS = ("*", "?", "[", "$", "`", "{")
 SUPPORTED_TOOL_NAMES = {"Bash", "shell", "exec_command", "functions.exec_command"}
 CONDA_RUN_FLAGS = {
     "--debug-wrapper-scripts",
@@ -150,6 +152,8 @@ def rewrite_command(command: str) -> str | None:
     conda_wrapped = unwrap_conda_run(tokens)
     if conda_wrapped is not None:
         prefix, inner = conda_wrapped
+        if has_shell_expansion(["conda-inner", *inner], 0):
+            return None
         rewritten_inner = rewrite_simple_command(shlex.join(inner))
         if rewritten_inner is None:
             return None
@@ -369,6 +373,21 @@ def rewrite_simple_command(command: str) -> str | None:
     if candidate == "rtk":
         return None
 
+    has_expansion = has_shell_expansion(tokens, candidate_index)
+    pytest_rewrite = rewrite_pytest_with_generic_filter(
+        tokens, candidate_index, stripped, has_expansion=has_expansion
+    )
+    if pytest_rewrite is not None:
+        return pytest_rewrite
+    if has_expansion:
+        # RTK 0.43 and shlex.join both quote glob/parameter tokens.  That turns
+        # shell expansion into a literal argument.  A leading command can be
+        # wrapped textually without changing its spelling; prefix wrappers
+        # such as conda/uv cannot be edited safely without a shell parser.
+        if candidate_index == 0 and candidate in NOISY_COMMANDS:
+            return f"rtk {stripped}"
+        return None
+
     if should_skip_exact_output(tokens, candidate_index):
         return None
 
@@ -386,6 +405,65 @@ def rewrite_simple_command(command: str) -> str | None:
         return None
 
     return rewritten
+
+
+def rewrite_pytest_with_generic_filter(
+    tokens: list[str],
+    candidate_index: int,
+    original_command: str,
+    *,
+    has_expansion: bool,
+) -> str | None:
+    """Preserve pytest argv while avoiding RTK 0.43's lossy pytest summary.
+
+    The specialized ``rtk pytest`` parser reports ``No tests collected`` when
+    pytest runs successfully but quiet/configured output omits the summary line.
+    ``rtk test`` keeps the original command and exit code, highlights failures,
+    and never invents a collection result.
+    """
+
+    prefix = tokens[:candidate_index]
+    candidate_token = tokens[candidate_index]
+    candidate = Path(candidate_token).name
+    args = tokens[candidate_index + 1 :]
+
+    if candidate in PYTEST_NAMES:
+        if has_expansion:
+            return f"rtk test {original_command}" if candidate_index == 0 else None
+        return shlex.join([*prefix, "rtk", "test", candidate_token, *args])
+
+    if candidate in PYTHON_NAMES and args[:2] == ["-m", "pytest"]:
+        if has_expansion:
+            return f"rtk test {original_command}" if candidate_index == 0 else None
+        return shlex.join([*prefix, "rtk", "test", candidate_token, *args])
+
+    if candidate == "uv" and args[:1] == ["run"]:
+        if has_expansion:
+            return None
+        inner = args[1:]
+        if inner and Path(inner[0]).name in PYTEST_NAMES:
+            return shlex.join(
+                [*prefix, candidate_token, "run", "rtk", "test", *inner]
+            )
+        if (
+            inner
+            and Path(inner[0]).name in PYTHON_NAMES
+            and inner[1:3] == ["-m", "pytest"]
+        ):
+            return shlex.join(
+                [*prefix, candidate_token, "run", "rtk", "test", *inner]
+            )
+
+    return None
+
+
+def has_shell_expansion(tokens: list[str], candidate_index: int) -> bool:
+    """Detect tokens that must retain the caller's original shell quoting."""
+
+    for token in tokens[candidate_index + 1 :]:
+        if token.startswith("~") or any(marker in token for marker in SHELL_EXPANSION_MARKERS):
+            return True
+    return False
 
 
 def wrap_command_with_rtk(command: str, tokens: list[str], candidate_index: int) -> str | None:

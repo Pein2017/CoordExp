@@ -12,7 +12,7 @@ Examples:
 rtk git status
 rtk cargo test
 rtk npm run build
-rtk pytest -q
+rtk test python -m pytest -q
 ```
 
 The local Codex PreToolUse hook also rewrites common shell commands and RTK-
@@ -22,18 +22,25 @@ shell syntax, or machine-readable output matters, prefer the raw command with
 
 ## CoordExp Caveats
 
-- Use `rtk proxy python -m pytest ...` for pytest diagnosis, collection,
-  version checks, or ambiguous "No tests collected" output. `rtk pytest` may
-  summarize zero selected or informational pytest runs too aggressively.
+- The local rewrite hook routes pytest through
+  `rtk test <original pytest command>`, not `rtk pytest`. RTK 0.43's
+  specialized pytest parser can misreport a successful quiet run as
+  `No tests collected` when the normal pytest summary is absent.
+- Use `rtk proxy python -m pytest ...` when exact pytest output matters, such
+  as diagnosis, collection, or version checks.
 - Use `RTK_HOOK_DISABLE=1 <command>` for exact Git status/diff output,
   structured JSON/YAML, NUL-delimited output, or a pipeline whose downstream
   consumer requires the producer's raw bytes.
+- Shell expansion is semantic, not cosmetic. The hook preserves direct-command
+  glob/parameter spelling and leaves prefixed commands such as `conda run ...
+  tests/*.py` raw when safe insertion would require re-quoting the expansion.
 - Independent multiline command lists are rewritten line by line while
   preserving their newlines. Continuations, control-flow blocks, variable or
   command substitutions, and here-doc style syntax remain raw; prefix each
   line with `rtk` explicitly when exact control is needed.
 - Do not rely on `rtk pytest --version`; upstream currently collapses that
-  informational output into the pytest summary path.
+  informational output into the pytest summary path. The hook's generic
+  `rtk test` route avoids that parser but still filters output.
 - If RTK output is surprising, re-run once with `rtk proxy <command>` before
   changing code or tests.
 
