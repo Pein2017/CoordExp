@@ -1,0 +1,4 @@
+interface:
+  display_name: "Native Depth-2 Contracting Pilot"
+  short_description: "Pilot package contracting across native subagent layers"
+  default_prompt: "Use $native-depth2-contracting-pilot to plan this long task as L0 with L1 package leads and constrained L2 workers."
