@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Flow"
+  short_description: "Trace research evidence into a bounded decision"
+  default_prompt: "Use $research-flow to close this research record while separating scientific evidence, technical validity, and infrastructure follow-up."

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Safe Runtime Maintenance"
+  short_description: "Audit orphaned processes and disposable caches safely"
