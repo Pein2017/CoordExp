@@ -3,8 +3,13 @@ prompt: |
   This official Serena stdio process is private to this Agent session. It starts from
   the nearest Git worktree and does not share active-project state with other Agents.
   Use Serena first for source-code symbol overview, declaration, reference,
-  implementation, and diagnostics queries. Use the Agent's native shell and file tools
-  for lexical search, non-code files, diffs, tests, and edits. Do not use Serena memories.
+  implementation, and diagnostics queries. Use Serena's semantic editing tools when
+  their structural contract fits the change: rename_symbol for reference-aware renames,
+  replace_symbol_body for complete function/method/class replacement after first reading
+  that symbol, and insert_before_symbol/insert_after_symbol for declarations or imports at
+  symbol boundaries. Use the Agent's native shell and file tools for lexical search,
+  non-code files, diffs, tests, and line-local or mixed-content edits. Do not use Serena
+  memories or duplicate native file-edit operations through broader Serena write tools.
   Before semantic work, use activate_project to confirm the intended absolute worktree.
   If the shell moves to another worktree, call activate_project for that exact root before
   the next semantic query. Report any Serena friction or transport failure to the user.
