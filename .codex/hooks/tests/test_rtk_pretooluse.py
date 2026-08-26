@@ -18,11 +18,11 @@ SPEC.loader.exec_module(rtk_pretooluse)
     [
         (
             "conda run -n ms python -m pytest -q",
-            "conda run -n ms rtk test python -m pytest -q",
+            "conda run -n ms rtk pytest -q",
         ),
         (
             "pytest tests/test_service.py -q",
-            "rtk test pytest tests/test_service.py -q",
+            "rtk pytest tests/test_service.py -q",
         ),
         (
             "python -m pytest --collect-only -q",
@@ -30,18 +30,18 @@ SPEC.loader.exec_module(rtk_pretooluse)
         ),
         (
             "uv run pytest tests/test_service.py -q",
-            "uv run rtk test pytest tests/test_service.py -q",
+            "uv run rtk pytest tests/test_service.py -q",
         ),
         (
             "uv run python -m pytest tests/test_service.py -q",
-            "uv run rtk test python -m pytest tests/test_service.py -q",
+            "uv run rtk pytest tests/test_service.py -q",
         ),
     ],
 )
-def test_pytest_rewrite_uses_generic_test_filter_without_changing_argv(
+def test_pytest_rewrite_preserves_argv_without_stale_workaround(
     command: str, expected: str
 ) -> None:
-    """Returning to `rtk pytest` would restore its false no-tests summary."""
+    """Only collection keeps the generic filter with RTK 0.45."""
 
     assert rtk_pretooluse.rewrite_command(command) == expected
 
@@ -66,7 +66,7 @@ def test_pytest_workaround_does_not_change_other_rewrite_rules(
         ("rg -n TODO src/*.py", "rtk rg -n TODO src/*.py"),
         (
             "python -m pytest tests/test_*.py -q",
-            "rtk test python -m pytest tests/test_*.py -q",
+            None,
         ),
         (
             "conda run -n ms python -m pytest tests/test_*.py -q",
@@ -78,3 +78,26 @@ def test_shell_expansions_are_never_requoted_by_the_hook(
     command: str, expected: str | None
 ) -> None:
     assert rtk_pretooluse.rewrite_command(command) == expected
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "find src -type f -print0",
+        "rg --null TODO src",
+        "git diff --name-only",
+        "git log --format=%H -1",
+    ],
+)
+def test_exact_or_machine_output_is_left_raw(command: str) -> None:
+    assert rtk_pretooluse.rewrite_command(command) is None
+
+
+def test_pytest_collection_keeps_generic_filter() -> None:
+    assert rtk_pretooluse.rewrite_command(
+        "python -m pytest --collect-only -q"
+    ) == "rtk test python -m pytest --collect-only -q"
+
+
+def test_pytest_version_uses_upstream_filter() -> None:
+    assert rtk_pretooluse.rewrite_command("pytest --version") == "rtk pytest --version"

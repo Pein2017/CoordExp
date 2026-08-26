@@ -14,8 +14,36 @@ from pathlib import Path
 
 PYTHON_NAMES = {"python", "python3", "python3.10", "python3.11", "python3.12"}
 PYTEST_NAMES = {"pytest", "py.test"}
-MACHINE_OUTPUT_FLAGS = {"--json", "-json", "--porcelain", "-z"}
-MACHINE_OUTPUT_FLAG_PREFIXES = ("--json=", "--porcelain=")
+MACHINE_OUTPUT_FLAGS = {
+    "--json",
+    "-json",
+    "--porcelain",
+    "-z",
+    "-0",
+    "--null",
+    "--name-only",
+    "--name-status",
+    "--raw",
+    "--numstat",
+    "--shortstat",
+    "--format",
+    "--pretty",
+    "--files-with-matches",
+    "--files-without-match",
+    "--count",
+    "--count-matches",
+    "--stats",
+    "-print0",
+    "-printf",
+}
+MACHINE_OUTPUT_FLAG_PREFIXES = (
+    "--json=",
+    "--porcelain=",
+    "--format=",
+    "--pretty=",
+    "--output=",
+    "-printf",
+)
 SHELL_NAMES = {"bash", "dash", "sh", "zsh"}
 SHELL_EXPANSION_MARKERS = ("*", "?", "[", "$", "`", "{")
 SUPPORTED_TOOL_NAMES = {"Bash", "shell", "exec_command", "functions.exec_command"}
@@ -380,7 +408,7 @@ def rewrite_simple_command(command: str) -> str | None:
     if pytest_rewrite is not None:
         return pytest_rewrite
     if has_expansion:
-        # RTK 0.43 and shlex.join both quote glob/parameter tokens.  That turns
+        # RTK and shlex.join both quote glob/parameter tokens.  That turns
         # shell expansion into a literal argument.  A leading command can be
         # wrapped textually without changing its spelling; prefix wrappers
         # such as conda/uv cannot be edited safely without a shell parser.
@@ -414,18 +442,25 @@ def rewrite_pytest_with_generic_filter(
     *,
     has_expansion: bool,
 ) -> str | None:
-    """Preserve pytest argv while avoiding RTK 0.43's lossy pytest summary.
+    """Preserve collection output while avoiding RTK's lossy pytest summary.
 
-    The specialized ``rtk pytest`` parser reports ``No tests collected`` when
-    pytest runs successfully but quiet/configured output omits the summary line.
-    ``rtk test`` keeps the original command and exit code, highlights failures,
-    and never invents a collection result.
+    RTK 0.45's specialized ``rtk pytest`` parser still reports ``No tests
+    collected`` for a successful ``--collect-only`` run.  ``rtk test`` keeps
+    the original command and exit code, preserves the collection output, and
+    never invents a collection result.  Normal pytest commands use upstream's
+    ``rtk pytest`` path.
     """
 
     prefix = tokens[:candidate_index]
     candidate_token = tokens[candidate_index]
     candidate = Path(candidate_token).name
     args = tokens[candidate_index + 1 :]
+
+    if not any(
+        argument == "--collect-only" or argument.startswith("--collect-only=")
+        for argument in args
+    ):
+        return None
 
     if candidate in PYTEST_NAMES:
         if has_expansion:
