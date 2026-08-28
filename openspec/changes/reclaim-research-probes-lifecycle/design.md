@@ -69,6 +69,8 @@ Multiple subagents edit the same `research-probes` checkout. Rules: stage by exp
 **D10. Verification is failure-set based.**
 Before any deletion, record the CPU-only baseline (`CUDA_VISIBLE_DEVICES=-1 conda run -n ms pytest tests/research tests/artifacts -q -p no:cacheprovider`) as a failure set; after each batch compare failure sets, never pass counts. The 44 admission tests must remain green throughout.
 
+**D11. Wave-8 apply lanes use temporary worktrees.** (User approval 2026-08-28: "完全同意. test, scripts 都可以大改动.") Three heavy write lanes run in parallel on `lane/<name>` branches at `/data/CoordExp/.worktrees/lane-<name>`, forked from `research-probes` HEAD, each committing freely inside its own checkout; the lead merges them into `research-probes` (disjoint write surfaces: `scripts/research`+`tests/research`+research citation edits; `tests/analysis`+root `tests/*.py`+`scripts/analysis`+small `src/` cuts; `docs`+`progress`+`memories/notes`+catalog), then runs the broad CPU suite once in `research-probes` and diffs the failure set against `receipts/test-baseline.md`. Lane worktrees and branches are removed after merge. This supersedes D9 for wave 8 only; D9's single-checkout protocol had already cost one mis-scoped commit.
+
 ## Risks / Trade-offs
 
 - [A deleted script is a replay entry that the coarse scan missed] → record-cited class is decided by a full-text search over `research/`, `docs/`, `memories/`, and both worktrees before each batch; the deletion commit message names the batch ledger; recovery is `git checkout research-base-v2 -- <path>`.
