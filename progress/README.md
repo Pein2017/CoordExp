@@ -25,35 +25,36 @@ read-only legacy provenance unless the user explicitly asks for migration.
 
 ## Directory Layout
 
-- [progress/directions/README.md](directions/README.md)
-  - historical research directions and Stage-2 design lineage
+Zero-current-citer files under `directions/`, `audits/`, `explorations/`, and
+`handoffs/` were pruned 2026-08-28 (see
+`openspec/changes/reclaim-research-probes-lifecycle/receipts/docs-entropy-audit.md`,
+wave 8.3); `git log` / `research-base-v2` is the recovery path.
+
+- [progress/directions/prefix_denoising_sft_v1.md](directions/prefix_denoising_sft_v1.md)
+  - the one file still cited by a current research unit (`research/ideas/prefix-denoising-sft/`)
 - [progress/diagnostics/README.md](diagnostics/README.md)
   - failure analyses, mechanism studies, threshold sweeps, and operator notes
-- [progress/audits/README.md](audits/README.md)
-  - structured review notes and decision audits
+- [progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md](audits/2026-06-14_prefix_denoising_sft_v1_audit.md)
+  - the one file still cited by a current research unit
 - [progress/benchmarks/README.md](benchmarks/README.md)
   - measured results, checkpoint comparisons, and evaluation sweeps
-- [progress/explorations/README.md](explorations/README.md)
-  - architecture, infrastructure, and implementation-planning explorations
+- [progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md](explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md)
+  - the one file still cited by a current research unit
 - [progress/pretrain/README.md](pretrain/README.md)
   - Stage-1 foundation history and early pretraining evidence
-- [progress/handoffs/](handoffs/)
-  - historical handoff notes preserved for continuation provenance
 
 ## Legacy Routing
 
 - old historical direction:
-  - start with [progress/directions/README.md](directions/README.md)
+  - start with [progress/directions/prefix_denoising_sft_v1.md](directions/prefix_denoising_sft_v1.md)
 - mechanism or failure diagnosis:
   - start with [progress/diagnostics/README.md](diagnostics/README.md)
 - measured score comparisons:
   - start with [progress/benchmarks/README.md](benchmarks/README.md)
 - repo/runtime architecture history:
-  - start with [progress/explorations/README.md](explorations/README.md)
+  - start with [progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md](explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md)
 - Stage-1 background:
   - start with [progress/pretrain/README.md](pretrain/README.md)
-- continuation provenance:
-  - start with `progress/handoffs/` when a branch handoff is explicitly relevant
 
 Use [progress/index.yaml](index.yaml) only when you need the machine-readable
 legacy category map.

@@ -159,10 +159,6 @@ docs:
       title: Stage-2 Training Runbook
       type: runbook
       status: historical-reference
-    - path: docs/training/LVIS.md
-      title: LVIS Integration Guide
-      type: design-note
-      status: historical-reference
     - path: docs/training/METRICS.md
       title: Training Metrics and Losses
       type: reference
@@ -255,14 +251,6 @@ docs:
       title: Architecture History
       type: history-router
       status: historical-router
-    - path: docs/history/training/STAGE1_ET_RMP_CE.md
-      title: Superseded Stage-1 Continuation Objective
-      type: historical-note
-      status: superseded
-    - path: docs/history/training/STAGE2_DESIGN.md
-      title: Stage-2 Design History
-      type: historical-note
-      status: legacy-direction
   supplemental:
     - path: docs/supplemental/patent/draft.md
       title: Patent Draft
@@ -276,42 +264,10 @@ progress:
       type: router
       status: legacy-router
   directions:
-    - path: progress/directions/README.md
-      title: Directions Index
-      type: router
-      status: legacy-router
-    - path: progress/directions/full_idea_v5.md
-      title: Full Idea v5
-      type: direction
-      status: legacy-reference
-    - path: progress/directions/2026-06-07_segment_aware_packing_infra.md
-      title: Segment-Aware Packing Infrastructure
-      type: direction
-      status: legacy-draft
-    - path: progress/directions/2026-06-05_row_conditioned_visual_coverage.md
-      title: Row-Conditioned Visual Coverage
-      type: direction
-      status: legacy-reference
     - path: progress/directions/prefix_denoising_sft_v1.md
       title: Prefix-Denoising SFT V1
       type: direction
       status: legacy-branch-provenance
-    - path: progress/directions/full_idea_v4.md
-      title: Full Idea v4
-      type: direction
-      status: legacy-superseded
-    - path: progress/directions/full_idea_v3.md
-      title: Full Idea v3
-      type: direction
-      status: legacy-reference
-    - path: progress/directions/stage2_clean_prefix_v2.md
-      title: Full Idea v2
-      type: direction
-      status: legacy-reference
-    - path: progress/directions/stage2_emish_set_supervision_v1.md
-      title: CoordExp + EM-ish Set-Supervision for V-LLM Detection (Qwen3-VL, norm1000)
-      type: historical-direction
-      status: legacy-direction
   diagnostics:
     - path: progress/diagnostics/README.md
       title: Diagnostics Index
@@ -490,30 +446,10 @@ progress:
       type: tool-index
       status: legacy-diagnostic
   audits:
-    - path: progress/audits/README.md
-      title: Audits Index
-      type: router
-      status: legacy-router
     - path: progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
       title: Prefix-Denoising SFT V1 Audit
       type: audit
       status: legacy-branch-provenance
-    - path: progress/audits/2026-05-03_type_schema_architecture_audit.md
-      title: Type-System And Schema-Boundary Audit
-      type: audit
-      status: legacy-audit
-    - path: progress/audits/2026-06-01_detection_scene_cleanup_validation.md
-      title: DetectionScene Cleanup And Validation Gate
-      type: audit
-      status: legacy-provenance
-    - path: progress/audits/2026-01-22_stage1_softce_logging.md
-      title: 'Stage-1 SoftCE (W1) Audit: Loss Dynamics, Logging Alignment, and Efficiency Notes (2026-01-22)'
-      type: audit
-      status: legacy-audit
-    - path: progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
-      title: Stage-2 AB (Channel-A only) — Coord Loss Dynamics + “A1 coord loss?” Decision Note (2026-02-25)
-      type: audit
-      status: legacy-audit
   benchmarks:
     - path: progress/benchmarks/README.md
       title: Benchmarks Index
@@ -556,44 +492,12 @@ progress:
       type: benchmark
       status: legacy-benchmark
   explorations:
-    - path: progress/explorations/README.md
-      title: Explorations Index
-      type: router
-      status: legacy-router
     - path: progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
       title: Docs/Progress OKF Upgrade Alignment
       type: alignment-decision
       status: legacy-decision
-    - path: progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
-      title: Training Infrastructure Architecture Decisions
-      type: exploration
-      status: legacy-reference
-    - path: progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
-      title: Coord-Repel Stage-1 SFT Design Decisions
-      type: exploration
-      status: legacy-branch-provenance
-    - path: progress/explorations/2026-05-31_grid_anchor_pending_record.md
-      title: Grid Anchor Compact Detection Pending Record
-      type: exploration
-      status: legacy-reference
-    - path: progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
-      title: Runtime Refactor Architecture Program (2026-03-19)
-      type: exploration
-      status: legacy-exploration
-    - path: progress/explorations/2026-01-26_stage2_infrastructure.md
-      title: Stage-2 Infrastructure Exploration Request
-      type: exploration
-      status: legacy-exploration
   pretrain:
-    - path: progress/pretrain/README.md
-      title: Pretrain Index
-      type: router
-      status: legacy-router
     - path: progress/pretrain/stage1_foundation.md
       title: 'Phase 1 / Stage-1 Training: Coord-Token SFT (Distribution Supervision)'
       type: historical-reference
-      status: legacy-reference
-    - path: progress/pretrain/2026-01-26_stage1_ablation.md
-      title: Stage-1 Pretraining Ablation (2026-01-26/27)
-      type: benchmark
       status: legacy-reference
