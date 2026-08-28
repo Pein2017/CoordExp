@@ -14,7 +14,6 @@ from src.optim.trainable_surface import (
     FrozenReasonSummary,
     TrainableSurfaceReceipt,
     build_trainable_surface_receipt,
-    write_trainable_surface_receipt,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "build_optimizer_group_plan",
     "build_scheduler_plan",
     "build_trainable_surface_receipt",
-    "write_trainable_surface_receipt",
 ]

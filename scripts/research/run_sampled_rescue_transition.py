@@ -13,8 +13,9 @@ import hashlib
 import math
 import os
 from pathlib import Path
+import struct
 import sys
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -23,6 +24,7 @@ from src.analysis.sampled_rescue_transition.artifacts import (
     load_case_table,
     load_call_records,
 )
+from src.common.errors import RuntimeContractError
 from src.analysis.sampled_rescue_transition.comparison import (
     BOX_END,
     BOX_START,
@@ -30,6 +32,123 @@ from src.analysis.sampled_rescue_transition.comparison import (
     OBJECT_REF_START,
     trajectory_rows,
 )
+
+# Recovered from `git show 767e57f5e^:src/inference/backend.py`. That commit shrank
+# `src/inference/backend.py` from 6,843 to 1,002 lines and deleted both helpers without
+# updating this, their only remaining consumer. They live here rather than back in the
+# backend because nothing else calls them.
+_RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS = (
+    ("adapter", "adapter_path"),
+    ("adapter", "adapter_payload_evidence", "config_path"),
+    ("adapter", "adapter_payload_evidence", "tensor_path"),
+    ("embedding_delta", "identity", "delta_path"),
+    ("embedding_delta", "identity", "metadata_path"),
+    ("embedding_delta", "load", "metadata_path"),
+    ("embedding_delta", "load", "tensor_path"),
+)
+_RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS_BY_FAMILY = {
+    family: tuple(
+        components
+        for components in _RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS
+        if components[0] == family
+    )
+    for family in ("adapter", "embedding_delta")
+}
+_RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATH_MARKER = (
+    "<relocatable-attested-model-payload-path>"
+)
+
+
+def _thaw_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
+def _normalized_attested_model_identity_for_runtime_comparison(
+    identity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Ignore only declared absolute payload locations during runtime matching."""
+
+    normalized = _thaw_json(identity)
+    for family, family_paths in (
+        _RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATHS_BY_FAMILY.items()
+    ):
+        family_identity = normalized.get(family)
+        if family_identity is None:
+            continue
+        if not isinstance(family_identity, Mapping):
+            raise RuntimeContractError(
+                "attested model payload family must be an object or null",
+                code="backend_sampling.attestation_model_payload_path_invalid",
+                context={"field": family},
+            )
+        for components in family_paths:
+            container: Any = normalized
+            for component in components[:-1]:
+                if not isinstance(container, Mapping) or component not in container:
+                    raise RuntimeContractError(
+                        "attested model payload identity is missing a required path",
+                        code=(
+                            "backend_sampling."
+                            "attestation_model_payload_path_invalid"
+                        ),
+                        context={"field": ".".join(components)},
+                    )
+                container = container[component]
+            if not isinstance(container, dict):
+                raise RuntimeContractError(
+                    "attested model payload identity path parent is malformed",
+                    code="backend_sampling.attestation_model_payload_path_invalid",
+                    context={"field": ".".join(components)},
+                )
+            field = components[-1]
+            location = container.get(field)
+            if (
+                not isinstance(location, str)
+                or not location.strip()
+                or not Path(location).is_absolute()
+            ):
+                raise RuntimeContractError(
+                    "attested model payload path must be a non-empty absolute string",
+                    code=(
+                        "backend_sampling.attestation_model_payload_path_invalid"
+                    ),
+                    context={"field": ".".join(components)},
+                )
+            container[field] = _RELOCATABLE_ATTESTED_MODEL_PAYLOAD_PATH_MARKER
+    return normalized
+
+
+def _canonical_float32_logprob(
+    value: Any,
+    *,
+    error_code: str = "backend_receipt.non_finite_selected_logprob",
+    context: Mapping[str, Any] | None = None,
+) -> float:
+    """Promote one score to the exact IEEE-754 binary32 value used by replay."""
+
+    try:
+        source = float(value)
+        canonical = struct.unpack(">f", struct.pack(">f", source))[0]
+    except (OverflowError, TypeError, ValueError, struct.error) as exc:
+        raise RuntimeContractError(
+            "selected-token logprob cannot be represented as finite float32",
+            code=error_code,
+            context=dict(context or {}),
+            cause=exc,
+        ) from exc
+    if not math.isfinite(source) or not math.isfinite(canonical):
+        raise RuntimeContractError(
+            "selected-token logprob cannot be represented as finite float32",
+            code=error_code,
+            context=dict(context or {}),
+        )
+    return canonical
+
+
 # This experiment uses the sealed root seed but does not depend on the retired
 # spatial-scope execution framework that originally declared it.
 PRIMARY_ROOT_SEED = 2026071301
@@ -1142,13 +1261,11 @@ def _first_free_token_evidence(result: object, suffix: Sequence[int]) -> dict[st
     if value is None:
         raise SystemExit("first free token lacks a selected-token logprob")
     try:
-        from src.inference.backend import canonical_float32_logprob
-
-        canonical = canonical_float32_logprob(
+        canonical = _canonical_float32_logprob(
             value,
             context={"step_index": 0, "token_id": int(suffix[0])},
         )
-    except Exception as exc:
+    except RuntimeContractError as exc:
         raise SystemExit(f"first free token logprob is not finite float32: {exc}") from exc
     return {
         "token_id": int(suffix[0]),
@@ -1484,8 +1601,6 @@ def _verify_donor_runtime_identity(
     active_tokenizer_identity: object,
     active_generation_config_fingerprint: str,
 ) -> None:
-    from src.inference.backend import _normalized_attested_model_identity_for_runtime_comparison
-
     evidence = donor.get("execution_evidence")
     if not isinstance(evidence, dict) or str(evidence.get("image_id")) != str(active_image_id):
         raise SystemExit("donor execution_evidence.image_id does not match active image_id")
