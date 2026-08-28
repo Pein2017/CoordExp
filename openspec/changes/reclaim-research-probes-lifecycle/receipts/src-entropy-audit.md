@@ -623,3 +623,13 @@ cut: the 22 directories and the bench yaml, end to end (their runners/tests alre
 tradeoff: none observable; historical provenance for old runs remains in progress/ and docs/history, and every file is in research-base-v3
 verify: `ls configs/analysis` shows only unmatched_proposal_verifier; `pytest tests --collect-only -q | tail -1` unchanged
 ```
+
+## Wave 8 lead addendum — `src/losses` alias (user approval "批准清理", 2026-08-28)
+
+```
+[high / low] src/losses/rollout_calibration.py::field_balanced_duplicate_rejection_and_recovery (+ __init__ re-export, two __all__ entries)
+evidence: bare alias of field_balanced_duplicate_rejection_loss ("useful to small research probes"); zero consumers in src/ scripts/ tests/ configs/ and the image2299 worktree (only its own definition line mirrors there)
+cut: 4 lines definition/comment + 3 export lines; the canonical loss function is untouched
+tradeoff: none observable (no loss math changed)
+verify: tests/losses 74 passed; `import src.losses` ok; canonical symbol present, alias absent
+```

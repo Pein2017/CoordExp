@@ -646,13 +646,6 @@ def field_balanced_duplicate_rejection_loss(
     )
 
 
-# The explicit loss spelling is canonical; this short alias follows the name
-# used by the duplicate-treatment design and is useful to small research probes.
-field_balanced_duplicate_rejection_and_recovery = (
-    field_balanced_duplicate_rejection_loss
-)
-
-
 def rollout_site_token_type_gate(
     declarations: tuple[RolloutGateSite, ...],
 ) -> RolloutSiteTokenTypeGateResult:
@@ -1275,7 +1268,6 @@ __all__ = [
     "RolloutGateSite",
     "RolloutSiteTokenTypeGateResult",
     "first_wrong_coordinate_preference",
-    "field_balanced_duplicate_rejection_and_recovery",
     "field_balanced_duplicate_rejection_loss",
     "grouped_entity_transition_preference",
     "rollout_site_token_type_gate",

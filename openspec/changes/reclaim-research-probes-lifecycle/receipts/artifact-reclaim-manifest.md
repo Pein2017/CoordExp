@@ -157,3 +157,10 @@ pass and confirmed untouched.
   between the 2026-08-28 inventory audit and this deletion pass — this
   worktree's `qwen3-vl-dense-enumeration/` output tree is still live).
 
+
+## Addendum 2026-08-28 — user-named roots (approval: "批准清理")
+
+| Root | Size | Re-verification | Decision |
+|---|---|---|---|
+| `/data/CoordExp/.worktrees/research-probes/outputs/third_party` | 43136871 bytes (42M, 62 files) | no citation in research/memories/docs/openspec/tests/src/scripts/configs or the image2299 worktree; no process/lsof; not a symlink | DELETED |
+| `/data/CoordExp/outputs/research/qwen3-vl-native-text-coordinate-val200` | 1.6G, 445 files | **cited by the live provenance investigation** `research/investigations/coordexp-experiment-knowledge-handoff/{08_coordinate_objective_and_decode_negatives.md,11_historical_result_registry.md,claims.tsv,source_coverage.tsv}` — the inventory's UNBOUND call was wrong (it matched the path, not the basename) | KEPT (bound); reclaim only if the user retires that registry's claims |
