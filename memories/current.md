@@ -2,6 +2,19 @@
 
 Last verified for the Human-13 owner-credit route: 2026-08-24.
 
+## Repository lifecycle (last verified 2026-08-28)
+
+The research lifecycle was executed for real under OpenSpec change
+`reclaim-research-probes-lifecycle`: a new research direction forks
+`probe/<direction>` from `research-probes` HEAD at `.worktrees/<direction>`,
+returns records only, and retires by `probe-final/<direction>` tag then
+worktree/branch removal. `docs/BRANCH_AND_WORKTREE_POLICY.md` "Research-probe
+routing" is the owner. `research-base-v2` (`8dac2d041`) is the replay anchor
+for the 86 `scripts/research` producers deleted on 2026-08-28; 61 HOLD
+scripts are listed in that change's `receipts/scripts-entropy-ledger.md`.
+`image2299-mechanism-microscope` is the only live direction worktree; 30
+lanes were retired to `probe-final/*` / `archive/*` tags.
+
 ## Authority boundary
 
 This file is continuity, not scientific authority. For the latest executed
