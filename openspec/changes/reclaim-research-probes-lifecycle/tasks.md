@@ -46,6 +46,6 @@
 ## 7. Close (Phases 3–4)
 
 - [ ] 7.1 From the integration lane: `git merge --ff-only research-probes`; if refused, `git merge research-probes` and record why in `receipts/integration-lane.md`.
-- [ ] 7.2 Refresh `memories/current.md` continuity pointer for the lifecycle change; confirm `research/index.md` and `docs/AGENT_INDEX.md` describe the executed lifecycle, not the designed one.
+- [x] 7.2 Refresh `memories/current.md` continuity pointer for the lifecycle change; confirm `research/index.md` and `docs/AGENT_INDEX.md` describe the executed lifecycle, not the designed one.
 - [ ] 7.3 `git tag -a research-base-v3 <final reviewed commit> -m "research-base-v3: post-reclaim research main"`; write `receipts/research-base-v3.md` (tag object, peeled commit, net reduction summary, worktree list).
 - [ ] 7.G Gate: `openspec validate --all`; `openspec verify`-style review of this change against its tasks; user approval to archive this change.
