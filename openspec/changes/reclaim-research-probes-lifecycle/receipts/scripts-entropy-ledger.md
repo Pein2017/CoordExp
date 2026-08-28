@@ -36,7 +36,7 @@ transitively. A script referenced only by scripts that are themselves deletable 
 | SHARED (production consumer, or live-direction consumer, or transitively imported by a kept script) | 125 | keep |
 | RECORD_CITED (`research/` or `memories/` names it) | 42 | keep (evidence obligation) |
 | DOCS_CITED (current docs only) | 22 | HOLD, task 5.4 |
-| TEST_ONLY | 88 | 57 deleted (batch 2), 31 HOLD (shared test module) |
+| TEST_ONLY | 88 | 49 deleted (batch 2), 39 HOLD (31 blocked by a shared test module, 8 reverted as load-bearing) |
 | ZERO | 29 | deleted (batch 1), minus 1 prior-decision HOLD |
 | SR_ONLY (referenced only by deletable scripts) | 9 | deleted (batch 1) |
 | **total** | **315** | |
@@ -368,467 +368,403 @@ tradeoff: none observable; replay via research-base-v2
 verify: pytest tests/research tests/artifacts failure set unchanged vs receipts/test-baseline.md
 ```
 
-## Batch 2 - TEST_ONLY with a fully dedicated test module (57 scripts, 56 test modules)
+## Batch 2 - TEST_ONLY with a fully dedicated test module (49 scripts, 48 test modules)
 
-Cited only by `tests/**` (plus (e) historical). Eligible only when **every** test module that loads the
-script - by `from scripts.research import ...`, `scripts.research.<stem>`, or split-path
-`importlib.util.spec_from_file_location` over a `"<stem>.py"` literal - loads *nothing but* scripts in
-the delete set. A test module that also loads a kept script is never touched; its script goes to HOLD.
-
-```
-[low / low] scripts/research/admit_native_sibling_first_rows.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `analyze_native_sibling_branch_value` (all deletable); dedicated test module(s) load no kept script
-cut: scripts/research/admit_native_sibling_first_rows.py + tests/analysis/test_native_sibling_first_row_owner_admission.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
+Cited only by `tests/**` (plus (e) historical). A script is eligible only when **every** test module that
+loads it - by `from scripts.research import ...`, `scripts.research.<stem>`, or split-path
+`importlib.util.spec_from_file_location` over a `"<stem>.py"` literal - loads *nothing but* scripts in the
+delete set. A test module that also loads a kept script is never touched; its script goes to HOLD-C.
 
 ```
 [low / low] scripts/research/aggregate_static_dynamic_owner_interface_shards.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/aggregate_static_dynamic_owner_interface_shards.py + tests/research/test_aggregate_static_dynamic_owner_interface_shards.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_gradient_cohort_treatment_owner_attribution.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_gradient_cohort_treatment_owner_attribution.py + tests/research/test_analyze_gradient_cohort_treatment_owner_attribution.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_human13_row_contrast_successor.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_human13_row_contrast_successor.py + tests/research/test_analyze_human13_row_contrast_successor.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/analyze_image2299_horizon_branch_value.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
-cut: scripts/research/analyze_image2299_horizon_branch_value.py + tests/analysis/test_analyze_image2299_horizon_branch_value.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_sampled_owner_inclusion.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_sampled_owner_inclusion.py + tests/research/test_analyze_sampled_owner_inclusion.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_selected_route_added_owner_transfer.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=3; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=3; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_selected_route_added_owner_transfer.py + tests/research/test_analyze_selected_route_added_owner_transfer.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_sorted_root_position_bias.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_sorted_root_position_bias.py + tests/research/test_analyze_sorted_root_position_bias.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_source_b16_treatment_owner_ledger.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_source_b16_treatment_owner_ledger.py + tests/research/test_analyze_source_b16_treatment_owner_ledger.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/analyze_source_route_preservation_screen.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=3; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=3; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/analyze_source_route_preservation_screen.py + tests/research/test_analyze_source_route_preservation_screen.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/assemble_duplicate_trajectory_state_banks.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; intra-directory referrers: `materialize_reviewed_duplication_training_inputs` (all deletable); dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; intra-directory referrers: `materialize_reviewed_duplication_training_inputs` (all deletable); no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/assemble_duplicate_trajectory_state_banks.py + tests/research/test_assemble_duplicate_trajectory_state_banks.py, tests/research/test_materialize_reviewed_duplication_training_inputs.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/assemble_exact_greedy_terminal_rescue_state_bank.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/assemble_exact_greedy_terminal_rescue_state_bank.py + tests/research/test_assemble_exact_greedy_terminal_rescue_state_bank.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/audit_sorted_image2299_legacy_transfer_context.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/audit_sorted_image2299_legacy_transfer_context.py + tests/research/test_audit_sorted_image2299_legacy_transfer_context.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_exact_trace_coordinate_review_packet.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `build_sampled_rescue_review_packet` (all deletable); dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `build_sampled_rescue_review_packet` (all deletable); no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_exact_trace_coordinate_review_packet.py + tests/research/test_build_exact_trace_coordinate_review_packet.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/build_exact_trace_coordinate_state_bank.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; dedicated test module(s) load no kept script
-cut: scripts/research/build_exact_trace_coordinate_state_bank.py + tests/research/test_build_exact_trace_coordinate_state_bank.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_heldout_owner_churn_review_packet.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_heldout_owner_churn_review_packet.py + tests/research/test_build_heldout_owner_churn_review_packet.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/build_natural_boundary_owner_admission_census.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; dedicated test module(s) load no kept script
-cut: scripts/research/build_natural_boundary_owner_admission_census.py + tests/research/test_build_natural_boundary_owner_admission_census.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_physical_owner_duplication_review_queue.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=6; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=6; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_physical_owner_duplication_review_queue.py + tests/research/test_build_physical_owner_duplication_review_queue.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_sampled_rescue_review_packet.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_sampled_rescue_review_packet.py + tests/research/test_build_sampled_rescue_review_packet.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_source_preservation_matched_dose_control_state_banks.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_source_preservation_matched_dose_control_state_banks.py + tests/research/test_build_source_preservation_matched_dose_control_state_banks.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_static_dynamic_owner_interface_h0_ledger.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_static_dynamic_owner_interface_h0_ledger.py + tests/research/test_build_static_dynamic_owner_interface_h0_ledger.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_static_dynamic_owner_interface_inputs.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_static_dynamic_owner_interface_inputs.py + tests/research/test_build_static_dynamic_owner_interface_inputs.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/build_unmatched_prediction_review.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/build_unmatched_prediction_review.py + tests/research/test_build_unmatched_prediction_review.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/collect_exact_greedy_terminal_rescue_events.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/collect_exact_greedy_terminal_rescue_events.py + tests/research/test_collect_exact_greedy_terminal_rescue_events.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/compare_constant_dose_breadth_frozen_step.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/compare_constant_dose_breadth_frozen_step.py + tests/research/test_compare_constant_dose_breadth_frozen_step.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/compare_repetition_penalty_owner_ledgers.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/compare_repetition_penalty_owner_ledgers.py + tests/research/test_compare_repetition_penalty_owner_ledgers.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/evaluate_frozen_coordinate_state_bank.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/evaluate_frozen_coordinate_state_bank.py + tests/test_frozen_coordinate_state_bank_eval.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/freeze_local_branch_cases.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/freeze_local_branch_cases.py + tests/research/test_freeze_local_branch_cases.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/human13_live_eval_matrix.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/human13_live_eval_matrix.py + tests/research/test_human13_live_eval_matrix.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/inventory_matched_objective_native_coordinate_trajectories.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/inventory_matched_objective_native_coordinate_trajectories.py + tests/research/test_inventory_matched_objective_native_coordinate_trajectories.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/materialize_candidate_pool_rollout_complement.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=5; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=5; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/materialize_candidate_pool_rollout_complement.py + tests/research/test_materialize_candidate_pool_rollout_complement.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/materialize_constant_dose_breadth_source_b16_development_eval_configs.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/materialize_constant_dose_breadth_source_b16_development_eval_configs.py + tests/research/test_materialize_constant_dose_breadth_source_b16_development_eval_configs.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/materialize_reviewed_duplication_training_inputs.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/materialize_reviewed_duplication_training_inputs.py + tests/research/test_materialize_reviewed_duplication_training_inputs.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/materialize_transition_phase0_fixed_prefix_panel.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `run_transition_phase0_fixed_prefix_release` (all deletable); dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `run_transition_phase0_fixed_prefix_release` (all deletable); no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/materialize_transition_phase0_fixed_prefix_panel.py + tests/research/test_transition_phase0_fixed_prefix_panel.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/mine_sorted_all_person_owner_phenotypes.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/mine_sorted_all_person_owner_phenotypes.py + tests/research/test_mine_sorted_all_person_owner_phenotypes.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/prepare_transition_phase0_candidate_scoring.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/prepare_transition_phase0_candidate_scoring.py + tests/research/test_prepare_transition_phase0_candidate_scoring.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/run_human_refined_completion_causal_micro_panel.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
-cut: scripts/research/run_human_refined_completion_causal_micro_panel.py + tests/analysis/test_human_refined_completion_causal_micro_panel.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/run_human_refined_greedy_set_completion_conditions.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `run_human_refined_completion_causal_micro_panel` (all deletable); dedicated test module(s) load no kept script
-cut: scripts/research/run_human_refined_greedy_set_completion_conditions.py + tests/analysis/test_human_refined_greedy_set_completion_conditions.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/run_image_12576_row_mediation_crossover.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/run_image_12576_row_mediation_crossover.py + tests/research/test_run_image_12576_row_mediation_crossover.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/run_iterative_forced_continue_extreme_capacity.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/run_iterative_forced_continue_extreme_capacity.py + tests/research/test_iterative_forced_continue_extreme_capacity.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/run_native_sibling_branch_atlas.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/run_native_sibling_branch_atlas.py + tests/analysis/test_native_sibling_row_branch_atlas.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/run_transition_phase0_fixed_prefix_release.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/run_transition_phase0_fixed_prefix_release.py + tests/research/test_transition_phase0_fixed_prefix_panel.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/score_fixed_prompt_coordinate_branches.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `score_native_coordinate_branch_pairs` (all deletable); dedicated test module(s) load no kept script
-cut: scripts/research/score_fixed_prompt_coordinate_branches.py + tests/research/test_score_fixed_prompt_coordinate_branches.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
-```
-
-```
-[low / low] scripts/research/score_native_coordinate_branch_pairs.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
-cut: scripts/research/score_native_coordinate_branch_pairs.py + tests/research/test_score_native_coordinate_branch_pairs.py
-tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/seal_natural_boundary_routing_history_contract.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/seal_natural_boundary_routing_history_contract.py + tests/research/test_seal_natural_boundary_routing_history_contract.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/seal_static_dynamic_owner_interface_eligible_hold_leaf.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; (e) historical only: `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v2.json`:1, `openspec/changes/archive/2026-08-07-add-resumable-costed-research-probe-shards/verification/source-bindings-v3.json`:1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/seal_static_dynamic_owner_interface_eligible_hold_leaf.py + tests/research/test_seal_static_dynamic_owner_interface_eligible_hold_leaf.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/select_constant_dose_breadth_shared_milestone.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=2; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/select_constant_dose_breadth_shared_milestone.py + tests/research/test_select_constant_dose_breadth_shared_milestone.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/subset_rollout_calibration_state_bank.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/subset_rollout_calibration_state_bank.py + tests/research/test_subset_rollout_calibration_state_bank.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_candidate_row_score_deltas.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_candidate_row_score_deltas.py + tests/research/test_summarize_candidate_row_score_deltas.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_heldout_owner_churn_review.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_heldout_owner_churn_review.py + tests/research/test_summarize_heldout_owner_churn_review.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_matched_random_sorted_prefix_order.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_matched_random_sorted_prefix_order.py + tests/test_summarize_matched_random_sorted_prefix_order.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_paired_terminal_forced_opener_release.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `summarize_source_transition_forced_opener_comparison` (all deletable); dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `summarize_source_transition_forced_opener_comparison` (all deletable); no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_paired_terminal_forced_opener_release.py + tests/research/test_paired_terminal_forced_opener_release.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_source_transition_forced_opener_comparison.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `materialize_source_transition_forced_opener_visual_review` (all deletable); dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; intra-directory referrers: `materialize_source_transition_forced_opener_visual_review` (all deletable); no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_source_transition_forced_opener_comparison.py + tests/research/test_source_transition_forced_opener_comparison.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_transition_phase0_fixed_prefix_panel.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_transition_phase0_fixed_prefix_panel.py + tests/research/test_summarize_transition_phase0_fixed_prefix_panel.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_transition_phase0_robustness.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_transition_phase0_robustness.py + tests/research/test_summarize_transition_phase0_robustness.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/summarize_untouched_terminal_boundary_statistics.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/summarize_untouched_terminal_boundary_statistics.py + tests/research/test_summarize_untouched_terminal_boundary_statistics.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ```
 [low / low] scripts/research/visualize_sorted_full_canvas_token_budget_intervention.py
-evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; dedicated test module(s) load no kept script
+evidence: (a)=0 (c)=0 (d)=0 (f)=0; (b)=1; no orphaned schema-version producer binding in `research/` or `memories/`
 cut: scripts/research/visualize_sorted_full_canvas_token_budget_intervention.py + tests/research/test_visualize_sorted_full_canvas_token_budget_intervention.py
 tradeoff: none observable; replay via research-base-v2
-verify: pytest --collect-only then full baseline failure-set diff
+verify: pytest --collect-only over tests/, then tests/research tests/artifacts failure-set diff
 ```
 
 ## HOLD - reported, not deleted (task 5.4)
@@ -963,22 +899,92 @@ write-surface rule that path is available, but the evidence does not justify it:
 | --- | --- | --- |
 | `analyze_native_sibling_branch_value` | ZERO (only an (e) hit) | `openspec/changes/archive/2026-08-28-establish-research-probes-baseline-v1/design.md`:193 - entropy ledger row `HOLD`, "Retain a replacement capable of replaying every documented result artifact." No new evidence beats that rationale, so it is excluded from batch 1. |
 
+### HOLD-E. Reverted during batch 2 - candidate proved load-bearing
+
+Found by the task-5.5 residue search and by an added check that greps each candidate's own
+`"<name>.v<N>"` schema literals across `research/` and `memories/`. Both catch bindings the stem scan
+cannot see: a record that cites the *test module* name (`test_<stem>.py` is one identifier token), and a
+record artifact bound to a producer by schema id rather than by script name. Each was reverted with
+`git checkout HEAD -- <path>` before the batch was committed; none reached a commit.
+
+| Script (and its test) | Why it is load-bearing |
+| --- | --- |
+| `admit_native_sibling_first_rows` + `tests/analysis/test_native_sibling_first_row_owner_admission.py` | `scripts/research/analyze_native_sibling_branch_value.py`:39 imports it - and that script is itself HOLD-D, so the import must keep resolving. |
+| `analyze_image2299_horizon_branch_value` + `tests/analysis/test_analyze_image2299_horizon_branch_value.py` | `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-human-resolved-dense-branch-value-and-calibration-screen/results.md`:134 names `tests/analysis/test_analyze_image2299_horizon_branch_value.py` as the verification command of a recorded result. Record-cited through the test module name, which the stem scan tokenises as one word and therefore missed. |
+| `build_exact_trace_coordinate_state_bank` + `tests/research/test_build_exact_trace_coordinate_state_bank.py` | sole producer of `exact_trace_coordinate_visual_review.v1`, which appears in `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/coordinate-review-decisions.json`. Producer binding by schema id, not by name. |
+| `build_natural_boundary_owner_admission_census` + `tests/research/test_build_natural_boundary_owner_admission_census.py` | `scripts/research/materialize_natural_boundary_pre_gpu_evidence.py`:35 (kept) binds `tests/research/test_build_natural_boundary_owner_admission_census.py` in `FOCUSED_TEST_PATHS`; deleting the test breaks a kept script's evidence contract. |
+| `run_human_refined_completion_causal_micro_panel` + `tests/analysis/test_human_refined_completion_causal_micro_panel.py` | sole producer of `human_refined_completion_causal_micro_panel.v1`, carried by 7 artifacts under `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/` (`status: complete`, `evidence_status: verified`). |
+| `run_human_refined_greedy_set_completion_conditions` + `tests/analysis/test_human_refined_greedy_set_completion_conditions.py` | imported by `run_human_refined_completion_causal_micro_panel`, which this pass reverted to KEEP; transitive keep. |
+| `score_fixed_prompt_coordinate_branches` + `tests/research/test_score_fixed_prompt_coordinate_branches.py` | imported by `score_native_coordinate_branch_pairs`, which this pass reverted to KEEP; transitive keep. |
+| `score_native_coordinate_branch_pairs` + `tests/research/test_score_native_coordinate_branch_pairs.py` | sole producer of `native_coordinate_branch_pairs.v1`, which appears in `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/pure-cross-entropy-native-branch-cases.json`. |
+
+### HOLD-F. Half-deleted mechanism pair, flagged for the user
+
+`run_iterative_forced_continue_extreme_capacity` (batch 2, deleted) is the producer for
+`analyze_iterative_forced_continue_extreme_capacity` (HOLD-C, kept only because
+`tests/research/test_iterative_forced_continue_exact_native.py` also loads the kept
+`run_local_branch_causal_value`). Both halves classify as entropy on their own evidence; only the
+shared test module keeps the analyzer. Its record,
+`research/2026-07-29-iterative-forced-continue-extreme-capacity.md`, was moved to `docs/history/` by
+wave 4 of this change, so the pair has no live record consumer. The analyzer half is a clean follow-up
+deletion once its test module is split.
+
 ## Configs and fixtures
 
-The 37 batch-1 and 57 batch-2 scripts reference only two `configs/` *directories*
+The batch-1 and batch-2 scripts reference only two `configs/` *directories*
 (`configs/coordexp_swift/infer/`, `configs/coordexp_swift/infer/research/`) as generation targets, never a
-tracked config file. No tracked `configs/**` entry is cited by a deleted script alone, so no config is
-removed by this change.
+tracked config file. No tracked `configs/**` entry is cited by a deleted script alone, so **no config is
+removed** by this change.
 
 ## Verification
 
-Baseline: `receipts/test-baseline.md`, 88 failing node ids, `research-probes` @ `57d988351`.
-Rule (D10): compare failure **sets**, never counts. New node id = stop.
+Baseline: `receipts/test-baseline.md`, 88 failing node ids, `88 failed, 5129 passed, 2 skipped`,
+`research-probes` @ `57d988351`. Rule (D10): compare failure **sets**, never counts.
 
-### Batch 1 (ZERO + SR_ONLY, 37 scripts, 0 tests, 0 configs)
+### Batch 1 (ZERO + SR_ONLY): 37 scripts, 0 tests, 0 configs
 
 - Narrow: `tests/artifacts/test_research_probe_admission.py tests/research/test_research_probe_admission_consumers.py tests/research/test_capture_natural_boundary_support_source_bindings.py` -> **51 passed**.
 - Broad: `CUDA_VISIBLE_DEVICES=-1 conda run -n ms pytest tests/research tests/artifacts -q -p no:cacheprovider --no-header -rfE` -> `88 failed, 5129 passed, 2 skipped in 721.48s`.
-- Failure-set diff vs baseline: **0 new, 0 gone** (identical 88 node ids). Pass count also identical, as expected: batch 1 removes no test.
-- Reverts: none.
+- Failure-set diff vs baseline: **0 new, 0 gone**. Pass count identical, as expected: batch 1 removes no test.
+- Reverts: none. Commit `1802262a2`.
+
+### Batch 2 (TEST_ONLY, dedicated test module): 49 scripts, 48 tests, 0 configs
+
+- `pytest tests --collect-only`: `6504 tests collected, 53 errors`. The 53 are the pre-existing
+  `ModuleNotFoundError: No module named 'src.analysis.{candidate_field_cardinality_tomography,
+  policy_objective_mechanism_comparison, post_x1_instance_basin_tomography,
+  prefix_state_transition_tomography, sorted_random_no_newline_phenotype}'` collection errors, unchanged in
+  count and identity by this change and unrelated to `scripts/research`.
+- Narrow: the same admission trio -> **51 passed**.
+- Broad: `85 failed, 4815 passed, 2 skipped in 689.14s`.
+- Failure-set diff vs baseline: **0 new**; 3 gone, all three inside the deleted module
+  `tests/research/test_run_image_12576_row_mediation_crossover.py`
+  (`test_load_stage_seven_source_reconstructs_four_exact_prefixes`,
+  `test_load_stage_seven_source_refuses_changed_prefix_hash`,
+  `test_validate_endpoint_parity_refuses_owner_only_match`). The 314 pass-count drop is the 48 removed
+  modules.
+- Out-of-baseline neighbours (the 7 deleted modules outside `tests/research`/`tests/artifacts`):
+  `pytest tests/analysis` (minus the 5 pre-broken packages) -> `3 failed, 91 passed`. All three failures are
+  `ImportError: cannot import name '_normalized_attested_model_identity_for_runtime_comparison' /
+  'canonical_float32_logprob' from 'src.inference.backend'` in
+  `tests/analysis/test_assemble_source_preservation_multi_route_state_banks.py` and
+  `tests/analysis/test_sampled_rescue_transition.py`, whose subject scripts are both KEPT and neither of
+  which mentions any deleted stem. Pre-existing, unrelated to this change.
+- Reverts: 8 scripts + 8 test modules, all before the commit; see HOLD-E.
+
+## Residue search (task 5.5)
+
+For every deleted basename (and the derived `test_<stem>` form), `rg --fixed-strings` across the whole
+`research-probes` tree and across `/data/CoordExp/.worktrees/image2299-mechanism-microscope`
+(tracked + untracked, minus `.git/` and `outputs/`): **217 hits, all accounted for**:
+
+| Where | Meaning |
+| --- | --- |
+| this ledger | the evidence records themselves |
+| `openspec/changes/archive/2026-08-06-add-hf-exact-history-evidence-seam/design.md`:66 | (e) historical mention of `run_paired_terminal_forced_opener_release.py` |
+| `image2299-mechanism-microscope/...` | that fork's own byte-identical copies of the files deleted here, plus its mirror of the same archived design doc; the fork is independent and unaffected |
+| `scripts/research/analyze_iterative_forced_continue_extreme_capacity.py`, `tests/research/test_iterative_forced_continue_exact_native.py` | substring collisions of the derived stem `iterative_forced_continue_extreme_capacity` with a **kept** module of a similar name; see HOLD-F |
+
+No surviving file under `src/`, `scripts/`, `tests/`, `configs/`, `research/`, `memories/`, or current `docs/`
+references a deleted module. `git diff --check` and `git diff --cached --check`: clean.
 
