@@ -38,14 +38,14 @@
 
 ## 6. `src/` entropy audit (Phase 2b′, report-only until approved)
 
-- [ ] 6.1 Audit every `src/` module, starting from the 60+ files unique to `research-probes` vs `main` (`git diff --name-only main...research-probes -- src`), for the nine candidate classes in `reclaim-code-entropy`; consumer search covers `src/`, `scripts/`, `tests/`, configs, research replay citations, and the image2299 worktree. Write `receipts/src-entropy-audit.md` ranked by confidence, risk, and net reduction, with silent-corruption surfaces marked report-only.
+- [x] 6.1 Audit every `src/` module, starting from the 60+ files unique to `research-probes` vs `main` (`git diff --name-only main...research-probes -- src`), for the nine candidate classes in `reclaim-code-entropy`; consumer search covers `src/`, `scripts/`, `tests/`, configs, research replay citations, and the image2299 worktree. Write `receipts/src-entropy-audit.md` ranked by confidence, risk, and net reduction, with silent-corruption surfaces marked report-only.
 - [ ] 6.2 Present the audit to the user; execute only user-named cuts, in D6 batch-and-test form, appending to the same receipt.
 - [x] 6.3 Docs entropy audit (report-only, user steer 2026-08-28 "大量的内容是可以清理的(文档/artifacts/*.py)"): rank `docs/catalog.yaml` legacy/historical entries, `docs/history/`, `progress/`, `reference/`, and `memories/notes/` by inbound references from current (non-legacy) documents, last commit date, and size; write `receipts/docs-entropy-audit.md` in the `reclaim-code-entropy` evidence format with move-to-history vs delete candidates. No edits.
 - [x] 6.4 Artifact-root inventory (report-only): for every top-level directory under `/data/CoordExp/outputs/research/` and `/data/CoordExp/.worktrees/research-probes/outputs/`, record size, newest mtime, and which `research/` unit or `memories/` note binds it (grep the path); classify bound-by-complete-unit / bound-by-archived-unit / unbound. Write `receipts/artifact-root-inventory.md`. Deletion of artifacts is never performed by this change; the user names roots to reclaim separately.
 
 ## 7. Close (Phases 3–4)
 
-- [ ] 7.1 From the integration lane: `git merge --ff-only research-probes`; if refused, `git merge research-probes` and record why in `receipts/integration-lane.md`.
+- [x] 7.1 From the integration lane: `git merge --ff-only research-probes`; if refused, `git merge research-probes` and record why in `receipts/integration-lane.md`.
 - [x] 7.2 Refresh `memories/current.md` continuity pointer for the lifecycle change; confirm `research/index.md` and `docs/AGENT_INDEX.md` describe the executed lifecycle, not the designed one.
-- [ ] 7.3 `git tag -a research-base-v3 <final reviewed commit> -m "research-base-v3: post-reclaim research main"`; write `receipts/research-base-v3.md` (tag object, peeled commit, net reduction summary, worktree list).
+- [x] 7.3 `git tag -a research-base-v3 <final reviewed commit> -m "research-base-v3: post-reclaim research main"`; write `receipts/research-base-v3.md` (tag object, peeled commit, net reduction summary, worktree list).
 - [ ] 7.G Gate: `openspec validate --all`; `openspec verify`-style review of this change against its tasks; user approval to archive this change.
