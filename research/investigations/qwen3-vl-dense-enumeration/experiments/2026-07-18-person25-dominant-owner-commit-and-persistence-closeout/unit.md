@@ -179,3 +179,5 @@ Durable execution artifacts resolve under:
 Each run retains checkpoint and adapter hashes, prompt and image identity, exact
 prefix token identifiers, person-25 donor provenance, seeds, decode policy, raw
 rows, parsed outcomes, matching results, and terminal status.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.

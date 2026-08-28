@@ -286,3 +286,5 @@ Model-free verification:
 - no causal claim about the ordering policy across training randomness;
 - no claim about general detection quality, hallucination, or Common Objects in
   Context annotation completeness.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.

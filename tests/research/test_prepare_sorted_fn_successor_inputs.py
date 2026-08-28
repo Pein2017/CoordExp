@@ -1225,6 +1225,12 @@ def test_near_gt_micro_local_index_0_is_always_the_exact_gt_box_regardless_of_si
     assert iou(boxes[0], gt_box) == 1.0
 
 
+@pytest.mark.skipif(
+    not all(path.is_file() for path in _REAL_FIXTURES),
+    reason="real predecessor Task-0/rules-template artifacts are unavailable "
+    "(the task4-control-input-plan-final root was reclaimed on 2026-08-28; "
+    "see reclaim-research-probes-lifecycle receipts/artifact-reclaim-manifest.md)",
+)
 def test_real_gt7511_17_near_gt_micro_local_index_0_is_the_exact_singleton(tmp_path: Path) -> None:
     """The exact real owner/box this correction was reported against:
     ``gt:7511:17``'s scalar_smoke near_gt_micro family has multiple exact
