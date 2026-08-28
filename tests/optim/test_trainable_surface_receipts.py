@@ -20,7 +20,6 @@ from src.optim.trainable_surface import (
     FrozenReasonSummary,
     TrainableSurfaceReceipt,
     build_trainable_surface_receipt,
-    write_trainable_surface_receipt,
 )
 from src.qwen.special_token_embeddings import (
     SpecialTokenEmbeddingInstallReceipt,
@@ -28,9 +27,7 @@ from src.qwen.special_token_embeddings import (
 )
 
 
-def test_trainable_surface_receipt_proves_optimizer_groups_and_sources(
-    tmp_path,
-) -> None:
+def test_trainable_surface_receipt_proves_optimizer_groups_and_sources() -> None:
     model = FakeTrainableSurface(
         adapter_targets=(
             "model.language_model.q_proj",
@@ -103,13 +100,6 @@ def test_trainable_surface_receipt_proves_optimizer_groups_and_sources(
         "base_towers_frozen_v1",
         "selected_embedding_delta_active",
     }
-
-    output_path = write_trainable_surface_receipt(
-        receipt,
-        tmp_path / "trainable_surface.json",
-    )
-
-    assert json.loads(output_path.read_text(encoding="utf-8")) == artifact
 
 
 def test_trainable_surface_receipt_rejects_optimizer_plan_missing_trainable() -> None:
@@ -209,41 +199,6 @@ def test_trainable_surface_receipt_rejects_stale_optimizer_parameter_object() ->
 
     assert exc_info.value.code == "trainable_surface.optimizer_plan_mismatch"
     assert exc_info.value.context["parameter_object_mismatch"] == [stale_name]
-
-
-def test_write_trainable_surface_receipt_rejects_non_standard_json(
-    tmp_path,
-) -> None:
-    receipt = TrainableSurfaceReceipt(
-        phase="before_first_backward",
-        frozen_towers=(),
-        trainable_towers=("adapter.language",),
-        adapter_targets={},
-        selected_embedding_tokens={},
-        parameter_counts={},
-        optimizer_groups=(
-            {
-                "group_name": "adapter.language",
-                "lr": float("inf"),
-                "weight_decay": 0.0,
-                "parameter_count": 1,
-                "parameter_names": ["x"],
-            },
-        ),
-        unmatched_trainable_names=(),
-        frozen_reason_summaries=(
-            FrozenReasonSummary(
-                reason="base_towers_frozen_v1",
-                parameter_count=0,
-                scalar_count=0,
-                parameter_names_preview=(),
-                context={},
-            ),
-        ),
-    )
-
-    with pytest.raises(ValueError):
-        write_trainable_surface_receipt(receipt, tmp_path / "receipt.json")
 
 
 class ParamLeaf(nn.Module):

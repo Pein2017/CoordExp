@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -555,46 +553,20 @@ def test_run_directory_collision_policy(tmp_path: Path) -> None:
         )
 
 
-def test_trace_config_writes_resolved_artifacts(tmp_path: Path) -> None:
+def test_resolved_config_artifacts_refuse_silent_overwrite(tmp_path: Path) -> None:
+    resolved = load_train_config(FIXTURE_CONFIG)
     run_dir = tmp_path / "trace-run"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "src.trace_config",
-            "--config",
-            str(FIXTURE_CONFIG),
-            "--run-dir",
-            str(run_dir),
-        ],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    summary = json.loads(result.stdout)
 
-    assert summary["artifacts"]["json_path"] == str(
-        run_dir / "configs" / "resolved.json"
-    )
+    artifacts = write_resolved_config_artifacts(resolved, run_dir)
+    assert artifacts.json_path == run_dir / "configs" / "resolved.json"
     assert (run_dir / "configs" / "resolved.yaml").exists()
+    before = artifacts.json_path.read_text()
 
-    sentinel = run_dir / "configs" / "resolved.json"
-    before = sentinel.read_text()
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "src.trace_config",
-            "--config",
-            str(FIXTURE_CONFIG),
-            "--run-dir",
-            str(run_dir),
-        ],
-        text=True,
-        capture_output=True,
-    )
-    assert result.returncode != 0
-    assert sentinel.read_text() == before
+    with pytest.raises(ConfigContractError) as exc_info:
+        write_resolved_config_artifacts(resolved, run_dir)
+
+    assert exc_info.value.code == "config.resolved_artifact_exists"
+    assert artifacts.json_path.read_text() == before
 
 
 def test_production_relaunch_configs_load_strictly() -> None:

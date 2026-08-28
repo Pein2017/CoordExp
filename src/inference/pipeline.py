@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -30,7 +30,6 @@ from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptCon
 from src.config.writer import write_resolved_config_artifacts
 from src.data import RawExample, load_raw_examples
 from src.inference.artifacts import (
-    RAW_NAME,
     benchmark_scope_eligible,
     stringify_mapping_keys,
     write_inference_artifacts,
@@ -49,13 +48,10 @@ from src.inference.data_parallel import (
     RankShardPlan,
     plan_data_parallel_shards,
     require_visible_cuda_for_inference,
-    sort_rows_by_index,
 )
 from src.inference.execution_context import (
-    load_and_verify_execution_context_artifact,
     prepare_execution_context_payload,
     publish_execution_context_artifact,
-    publish_rank_local_execution_context_copy,
     recover_published_execution_context_artifact,
     validate_execution_context_identity,
     verify_local_execution_context_artifact,
@@ -77,12 +73,6 @@ from src.inference.scoring import SCORE_POLICY_FINGERPRINT
 
 FrontendFactory = Callable[..., InferenceFrontend]
 WorkerLauncher = Callable[..., Any]
-
-
-@dataclass(frozen=True)
-class DataParallelShardRunResult:
-    raw_rows: list[dict[str, Any]]
-    shard_dirs: list[Path]
 
 
 def run(
@@ -268,77 +258,6 @@ def run_shard(
         execution_model=execution_model,
     )
     return 0
-
-
-def run_data_parallel_shards(
-    *,
-    resolved: ResolvedInferConfig,
-    run_dir: Path,
-    plan: DataParallelPlan,
-    frontend_factory: FrontendFactory | None = None,
-    session_opener: BackendSessionOpener | None = None,
-    execution_model: dict[str, Any] | None = None,
-    execution_context_identity: dict[str, Any] | None = None,
-) -> DataParallelShardRunResult:
-    if resolved.config.backend.type == "vllm":
-        raise RuntimeContractError(
-            "vLLM shards must run through fresh rank-local worker processes",
-            code="pipeline.vllm_in_process_forbidden",
-        )
-    validated_execution_context_identity = validate_execution_context_identity(
-        execution_context_identity
-    )
-    execution_context_source = None
-    if validated_execution_context_identity is not None:
-        execution_context_source = load_and_verify_execution_context_artifact(
-            locator=validated_execution_context_identity["locator"],
-            expected_file_sha256=validated_execution_context_identity["file_sha256"],
-            expected_value_fingerprint=validated_execution_context_identity[
-                "value_fingerprint"
-            ],
-            expected_journal_plan_reference=validated_execution_context_identity[
-                "journal_plan_reference"
-            ],
-        )
-    shard_dirs: list[Path] = []
-    raw_rows: list[dict[str, Any]] = []
-    for rank_plan in plan.ranks:
-        shard_dir = run_dir / "shards" / rank_plan.shard_dir_name
-        shard_dirs.append(shard_dir)
-        if execution_context_source is not None:
-            publish_rank_local_execution_context_copy(
-                payload=execution_context_source.payload,
-                destination_dir=shard_dir,
-                expected_file_sha256=execution_context_source.file_sha256,
-            )
-        run_shard(
-            resolved=resolved,
-            output_dir=shard_dir,
-            row_indices=rank_plan.row_indices,
-            worker_metadata={
-                "shard_plan_fingerprint": plan.fingerprint,
-                "rank": rank_plan.rank,
-                "world_size": rank_plan.world_size,
-                "parent_visible_device_token": rank_plan.parent_visible_device_token,
-                "worker_cuda_visible_devices": rank_plan.parent_visible_device_token,
-                "worker_logical_device": "cuda:0",
-                "cuda_device_count": 1,
-                "cuda_current_device": 0,
-                "model_first_parameter_device": "cuda:0",
-                "per_device_batch_size": rank_plan.per_device_batch_size,
-                "batch_ids": list(rank_plan.batch_ids),
-            },
-            rank_plan=rank_plan,
-            frontend_factory=frontend_factory,
-            session_opener=session_opener,
-            execution_model=execution_model,
-            execution_context_identity=validated_execution_context_identity,
-        )
-        raw_rows.extend(_read_jsonl(shard_dir / RAW_NAME))
-    return DataParallelShardRunResult(
-        raw_rows=sort_rows_by_index(raw_rows),
-        shard_dirs=shard_dirs,
-    )
 
 
 def _execute_controller_worker_path(
@@ -858,14 +777,6 @@ def _validate_rank_plan_matches_assignment(
                 "row_indices": list(row_indices),
             },
         )
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line
-    ]
 
 
 def _read_json(path: Path) -> dict[str, Any]:
