@@ -311,3 +311,5 @@ human-reviewed evaluation cohort.
 The experiment-local converters, summarizers, manifests, and focused tests are
 retained in this worktree. No architecture or production inference contract is
 promoted.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.

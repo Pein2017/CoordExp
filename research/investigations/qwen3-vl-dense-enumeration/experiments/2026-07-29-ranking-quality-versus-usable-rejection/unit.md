@@ -76,6 +76,8 @@ Produced by `scripts/research/analyze_ranking_versus_operating_point.py`, which
 imports the parent unit's `_auroc` implementation rather than reimplementing it,
 so the numbers are comparable to Stage 1 by construction.
 
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
+
 ## Scope and Non-Goals
 
 Panel, clusters, labels, likelihoods, and the retention target are inherited

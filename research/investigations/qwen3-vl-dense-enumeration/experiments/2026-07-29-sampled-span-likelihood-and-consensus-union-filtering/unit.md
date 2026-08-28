@@ -460,6 +460,8 @@ immutable run identifier. Expected products: `span-likelihood.jsonl`,
 `report.md`, distribution and retention plots, and optionally a filtered 1×3
 visualization in the existing `Sorted | Random | Permutation` panel order.
 
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
+
 ## Semantic-Delta Gate
 
 Conditions added during alignment that the originating handoff did not fix.

@@ -736,6 +736,8 @@ At that implementation checkpoint no live action had occurred and task 6.3
 remained pending; the execution closure below supersedes that provisional
 state.
 
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
+
 ## Execution closure
 
 The reserved `vertical-dose-qualification-v5` parity-only root executed on

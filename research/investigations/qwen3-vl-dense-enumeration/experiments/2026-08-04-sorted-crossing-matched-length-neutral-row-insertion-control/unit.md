@@ -329,6 +329,8 @@ request plan, exact source digests, scorer/runtime identity, raw paired scores,
 parity and quarantine ledgers, same-run replay comparisons, owner-level
 analysis rows, route summary, report, and self-sealed manifest.
 
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
+
 ## Representative smoke, compute, and stop boundary
 
 Before full capture, run one real matched-`E` and one real unmatched-`E` owner

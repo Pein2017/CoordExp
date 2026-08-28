@@ -168,3 +168,5 @@ unresolved rows rather than reward a longer rollout alone.
 These three cases are diagnostic examples only. They justify a larger,
 reviewed screen; they do not establish that one particular prefix or
 coordinate boundary is universally causal.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.

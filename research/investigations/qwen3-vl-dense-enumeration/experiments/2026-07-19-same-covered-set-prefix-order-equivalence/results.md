@@ -224,3 +224,5 @@ generation, and runtime identities. They do not preserve a source commit or
 dirty-diff checksum for the experiment-local code. The result is sufficient
 for this bounded mechanism probe, but the missing code-state receipt should be
 fixed before promoting this runner into a reusable evaluation contract.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
