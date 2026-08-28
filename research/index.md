@@ -14,7 +14,7 @@ behavior remain in `docs/`. Stable compatibility-sensitive contracts remain in
 
 ## Entry Points
 
-- [Pi Lightweight External Worker Ablation](investigations/pi-lightweight-worker-ablation/) - Stage 0 capability and total-cost screen for bounded, mechanically verifiable CoordExp tasks
+- [Pi Lightweight External Worker Ablation](archive/pi-lightweight-worker-ablation/) - Stage 0 capability and total-cost screen for bounded, mechanically verifiable CoordExp tasks
 - [Qwen3-VL Dense Enumeration Weekly Research Report, 2026-07-13 through 2026-07-16](investigations/qwen3-vl-dense-enumeration/2026-07-13-to-2026-07-16-weekly-research-report.md) - integrated executed evidence, mechanism synthesis, implementation retrospective, and GPT-Pro handoff
 - [Qwen3-VL Autoregressive Detection Research Compass](investigations/qwen3-vl-dense-enumeration/compass.md) - program-level north star, current belief register, discriminator queue, and paper-thesis boundary
 - [CoordExp Historical Experiment Knowledge Handoff](investigations/coordexp-experiment-knowledge-handoff/) - audited historical results, negative evidence, execution lessons, and provenance ledgers; never a current-runtime authority

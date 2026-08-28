@@ -752,7 +752,7 @@ The layer evidence is phase-specific and must not be reduced to a claim that
 - Historical `ms-swift` provenance also localized selected duplication and
   coordinate-basin transitions near layer 17 or 18, with later layers carrying
   or sharpening ownership. The synthesis is routed through the
-  [Autoregressive Binding Template Study](../autoregressive-binding-template-study/).
+  [Autoregressive Binding Template Study](../../archive/autoregressive-binding-template-study/).
 
 Current belief: late-middle residual states are promising phase-specific
 observation and intervention surfaces. They are not yet evidence for one fixed

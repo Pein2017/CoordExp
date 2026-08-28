@@ -126,7 +126,7 @@ Use these current owners before acting on a historical claim:
 
 - [Qwen3-VL dense enumeration compass](../qwen3-vl-dense-enumeration/compass.md)
   for the active belief state and next discriminator.
-- [Autoregressive binding template study](../autoregressive-binding-template-study/index.md)
+- [Autoregressive binding template study](../../archive/autoregressive-binding-template-study/index.md)
   for the existing 223-record binding synthesis.
 - [Painted ground-truth transcription probe](../../ideas/qwen3-vl-painted-gt-transcription-probe/overview.md)
   for privileged visual designation evidence.

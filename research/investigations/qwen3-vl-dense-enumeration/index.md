@@ -216,7 +216,7 @@ completed unit and results record own current lifecycle and evidence status.
 
 ## Upstream Evidence
 
-- [Autoregressive binding template study](../autoregressive-binding-template-study/)
+- [Autoregressive binding template study](../../archive/autoregressive-binding-template-study/)
 - [Painted Ground-Truth transcription probe](../../ideas/qwen3-vl-painted-gt-transcription-probe/)
 - [Separate selection, transcription, commit, and stop](../../decisions/separate-selection-transcription-commit-and-stop.md)
 - [Require target-specific causal consumption](../../decisions/require-target-specific-causal-consumption.md)
