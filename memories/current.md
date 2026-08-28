@@ -17,8 +17,10 @@ route, the immutable artifacts and their bound commits own the evidence:
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-23-human13-n13-k4k8-corrected-geometry-probe/v3`
   at correction commit `a904e3ae38405cf018bccbc176c3497be29313c9`
 
-The concise interpretation and integrity boundary are in
-`memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`.
+The interpretation and integrity boundary are owned by the research unit
+[2026-08-22 Human-13 Owner-Credit N/K Factorial](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-22-human13-owner-credit-nk-factorial/results.md)
+(secondary provenance:
+`memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`).
 Earlier formal Human-13 units remain evidence for their own bounded questions,
 but they do not override this newer standalone route.
 
