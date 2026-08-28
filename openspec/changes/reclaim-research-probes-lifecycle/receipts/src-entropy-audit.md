@@ -613,3 +613,13 @@ removed there.
 `configs/infer/recursive_detection_ce/fullobj_{sorted,random}_purece_ckpt3668_a3_2_rollout1024_greedy.yaml`
 name the same artifact roots but are ordinary infer configs consumed by the live infer entrypoint —
 **keep**.
+
+## Wave 8 lead addendum — orphaned configs (after lane/tests merge)
+
+```
+[high / low] configs/analysis/<22 subdirs> + configs/bench/rollout_backend_bench.yaml (92 + 1 files)
+evidence: after B1–B3 deleted the src.analysis.* runners and tests, `grep -rl -F 'configs/analysis/<d>'` over src scripts tests docs research memories openspec/specs openspec/changes (excluding docs/history, progress, openspec archive, receipts) returns 0 for 22 of 23 subdirs; the bench yaml has 0 hits. image2299 worktree hits are only the same abandoned tests/launchers it mirrors from before today's deletions (no image2299-unique consumer). Kept: configs/analysis/unmatched_proposal_verifier (cited by docs/eval/drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md).
+cut: the 22 directories and the bench yaml, end to end (their runners/tests already removed by lane/tests)
+tradeoff: none observable; historical provenance for old runs remains in progress/ and docs/history, and every file is in research-base-v3
+verify: `ls configs/analysis` shows only unmatched_proposal_verifier; `pytest tests --collect-only -q | tail -1` unchanged
+```
