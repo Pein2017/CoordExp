@@ -24,7 +24,10 @@ python -m codex_usage_ledger \
 
 The default output is one JSON object per subagent rollout. Use `--format csv`
 for a spreadsheet-friendly view or `--format json` for one combined document.
-Use `--max-files` while validating the command against a large session tree.
+The default summary is compact: it keeps `route_pairs` and omits redundant
+task-level `groups` and role-level `attempt_routes`. Pass `--full-summary` when
+an existing consumer needs those legacy arrays. Use `--max-files` while
+validating the command against a large session tree.
 
 ## Scope one parent task
 
@@ -77,6 +80,11 @@ python -m codex_usage_ledger \
   --output /tmp/codex-subagent-cost.csv
 ```
 
+Declare `[metadata].effective_date` and `[metadata].source` in the price TOML.
+The summary's `pricing_snapshot` binds the resolved path, SHA-256, metadata,
+currencies, sources, and loaded rate keys to the resulting estimate. Duplicate
+provider/model rates and non-boolean billing flags fail closed.
+
 ## Routing attempts and acceptance cost
 
 The report attaches each child thread to its parent `spawn_agent` activity
@@ -89,7 +97,18 @@ dispositions are JSONL, one object per line:
 ```
 
 Valid dispositions are `accepted`, `rework`, `escalated`, and `failed`. Use
-strict accounting when only explicit lead labels should count:
+`--outcomes-template-out` to create one context-bearing placeholder row per
+attempt, edit it down to explicit valid outcomes, then use strict accounting:
+
+```bash
+python -m codex_usage_ledger \
+  --sessions "$CODEX_HOME/sessions" \
+  --prices prices-gpt56-standard.toml \
+  --outcomes-template-out /tmp/routing-outcomes-template.jsonl \
+  --summary-out /tmp/codex-routing-summary.json
+```
+
+After replacing `REPLACE_ME` dispositions:
 
 ```bash
 python -m codex_usage_ledger \
@@ -106,7 +125,10 @@ an auditable exploratory estimate, `completed` treats a terminal
 `task_complete` receipt as an explicitly named completion proxy, while
 `followup_aware` also marks a completed child with an observed
 `followup_task` as `rework`. The summary exposes the definition and
-`attempts.cost_per_accepted_task`; neither proxy is human acceptance.
+`attempts.cost_per_accepted_task`; neither proxy is human acceptance. Attempt
+rows also expose interaction/completion counts and bounded
+`proxy_ambiguity_reasons`; these do not alter disposition or classify message
+text.
 
 The report keeps `pricing.status` explicit:
 
@@ -124,7 +146,9 @@ bound when partial records exist), and `totals.unpriced_tokens`.
 The cost calculation reports uncached input, cached input, cache-write input,
 output, and reasoning dimensions separately. Cache-write and reasoning
 inclusion are explicit flags in the rate file because providers do not all
-bill those fields the same way.
+bill those fields the same way. Each `route_pairs` entry aggregates these
+billable dimensions, measured usage, estimated cost, and labeled rollout wall
+time with observation count, total, mean, median, and nearest-rank P90.
 
 `prices-gpt56-standard.toml` is a local snapshot populated from the user's
 GPT-5.6 Standard API price screenshot on 2026-08-06. Treat it as an estimate

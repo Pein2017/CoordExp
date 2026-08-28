@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .parser import SessionRecord, parse_rollout
-from .pricing import load_rates
+from .pricing import build_price_receipt, load_rates
 from .attempts import (
     annotate_attempts,
     load_outcomes,
@@ -80,13 +80,17 @@ def _scan(
         session_id=session_id,
         root_thread_id=root_thread_id,
     )
-    return records, all_records, {
-        "files_seen": files_seen,
-        **scope,
-        "records_emitted": len(records),
-        "skipped_non_subagents": scope["scope_records"] - len(records),
-        "parse_errors": sum(record.parse_errors for record in records),
-    }
+    return (
+        records,
+        all_records,
+        {
+            "files_seen": files_seen,
+            **scope,
+            "records_emitted": len(records),
+            "skipped_non_subagents": scope["scope_records"] - len(records),
+            "parse_errors": sum(record.parse_errors for record in records),
+        },
+    )
 
 
 def filter_records(
@@ -100,9 +104,7 @@ def filter_records(
     """Select an exact thread, a persisted session, or a root thread subtree."""
 
     scope_args = [
-        value
-        for value in (thread_id, session_id, root_thread_id)
-        if value is not None
+        value for value in (thread_id, session_id, root_thread_id) if value is not None
     ]
     if len(scope_args) > 1:
         raise ValueError(
@@ -132,9 +134,7 @@ def filter_records(
                 if child not in subtree:
                     subtree.add(child)
                     frontier.append(child)
-        scoped = [
-            record for record in materialized if record.thread_id in subtree
-        ]
+        scoped = [record for record in materialized if record.thread_id in subtree]
         scope_filter = "root_thread_subtree"
     else:
         scoped = materialized
@@ -158,6 +158,32 @@ def _write_json(path: Path, value: Any, pretty: bool) -> None:
             value, ensure_ascii=False, indent=2 if pretty else None, sort_keys=pretty
         )
         + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_outcomes_template(path: Path, items: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for item in items:
+        attempt = item.get("attempt") or {}
+        rows.append(
+            {
+                "attempt_id": attempt.get("attempt_id"),
+                "thread_id": item.get("thread_id"),
+                "parent_thread_id": item.get("parent_thread_id"),
+                "task_label": item.get("task_label"),
+                "agent_role": item.get("agent_role"),
+                "model": item.get("model") or item.get("models"),
+                "effort": item.get("effort") or item.get("efforts"),
+                "disposition": "REPLACE_ME",
+                "note": "",
+            }
+        )
+    path.write_text(
+        "".join(
+            json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows
+        ),
         encoding="utf-8",
     )
 
@@ -261,12 +287,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=Path, help="write the session report to this file"
     )
     parser.add_argument(
-        "--summary-out", type=Path, help="write grouped route/task summary JSON"
+        "--summary-out", type=Path, help="write compact model/effort summary JSON"
+    )
+    parser.add_argument(
+        "--full-summary",
+        action="store_true",
+        help="include task-level groups and role-level attempt routes",
     )
     parser.add_argument(
         "--outcomes",
         type=Path,
         help="optional JSONL dispositions keyed by attempt_id or thread_id",
+    )
+    parser.add_argument(
+        "--outcomes-template-out",
+        type=Path,
+        help="write a human-editable strict-outcome template JSONL",
     )
     parser.add_argument(
         "--disposition-policy",
@@ -295,6 +331,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         rates = load_rates(args.prices)
+        pricing_snapshot = build_price_receipt(args.prices, rates)
         outcomes = load_outcomes(args.outcomes)
         paths = discover_files(args.sessions, args.since, args.until, args.max_files)
         records, all_records, scan = _scan(
@@ -325,17 +362,22 @@ def main(argv: list[str] | None = None) -> int:
             "root_thread_id": args.root_thread_id,
             "outcomes": str(args.outcomes) if args.outcomes else None,
             "disposition_policy": args.disposition_policy,
+            "summary_mode": "full" if args.full_summary else "compact",
         },
         "totals": summarize_totals(items),
         "attempts": summarize_attempts(items, args.disposition_policy),
-        "attempt_routes": summarize_attempt_routes(items),
         "route_pairs": summarize_route_pairs(items),
+        "pricing_snapshot": pricing_snapshot,
         "scan": scan,
-        "groups": summarize(items),
     }
+    if args.full_summary:
+        summary["attempt_routes"] = summarize_attempt_routes(items)
+        summary["groups"] = summarize(items)
 
     if args.summary_out:
         _write_json(args.summary_out, summary, args.pretty)
+    if args.outcomes_template_out:
+        _write_outcomes_template(args.outcomes_template_out, items)
 
     output_stream = (
         open(args.output, "w", encoding="utf-8") if args.output else sys.stdout

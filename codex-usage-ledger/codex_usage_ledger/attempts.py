@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime
+from math import ceil
 from pathlib import Path
 from statistics import mean, median
 from typing import Any, Iterable
+
+from .model import USAGE_FIELDS
 
 
 DISPOSITIONS = {"accepted", "rework", "escalated", "failed", "unknown"}
@@ -24,17 +28,23 @@ def load_outcomes(path: Path | None) -> dict[str, dict[str, Any]]:
             try:
                 value = json.loads(raw_line)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid outcomes JSONL at line {line_number}") from exc
+                raise ValueError(
+                    f"invalid outcomes JSONL at line {line_number}"
+                ) from exc
             if not isinstance(value, dict):
                 raise ValueError(f"outcomes line {line_number} must be an object")
             key = value.get("attempt_id") or value.get("thread_id")
             disposition = value.get("disposition")
             if not isinstance(key, str) or not key:
-                raise ValueError(f"outcomes line {line_number} needs attempt_id or thread_id")
+                raise ValueError(
+                    f"outcomes line {line_number} needs attempt_id or thread_id"
+                )
             if disposition not in DISPOSITIONS - {"unknown"}:
                 raise ValueError(
                     f"outcomes line {line_number} has invalid disposition: {disposition!r}"
                 )
+            if key in outcomes:
+                raise ValueError(f"duplicate outcome identifier: {key}")
             outcomes[key] = dict(value)
     return outcomes
 
@@ -46,7 +56,9 @@ def _event_sort_key(event: dict[str, Any]) -> tuple[int, str]:
     return 0, event.get("timestamp") or ""
 
 
-def _activity_index(records: Iterable[Any]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]]:
+def _activity_index(
+    records: Iterable[Any],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]]:
     by_thread: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     tool_names: dict[str, str] = {}
     for record in records:
@@ -103,20 +115,31 @@ def annotate_attempts(
         thread_id = item.get("thread_id")
         thread_key = thread_id if isinstance(thread_id, str) else None
         events = activity_by_thread.get(thread_key or "", [])
-        started = next((event for event in events if event.get("kind") == "started"), None)
-        attempt_id = (
-            started.get("event_id")
-            if started and isinstance(started.get("event_id"), str)
+        started = next(
+            (event for event in events if event.get("kind") == "started"), None
+        )
+        started_event_id = started.get("event_id") if started else None
+        attempt_id: str = (
+            started_event_id
+            if isinstance(started_event_id, str)
             else f"thread:{thread_key or 'unknown'}"
         )
-        followups = [
-            event
-            for event in events
-            if event.get("kind") == "interacted"
-            and tool_names.get(event.get("event_id")) == "followup_task"
+        interactions = [event for event in events if event.get("kind") == "interacted"]
+        completions = [event for event in events if event.get("kind") == "completed"]
+        followups = []
+        for event in interactions:
+            event_id = event.get("event_id")
+            if (
+                isinstance(event_id, str)
+                and tool_names.get(event_id) == "followup_task"
+            ):
+                followups.append(event)
+        interruptions = [
+            event for event in events if event.get("kind") == "interrupted"
         ]
-        interruptions = [event for event in events if event.get("kind") == "interrupted"]
-        label = labels.get(attempt_id) or (labels.get(thread_key) if thread_key else None)
+        label = labels.get(attempt_id) or (
+            labels.get(thread_key) if thread_key else None
+        )
         if label is not None:
             disposition = label.get("disposition")
             disposition_source = "explicit_outcome"
@@ -126,6 +149,16 @@ def annotate_attempts(
                 item.get("status") or "unknown", len(followups), policy
             )
             note = None
+        ambiguity_reasons = []
+        if label is None and policy != "strict" and followups:
+            ambiguity_reasons.append("followup_semantics_unverified")
+        if len(completions) > 1:
+            ambiguity_reasons.append("multiple_completion_events")
+        if len(interactions) > len(followups):
+            ambiguity_reasons.append("non_followup_interaction")
+        activity_kinds = {
+            kind for event in events if isinstance((kind := event.get("kind")), str)
+        }
         attempt = {
             "attempt_id": attempt_id,
             "child_thread_id": thread_id,
@@ -134,8 +167,11 @@ def annotate_attempts(
             "agent_path": item.get("agent_path"),
             "agent_role": item.get("agent_role"),
             "followup_count": len(followups),
+            "interaction_count": len(interactions),
+            "completion_event_count": len(completions),
             "interrupted_count": len(interruptions),
-            "activity_kinds": sorted({event.get("kind") for event in events if event.get("kind")}),
+            "activity_kinds": sorted(activity_kinds),
+            "proxy_ambiguity_reasons": ambiguity_reasons,
             "disposition": disposition,
             "disposition_source": disposition_source,
             "note": note if isinstance(note, str) else None,
@@ -156,11 +192,11 @@ def _priced_cost(item: dict[str, Any]) -> float | None:
 
 def _aggregate(members: list[dict[str, Any]]) -> dict[str, Any]:
     costs = [cost for item in members if (cost := _priced_cost(item)) is not None]
-    accepted = [item for item in members if item["attempt"]["disposition"] == "accepted"]
+    accepted = [
+        item for item in members if item["attempt"]["disposition"] == "accepted"
+    ]
     accepted_costs = [
-        cost
-        for item in accepted
-        if (cost := _priced_cost(item)) is not None
+        cost for item in accepted if (cost := _priced_cost(item)) is not None
     ]
     total_cost = sum(costs) if costs else None
     accepted_total = sum(accepted_costs) if accepted_costs else None
@@ -172,7 +208,7 @@ def _aggregate(members: list[dict[str, Any]]) -> dict[str, Any]:
         "total_estimated_cost": total_cost,
         "accepted_estimated_cost": accepted_total,
         "cost_per_accepted_task": (
-            accepted_total / len(accepted_costs) if accepted_costs else None
+            sum(accepted_costs) / len(accepted_costs) if accepted_costs else None
         ),
         "mean_estimated_cost": mean(costs) if costs else None,
         "median_estimated_cost": median(costs) if costs else None,
@@ -186,9 +222,123 @@ def _aggregate(members: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def summarize_attempts(
-    items: Iterable[dict[str, Any]], policy: str
-) -> dict[str, Any]:
+def _distribution(values: Iterable[int | float]) -> dict[str, int | float | None]:
+    materialized = sorted(values)
+    if not materialized:
+        return {
+            "observations": 0,
+            "total": None,
+            "mean": None,
+            "median": None,
+            "p90": None,
+        }
+    return {
+        "observations": len(materialized),
+        "total": sum(materialized),
+        "mean": mean(materialized),
+        "median": median(materialized),
+        "p90": materialized[ceil(len(materialized) * 0.9) - 1],
+    }
+
+
+def _numeric(value: Any) -> int | float | None:
+    return (
+        value
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        else None
+    )
+
+
+def _wall_seconds(item: dict[str, Any]) -> float | None:
+    started = item.get("started_at")
+    ended = item.get("ended_at")
+    if not isinstance(started, str) or not isinstance(ended, str):
+        return None
+    try:
+        duration = (
+            datetime.fromisoformat(ended) - datetime.fromisoformat(started)
+        ).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return duration if duration >= 0 else None
+
+
+def _usage_distributions(
+    members: list[dict[str, Any]], key: str, fields: Iterable[str]
+) -> dict[str, dict[str, int | float | None]]:
+    output = {}
+    for field in fields:
+        values = []
+        for item in members:
+            usage = item.get(key)
+            value = _numeric(usage.get(field)) if isinstance(usage, dict) else None
+            if value is not None:
+                values.append(value)
+        output[field] = _distribution(values)
+    return output
+
+
+def _billable_usage(item: dict[str, Any]) -> dict[str, int] | None:
+    pricing = item.get("pricing")
+    if not isinstance(pricing, dict) or pricing.get("status") != "ok":
+        return None
+    totals = {
+        field: 0
+        for field in (
+            "uncached_input_tokens",
+            "cached_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+            "reasoning_output_tokens",
+        )
+    }
+    for segment in pricing.get("segments", []):
+        segment_pricing = segment.get("pricing") if isinstance(segment, dict) else None
+        billable = (
+            segment_pricing.get("billable_tokens")
+            if isinstance(segment_pricing, dict)
+            else None
+        )
+        if not isinstance(billable, dict):
+            return None
+        for field in totals:
+            value = billable.get(field)
+            if not isinstance(value, int) or isinstance(value, bool):
+                return None
+            totals[field] += value
+    return totals
+
+
+def _decision_metrics(members: list[dict[str, Any]]) -> dict[str, Any]:
+    wall_values = [
+        value for item in members if (value := _wall_seconds(item)) is not None
+    ]
+    billable = [
+        usage for item in members if (usage := _billable_usage(item)) is not None
+    ]
+    return {
+        "rollout_wall_seconds": _distribution(wall_values),
+        "measured_tokens": _usage_distributions(
+            members, "measured_usage", USAGE_FIELDS
+        ),
+        "billable_tokens": _usage_distributions(
+            [{"billable": usage} for usage in billable],
+            "billable",
+            (
+                "uncached_input_tokens",
+                "cached_input_tokens",
+                "cache_write_input_tokens",
+                "output_tokens",
+                "reasoning_output_tokens",
+            ),
+        ),
+        "estimated_cost": _distribution(
+            cost for item in members if (cost := _priced_cost(item)) is not None
+        ),
+    }
+
+
+def summarize_attempts(items: Iterable[dict[str, Any]], policy: str) -> dict[str, Any]:
     materialized = list(items)
     aggregate = _aggregate(materialized)
     aggregate.update(
@@ -209,8 +359,14 @@ def summarize_attempts(
 def summarize_attempt_routes(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for item in items:
-        model = item.get("model") or ",".join(item.get("models") or []) or "unknown-model"
-        effort = item.get("effort") or ",".join(item.get("efforts") or []) or "unknown-effort"
+        model = (
+            item.get("model") or ",".join(item.get("models") or []) or "unknown-model"
+        )
+        effort = (
+            item.get("effort")
+            or ",".join(item.get("efforts") or [])
+            or "unknown-effort"
+        )
         role = item.get("agent_role") or item.get("task_label") or "unknown-role"
         groups[(model, effort, role)].append(item)
     summaries = []
@@ -231,10 +387,21 @@ def summarize_route_pairs(items: Iterable[dict[str, Any]]) -> list[dict[str, Any
 
     groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for item in items:
-        model = item.get("model") or ",".join(item.get("models") or []) or "unknown-model"
-        effort = item.get("effort") or ",".join(item.get("efforts") or []) or "unknown-effort"
+        model = (
+            item.get("model") or ",".join(item.get("models") or []) or "unknown-model"
+        )
+        effort = (
+            item.get("effort")
+            or ",".join(item.get("efforts") or [])
+            or "unknown-effort"
+        )
         groups[(model, effort)].append(item)
     return [
-        {"model": model, "effort": effort, **_aggregate(members)}
+        {
+            "model": model,
+            "effort": effort,
+            **_aggregate(members),
+            **_decision_metrics(members),
+        }
         for (model, effort), members in sorted(groups.items())
     ]

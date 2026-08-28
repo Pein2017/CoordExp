@@ -2,6 +2,10 @@
 # Keep one entry per provider/model pair. Prices are per one million tokens.
 # Do not commit private or time-sensitive provider rates without a source/date.
 
+[metadata]
+effective_date = "YYYY-MM-DD"
+source = "replace-with-provider-pricing-page-or-receipt"
+
 [[rates]]
 provider = "openai"
 model = "gpt-5.6-luna"

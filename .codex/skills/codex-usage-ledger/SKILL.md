@@ -68,12 +68,16 @@ reports requested by the caller, preferably under a temporary directory.
    recorded in `filters` and `scan.scope_filter`/`scan.scope_records`.
 
 3. Run `--disposition-policy strict` when a real lead or verifier outcomes
-   JSONL is available. Pass it with `--outcomes`; use `attempt_id` from the
-   report and one disposition (`accepted`, `rework`, `escalated`, or `failed`)
-   per line.
+   JSONL is available. Generate a starting file with
+   `--outcomes-template-out PATH`, replace the `REPLACE_ME` values, remove
+   attempts that remain unlabeled, and pass the result with `--outcomes`. Use
+   one disposition (`accepted`, `rework`, `escalated`, or `failed`) per line;
+   duplicate identifiers fail closed.
 4. Read `summary.json` first. Check `scan.parse_errors`, the scan window,
-   `totals.unpriced_segments`, the price source, and the disposition definition
-   before quoting a number. Load `references/report-fields.md` when a field
+   `totals.unpriced_segments`, `pricing_snapshot`, and the disposition
+   definition before quoting a number. The default summary is compact. Pass
+   `--full-summary` only when task-level `groups` or role-level
+   `attempt_routes` are needed. Load `references/report-fields.md` when a field
    meaning is unclear.
 
 ## Interpret acceptance cost
@@ -87,9 +91,10 @@ reports requested by the caller, preferably under a temporary directory.
 - Compare model × effort pairs only within comparable role, task class, brief,
   verifier, and surface. Do not produce a global model ranking from mixed
   roles, missing rates, interrupted tasks, or raw call volume.
-- Use `route_pairs` for descriptive cost and disposition summaries. Require a
-  meaningful sample and comparable acceptance evidence before changing a
-  routing default.
+- Use `route_pairs` for measured/billable token, rollout wall-time, estimated
+  cost, and disposition distributions. Require a meaningful sample and
+  comparable acceptance evidence before changing a routing default. Wall time
+  includes waiting and orchestration delay; it is not compute time.
 - Report the formula, denominator, priced/unpriced counts, snapshot timestamp,
   and the strongest limitation alongside every headline cost.
 

@@ -3,6 +3,10 @@
 # The screenshot lists cache-write as a separate billing dimension, so this
 # file keeps cache_write_is_in_input=false. Reasoning is treated as output.
 
+[metadata]
+effective_date = "2026-08-06"
+source = "User-provided screenshot: GPT-5.6 API token price (Standard API), 2026-08-06"
+
 [[rates]]
 provider = "openai"
 model = "gpt-5.6-sol"

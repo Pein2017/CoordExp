@@ -8,12 +8,13 @@ from pathlib import Path
 from codex_usage_ledger.parser import parse_rollout
 from codex_usage_ledger.pricing import load_rates
 from codex_usage_ledger.report import enrich_record, summarize, summarize_totals
-from codex_usage_ledger.cli import filter_records
+from codex_usage_ledger.cli import filter_records, main
 from codex_usage_ledger.parser import SessionRecord
 from codex_usage_ledger.attempts import (
     annotate_attempts,
     load_outcomes,
     summarize_attempts,
+    summarize_route_pairs,
 )
 
 
@@ -65,9 +66,7 @@ class LedgerTests(unittest.TestCase):
         )
         self.assertEqual(session_scope["scope_filter"], "session")
 
-        subtree, subtree_scope = filter_records(
-            records, True, root_thread_id="root-a"
-        )
+        subtree, subtree_scope = filter_records(records, True, root_thread_id="root-a")
         self.assertEqual(
             [record.thread_id for record in subtree],
             ["root-a", "child-a", "grandchild-a"],
@@ -282,6 +281,8 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual(record.task_label, "worker")
             self.assertEqual(record.model, "gpt-5.6-luna")
             self.assertEqual(record.effort, "medium")
+            assert record.latest_total_usage is not None
+            assert record.latest_last_usage is not None
             self.assertEqual(record.latest_total_usage.total_tokens, 330)
             self.assertEqual(record.latest_last_usage.total_tokens, 220)
             self.assertEqual(record.status, "completed")
@@ -530,7 +531,9 @@ output_per_million = 2.0
                 encoding="utf-8",
             )
             record = parse_rollout(path)
-            self.assertEqual(record.sub_agent_activity_events[0]["event_id"], "call-start")
+            self.assertEqual(
+                record.sub_agent_activity_events[0]["event_id"], "call-start"
+            )
             self.assertEqual(record.agent_tool_calls[1]["name"], "followup_task")
             price_path = Path(tmp) / "prices.toml"
             price_path.write_text(
@@ -555,9 +558,7 @@ output_per_million = 2.0
                 ],
                 None,
             )
-            completed_proxy = annotate_attempts(
-                [item], [record], policy="completed"
-            )[0]
+            completed_proxy = annotate_attempts([item], [record], policy="completed")[0]
             self.assertEqual(completed_proxy["attempt"]["disposition"], "accepted")
             self.assertAlmostEqual(
                 summarize_attempts([completed_proxy], "completed")[
@@ -575,6 +576,336 @@ output_per_million = 2.0
             )
             outcomes = load_outcomes(path)
             self.assertEqual(outcomes["call-start"]["disposition"], "accepted")
+
+    def test_route_pair_decision_distributions(self) -> None:
+        def item(
+            started_at: str,
+            ended_at: str,
+            total_tokens: int,
+            cached_tokens: int,
+            cost: float,
+        ) -> dict:
+            return {
+                "model": "gpt-5.6-sol",
+                "effort": "medium",
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "measured_usage": {
+                    "input_tokens": total_tokens - 10,
+                    "cached_input_tokens": cached_tokens,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 10,
+                    "reasoning_output_tokens": 4,
+                    "total_tokens": total_tokens,
+                },
+                "pricing": {
+                    "status": "ok",
+                    "amount": cost,
+                    "segments": [
+                        {
+                            "pricing": {
+                                "status": "ok",
+                                "amount": cost,
+                                "billable_tokens": {
+                                    "uncached_input_tokens": total_tokens
+                                    - cached_tokens
+                                    - 10,
+                                    "cached_input_tokens": cached_tokens,
+                                    "cache_write_input_tokens": 0,
+                                    "output_tokens": 10,
+                                    "reasoning_output_tokens": 0,
+                                },
+                            }
+                        }
+                    ],
+                },
+                "attempt": {"disposition": "accepted"},
+            }
+
+        route = summarize_route_pairs(
+            [
+                item(
+                    "2026-08-06T00:00:00Z",
+                    "2026-08-06T00:00:10Z",
+                    100,
+                    40,
+                    1.0,
+                ),
+                item(
+                    "2026-08-06T00:01:00Z",
+                    "2026-08-06T00:01:30Z",
+                    300,
+                    100,
+                    3.0,
+                ),
+                {
+                    "model": "gpt-5.6-sol",
+                    "effort": "medium",
+                    "pricing": {"status": "partial_or_missing", "amount": None},
+                    "attempt": {"disposition": "unknown"},
+                },
+            ]
+        )[0]
+
+        self.assertEqual(
+            route["rollout_wall_seconds"],
+            {
+                "observations": 2,
+                "total": 40.0,
+                "mean": 20.0,
+                "median": 20.0,
+                "p90": 30.0,
+            },
+        )
+        self.assertEqual(route["measured_tokens"]["total_tokens"]["total"], 400)
+        self.assertEqual(route["billable_tokens"]["cached_input_tokens"]["median"], 70)
+        self.assertEqual(route["estimated_cost"]["p90"], 3.0)
+        self.assertEqual(route["estimated_cost"]["observations"], 2)
+        self.assertEqual(route["unpriced_attempts"], 1)
+
+    def test_compact_summary_price_receipt_and_outcomes_template(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sessions = root / "sessions"
+            sessions.mkdir()
+            rollout = sessions / "rollout-2026-08-06T00-00-00-child.jsonl"
+            usage = {
+                "input_tokens": 100,
+                "cached_input_tokens": 40,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 10,
+                "reasoning_output_tokens": 4,
+                "total_tokens": 110,
+            }
+            rollout.write_text(
+                "".join(
+                    [
+                        _line(
+                            "2026-08-06T00:00:00Z",
+                            "session_meta",
+                            {
+                                "id": "child-summary",
+                                "parent_thread_id": "parent-summary",
+                                "thread_source": "subagent",
+                                "agent_path": "/root/summary-worker",
+                                "agent_role": "reviewer",
+                                "model_provider": "openai",
+                            },
+                        ),
+                        _line(
+                            "2026-08-06T00:00:01Z",
+                            "event_msg",
+                            {"type": "task_started", "turn_id": "turn-1"},
+                        ),
+                        _line(
+                            "2026-08-06T00:00:01Z",
+                            "turn_context",
+                            {
+                                "turn_id": "turn-1",
+                                "model": "gpt-5.6-sol",
+                                "effort": "medium",
+                            },
+                        ),
+                        _line(
+                            "2026-08-06T00:00:02Z",
+                            "event_msg",
+                            {
+                                "type": "token_count",
+                                "info": {
+                                    "total_token_usage": usage,
+                                    "last_token_usage": usage,
+                                },
+                            },
+                        ),
+                        _line(
+                            "2026-08-06T00:00:03Z",
+                            "event_msg",
+                            {"type": "task_complete", "turn_id": "turn-1"},
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            prices = root / "prices.toml"
+            prices.write_text(
+                """
+[metadata]
+effective_date = "2026-08-06"
+source = "test price sheet"
+
+[[rates]]
+provider = "openai"
+model = "gpt-5.6-sol"
+input_per_million = 1.0
+cached_input_per_million = 0.5
+output_per_million = 2.0
+source = "test price sheet"
+""",
+                encoding="utf-8",
+            )
+            summary_path = root / "summary.json"
+            output_path = root / "items.jsonl"
+            template_path = root / "outcomes-template.jsonl"
+            common = [
+                "--sessions",
+                str(sessions),
+                "--prices",
+                str(prices),
+                "--summary-out",
+                str(summary_path),
+                "--output",
+                str(output_path),
+                "--outcomes-template-out",
+                str(template_path),
+            ]
+
+            self.assertEqual(main(common), 0)
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertNotIn("groups", summary)
+            self.assertNotIn("attempt_routes", summary)
+            self.assertEqual(summary["filters"]["summary_mode"], "compact")
+            self.assertEqual(summary["pricing_snapshot"]["status"], "loaded")
+            self.assertEqual(
+                summary["pricing_snapshot"]["effective_date"], "2026-08-06"
+            )
+            self.assertEqual(len(summary["pricing_snapshot"]["sha256"]), 64)
+            template = json.loads(template_path.read_text(encoding="utf-8"))
+            self.assertEqual(template["disposition"], "REPLACE_ME")
+            self.assertEqual(template["model"], "gpt-5.6-sol")
+            with self.assertRaisesRegex(ValueError, "invalid disposition.*REPLACE_ME"):
+                load_outcomes(template_path)
+
+            self.assertEqual(main([*common, "--full-summary"]), 0)
+            full = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(full["filters"]["summary_mode"], "full")
+            self.assertIn("groups", full)
+            self.assertIn("attempt_routes", full)
+
+            self.assertEqual(
+                main(
+                    [
+                        "--sessions",
+                        str(sessions),
+                        "--summary-out",
+                        str(summary_path),
+                        "--output",
+                        str(output_path),
+                    ]
+                ),
+                0,
+            )
+            unpriced = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(unpriced["pricing_snapshot"]["status"], "unconfigured")
+
+    def test_duplicate_inputs_and_invalid_price_flags_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            duplicate_prices = root / "duplicate-prices.toml"
+            duplicate_prices.write_text(
+                """
+[[rates]]
+provider = "openai"
+model = "same"
+cache_write_is_in_input = false
+
+[[rates]]
+provider = "openai"
+model = "same"
+cache_write_is_in_input = false
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError, "duplicate price rate.*openai:same"
+            ):
+                load_rates(duplicate_prices)
+
+            invalid_bool = root / "invalid-bool.toml"
+            invalid_bool.write_text(
+                """
+[[rates]]
+provider = "openai"
+model = "same"
+cache_write_is_in_input = "false"
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "cache_write_is_in_input.*boolean"):
+                load_rates(invalid_bool)
+
+            duplicate_outcomes = root / "duplicate-outcomes.jsonl"
+            duplicate_outcomes.write_text(
+                '{"attempt_id":"same","disposition":"accepted"}\n'
+                '{"attempt_id":"same","disposition":"failed"}\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate outcome.*same"):
+                load_outcomes(duplicate_outcomes)
+
+    def test_proxy_ambiguity_is_structural(self) -> None:
+        record = SessionRecord(
+            file="fixture",
+            file_size_bytes=1,
+            thread_id="child-ambiguous",
+            parent_thread_id="parent-ambiguous",
+            thread_source="subagent",
+            sub_agent_activity_events=[
+                {
+                    "event_id": "start",
+                    "agent_thread_id": "child-ambiguous",
+                    "kind": "started",
+                    "occurred_at_ms": 1,
+                },
+                {
+                    "event_id": "complete-1",
+                    "agent_thread_id": "child-ambiguous",
+                    "kind": "completed",
+                    "occurred_at_ms": 2,
+                },
+                {
+                    "event_id": "message",
+                    "agent_thread_id": "child-ambiguous",
+                    "kind": "interacted",
+                    "occurred_at_ms": 3,
+                },
+                {
+                    "event_id": "follow",
+                    "agent_thread_id": "child-ambiguous",
+                    "kind": "interacted",
+                    "occurred_at_ms": 4,
+                },
+                {
+                    "event_id": "complete-2",
+                    "agent_thread_id": "child-ambiguous",
+                    "kind": "completed",
+                    "occurred_at_ms": 5,
+                },
+            ],
+            agent_tool_calls=[
+                {"call_id": "message", "name": "send_message"},
+                {"call_id": "follow", "name": "followup_task"},
+            ],
+        )
+        item = {
+            "thread_id": "child-ambiguous",
+            "parent_thread_id": "parent-ambiguous",
+            "status": "completed",
+            "pricing": {"status": "missing_usage", "amount": None},
+        }
+
+        attempt = annotate_attempts([item], [record], policy="followup_aware")[0][
+            "attempt"
+        ]
+        self.assertEqual(attempt["interaction_count"], 2)
+        self.assertEqual(attempt["completion_event_count"], 2)
+        self.assertEqual(
+            attempt["proxy_ambiguity_reasons"],
+            [
+                "followup_semantics_unverified",
+                "multiple_completion_events",
+                "non_followup_interaction",
+            ],
+        )
 
 
 if __name__ == "__main__":

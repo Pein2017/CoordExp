@@ -17,13 +17,21 @@ Use these fields when checking a ledger result.
 | `attempts.priced_accepted_attempts` | Accepted records with a complete price. This is the denominator for the cost metric. |
 | `attempts.cost_per_accepted_task` | `accepted_estimated_cost / priced_accepted_attempts`; only authoritative with explicit outcomes. |
 | `attempts.accepted_definition` | The exact strict or proxy definition used for the number. |
-| `route_pairs` | Descriptive model × effort aggregates; do not treat mixed-task pairs as a benchmark. |
+| `pricing_snapshot` | Resolved price path, SHA-256, effective date, sources, currencies, and loaded rate keys; `unconfigured` when no price file was selected. |
+| `route_pairs` | Compact descriptive model × effort aggregates; do not treat mixed-task pairs as a benchmark. |
+| `route_pairs[].rollout_wall_seconds` | Observation count plus total, mean, median, and nearest-rank P90 elapsed wall time; this includes orchestration and waiting. |
+| `route_pairs[].measured_tokens` | Distributions for persisted post-boundary token dimensions. |
+| `route_pairs[].billable_tokens` | Distributions for fully priced uncached, cached, cache-write, output, and reasoning dimensions. |
+| `route_pairs[].estimated_cost` | Distribution over fully priced attempt costs. |
 
 The matching CLI filters are also copied into `filters`:
 `thread_id` (one exact rollout), `session_id` (exact persisted session ID), and
 `root_thread_id` (that thread plus all descendants). Only one can be set. A
 root-subtree report still excludes the root record unless `include_root` is
 true; this is useful when separating parent-process cost from child-agent cost.
+`filters.summary_mode` is `compact` by default. `--full-summary` changes it to
+`full` and restores `groups` plus `attempt_routes`; detailed session output is
+unchanged.
 
 ## Evidence vocabulary
 
@@ -34,3 +42,5 @@ true; this is useful when separating parent-process cost from child-agent cost.
 - `spawn_event_id`: the attempt was joined to a parent `spawn_agent` activity.
 - `thread:<id>`: no matching spawn activity was persisted; the record is a
   thread-level fallback evidence.
+- `proxy_ambiguity_reasons`: structural warnings from persisted lifecycle and
+  interaction receipts; never a semantic classifier of agent messages.
