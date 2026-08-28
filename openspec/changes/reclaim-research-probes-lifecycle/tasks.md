@@ -1,7 +1,7 @@
 ## 1. Freeze inputs and baseline
 
 - [x] 1.1 Record in `receipts/inputs.md`: `research-probes` HEAD SHA, `git status --short | wc -l == 0`, the three retirement buckets with tip SHAs exactly as listed in `design.md`, and a fresh `git -C <wt> status --short | wc -l` per worktree target. Any non-zero count removes that target from its bucket and is reported.
-- [ ] 1.2 Run `CUDA_VISIBLE_DEVICES=-1 conda run -n ms pytest tests/research tests/artifacts -q -p no:cacheprovider` and store the failure set (test node ids, not counts) and runtime in `receipts/test-baseline.md`.
+- [x] 1.2 Run `CUDA_VISIBLE_DEVICES=-1 conda run -n ms pytest tests/research tests/artifacts -q -p no:cacheprovider` and store the failure set (test node ids, not counts) and runtime in `receipts/test-baseline.md`.
 
 ## 2. Lifecycle and routing documents (Phase 0)
 
@@ -29,19 +29,19 @@
 
 ## 5. `scripts/research` entropy reclamation (Phase 2b)
 
-- [ ] 5.1 Build the classified reference ledger for all 315 scripts: for each script, hits split into production import (`src/`, other `scripts/`), dedicated test, research-record citation (`research/`, `memories/`), docs citation, config citation, and hits inside `/data/CoordExp/.worktrees/image2299-mechanism-microscope` (tracked and untracked). Assign class per D6. Write `receipts/scripts-entropy-ledger.md` with one evidence record per delete candidate and the keep list with its reason class.
-- [ ] 5.2 Batch 1, zero-reference scripts: delete end to end (script, any config or fixture cited only by it). Run the narrow tests for neighbouring modules, then the baseline command; diff the failure set against `receipts/test-baseline.md`. Commit with explicit paths; message names the ledger batch.
-- [ ] 5.3 Batch 2, test-only scripts: delete script, its dedicated test module(s), and configs/fixtures cited only by them. Same verification and commit form.
-- [ ] 5.4 Report, do not delete: scripts whose only citation is a closed research record or a docs page. List them in the ledger as HOLD with the citing path so the user can decide whether to rewrite the citation to `research-base-v2` later.
-- [ ] 5.5 Residue search for every deleted basename across the tree and the image2299 worktree; `git diff --check`; final failure-set diff; net reduction (files, lines, tests, configs) recorded in the ledger.
-- [ ] 5.G Gate: lead reviews the ledger and `git diff --stat research-base-v2..HEAD -- scripts tests configs`; admission tests green; no HOLD item deleted.
+- [x] 5.1 Build the classified reference ledger for all 315 scripts: for each script, hits split into production import (`src/`, other `scripts/`), dedicated test, research-record citation (`research/`, `memories/`), docs citation, config citation, and hits inside `/data/CoordExp/.worktrees/image2299-mechanism-microscope` (tracked and untracked). Assign class per D6. Write `receipts/scripts-entropy-ledger.md` with one evidence record per delete candidate and the keep list with its reason class.
+- [x] 5.2 Batch 1, zero-reference scripts: delete end to end (script, any config or fixture cited only by it). Run the narrow tests for neighbouring modules, then the baseline command; diff the failure set against `receipts/test-baseline.md`. Commit with explicit paths; message names the ledger batch.
+- [x] 5.3 Batch 2, test-only scripts: delete script, its dedicated test module(s), and configs/fixtures cited only by them. Same verification and commit form.
+- [x] 5.4 Report, do not delete: scripts whose only citation is a closed research record or a docs page. List them in the ledger as HOLD with the citing path so the user can decide whether to rewrite the citation to `research-base-v2` later.
+- [x] 5.5 Residue search for every deleted basename across the tree and the image2299 worktree; `git diff --check`; final failure-set diff; net reduction (files, lines, tests, configs) recorded in the ledger.
+- [x] 5.G Gate: lead reviews the ledger and `git diff --stat research-base-v2..HEAD -- scripts tests configs`; admission tests green; no HOLD item deleted.
 
 ## 6. `src/` entropy audit (Phase 2b′, report-only until approved)
 
 - [ ] 6.1 Audit every `src/` module, starting from the 60+ files unique to `research-probes` vs `main` (`git diff --name-only main...research-probes -- src`), for the nine candidate classes in `reclaim-code-entropy`; consumer search covers `src/`, `scripts/`, `tests/`, configs, research replay citations, and the image2299 worktree. Write `receipts/src-entropy-audit.md` ranked by confidence, risk, and net reduction, with silent-corruption surfaces marked report-only.
 - [ ] 6.2 Present the audit to the user; execute only user-named cuts, in D6 batch-and-test form, appending to the same receipt.
-- [ ] 6.3 Docs entropy audit (report-only, user steer 2026-08-28 "大量的内容是可以清理的(文档/artifacts/*.py)"): rank `docs/catalog.yaml` legacy/historical entries, `docs/history/`, `progress/`, `reference/`, and `memories/notes/` by inbound references from current (non-legacy) documents, last commit date, and size; write `receipts/docs-entropy-audit.md` in the `reclaim-code-entropy` evidence format with move-to-history vs delete candidates. No edits.
-- [ ] 6.4 Artifact-root inventory (report-only): for every top-level directory under `/data/CoordExp/outputs/research/` and `/data/CoordExp/.worktrees/research-probes/outputs/`, record size, newest mtime, and which `research/` unit or `memories/` note binds it (grep the path); classify bound-by-complete-unit / bound-by-archived-unit / unbound. Write `receipts/artifact-root-inventory.md`. Deletion of artifacts is never performed by this change; the user names roots to reclaim separately.
+- [x] 6.3 Docs entropy audit (report-only, user steer 2026-08-28 "大量的内容是可以清理的(文档/artifacts/*.py)"): rank `docs/catalog.yaml` legacy/historical entries, `docs/history/`, `progress/`, `reference/`, and `memories/notes/` by inbound references from current (non-legacy) documents, last commit date, and size; write `receipts/docs-entropy-audit.md` in the `reclaim-code-entropy` evidence format with move-to-history vs delete candidates. No edits.
+- [x] 6.4 Artifact-root inventory (report-only): for every top-level directory under `/data/CoordExp/outputs/research/` and `/data/CoordExp/.worktrees/research-probes/outputs/`, record size, newest mtime, and which `research/` unit or `memories/` note binds it (grep the path); classify bound-by-complete-unit / bound-by-archived-unit / unbound. Write `receipts/artifact-root-inventory.md`. Deletion of artifacts is never performed by this change; the user names roots to reclaim separately.
 
 ## 7. Close (Phases 3–4)
 
