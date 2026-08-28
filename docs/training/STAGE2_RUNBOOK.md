@@ -39,8 +39,6 @@ Historical source/config handles include:
 
 ## Historical references
 
-- [`../history/training/STAGE2_DESIGN.md`](../history/training/STAGE2_DESIGN.md)
-  for preserved design rationale;
 - [`../history/superpowers/README.md`](../history/superpowers/README.md) for
   dated historical plans and handoffs;
 - [`../../openspec/changes/archive/`](../../openspec/changes/archive/) for

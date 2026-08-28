@@ -29,10 +29,8 @@ For current implementation work, start with:
   comparator vocabulary;
 - [`STAGE2_RUNBOOK.md`](STAGE2_RUNBOOK.md): legacy rollout-correction runbook;
 - [`METRICS.md`](METRICS.md): historical metric and loss interpretation;
-- [`LVIS.md`](LVIS.md): historical LVIS integration notes;
 - [`../data/PACKING.md`](../data/PACKING.md): packing history and contract
   comparisons;
-- [`../history/training/`](../history/training/): superseded training notes;
 - [`drafts/`](drafts/): explicitly non-canonical experiment drafts.
 
 The old `configs/stage1/`, `configs/stage2/`, archived recursive-detection
