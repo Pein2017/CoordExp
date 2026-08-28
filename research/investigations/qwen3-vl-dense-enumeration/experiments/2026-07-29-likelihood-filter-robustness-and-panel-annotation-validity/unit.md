@@ -79,6 +79,8 @@ Produced by `scripts/research/analyze_common_owner_count_robustness.py`, which
 imports the parent unit's `analyze_cluster_confidence_retention.py` rather than
 reimplementing scoring, thresholding, or fold construction.
 
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
+
 ## Scope and Non-Goals
 
 Panel, checkpoints, clusters, labels, likelihoods, and the pre-registered

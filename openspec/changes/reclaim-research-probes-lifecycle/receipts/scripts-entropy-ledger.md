@@ -1028,3 +1028,288 @@ Every file removed by this change is present in the annotated tag `research-base
 ```
 git checkout research-base-v2 -- scripts/research/<name>.py
 ```
+
+## Wave 8 (8.1) - approved follow-through on HOLD-A/B/C/F
+
+User approval 2026-08-28 ("完全同意. test, scripts 都可以大改动"). Lane worktree
+`/data/CoordExp/.worktrees/lane-scripts`, branch `lane/scripts`, forked from `research-probes`
+HEAD `b3d3be9b9`. Method unchanged from waves 5/1-2; two rules were added and are the reason the
+deleted counts are lower than the HOLD lists:
+
+1. **Transitivity as a fixpoint.** A candidate imported by a *surviving* script is kept, and a
+   candidate that is itself kept then blocks its own imports. Iterating to a fixpoint over the
+   86 HOLD-A/B/C candidates leaves 59 deletable and 27 blocked. The single-pass form used while
+   planning would have deleted `human13_live_payload` and `human13_live_segments`, both imported
+   by `train_human13_live_arm` (HOLD-A, itself kept because `human13_on_policy_runtime` imports it).
+2. **A deleted script that a surviving-subject test depends on is kept.** The split rule keeps every
+   test whose subject survives; when such a test cannot run without the candidate (directly or
+   through a module-level fixture), deleting the candidate would delete the module rather than
+   split it. Two candidates were kept this way (`train_human13_k_trajectory_rp_crossover`,
+   `split_label_only_candidate_pool`).
+
+### Batch 1 - HOLD-B (commit `06f34e736`)
+
+19 scripts, 10 test modules, 1 config, 12 record citation rewrites.
+
+| Deleted script | Dedicated test module removed |
+| --- | --- |
+| `analyze_cluster_confidence_retention` | - |
+| `analyze_common_owner_count_robustness` | - |
+| `analyze_ranking_versus_operating_point` | - |
+| `analyze_sorted_crossing_neutral_row_control` | `tests/research/test_analyze_sorted_crossing_neutral_row_control.py` |
+| `build_cluster_confidence` | - |
+| `build_common_object_prefix_permutation_cases` | `tests/research/test_build_common_object_prefix_permutation_cases.py` |
+| `build_matched_random_sorted_candidate_score_manifest` | `tests/research/test_build_matched_random_sorted_candidate_score_manifest.py` |
+| `build_sorted_prospective_13_image_panel` | `tests/research/test_build_sorted_prospective_13_image_panel.py` |
+| `compute_sampled_union_f1_metrics` | - |
+| `derive_likelihood_mining_baseline` | - |
+| `merge_sorted_crossing_neutral_row_control` | `tests/research/test_merge_sorted_crossing_neutral_row_control.py` |
+| `prepare_sorted_crossing_neutral_row_control` | `tests/research/test_prepare_sorted_crossing_neutral_row_control.py` |
+| `run_earliest_shared_prefix_branch_pilot` | `tests/research/test_earliest_shared_prefix_branch_pilot.py` |
+| `run_fixed_prefix_nonboundary_box_grammar_image19432` | - |
+| `run_human13_rp_crossover_parity_v5` | `tests/research/test_run_human13_rp_crossover_parity_v5.py` |
+| `run_span_likelihood_replay` | - |
+| `score_sorted_crossing_neutral_row_control` | `tests/research/test_score_sorted_crossing_neutral_row_control.py` |
+| `summarize_same_covered_set_prefix_order_probe` | `tests/research/test_summarize_same_covered_set_prefix_order_probe.py` |
+| `verify_likelihood_mining_contracts` | - |
+
+Config removed: `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_random_permutation_bundle_step4887_human_refined12_hf_fp32.yaml`
+(referenced only by `run_span_likelihood_replay` and `verify_likelihood_mining_contracts`).
+
+### Batch 2 - HOLD-C (commit `20be41cfa`)
+
+31 scripts (30 HOLD-C + `visualize_sorted_owner_accessibility_visual_atlas`, a HOLD-B entry
+deferred out of batch 1 because `visualize_sorted_image2299_mechanism_atlas` imported it),
+26 whole test modules, 6 shared modules split, 2 record citation rewrites.
+
+| Deleted script |
+| --- |
+| `analyze_iterative_forced_continue_extreme_capacity` |
+| `analyze_sorted_crossing_boundary_owner_release_secondary` |
+| `analyze_sorted_fn_mechanisms` |
+| `analyze_sorted_full_canvas_token_budget_intervention` |
+| `analyze_sorted_image2299_owner_accessibility` |
+| `analyze_sorted_image2299_supported_fn_reachability` |
+| `attest_sorted_fn_successor_score_run` |
+| `attest_sorted_owner_basin_smoke` |
+| `audit_sorted_image2299_calibration_transfer` |
+| `build_image2299_current_native_ledger` |
+| `build_sorted_image2299_native_ledger` |
+| `build_sorted_image2299_owner_accessibility_plan` |
+| `convert_image2299_case_v1_to_v2` |
+| `human13_row_contrast_live` |
+| `materialize_human13_row_contrast_successor` |
+| `prepare_sorted_full_canvas_token_budget_intervention` |
+| `run_continuation_locality_boundary_scoring` |
+| `run_iterative_forced_continue_exact_native` |
+| `run_physical_owner_duplication_prefix_counterfactual` |
+| `run_static_dynamic_owner_observational_census` |
+| `score_sorted_full_canvas_token_budget_intervention_shard` |
+| `seal_s_k10_h20_crossover_finalization_receipt` |
+| `summarize_continuation_locality_owner_compositionality` |
+| `train_human13_row_contrast_successor` |
+| `validate_same_parent_complete_row_intervention_union` |
+| `validate_sampled_history_target_reachability_union` |
+| `visualize_sorted_crossing_boundary_owner_release` |
+| `visualize_sorted_crossing_owner_row_geometry` |
+| `visualize_sorted_image2299_mechanism_atlas` |
+| `visualize_sorted_owner_accessibility_visual_atlas` |
+| `visualize_sorted_supported_fn_native_prefix_reachability_prevalence` |
+
+| Shared test module | Split |
+| --- | --- |
+| `tests/research/test_continuation_locality_owner_compositionality.py` | -2 tests (`test_binary_recovery_transitions_preserve_pairing`, `test_locality_and_owner_runners_use_the_same_stable_sharding`); 4 kept |
+| `tests/research/test_finalize_s_k10_h20_crossover.py` | -5 tests + `_successor_fixture` + the two `REAL_SEALER*` constants (the whole "post-execution finalization successor" section); `test_finalize_without_a_successor_keeps_the_strict_parent_contract` kept, 52 node ids collect |
+| `tests/research/test_run_same_parent_complete_row_intervention.py` | -1 test (`test_union_requires_exact_three_candidates`); 5 kept |
+| `tests/research/test_run_sampled_history_target_reachability.py` | -4 `test_union_validator_*` tests; 14 kept |
+| `tests/research/test_run_sorted_fn_successor_behavior.py` | -1 test (`test_v2_attestor_analyzer_admission_builds_behavior_contract_cpu_only`) + its `_analyze_v2_landscape_for_behavior` fixture; 24 kept |
+| `tests/research/test_merge_sorted_crossing_boundary_owner_release_secondary.py` | docstring pointer to the deleted `test_analyze_..._secondary` module rewritten; no test removed |
+
+HOLD-F resolved here: `analyze_iterative_forced_continue_extreme_capacity`, the surviving half of the
+pair whose producer wave 5 batch 2 deleted, went with its shared module
+`tests/research/test_iterative_forced_continue_exact_native.py`. The kept `run_local_branch_causal_value`
+keeps its own dedicated module `tests/research/test_run_local_branch_causal_value.py`.
+
+### Batch 3 - HOLD-A + HOLD-F (commit `b0b2763a5`)
+
+5 scripts and their 5 dedicated test modules. All 22 HOLD-A scripts were re-verified against
+current `docs/`, `progress/`, `memories/` and `research/`: every citation is a
+`docs/superpowers/plans/**` plan, so the doc rule clears all 22 and no canonical or active doc cites
+any of them. The 17 not deleted are held by the transitivity/test-dependency rules, not by a doc.
+
+| Deleted script | Dedicated test module removed |
+| --- | --- |
+| `analyze_human13_k_trajectory_rp_crossover` | `tests/research/test_analyze_human13_k_trajectory_rp_crossover.py` |
+| `build_human13_row_contrast_successor` | `tests/research/test_build_human13_row_contrast_successor.py` |
+| `human13_gradient_preservation` | `tests/research/test_human13_gradient_preservation.py` |
+| `launch_human13_k_union_matrix` | `tests/research/test_launch_human13_k_union_matrix.py` |
+| `run_human13_live_census` | `tests/research/test_run_human13_live_census.py` |
+
+### Citation rewrites (14 files, one `**Replay note.**` line each)
+
+Text: "Producer scripts deleted from `research-probes` on 2026-08-28
+(reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`:
+`git worktree add <tmp> research-base-v2`." Placed at the end of the unit's artifact/provenance
+section where one exists, else at the end of the file. No result, number, or status field changed.
+
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-17-object-specific-geometry-transport-and-cross-row-influence-horizon/results.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/results.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-29-likelihood-filter-robustness-and-panel-annotation-validity/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-29-ranking-quality-versus-usable-rejection/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-29-sampled-span-likelihood-and-consensus-union-filtering/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-03-sorted-owner-accessibility-phenotype-census/tasks.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-03-sorted-owner-accessibility-phenotype-census/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-04-sorted-crossing-matched-length-neutral-row-insertion-control/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-04-sorted-prospective-13-image-panel-admission/tasks.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-04-sorted-prospective-13-image-panel-admission/unit.md`
+- `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-14-human13-k-trajectory-rp-crossover-screen/unit.md`
+
+`research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/candidate-row-scoring-manifest.json`
+is the only citation of `build_matched_random_sorted_candidate_score_manifest`, but it is a produced
+result artifact carrying the producer name and hash, so it was left byte-unchanged and the replay note
+went into that unit's `results.md` instead.
+
+No `memories/**` file cites any script deleted here.
+
+### Kept, with the blocking evidence
+
+| Class | Total | Deleted | Kept |
+| --- | ---: | ---: | ---: |
+| HOLD-A | 22 | 5 | 17 |
+| HOLD-B | 33 | 20 | 13 |
+| HOLD-C | 31 | 30 | 1 |
+| **total** | **86** | **55** | **31** |
+
+**HOLD-A-keep (17)** - every one is cited only by `docs/superpowers/plans/**`, so all are keeps by
+transitivity, never by a doc:
+
+| Kept script | Blocked by |
+| --- | --- |
+| `build_human13_on_policy_frontier` | `human13_continuation_projection`, `human13_greedy_compiler`, `human13_hf_native_one_image_owner`, `human13_live_eval`, `human13_on_policy_runtime`, `human13_rp_crossover_production_backend` (import) |
+| `collect_human13_discovery` | `human13_live_eval`, `human13_live_model`, `human13_rp_crossover_production_backend`, `materialize_human13_no_update_census` (import) |
+| `collect_human13_rp_crossover` | `human13_rp_crossover_live_composition`, `human13_rp_crossover_matrix_contracts`, `human13_rp_crossover_production_backend`, `human13_trajectory_credit` (import) |
+| `compare_clean_rollout_owner_coverage` | `analyze_human13_k_union`, `build_human13_k_union_manifest`, `human13_continuation_projection`, `human13_trajectory_credit` (import) |
+| `human13_frontier_selection` | `human13_continuation_projection`, `human13_on_policy_runtime` (import) |
+| `human13_k_trajectory_contracts` | `human13_trajectory_credit` (import) |
+| `human13_live_census` | `human13_greedy_compiler`, `human13_rp_crossover_production_backend` (import) |
+| `human13_live_payload` | `train_human13_live_arm` (import; fixpoint - `train_human13_live_arm` is itself a kept HOLD-A entry) |
+| `human13_live_segments` | `train_human13_live_arm` (import; fixpoint) |
+| `human13_on_policy_live` | `human13_on_policy_runtime` (import) |
+| `human13_on_policy_scoring` | `human13_greedy_compiler`, `human13_on_policy_runtime` (import) |
+| `human13_rp_policy` | `human13_trajectory_credit` (import) |
+| `launch_human13_k_trajectory_rp_crossover` | `human13_rp_crossover_production_backend` (import) |
+| `materialize_human13_k_union_configs` | `execute_human13_k_union`, `human13_live_model`, `human13_rp_crossover_production_backend` (import) |
+| `train_human13_k_trajectory_rp_crossover` | surviving-subject tests: 10 of 28 in `test_launch_human13_k_trajectory_rp_crossover.py` and 3 of 16 in `test_human13_rp_crossover_production.py` drive the launcher/production factory through this runner |
+| `train_human13_live_arm` | `human13_on_policy_runtime` (import) |
+| `train_human13_on_policy_successor` | `human13_on_policy_runtime` (import) |
+
+**HOLD-B-keep (13)**:
+
+| Kept script | Blocked by |
+| --- | --- |
+| `analyze_image2299_near_complete_relabel_successor_transition` | `analyze_image2299_horizon_branch_value` (import) |
+| `assemble_positive_path_imitation_state_bank` | `analyze_trajectory_owner_set_admission_census`, `assemble_constant_dose_breadth_state_banks`, `assemble_row_local_owner_stop_state_bank`, `assemble_source_preservation_multi_route_state_banks` (import) |
+| `build_sorted_owner_accessibility_census_plan` | `analyze_sorted_supported_fn_native_prefix_reachability_prevalence`, `prepare_sorted_crossing_boundary_owner_release_realization`, `run_static_dynamic_owner_support_probe`, `score_sorted_crossing_boundary_owner_release` (import) |
+| `human13_rp_crossover_live_packs` | `human13_greedy_compiler`, `human13_rp_crossover_live_composition`, `human13_rp_crossover_production_backend` (import) |
+| `merge_sorted_owner_accessibility_census_shards` | `analyze_sorted_supported_fn_native_prefix_reachability_prevalence`, `prepare_sorted_crossing_boundary_owner_release_realization`, `score_sorted_crossing_boundary_owner_release` (import) |
+| `run_current_seeded_sampled_rollouts` | `build_inference_coordinate_boundary_state_bank`, `collect_vllm_trajectory_panel`, `human13_hf_census`, `human13_live_eval`, `human13_rp_crossover_production_backend`, `validate_constant_dose_trajectory_panel_union` (import) |
+| `run_historical_random_sorted_image2299_screen` | deletable, DEFERRED: its dedicated module is `tests/analysis/test_historical_random_sorted_image2299_screen.py`, outside this lane's write surface |
+| `run_native_commit_redistribution` | `run_batch_coordinate_logit_invariance` (import) |
+| `run_native_sibling_branch_replay` | `analyze_native_sibling_branch_value` (HOLD-D), `run_complete_candidate_row_scoring`, `run_next_row_likelihood_change` (import) |
+| `run_person25_commit_closeout` | deletable, DEFERRED: `tests/analysis/test_person25_commit_closeout.py`, outside this lane's write surface |
+| `run_sampled_rescue_transition` | `run_batch_coordinate_logit_invariance`, `run_fixed_encoding_downstream_residual_state_portability`, `run_fixed_encoding_object_centered_spatial_eligibility_crossover`, `run_fixed_encoding_query_scoped_object_centered_spatial_eligibility` (import); also task 8.2 lane work |
+| `score_person25_y2_competition` | deletable, DEFERRED: `tests/analysis/test_person25_y2_competition.py`, outside this lane's write surface |
+| `score_sorted_owner_accessibility_census_shard` | `score_sorted_crossing_boundary_owner_release` (import) |
+
+**HOLD-C-keep (1)**: `split_label_only_candidate_pool` - its `_inputs` fixture builds the input set for
+all 10 tests of the surviving `validate_constant_dose_trajectory_panel_union`, so removing it would
+delete `tests/research/test_validate_constant_dose_trajectory_panel_union.py` rather than split it.
+It and `tests/research/test_split_label_only_candidate_pool.py` were restored with
+`git checkout HEAD -- <path>` before batch 2 was committed; neither reached a commit in deleted form.
+
+The three DEFERRED HOLD-B scripts above are the only reclaimable residue this lane leaves: they are
+deletable on every rule, and the `tests` lane (task 8.2) or the lead can take them together with their
+`tests/analysis/` modules.
+
+### Verification
+
+Two path-dependent facts about running in a lane worktree, both recorded rather than fixed:
+
+- `tests/research/test_research_probe_admission_consumers.py` raises
+  `ConsumerAdmissionError: execution root is not an approved worktree` at *import* time, because
+  `scripts/research/research_probe_admission_consumers.py`:160 binds the compatibility receipt pair to
+  `/data/CoordExp/.worktrees/research-probes` or `/data/CoordExp/outputs/research-probe-infras` only
+  (commit `74609d2b1`). It is a whole-module collection error in `lane-scripts` independent of any
+  deletion here, contributes no baseline failure, and was excluded with `--ignore` from every broad run.
+  It must be re-run by the lead in `research-probes` after the merge.
+- `tests/research/test_prepare_sorted_fn_successor_inputs.py::test_real_gt7511_17_near_gt_micro_local_index_0_is_the_exact_singleton`
+  fails with `FileNotFoundError` on
+  `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-01-sorted-owner-basin-task4-control-input-plan-final`,
+  an artifact root the concurrent task-8.4 reclaim removed mid-run. Its subject
+  `prepare_sorted_fn_successor_inputs` is a kept script and is untouched by this lane; nothing was
+  restored. It is out of baseline in all three batches and is an artifact-state failure, not a code one.
+
+| Batch | Admission | `tests/research` collect | Broad `tests/research tests/artifacts` | New vs baseline | Gone vs baseline |
+| --- | --- | ---: | --- | ---: | ---: |
+| 1 | 36 passed | - | `86 failed, 4564 passed, 3 skipped` | 1 (the 8.4 artifact root) | 3 |
+| 2 | 36 passed | 3965, 0 errors | `83 failed, 3988 passed, 3 skipped` | 1 (same) | 6 |
+| 3 | 36 passed | 3911, 0 errors | `83 failed, 3934 passed, 3 skipped` | 1 (same) | 6 |
+
+Final failure-set diff vs `receipts/test-baseline.md` (88 node ids): **0 new attributable to this lane**,
+**6 gone** -
+
+| Gone node id | Why |
+| --- | --- |
+| `tests/research/test_run_image_12576_row_mediation_crossover.py::test_load_stage_seven_source_reconstructs_four_exact_prefixes` | module deleted by wave 5 batch 2, before this lane forked |
+| `tests/research/test_run_image_12576_row_mediation_crossover.py::test_load_stage_seven_source_refuses_changed_prefix_hash` | same |
+| `tests/research/test_run_image_12576_row_mediation_crossover.py::test_validate_endpoint_parity_refuses_owner_only_match` | same |
+| `tests/research/test_build_sorted_image2299_native_ledger.py::test_exact_real_artifact_validate_only` | module deleted in batch 2 |
+| `tests/research/test_build_sorted_image2299_native_ledger.py::test_receipt_is_self_sealed_and_task0_shapes_are_stable` | module deleted in batch 2 |
+| `tests/research/test_run_sorted_fn_successor_behavior.py::test_v2_attestor_analyzer_admission_builds_behavior_contract_cpu_only` | test removed by the batch-2 split (its subject is the deleted attestor/analyzer) |
+
+### Residue search
+
+For each of the 55 deleted basenames and its derived `test_<stem>` form, `grep -rl --fixed-strings`
+over `lane-scripts` and over `/data/CoordExp/.worktrees/image2299-mechanism-microscope`
+(minus `.git/`, `outputs/`, `model_cache/`, and this ledger). Every hit is accounted for:
+
+| Where | Meaning |
+| --- | --- |
+| 15 `research/**` records | the preserved citation plus its new replay note - the intended outcome |
+| 5 `docs/superpowers/plans/**` | the HOLD-A plan citations; `docs/` is the docs lane's surface, so they are reported, not edited |
+| `openspec/changes/archive/**` (7 files) | class (e) historical mentions, including four `source-bindings*.json` receipts of an archived change |
+| `receipts/test-baseline.md`, `receipts/src-entropy-audit.md` | this change's own evidence records |
+| `scripts/research/build_sorted_owner_basin_census.py`:9 | a docstring sentence naming `compute_sampled_union_f1_metrics.py`; a prose mention, not an import (the union it describes is still produced) |
+| `image2299-mechanism-microscope` | 14 byte-identical mirrors (not counted, per the md5-mirror rule), 65 fork copies of files this repo no longer has, and 19 files that differ exactly by this wave's replay notes and test splits. The fork is independent and unaffected. |
+
+No surviving file under `src/`, `scripts/`, `tests/`, or `configs/` imports or launches a deleted module.
+`git diff --check` and `git diff --cached --check`: clean on all three commits.
+
+### Net reduction
+
+```
+git diff --stat b3d3be9b9..HEAD -- scripts tests configs research | tail -1
+ 117 files changed, 29 insertions(+), 73969 deletions(-)
+```
+
+| Surface | Before wave 8 | After | Removed |
+| --- | ---: | ---: | ---: |
+| `scripts/research/*.py` | 229 | 174 | **55** |
+| `tests/research/*.py` | 185 | 144 | **41** |
+| `configs/**` | 564 | 563 | **1** |
+| lines | - | - | **73,969** (29 inserted: the 14 replay notes) |
+
+Cumulative over the change: `scripts/research` 315 -> 174 (**141 removed, 44.8%**);
+`tests/research` 185 -> 144 with 48 more modules removed in wave 5 outside `tests/research`.
+
+### Recovery
+
+Every file removed by wave 8 is present in `research-base-v3` (and in `research-base-v2` for anything
+that predates it):
+
+```
+git checkout research-base-v3 -- scripts/research/<name>.py
+```

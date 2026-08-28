@@ -197,6 +197,8 @@ Verified end to end:
   clean-room republish, not a mutation of a previously declared-complete
   artifact.
 
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
+
 ## Stop boundary
 
 This unit stops after publishing the versioned probe input and its receipt.

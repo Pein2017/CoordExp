@@ -219,3 +219,5 @@ The focused test slice passed `9/9`; Python compilation and `git diff --check`
 also passed before graphics-processing-unit execution. A separate read-only
 contract audit approved the launch, and a post-run model diagnosis independently
 applied the frozen stop rule.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.

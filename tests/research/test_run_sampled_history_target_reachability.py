@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from scripts.research.validate_sampled_history_target_reachability_union import validate_union
 from scripts.research.run_sampled_history_target_reachability import (
     StageOneValidationError,
     classify_target_from_extended_rows,
@@ -218,40 +217,3 @@ def _write_union_fixture(tmp_path: Path, *, device_per_image: bool = False) -> t
         }), encoding="utf-8")
         shards.append(path)
     return manifest_path, shards
-
-
-def test_union_validator_requires_exact_eight_images_and_shared_identity(tmp_path: Path) -> None:
-    manifest_path, shards = _write_union_fixture(tmp_path)
-    result = validate_union(manifest_path=manifest_path, shard_paths=shards)
-    assert result["passed"] is True
-    assert result["image_count"] == 8
-    changed = json.loads(shards[-1].read_text(encoding="utf-8"))
-    changed["config"]["dtype"] = "fp16"
-    shards[-1].write_text(json.dumps(changed), encoding="utf-8")
-    with pytest.raises(StageOneValidationError, match="identity conflict"):
-        validate_union(manifest_path=manifest_path, shard_paths=shards)
-
-
-def test_union_validator_rejects_wrong_manifest_digest(tmp_path: Path) -> None:
-    manifest_path, shards = _write_union_fixture(tmp_path)
-    changed = json.loads(shards[0].read_text(encoding="utf-8"))
-    changed["frozen_inputs"]["manifest_sha256"] = "wrong-manifest-sha"
-    shards[0].write_text(json.dumps(changed), encoding="utf-8")
-    with pytest.raises(StageOneValidationError, match="manifest digest mismatch"):
-        validate_union(manifest_path=manifest_path, shard_paths=shards)
-
-
-@pytest.mark.parametrize("identity_field", ["stage_one_runner_sha256", "reused_local_branch_helper_sha256"])
-def test_union_validator_rejects_mismatched_runner_or_helper_identity(tmp_path: Path, identity_field: str) -> None:
-    manifest_path, shards = _write_union_fixture(tmp_path)
-    changed = json.loads(shards[-1].read_text(encoding="utf-8"))
-    changed["source_identity"][identity_field] = "different-sha"
-    shards[-1].write_text(json.dumps(changed), encoding="utf-8")
-    with pytest.raises(StageOneValidationError, match="identity conflict"):
-        validate_union(manifest_path=manifest_path, shard_paths=shards)
-
-
-def test_union_validator_allows_different_cuda_ordinals(tmp_path: Path) -> None:
-    manifest_path, shards = _write_union_fixture(tmp_path, device_per_image=True)
-    result = validate_union(manifest_path=manifest_path, shard_paths=shards)
-    assert result["passed"] is True

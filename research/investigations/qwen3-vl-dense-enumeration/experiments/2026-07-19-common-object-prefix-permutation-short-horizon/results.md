@@ -330,3 +330,5 @@ Experiment-local implementation:
 - `scripts/research/build_common_object_prefix_permutation_cases.py`;
 - `scripts/research/run_same_covered_set_prefix_order_probe.py`;
 - `scripts/research/summarize_same_covered_set_prefix_order_probe.py`.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.
