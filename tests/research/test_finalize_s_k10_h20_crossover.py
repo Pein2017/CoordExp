@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import pytest
 
 from scripts.research import finalize_s_k10_h20_crossover as finalizer
+from scripts.research import seal_s_k10_h20_crossover_finalization_receipt as successor_sealer
 
 
 REAL_GATE_RESULT = Path(
@@ -1573,6 +1574,8 @@ def test_frozen_s_v2_real_arms_finalize_through_tmp_shard_envelopes(tmp_path: Pa
 
 REAL_FINALIZER = Path(finalizer.__file__).resolve()
 REAL_FINALIZER_TEST = REAL_FINALIZER.parents[2] / "tests" / "research" / "test_finalize_s_k10_h20_crossover.py"
+REAL_SEALER = Path(successor_sealer.__file__).resolve()
+REAL_SEALER_TEST = REAL_FINALIZER.parents[2] / "tests" / "research" / "test_seal_s_k10_h20_crossover_finalization_receipt.py"
 
 
 def _selfed(document: Mapping[str, Any], field: str = "self_sha256") -> dict[str, Any]:
@@ -1582,10 +1585,346 @@ def _selfed(document: Mapping[str, Any], field: str = "self_sha256") -> dict[str
     return result
 
 
+def _successor_fixture(tmp_path: Path) -> dict[str, Any]:
+    """A synthetic parent/execution set whose two slots point at the real tools."""
+
+    unit = tmp_path / "unit"
+    execution_root = unit / "execution-v4"
+    evidence_root = unit / "evidence-v4"
+    authority = tmp_path / "authority.md"
+    authority.write_text("# successor authority fixture\n")
+    census = tmp_path / "census.json"
+    _write(census, {"census": "fixture"})
+
+    plan_events = [
+        {"event_id": event_id, "event_index": index, "image_id": 100 + position}
+        for position, (event_id, index) in enumerate(zip(finalizer.EVENT_IDS, finalizer.EVENT_INDICES))
+    ]
+    plan_document = _selfed(
+        {
+            "schema_version": finalizer.PLAN_SCHEMA_VERSION,
+            "unit_id": finalizer.UNIT_ID,
+            "status": "planned",
+            "events": plan_events,
+        }
+    )
+    plan_path = unit / "plan-v1" / "plan.json"
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_bytes(finalizer.canonical_json_bytes(plan_document) + b"\n")
+    plan_info = {
+        "document": plan_document,
+        "path": str(plan_path),
+        "raw_sha256": finalizer.sha256_file(plan_path),
+        "self_sha256": plan_document["self_sha256"],
+        "events": plan_events,
+    }
+
+    parent_document = _selfed(
+        {
+            "schema_version": finalizer.PRE_GPU_SCHEMA_VERSION,
+            "unit_id": finalizer.UNIT_ID,
+            "status": "sealed_pre_gpu",
+            "plan_self_sha256": plan_document["self_sha256"],
+            "roots": {
+                "execution_root": {"path": str(execution_root)},
+                "final_root": {"path": str(evidence_root)},
+            },
+            "input_bindings": {
+                "census": {
+                    "path": str(census),
+                    "sha256": finalizer.sha256_file(census),
+                    "size_bytes": census.stat().st_size,
+                    "kind": "file",
+                }
+            },
+            "input_hashes": {"census_sha256": finalizer.sha256_file(census)},
+            "source_files": {
+                "crossover_finalizer": {"path": str(REAL_FINALIZER), "sha256": "a" * 64, "kind": "file"}
+            },
+            "test_files": {
+                "crossover_finalizer_test": {"path": str(REAL_FINALIZER_TEST), "sha256": "b" * 64, "kind": "file"}
+            },
+        }
+    )
+    parent_path = unit / "pre-gpu-receipt-v5" / "pre-gpu-receipt.json"
+    parent_path.parent.mkdir(parents=True, exist_ok=True)
+    parent_path.write_bytes(finalizer.canonical_json_bytes(parent_document) + b"\n")
+
+    for index, shard_id in enumerate(successor_sealer.SHARD_IDS):
+        root = execution_root / shard_id
+        root.mkdir(parents=True, exist_ok=True)
+        result = _selfed(
+            {
+                "schema_version": finalizer.EVENT_SCHEMA_VERSION,
+                "unit_id": finalizer.UNIT_ID,
+                "status": "completed",
+                "shard_id": shard_id,
+                "event_id": finalizer.EVENT_IDS[index],
+                "event_index": finalizer.EVENT_INDICES[index],
+                "image_id": 100 + index,
+                "plan_self_sha256": plan_document["self_sha256"],
+                "pre_gpu_receipt_self_sha256": parent_document["self_sha256"],
+            },
+            "result_sha256",
+        )
+        (root / "result.json").write_bytes(finalizer.canonical_json_bytes(result) + b"\n")
+        for name, body in (
+            ("runtime_identity.json", {"shard_id": shard_id, "device": {"physical_device": finalizer.DEVICE_PLAN[shard_id], "logical_device": "cuda:0"}}),
+            ("terminal_summary.json", {"shard_id": shard_id, "status": "completed"}),
+            ("aggregate.receipt.json", {"shard_id": shard_id, "event_id": finalizer.EVENT_IDS[index]}),
+        ):
+            (root / name).write_bytes(finalizer.canonical_json_bytes(_selfed(body)) + b"\n")
+
+    receipt = successor_sealer.build_finalization_receipt(
+        parent_receipt=parent_path,
+        plan=plan_path,
+        execution_root=execution_root,
+        evidence_root=evidence_root,
+        authority=authority,
+    )
+    return {
+        "receipt": receipt,
+        "plan_info": plan_info,
+        "plan_path": plan_path,
+        "parent_path": parent_path,
+        "parent_document": parent_document,
+        "execution_root": execution_root,
+        "evidence_root": evidence_root,
+        "authority": authority,
+        "census": census,
+    }
+
+
+def test_finalization_successor_authorizes_exactly_two_slots(tmp_path: Path) -> None:
+    fixture = _successor_fixture(tmp_path)
+    checked = finalizer._validate_finalization_receipt(fixture["receipt"], fixture["plan_info"])
+
+    assert set(checked["allowance"]) == set(finalizer.AUTHORIZED_FINALIZATION_SLOTS)
+    assert checked["allowance"]["source_files.crossover_finalizer"] == finalizer.sha256_file(REAL_FINALIZER)
+    assert checked["allowance"]["test_files.crossover_finalizer_test"] == finalizer.sha256_file(REAL_FINALIZER_TEST)
+    assert checked["parent_raw_sha256"] == finalizer.sha256_file(fixture["parent_path"])
+    assert checked["parent_self_sha256"] == fixture["parent_document"]["self_sha256"]
+    assert checked["evidence_root"] == str(fixture["evidence_root"])
+    assert checked["self_sha256"] == fixture["receipt"]["self_sha256"]
+
+
+def test_parent_ref_validation_consumes_only_the_two_authorized_slots(tmp_path: Path) -> None:
+    fixture = _successor_fixture(tmp_path)
+    parent = fixture["parent_document"]
+    info = {"path": str(fixture["parent_path"]), "raw_sha256": finalizer.sha256_file(fixture["parent_path"]), "size_bytes": 0}
+    checked = finalizer._validate_finalization_receipt(fixture["receipt"], fixture["plan_info"])
+
+    # Without the successor the parent's own binding of this file is fatal.
+    with pytest.raises(finalizer.EvidenceContractError, match=r"source_files.crossover_finalizer raw SHA-256 drifted"):
+        finalizer._hash_ref(parent["source_files"]["crossover_finalizer"], "pre-GPU source_files.crossover_finalizer")
+
+    # With it, exactly that slot validates against the live file.
+    finalizer._hash_ref(
+        parent["source_files"]["crossover_finalizer"],
+        "pre-GPU source_files.crossover_finalizer",
+        expected_sha256=checked["allowance"]["source_files.crossover_finalizer"],
+    )
+    # An unrelated binding is never relaxed by the successor.
+    fixture["census"].write_bytes(finalizer.canonical_json_bytes({"census": "drifted"}) + b"\n")
+    with pytest.raises(finalizer.EvidenceContractError, match=r"input_bindings.census raw SHA-256 drifted"):
+        finalizer._hash_ref(parent["input_bindings"]["census"], "pre-GPU input_bindings.census")
+    assert info["raw_sha256"] == checked["parent_raw_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("schema", r"schema/status/unit identity drifted"),
+        ("status", r"schema/status/unit identity drifted"),
+        ("unit", r"schema/status/unit identity drifted"),
+        ("self_tamper", r"finalization receipt.self_sha256 mismatch"),
+        ("cpu_only", r"authorization.cpu_only must be true"),
+        ("gpu_used", r"authorization.gpu_used must be false"),
+        ("model_loaded", r"authorization.model_loaded must be false"),
+        ("no_training", r"authorization.no_training must be true"),
+        ("endpoint_semantics", r"authorization.endpoint_semantics_unchanged must be true"),
+        ("authority_hash", r"finalization authority document differs from the live file"),
+        ("parent_raw", r"parent raw SHA-256 differs from the live parent"),
+        ("parent_self", r"parent self SHA-256 differs from the live parent"),
+        ("parent_document", r"parent document differs from the live parent"),
+        ("plan_raw", r"plan raw SHA-256 differs from the supplied plan"),
+        ("plan_self", r"plan self SHA-256 differs from the supplied plan"),
+        ("old_hash", r"old hash differs from the parent binding"),
+        ("new_hash", r"new hash differs from the live file"),
+        ("third_slot", r"must authorize exactly"),
+        ("one_slot", r"must authorize exactly"),
+        ("foreign_finalizer_path", r"path differs from the parent binding"),
+        ("missing_cause", r"cause"),
+        ("shard_order", r"identity/order drifted"),
+        ("shard_event", r"event/device binding differs from the plan"),
+        ("shard_device", r"event/device binding differs from the plan"),
+        ("shard_artifact_raw", r"raw SHA-256 differs from the immutable artifact"),
+        ("shard_artifact_self", r"self SHA-256 differs from the immutable artifact"),
+        ("shard_artifact_path", r"path is not under its shard root"),
+        ("shard_artifact_set", r"artifact set drifted"),
+        ("execution_status", r"not declared complete_immutable"),
+        ("evidence_hash", r"must not bind an evidence hash"),
+        ("evidence_exists", r"must still be absent and non-symlink"),
+        ("pins_raw", r"runtime input pins differ from the recomputed parent"),
+        ("pins_self", r"runtime input pins differ from the recomputed parent"),
+        ("unchanged_set", r"unchanged source_files set differs from the parent"),
+        ("unchanged_hash", r"unchanged input_bindings.census differs from the parent"),
+        ("tool_set", r"tools must be exactly"),
+        ("sealer_hash", r"finalization tool successor_sealer differs from the live file"),
+        ("sealer_test_hash", r"finalization tool successor_sealer_test differs from the live file"),
+    ],
+)
+def test_finalization_successor_fails_closed(tmp_path: Path, mutation: str, message: str) -> None:
+    fixture = _successor_fixture(tmp_path)
+    receipt = copy.deepcopy(fixture["receipt"])
+    finalizer_slot = "source_files.crossover_finalizer"
+    reself = True
+
+    if mutation == "schema":
+        receipt["schema_version"] = "other.v1"
+    elif mutation == "status":
+        receipt["status"] = "draft"
+    elif mutation == "unit":
+        receipt["unit_id"] = "other-unit"
+    elif mutation == "self_tamper":
+        receipt["self_sha256"] = "c" * 64
+        reself = False
+    elif mutation in {"cpu_only", "no_training", "endpoint_semantics"}:
+        key = "endpoint_semantics_unchanged" if mutation == "endpoint_semantics" else mutation
+        receipt["authorization"][key] = False
+    elif mutation in {"gpu_used", "model_loaded"}:
+        receipt["authorization"][mutation] = True
+    elif mutation == "authority_hash":
+        receipt["authorization"]["authority"]["sha256"] = "d" * 64
+    elif mutation == "parent_raw":
+        receipt["parent"]["receipt"]["raw_sha256"] = "e" * 64
+    elif mutation == "parent_self":
+        receipt["parent"]["receipt"]["self_sha256"] = "f" * 64
+    elif mutation == "parent_document":
+        receipt["parent"]["document"]["no_training"] = True
+    elif mutation == "plan_raw":
+        receipt["parent"]["plan"]["raw_sha256"] = "0" * 64
+    elif mutation == "plan_self":
+        receipt["parent"]["plan"]["self_sha256"] = "1" * 64
+    elif mutation == "old_hash":
+        receipt["authorized_drift"][finalizer_slot]["old_sha256"] = "2" * 64
+    elif mutation == "new_hash":
+        receipt["authorized_drift"][finalizer_slot]["new_sha256"] = "3" * 64
+    elif mutation == "third_slot":
+        receipt["authorized_drift"]["source_files.crossover_runner"] = dict(receipt["authorized_drift"][finalizer_slot])
+    elif mutation == "one_slot":
+        receipt["authorized_drift"].pop("test_files.crossover_finalizer_test")
+    elif mutation == "foreign_finalizer_path":
+        foreign = tmp_path / "foreign_finalizer.py"
+        foreign.write_text("# foreign\n")
+        receipt["authorized_drift"][finalizer_slot]["path"] = str(foreign)
+    elif mutation == "missing_cause":
+        receipt["authorized_drift"][finalizer_slot]["cause"] = ""
+    elif mutation == "shard_order":
+        receipt["execution"]["shards"][0], receipt["execution"]["shards"][1] = (
+            receipt["execution"]["shards"][1],
+            receipt["execution"]["shards"][0],
+        )
+    elif mutation == "shard_event":
+        receipt["execution"]["shards"][0]["image_id"] = 999
+    elif mutation == "shard_device":
+        receipt["execution"]["shards"][2]["physical_device"] = "3"
+    elif mutation == "shard_artifact_raw":
+        receipt["execution"]["shards"][1]["artifacts"]["result.json"]["raw_sha256"] = "4" * 64
+    elif mutation == "shard_artifact_self":
+        receipt["execution"]["shards"][1]["artifacts"]["terminal_summary.json"]["self_sha256"] = "5" * 64
+    elif mutation == "shard_artifact_path":
+        other = fixture["execution_root"] / "shard-000" / "result.json"
+        receipt["execution"]["shards"][2]["artifacts"]["result.json"]["path"] = str(other)
+    elif mutation == "shard_artifact_set":
+        receipt["execution"]["shards"][0]["artifacts"].pop("aggregate.receipt.json")
+    elif mutation == "execution_status":
+        receipt["execution"]["root"]["status"] = "partial"
+    elif mutation == "evidence_hash":
+        receipt["evidence_root"]["sha256"] = "6" * 64
+    elif mutation == "evidence_exists":
+        fixture["evidence_root"].mkdir(parents=True)
+    elif mutation == "pins_raw":
+        receipt["runtime_input_pins"]["pre_gpu_receipt_sha256"] = "7" * 64
+    elif mutation == "pins_self":
+        receipt["runtime_input_pins"]["pre_gpu_receipt_self_sha256"] = "8" * 64
+    elif mutation == "unchanged_set":
+        receipt["unchanged_parent_bindings"]["source_files"]["crossover_runner"] = {"path": "/x", "sha256": "9" * 64}
+    elif mutation == "unchanged_hash":
+        receipt["unchanged_parent_bindings"]["input_bindings"]["census"]["sha256"] = "a" * 64
+    elif mutation == "tool_set":
+        receipt["finalization_tools"].pop("successor_sealer_test")
+    elif mutation == "sealer_hash":
+        receipt["finalization_tools"]["successor_sealer"]["sha256"] = "b" * 64
+    else:
+        receipt["finalization_tools"]["successor_sealer_test"]["sha256"] = "c" * 64
+
+    candidate = _selfed(receipt) if reself else receipt
+    with pytest.raises(finalizer.EvidenceContractError, match=message):
+        finalizer._validate_finalization_receipt(candidate, fixture["plan_info"])
+
+
+def test_finalization_successor_rejects_a_foreign_running_finalizer(tmp_path: Path) -> None:
+    fixture = _successor_fixture(tmp_path)
+    receipt = copy.deepcopy(fixture["receipt"])
+    foreign = tmp_path / "foreign_tool.py"
+    foreign.write_text("# foreign finalization tool\n")
+    receipt["finalization_tools"]["finalizer"] = {
+        "path": str(foreign),
+        "sha256": finalizer.sha256_file(foreign),
+        "size_bytes": foreign.stat().st_size,
+    }
+    with pytest.raises(finalizer.EvidenceContractError, match=r"path differs from the running finalization tool"):
+        finalizer._validate_finalization_receipt(_selfed(receipt), fixture["plan_info"])
+
+
+def test_finalization_successor_rejects_a_different_parent_or_plan_path(tmp_path: Path) -> None:
+    fixture = _successor_fixture(tmp_path)
+    other_parent = tmp_path / "other-parent.json"
+    other_parent.write_bytes(finalizer.canonical_json_bytes(_selfed({"unit_id": finalizer.UNIT_ID})) + b"\n")
+    with pytest.raises(finalizer.EvidenceContractError, match=r"binds a different parent receipt path"):
+        finalizer._validate_finalization_receipt(fixture["receipt"], fixture["plan_info"], pre_gpu_path=other_parent)
+
+    other_plan = dict(fixture["plan_info"])
+    other_plan["path"] = str(tmp_path / "other-plan.json")
+    Path(other_plan["path"]).write_bytes(b"{}\n")
+    with pytest.raises(finalizer.EvidenceContractError, match=r"binds a different plan path"):
+        finalizer._validate_finalization_receipt(fixture["receipt"], other_plan)
+
+
 def _runtime_document(pre_gpu: Mapping[str, Any], extras: Mapping[str, str]) -> dict[str, Any]:
     sealed_inputs = finalizer._sealed_input_hashes(pre_gpu)
     sealed_code = finalizer._sealed_code_hashes(pre_gpu)
     return {"code_hashes": dict(sealed_code), "input_hashes": {**sealed_inputs, **extras}}
+
+
+def test_runtime_receipt_key_is_admitted_only_under_a_successor(tmp_path: Path) -> None:
+    fixture = _successor_fixture(tmp_path)
+    checked = finalizer._validate_finalization_receipt(fixture["receipt"], fixture["plan_info"])
+    pre_gpu = {"document": fixture["parent_document"]}
+    pins = {
+        "pre_gpu_receipt": checked["parent_raw_sha256"],
+        "pre_gpu_receipt_sha256": checked["parent_raw_sha256"],
+        "pre_gpu_receipt_self_sha256": checked["parent_self_sha256"],
+    }
+    document = _runtime_document(pre_gpu, pins)
+
+    with pytest.raises(finalizer.EvidenceContractError, match=r"unexpected runner-local key pre_gpu_receipt_sha256"):
+        finalizer._validate_runtime_hash_maps(document, pre_gpu, "runtime identity")
+    finalizer._validate_runtime_hash_maps(document, pre_gpu, "runtime identity", successor=checked)
+
+    for key in ("pre_gpu_receipt", "pre_gpu_receipt_sha256", "pre_gpu_receipt_self_sha256"):
+        drifted = _runtime_document(pre_gpu, {**pins, key: "d" * 64})
+        with pytest.raises(finalizer.EvidenceContractError, match=rf"input_hashes.{key} does not pin the recomputed parent"):
+            finalizer._validate_runtime_hash_maps(drifted, pre_gpu, "runtime identity", successor=checked)
+
+    missing = _runtime_document(pre_gpu, {key: value for key, value in pins.items() if key != "pre_gpu_receipt_sha256"})
+    with pytest.raises(finalizer.EvidenceContractError, match=r"pre_gpu_receipt_sha256 does not pin the recomputed parent"):
+        finalizer._validate_runtime_hash_maps(missing, pre_gpu, "runtime identity", successor=checked)
+
+    unknown = _runtime_document(pre_gpu, {**pins, "runner_local_extra": "e" * 64})
+    with pytest.raises(finalizer.EvidenceContractError, match=r"unexpected runner-local key runner_local_extra"):
+        finalizer._validate_runtime_hash_maps(unknown, pre_gpu, "runtime identity", successor=checked)
 
 
 def test_finalize_without_a_successor_keeps_the_strict_parent_contract(tmp_path: Path) -> None:

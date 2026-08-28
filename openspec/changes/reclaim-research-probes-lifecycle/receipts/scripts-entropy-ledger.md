@@ -1313,3 +1313,23 @@ that predates it):
 ```
 git checkout research-base-v3 -- scripts/research/<name>.py
 ```
+
+## Wave 8 lead addendum — receipt-bound files are load-bearing bytes
+
+After merging `lane/scripts`, the admission trio failed 3/51 in `research-probes` with
+`ConsumerAdmissionError: compatibility receipt finalizer_test raw source binding drifted`
+(`scripts/research/research_probe_admission_consumers.py:811`). The sealed CPU compatibility
+receipts bind twelve source files by resolved path + byte count + SHA-256
+(adapter lines 48–94), including the **test module** `tests/research/test_finalize_s_k10_h20_crossover.py`,
+which HOLD-C batch 2 had split (−5 tests + fixture). The split changed the bytes → fail-closed, as designed.
+
+Rule added for future reclaim passes: any file whose path appears in a compatibility-receipt binding
+(or in `RegularFileBinding(...)` declarations) is SHARED regardless of its test/doc status, and its
+imports are SHARED transitively. A test module referenced by production code is not splittable.
+
+Fix: `git checkout research-base-v3 -- tests/research/test_finalize_s_k10_h20_crossover.py`
+(the only drifted binding of the twelve) and its import
+`scripts/research/seal_s_k10_h20_crossover_finalization_receipt.py` (+ its dedicated test).
+Verification: the two restored test modules 127 passed; admission trio 51 passed; `pytest tests --collect-only` 5607 collected, 0 errors.
+Net effect on this wave's counts: +1 script, +1 test module restored (scripts/research 174 → 172 after the
+person25 cluster removal and this restore; see receipts/research-base-v4.md for final counts).
