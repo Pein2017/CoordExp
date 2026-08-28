@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 import scripts.research.run_same_parent_complete_row_intervention as stage3
-from scripts.research.validate_same_parent_complete_row_intervention_union import validate_union
 
 
 def _row(index: int, token_ids: list[int], owner: str, *, coords: list[int] | None = None) -> dict[str, object]:
@@ -151,52 +150,3 @@ def test_monkeypatched_runtime_replay_uses_exact_parent_branches(monkeypatch: py
     assert result["comparison"]["sampled_source_replay_parity"]["passed"] is True
     assert result["comparison"]["target_retrieved_native"] is False
     assert result["comparison"]["target_retrieved_sampled"] is True
-
-
-def test_union_requires_exact_three_candidates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    candidates = {str(i): {"image_id": str(i)} for i in ("1", "2", "3")}
-    shard_digests = {image_id: {"path": str(tmp_path / f"source-{image_id}.json"), "sha256": "source"} for image_id in candidates}
-    sources = {
-        "admission_path": str(tmp_path / "admission.json"),
-        "admission_sha256": "admission",
-        "stage_two_union_path": str(tmp_path / "stage2-union.json"),
-        "stage_two_union_sha256": "stage2-union",
-        "stage_two_admission_path": str(tmp_path / "stage2-admission.json"),
-        "stage_two_admission_sha256": "stage2-admission",
-        "stage_two_shards": shard_digests,
-        "candidates": candidates,
-    }
-    monkeypatch.setattr("scripts.research.validate_same_parent_complete_row_intervention_union.load_stage_three_sources", lambda _path: sources)
-    shard_paths = []
-    digest_map = {key: value["sha256"] for key, value in shard_digests.items()}
-    for image_id in candidates:
-        path = tmp_path / f"shard-{image_id}.json"
-        path.write_text(
-            json.dumps({
-                "schema_version": stage3.SCHEMA_VERSION,
-                "phase": stage3.PHASE,
-                "frozen_inputs": {
-                    "stage_three_admission": sources["admission_path"],
-                    "stage_three_admission_sha256": sources["admission_sha256"],
-                    "stage_two_union": sources["stage_two_union_path"],
-                    "stage_two_union_sha256": sources["stage_two_union_sha256"],
-                    "stage_two_admission": sources["stage_two_admission_path"],
-                    "stage_two_admission_sha256": sources["stage_two_admission_sha256"],
-                    "stage_two_shard_sha256": digest_map,
-                },
-                "model_identity": {"model": "same"},
-                "config": {"model_dtype": "fp32", "device": "cuda:0"},
-                "source_identity": {"stage_three_runner_sha256": "runner", "stage_two_runner_sha256": "stage2"},
-                "images": [{
-                    "image_id": image_id,
-                    "stage3_admission_entry": candidates[image_id],
-                    "comparison": {"no_op_parity": {"passed": True}, "primary_causal_claim_allowed": True},
-                }],
-            }),
-            encoding="utf-8",
-        )
-        shard_paths.append(path)
-    with pytest.raises((ValueError, KeyError)):
-        validate_union(shard_paths=shard_paths, admission_path=tmp_path / "admission.json")
-    with pytest.raises(ValueError, match="exactly three"):
-        validate_union(shard_paths=shard_paths[:2], admission_path=tmp_path / "admission.json")

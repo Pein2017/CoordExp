@@ -8,9 +8,7 @@ from typing import Any
 import pytest
 import torch
 
-from scripts.research import run_continuation_locality_boundary_scoring as locality
 from scripts.research import run_exact_prefix_owner_compositionality as owner_probe
-from scripts.research import summarize_continuation_locality_owner_compositionality as summarize
 from scripts.research.materialize_continuation_locality_owner_compositionality import (
     SCHEMA_VERSION,
     _row_prefixes,
@@ -33,13 +31,6 @@ def test_complete_row_prefixes_preserve_every_literal_boundary() -> None:
     second = _complete_row([52, 53])
 
     assert _row_prefixes(first + second) == [first, first + second]
-
-
-def test_locality_and_owner_runners_use_the_same_stable_sharding() -> None:
-    values = ["case-a", "case-b", "image-225458-depth-1-owner-bottle"]
-
-    for value in values:
-        assert locality._stable_shard(value, 7) == owner_probe._stable_shard(value, 7)
 
 
 def test_owner_manifest_validates_composite_owner_ids_and_literal_hashes() -> None:
@@ -73,17 +64,6 @@ def test_owner_manifest_validates_composite_owner_ids_and_literal_hashes() -> No
     corrupted["owner_cases"][0]["target"]["row_token_ids_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="row hash mismatch"):
         owner_probe._validated_cases(corrupted)
-
-
-def test_binary_recovery_transitions_preserve_pairing() -> None:
-    assert summarize._binary_transition_counts(
-        [0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0]
-    ) == {
-        "false_to_false": 1,
-        "false_to_true": 1,
-        "true_to_false": 1,
-        "true_to_true": 1,
-    }
 
 
 def test_owner_state_score_preserves_existing_reduction_from_token_evidence() -> None:

@@ -162,3 +162,5 @@ combined `visual/combined/visual-manifest.json` covering `61` figures.
 [`results.md`](results.md) is written against the captured artifacts and is
 bound by contract item 15. It closes the census without promoting a causal
 mechanism, training objective, or architecture.
+
+**Replay note.** Producer scripts deleted from `research-probes` on 2026-08-28 (reclaim-research-probes-lifecycle); replay them from tag `research-base-v2`: `git worktree add <tmp> research-base-v2`.

@@ -16,9 +16,7 @@ receipt, manifest and admission is sealed with the producer's own
 ``sha256_json`` canonicalization -- so a schema drift in the capture surface
 breaks these tests instead of silently passing a stale hand-written dict.
 
-``build_secondary_capture`` and its helpers are imported by
-``test_analyze_sorted_crossing_boundary_owner_release_secondary`` rather than
-duplicated.
+``build_secondary_capture`` and its helpers live in this module.
 """
 
 from __future__ import annotations
