@@ -398,3 +398,218 @@ This audit ran no destructive command. The commands quoted per candidate are the
 checks and were executed as stated. Any cut approved under task 6.2 must still follow D10: record
 the CPU-only failure **set** before and after, compare sets and never counts, and keep the 44
 admission tests green. Recovery for anything cut is `git checkout research-base-v2 -- <path>`.
+
+---
+
+# Wave 8 (8.2) — applied cuts
+
+Lane `tests` (`lane/tests` @ `/data/CoordExp/.worktrees/lane-tests`, forked from
+`research-probes` HEAD `b3d3be9b9`; `model_cache` symlinked). User approval 2026-08-28:
+"完全同意. test, scripts 都可以大改动". Five commits, one per batch, staged by explicit path.
+
+**Net across the lane**: 128 files changed, **119 files deleted**, **24,407 lines removed**,
+231 added. `pytest tests --collect-only`: **6,489 collected / 54 errors → 6,409 collected /
+1 error**. The one surviving error is path-dependent, not a defect — see "Verification" below.
+
+| Batch | Commit | Files | Lines removed | Lines added |
+| --- | --- | ---: | ---: | ---: |
+| B1 `tests/analysis` abandoned packages + duplicate basename | `07bfd17ec` | 53 deleted, 1 renamed | 9,318 | 0 |
+| B2 legacy root test modules + fixture builder | `ce63d6034` | 13 deleted | 7,213 | 0 |
+| B3 broken `scripts/analysis` entrypoints + launchers | `f33c6d95b` | 51 deleted | 7,464 | 0 |
+| B4 four zero-consumer `src/` surfaces | `326de8bc9` | 2 deleted, 6 edited | 405 | 12 |
+| B5 `run_sampled_rescue_transition` repair | `69bb997b6` | 1 added, 1 edited | 7 | 219 |
+
+## B1 — `tests/analysis` abandoned packages (`07bfd17ec`)
+
+Each of the five `src.analysis.*` targets was confirmed `ModuleNotFoundError` by real import
+before deletion; all 52 test modules were already reported as collection errors by
+`pytest tests --collect-only`.
+
+| Package deleted under `tests/analysis/` | Files | Lines | Missing target (import-confirmed) |
+| --- | ---: | ---: | --- |
+| `candidate_field_cardinality_tomography/` | 15 + conftest | 943 | `src.analysis.candidate_field_cardinality_tomography` |
+| `policy_objective_mechanism_comparison/` | 3 | 161 | `src.analysis.policy_objective_mechanism_comparison` |
+| `post_x1_instance_basin_tomography/` | 9 | 1,557 | `src.analysis.post_x1_instance_basin_tomography` |
+| `prefix_state_transition_tomography/` | 11 | 1,127 | `src.analysis.prefix_state_transition_tomography` |
+| `sorted_random_no_newline_phenotype/` | 14 | 5,470 | `src.analysis.sorted_random_no_newline_phenotype` |
+| **total** | **53** | **9,318** | 5 packages |
+
+The conftest was package-local (`candidate_field_cardinality_tomography/conftest.py`, fixtures
+`tiny_coord_jsonl` / `minimal_base_row`), used by no surviving test; it was dropped whole, not
+trimmed.
+
+**Duplicate basename (B7 in the audit)**: the `tests/analysis` copy is *not* in the abandoned set,
+so it was renamed rather than deleted:
+`tests/analysis/test_assemble_source_preservation_multi_route_state_banks.py` (173 lines, md5
+`182b0e1a…`) → `…_analysis.py`. The 795-line `tests/research` module (md5 `89220c7e…`) is now
+collected in a full-suite run for the first time; collected count rose from 6,489 to 6,516 across
+this batch despite 52 modules leaving.
+
+## B2 — legacy root test modules (`ce63d6034`)
+
+The audit's "13 legacy root modules + the fixture builder, 7,213 lines" is **12 modules + the
+builder = 13 files**; the line total 7,213 matches exactly. `test_stage2_ab_vllm_server_mode_ab_mixed_diag.py`
+is a sibling of the same family but imports cleanly and was **kept**.
+
+Measured before the cut (13 files incl. ab_mixed_diag): `92 failed, 9 passed, 6 skipped in 7.21s`;
+without ab_mixed_diag: `92 failed, 9 passed, 5 skipped`, reproducing the audit exactly.
+
+### Triage of the 9 passing + 5 skipped node ids
+
+Rule applied: keep a test only if its subject module still exists in `src/` and it passes.
+`src/infer/` and `src/trainers/` do **not** exist (only the `src/infer.py` entrypoint), so every
+pass below is vacuous — the subject of the assertion is absent.
+
+| Node id | Outcome | Subject | Decision |
+| --- | --- | --- | --- |
+| `test_infer_layout_import_gates::test_infer_backends_module_is_removed` | PASS | `src.infer.backends` | delete — asserts absence; `src.infer` is not a package |
+| `…::test_legacy_infer_engine_module_is_removed` | PASS | `src.infer.engine` | delete — same |
+| `…::test_trainer_vllm_compat_module_is_removed` | PASS | `src.trainers.rollout_runtime[.vllm_compat]` | delete — `src/trainers/` absent |
+| `…::test_trainer_swift_infer_compat_module_is_removed` | PASS | `src.trainers.rollout_runtime.swift_infer_compat` | delete — same |
+| `…::test_active_docs_do_not_describe_stage2_runtime_as_shared_infer_runtime` | PASS | 4 doc phrases about `stage2_rollout_runtime.py` | delete — module gone; grep matched only itself |
+| `…::test_infer_backend_modules_do_not_call_trainer_private_decode_resolver` | PASS | `rglob` over `src/infer/` | delete — directory absent, loop body never runs |
+| `…::test_infer_modules_do_not_import_trainer_internals` | PASS | `rglob` over `src/infer/` | delete — same |
+| `…::test_infer_owner_coupling_is_confined_to_designated_adapters` | PASS | `rglob` over `src/infer/` | delete — same |
+| `…::test_dead_rollout_matching_manifest_family_branch_is_absent` | PASS | `manifest_family == "rollout_matching"` needle | delete — only self-hit, which the test excludes |
+| `test_chat_template_regression::…[desc_first]` | SKIP (missing local processor) | imports `src.coord_tokens.codec`, `src.datasets.builders`, `src.utils.coordjson_transpiler` | delete — all three absent |
+| `test_chat_template_regression::…[geometry_first]` | SKIP (same) | same | delete |
+| `test_detection_training_config_contract` (module-level) | SKIP "legacy MS-Swift config contract is not active in CoordExp-Swift" | self-declared legacy | delete |
+| `test_stage2_ab_vllm_server_mode_smoke::test_vllm_server_prompt_tokenization_parity_smoke` | SKIP (env gate) | `src.trainers.stage2_rollout_runtime` | delete — absent |
+| `test_stage2_ab_vllm_server_mode_smoke::test_stage2_rollout_correction_vllm_server_mode_smoke` | SKIP (env gate, 4-GPU) | same | delete |
+
+**Kept: none.** No node id had a surviving subject, so nothing had to be moved into another module.
+Cross-reference check before deletion: zero hits for any of the 13 basenames in `src/`, `scripts/`,
+`tests/`, `configs/`, `openspec/specs`, `pytest.ini`; only `docs/history/**` and `progress/**` mention
+them.
+
+## B3 — broken `scripts/analysis` entrypoints (`f33c6d95b`)
+
+40 `.py` files (5,511 lines) referencing **49 distinct** non-existent `src.*` module targets. Every
+one of the 49 was import-checked in `conda run -n ms`: **0 importable, 49 `ModuleNotFoundError`**.
+Post-cut AST rescan of `scripts/analysis`: **0 broken `src.*` targets remain**.
+
+| Group | Files | Lines | Evidence |
+| --- | ---: | ---: | --- |
+| runners for the 5 B1 packages (`run.py`/`status.py`/`finalize_if_ready.py`/`real_runtime.py` + 2 top-level `run_*`) | 12 | — | import target is the package B1 deleted |
+| further-broken analysis scripts | 28 | — | `src.trainers.*`, `src.detection.*`, `src.datasets.builders`, `src.coord_tokens.*`, `src.utils.*`, `src.infer.*`, `src.common.*`, 20 more `src.analysis.*` |
+| **subtotal `.py`** | **40** | **5,511** | |
+| tmux launchers whose every python target is in that set | 10 | — | incl. `launch_autoreg_object_rollout_lane_b_tmux.sh`, which runs `python -m src.analysis.prefix_rollin_teacher_forced_diagnostic` (also absent, import-confirmed) |
+| `rollout_backend_bench/README.md` | 1 | — | both scripts it documents are deleted |
+| **subtotal non-`.py`** | **11** | **1,953** | |
+
+**Kept (import cleanly, all self-contained on stdlib/numpy/torch or live `src.*`)**: `__init__.py`,
+`analyze_repetitive_long_samples.py`, `analyze_token_lengths.py`, `compare_detection_runs.py`,
+`coordexp_swift_fa2_length_precision_probe.py` (imports live `src.config`/`src.qwen`/`src.packing`),
+`coordexp_swift_length_isolation.py`, `dump_instability_samples.py`, `report_rollout_stability.py`,
+`visualize_packing_results.py`, `run_ckpt_pair_confidence_eval.sh` (targets live `scripts/`), and the
+three JSON-only post-hoc analyzers that live inside the tomography directories:
+`candidate_field_cardinality_tomography/{phase_a2_dual_checkpoint_analysis,unmatched_peak_review_gallery}.py`
+and `prefix_state_transition_tomography/analyze_phase_a3_results.py`. The audit proposed cutting
+"the 12 runners for the deleted packages"; these three sit in the same directories but were kept
+because they import cleanly and read artifact JSON, not `src.analysis`.
+
+## B4 — four zero-consumer `src/` surfaces (`326de8bc9`)
+
+| Cut | Removed | Consumer proof |
+| --- | ---: | --- |
+| `src/inference/pipeline.py::run_data_parallel_shards` + `DataParallelShardRunResult` + now-orphan `_read_jsonl` + 4 imports | 90 src lines | grep over `src/`, `scripts/`, `configs/`, `tests/`, `research/`, `memories/`, `openspec/` and the image2299 fork: its own `def` and 4 test call sites only |
+| its 4 tests in `tests/inference/test_pipeline.py` | 163 test lines | all four exercise the in-process route; the surviving controller/worker path keeps 6 `test_pipeline_controller_*` tests and `run_shard` keeps 6 `test_shard_primitive_*` tests |
+| `src/trace_config.py` | 46 lines | zero importers; only a subprocess test |
+| `tests/config/test_train_config.py::test_trace_config_writes_resolved_artifacts` | 38 lines, replaced by 10 | the only contract it proved — the fail-closed `config.resolved_artifact_exists` guard in the surviving `write_resolved_config_artifacts` — is now covered directly by `test_resolved_config_artifacts_refuse_silent_overwrite`; deleting it outright would have left that guard uncovered |
+| `src/optim/trainable_surface.py::write_trainable_surface_receipt` + 2 `src/optim/__init__.py` export lines | 21 lines | its sibling `build_trainable_surface_receipt` is production; the writer half has none (the receipt is persisted by `RunWriter`) |
+| its dedicated test + one appended assertion block | 46 test lines | `test_write_trainable_surface_receipt_rejects_non_standard_json` deleted whole; the write/readback tail of `test_trainable_surface_receipt_proves_optimizer_groups_and_sources` removed with its now-unused `tmp_path` fixture |
+| `src/metrics/__init__.py` (+ directory) | 1 line | docstring-only marker; its only two referrers were the B2 modules |
+
+Post-cut grep for `run_data_parallel_shards`, `DataParallelShardRunResult`, `trace_config`,
+`write_trainable_surface_receipt`, `src.metrics`, `src/metrics` over `src scripts tests configs
+openspec/specs`: **zero hits**.
+
+**Not cut, as instructed**: `src/losses/` `field_balanced_duplicate_rejection_and_recovery` alias
+(C1) — silent-corruption surface the user did not name. Also untouched:
+`src/analysis/spatial_scope_history/` (B8, untracked `.pyc`-only residue) and
+`src/inference/execution_context.py` naming cleanup (B9) — neither is in this lane's write surface.
+
+## B5 — `run_sampled_rescue_transition.py` repair (`69bb997b6`)
+
+Section E's diagnosis confirmed: `767e57f5e` deleted `canonical_float32_logprob` and
+`_normalized_attested_model_identity_for_runtime_comparison` from `src/inference/backend.py`
+without updating this, their only remaining consumer. Both are recovered verbatim from
+`git show 767e57f5e^:src/inference/backend.py` (with `_thaw_json` and the relocatable-payload path
+table) as private module-level helpers in the script — they belong here, not back in the backend,
+because nothing else calls them. The `except Exception` at :1145 is narrowed to
+`except RuntimeContractError`, so the `SystemExit("first free token logprob is not finite float32…")`
+it raises now fires only for the non-finite case it names.
+
+Bug fix, so the test was written first.
+
+**RED** — `tests/research/test_run_sampled_rescue_transition_helpers.py` against the unrepaired
+script (re-run as a sensitivity check with the final test content):
+
+```
+E   ImportError: cannot import name '_canonical_float32_logprob' from
+    'scripts.research.run_sampled_rescue_transition'
+1 error in 0.21s
+```
+
+and the two pre-existing failures the audit named:
+
+```
+E   ImportError: cannot import name '_normalized_attested_model_identity_for_runtime_comparison'
+    from 'src.inference.backend'          scripts/research/run_sampled_rescue_transition.py:1487
+E   SystemExit: first free token logprob is not finite float32: cannot import name
+    'canonical_float32_logprob' from 'src.inference.backend'
+                                          scripts/research/run_sampled_rescue_transition.py:1152
+2 failed in 0.23s
+```
+
+**GREEN** — after the repair, the new module plus both previously-failing node ids:
+
+```
+.....                                                                    [100%]
+5 passed in 0.40s
+```
+
+## Verification
+
+- `pytest tests --collect-only -q`: **54 errors → 1**. The 52 abandoned `tests/analysis` errors and
+  the duplicate-basename `import file mismatch` are gone. The remaining error is **path-dependent**:
+  `tests/research/test_research_probe_admission_consumers.py` raises
+  `ConsumerAdmissionError: execution root is not an approved worktree` at import, because this lane
+  worktree is not the fixed `research-probes` root. It is present at `b3d3be9b9` in this checkout
+  too and is not caused by any batch here.
+- Admission trio, after every batch: `tests/artifacts/test_research_probe_admission.py` +
+  `tests/research/test_capture_natural_boundary_support_source_bindings.py` → **36 passed**;
+  `tests/research/test_research_probe_admission_consumers.py` → path-dependent error as above.
+- `pytest tests/analysis tests/inference tests/optim -q -rfE`: **42 failed / 599 passed** after
+  B1–B3 (3 `tests/analysis` + 39 `tests/inference`, all pre-existing) → **40 failed / 596 passed**
+  after B5. The two node ids that left the failure set are exactly the two B5 repaired. The single
+  remaining `tests/analysis` failure is the pre-existing
+  `test_assemble_source_preservation_multi_route_state_banks_analysis.py::test_family_weights_are_equal_per_image_and_mean_one`
+  `AssemblyError` (audit section E, third failure — not this lane's). `tests/optim` has zero failures.
+  `tests/config` has one pre-existing failure,
+  `test_active_profile_migration_changes_only_infrastructure_allowlist`, which compares the
+  `configs/` YAML inventory against a frozen baseline; no config was touched by this lane.
+- Residue: every deleted basename (100 distinct, generic names excluded and checked by directory
+  instead) grepped over `src scripts tests configs openspec/specs pytest.ini` — **one hit**, below.
+- image2299 fork: all **119** deleted paths exist there byte-identically (md5 compared against
+  `b3d3be9b9`), so under the ledger's md5-mirror rule none of them is a fork consumer. Zero
+  differing copies.
+- `git diff --check` clean on the working tree and over `b3d3be9b9..HEAD`.
+
+### Residue left for the owner of `configs/` (outside this lane's write surface)
+
+Deleting the runners orphaned their configs; `configs/` is not this lane's surface, so nothing was
+removed there.
+
+| Orphaned config | Bound to |
+| --- | --- |
+| `configs/analysis/candidate_field_cardinality_tomography/*.yaml` (5) | deleted `run.py`/`status.py`/`finalize_if_ready.py` |
+| `configs/analysis/policy_objective_mechanism_comparison/*.yaml` (1) | deleted `policy_objective_mechanism_comparison/run.py` |
+| `configs/analysis/post_x1_instance_basin_tomography/*.yaml` (4) | deleted `run_post_x1_instance_basin_tomography.py` |
+| `configs/analysis/prefix_state_transition_tomography/*.yaml` (3) | deleted `prefix_state_transition_tomography/run.py` |
+| `configs/analysis/sorted_random_no_newline_phenotype/*.yaml` (5) | deleted `sorted_random_no_newline_phenotype/run.py` |
+| `configs/bench/rollout_backend_bench.yaml` | deleted `rollout_backend_bench/benchmark_rollout_backends.py` (named in its header comment) |
+
+`configs/infer/recursive_detection_ce/fullobj_{sorted,random}_purece_ckpt3668_a3_2_rollout1024_greedy.yaml`
+name the same artifact roots but are ordinary infer configs consumed by the live infer entrypoint —
+**keep**.
