@@ -48,7 +48,7 @@
 - [x] 7.1 From the integration lane: `git merge --ff-only research-probes`; if refused, `git merge research-probes` and record why in `receipts/integration-lane.md`.
 - [x] 7.2 Refresh `memories/current.md` continuity pointer for the lifecycle change; confirm `research/index.md` and `docs/AGENT_INDEX.md` describe the executed lifecycle, not the designed one.
 - [x] 7.3 `git tag -a research-base-v3 <final reviewed commit> -m "research-base-v3: post-reclaim research main"`; write `receipts/research-base-v3.md` (tag object, peeled commit, net reduction summary, worktree list).
-- [ ] 7.G Gate: `openspec validate --all`; `openspec verify`-style review of this change against its tasks; user approval to archive this change.
+- [x] 7.G Gate: `openspec validate --all`; `openspec verify`-style review of this change against its tasks; user approval to archive this change.
 
 ## 8. Approved follow-through (user approval 2026-08-28; D11 lanes)
 
@@ -57,4 +57,4 @@
 - [x] 8.3 Lane `docs`: apply `receipts/docs-entropy-audit.md`: DELETE candidates 1–5 and any other zero-current-citer DELETE entries; MOVE-TO-HISTORY the legacy/historical catalog entries with catalog path updates and inbound-link rewrites from current docs; prune the 9 confirmed-sediment `memories/notes` (git history is the recovery path); keep every KEEP-FLAGGED item; gate = catalog path resolution + link check. Append to the receipt.
 - [x] 8.4 Artifact reclaim (no git): re-verify every UNBOUND and BOUND-ARCHIVED root from `receipts/artifact-root-inventory.md` against `research/`, `memories/`, `docs/`, `openspec/`, and the image2299 worktree (tracked+untracked); write `receipts/artifact-reclaim-manifest.md` (path, size, mtime, file count, class, verification) BEFORE deletion; delete only re-verified roots; never touch BOUND-COMPLETE, BOUND-ACTIVE, or `/data/CoordExp/outputs/research-probe-infras/`; record freed GB.
 - [x] 8.5 Lead: merge the three lane branches into `research-probes`, run the broad CPU suite plus the admission trio once, diff the failure set against the baseline, remove lane worktrees/branches, ff the integration lane, cut `research-base-v4` if the tree changed materially, record in receipts.
-- [ ] 8.G Gate: `openspec validate --all`; residue grep for every deleted basename; `git diff --check`; user approval to archive (7.G).
+- [x] 8.G Gate: `openspec validate --all`; residue grep for every deleted basename; `git diff --check`; user approval to archive (7.G).
