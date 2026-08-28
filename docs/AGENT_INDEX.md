@@ -64,12 +64,14 @@ documented here.
   [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
 - Research interpretation, units, and durable results:
   [research/index.md](../research/index.md)
-- Reusable probe mechanics integration lane:
+- Reusable probe mechanics integration lane: the permanent worktree
   `/data/CoordExp/.worktrees/research-probe-infras`; merge accepted mechanics
-  into `research-probes`, but never use this lane as a probe fork point.
-- Once a `research-base-vN` tag exists, start an ephemeral `probe/<ticket>`
-  worktree from its newest tag. Until then, require an explicitly recorded
-  `research-probes` source commit.
+  into `research-probes`, but never use this lane as a probe fork point or a
+  retirement target.
+- Fork a new research direction as `probe/<direction>` from `research-probes`
+  HEAD at `.worktrees/<direction>`; no tag is required to fork. Cut a
+  `research-base-vN` tag only as a milestone after a reusable-mechanics merge
+  into `research-probes`.
 
 ## Current Swift production route
 

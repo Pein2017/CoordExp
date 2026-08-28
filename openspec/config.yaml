@@ -11,9 +11,12 @@ context: |
   route from the user-named task. Do not infer a research task should start on
   main merely because it is the repository root.
 
-  Once an annotated research-base-vN tag exists, new disposable probe worktrees
-  start from the newest such tag. Before then, a user-named probe may fork a
-  recorded research-probes commit only; do not invent an implicit baseline.
+  A new research direction forks probe/<direction> from research-probes HEAD
+  at .worktrees/<direction>; no tag is required to fork, and the admission
+  owner binds the exact commit and clean status. research-base-vN tags are cut
+  as milestones after a reusable-mechanics merge into research-probes, not as
+  fork prerequisites; research-probe-infras is the permanent integration lane
+  and never a fork point or retirement target.
 
   docs/ describes accepted current architecture and operator workflows.
   openspec/specs/ owns stable compatibility-sensitive behavior contracts.

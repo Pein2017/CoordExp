@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Current production and research branch, worktree, and Codex-session routing for CoordExp.
 tags: [git, branches, worktrees, codex, coordexp-swift, research-probes]
-updated: 2026-08-24
+updated: 2026-08-28
 ---
 
 # Branch And Worktree Policy
@@ -46,36 +46,55 @@ root `main` checkout; then update the development branch from the promoted
   `research-probes` branch. Resolve its live ref and commit at use time; branch
   names may change, but this fixed directory is never moved, recreated, or
   retired by probe lifecycle work.
-- `/data/CoordExp/.worktrees/research-probe-infras` is the bounded integration
-  lane for reusable probe mechanics. It is not a competing research authority
-  or a source for a new research probe. Accepted generic mechanics may merge
-  from this lane into `research-probes`; the two lines never imply a merge from
-  `coordexp-swift` or production `main`.
+- `/data/CoordExp/.worktrees/research-probe-infras` on branch
+  `research-probe-infras` is the permanent integration lane for reusable probe
+  mechanics. It merges accepted reusable mechanics into `research-probes` and
+  is fast-forwarded from `research-probes` after each accepted lifecycle
+  change; it is never a fork point for a new direction and never a retirement
+  target.
 - Both fixed research worktrees are protected by native Git worktree locks.
   Their current local protection is not an off-host backup, a remote branch
   promise, or approval to unlock, remove, prune, or rename either path.
 
-For a new research probe:
+For a new research direction:
 
-1. Start an ephemeral `probe/<ticket>` worktree from the newest annotated
-   `research-base-vN` tag. Before the first such tag exists, use only an
-   explicitly recorded `research-probes` source commit; do not invent an
-   implicit baseline from `main` or an arbitrary worktree.
-2. Bind the source commit, worktree path, configuration, external-artifact
-   locator, and replay entry to the probe's research record before interpreting
-   a result.
-3. Return the research unit, result/review, conclusion, and provenance manifest
-   to `research-probes` whether the result is positive or negative. Promote
-   experiment code only after a real second consumer has an owner-preserving
-   shared need; otherwise leave it experiment-local.
-4. Keep checkpoints, caches, raw model outputs, and other large artifacts
-   outside Git with bound locators and checksums. Before retirement, reserve the
-   `probe-final/<ticket>` annotated-tag namespace and record its final source,
-   path, and replay entry in the merged provenance manifest.
-5. Retire an ephemeral probe worktree only through a separately approved
-   evidence-preserving lifecycle action. Baseline-tag approval, document merge,
-   or a clean Git status does not authorize branch deletion, tag mutation,
-   artifact reclamation, or worktree removal.
+1. Fork `probe/<direction>` from `research-probes` HEAD:
+   `git worktree add /data/CoordExp/.worktrees/<direction> -b probe/<direction>
+   research-probes`. The admission owner binds the exact commit and clean
+   status at use time; no tag is required to fork. A direction worktree has no
+   obligation to sync from `research-probes` during its life; run
+   `git merge research-probes` inside it on demand, when the direction needs a
+   new reusable mechanic.
+2. Return records-only, not code. On `research-probes`:
+   `git checkout probe/<direction> -- research/<unit-dirs>` for the unit
+   directories, then hand-merge (append, do not overwrite) the shared routers a
+   direction worktree diverges on — the investigation's `experiments/index.md`,
+   `compass.md`, `research/index.md`, and any `research/decisions/` entry it
+   touches. Code stays on the direction branch and is not returned by default
+   (see promotion below). Follow the research-flow closeout order — result,
+   then experiment router, then decision/compass, then `memories/current.md`
+   — so a result never lives only in `memories/`.
+3. Promote code only when a real second consumer exists; the default is
+   experiment-local. When promotion is warranted, either
+   `probe/<direction> → research-probes` directly or
+   `probe/<direction> → research-probe-infras → research-probes` is
+   acceptable; choose per case.
+4. Cut a `research-base-vN` tag after a reusable-mechanics merge into
+   `research-probes`, not after a records-only return, and record it in a
+   one-paragraph receipt. `research-base-v2` (`8dac2d041`) is the replay
+   anchor for every `scripts/research/` producer this repository has since
+   deleted: replay by `git worktree add <tmp-path> research-base-v2` and read
+   the producer from there.
+5. Retire a direction lane once its worktree is clean
+   (`git -C <wt> status --short` empty): tag first, then remove.
+   `git tag -a probe-final/<direction> <tip> -m "..."` when the lifecycle
+   completed and its records were returned; `git tag -a archive/<name> <tip>
+   -m "..."` when the lane is untriaged and its content is preserved but not
+   returned. Then `git worktree remove <wt>` and `git branch -D <branch>`.
+   Recovery is `git branch <branch> <tag>^{}` followed by `git worktree add`.
+   Remote-tracking refs are never touched. `image2299-mechanism-microscope` is
+   the current live direction worktree and the reference specimen for this
+   model.
 
 ## Codex sessions and task worktrees
 

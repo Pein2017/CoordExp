@@ -31,10 +31,11 @@ evergreen router.
 
 `coordexp-swift` remains the active production-development branch at
 `/data/CoordExp/.worktrees/CoordExp-swift`; it is not a second research base.
-`research-probe-infras` is the bounded infrastructure integration lane at
+`research-probe-infras` is the permanent infrastructure integration lane at
 `/data/CoordExp/.worktrees/research-probe-infras`, not a place to start a new
-probe. The two research fixed worktrees are locally Git-locked and never become
-retirement targets merely because a branch name changes.
+probe and never a retirement target. The two research fixed worktrees are
+locally Git-locked and never become retirement targets merely because a
+branch name changes.
 
 ## Authority model
 
