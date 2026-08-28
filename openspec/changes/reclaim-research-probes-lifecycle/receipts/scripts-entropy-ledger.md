@@ -988,3 +988,43 @@ For every deleted basename (and the derived `test_<stem>` form), `rg --fixed-str
 No surviving file under `src/`, `scripts/`, `tests/`, `configs/`, `research/`, `memories/`, or current `docs/`
 references a deleted module. `git diff --check` and `git diff --cached --check`: clean.
 
+## Net reduction
+
+`git diff --stat research-base-v2..HEAD -- scripts tests configs | tail -1`:
+
+```
+ 134 files changed, 72807 deletions(-)
+```
+
+No other lane in this change touched `scripts/`, `tests/`, or `configs/`, so that range is exactly the two
+batches below.
+
+| Surface | Before | After | Removed |
+| --- | ---: | ---: | ---: |
+| `scripts/research/*.py` | 315 | 229 | **86** (37 batch 1 + 49 batch 2) |
+| test modules under `tests/**` | 413 | 365 | **48** |
+| `configs/**` entries | 564 | 564 | 0 |
+| lines | - | - | **72,807** |
+| concepts | - | - | 86 probe entrypoints and their 48 dedicated contract suites no longer have to stay coherent with the admission owner, the artifact roots, or each other |
+
+Insertions: 0 outside this receipt. No surviving script was edited: every deletion was end-to-end, so no
+dead import had to be removed.
+
+## Kept on purpose
+
+- 125 SHARED and 42 RECORD_CITED scripts: real production/live-direction consumers or a research unit that
+  names them as replay entry or evidence producer.
+- 22 DOCS_CITED, 31 TEST_ONLY blocked by a shared test module, 8 reverted load-bearing candidates, and
+  `analyze_native_sibling_branch_value` (prior-change HOLD): reported above, untouched, user's decision.
+- 33 of the 42 RECORD_CITED scripts are cited only by `status: complete` units (HOLD-B). They are the
+  largest remaining reclaimable block and the cheapest next step: rewriting those citations to point at
+  `research-base-v2` would make them deletable without losing replay.
+
+## Recovery
+
+Every file removed by this change is present in the annotated tag `research-base-v2`
+(tag object `960c627c6`, peeled commit `8dac2d041`):
+
+```
+git checkout research-base-v2 -- scripts/research/<name>.py
+```
