@@ -286,3 +286,289 @@ sediment.
 | `docs/history/training/STAGE2_DESIGN.md` | legacy-direction | 2026-06-15 | 1399 | 0 |
 | `docs/history/architecture/README.md` | historical-router | 2026-07-11 | 999 | 5 |
 | `progress/pretrain/README.md` | legacy-router | 2026-07-07 | 931 | 1 |
+
+## Wave 8 (8.3) — applied 2026-08-28 on `lane/docs`
+
+Executed the DELETE and memories/notes buckets of this audit per user approval
+2026-08-28 ("完全同意"). Lane worktree `/data/CoordExp/.worktrees/lane-docs`,
+branch `lane/docs`, forked from `research-probes` HEAD `b3d3be9b9`. Before
+each deletion, the current-citer grep from the Method section above was
+re-run against the live tree (not just trusted from this receipt's original
+snapshot).
+
+### Re-verification finding (changed the plan)
+
+The re-run found 3 files in the item-[2] "cut: all files" set that now have
+a real current citer that the original audit missed: `research/ideas/
+prefix-denoising-sft/{overview.md,discussion.md,draft.md}` (still under
+`research/ideas/`, not `research/archive/` — task 4.2 archived four other
+investigations but not this one) cite `progress/audits/
+2026-06-14_prefix_denoising_sft_v1_audit.md`, `progress/directions/
+prefix_denoising_sft_v1.md`, and `progress/explorations/
+2026-06-20_docs_progress_okf_upgrade_alignment.md` as primary source
+material ("review findings that motivated repair...", "original idea,
+design rationale..."), not as a completed-provenance manifest reference
+like `source_coverage.tsv`. Per task 8.3's re-verification instruction,
+these 3 were skipped and kept (with their catalog entries), leaving
+`progress/audits/`, `progress/directions/`, and `progress/explorations/`
+each holding exactly the one still-cited file.
+
+### MOVE-TO-HISTORY bucket: resolved to zero git-mv operations
+
+Task 8.3's own move mechanic (`git mv <path> docs/history/<same relative
+path under docs/>`) is only definable for a source path already under
+`docs/`. Re-checking the audit's Appendix, there are exactly 7 `docs/`-
+prefixed non-current catalog paths total: `docs/training/{STAGE1_OBJECTIVE,
+METRICS,LVIS,README,STAGE2_RUNBOOK}.md`, `docs/data/VISUAL_GENOME.md`,
+`docs/eval/COCO_TEST_SUBMISSION.md`. Of these: `LVIS.md` is DELETE (0
+citers, see below); `STAGE1_OBJECTIVE.md`, `METRICS.md`, `STAGE2_RUNBOOK.md`,
+`VISUAL_GENOME.md`, `COCO_TEST_SUBMISSION.md` are the 5 the audit explicitly
+named KEEP-FLAGGED (real 2-6 citers, evidence obligations). The remaining
+one, `docs/training/README.md` (historical-router, 5 real citers), was
+neither named KEEP-FLAGGED nor given a per-path MOVE tag by the audit; it
+also falls outside the audit's own move criterion ("citer count 0-1") and
+is the directory index for the three KEEP-FLAGGED siblings that stay in
+place. It was left untouched and is recorded below for the lead rather than
+moved on inference. The audit's prose "~65 docs/ entries ... MOVE-TO-HISTORY"
+therefore reads, against the real Appendix data, as using "docs/" loosely
+for "docs/catalog.yaml entries" in general (including `progress/`-prefixed
+ones); those `progress/`-prefixed entries are excluded from this task's
+move mechanic because `progress/`'s own catalog authority status is
+`deprecated_read_only_migrate_to_research` (destination `research/`, not
+`docs/history/`) — a different, out-of-scope disposition. Net result: no
+commit 2 (`chore(docs): move legacy catalog entries under docs/history`)
+was created; there is nothing to move under 8.3's literal instruction.
+
+### Deleted (DELETE bucket, commit `46ec2ccf7`)
+
+
+
+| subdirectory (deleted whole) | files | size |
+|---|---:|---:|
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_010/` | 7 | 5.06 MB |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_121/` | 7 | 7.26 MB |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/` | 7 | 7.07 MB |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/` | 7 | 6.00 MB |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/` | 7 | 5.02 MB |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/` | 7 | 5.29 MB |
+| **total** | 42 | 35.70 MB |
+
+(README.md, index.json, research_subset.json kept per audit item [1].)
+
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_121/rp115_review/vis_0000.png` | 1,848,692 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_121/rp118_canonical.jsonl` | 2,728 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_121/rp118_review/vis_0000.png` | 1,850,469 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/benefit_158_comparison.png` | 1,971,717 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/rp110_canonical.jsonl` | 932 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/rp110_review/vis_0000.png` | 1,812,181 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/rp115_canonical.jsonl` | 996 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/rp115_review/vis_0000.png` | 1,813,474 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/rp118_canonical.jsonl` | 1,189 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/benefit_158/rp118_review/vis_0000.png` | 1,816,895 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/hurt_025_comparison.png` | 1,729,914 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/rp110_canonical.jsonl` | 2,443 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/rp110_review/vis_0000.png` | 1,519,132 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/rp115_canonical.jsonl` | 2,510 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/rp115_review/vis_0000.png` | 1,522,458 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/rp118_canonical.jsonl` | 2,149 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_025/rp118_review/vis_0000.png` | 1,508,157 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/hurt_061_comparison.png` | 1,464,399 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/rp110_canonical.jsonl` | 2,496 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/rp110_review/vis_0000.png` | 1,264,868 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/rp115_canonical.jsonl` | 2,496 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/rp115_review/vis_0000.png` | 1,263,945 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/rp118_canonical.jsonl` | 2,426 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_061/rp118_review/vis_0000.png` | 1,265,876 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/hurt_178_comparison.png` | 1,557,394 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/rp110_canonical.jsonl` | 3,882 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/rp110_review/vis_0000.png` | 1,328,049 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/rp115_canonical.jsonl` | 3,801 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/rp115_review/vis_0000.png` | 1,330,606 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/rp118_canonical.jsonl` | 3,830 |
+| `progress/diagnostics/artifacts/et_rmp_rp_sample_bank_2026-04-29/hurt_178/rp118_review/vis_0000.png` | 1,315,252 |
+
+### progress/audits (zero-real-citer, 10 files) — 0.14 MB
+
+| path | size (B) |
+|---|---:|
+| `progress/audits/2026-01-22_stage1_softce_logging.md` | 9,272 |
+| `progress/audits/2026-02-25_stage2_channel_a_coord_loss.md` | 18,854 |
+| `progress/audits/2026-05-03_type_schema_architecture_audit.md` | 46,701 |
+| `progress/audits/2026-05-14-instance-trie-gaussian-post-implementation-audit.md` | 4,089 |
+| `progress/audits/2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md` | 5,111 |
+| `progress/audits/2026-05-19_openspec_reactivation_audit.md` | 8,633 |
+| `progress/audits/2026-05-20_repository_stewardship_audit.md` | 12,556 |
+| `progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md` | 1,111 |
+| `progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md` | 18,224 |
+| `progress/audits/2026-06-01_detection_scene_cleanup_validation.md` | 15,082 |
+| `progress/audits/README.md` | 2,844 |
+
+### progress/directions (zero-real-citer, 8 files) — 0.21 MB
+
+| path | size (B) |
+|---|---:|
+| `progress/directions/2026-06-05_row_conditioned_visual_coverage.md` | 33,084 |
+| `progress/directions/2026-06-07_segment_aware_packing_infra.md` | 34,954 |
+| `progress/directions/README.md` | 2,598 |
+| `progress/directions/full_idea_v3.md` | 27,326 |
+| `progress/directions/full_idea_v4.md` | 19,667 |
+| `progress/directions/full_idea_v5.md` | 28,600 |
+| `progress/directions/stage2_clean_prefix_v2.md` | 10,813 |
+| `progress/directions/stage2_emish_set_supervision_v1.md` | 58,599 |
+
+### progress/explorations (zero-real-citer, 8 files) — 0.41 MB
+
+| path | size (B) |
+|---|---:|
+| `progress/explorations/2026-01-26_stage2_infrastructure.md` | 4,295 |
+| `progress/explorations/2026-03-19_runtime_refactor_architecture_program.md` | 5,743 |
+| `progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md` | 131,710 |
+| `progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md` | 112,511 |
+| `progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md` | 92,102 |
+| `progress/explorations/2026-05-31_grid_anchor_pending_record.md` | 14,639 |
+| `progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md` | 54,922 |
+| `progress/explorations/2026-06-17_codebase_refactoring_program_kickoff.md` | 16,002 |
+| `progress/explorations/README.md` | 2,694 |
+
+### progress/handoffs (whole dir, 2 files) — 0.01 MB
+
+| path | size (B) |
+|---|---:|
+| `progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md` | 5,346 |
+| `progress/handoffs/README.md` | 766 |
+
+### progress/pretrain (2 zero/manifest-only files; stage1_foundation.md kept) — 0.01 MB
+
+| path | size (B) |
+|---|---:|
+| `progress/pretrain/2026-01-26_stage1_ablation.md` | 8,761 |
+| `progress/pretrain/README.md` | 931 |
+
+### docs/ zero-citer files (3) — 0.02 MB
+
+| path | size (B) |
+|---|---:|
+| `docs/history/training/STAGE1_ET_RMP_CE.md` | 1,418 |
+| `docs/history/training/STAGE2_DESIGN.md` | 1,399 |
+| `docs/training/LVIS.md` | 13,170 |
+
+### memories/notes sediment (9) — 0.02 MB
+
+| path | size (B) |
+|---|---:|
+| `memories/notes/2026-07-22-constant-dose-image-breadth-screen-checkpoint.md` | 6,453 |
+| `memories/notes/2026-07-22-physical-owner-duplication-goal-checkpoint.md` | 2,867 |
+| `memories/notes/2026-07-22-physical-owner-duplication-treatment-decision.md` | 1,509 |
+| `memories/notes/2026-07-22-pi-stage0-network-failure-checkpoint.md` | 2,232 |
+| `memories/notes/2026-07-22-pi-stage0-readiness-checkpoint.md` | 2,999 |
+| `memories/notes/2026-07-23-pi-stage0-proxy9090-rerun-result.md` | 2,284 |
+| `memories/notes/2026-07-23-pi-stateful-rpc-thread-pilot.md` | 1,950 |
+| `memories/notes/2026-08-12-human13-k-union-planning-checkpoint.md` | 3,608 |
+| `memories/notes/2026-08-15-all-hf-shared-surface-successor.md` | 1,997 |
+
+**Total freed: 38,284,451 bytes (36.51 MB)**
+
+### `docs/catalog.yaml` entries removed (24)
+
+`docs/training/LVIS.md`, `docs/history/training/STAGE1_ET_RMP_CE.md`,
+`docs/history/training/STAGE2_DESIGN.md`, all 6 `progress/audits/*` entries
+except the kept `2026-06-14_prefix_denoising_sft_v1_audit.md`, all 9
+`progress/directions/*` entries except the kept `prefix_denoising_sft_v1.md`,
+all 7 `progress/explorations/*` entries except the kept
+`2026-06-20_docs_progress_okf_upgrade_alignment.md`, and 2 of 3
+`progress/pretrain/*` entries (`README.md`, `2026-01-26_stage1_ablation.md`;
+`stage1_foundation.md` kept). Verified: 123 tracked paths -> 99, `yaml.safe_load`
+parses, every remaining `path:` resolves (gate script below).
+
+### Skipped items (real current citer found on re-verification; not deleted)
+
+| path | citer | reason |
+|---|---|---|
+| `progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md` | `research/ideas/prefix-denoising-sft/{overview.md,discussion.md}` | primary source citation, not manifest-only |
+| `progress/directions/prefix_denoising_sft_v1.md` | `research/ideas/prefix-denoising-sft/{overview.md,discussion.md,draft.md}` | primary source citation |
+| `progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md` | `research/ideas/prefix-denoising-sft/overview.md` | primary source citation |
+| `docs/training/README.md` | itself (5 real citers) not moved | not KEEP-FLAGGED-named nor MOVE-tagged by the audit; router for kept `STAGE1_OBJECTIVE.md`/`METRICS.md`/`STAGE2_RUNBOOK.md`; held for lead, see reasoning above |
+
+### Inbound links rewritten (write-surface files only)
+
+| file | change |
+|---|---|
+| `docs/training/README.md` | removed `LVIS.md` bullet; removed `../history/training/` bullet (dir now empty/gone) |
+| `docs/training/STAGE2_RUNBOOK.md` | removed `../history/training/STAGE2_DESIGN.md` bullet |
+| `docs/history/README.md` | removed `training/` bullet (dir now empty/gone) |
+| `progress/README.md` | removed `progress/handoffs/` bullet; repointed `directions/`, `audits/`, `explorations/` bullets from their deleted `README.md` routers to the single retained prefix-denoising-sft-cited file in each |
+
+`progress/index.yaml` (a parallel legacy manifest, not named in 8.3's gate
+or write-surface enumeration beyond generic `progress/**`) still lists
+`path:`-style entries for files deleted in this wave (e.g.
+`progress/audits/2026-05-03_type_schema_architecture_audit.md`); left
+untouched since it is outside the stated gate and `progress/`'s own
+authority status is read-only — flagged here for the lead rather than
+edited.
+
+### memories/notes pruned (9, commit `02a21f9dc`)
+
+| note | owning research unit |
+|---|---|
+| `2026-07-22-constant-dose-image-breadth-screen-checkpoint.md` | `research/investigations/.../experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md` |
+| `2026-07-22-physical-owner-duplication-goal-checkpoint.md` | `experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/` |
+| `2026-07-22-physical-owner-duplication-treatment-decision.md` | same unit |
+| `2026-07-22-pi-stage0-network-failure-checkpoint.md` | `research/archive/pi-lightweight-worker-ablation/experiments/2026-07-22-stage0-frozen-task-harness-screen/` |
+| `2026-07-22-pi-stage0-readiness-checkpoint.md` | same archived unit |
+| `2026-07-23-pi-stage0-proxy9090-rerun-result.md` | same archived unit |
+| `2026-07-23-pi-stateful-rpc-thread-pilot.md` | `research/archive/pi-lightweight-worker-ablation/experiments/2026-07-23-stateful-rpc-thread-pilot/` |
+| `2026-08-12-human13-k-union-planning-checkpoint.md` | `experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/` |
+| `2026-08-15-all-hf-shared-surface-successor.md` | `experiments/2026-08-15-human13-all-hf-shared-surface-trajectory-credit-vertical/` and `.../2026-08-16-.../` |
+
+None of the 9 were linked from `memories/current.md` or any `research/` file
+(re-verified: `grep -rln <basename> memories research openspec/specs docs
+AGENTS.md README.md` returned nothing for all 9 before deletion), so no
+continuity-pointer rewrite in `memories/current.md` was needed.
+
+### Post-merge link fixes for the lead
+
+None. Every citing file this wave found in `research/**` or `openspec/**`
+either (a) cites a file that was kept (the 3 prefix-denoising-sft skip
+items), or (b) is itself a `docs/history/` frozen snapshot whose broken
+links pre-date this change and are not this wave's to fix (see before/after
+counts below, which are identical).
+
+### Gate: catalog + link check (before/after)
+
+`docs/catalog.yaml` path resolution: 0 missing paths, both before and after.
+
+Broken-link check scope (`docs/*.md`, `docs/**/README.md`, `README.md`,
+`AGENTS.md`, `memories/current.md`, relative links only):
+
+| | count |
+|---|---:|
+| before (stashed to pre-edit tree, HEAD `b3d3be9b9`) | 306 |
+| after (first pass, before fixing 2 new dir-links) | 308 |
+| after (final, post `docs/training/README.md` + `docs/history/README.md` fixes) | 306 |
+
+Diff of the final after-list against the before-list: empty (no new
+breakage, none of the 306 pre-existing ones — all inside frozen
+`docs/history/worktree-*/snapshots/**` — were touched). `git diff --check`:
+clean on both commits.
+
+### `git diff --check`
+
+Clean (no whitespace errors) on both commits.
+
+### Commits
+
+- `46ec2ccf7` `chore(docs): delete zero-citer legacy documents` (82 files
+  changed: 77 deletions in `progress/`, 3 in `docs/`, 5 edits in
+  `docs/catalog.yaml` + 4 link-bearing docs)
+- `02a21f9dc` `chore(memories): prune sediment notes owned by research units`
+  (9 files deleted)
+- No `chore(docs): move legacy catalog entries under docs/history` commit —
+  see "MOVE-TO-HISTORY bucket: resolved to zero git-mv operations" above.
+
+### MB freed
+
+36.51 MB total (35.70 MB `et_rmp_rp_sample_bank` subdirs + 0.81 MB
+`progress/audits+directions+explorations+handoffs+pretrain` +
+0.02 MB `docs/` + 0.02 MB `memories/notes`), computed from git blob sizes
+at parent commit `b3d3be9b9` for every path in both commits' diff
+`--diff-filter=D` lists.
