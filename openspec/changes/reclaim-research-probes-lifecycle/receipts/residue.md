@@ -14,3 +14,7 @@ Freed: 72K + 4.0K + 16K ≈ 92K. `.pi-worker/` (1.7G) left in place; `.serena/ca
 ## Lead addendum (4.3)
 
 `.pi-worker/` holds 8 tracked files under `.pi-worker/home/pi-worker/**`; only its ignored content was removed with `git clean -fdX -- .pi-worker` (runs/ 1.2G, results/ 151M, sandbox-base-v2/ 6.1M, sessions/, threads/, specs/, agent/): 1.7G -> 100K. No process referenced the directory.
+
+## Lead addendum (close)
+
+`.serena/cache/` (870M, ignored, regenerable) removed at close after all semantic work finished.
