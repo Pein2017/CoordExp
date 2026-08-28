@@ -20,7 +20,7 @@ varlen packing, Accelerate world-size one, vLLM batch K refresh, pytest, Ruff,
 OpenSpec.
 
 **Authority:**
-[OpenSpec](../../../openspec/changes/add-human13-on-policy-first-bottleneck-successor/)
+[OpenSpec](../../../openspec/changes/archive/2026-08-28-add-human13-on-policy-first-bottleneck-successor/)
 and [research unit](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/unit.md).
 This file is execution discipline only and deliberately avoids a second copy of
 the scientific contract.
@@ -176,7 +176,7 @@ experiment root.
 
 - Create: `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md`
 - Modify: `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/unit.md`
-- Modify: `openspec/changes/add-human13-on-policy-first-bottleneck-successor/tasks.md`
+- Modify: `openspec/changes/archive/2026-08-28-add-human13-on-policy-first-bottleneck-successor/tasks.md`
 
 1. Hash all decision-owning manifests, checkpoints, iteration receipts, raw
    outputs, and analyses.  Report attempted/accepted/rejected updates, protected

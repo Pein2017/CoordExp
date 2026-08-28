@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11, PyTorch, Qwen3-VL/Transformers, FlashAttention-2 varlen packing, Accelerate world-size one, pytest, Ruff, OpenSpec.
 
-**Authority:** [OpenSpec change](../../../openspec/changes/add-human13-row-contrast-geometry-preservation-successor/) and [research unit](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-row-contrast-geometry-preservation-successor/unit.md). This plan is execution discipline only.
+**Authority:** [OpenSpec change](../../../openspec/changes/archive/2026-08-28-add-human13-row-contrast-geometry-preservation-successor/) and [research unit](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-row-contrast-geometry-preservation-successor/unit.md). This plan is execution discipline only.
 
 ---
 

@@ -26,10 +26,10 @@ discovery, pytest, OpenSpec.
 This execution plan is subordinate to:
 
 - [research unit](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md), which owns scientific meaning;
-- [OpenSpec proposal](../../../openspec/changes/add-human13-k-union-greedy-overfit-probe/proposal.md);
-- [OpenSpec specification](../../../openspec/changes/add-human13-k-union-greedy-overfit-probe/specs/coordexp-swift-human13-k-union-greedy-probe/spec.md);
-- [OpenSpec design](../../../openspec/changes/add-human13-k-union-greedy-overfit-probe/design.md); and
-- [OpenSpec tasks](../../../openspec/changes/add-human13-k-union-greedy-overfit-probe/tasks.md).
+- [OpenSpec proposal](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/proposal.md);
+- [OpenSpec specification](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/specs/coordexp-swift-human13-k-union-greedy-probe/spec.md);
+- [OpenSpec design](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/design.md); and
+- [OpenSpec tasks](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/tasks.md).
 
 Do not reinterpret or duplicate their arm semantics here. If this plan and
 OpenSpec differ, stop and update the planning artifacts before touching code.
@@ -45,7 +45,7 @@ useful later. Retire only conclusion-changing risks at each gate.
 **Files:**
 
 - Read: `AGENTS.md`
-- Read: `openspec/changes/add-human13-k-union-greedy-overfit-probe/{proposal.md,design.md,tasks.md}`
+- Read: `openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/{proposal.md,design.md,tasks.md}`
 - Read: `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/{unit.md,review.md,handoff.md}`
 - Inspect: only the exact paths named in the active OpenSpec wave
 

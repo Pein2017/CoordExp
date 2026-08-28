@@ -4,7 +4,7 @@ This design is approved for implementation by the user's instruction to
 continue the Human-13 overfit route.  Scientific meaning and completion are
 owned by the
 [research unit](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/unit.md)
-and [OpenSpec change](../../../openspec/changes/add-human13-on-policy-first-bottleneck-successor/).
+and [OpenSpec change](../../../openspec/changes/archive/2026-08-28-add-human13-on-policy-first-bottleneck-successor/).
 
 The implementation extends the experiment-local Human-13 spine with four deep
 modules rather than a new trainer:
