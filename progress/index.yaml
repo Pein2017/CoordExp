@@ -17,22 +17,13 @@ legacy_read_order:
   - docs/SYSTEM_OVERVIEW.md
   - the relevant current docs router under docs/
   - progress/README.md
-  - progress/directions/README.md
   - the specific category router and note relevant to the question
 
 groups:
   root:
     - progress/README.md
   directions:
-    - progress/directions/README.md
-    - progress/directions/full_idea_v5.md
-    - progress/directions/2026-06-07_segment_aware_packing_infra.md
-    - progress/directions/2026-06-05_row_conditioned_visual_coverage.md
     - progress/directions/prefix_denoising_sft_v1.md
-    - progress/directions/full_idea_v4.md
-    - progress/directions/full_idea_v3.md
-    - progress/directions/stage2_clean_prefix_v2.md
-    - progress/directions/stage2_emish_set_supervision_v1.md
   diagnostics:
     - progress/diagnostics/README.md
     - progress/diagnostics/artifacts/README.md
@@ -91,16 +82,7 @@ groups:
     - progress/diagnostics/2026-02-22_stage2_softctx_discretization_vs_stage1_bbox.md
     - progress/diagnostics/2026-03-11_visualization_tools_index.md
   audits:
-    - progress/audits/README.md
     - progress/audits/2026-06-14_prefix_denoising_sft_v1_audit.md
-    - progress/audits/2026-06-01_detection_scene_cleanup_validation.md
-    - progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md
-    - progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md
-    - progress/audits/2026-05-20_repository_stewardship_audit.md
-    - progress/audits/2026-05-19_openspec_reactivation_audit.md
-    - progress/audits/2026-05-03_type_schema_architecture_audit.md
-    - progress/audits/2026-01-22_stage1_softce_logging.md
-    - progress/audits/2026-02-25_stage2_channel_a_coord_loss.md
   benchmarks:
     - progress/benchmarks/README.md
     - progress/benchmarks/stage1_2b_val200_leaderboard.md
@@ -117,23 +99,10 @@ groups:
     - progress/benchmarks/2026-03-11_stage2_oracle_k_first200.md
     - progress/benchmarks/2026-03-11_stage2_rollout_temperature_refinement.md
   explorations:
-    - progress/explorations/README.md
     - progress/explorations/2026-06-20_docs_progress_okf_upgrade_alignment.md
-    - progress/explorations/2026-06-17_codebase_refactoring_program_kickoff.md
-    - progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md
-    - progress/explorations/2026-05-31_grid_anchor_pending_record.md
-    - progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md
-    - progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md
-    - progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md
-    - progress/explorations/2026-03-19_runtime_refactor_architecture_program.md
-    - progress/explorations/2026-01-26_stage2_infrastructure.md
   handoffs:
-    - progress/handoffs/README.md
-    - progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md
   pretrain:
-    - progress/pretrain/README.md
     - progress/pretrain/stage1_foundation.md
-    - progress/pretrain/2026-01-26_stage1_ablation.md
 
 notes:
   - path: progress/README.md
