@@ -82,8 +82,10 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
 
 - Use subagents when they are likely to reduce time to final acceptance through
   independent evidence gathering, a coherent implementation lane, disjoint
-  parallel work, or a bounded review justified by the acceptance rules below.
-  Handle small single-lane tasks directly.
+  parallel work, or a bounded review justified by the acceptance rules below;
+  also use a bounded self-contained lane when it materially preserves the main
+  thread's context window for user decisions, synthesis, or acceptance. Handle
+  small or tightly coupled tasks directly.
 - Choose topology from dependencies, semantic ownership, write surfaces, and
   acceptance before choosing a model.
 - Reuse one worker across sequential checkpoints only while goal, non-goals,
