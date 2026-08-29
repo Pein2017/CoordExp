@@ -13,3 +13,4 @@ subtree.
 - [Autoregressive Binding Template Study](autoregressive-binding-template-study/)
 - [CoordExp-Swift Physical Length](coordexp-swift-physical-length/)
 - [Label Studio COCO Refinement Commit Gate](label-studio-coco-refinement-commit-gate/)
+- [Research raw-material distillation (2026-08-29)](2026-08-29-research-raw-materials-distillation/)
