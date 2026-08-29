@@ -374,6 +374,13 @@ A directory path is a handle, not proof. State whether evidence is locally
 verified, historical-handle-only, unavailable, metric-bearing, or
 mechanics-only.
 
+Before reclaiming an artifact root or deleting a producer script, search
+`tests/` alongside `research/`, `memories/`, `docs/`, and every live probe
+worktree. Real-fixture tests bind roots, and sealed compatibility receipts
+bind source files — test modules included — by SHA-256. A file named in a
+receipt binding is load-bearing bytes regardless of its test or doc status;
+splitting, moving, or deleting it fails the bound consumer closed.
+
 ## Promotion Ladder
 
 1. **Artifact exists**: traceable execution only.

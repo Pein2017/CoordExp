@@ -33,6 +33,12 @@ directly. “Full speed” and spare slots do not satisfy this predicate.
 
 Before spawning, read [references/contracts.md](references/contracts.md).
 
+For research, fan-out also requires one frozen active contract: anchor,
+conditioning surface, intervention, decision outcome, acceptance/debt policy,
+attempt budget, and stop rule. If any of these is unsettled, keep the work at L0
+or use one read-only adviser; parallelism must not decide the estimand by
+accumulation.
+
 ## Layer contract
 
 ### L0: user-facing lead
@@ -45,16 +51,22 @@ Before spawning, read [references/contracts.md](references/contracts.md).
   surfaces. Reserve enough live capacity for their L2 workers.
 - Receive package acceptance packets and decision escalations. Do not routinely
   receive raw L2 outputs, run their correction loop, or become an implementor.
+- Reset the phase when checkpoint family/order, conditioning, intervention
+  sequence, acceptance/debt policy, architecture, claim, or stop rule changes.
+  Freeze a new packet and invalidate only contracts that depended on the old
+  semantics; do not patch every existing worker into the new question.
 
 ### L1: package lead or contractor
 
 - Own exactly one non-trivial package: decomposition, L2 routing, integration,
   one bundled correction round, verification, and a compact package receipt.
-- May use any model in the live spawn allowlist. Prefer `gpt-5.6-terra` at the
-  lowest sufficient effort for a general package lead: medium for bounded
-  work, high for multi-file integration. Use Sol only after observed evidence
-  that Terra cannot close a cross-package semantic, lifecycle, or integration
-  problem; do not upgrade merely because a task is long or important.
+- May use any model in the live spawn allowlist. The spawning lead selects the
+  model and a supported effort from the package's actual complexity, verifier,
+  stakes, latency, and cost; this skill does not bind `medium`, `high`, or
+  `xhigh` to package labels. Prefer the Terra family for a general package lead.
+  Use Sol only after observed evidence that Terra cannot close a cross-package
+  semantic, lifecycle, or integration problem; do not upgrade merely because a
+  task is long or important.
 - Normally use `fork_turns: "none"`. A read-only design adviser may fork at most
   the last five turns only when the conversational nuance cannot be expressed
   in a smaller contract.
@@ -74,8 +86,12 @@ Before spawning, read [references/contracts.md](references/contracts.md).
 
 - **Hard model allowlist:** use only `gpt-5.6-luna` or `gpt-5.6-terra`, with an
   explicit supported reasoning effort and `fork_turns: "none"`.
-- Never substitute Sol or another model. If the work requires Sol-level
-  semantic or lifecycle judgment, create a separate L1 reviewer/adviser.
+- The spawning L1 chooses that effort from the ticket's actual needs; depth or
+  worker tier does not imply `medium`, `high`, or `xhigh`.
+- Never substitute Sol or another model. If a semantic or lifecycle uncertainty
+  can materially change package acceptance and cannot be closed by the frozen
+  verifier or L1 inspection, create at most one separate L1 reviewer/adviser;
+  difficulty alone does not justify that route.
 - Own one narrow output with exact paths, invariants, verifier, permissions,
   and stop rule. Implement, test, inspect, or mechanically review; do not
   redefine goals, architecture, claims, or acceptance.
@@ -106,6 +122,19 @@ contract, known failure modes, tier, budget, and stop rule.
    L1 for a third patch. Reframe the contract or dispatch one fresh L1 at the
    next justified tier; keep the takeover narrow and preserve accepted work.
 8. Wait on L1 from L0 and on L2 from L1. Use long event waits; do not status-poll.
+9. Freeze a review target. Use at most one adviser for an unresolved semantic
+   fork and at most one independent reviewer at promotion or flatten, only when
+   a named failure could materially change acceptance. When a correction keeps
+   the contract and topology fixed, L1 verifies the original counterexample and
+   acceptance commands directly; do not review the delta or stack an adjacent
+   correction review. If the target's semantic foundation changes, supersede
+   the old review and decide afresh whether another review is justified.
+10. Keep maintenance, cleanup, and Git-hygiene packages out of an active
+    scientific fan-out. Run them only after a sealed checkpoint unless they are
+    required to unblock the frozen contrast.
+11. For sequential research interventions, the accepted earlier edge must be
+    cold-read and natively rerolled before contracting the next edge. A sampled
+    or teacher-forced joint route is not a substitute for reachable state.
 
 ## Pilot evaluation
 
@@ -139,3 +168,15 @@ is equal.
 - An authorized generated/pin closure is returned to L0 as a blocker.
 - Sol is selected for an L1 before Terra shows an actual capability gap.
 - Green tests or a worker final answer are treated as package acceptance.
+- Multiple advisers or reviewers inspect overlapping versions of a moving
+  research target.
+- A corrected fixed-contract package is sent to another reviewer instead of L1
+  replaying the original counterexample and acceptance commands.
+- Nonblocking quality, documentation, hardening, or extra-test suggestions are
+  promoted into the package correction queue without an acceptance-changing
+  witness.
+- A semantic change is broadcast as patches to existing workers instead of a
+  fresh packet with explicit supersession.
+- Cleanup or Git audit competes with an unsealed decision-bearing run.
+- A later intervention is contracted against a prefix the promoted earlier
+  intervention never reaches natively.

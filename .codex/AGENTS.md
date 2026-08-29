@@ -82,7 +82,8 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
 
 - Use subagents when they are likely to reduce time to final acceptance through
   independent evidence gathering, a coherent implementation lane, disjoint
-  parallel work, or fresh review. Handle small single-lane tasks directly.
+  parallel work, or a bounded review justified by the acceptance rules below.
+  Handle small single-lane tasks directly.
 - Choose topology from dependencies, semantic ownership, write surfaces, and
   acceptance before choosing a model.
 - Reuse one worker across sequential checkpoints only while goal, non-goals,
@@ -137,18 +138,34 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
 
 - Never accept a worker self-report as completion. Replay the relevant command
   or inspect independently verifiable receipts such as exact diffs, regression
-  counts, file metadata, artifact paths, and live state.
+  counts, file metadata, artifact paths, and live state. Independent
+  verification normally means the lead performs this replay; it does not imply
+  spawning another reviewer.
 - Keep candidate completion, lead acceptance, and user acceptance distinct.
-- Use dedicated reviewers according to risk, not automatically per worker:
-  silent correctness, compatibility, milestone, claim, launch, security, or
-  irreversible boundaries deserve fresh review.
-- Freeze a review target. If it drifts, invalidate only affected findings when
-  owner, assumptions, and contract remain stable, and review the exact delta;
-  restart the review when those foundations change.
-- Allow one bundled correction round per task. A third same-class finding means
-  stop and fix the shared invariant or escalate, not begin a fourth review loop.
-- Probe-tier work gets one proportionate review round and no production
-  anti-forgery ceremony.
+- Review is a bounded falsification test of the active decision, not an
+  open-ended search for improvements. Use a dedicated reviewer only when a
+  named failure mode could materially change package acceptance and a fresh
+  review is likely to reduce that risk more efficiently than a deterministic
+  verifier or direct lead inspection.
+- A finding is blocking only when it supplies a reproducible counterexample
+  that can change the active scientific or product decision, corrupt a declared
+  metric, denominator, data or artifact identity, violate an explicit
+  acceptance invariant, or make the authorized action unsafe. Omit style,
+  maintainability, archival completeness, hypothetical unused topology,
+  optional hardening, and additional test-coverage findings unless they
+  directly demonstrate one of those failures.
+- Freeze one review target and allow at most one delegated review pass for that
+  target. When a correction preserves the estimand, semantic owner, execution
+  topology, and acceptance contract, the lead verifies the original blocking
+  counterexamples and acceptance commands directly; do not review the exact
+  delta or spawn a correction reviewer. A changed foundation supersedes the old
+  review and requires a new decision about whether review is justified.
+- Bundle accepted blocking corrections once. If no blocking counterexample
+  remains and the declared acceptance checks pass, stop reviewing and continue
+  the authorized workflow.
+- Probe-tier work gets at most one proportionate delegated review before launch
+  and no production anti-forgery ceremony. Nonblocking issues never delay the
+  probe.
 
 ## Durability and efficiency
 
@@ -169,13 +186,17 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
 - Verify live availability. Effort changes search depth; it does not repair a
   role mismatch. Change model family when semantic or architectural capability
   is the uncertainty.
-- Read-only scout: luna/medium; a provider-diverse peer may corroborate but does
-  not own writes or conclusions.
-- Bounded builder: terra/high or sonnet/high; use sonnet/medium only for small,
-  explicit work with a deterministic verifier.
-- Semantic builder: sol/high; use opus/medium-high as a peer for mathematical,
-  autograd, research-semantic, or silent-correctness work.
-- Lifecycle builder: opus/high for compatibility, serialization, source
-  archaeology, and broad framework lifecycle work.
-- Semantic review: sol/xhigh. Lifecycle review: opus/xhigh. Major-decision
-  models advise only; the lead and user retain authority.
+- The main-thread lead selects a supported reasoning effort for each spawn from
+  the actual task shape, risk, verifier strength, observed capability gap,
+  latency, and cost. `medium`, `high`, and `xhigh` are choices, not role-bound
+  defaults or mandatory escalation steps.
+- Model-family guidance remains task-shaped: luna suits read-only scouting;
+  terra or sonnet suits bounded building; sol suits semantic, mathematical, or
+  statistical work; opus suits broad lifecycle and source-archaeology work. A
+  provider-diverse peer may corroborate but does not own writes or conclusions.
+- Route review with the smallest sufficient model family and an effort chosen by
+  the main-thread lead. No family or effort is automatically required because a
+  surface is labelled silent correctness, claim, launch, or milestone. Escalate
+  only after a concrete capability gap or when the accepted stakes justify the
+  added latency and cost. Major-decision models advise only; the lead and user
+  retain authority.

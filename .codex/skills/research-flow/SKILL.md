@@ -1,6 +1,6 @@
 ---
 name: research-flow
-description: Trace CoordExp research evidence into a bounded decision or closeout without conflating scientific, technical, and archival status.
+description: Lead or close a bounded CoordExp research investigation while preserving one active estimand and separating scientific, technical, and archival status.
 ---
 
 # Research Flow
@@ -20,6 +20,14 @@ current-behavior documentation, production code, or an ordinary audit.
   behavior. Neither owner's acceptance closes the other.
 - Historical records are provenance; legacy progress archives receive no new
   records.
+- Worktree lifecycle for a research direction — forking `probe/<direction>`
+  from the `research-probes` worktree HEAD, records-only return (units,
+  routers, provenance; code stays on the branch), `probe-final/` and
+  `archive/` tag-then-remove retirement, and `research-base-vN` milestones — is
+  owned by the "Research-probe routing" section of that worktree's
+  `docs/BRANCH_AND_WORKTREE_POLICY.md`. Follow it; do not restate or reinvent
+  it here. (The root `main` copy of that file is production-only and does not
+  carry this section.)
 - Reviews, handoffs, packets, and memory route to owners but do not become
   authority.
 
@@ -27,6 +35,27 @@ Use `audit-review` for correctness findings, `model-diagnosis` for abnormal
 behavior, the owning code/config/runtime path for a reproducible mechanical
 failure, `coordexp-infer-eval-workflow` for run operations, and `git-hygiene`
 for repository publication.
+
+## Active-contract gate
+
+Before executing a probe or training step, freeze one current sentence:
+
+```text
+From anchor A, does intervention X change decision outcome Y under gate Z?
+```
+
+Bind it to one immutable specimen packet: checkpoint/config identity, natural
+prefix identity, intervention boundary and provenance, evaluation/owner ledger,
+primary acceptance level, attempt budget, and stop rule. Exact-token identity is
+a replay/provenance diagnostic unless the unit explicitly makes exact replay the
+estimand.
+
+A change to checkpoint family or ordering, conditioning surface, intervention
+sequence, acceptance/debt policy, architecture, claim, critical path, or stop
+rule is a phase reset. Close or detach the old contract and create a fresh unit
+or continuation packet before execution; do not let old terms silently acquire
+new meanings. Start a fresh task when the lead must reconstruct more than one
+prior iteration from conversation rather than from the packet.
 
 ## Work
 
@@ -71,6 +100,12 @@ for repository publication.
    - Complete when derived constraints are either authorized or explicitly
      labeled proposals.
 
+   For sequential interventions, regenerate each later intervention from the
+   cold-read native state produced by the accepted earlier intervention. Never
+   compose a decision-bearing route from a teacher-forced, jointly sampled, or
+   otherwise hypothetical prefix unless that conditioning is itself the frozen
+   estimand.
+
 5. **Gate evidence on both axes.**
    - On the research axis, verify the declared question, contrast, denominator,
      conditioning, evaluation surface, and permitted claim.
@@ -88,6 +123,13 @@ for repository publication.
    - Complete when every verdict names both the accepted mechanical path and
      the evidence-bearing scientific contrast, or states that one is absent.
 
+   Validate a mutable runner with one sentinel covering intervention
+   consumption, gradient/update direction when relevant, rejection/rollback,
+   receipt completion ordering, and cold readback before the foreground run.
+   If a runner invariant fails, classify the affected run as technical-invalid,
+   repair the instrument, and restart from the immutable parent; do not turn
+   the repair into another scientific arm.
+
 6. **Close routing once.**
    - When evidence changes the route, update the owning result/unit, experiment
      index, and current decision or compass. Refresh project memory only if
@@ -99,6 +141,11 @@ for repository publication.
    - Promote current behavior to operator guidance or stable contracts only
      through their own authorized change.
    - Complete when no live router points at superseded transport or provenance.
+
+   Keep one machine-readable iteration receipt authoritative. Human records
+   link to it and summarize the decision; do not duplicate volatile counters or
+   ledgers across multiple prose surfaces. Update broad routers at a promoted
+   anchor or final closeout, not after every attempted update.
 
 7. **Verify the product.**
    - Check tracked scope, links, source counts, lifecycle state, artifact
@@ -139,6 +186,13 @@ change, reconcile the literal task condition before changing a checkbox.
   receipt/write-read checks, one minimal real end-to-end mechanics smoke, and
   then the smallest decision-bearing scientific pilot. Do not let in-memory
   outputs or helper-only tests stand in for durable end-to-end evidence.
+- For a long self-driven loop, predeclare the attempt budget and phase-reset
+  triggers. Use at most one advisory pass at an unresolved semantic fork and
+  one independent review at promotion or flatten; do not review a target that
+  is still changing or run maintenance/cleanup lanes against active science.
+- Report launch, anomaly, decision-bearing result, and closure. Do not turn
+  command liveness, buffered logs, or routine receipt reads into a second
+  status stream.
 
 ## Report
 

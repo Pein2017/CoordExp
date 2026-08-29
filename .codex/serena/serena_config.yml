@@ -576,6 +576,40 @@ ls_specific_settings:
 # This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
 # giving it a high priority of 3, while the default Python language server is fully excluded from
 # auto-detection with priority 0.
+
+# mapping from language server keys to integer priority values (higher = more preferred), which determine
+# language server selection during automatic project creation and are used to break ties when multiple
+# language servers match an equal number of source files.
+# The priority values override Serena's default priorities:
+#   * 0 = experimental or secondary language servers, which are never auto-detected
+#         (e.g. `python_*` and `php_*` are "secondary"; also applies to non-programming languages like `json`)
+#   * 1 = supersets of other languages, which shall be preferred only if they match more files
+#         (e.g. `vue` and `svelte`, which are supersets of `typescript`)
+#   * 2 = default priority
+# Example:
+#   ls_priorities:
+#     python: 0
+#     python_basedpyright: 3
+# This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
+# giving it a high priority of 3, while the default Python language server is fully excluded from
+# auto-detection with priority 0.
+
+# mapping from language server keys to integer priority values (higher = more preferred), which determine
+# language server selection during automatic project creation and are used to break ties when multiple
+# language servers match an equal number of source files.
+# The priority values override Serena's default priorities:
+#   * 0 = experimental or secondary language servers, which are never auto-detected
+#         (e.g. `python_*` and `php_*` are "secondary"; also applies to non-programming languages like `json`)
+#   * 1 = supersets of other languages, which shall be preferred only if they match more files
+#         (e.g. `vue` and `svelte`, which are supersets of `typescript`)
+#   * 2 = default priority
+# Example:
+#   ls_priorities:
+#     python: 0
+#     python_basedpyright: 3
+# This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
+# giving it a high priority of 3, while the default Python language server is fully excluded from
+# auto-detection with priority 0.
 ls_priorities:
 
 # list of paths to ignore across all projects.
@@ -675,20 +709,14 @@ trusted_project_path_patterns:
 projects:
 - /data/CoordExp
 - /data/CoordExp/.codex/memories
+- /data/CoordExp/.codex/plugins/cache/coordexp-local/codex-wake-me-up/0.1.0+codex.20260823095611
 - /data/CoordExp/.codex/skills/safe-runtime-maintenance
-- /data/CoordExp/.codex/worktrees/3f15/research-probes
 - /data/CoordExp/.worktrees/CoordExp-swift
 - /data/CoordExp/.worktrees/codex-start-if-idle-turn-guard
 - /data/CoordExp/.worktrees/codex-wake-me-up-event-monitor
-- /data/CoordExp/.worktrees/human13-nk-factorial-probe
 - /data/CoordExp/.worktrees/image2299-mechanism-microscope
-- /data/CoordExp/.worktrees/owner-commit-binding
-- /data/CoordExp/.worktrees/permanent-owner-bridge
 - /data/CoordExp/.worktrees/research-probe-infras
 - /data/CoordExp/.worktrees/research-probes
-- /data/CoordExp/.worktrees/rp-crossover-live-integration
-- /data/CoordExp/.worktrees/rp-crossover-materializer
-- /data/CoordExp/.worktrees/rp-crossover-production
 - /data/CoordExp/codex-harnessdock
 - /data/CoordExp/codex-harnessdock-dev
 - /data/CoordExp/codex-usage-ledger

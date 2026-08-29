@@ -49,8 +49,8 @@ silent newly wired contract mismatch.
    - Distinguish a symptom patch from an intervention that improves the
      decision-owning behavior.
    - Route silent contract drift to `model-innovation-risk-audit` and a
-     long-running hidden-state investigation to
-     `coordexp-vllm-mechanistic-loop`.
+     user-approved long-running investigation to a fresh owning unit under
+     `research-flow`.
    - Complete when the recommendation, evidence scope, and claim boundary align.
 
 ## Report

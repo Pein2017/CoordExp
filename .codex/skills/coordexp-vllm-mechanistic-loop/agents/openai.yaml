@@ -1,4 +1,0 @@
-interface:
-  display_name: "CoordExp Vision-Language Mechanistic Loop"
-  short_description: "Investigate hidden model mechanisms"
-  default_prompt: "Use $coordexp-vllm-mechanistic-loop to continue this artifact-backed mechanism investigation."
