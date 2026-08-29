@@ -74,7 +74,7 @@ The referenced Step-0/Step-1 artifact roots, step-484 checkpoint, and input JSON
 
 ### Exact recovered identity
 
-- Checkpoints: Sorted, Random, and Permutation arms, each nominal step `4887`; exact adapter identities are embedded in sampled shard `model_identity` records.
+- Checkpoints: Sorted, Random, and Permutation arms, each nominal step `4887`; their exact sampled-shard identities are pinned below.
 - Evaluation data: `human-refined-12.coord.jsonl`, 12 images, 346 trusted owners.
 - Sampler: K=`16`, seeds `21001..21016`, temperature `0.4`, top-p `0.95`, repetition penalty `1.0`, max new tokens `3084`, HF fp32.
 - Native greedy baseline: separate stored manifests; do not infer it from the sampled configs. The configs contain temperature `0` and RP `1.10`, while sampled shards explicitly record RP `1.0`.
@@ -87,6 +87,18 @@ The referenced Step-0/Step-1 artifact roots, step-484 checkpoint, and input JSON
   - Sorted `f1-metrics.json`: `0ed6a8e440a12c0e3b15aff43e6c7c073ff4e93e3afa26f178d9e75317c48688`;
   - Random: `b7f27790e68a4ea9c34253de849df601505f795be00843c2736e04fe81f955d5`;
   - Permutation: `4f7a39387c96d197236237e6c262720f3214df7868b14b3a720ca1f0aa2a5768`.
+
+### Complete sampled-shard `model_identity`
+
+The value is identical in `sampled/shard-0.json` and `sampled/shard-1.json` for each arm. `Identity SHA256` is over `jq -c '.model_identity'`, including backend/effective settings, base, adapter, embedding delta, processor, tokenizer, and generation identity. The exact source field plus this reproducible digest pins the complete value; the checkpoint-defining paths are expanded here so the three arms are not represented by truncated display names.
+
+| Arm | Exact sampled-shard source | Adapter | Embedding delta | Base | Generation fingerprint | Complete identity `jq -c` SHA256 |
+|---|---|---|---|---|---|---|
+| Sorted | `outputs/research/qwen3-vl-dense-enumeration/2026-07-29-three-checkpoint-human-refined12-max3084/sorted/sampled/shard-{0,1}.json` → `.model_identity` | `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter` | `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings`; additive F32 `[1004,2048]`; base-config SHA256 `c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de` | `/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent` | `14faa4a4a69a1e5a2647d61943fedd79b10fe9f30fc18324834f0b436ce1cdd6` | `ad69be21580d4d3dbf1f521c7d83e8e6fae1248cbbbc88984d5aef7251c85a7c` |
+| Random | `outputs/research/qwen3-vl-dense-enumeration/2026-07-29-three-checkpoint-human-refined12-max3084/random/sampled/shard-{0,1}.json` → `.model_identity` | `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/checkpoints/step-4887/adapter` | `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/checkpoints/step-4887/special_token_embeddings`; additive F32 `[1004,2048]`; base-config SHA256 `c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de` | `/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent` | `14faa4a4a69a1e5a2647d61943fedd79b10fe9f30fc18324834f0b436ce1cdd6` | `b748e613c7b43706ead1d5ade4d5ffb2b9278a6b2dc45c6312de96b34ca8c74d` |
+| Permutation | `outputs/research/qwen3-vl-dense-enumeration/2026-07-29-three-checkpoint-human-refined12-max3084/permutation/sampled/shard-{0,1}.json` → `.model_identity` | `/data/CoordExp/outputs/prod/coordexp_swift/permutation_bundle_coordinate_noise/single_arm_probe/qwen3_vl_2b_random_step4887_permutation_noise_same_image_bundle_single_arm_probe_k8_n1_b24-20260728T151102Z/checkpoints/step-4887/adapter` | `/data/CoordExp/outputs/prod/coordexp_swift/permutation_bundle_coordinate_noise/single_arm_probe/qwen3_vl_2b_random_step4887_permutation_noise_same_image_bundle_single_arm_probe_k8_n1_b24-20260728T151102Z/checkpoints/step-4887/special_token_embeddings`; additive F32 `[1004,2048]`; base-config SHA256 `c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de` | `/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent` | `14faa4a4a69a1e5a2647d61943fedd79b10fe9f30fc18324834f0b436ce1cdd6` | `c317d6a94c96534b3dab52ea203307bdc983077b77c4dcb493a595f3a41784ec` |
+
+Shared complete-record properties: HF `generate`, Transformers `4.57.1`, SDPA, patch-embed linearization enabled, active DoRA adapter `default`, tied embeddings, Qwen3-VL-2B (`text_hidden_size=2048`), and contiguous coordinate token IDs `151670..152669`. These are descriptive fields from the recorded identity, not reconstructed assumptions.
 
 | Checkpoint | Greedy strict owner count | K16 union owner count | Union TP / FP / FN | Greedy-missed recovered owners | FP taxonomy: class-absent / mis-grounded / duplicate / loose |
 |---|---:|---:|---:|---:|---:|
@@ -132,6 +144,18 @@ Artifact: `/data/CoordExp/.worktrees/owner-commit-binding/outputs/probes/coordex
 - 2,046 strict-matched generated commit observations.
 - Own-owner retrieval@1 `75.27%`; same-class retrieval@1 `71.30%`.
 - Commit state exceeds box-end and last-coordinate controls for all 2,046 observations; exceeds cyclic next-image same-geometry control in `93.65%`.
+
+### Exact representation definition for retrieval@1 `75.27%`
+
+- **Layer:** the replay hooks the unique `model.language_model.norm` module. The query is the final post-norm language hidden state, not an intermediate layer. Visual candidates come from the unique `model.visual.merger` output.
+- **Commit token/boundary:** every parsed generated row is aligned, in forward row order, to the exact generated-token subsequence `raw_span_text + <|commit|>`. `<|commit|>` is token ID `151669`; if it is generated step `k`, the captured full-sequence column is `prompt_width + k`, after consuming the commit token. The companion boundaries are `<|box_end|>` at `k-1` and the last coordinate at `k-2`.
+- **Replay and query construction:** exact prompt plus complete generated IDs are replayed once with the same model/image tensors, `use_cache=False`, and no supplied `inputs_embeds`, `position_ids`, cache, or `past_key_values`; the final-norm hook captures detached commit, box-end, and last-coordinate vectors.
+- **Owner prototype/readout construction:** for each strict-matched row, use the row's parsed predicted `coord_bins`—never the GT box—to select executed-image main-merger rows. The prototype is their bbox-overlap-fraction-weighted mean, then L2-normalized. Query and prototype are detached and converted to FP32.
+- **Candidate pool and search scope:** retrieval is computed independently within each image. For a query, the positive is its strict-matched physical owner's prototype; candidates are all other strict-matched observations pooled across that image's greedy/sampled trajectories, excluding every observation with the same `owner_id`. Thus the reported `1540/2046 = 0.7526881720430108` (`75.27%`) is the aggregate of same-image, different-owner decisions over 13 images. It is neither cross-image nor global retrieval. Same-class retrieval uses the same pool further restricted to the same normalized description.
+- **Similarity metric:** FP32 cosine similarity, implemented as dot product after L2 normalization; retrieval@1 passes only when own-owner cosine is strictly greater than the maximum eligible other-owner cosine.
+- **Controls:** (1) same row's final post-norm `<|box_end|>` state against its own prototype; (2) same row's final post-norm last-coordinate state against its own prototype; (3) a cyclic next-image control that projects the same normalized predicted geometry onto the next sealed-panel image's verified merger matrix. The third is a control comparison, not part of the retrieval candidate pool.
+
+Exact source: `scripts/research/frozen_owner_set_probe/{replay.py,representation.py,prototypes.py,finalize.py}` and `src/qwen/generated_commit_replay.py` under source SHA `093b4a2d0b8983c4786fb32ba9cdde3202996b6e`; exact metric receipt: `outputs/probes/coordexp_swift/frozen_owner_set_probe/a3_step2445/finalize/evidence/representation.json` in the same worktree.
 
 Supported: owner-local information is retrospectively readable under the frozen generated-state replay.
 Not supported: attribution to the auxiliary objective, a deployable controller, or causal future use.
@@ -202,9 +226,32 @@ Therefore the Notion industrial claim remains Inconclusive with verdict `SOURCE_
 | Causal Evaluation | `/data/CoordExp/docs/PROJECT_CONTEXT.md` | exists, committed | High-level current context, not the full evaluator implementation |
 | Causal Evaluation | `/data/CoordExp/.worktrees/research-probes/research/` | exists, clean | Research-local contracts exist; current production primitives also live under unlisted `src/inference`, `src/eval`, and `src/vis` |
 | Industrial/Data Regimes | `/data/CoordExp/.worktrees/human13-nk-factorial-probe/` | exists, clean | Current human13 worktree; not a recovered source for the historical industrial polygon/line claim |
-| Image2299 | image2299 research directory | exists; current worktree has new 2026-08-26 uncommitted set-compilation changes | The prior 2026-08-25 units are now committed at `60a0b25a...`; any Notion statement that those units remain uncommitted is stale, while newer 2026-08-26 changes are genuinely uncommitted |
+| Image2299 | image2299 research directory | exists; current worktree has two uncommitted 2026-08-26 experiment directories | The prior 2026-08-25 units are now committed at `60a0b25a...`; any Notion statement that those units remain uncommitted is stale, while the directories listed below are genuinely uncommitted |
 | Image2299 | research-probes dense-enumeration directory | exists, clean | Canonical historical research authority; not all newest image2299 work is synchronized here |
 | val200 Evaluation Gate | `docs/eval/WORKFLOW.md`, `docs/COORDEXP_SWIFT.md`, `configs/` | all exist; tracked sources clean | Exists; current production evaluator code should be linked in addition to the docs |
+
+### Image2299 commit coverage and current uncommitted directories
+
+Commit `60a0b25a12861785cb319c580fcba7ef7fc02471` touches the following exact experiment directories:
+
+- `2026-08-25-image2299-xy-adapter-embedding-composition`
+- `2026-08-25-image2299-xy-certified-anchor-iteration-2`
+- `2026-08-25-image2299-xy-certified-anchor-iteration-3`
+- `2026-08-25-image2299-xy-gt17-debt-ledger-iteration`
+- `2026-08-25-image2299-xy-gt23-relative-barrier-training`
+- `2026-08-25-image2299-xy-gt7-debt-repayment`
+- `2026-08-25-image2299-xy-prefix-safe-deficit-compilation`
+- `2026-08-25-image2299-xy-same-owner-serialization-sentinel`
+- `2026-08-25-image2299-xy-single-edge-owner-compilation`
+- `2026-08-25-image2299-xy-step1-delta-backtracking`
+- `2026-08-25-image2299-xy-two-edge-debt-repayment`
+
+The currently truly uncommitted 2026-08-26 experiment directories in `/data/CoordExp/.worktrees/image2299-mechanism-microscope` are:
+
+- `2026-08-26-image2299-full-root-detached-margin/` (`unit.md` untracked)
+- `2026-08-26-image2299-set-level-compilation/` (`unit.md` untracked)
+
+This is a live Git-status statement, not an attribution of ownership or readiness. Separate modified tracked files outside these two directories are not reclassified as 2026-08-26 experiment directories.
 
 ## Recovery boundary
 
