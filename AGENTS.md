@@ -40,17 +40,19 @@
   skill when the current task needs it. Its planning, worktree, and
   subagent-driving skills stay in use; no skill imposes a workflow the task
   did not ask for.
-- Test-first is required only for fault or fail-closed paths, bug fixes
+- The following test-first rules specialize and satisfy the user-wide
+  falsification requirement. Test-first is required only for fault or fail-closed paths, bug fixes
   (reproduction test first), and frozen-contract refactors (characterization
   first). Elsewhere prefer fail-fast runtime validation over test-first
   ritual; exploratory probes, glue, config, and fast-failure code never get
   ceremony. A load-bearing test, whenever written, must have been observed
   to fail for the right reason at least once (RED or a demonstrated
   sensitivity check); a green-only test is unverified evidence.
-- Silent-corruption surfaces (masking, supervision positions, loss
+- The following invariant rule specializes and satisfies that requirement:
+  silent-corruption surfaces (masking, supervision positions, loss
   accounting, parity) are guarded by invariant assertions and golden
   fixtures rather than unit TDD; probe-tier work gets no RED/GREEN
-  ceremony, matching its single-review-round budget.
+  ceremony.
 - Before broad implementation or a costly launch, retire the smallest set of
   conclusion-changing execution risks with a production-shaped vertical slice.
   Leaf tests and mocks do not close real-entry, distributed, scale, persistence,
@@ -68,8 +70,7 @@
   `conda run -n ms <command>`, unless the named artifact requires another runtime.
 - Shared GPU activity is expected and normally reusable; adapt only after a
   concrete OOM or operational conflict.
-- Dirty changes are expected; inspect their ownership before treating them as
-  task work.
+- Dirty changes are expected.
 
 ## Records
 
