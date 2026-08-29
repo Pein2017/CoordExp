@@ -46,10 +46,9 @@ tier and budget:
 stop rule and typed failure status:
 ```
 
-Select only `gpt-5.6-luna` or `gpt-5.6-terra`. Use Luna for cheap read-only
-extraction and tightly mechanical tasks; use Terra for bounded implementation,
-integration checks, or stronger local reasoning. Model availability is checked
-live. Lack of an allowed model is a route failure, not permission to substitute.
+Use the L2 execution-worker section of the main `SKILL.md` for the model
+allowlist and routing rules. Check availability live; an unavailable allowed
+model is a route failure, not permission to substitute.
 
 ## L1 to L0 acceptance packet
 
@@ -78,10 +77,11 @@ disposition`; they are not `HOLD` or `BLOCKED` unless they require new authority
 A long service migration has three independent packages: schema compatibility,
 client implementation, and deployment verification. L0 keeps the migration
 semantics and rollout decision. Three L1 leads may own those packages if their
-write surfaces are disjoint. The client L1 can spawn a Terra builder and a Luna
-test-receipt worker; it integrates and verifies both. A security review needing
-Sol is a separate read-only L1, never an L2. Only package packets and material
-decision deltas return to L0.
+write surfaces are disjoint. The client L1 can spawn a builder and a
+test-receipt worker under the main `SKILL.md` L2 routing rules; it integrates
+and verifies both. A security review requiring a higher-capability model is a
+separate read-only L1, never an L2. Only package packets and material decision
+deltas return to L0.
 
 ## Per-package pilot receipt
 

@@ -1,6 +1,6 @@
 # User-wide Codex Contract
 
-Reusable guidance for every repository opened with Project and nested `AGENTS.md` files add repository-specific rules later in the Codex instruction chain.
+Reusable guidance for every repository opened with Project. Nested `AGENTS.md` files specialize these rules within their scope later in the Codex instruction chain.
 
 ## Authority and scope
 
@@ -72,11 +72,16 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
 
 ## Language output
 
-- Use Chinese for user-facing output only when both conditions hold: this is
-  the main thread and the user's input is Chinese.
-- In every other context, including subagents, internal reasoning, and
-  non-main-thread work, prefer English or another familiar language; do not
-  force Chinese.
+- Treat every direct exchange with the user as user-facing communication,
+  including both main threads and side chats. A side chat is not an internal,
+  subagent, or agent-to-agent context.
+- For every user-facing reply, use the language of the user's current message
+  unless the user explicitly requests another language. When a message mixes
+  languages, follow its dominant natural language while preserving technical
+  terms where useful.
+- In genuinely internal contexts only, including subagents, internal reasoning,
+  and agent-to-agent communication, prefer English or another familiar
+  language; do not apply this internal-language preference to side chats.
 
 ## Adaptive topology
 
@@ -109,8 +114,9 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
   Builders and reviewers use `fork_turns: "none"`; never use full history after
   context becomes non-trivial. Design advisers fork at most the last 5 turns.
 - Every brief states the frozen goal and non-goals, exact cwd and owned paths,
-  authoritative constants, permissions, acceptance commands, output contract,
-  known failure modes, budget, tier (`probe` or `production`), and stop rule.
+  permissions, acceptance commands, output contract, and stop rule. Include
+  authoritative constants, known failure modes, budget, and tier (`probe` or
+  `production`) only when material.
 - A follow-up may continue an existing worker only under the reuse invariants
   above. Otherwise start a fresh worker with a self-contained brief.
 - Worker outcomes distinguish `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED`,
@@ -131,10 +137,10 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
   proof of failure. After a timeout, inspect the delivered checkpoint; when no
   intervention is needed, issue one further 60-minute wait instead of short
   status polls.
-- For non-interactive asynchronous commands, prefer `yield_time_ms >= 180000`
-  and use `300000` when intermediate output is unnecessary. In
-  `functions.exec`, set outer yield at least 30000 ms longer than the longest
-  nested wait. Completion may return early.
+- For non-interactive asynchronous commands, use the longest supported
+  event-driven wait, preserve any session or cell identifier, and do not
+  short-poll. In `functions.exec`, keep the outer wait long enough to
+  accommodate any nested event-driven wait. Completion may return early.
 
 ## Acceptance and review
 
@@ -179,9 +185,6 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
 - Optimize end-to-end time to final acceptance: builder latency + correction +
   review + runtime wait + lead intervention. Treat spend as a tie-breaker when
   quality and acceptance time are comparable.
-- When auditing usage, separate root, peer, and child sessions; deduplicate
-  repeated message receipts; report fresh input, cache creation, cache read, and
-  output separately; use strictly accepted outcomes as the denominator.
 
 ## Model routing
 
@@ -192,10 +195,8 @@ Reusable guidance for every repository opened with Project and nested `AGENTS.md
   the actual task shape, risk, verifier strength, observed capability gap,
   latency, and cost. `medium`, `high`, and `xhigh` are choices, not role-bound
   defaults or mandatory escalation steps.
-- Model-family guidance remains task-shaped: luna suits read-only scouting;
-  terra or sonnet suits bounded building; sol suits semantic, mathematical, or
-  statistical work; opus suits broad lifecycle and source-archaeology work. A
-  provider-diverse peer may corroborate but does not own writes or conclusions.
+- A provider-diverse peer may corroborate but does not own writes or
+  conclusions.
 - Route review with the smallest sufficient model family and an effort chosen by
   the main-thread lead. No family or effort is automatically required because a
   surface is labelled silent correctness, claim, launch, or milestone. Escalate

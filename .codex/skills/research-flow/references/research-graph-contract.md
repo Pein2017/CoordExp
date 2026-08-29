@@ -406,7 +406,8 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
 - Parse new non-router frontmatter.
 - Fail review on any unexplained local abbreviation, arm code, hypothesis code,
   metric symbol, or coined name.
-- Run `conda run -n ms python scripts/research/check_research_graph.py` for the
+- From `/data/CoordExp/.worktrees/research-probes`, run
+  `conda run -n ms python scripts/research/check_research_graph.py` for the
   decision layer.
 - Check for lifecycle contradictions such as a completed result whose router
   still says `planned`, `ready`, or `running`, or a current decision that names
