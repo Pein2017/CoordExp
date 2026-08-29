@@ -712,8 +712,6 @@ projects:
 - /data/CoordExp/.codex/plugins/cache/coordexp-local/codex-wake-me-up/0.1.0+codex.20260823095611
 - /data/CoordExp/.codex/skills/safe-runtime-maintenance
 - /data/CoordExp/.worktrees/CoordExp-swift
-- /data/CoordExp/.worktrees/codex-start-if-idle-turn-guard
-- /data/CoordExp/.worktrees/codex-wake-me-up-event-monitor
 - /data/CoordExp/.worktrees/image2299-mechanism-microscope
 - /data/CoordExp/.worktrees/research-probe-infras
 - /data/CoordExp/.worktrees/research-probes
