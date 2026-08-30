@@ -33,7 +33,7 @@
     "specs/coordexp-swift-research-probe-infra-base/spec.md": "5fd19d39aa86e8ce4b643f4db88e9a9c1773540123484a508d2da35b064efac1",
     "tasks.md": "8fcb4ab3691eef1d7dd0f2c4ca350763273c7927fa023caf73e6f7279bbd6121"
   },
-  "harnessdock_version": "0.25.0+codex.20260830064506",
+  "harnessdock_version": "0.25.2+codex.20260830084057",
   "attempts": [
     {
       "harness": "opencode",
