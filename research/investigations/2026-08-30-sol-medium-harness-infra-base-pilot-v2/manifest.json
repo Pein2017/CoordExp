@@ -1,7 +1,8 @@
 {
   "schema_version": 2,
   "benchmark_id": "2026-08-30-sol-medium-harness-infra-base-pilot-v2",
-  "state": "launch_authorized_baseline_passed",
+  "state": "completed_lead_accepted",
+  "results_path": "research/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/results.json",
   "prepared_at_utc": "2026-08-30T08:24:46Z",
   "purpose": "Compare native Codex, Pi, and OpenCode on one reachable, byte-identical OpenSpec implementation task; this single pilot is not a general harness ranking.",
   "source_commit": "c5e7de7134ca18c931c0495f1388f7ca613a4c4b",
