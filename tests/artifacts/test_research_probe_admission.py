@@ -830,6 +830,8 @@ def test_output_drift_prevents_final_receipt_but_preserves_terminal_records(
 def test_package_exports_only_the_intentional_top_level_admission_surface() -> None:
     expected_admission_exports = {
         "AbsoluteExecutableBinding",
+        "AdmissionInspection",
+        "BindingManifest",
         "DirectoryTreeBinding",
         "RegularFileBinding",
         "ResearchProbeAdmission",
@@ -838,7 +840,12 @@ def test_package_exports_only_the_intentional_top_level_admission_surface() -> N
         "ResolvedDataFileBinding",
         "StageEvidence",
         "StrictValueBinding",
+        "TargetTreeBinding",
+        "TargetTreeIdentity",
         "capture_binding_manifest",
+        "capture_target_tree_binding",
+        "revalidate_binding_manifest",
+        "revalidate_target_tree_binding",
     }
     module_admission_names = set(admission_module.__all__)
     assert module_admission_names.intersection(artifact_package.__all__) == (
@@ -846,11 +853,8 @@ def test_package_exports_only_the_intentional_top_level_admission_surface() -> N
     )
     for internal_name in {
         "ADMISSION_SCHEMA_VERSION",
-        "AdmissionInspection",
-        "BindingManifest",
         "MECHANICS_STATEMENT",
         "STAGES",
-        "revalidate_binding_manifest",
     }:
         assert internal_name not in artifact_package.__all__
         assert not hasattr(artifact_package, internal_name)

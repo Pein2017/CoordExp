@@ -67,7 +67,8 @@ documented here.
 - Reusable probe mechanics integration lane: the permanent worktree
   `/data/CoordExp/.worktrees/research-probe-infras`; merge accepted mechanics
   into `research-probes`, but never use this lane as a probe fork point or a
-  retirement target.
+  retirement target. Route capability selection and public mechanics imports
+  through [RESEARCH_PROBE_INFRA_BASE.md](RESEARCH_PROBE_INFRA_BASE.md).
 - Fork a new research direction as `probe/<direction>` from `research-probes`
   HEAD at `.worktrees/<direction>`; no tag is required to fork. Cut a
   `research-base-vN` tag only as a milestone after a reusable-mechanics merge

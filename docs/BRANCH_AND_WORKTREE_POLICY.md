@@ -51,7 +51,8 @@ root `main` checkout; then update the development branch from the promoted
   mechanics. It merges accepted reusable mechanics into `research-probes` and
   is fast-forwarded from `research-probes` after each accepted lifecycle
   change; it is never a fork point for a new direction and never a retirement
-  target.
+  target. The [research-probe infrastructure base](RESEARCH_PROBE_INFRA_BASE.md)
+  routes capability selection without changing these lifecycle rules.
 - Both fixed research worktrees are protected by native Git worktree locks.
   Their current local protection is not an off-host backup, a remote branch
   promise, or approval to unlock, remove, prune, or rename either path.
