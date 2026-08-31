@@ -32,6 +32,15 @@ specimen-bound and is preserved by the direction's final tag; reusable
 mechanics should be extracted only after the Human13 direction becomes a real
 second consumer. `HOLD_PRODUCTION` remains active.
 
+The user has clarified the longer-term objective: Image2299 QP is the first
+programmability witness, not the desired endpoint. The intended progression is
+finite-path compilation -> leak-free shared readout learning -> conditional
+language-tower optimizer internalization. QP should become a
+credit-assignment/constraint teacher; no large `lm_head` residual should be
+treated as generalized intelligence merely because it fits the panel. The
+current Human13 unit remains the required discriminator before any DoRA,
+aligner, vision, or tied-embedding escalation.
+
 The records-only transfer is committed at `392b07f45`. The old direction tip
 `9d816db2c` is preserved by annotated tag
 `probe-final/image2299-mechanism-microscope`; its worktree and local branch are
