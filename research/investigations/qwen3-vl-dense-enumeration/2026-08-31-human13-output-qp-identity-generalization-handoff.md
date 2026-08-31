@@ -4,11 +4,17 @@ description: Phase-boundary transport from the Image2299 finite-policy compilati
 type: investigation
 role: research-handoff
 authority: transport_only
-status: ready_for_direction_fork
+status: direction_forked_unit_planned
 updated: 2026-08-31
 ---
 
 # Human13 shared output-QP identity and generalization handoff
+
+Direction instantiated on `2026-08-31` at
+`/data/CoordExp/.worktrees/human13-output-qp-identity-generalization`, branch
+`probe/human13-output-qp-identity-generalization`, forked from canonical commit
+`42752b496`. The active research authority is now the [Human13 shared
+output-QP unit](experiments/2026-08-31-human13-shared-output-qp-identity-generalization/unit.md).
 
 This handoff is transport, not experimental authority. A new research unit must
 freeze its own exact panel, routes, constraints, controls, attempt budget, and
