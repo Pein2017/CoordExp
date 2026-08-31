@@ -1,36 +1,56 @@
 # Contract and receipt shapes
 
-Use these shapes as concise recipes. Omit fields that are genuinely irrelevant;
-do not replace them with copied conversation history.
+Omit genuinely irrelevant fields. Do not replace them with copied conversation
+history. General delegation and acceptance policy remains owned by the user-wide
+`AGENTS.md`.
 
 ## L0 to L1 package contract
 
 ```text
-package_id:
+package_id and frozen target identity:
 decision-owning outcome:
-frozen goal and non-goals:
+goal and non-goals:
 user-owned decisions that remain frozen:
 cwd and authoritative paths/constants:
-owned read/write surfaces and single-writer rule:
-permissions and material-cost boundary:
-required L1 responsibilities:
-acceptance commands/evidence:
+owned read/write surfaces and permissions:
+material-cost boundary:
+acceptance verifier/evidence:
+effective_depth_plan: 1 | 2
+depth-2 predicate:
+  independent output A:
+  independent output B:
+  expected time or L0-context advantage:
+route plan: model x effort x layer
 mandatory escalation triggers:
-output status and acceptance-packet fields:
 known failure modes:
 tier and budget:
 stop rule:
+required acceptance-packet fields:
 ```
 
-The contract grants local implementation latitude only inside the frozen
-boundary. It does not grant architecture, publication, destructive, costly, or
-external authority that L0 does not already possess.
+The contract grants local implementation latitude only inside this frozen
+boundary. If fewer than two L2 outputs materialize, the package becomes
+`effective_depth: 1`; L1 completes it directly.
 
-State the effective depth and why it is cheaper than direct L1 execution. For a
-shared physical worktree/index, state that writer packages and commits are
-serialized or name the isolated worktrees that make parallel writes safe.
+## Terra to Sol escalation witness
+
+Before spawning a Sol L1 as a capability escalation, record:
+
+```text
+prior Terra attempt and route:
+unchanged frozen target and verifier:
+acceptance-changing counterexample or semantic conflict:
+one bundled Terra correction and replay result:
+why the verifier or Terra inspection still cannot close it:
+fresh Sol package id:
+```
+
+No witness means no capability escalation. A Sol reviewer may still be selected
+under the user-wide review policy, but its model label does not expand authority.
 
 ## L1 to L2 execution ticket
+
+Use this ticket only for an output named by the depth-2 predicate.
 
 ```text
 ticket_id and parent package_id:
@@ -38,6 +58,7 @@ one executable output:
 exact cwd and owned paths:
 required inputs and authoritative constants:
 interface invariants:
+model and effort:
 permissions and explicit non-authority:
 deterministic verifier or evidence request:
 expected receipt:
@@ -46,55 +67,51 @@ tier and budget:
 stop rule and typed failure status:
 ```
 
-Use the L2 execution-worker section of the main `SKILL.md` for the model
-allowlist and routing rules. Check availability live; an unavailable allowed
-model is a route failure, not permission to substitute.
+An L2 reports to its L1 and never spawns. If the ticket needs Sol-level semantic
+or lifecycle judgment, promote it to a separate L1 adviser.
 
 ## L1 to L0 acceptance packet
 
 ```text
 package_id and frozen target identity:
 status: candidate | NEEDS_CONTEXT | HOLD | BLOCKED | SUPERSEDED
+effective_depth: 1 | 2
+materialized L2 outputs and evidence handles:
+model x effort x layer routes:
 outcome and decision impact:
 changed paths/artifacts or evidence handles:
-L1-replayed verification and exact decisive results:
+L1-replayed verifier and exact decisive results:
+L1 correction rounds: 0 | 1
 review findings and disposition:
 contract deviations and escalations:
 residual risks and unexecuted gates:
 recommended L0 action:
 ```
 
-Raw logs, long diffs, and full child transcripts stay behind referenced handles.
-Any P0/P1, claim-changing, permission-changing, or user-owned finding remains
-visible even when the rest of the packet is compressed.
-
-Expected generated drift, pin changes, fixture propagation, or formatting
-shape differences that were already authorized belong in `review findings and
-disposition`; they are not `HOLD` or `BLOCKED` unless they require new authority.
-
-## Generic example
-
-A long service migration has three independent packages: schema compatibility,
-client implementation, and deployment verification. L0 keeps the migration
-semantics and rollout decision. Three L1 leads may own those packages if their
-write surfaces are disjoint. The client L1 can spawn a builder and a
-test-receipt worker under the main `SKILL.md` L2 routing rules; it integrates
-and verifies both. A security review requiring a higher-capability model is a
-separate read-only L1, never an L2. Only package packets and material decision
-deltas return to L0.
+Raw logs, long diffs, and full L2 transcripts stay behind evidence handles. Any
+acceptance-changing, permission-changing, or user-owned finding remains visible.
 
 ## Per-package pilot receipt
 
+L0 completes this after its acceptance decision:
+
 ```text
-task class and package size:
-effective topology and model/effort routes:
+package_id and task class:
+lead disposition: accepted | rework | escalated | failed
+effective_depth: 1 | 2
+depth-2 predicate result and materialized output count:
+model x effort x layer routes:
 accepted outcome and verifier:
-L0 context or token evidence available:
-L0 implementation interventions:
-L1 correction rounds:
+L0 raw L2 transcript reads: integer
+L0 direct package code edits: integer and handles
+L1 correction rounds: 0 | 1
 semantic escalations and role/write-surface drift:
-wall time and priced/unpriced usage evidence:
+critical-path wall time:
+measured tokens and priced/unpriced usage coverage:
 observed benefit:
 observed overhead or failure:
-retain | revise | reject recommendation (user decides):
+retain | revise | reject recommendation:
 ```
+
+`followup_aware` completion is not a strict lead disposition. Do not claim
+context, latency, cost, or model superiority without a matched depth-1 package.
