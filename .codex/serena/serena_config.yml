@@ -981,12 +981,15 @@ trusted_project_path_patterns:
 projects:
 - /data/CoordExp
 - /data/CoordExp/.codex/memories
+- /data/CoordExp/.codex/plugins/data/codex-harnessdock
 - /data/CoordExp/.codex/skills/safe-runtime-maintenance
 - /data/CoordExp/.worktrees/CoordExp-swift
 - /data/CoordExp/.worktrees/benchmark-infra-base-codex
 - /data/CoordExp/.worktrees/benchmark-infra-base-opencode
 - /data/CoordExp/.worktrees/benchmark-infra-base-pi
 - /data/CoordExp/.worktrees/benchmark-infra-base-v2-codex
+- /data/CoordExp/.worktrees/benchmark-infra-base-v2-opencode
+- /data/CoordExp/.worktrees/benchmark-infra-base-v2-pi
 - /data/CoordExp/.worktrees/image2299-mechanism-microscope
 - /data/CoordExp/.worktrees/research-probe-infras
 - /data/CoordExp/.worktrees/research-probes
@@ -997,5 +1000,6 @@ projects:
 - /data/CoordExp/external/agent-orchestrator
 - /data/CoordExp/external/codex-host
 - /data/CoordExp/external/harness/codex
+- /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/20260831T-image2299-canonical-g46-global-qp-v1
 - /data/CoordExp/serena-light
 - /data/ms-swift
