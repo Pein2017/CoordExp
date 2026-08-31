@@ -48,6 +48,11 @@ This would still be panel-bounded shared-readout evidence, not production,
 distribution-level generalization, a covered-set controller, or proof that the
 vision tower learned new information.
 
+This unit is a representation and transfer discriminator, not the final
+internalized-learning treatment. A successful direct QP only licenses a
+separate optimizer-trained shared-output-adapter unit. A language-tower update
+is a later unit with a different parameter surface and acceptance contract.
+
 ## Frozen substrate before execution
 
 The implementation must bind and verify, before the first model forward:
@@ -189,11 +194,18 @@ For every per-image diagnostic residual and every joint residual, report:
 
 - selected rows, constraint counts, projected rank, and solver certificate;
 - Frobenius norm and normalized norm;
+- residual-row norm relative to its frozen base row and the maximum required
+  target-versus-competitor logit-margin shift;
 - largest-row energy share;
 - participation-ratio effective rank and rank for 95% energy;
 - objective with the largest single constraint removed;
 - semantic and matched-null pairwise residual cosine;
 - off-diagonal protection damage and target-deficit transfer.
+
+Also measure functional blast radius on frozen Source and held-out states:
+top-1 flips, coordinate-token rank changes, logit KL divergence, and owner/debt
+changes. Sparse row support must not be described as a small intervention when
+its logit effect is large.
 
 Per-image residuals are diagnostics only and must never be applied in an
 evaluation path.
@@ -206,7 +218,8 @@ evaluation path.
   owner gain, or any held-out Source owner is lost. Stop before N=13.
 - **SHARED READOUT EVIDENCE:** semantic residuals beat their matched nulls on
   off-diagonal transfer/rank burden and produce positive held-out greedy gains
-  with zero owner/debt loss. This licenses a separate shared Torch-adapter unit.
+  with zero owner/debt loss. This licenses a separate optimizer-trained shared
+  Torch-adapter unit; it does not establish hidden-state internalization.
 - **MECHANICAL INVALID:** any hash, parser, ledger, route, warm/cold, full-vocab,
   or primal-dual failure invalidates that cell and supplies no scientific
   evidence.
@@ -230,6 +243,12 @@ embeddings in this unit.
    fail.
 5. Keep tied embeddings last because changing `E` changes both input dynamics
    and every output row and destroys the convex readout problem.
+
+If a separate language-tower unit is later opened, QP supplies active
+constraints and feasibility certificates rather than inference-time weights.
+That unit must train on complete post-insertion routes, accumulate signals
+across images into shared optimizer steps, re-run natural greedy after each
+accepted update, and roll back any incumbent-owner or hard-debt regression.
 
 ## Code ownership and reuse rule
 

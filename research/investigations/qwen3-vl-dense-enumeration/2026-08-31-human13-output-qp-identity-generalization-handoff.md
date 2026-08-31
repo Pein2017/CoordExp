@@ -75,6 +75,34 @@ alone is therefore a poor semantic-sharing statistic. Every future solve must
 also report the largest-row energy share, effective rank, rank for 95% energy,
 and a norm or objective with the largest constraint removed.
 
+### What the concentration does and does not mean
+
+The `99.1492%` statistic says that the solved matrix is effectively rank one:
+the selected vocabulary rows mostly use one common hidden-state direction. It
+does **not** show that a general owner concept lives in that direction. The
+single dominant coordinate row and the near-orthogonality to M41 make a
+specimen-specific readout shortcut the strongest current explanation.
+
+The `87.10%` statistic is a concentration of squared margin deficits, not a
+fraction of owners, behavior, or intelligence. It says that the minimum-norm
+program is numerically driven by six unusually hard token decisions. At the
+worst site, the target-versus-competitor margin must move by at least about
+`12.38` logits to clear the registered margin. The intervention is therefore
+sparse in parameter support but functionally large at its bottleneck states.
+
+Neither statistic alone proves overfitting. A low-rank direction could be a
+real shared bottleneck if it transfers to unseen images and beats a matched
+null. In the present combination—one GT-authored image, all route states
+visible to the solver, excess readout capacity, no held-out test, one dominant
+coordinate row—the evidence should be treated as oracle finite-path overfit
+until Human13 rejects that explanation.
+
+Finally, this result does not localize the causal disease to `lm_head`. The
+experiment allowed correction only at `lm_head`, so every fitted correction is
+forced to appear there. It proves linear readout sufficiency on the visited
+Image2299 states; it does not prove that frozen hidden states contain a
+cross-image owner representation or covered-set memory.
+
 ## The Human13 question
 
 The next estimand is deliberately narrower than “can QP fit 13 images?”:
@@ -93,6 +121,48 @@ The frozen panel has 13 images but only 12 target-bearing images in the existing
 Human13 ledger; the thirteenth is a preservation-only control. Interaction
 matrices are therefore `12 x 12`, not `13 x 13`. Re-derive this count from the
 frozen ledger before launch rather than trusting this transport note.
+
+## Program objective: compilation to optimizer learning
+
+The output QP is not the intended production model. Its durable roles are:
+
+1. **feasibility oracle**—show whether an intended complete route can exist on
+   the current frozen states;
+2. **credit-assignment teacher**—identify active target, preservation, debt,
+   CONTINUE, and EOS constraints at exact post-insertion states;
+3. **minimum-intervention certificate**—separate infeasibility from an
+   arbitrary optimizer failure;
+4. **red-team control**—compare semantic routes with deficit-matched nulls.
+
+There are two distinct learning milestones:
+
+- **shared readout learning:** one Torch-native output adapter is updated by an
+  optimizer across training images and transfers to held-out images without
+  per-image QP at inference. This is genuine shared parameter learning, but it
+  still changes only the readout;
+- **transition-dynamics internalization:** QP-derived constraints supervise an
+  optimizer update to the language tower so that owner preservation,
+  remaining-owner admission, duplicate suppression, and STOP behavior become
+  properties of the model's evolving hidden states.
+
+The current Human13 unit tests whether the first milestone is even supported by
+frozen representations. It must not claim the second milestone. If a later
+unit trains language-tower DoRA, QP becomes a teacher rather than a payload:
+
+1. decode current natural routes;
+2. Hungarian/owner matching builds gained, preserved, debt, and STOP events;
+3. teacher-force the complete **post-insertion** routes, not counterfactual
+   repaired prefixes that inference will never visit;
+4. accumulate multi-image event losses or a local constrained step into one
+   optimizer update;
+5. re-decode naturally after every accepted update;
+6. reject or roll back any update that loses an incumbent owner or increases
+   hard debt.
+
+Success for internalization requires one shared checkpoint, no test-time QP,
+held-out natural-greedy gain, zero protected-owner/hard-debt regression, and
+evidence that the relevant hidden-state separation—not merely one giant output
+row—improved. Loss curves and teacher-forced route fit do not qualify.
 
 ## Why the former consensus-span idea is retired
 
@@ -211,11 +281,14 @@ regress.
 
 ## Parameter escalation boundary
 
-1. Start with a shared output adapter; it is a standard Torch `nn.Parameter`
-   even though Image2299 used a direct FP64 QP solve.
+1. Use direct shared output QP only as the cheapest representation/constraint
+   discriminator. If it transfers, open a separate shared Torch `nn.Parameter`
+   adapter unit trained by an optimizer; do not ship the QP payload.
 2. Move to language-tower DoRA only if held-out targets are not linearly
    decodable from cached final hidden states at the same rank budget, or a
    certified shared-output constraint conflict remains after rank is relaxed.
+   That successor must use QP active constraints as teacher signals and judge
+   every update by natural greedy, not by teacher-forced loss.
 3. Consider the multimodal aligner only if pre-aligner visual tokens separate
    the missing owners while post-aligner states do not.
 4. Consider the vision tower only if pre-aligner region/instance features also
@@ -237,6 +310,35 @@ module only after Human13 becomes a real second-direction consumer.
 The generic `sparse_target_site_ce` helper is also not required by this first
 QP unit and has only Image2299 callers today, so it is not promoted at this
 boundary.
+
+## Fresh-chat continuation contract
+
+The recommended continuation is a new chat in this existing worktree. This is
+a design-to-implementation boundary; the long Image2299 transcript is no
+longer required to act safely.
+
+First actions, in order:
+
+1. verify `pwd`, branch, `git status`, and current `HEAD`;
+2. read the active [unit](experiments/2026-08-31-human13-shared-output-qp-identity-generalization/unit.md),
+   then this handoff and the minimum reading path below;
+3. re-resolve the panel/checkpoint/artifact paths and hashes—historical output
+   paths are volatile and may have been reclaimed;
+4. implement only Stage -1 recovery/parity and the Stage-0 pooled-rank census;
+5. freeze its forward-count, wall-time, memory, cache, and artifact bounds
+   before any GPU launch;
+6. stop after the Stage-0 receipt and choose exact protected-null versus margin
+   preservation from measured rank. Do not implement Stage 1 speculatively.
+
+Current execution state: no Human13 code, model forward, solver run, optimizer
+step, GPU launch, checkpoint, or scientific artifact exists on this branch.
+This handoff conveys no launch authority. A fresh chat must obtain the user's
+material-cost decision after Stage -1 identities and Stage-0 bounds are frozen.
+
+Volatile facts to reverify include live artifact existence, Source checkpoint
+availability, GPU/process state, evaluator imports, and the exact 12-target plus
+1-preservation ledger count. Stable facts are the branch/worktree identity,
+the linked committed records, and the archived Image2299 tag.
 
 ## Reading path for the next session
 
