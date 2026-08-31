@@ -32,9 +32,11 @@ specimen-bound and is preserved by the direction's final tag; reusable
 mechanics should be extracted only after the Human13 direction becomes a real
 second consumer. `HOLD_PRODUCTION` remains active.
 
-The lifecycle transfer is committed before the old direction is tagged and
-retired. Recheck the live worktree/tag state rather than inferring it from this
-pre-retirement note.
+The records-only transfer is committed at `392b07f45`. The old direction tip
+`9d816db2c` is preserved by annotated tag
+`probe-final/image2299-mechanism-microscope`; its worktree and local branch are
+retired. No `research-base-vN` tag is cut because no reusable code was
+promoted. Recheck the live worktree/tag state before mutation.
 
 ## Repository lifecycle (last verified 2026-08-28)
 
@@ -46,8 +48,10 @@ worktree/branch removal. `docs/BRANCH_AND_WORKTREE_POLICY.md` "Research-probe
 routing" is the owner. `research-base-v2` (`8dac2d041`) is the replay anchor
 for the 86 `scripts/research` producers deleted on 2026-08-28; 61 HOLD
 scripts are listed in that change's `receipts/scripts-entropy-ledger.md`.
-`image2299-mechanism-microscope` is the only live direction worktree; 30
-lanes were retired to `probe-final/*` / `archive/*` tags.
+The Image2299 direction is now retired to
+`probe-final/image2299-mechanism-microscope`. Its selected records are in
+`research-probes`; its specimen-bound code and omitted history remain
+recoverable from the tag.
 
 ## Authority boundary
 
