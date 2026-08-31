@@ -14,6 +14,11 @@ STABLE_JOURNAL_AND_INFERENCE_OWNERS = (
     REPOSITORY_ROOT / "src" / "config",
     REPOSITORY_ROOT / "configs" / "coordexp_swift" / "infer",
 )
+# Admission deliberately names a fixed claim boundary to deny scientific authority;
+# its typed contract tests own that research-specific schema.
+RESEARCH_SPECIFIC_ARTIFACT_OWNERS = frozenset(
+    {REPOSITORY_ROOT / "src" / "artifacts" / "research_probe_admission.py"}
+)
 SCANNED_TEXT_SUFFIXES = frozenset({".json", ".py", ".toml", ".yaml", ".yml"})
 
 # Research vocabulary that belongs to callers only, never to stable owners.
@@ -176,6 +181,11 @@ def test_stable_journal_and_inference_owners_exclude_research_vocabulary() -> No
         assert root.exists(), (
             f"Declared stable root does not exist: {root.relative_to(REPOSITORY_ROOT)}"
         )
+    for path in RESEARCH_SPECIFIC_ARTIFACT_OWNERS:
+        assert path.is_file(), (
+            f"Declared research-specific owner does not exist: "
+            f"{path.relative_to(REPOSITORY_ROOT)}"
+        )
 
     violations: list[str] = []
     for path in _stable_text_files():
@@ -209,4 +219,5 @@ def _stable_text_files() -> list[Path]:
         for root in STABLE_JOURNAL_AND_INFERENCE_OWNERS
         for path in root.rglob("*")
         if path.is_file() and path.suffix in SCANNED_TEXT_SUFFIXES
+        if path not in RESEARCH_SPECIFIC_ARTIFACT_OWNERS
     )
