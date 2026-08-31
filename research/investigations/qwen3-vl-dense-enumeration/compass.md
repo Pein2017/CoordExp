@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-08-13
+updated: 2026-08-31
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -19,6 +19,26 @@ paper thesis. It does not own executed facts, runtime behavior, a final
 architecture, or an implementation contract.
 
 ## Current Live Route
+
+As of `2026-08-31`, Image2299 is closed as a single-image finite output-policy
+compilation result. The [direct canonical G46 global-QP result](experiments/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/results.md)
+reaches fresh-cold ordinary-greedy 46/46 with one sparse output-only residual;
+the base tied embedding/head, language tower, multimodal aligner, and vision
+tower remain frozen. This is not evidence of base-model learning, transfer, or
+general dense enumeration. A post-closeout audit further shows that the direct
+G46 residual is 99.15% first-singular-direction energy and dominated by one
+coordinate-token row, so total residual norm is not a semantic-sharing metric.
+
+The next route is the [Human13 output-QP identity/generalization handoff](2026-08-31-human13-output-qp-identity-generalization-handoff.md).
+It retires per-image residual composition as a treatment, starts with a pooled
+protected-state rank census, and moves held-out evidence to an N=4
+leave-one-out shared-output test. The candidate treatment is a direct joint QP
+with hard route-margin preservation and slack-priced owner gain, compared with
+same-image deficit-matched null rows. No held-out image may contribute a target
+route, hidden state, constraint, residual, or route selection. Production,
+architecture promotion, and tied-embedding updates remain on hold.
+
+### Earlier same-panel training lineage
 
 As of `2026-08-13`, the completed [Human-13 On-Policy First-Bottleneck
 Successor](experiments/2026-08-13-human13-on-policy-first-bottleneck-successor/results.md)

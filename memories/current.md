@@ -1,6 +1,40 @@
 # Current Project Memory
 
-Last verified for the Human-13 owner-credit route: 2026-08-24.
+Last verified for the Image2299 closeout and Human13 successor boundary:
+2026-08-31.
+
+## Current phase boundary
+
+The fixed Image2299 objective is complete. The evidence owner is the
+[46-owner continuation](../research/investigations/qwen3-vl-dense-enumeration/2026-08-31-image2299-augmented-greedy-38-to-46-owner-continuation.md),
+especially the [direct canonical-G46 global QP](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/results.md).
+It establishes a fresh-cold ordinary-greedy single-image 46/46 sparse
+output-head-delta witness. It does not establish base-model learning,
+multi-image transfer, general dense enumeration, or production readiness.
+
+A lead-replayed post-closeout audit finds the direct residual is dominated by
+one coordinate-token row and has 99.15% first-singular-direction energy. The
+composed five-tie payload retains the M41 component by construction, so its
+cold replay is a distinct construction but not independent evidence for a
+shared semantic direction. Total norm alone is no longer a sufficient
+mechanism metric.
+
+The next transport document is the [Human13 output-QP identity/generalization
+handoff](../research/investigations/qwen3-vl-dense-enumeration/2026-08-31-human13-output-qp-identity-generalization-handoff.md).
+It retires consensus-span composition, begins with a pooled-rank capacity
+census, then tests one margin-preserving shared output residual against
+deficit-matched nulls. N=4 leave-one-out natural-greedy transfer precedes any
+13-image fit. Per-image residuals, held-out target routes, held-out hidden
+states, and held-out constraints are forbidden in evaluation.
+
+No Image2299 QP code is promoted at this boundary. Its implementation remains
+specimen-bound and is preserved by the direction's final tag; reusable
+mechanics should be extracted only after the Human13 direction becomes a real
+second consumer. `HOLD_PRODUCTION` remains active.
+
+The lifecycle transfer is committed before the old direction is tagged and
+retired. Recheck the live worktree/tag state rather than inferring it from this
+pre-retirement note.
 
 ## Repository lifecycle (last verified 2026-08-28)
 

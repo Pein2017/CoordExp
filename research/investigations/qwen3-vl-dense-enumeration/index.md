@@ -112,6 +112,25 @@ optimization instability remain competing explanations.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
+## Image2299 closeout and Human13 successor
+
+The [Image2299 46-owner continuation](2026-08-31-image2299-augmented-greedy-38-to-46-owner-continuation.md)
+closes the fixed single-image objective with a fresh-cold ordinary-greedy 46/46
+sparse output-head delta. The direct result is one frozen-model convex readout
+compilation, not language-tower DoRA, base-model learning, transfer, or a
+production checkpoint. The retained chain includes protected-null mechanics,
+target-only and global constraint compilation, the bounded online-SQP negative,
+the M/G QP-versus-CE ablation, canonical-G41 norm release, composed five-tie
+completion, and the direct canonical-G46 solve.
+
+The next direction is defined by the [Human13 shared output-QP identity and
+generalization handoff](2026-08-31-human13-output-qp-identity-generalization-handoff.md).
+It treats Image2299 as a feasibility oracle, not a transferable payload. Its
+first decision is whether pooled exact protected-null capacity survives; its
+first production-relevant evidence is N=4 leave-one-out natural-greedy transfer
+from one shared output residual against deficit-matched nulls. No per-image
+residual may enter evaluation, and `HOLD_PRODUCTION` remains in force.
+
 ## Reading Path
 
 Start with the [weekly integrated research report for 2026-07-13 through
