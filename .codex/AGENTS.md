@@ -85,12 +85,12 @@ Reusable guidance for every repository opened with Project. Nested `AGENTS.md` f
 
 ## Adaptive topology
 
-- Use subagents when they are likely to reduce time to final acceptance through
-  independent evidence gathering, a coherent implementation lane, disjoint
-  parallel work, or a bounded review justified by the acceptance rules below;
-  also use a bounded self-contained lane when it materially preserves the main
-  thread's context window for user decisions, synthesis, or acceptance. Handle
-  small or tightly coupled tasks directly.
+- Use subagents only for a bounded lane likely to reduce time to final
+  acceptance through independent evidence, disjoint write ownership, a named
+  review risk, or material preservation of the lead's decision context. Before
+  spawning, reconcile live and completed workers; keep one current worker per
+  package or semantic owner, and use follow-up, an existing receipt, or direct
+  lead work when it suffices. Handle small or tightly coupled tasks directly.
 - Choose topology from dependencies, semantic ownership, write surfaces, and
   acceptance before choosing a model.
 - Reuse one worker across sequential checkpoints only while goal, non-goals,
@@ -110,9 +110,11 @@ Reusable guidance for every repository opened with Project. Nested `AGENTS.md` f
 
 ## Delegation contract
 
-- Every spawn sets `fork_turns`, `model`, and `reasoning_effort` explicitly.
-  Builders and reviewers use `fork_turns: "none"`; never use full history after
-  context becomes non-trivial. Design advisers fork at most the last 5 turns.
+- The main-thread lead sets `fork_turns`, `model`, and `reasoning_effort`
+  explicitly on every spawn; omitting any of them to inherit a parent default is
+  prohibited. Builders and reviewers use `fork_turns: "none"`; never use full
+  history after context becomes non-trivial. Design advisers fork at most the
+  last 5 turns.
 - Every brief states the frozen goal and non-goals, exact cwd and owned paths,
   permissions, acceptance commands, output contract, and stop rule. Include
   authoritative constants, known failure modes, budget, and tier (`probe` or
@@ -137,10 +139,12 @@ Reusable guidance for every repository opened with Project. Nested `AGENTS.md` f
   proof of failure. After a timeout, inspect the delivered checkpoint; when no
   intervention is needed, issue one further 60-minute wait instead of short
   status polls.
-- For non-interactive asynchronous commands, use the longest supported
-  event-driven wait, preserve any session or cell identifier, and do not
-  short-poll. In `functions.exec`, keep the outer wait long enough to
-  accommodate any nested event-driven wait. Completion may return early.
+- For each non-interactive long-running command, keep one current owner and one
+  live invocation. Reconcile matching processes, sessions, and still-valid
+  receipts before launch; join live work, reuse valid evidence, or otherwise
+  start one fresh invocation instead of relaunching or short-polling. In
+  `functions.exec`, keep the outer wait long enough for any nested event-driven
+  wait. Completion may return early.
 
 ## Acceptance and review
 

@@ -45,6 +45,10 @@ a different checkout until ownership is resolved.
 5. Run the smallest meaningful verification for that staged scope.
 6. Commit with an imperative message, then confirm the remaining dirty set.
 
+Give each verification command one owner and retain its live process or session
+handle. Before retrying a slow or broad check, prove the earlier invocation
+exited; never run overlapping copies of the same suite.
+
 Completion requires a commit whose patch matches the stated intent, contains no
 unrelated work or secrets, and has an explicit verification receipt.
 
