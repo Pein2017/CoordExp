@@ -1,0 +1,6 @@
+interface:
+  display_name: "Scope Economy Review"
+  short_description: "Challenge unnecessary scope before it becomes work"
+  default_prompt: "Use $scope-economy-review to decide whether proposed machinery belongs on the shortest path to acceptance."
+policy:
+  allow_implicit_invocation: true

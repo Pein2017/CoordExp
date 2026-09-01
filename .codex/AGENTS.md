@@ -91,6 +91,9 @@ Reusable guidance for every repository opened with Project. Nested `AGENTS.md` f
   spawning, reconcile live and completed workers; keep one current worker per
   package or semantic owner, and use follow-up, an existing receipt, or direct
   lead work when it suffices. Handle small or tightly coupled tasks directly.
+- Delegate only when expected lead-context or wall-time savings exceed briefing,
+  integration, and acceptance cost; mere parallelizability or task complexity
+  is not a trigger.
 - Choose topology from dependencies, semantic ownership, write surfaces, and
   acceptance before choosing a model.
 - Reuse one worker across sequential checkpoints only while goal, non-goals,

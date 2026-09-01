@@ -50,6 +50,14 @@ primary acceptance level, attempt budget, and stop rule. Exact-token identity is
 a replay/provenance diagnostic unless the unit explicitly makes exact replay the
 estimand.
 
+An auxiliary proxy, null, mechanism diagnostic, or gradient screen is
+decision-owning only when the active contract explicitly names it and its stop
+rule is user-authorized. Otherwise run it after or alongside the frozen primary
+contrast, never on its critical path: failure, infeasibility, or ambiguity closes
+only that diagnostic branch. This does not weaken the input, identity,
+mechanical-validity, safety, or evidence-interpretability gates required by the
+primary contrast.
+
 A change to checkpoint family or ordering, conditioning surface, intervention
 sequence, acceptance/debt policy, architecture, claim, critical path, or stop
 rule is a phase reset. Close or detach the old contract and create a fresh unit
