@@ -1,30 +1,40 @@
 ---
 name: scope-economy-review
-description: Use when a proposed or in-progress task would place a new generic adapter, schema, runtime, orchestration layer, mock-only acceptance, auxiliary proxy/null/control gate, or repeated review ahead of the shortest existing real path, or when the user flags overdesign, overengineering, or overauditing.
+description: Use when proposed or active work puts a generic adapter, schema, runtime, orchestration layer, mock-only acceptance, auxiliary proxy/null/control gate, or repeated review ahead of the shortest real path, or when the user flags overdesign, overengineering, or overauditing.
 ---
 
 # Scope Economy Review
 
 ## Overview
 
-Run one adversarial **decision-path** review, not a general code review. New
-machinery stays only when it closes a named acceptance-changing risk that the
-existing real path cannot close more cheaply.
+Apply one adversarial **decision-path** check, not a general code review. New
+machinery stays only when it closes a named acceptance-changing risk more
+cheaply than the existing real path.
 
 ## Invocation contract
 
-When a description trigger is present and this frozen phase and target have not
-already received this review, launch exactly one read-only reviewer:
+Automatic invocation loads a lead-local check; it does not authorize delegation.
+A user correction about overdesign triggers local reconsideration, never a
+spawn. Do not launch a reviewer to decide whether to launch one.
+
+One read-only reviewer is allowed only when all four conditions hold:
+
+1. A named unresolved risk can change acceptance, evidence identity, safety, or behavior.
+2. Local inspection or a deterministic check cannot close it more cheaply.
+3. Expected decision value or lead-context/wall-time savings exceed briefing,
+   integration, and acceptance cost.
+4. This frozen phase and target have not already received the review.
+
+Then use:
 
 - `model: gpt-5.6-sol`
 - `reasoning_effort: high`
 - `fork_turns: "none"`
 - no writes, subagents, or full-history reconstruction
 
-Give it only the frozen outcome, acceptance and stop rule; proposed next actions;
-shortest existing real path; claimed consumer of the new work; and explicit
-user-owned architecture, claim, cost, or safety decisions. Without a trigger,
-do not launch it.
+Give it only the frozen outcome, acceptance and stop rule; next actions; shortest
+real path; claimed consumer; and user-owned decisions. If any condition fails,
+keep the check local.
 
 ## Decision rule
 
@@ -44,7 +54,7 @@ and user-mandated architecture remain binding.
 
 ## Output contract
 
-Return only these fields, one concise statement each:
+For a delegated review, return only these fields, one concise statement each:
 
 ```text
 VERDICT: KEEP | CUT | REORDER | USER_DECISION
@@ -57,21 +67,13 @@ ACTION:
 
 A blocking verdict requires a concrete counterexample. Do not propose a full
 alternative architecture, optional hardening, or another reviewer. Stop after
-one pass; the lead owns reconciliation and acceptance.
+one pass; the lead owns reconciliation and acceptance. Keep a local verdict
+internal unless it changes the next action or requires `USER_DECISION`.
 
-## Pressure checks
-
-| Rationalization | Decision test |
-| --- | --- |
-| “It must scale later.” | First show failure at the next decision-bearing scale. |
-| “The mathematics is cleaner.” | Cleanliness does not make a diagnostic decision-owning. |
-| “Cost is allowed.” | Permission to spend does not prove necessity or ordering. |
-| “Mocks are green.” | Self-consistency does not close a real-path risk. |
-| “Subagents are cheap.” | Count briefing, integration, and acceptance cost. |
+Future scale, cleaner mathematics, allowed cost, green mocks, or cheap subagents
+do not establish necessity. Apply the cheaper-discriminator and net-cost tests.
 
 ## Example
 
-A real `N=2` runner exists, while a generic adapter and fake-runtime suite are
-proposed before real `N=4`. Return `REORDER`: extend the existing runner to
-`N=4`; abstract only if that run exposes unavoidable duplication, receipt
-ambiguity, or backend divergence.
+With a real `N=2` runner, return `REORDER` for an adapter proposed before real
+`N=4`; abstract only if `N=4` exposes a concrete need.
