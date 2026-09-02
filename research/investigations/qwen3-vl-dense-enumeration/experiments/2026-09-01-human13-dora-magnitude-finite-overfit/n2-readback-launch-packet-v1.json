@@ -1,0 +1,122 @@
+{
+  "schema_version": "human13_dora_magnitude_n2_readback_launch.v1",
+  "status": "frozen_before_execution",
+  "stage": "N2",
+  "estimand": "Does the accepted shared magnitude-only N2 candidate survive standard unmerged DoRA persistence and fresh natural greedy decode on the same two-image panel?",
+  "strongest_alternative": "The candidate may only fit teacher-forced canonical prefixes and fail autoregressive owner coverage after a cold unmerged adapter load.",
+  "candidate": {
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/human13-n2-dora-magnitude-finite.json",
+    "receipt_file_sha256": "fce0accfe081db5e7aad3ea8edda391750cf4e7a514d0f2f967e4a0b5d719e23",
+    "receipt_content_sha256": "98f4f08ae839e0d21b2d4177ee440e4ef63d4f074f8b1280ff7a3765ec69068a",
+    "payload": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/human13-n2-dora-magnitude-finite.safetensors",
+    "payload_sha256": "9c58350fb6e755901dcd70c6ea68c54405e6f90f080d58874c216788ec314e3c",
+    "required_disposition": "FINITE_MARGIN_PASS",
+    "training_steps": 70,
+    "minimum_canonical_margin": 0.18888473510742188,
+    "magnitude_delta_l2": 41.52853376420035,
+    "source_restored": true
+  },
+  "source": {
+    "checkpoint": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "base": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+    "adapter_sha256": "49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da",
+    "selected_token_delta_sha256": "a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2",
+    "panel_sha256": "5c6cc95965c6dd24d7f61f09a0c56edb71eb5a9a05664fa7d26269718f741f23",
+    "prompt_config_sha256": "d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b",
+    "prior_source_natural_receipts": [
+      {
+        "image_id": 6040,
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n2-v2/capture-6040/capture-6040.json",
+        "sha256": "f8419f9e161fed65000ce99f679eb636d63167485496a52f1247237932663285"
+      },
+      {
+        "image_id": 16228,
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n2-v2/capture-16228/capture-16228.json",
+        "sha256": "1d5b1e698af48d21652fe51b92a504bc10015467a65badafb27799ae8558e4e2"
+      }
+    ]
+  },
+  "implementation": {
+    "runner": "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+    "runner_sha256": "f3a7f333dc06ad56f33c4ef08592f5f6c6b5149c115a5f9a9980c5b96384ccf1",
+    "same_panel_runtime": "scripts/research/run_human13_output_qp_same_panel.py",
+    "same_panel_runtime_sha256": "83f60c5362b88427d981303be2c8ece4b544346a6ffb352390812a6f1ef353fb",
+    "test_sha256": "3f3935e592131cbf0cc0ab9b5282cbee9e7b39e334b6a3db43e035b9c1651957",
+    "adapter_materialization": "CPU-only exact replacement of 196 magnitude tensors in the 588-tensor Source PEFT payload; all A/B tensors preserved",
+    "durable_merge_allowed": false,
+    "fresh_process_required": true,
+    "natural_order_is_monitor_only": true
+  },
+  "outputs": {
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1",
+    "adapter": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/adapter",
+    "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/human13-n2-acceptance.json"
+  },
+  "commands": {
+    "materialize": [
+      "conda",
+      "run",
+      "-n",
+      "ms",
+      "python",
+      "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+      "materialize",
+      "--candidate-receipt",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/human13-n2-dora-magnitude-finite.json",
+      "--output-adapter",
+      "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/adapter"
+    ],
+    "verify": [
+      "/usr/bin/env",
+      "CUDA_VISIBLE_DEVICES=0",
+      "H13_N2_ADAPTER_PATH=/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/adapter",
+      "H13_N2_RECEIPT_PATH=/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1/human13-n2-acceptance.json",
+      "/root/miniconda3/bin/conda",
+      "run",
+      "--no-capture-output",
+      "-n",
+      "ms",
+      "python",
+      "-c",
+      "import os; from scripts.research.run_human13_dora_magnitude_finite_overfit import main; raise SystemExit(main(['readback', '--adapter-path=' + os.environ['H13_N2_ADAPTER_PATH'], '--output-receipt=' + os.environ['H13_N2_RECEIPT_PATH']]))"
+    ]
+  },
+  "acceptance": {
+    "canonical_readback_minimum_margin": 0.00998,
+    "full_vocabulary_width": 152670,
+    "rp1_0_iou50_owner_count": 65,
+    "report_iou60_iou80": true,
+    "hard_debt": 0,
+    "natural_eos_image_count": 2,
+    "rp1_10_gating": false,
+    "natural_order_gating": false,
+    "pass_disposition": "N2_PASS",
+    "natural_failure_disposition": "M_ONLY_REPLAY_PASS_NATURAL_FAIL",
+    "persistence_or_replay_failure_disposition": "MECHANICAL_INVALID"
+  },
+  "resource_bounds": {
+    "cuda_visible_devices": "0",
+    "world_size": 1,
+    "materialization_model_loads": 0,
+    "verification_model_loads": 1,
+    "canonical_language_forwards": 2,
+    "natural_generations": 4,
+    "peak_gpu_reserved_bytes_lt": 85899345920,
+    "verification_wall_time_seconds_lt": 1800,
+    "adapter_payload_bytes_lt": 104857600
+  },
+  "attempt_budget": {
+    "decision_bearing_verifications": 1,
+    "mechanical_rerun_allowed": 1,
+    "mechanical_rerun_condition": "only after a demonstrated verifier or persistence defect"
+  },
+  "launch_transport_note": "Root cause of the pre-model exit-0 attempts was PATH resolving env to /root/.local/bin/env, a host wrapper that silently returned without child creation. Explicit /usr/bin/env is frozen here. The python -c transport calls the identical main(['readback', ...]) in a fresh ms-conda process; no prior formal-path attempt loaded Python, allocated GPU memory, or created a receipt.",
+  "host_exec_login": false,
+  "host_exec_transport": "send the frozen command over stdin to /bin/bash --noprofile --norc because exec_command argv caching short-circuits the formal output paths before child creation",
+  "next": {
+    "on_n2_pass": "record N2_PASS, then freeze a fresh-Source N4 packet",
+    "on_natural_fail": "stop the ladder and record the teacher-forced-to-natural policy gap",
+    "on_mechanical_invalid": "repair the exact defect and use the one allowed mechanical rerun",
+    "forbidden": "do not build or launch QP, Farkas, permutation, matched-swap, or distributed solver infrastructure"
+  }
+}

@@ -1,268 +1,295 @@
 ---
-title: Human13 Shared Output-QP Identity and Generalization
-description: A staged test of whether one leak-free shared output residual transfers owner gains across Human13 rather than compiling per-image lookup tables.
+title: Human13 Shared Output-QP Same-Panel Overfit
+description: A staged test of whether one output-only residual shared across the fixed Human13 panel can compile all 392 canonical owners under natural greedy.
 type: investigation
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: planned
+implementation_status: completed
 unit_id: 2026-08-31-human13-shared-output-qp-identity-generalization
 topic: qwen3-vl-dense-enumeration
-status: planned
-evidence_status: no_execution
+status: completed_human13_overfit_pass
+evidence_status: immutable_n13_primary_acceptance
 updated: 2026-08-31
 ---
 
-# Human13 Shared Output-QP Identity and Generalization
+# Human13 Shared Output-QP Same-Panel Overfit
 
-## Decision and active estimand
+## Pre-execution semantic correction
 
-This unit asks whether one output-only parameter delta shared across images can
-produce **held-out** natural-greedy owner gains without consuming any held-out
-target route, hidden state, constraint, route choice, or image-specific
-residual.
+The stable unit ID and path retain the original `identity-generalization`
+label for backlinks. That label no longer owns the estimand. Before any model
+forward, the user superseded the proposed held-out and leave-one-out study with
+the direct multi-image continuation of the Image2299 overfit question:
 
-The decision-owning outcome is fresh-cold ordinary greedy from the original
-prompt. Training-route likelihood, teacher-forced margins, feasibility, norm,
-and same-panel fit are mechanism diagnostics only.
+> After one fixed image could be overfit, can the same output-only mechanism
+> overfit thirteen fixed images jointly?
 
-The strongest alternative is lookup-table superposition: a high-dimensional
-output head can independently compile a finite collection of image-specific
-routes without learning a reusable owner or enumeration rule.
+The former held-out plan produced no execution or evidence. Generalization is
+a separate successor only after same-panel capacity is established.
 
-## Frozen claim boundary
+## Decision and estimand
 
-Image2299's direct G46 result is a valid single-image finite output-policy
-compilation witness. It is not a learned base-model result. This unit does not
-reuse its residual at inference and does not solve a GT-conditioned residual
-for an evaluation image.
+Starting from the exact four-coordinate `geo_sorted_xy=(x1,y1)` step-2444
+Source, can one output-only delta shared by all fixed Human13 images compile
+the complete 392-owner target policy under fresh-cold original-prompt natural
+greedy?
+
+All thirteen images may contribute their canonical target routes, hidden
+states, token constraints, and evaluator rows. That is intentional same-panel
+overfit, not leakage relative to this estimand. The intervention must still be
+one shared matrix: no image-ID branch, per-image residual, per-image checkpoint,
+or inference-time payload selection is allowed. Frozen hidden states may encode
+image and prefix identity, so a successful shared matrix may act as a finite
+lookup table; that still counts as overfit success here.
+
+### Primary success predicate
+
+At repetition penalty `1.0`, one immutable `Delta W_out` must, on one fresh
+process per verification cell:
+
+1. decode from each of the 13 original prompts without teacher forcing;
+2. reach strict same-category, global one-to-one, actual-pixel Intersection
+   over Union at least `0.5` coverage of all `392 / 392` GT owners;
+3. incur zero confirmed duplicate, unsupported, malformed, or token-cap debt;
+   and
+4. terminate with a valid natural end-of-sequence token.
+
+Report legacy-12 `346 / 346` and Image2299 `46 / 46` before the pooled result.
+Exact canonical token replay is a stronger diagnostic receipt, not a separate
+requirement when an owner-equivalent complete route satisfies the predicate.
+Repetition penalty `1.10` is a nonblocking robustness monitor.
 
 The strongest permitted positive claim is:
 
-> On the frozen Human13 panel and Source checkpoint, one shared output-only
-> delta trained without the held-out image's route or states improves held-out
-> strict-owner coverage under fresh-cold ordinary greedy while preserving all
-> Source owners and hard debt.
+> On the frozen Human13 panel and exact step-2444 Source, one output-only delta
+> shared across all thirteen images compiled a fresh-cold natural-greedy
+> 392-owner same-panel policy without hard debt.
 
-This would still be panel-bounded shared-readout evidence, not production,
-distribution-level generalization, a covered-set controller, or proof that the
-vision tower learned new information.
+This is finite-panel shared-output overfit or compilability only. It does not
+establish held-out transfer, identity or distributional generalization,
+semantic sharing, hidden-state internalization, base-model learning, or
+production readiness.
 
-This unit is a representation and transfer discriminator, not the final
-internalized-learning treatment. A successful direct QP only licenses a
-separate optimizer-trained shared-output-adapter unit. A language-tower update
-is a later unit with a different parameter surface and acceptance contract.
+## Frozen Source and panel identity
 
-## Frozen substrate before execution
+The first model process must fail closed unless every identity below matches.
 
-The implementation must bind and verify, before the first model forward:
+### Source
 
-- Source checkpoint and tied-head identity;
-- tokenizer, prompt, wrapper, geometry convention, and natural decode recipe;
-- exact Human13 image JSONL, image bytes, GT owner ledger, and evaluator;
-- Source natural-greedy routes at repetition penalties `1.0` and `1.10`;
-- target-bearing versus preservation-only image roles;
-- duplicate, unsupported, malformed, cap-stop, and ambiguity policy.
+- checkpoint:
+  `/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444`
+- base model:
+  `/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`
+- adapter tensor SHA-256:
+  `49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da`
+- special-embedding tensor SHA-256:
+  `a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2`
+- base `config.json` SHA-256:
+  `c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de`
+- base `tokenizer.json` SHA-256:
+  `ca7e80dee65c629af3b314e76a7587490db3f4e6412df4af9f3b690a9e9916f8`
+- prompt/template authority:
+  `configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`
+- prompt-config SHA-256:
+  `d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b`
+- launch config: derive one experiment-local leaf that changes only the run
+  root and decision-bearing `generation.batch_size=1`; freeze its resolved
+  bytes and hash before the first forward and never write the historical H0
+  artifact root;
+- backend: Hugging Face, full-model `fp32`, Scaled Dot-Product Attention,
+  physical batch size one for decision-bearing decode;
+- geometry: four-coordinate `XYXY`, stable `geo_sorted_xy=(x1,y1)`;
+- wrapper/parser: native `object_box_closed` / strict expected parser;
+- primary decode: temperature `0`, top-p `1`, repetition penalty `1.0`,
+  `max_new_tokens=3084`.
 
-Historical records indicate 12 target-bearing images and one preservation-only
-control. Re-derive this from the recovered frozen ledger; a mismatch is a data
-gate failure, not a reason to silently rewrite the denominator.
+`Delta W_out` changes logits only. It must not modify the tied input embedding
+tensor or any checkpoint file.
 
-The live historical panel artifacts may have been reclaimed. Rebuild only the
-needed inputs from their frozen sources and verify the hashes recorded by the
-[prospective panel-admission unit](../2026-08-04-sorted-prospective-13-image-panel-admission/unit.md).
-Recover the historical builder from `research-base-v2` only if necessary; do
-not restore a retired Human13 runner wholesale.
+### Panel
 
-## Intervention identity
+The historical artifacts were exactly reconstructed and verified before this
+protocol correction:
 
-Keep the tied base embedding/head `E`, language tower, multimodal aligner, and
-vision tower frozen:
+| Artifact | Rows / owners | SHA-256 |
+|---|---:|---|
+| `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/evaluation-inputs/human-refined-12.coord.jsonl` | 12 / 346 | `cfe4f693133287f9e6c561fc094710c642f049aec3d50f44dea98b764ba2aa85` |
+| `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-04-sorted-prospective-13-image-panel-admission/evaluation-inputs/human-refined-13.coord.jsonl` | 13 / 392 | `01086b139fa23983697492fdb535b5154429277803e8f12b243f9a031d1451f8` |
+| `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-04-sorted-prospective-13-image-panel-admission/receipt.json` | admission receipt | `ad78c174897509dca07c24c57d12c897fdad42724d83af08147d79c9644c5414` |
+| `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-crossover/inputs/human-refined-13.geo_sorted_xy.coord.jsonl` | 13 / 392 | `5c6cc95965c6dd24d7f61f09a0c56edb71eb5a9a05664fa7d26269718f741f23` |
+| `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-crossover/inputs/human-refined-13.geo_sorted_xy.coord.receipt.json` | ordering receipt | `cd1273f627f7bdfcb16e9ca6e4a50e9d51f0163081ea7458d6d3deabe9bb82c0` |
+
+The ordered image IDs are `1584, 2299, 2685, 4134, 5001, 6040, 7511,
+10707, 13348, 13923, 14038, 14439, 16228`. All 13 are target-bearing under
+the full-GT predicate. The earlier `12 target-bearing + 1 preservation-only`
+statement described a narrower missing-owner ledger and is inapplicable here.
+
+## Intervention and solver contract
+
+Keep the base model frozen and use
 
 \[
 z(h)=hE^\top+h\Delta W_{out}^\top.
 \]
 
-`Delta W_out` is one shared parameter across all images. It may be solved as a
-convex FP64 program during this mechanics unit or represented by a standard
-Torch parameter later. No image-id lookup or per-image payload is allowed.
+For each admitted stage:
 
-## Stage -1: input recovery and parity
+1. serialize every included image's complete canonical x-then-y GT route;
+2. teacher-force that route at zero residual and capture the final hidden state
+   at every target-token decision;
+3. solve one minimum-Frobenius-norm selected-row `Delta W_out` with registered
+   target-versus-full-vocabulary margin `0.01`;
+4. use cutting planes if needed, then require a final full-vocabulary margin
+   certificate with zero positive slack; and
+5. write one immutable payload before warm and fresh-cold natural decode.
 
-1. Re-materialize the exact Human13 panel from frozen sources.
-2. Verify all published hashes and 13 image references.
-3. Reproduce the Source natural-greedy owner/debt ledger on both repetition
-   penalties before constructing targets.
-4. Stop on checkpoint, tokenizer, prompt, route, geometry, or evaluator drift.
+Teacher-forced feasibility is necessary mechanics evidence, not behavioral
+success. A candidate passes only through the primary natural-greedy predicate.
+No alternate subset, route order, margin, alias, sign, row deletion, or payload
+selection may be chosen after observing a decode.
 
-This stage produces no intervention and no scientific result.
+## Frozen nested ladder
 
-## Stage 0: pooled protected-state capacity census
+Panel owner counts freeze the burden-spanning subsets before the first model
+forward: N=2 uses the minimum and maximum burden, while N=4 adds the nearest
+one-third and two-third burden ranks; image ID breaks count ties.
 
-Teacher-force every Source route and every intended post-insertion target route
-at zero residual. Cache final hidden states and report, as images are pooled:
+| Stage | Images | Canonical owners |
+|---|---|---:|
+| N=2 | `6040, 16228` | 65 |
+| N=4 | `4134, 6040, 13923, 16228` | 123 |
+| N=13 | all ordered panel IDs | 392 |
 
-1. protected-state matrix shape, singular spectrum, and numerical rank;
-2. exact protected-null dimension within hidden width 2048;
-3. projected norm of every positive state;
-4. every per-position baseline target-versus-competitor deficit;
-5. selected-row overlap across images.
+### Stage -1: identity and zero-delta parity
 
-### Stage-0 decision
+1. Re-hash Source, panel, image bytes, tokenizer, prompt, wrapper, parser,
+   evaluator, geometry, and decode settings.
+2. Freeze canonical route bytes and the N=2/N=4/N=13 owner ledgers.
+3. Reproduce Source natural greedy at repetition penalties `1.0` and `1.10`.
+4. Prove zero-delta logits and decodes equal Source.
+5. For each later payload, run a Source-A -> candidate-B -> Source-A process
+   sandwich so loader contamination cannot masquerade as a treatment effect.
 
-- If the pooled exact nullspace remains nontrivial with well-conditioned
-  positive projections, exact protected-null may continue as a mechanics arm.
-- If rank saturates hidden width or positive projected norms collapse, exact
-  multi-image protected-null is retired. The primary path becomes explicit
-  route-margin preservation.
-- Norm explosion coupled to nullspace collapse is **capacity exhaustion**, not
-  evidence against semantic sharing.
+Stage -1 produces no scientific result. Any mismatch is `MECHANICAL_INVALID`.
 
-Stage 0 is the first launch target. Do not implement the joint solver until its
-receipt fixes the active parameterization.
+### N=2, N=4, and N=13
 
-## Stage 1: N=2 joint QP and matched null
+At each N, solve and evaluate on the same registered images. All target states
+are allowed because same-panel fit is the estimand. Promote only after the
+current N satisfies the primary predicate on its own owners and hard-debt/EOS
+conditions. N=2 failure stops N=4; N=4 failure stops N=13.
 
-Select two target-bearing images that bracket declared target burden using only
-the frozen ledger. Build the complete intended post-insertion route for each.
-All preservation constraints are evaluated on those new routes, not on the old
-prefixes that the intervention will no longer visit.
+The original registered N13 solve and its identical diagnostic replay stopped
+at a numerical boundary before payload creation. The later authorized recovery
+retained the exact terminal dual on each active subproblem and bounded
+continuation to three `4,000`-iteration segments; a status-0/no-new-cut point
+could receive same-active-problem `ftol=0` certificate polish. It did not change
+targets, constraints, objective, margin, certificate tolerance, or candidate
+selection. Each decision-bearing candidate gets one fresh-process
+natural-greedy replay at repetition penalty `1.0`; no warm candidate replay owns
+acceptance. Repetition penalty `1.10` is a nonblocking monitor.
 
-Compare:
+## Execution evidence
 
-1. semantic owner rows; and
-2. same-image deficit-matched decoy rows.
+The completed [results](results.md) record owns current evidence. N2 passes on
+`65 / 65` owners, N4 on `123 / 123`, and N13 on `392 / 392`, each at
+IoU50, IoU60, and IoU80 with zero hard debt, natural EOS, exact canonical
+replay, and exact Source-A -> candidate-B -> Source-A restoration.
 
-Decoys must match category, wrapper, token count, area/aspect distribution, and
-per-position baseline deficit profile, while maintaining maximum IoU below
-`0.1` to every GT box. Freeze candidate generation, matching tolerance, and
-tie-break before any solve.
+The accepted N13 run is
+`20260831T-n13-v5-certificate-polish-corrected`. Its census is `P=3637`,
+`U=832`, 772 selected rows, hidden-span rank 2048, and 2,807,764 registered
+constraints. The unchanged exhaustive certificate reports maximum FP64
+violation `1.0842741027028424e-05` against tolerance `2e-5` and minimum
+FP32 hook margin `0.00998687744140625` for the frozen `0.01` target margin.
+Thirteen fresh candidate processes cover all owners and thirteen fresh
+post-candidate Source processes restore four exact route-identity fields. The
+extended immutable acceptance receipt classifies the result as
+`HUMAN13_OVERFIT_PASS`.
 
-Solve:
+## Required monitors
 
-\[
-\min_{\Delta W,\xi\ge0}
-\tfrac12\lVert\Delta W\rVert_F^2+C\sum_g\xi_g
-\]
+### Identity and resource
 
-with hard constraints for incumbent route-margin preservation, confirmed hard
-debt, and CONTINUE/EOS behavior; gained-owner margins use owner-level slack.
-Choose one alias per owner outside the convex solve by a frozen minimum-deficit
-rule. Use cutting planes and a final full-vocabulary margin check.
+- every Source, panel, image, prompt, tokenizer, wrapper, evaluator, route, and
+  payload hash;
+- process/model-load count, generation and teacher-forced capture count;
+- wall time, peak GPU reserved bytes, peak host resident memory, worker count,
+  cache bytes, and final artifact bytes;
+- measured N=2 scaling projected to N=4 and N=13 before promotion.
 
-`Delta W = 0` must be feasible for the safety-only program. Otherwise the
-constraint compiler is invalid.
+### Capacity and optimization
 
-## Stage 2: N=4 leave-one-out transfer
+- selected rows, registered constraints, active constraints, free variables,
+  slack, primal/dual residuals, and final full-vocabulary certificate;
+- Frobenius norm total and per owner/constraint as N grows;
+- parameter participation-ratio effective rank, first-direction energy, and
+  rank for 95% energy;
+- largest row-energy share and largest baseline deficit/active constraint;
+- protected-state numerical rank and null dimension as diagnostics only, never
+  as a launch or success gate.
 
-Use four frozen images. For each fold, construct targets, cache states, assemble
-constraints, and solve on three images only. Apply the one resulting shared
-delta cold to the fourth image's original prompt.
+### Functional behavior
 
-The held-out image contributes only its pre-frozen evaluation ledger after the
-solve. It contributes no route, hidden state, constraint, residual, alias, or
-hyperparameter choice.
+- per-image gained, retained, and lost owners; duplicate, unsupported,
+  malformed, ambiguity, cap, and EOS status; first decode divergence;
+- warm versus fresh-cold equality and Source-A/B/A restoration;
+- top-1 flips, coordinate-token rank shifts, and logit Kullback-Leibler
+  divergence on registered Source and target states;
+- functional effective rank of the induced logit-change matrix
+  `H_eval Delta W_out^T`.
 
-Run semantic folds first. Run matched-null folds only while needed to decide
-shared structure versus lookup.
+If and only if the largest row holds at least `90%` of residual energy or one
+constraint holds at least `50%` of squared baseline-deficit mass, run one
+drop-dominant-row or leave-largest-constraint-out sensitivity. Do not build a
+full ablation grid speculatively.
 
-### Primary metric
+## Optional post-success identity-permutation null
 
-Per-fold held-out net strict-owner delta at repetition penalty `1.0`, subject
-to:
+This null classifies a successful N=13 fit; it does not gate or revoke it and
+was not run after the primary success stop rule fired.
+Keep the same target-token multiset and token-slot types, but permute which
+matched hidden-state decisions receive those targets within frozen baseline-
+deficit bins. This holds output-row popularity and approximate local difficulty
+fixed while breaking the correct owner/state pairing.
 
-- zero Source-owner loss on every train and held-out image;
-- zero increase in confirmed duplicate, unsupported, malformed, or cap-stop
-  debt;
-- valid terminal EOS;
-- one warm and one fresh-cold replay with identical payload and surface hashes.
+- Comparable feasibility, norm, and functional rank supports an
+  identity-agnostic finite lookup-capacity explanation.
+- Lower burden for the correct pairing supports only panel-bounded semantic
+  specificity.
 
-Repetition penalty `1.10` is a robustness readout. Failure there blocks a
-robustness or production claim but does not erase a qualified `1.0` geometry
-result.
+Neither outcome is a generalization result.
 
-## Stage 3: full panel
+## Decision and stop rules
 
-Proceed only after positive N=4 leave-one-out evidence stronger than matched
-null. Use leave-one-out over the 12 target-bearing images and retain the
-thirteenth as a pure preservation control. Never report a pooled total before
-the legacy-12 and Image2299 slices required by the panel-admission contract.
+- **MECHANICAL_INVALID:** any identity, parser, ledger, zero-delta, warm/cold,
+  full-vocabulary, or solver-certificate failure. Repair mechanics without a
+  scientific claim.
+- **N2_FAIL / N4_FAIL:** the registered smaller stage does not satisfy natural
+  greedy or hard-debt/EOS conditions. Stop scaling.
+- **OUTPUT_SURFACE_BOUNDED_NEGATIVE:** a valid registered program is infeasible
+  or cannot produce the target behavior. This is evidence about this output
+  surface and recipe only, not about semantic information or generalization.
+- **HUMAN13_OVERFIT_PASS:** the single N=13 payload satisfies all primary
+  conditions. Stop and report the finite-panel result; do not require the null
+  or open a larger parameter surface.
 
-## Required mechanism readouts
+This unit does not authorize language-tower, aligner, vision-tower, tied-input-
+embedding, per-image-payload, or rank-escalation treatments. `HOLD_PRODUCTION`
+remains unconditional.
 
-For every per-image diagnostic residual and every joint residual, report:
+## Code ownership and execution state
 
-- selected rows, constraint counts, projected rank, and solver certificate;
-- Frobenius norm and normalized norm;
-- residual-row norm relative to its frozen base row and the maximum required
-  target-versus-competitor logit-margin shift;
-- largest-row energy share;
-- participation-ratio effective rank and rank for 95% energy;
-- objective with the largest single constraint removed;
-- semantic and matched-null pairwise residual cosine;
-- off-diagonal protection damage and target-deficit transfer.
+The experiment-local runner is
+`scripts/research/run_human13_output_qp_same_panel.py`; it reuses the existing
+step-2444 loading, prompt, cold-decode, and strict owner-evaluation seams while
+keeping the solver and selected-row hook local to this research consumer. Its
+invariant tests are in `tests/research/test_human13_output_qp_same_panel.py`.
+No shared infrastructure or checkpoint mutation was introduced.
 
-Also measure functional blast radius on frozen Source and held-out states:
-top-1 flips, coordinate-token rank changes, logit KL divergence, and owner/debt
-changes. Sparse row support must not be described as a small intervention when
-its logit effect is large.
-
-Per-image residuals are diagnostics only and must never be applied in an
-evaluation path.
-
-## Decision rules and stop boundary
-
-- **LOOKUP:** semantic and matched null have comparable feasibility, rank,
-  cosine, and off-diagonal transfer. Stop without parameter escalation.
-- **NO TRANSFER:** at least three of four held-out folds have nonpositive net
-  owner gain, or any held-out Source owner is lost. Stop before N=13.
-- **SHARED READOUT EVIDENCE:** semantic residuals beat their matched nulls on
-  off-diagonal transfer/rank burden and produce positive held-out greedy gains
-  with zero owner/debt loss. This licenses a separate optimizer-trained shared
-  Torch-adapter unit; it does not establish hidden-state internalization.
-- **MECHANICAL INVALID:** any hash, parser, ledger, route, warm/cold, full-vocab,
-  or primal-dual failure invalidates that cell and supplies no scientific
-  evidence.
-
-Changing the panel, target-route construction, matcher, margin definition, or
-null after inspecting a decode starts a new unit. This unit does not tune until
-something works.
-
-## Parameter escalation
-
-Do not unfreeze language-tower DoRA, the aligner, vision tower, or tied
-embeddings in this unit.
-
-1. Test the shared output surface.
-2. Consider language-tower DoRA only after a rank-matched held-out linear probe
-   shows that the needed next-owner action is not decodable from final hidden
-   states, or a certified shared-output constraint conflict remains.
-3. Consider the aligner only if pre-aligner visual tokens separate missing
-   owners but post-aligner states do not.
-4. Consider the vision tower only if pre-aligner region/instance features also
-   fail.
-5. Keep tied embeddings last because changing `E` changes both input dynamics
-   and every output row and destroys the convex readout problem.
-
-If a separate language-tower unit is later opened, QP supplies active
-constraints and feasibility certificates rather than inference-time weights.
-That unit must train on complete post-insertion routes, accumulate signals
-across images into shared optimizer steps, re-run natural greedy after each
-accepted update, and roll back any incumbent-owner or hard-debt regression.
-
-## Code ownership and reuse rule
-
-The archived Image2299 implementation is preserved at
-`probe-final/image2299-mechanism-microscope`. Do not copy its 30-plus-file
-private import chain. Stage 0 needs only panel recovery, teacher-forced state
-capture, and linear-algebra reporting. If Stage 1 proceeds, port the smallest
-pure selected-row residual, constraint assembly, solve/certificate, and
-full-vocabulary verification seams. Extract shared infrastructure only after
-this Human13 unit proves a real second-direction consumer.
-
-## Execution state
-
-No code, model forward, solver run, optimizer update, GPU launch, checkpoint,
-or scientific artifact has been created by this unit. Execution requires a
-fresh launch decision after Stage -1 identities and Stage-0 resource bounds are
-frozen.
+The five historical input artifacts listed above match their published hashes.
+N2, N4, and N13 payloads, natural-decode receipts, Source-restoration receipts,
+and aggregate acceptances are durable under the output roots named in the
+results. The N13 success stop rule has fired; architecture and production remain
+unpromoted.

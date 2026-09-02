@@ -112,7 +112,7 @@ optimization instability remain competing explanations.
 The weekly report and research compass own the broader synthesis and next-
 discriminator boundary.
 
-## Image2299 closeout and Human13 successor
+## Image2299 closeout and Human13 successors
 
 The [Image2299 46-owner continuation](2026-08-31-image2299-augmented-greedy-38-to-46-owner-continuation.md)
 closes the fixed single-image objective with a fresh-cold ordinary-greedy 46/46
@@ -123,13 +123,37 @@ target-only and global constraint compilation, the bounded online-SQP negative,
 the M/G QP-versus-CE ablation, canonical-G41 norm release, composed five-tie
 completion, and the direct canonical-G46 solve.
 
-The next direction is defined by the [Human13 shared output-QP identity and
-generalization handoff](2026-08-31-human13-output-qp-identity-generalization-handoff.md).
-It treats Image2299 as a feasibility oracle, not a transferable payload. Its
-first decision is whether pooled exact protected-null capacity survives; its
-first production-relevant evidence is N=4 leave-one-out natural-greedy transfer
-from one shared output residual against deficit-matched nulls. No per-image
-residual may enter evaluation, and `HOLD_PRODUCTION` remains in force.
+The completed [Human13 shared output-QP same-panel results](experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md)
+pass all three nested stages. From exact `geo_sorted_xy` step-2444, one shared
+output-only residual reaches N2 `65 / 65`, N4 `123 / 123`, and N13
+`392 / 392` at IoU50, IoU60, and IoU80 under RP1.0 with zero hard debt,
+natural EOS, exact canonical replay, and Source restoration. This licenses only
+a finite-panel shared-output overfit/compilability claim. The independent
+[Image2299 fixed-payload transfer result](experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md)
+is strongly negative on legacy-12 (`138 -> 18` IoU50 owners), conditional on
+the Image2299-trained checkpoint. Generalization remains open.
+
+The [Scalable Annotated-Owner Shared DoRA Pilot](experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md)
+reached its registered G0 scientific stop. G0.4 supplied `440` positive and
+`1,214` preservation event contexts, but the exact whole-bundle K1 null was
+infeasible in `101` image-imbalanced strata. No deficits, gradients, G0.3,
+optimizer steps, or G1 training were run. This closes the registered control
+route, not the shared-DoRA learning hypothesis.
+
+The completed [Human13 magnitude-only finite-overfit result](experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md)
+then compiled N2 `65 / 65`, N4 `123 / 123`, and N13 `392 / 392` with separate
+shared unmerged magnitude-only adapters. This is fixed-panel internal-network
+programmability only, not held-out transfer or semantic generalization.
+
+The subsequent [Direct C-D0 result](experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md)
+is mechanically valid and returns `SCIENTIFIC_STOP_DIRECT_C_D0`. On the frozen
+128-image, 891-owner screen, D0 matches 606 IoU50 owners versus C's 630,
+retains only `586 / 614 = 95.44%` of Source-covered owners, and produces one
+length-capped decode where C produces none. This rejects promotion or paired
+replication of the frozen D0 bundle at its registered dose; it does not reject
+DoRA or actual-prefix learning in general. The next bounded phase is a
+C-anchored zero-update audit; constrained active-set optimization remains
+conditional. `HOLD_PRODUCTION` remains in force.
 
 ## Reading Path
 

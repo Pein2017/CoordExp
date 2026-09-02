@@ -1,0 +1,78 @@
+{
+  "acceptance": {
+    "artifact": [
+      "rank zero publishes one standard unmerged DoRA adapter and the universal-base reference",
+      "no merged adapter, copied base shard, full-model checkpoint, or embedding-delta update is published",
+      "a fresh process loads base plus the saved adapter plus the frozen selected-token delta, reports merged_adapters=[], and produces two identical cold decodes"
+    ],
+    "data": [
+      "C consumes 64 one-image packs from the bound train-c JSONL",
+      "D0 consumes all 64 admitted bank events exactly once",
+      "D0 reports both 32-event positive and 32-event preservation families"
+    ],
+    "runtime": [
+      "world_size=8, physical_batch_per_rank=1, gradient_accumulation_steps=8, effective_batch_size=64",
+      "completed_steps=1, finite update, fixed collective order, and clean rank/process exit",
+      "trainable surface is adapter.language only and the selected-token delta is frozen"
+    ]
+  },
+  "claim_boundary": "Production-shaped mechanics only. Passing does not establish overfit, directionality, generalization, or D0 superiority.",
+  "code": {
+    "executable_commit": "5ea16e781469b91caab98e0b587fea65904cb545",
+    "record_only_descendant_allowed": true,
+    "tree": "6f4340b4ebd73b2c7c825c5df08e1edce7bd6d7e"
+  },
+  "configs": {
+    "C": {
+      "path": "configs/coordexp_swift/research/qwen3_vl_2b_annotated_owner_direct_c_smoke_1_step_ebs64_seed19.yaml",
+      "sha256": "ad2f2e168115ff227511fc347ec39410516f010ddea2bd76c5276015dacf8cc3"
+    },
+    "D0": {
+      "path": "configs/coordexp_swift/research/qwen3_vl_2b_annotated_owner_direct_d0_smoke_1_step_ebs64_seed19.yaml",
+      "sha256": "6dd53b755a9ba1bace380936b9ff9c1f79eb92d1bdd711ffedb346699c49efcd"
+    }
+  },
+  "launch": {
+    "command_template": "CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 conda run -n ms accelerate launch --num_processes 8 --num_machines 1 --mixed_precision bf16 --dynamo_backend no --multi_gpu -m src.train --config <CONFIG>",
+    "execution_order": [
+      "C",
+      "D0"
+    ],
+    "reason_for_serial_execution": "The host has exactly eight available GPUs and each arm preserves the registered eight-rank topology."
+  },
+  "resource_bounds": {
+    "C_global_forwards": 64,
+    "D0_global_post_update_replay_forwards": 64,
+    "D0_global_training_forwards": 64,
+    "adapter_payload_max_bytes": 104857600,
+    "copied_or_merged_model_payload_max_bytes": 0,
+    "peak_gpu_memory_mib_per_rank": 24576,
+    "wall_seconds_per_arm": 900
+  },
+  "runtime": {
+    "accelerate": "1.10.1",
+    "cuda_driver": "550.54.15",
+    "peft": "0.17.1",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.1"
+  },
+  "schema_version": "annotated-owner-direct-c-d0-smoke-launch.v1",
+  "smoke_data": {
+    "C_jsonl_sha256": "689a2af5a9a26b62d3a054b8cdb45582f609b8b606088d01b3aa6d4808819997",
+    "D0_bank_id": "4fd24ece31acc38b4c6513e7a1ed1bc45d7cc170257c5bacd5722543e7f0221b",
+    "manifest_sha256": "24cba2d78f9ac9f15ee5b5e8028ea6a74e1149ffe69238d9001803ef577488fa",
+    "receipt_id": "f6c615b39273ea1d5b991e5530df69fe8cd18e14eb83853fe230f30ab1d4952b",
+    "receipt_sha256": "de1cbf7490b11ab3aaac5d9a6d81f818adf2bf85924d433589b180593b3ae32d",
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-annotated-owner-direct-c-d0-pilot/smoke-v1"
+  },
+  "source": {
+    "adapter_fingerprint": "5a59270e1ed1bf2062590fd0eb820e534e39e8914c7a20d91d642a8f2a99452d",
+    "adapter_path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/adapter",
+    "base_package_fingerprint": "111eadc57bb7ec6bfc8ac166444ceab0bf941eb5ed2d26f63d7b3a620bef76bb",
+    "base_package_manifest": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/mechanics/annotated-owner-d0-two-rank-one-update-v2/universal-base-package-manifest.json",
+    "base_package_manifest_sha256": "fd3eb652d6b1a8348af37779f656e6a836687c3e7225de76b02ef06239fc7f3b",
+    "checkpoint_id": "1bc711f1ad68ead42832b4e1dfba605a23ce71c27a5581724e1285a0e09222cd"
+  },
+  "status": "READY_FOR_SMOKE",
+  "stop_rule": "Any identity, data, topology, denominator, finite-update, trainable-surface, checkpoint, payload-size, resource-bound, fresh-readback, or process-exit failure holds both full 26-step arms."
+}

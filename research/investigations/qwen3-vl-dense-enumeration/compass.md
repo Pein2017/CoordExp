@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-08-31
+updated: 2026-09-02
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -20,23 +20,33 @@ architecture, or an implementation contract.
 
 ## Current Live Route
 
-As of `2026-08-31`, Image2299 is closed as a single-image finite output-policy
-compilation result. The [direct canonical G46 global-QP result](experiments/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/results.md)
-reaches fresh-cold ordinary-greedy 46/46 with one sparse output-only residual;
-the base tied embedding/head, language tower, multimodal aligner, and vision
-tower remain frozen. This is not evidence of base-model learning, transfer, or
-general dense enumeration. A post-closeout audit further shows that the direct
-G46 residual is 99.15% first-singular-direction energy and dominated by one
-coordinate-token row, so total residual norm is not a semantic-sharing metric.
+The [Human13 shared output-QP same-panel result](experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md)
+passes N2 `65 / 65`, N4 `123 / 123`, and N13 `392 / 392` at IoU50,
+IoU60, and IoU80 under RP1.0 with zero hard debt, natural EOS, exact canonical
+replay, and Source restoration. The later
+[magnitude-only finite-overfit result](experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md)
+also compiles all `392 / 392` fixed-panel owners with a shared unmerged
+language-DoRA magnitude surface. These are finite-panel programmability
+results, not held-out transfer, semantic sharing, or population generalization.
 
-The next route is the [Human13 output-QP identity/generalization handoff](2026-08-31-human13-output-qp-identity-generalization-handoff.md).
-It retires per-image residual composition as a treatment, starts with a pooled
-protected-state rank census, and moves held-out evidence to an N=4
-leave-one-out shared-output test. The candidate treatment is a direct joint QP
-with hard route-margin preservation and slack-priced owner gain, compared with
-same-image deficit-matched null rows. No held-out image may contribute a target
-route, hidden state, constraint, residual, or route selection. Production,
-architecture promotion, and tied-embedding updates remain on hold.
+The [fixed Image2299-payload transfer probe](experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md)
+is strongly negative on legacy-12, and the
+[Scalable Annotated-Owner Shared DoRA G0 result](experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md)
+stops before gradients because its exact whole-bundle K1 null is infeasible.
+The former rejects automatic reuse of that fixed payload; the latter closes
+only its frozen control route.
+
+The [Direct C-D0 result](experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md)
+is mechanically valid but scientifically terminal. On the registered
+128-image, 891-owner screen, D0 trails C by 24 IoU50 owners (`606` versus
+`630`), retains `95.44%` of Source-covered owners, loses twice as many Source
+owners as C (`28` versus `14`), and produces one cap where C produces none.
+All four GO predicates fail. The frozen D0 bundle is not promoted or rescued;
+this does not establish that shared DoRA or actual-prefix objectives cannot
+work. The next bounded discriminator is a C-anchored zero-update mechanism
+audit. Receding-horizon active-set projection remains conditional on that
+audit. Production, architecture promotion, and tied-embedding updates remain
+on hold.
 
 ### Earlier same-panel training lineage
 

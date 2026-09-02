@@ -1,0 +1,110 @@
+{
+  "schema_version": "human13_dora_magnitude_n4_readback_launch.v1",
+  "status": "frozen_before_execution",
+  "stage": "N4",
+  "estimand": "Does the accepted fresh-Source shared magnitude-only N4 candidate survive standard unmerged DoRA persistence and fresh natural greedy decode on the same four-image panel?",
+  "strongest_alternative": "The N4 candidate may fit teacher-forced canonical prefixes but fail autoregressive owner coverage after a cold unmerged adapter load.",
+  "training_launch_packet": {
+    "path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n4-launch-packet-v1.json",
+    "sha256": "0356f8c008c1babda212c6d2a72d2460610b27e3346c1cedcb229998d06581c9"
+  },
+  "candidate": {
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/human13-n4-dora-magnitude-finite.json",
+    "receipt_file_sha256": "8b3118e53d595c0005c5c5c06cedbe7b8c87003c7502ffde071d0387e3fc6a57",
+    "receipt_content_sha256": "f6f0a067b83bf94fa98238b1ff7845c9e07b2dd2deee757e68d582545500d265",
+    "payload": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/human13-n4-dora-magnitude-finite.safetensors",
+    "payload_sha256": "1070dca83f3b051eca53b32a44e153a4e2cc05fe5ac7e9f59166d45059bbb080",
+    "required_disposition": "FINITE_MARGIN_PASS",
+    "training_steps": 90,
+    "minimum_canonical_margin": 0.061603546142578125,
+    "magnitude_delta_l2": 52.88320911938949,
+    "source_restored": true
+  },
+  "materialized_adapter": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/adapter",
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/adapter/human13-n4-materialization.json",
+    "receipt_sha256": "5e431e3cc2620e082ca09cf849be9fdf5f8e34964259f0db849499ba179433b8",
+    "fingerprint": "0fe8de7c44f44be161637e437dd0cccd85beba12292e79cb3116581bd7152203",
+    "adapter_model_sha256": "44a56a512f19b8a9126db54f6779e82956bc1c0d64ae2bfca9a4e1070765f110",
+    "adapter_model_bytes": 72111984,
+    "mapped_magnitude_count": 196,
+    "source_a_b_tensor_sha256": "40e8716a47e58e0b300d85c3d5eeeeecb3bb367eb85682858e7344b88e459b10",
+    "materialized_a_b_tensor_sha256": "40e8716a47e58e0b300d85c3d5eeeeecb3bb367eb85682858e7344b88e459b10",
+    "unmerged": true,
+    "model_load_count": 0
+  },
+  "source": {
+    "checkpoint": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "base": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+    "adapter_sha256": "49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da",
+    "selected_token_delta_sha256": "a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2",
+    "panel_sha256": "5c6cc95965c6dd24d7f61f09a0c56edb71eb5a9a05664fa7d26269718f741f23",
+    "prompt_config_sha256": "d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b"
+  },
+  "implementation": {
+    "runner": "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+    "runner_sha256": "e5c0f03de0384b454d15d202cc150fcf0de46b876d0b8165bb80c02de3f0da4b",
+    "same_panel_runtime": "scripts/research/run_human13_output_qp_same_panel.py",
+    "same_panel_runtime_sha256": "83f60c5362b88427d981303be2c8ece4b544346a6ffb352390812a6f1ef353fb",
+    "test_sha256": "74c86192a1422f8fc28536b0d29f75d376fdc6eab0216cd63e65f23a13fbd956",
+    "fresh_process_required": true,
+    "natural_order_is_monitor_only": true,
+    "durable_merge_allowed": false
+  },
+  "outputs": {
+    "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/human13-n4-acceptance.json",
+    "log": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/readback.log"
+  },
+  "command": [
+    "/usr/bin/env",
+    "CUDA_VISIBLE_DEVICES=2",
+    "/root/miniconda3/bin/conda",
+    "run",
+    "--no-capture-output",
+    "-n",
+    "ms",
+    "python",
+    "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+    "readback",
+    "--stage",
+    "n4",
+    "--adapter-path",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/adapter",
+    "--output-receipt",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/human13-n4-acceptance.json"
+  ],
+  "acceptance": {
+    "canonical_readback_minimum_margin": 0.00998,
+    "full_vocabulary_width": 152670,
+    "rp1_0_iou50_owner_count": 123,
+    "report_iou60_iou80": true,
+    "hard_debt": 0,
+    "natural_eos_image_count": 4,
+    "rp1_10_gating": false,
+    "natural_order_gating": false,
+    "pass_disposition": "N4_PASS",
+    "natural_failure_disposition": "M_ONLY_REPLAY_PASS_NATURAL_FAIL",
+    "persistence_or_replay_failure_disposition": "MECHANICAL_INVALID"
+  },
+  "resource_bounds": {
+    "cuda_visible_devices": "2",
+    "world_size": 1,
+    "verification_model_loads": 1,
+    "canonical_language_forwards": 4,
+    "natural_generations": 8,
+    "peak_gpu_reserved_bytes_lt": 85899345920,
+    "verification_wall_time_seconds_lt": 1800,
+    "adapter_payload_bytes_lt": 104857600
+  },
+  "attempt_budget": {
+    "decision_bearing_verifications": 1,
+    "mechanical_rerun_allowed": 1,
+    "mechanical_rerun_condition": "only after a demonstrated verifier or persistence defect"
+  },
+  "next": {
+    "on_n4_pass": "record N4_PASS, then assess and freeze a fresh-Source N13 implementation packet",
+    "on_natural_fail": "stop the ladder and record the teacher-forced-to-natural policy gap",
+    "on_mechanical_invalid": "repair the exact defect and use the one allowed mechanical rerun",
+    "forbidden": "do not initialize from N2/N4, merge durably, or build QP, Farkas, permutation, matched-swap, or distributed solver infrastructure"
+  }
+}

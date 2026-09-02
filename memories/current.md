@@ -1,7 +1,7 @@
 # Current Project Memory
 
-Last verified for the Image2299 closeout and Human13 successor boundary:
-2026-08-31.
+Last verified for the Human13 output-QP, magnitude-only DoRA, G0, and Direct
+C-D0 closeout boundary: 2026-09-02.
 
 ## Current phase boundary
 
@@ -19,27 +19,25 @@ cold replay is a distinct construction but not independent evidence for a
 shared semantic direction. Total norm alone is no longer a sufficient
 mechanism metric.
 
-The next transport document is the [Human13 output-QP identity/generalization
-handoff](../research/investigations/qwen3-vl-dense-enumeration/2026-08-31-human13-output-qp-identity-generalization-handoff.md).
-It retires consensus-span composition, begins with a pooled-rank capacity
-census, then tests one margin-preserving shared output residual against
-deficit-matched nulls. N=4 leave-one-out natural-greedy transfer precedes any
-13-image fit. Per-image residuals, held-out target routes, held-out hidden
-states, and held-out constraints are forbidden in evaluation.
+The completed [Human13 shared output-QP result](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md)
+and [magnitude-only DoRA result](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md)
+establish fixed-panel programmability: each reaches `392 / 392` annotated
+owners at IoU50/60/80 under RP1.0 with zero hard debt and natural EOS. Neither
+establishes held-out transfer or semantic generalization.
 
-No Image2299 QP code is promoted at this boundary. Its implementation remains
-specimen-bound and is preserved by the direction's final tag; reusable
-mechanics should be extracted only after the Human13 direction becomes a real
-second consumer. `HOLD_PRODUCTION` remains active.
+The [G0 result](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md)
+closes its infeasible exact-null control route before gradients, not the DoRA
+learning hypothesis. The
+[Direct C-D0 result](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md)
+is mechanically valid and terminal: D0 matches 606 versus C's 630 IoU50
+owners on the frozen 128-image, 891-owner screen, retains
+`586 / 614 = 95.44%` of Source-covered owners, and fails all four registered
+GO predicates. Stop the frozen D0 objective without rescue.
 
-The user has clarified the longer-term objective: Image2299 QP is the first
-programmability witness, not the desired endpoint. The intended progression is
-finite-path compilation -> leak-free shared readout learning -> conditional
-language-tower optimizer internalization. QP should become a
-credit-assignment/constraint teacher; no large `lm_head` residual should be
-treated as generalized intelligence merely because it fits the panel. The
-current Human13 unit remains the required discriminator before any DoRA,
-aligner, vision, or tied-embedding escalation.
+No experiment-local output-QP, G0, or Direct C-D0 code is promoted at this
+boundary. The next separate phase is a C-anchored zero-update mechanism audit;
+receding-horizon active-set projection remains conditional. `HOLD_PRODUCTION`
+remains active.
 
 The records-only transfer is committed at `392b07f45`. The old direction tip
 `9d816db2c` is preserved by annotated tag
@@ -64,8 +62,9 @@ recoverable from the tag.
 
 ## Authority boundary
 
-This file is continuity, not scientific authority. For the latest executed
-route, the immutable artifacts and their bound commits own the evidence:
+This file is continuity, not scientific authority. For the historical
+trajectory-credit route, the immutable artifacts and their bound commits own
+the evidence:
 
 - N=1 standalone result:
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-21-human13-standalone-owner-credit-probe/full-gpu1.json`
@@ -81,22 +80,23 @@ The interpretation and integrity boundary are owned by the research unit
 [2026-08-22 Human-13 Owner-Credit N/K Factorial](../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-22-human13-owner-credit-nk-factorial/results.md)
 (secondary provenance:
 `memories/notes/2026-08-24-human13-n13-k4-k8-factorial-result.md`).
-Earlier formal Human-13 units remain evidence for their own bounded questions,
-but they do not override this newer standalone route.
+These artifacts own only their historical trajectory-credit question. Later
+output-QP, magnitude-only, G0, and Direct C-D0 results own their separate
+bounded conclusions and do not retroactively complete or erase this unit.
 
-## Current research question
+## Historical trajectory-credit question
 
 Can information from multiple sampled trajectories be combined into a scalable
 training signal that improves clean greedy physical-owner coverage, while
 retaining owners already found by the Source model?
 
-The current standalone treatment is deliberately simple: sampling-derived
+The historical standalone treatment is deliberately simple: sampling-derived
 trajectory credit plus masked CE preservation of current Source owners, one
 fresh AdamW instance per cell, LR `3e-6`, milestones `0/1/2/4`, and dual
 greedy evaluation at repetition penalty `1.0` and `1.10`. Physical owners are
 scored with actual-pixel, class-aware, global one-to-one IoU >= 0.5 matching.
 
-## Latest durable conclusion
+## Historical trajectory-credit conclusion
 
 The N=13 K4/K8 matrix is valid scientific evidence, not a runtime smoke. All
 eight cells completed four updates; all losses, gradients, and parameter deltas
@@ -125,20 +125,21 @@ This narrows the earlier direction:
 - N=13 shows that greater image breadth alone does not make the current credit
   direction coherent, and increasing K from 4 to 8 does not solve it.
 
-## Decision and next discriminator
+## Historical trajectory-credit decision and next discriminator
 
-Do not enlarge K again for this objective. K4 is the safer discovery setting.
-The next scientific successor should change the credit-fusion or preservation
+At that phase, do not enlarge K again for this objective. K4 is the safer
+discovery setting. The then-next scientific successor should change the
+credit-fusion or preservation
 objective, not add more trajectories or resume the retired production runner.
 The main unresolved mechanism is gradient conflict: extra sampled-owner credit
 can raise new H while moving probability away from existing TP, particularly
 under RP1.10 greedy decoding.
 
-A next unit, if the user authorizes it, should restart from the same Source and
+A successor at that phase, if authorized, should restart from the same Source and
 compare a small number of K4 treatments that directly address this conflict,
 for example owner-balanced/conflict-aware trajectory aggregation and stronger
 physical-owner preservation. Dual-RP clean greedy physical TP/FP/FN remains the
-decision owner. No follow-on GPU run is authorized merely by this memory.
+decision owner. No follow-on GPU run was authorized merely by that memory.
 
 ## Retired and retained context
 
@@ -155,7 +156,7 @@ decision owner. No follow-on GPU run is authorized merely by this memory.
 - The 2026-08-14 scalable-trajectory note preserves the original motivation;
   its optimizer details are historical hypotheses, not current authorization.
 
-## Operational continuation
+## Historical trajectory-credit operational note
 
 The v3 run root is complete and immutable; no cells remain running. The
 producer-PID plus terminal-receipt wake monitor worked for the multi-hour smoke

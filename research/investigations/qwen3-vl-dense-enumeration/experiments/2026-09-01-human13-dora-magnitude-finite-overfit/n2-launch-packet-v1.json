@@ -1,0 +1,112 @@
+{
+  "schema_version": "human13_dora_magnitude_finite_overfit_launch.v1",
+  "status": "frozen_before_execution",
+  "stage": "N2",
+  "estimand": "From exact step-2444 Source, can one shared finite update to only the 196 language-DoRA magnitude vectors make every canonical N2 target beat the full vocabulary by the registered margin?",
+  "strongest_alternative": "The fixed magnitude surface or this one frozen CE schedule may fail even though full DoRA or another optimizer could fit N2.",
+  "source": {
+    "checkpoint": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "adapter_sha256": "49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da",
+    "selected_token_delta_sha256": "a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2",
+    "panel_sha256": "5c6cc95965c6dd24d7f61f09a0c56edb71eb5a9a05664fa7d26269718f741f23",
+    "prompt_config_sha256": "d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b"
+  },
+  "implementation": {
+    "runner": "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+    "runner_sha256": "b29bedc7dd862aee1c5ab7d059a02999e7f4437d450cdb5162328abbeb86037c",
+    "same_panel_runtime_sha256": "a9598ab90ffe4c9adb88319a796cc48f830be89f258e45e1cf0ab39558305353",
+    "magnitude_surface_helper_sha256": "158601bb15479a64e4e83b85b5555661b3ef391982f208c333bc196368a648e1",
+    "one_model_session": true,
+    "actual_selected_delta_output_wrapper": true,
+    "durable_merge_allowed": false
+  },
+  "population": {
+    "image_ids": [
+      6040,
+      16228
+    ],
+    "owner_count": 65,
+    "canonical_decision_count": 592
+  },
+  "trainable_surface": {
+    "magnitude_vector_count": 196,
+    "magnitude_scalar_count": 573440,
+    "fixed": [
+      "all DoRA A/B factors",
+      "base weights",
+      "vision tower and multimodal aligner",
+      "selected-token delta",
+      "input embedding and output head"
+    ]
+  },
+  "objective": {
+    "name": "full_vocabulary_canonical_cross_entropy",
+    "reduction": "sum_per_image_divided_by_total_592_decisions",
+    "optimizer": "AdamW",
+    "learning_rate": 0.003,
+    "weight_decay": 0.0,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "epsilon": 1e-08,
+    "maximum_steps": 300,
+    "margin_check_every_steps": 10,
+    "seed": 0,
+    "scheduler": "none",
+    "early_stop": "first check where every canonical target-vs-full-vocabulary margin is at least 0.00998"
+  },
+  "resource_bounds": {
+    "cuda_visible_devices": "0",
+    "world_size": 1,
+    "model_loads": 1,
+    "source_full_forwards": 2,
+    "source_language_replay_forwards": 2,
+    "training_language_forwards_max": 600,
+    "backwards_max": 600,
+    "margin_language_forwards_max": 60,
+    "optimizer_steps_max": 300,
+    "peak_gpu_reserved_bytes_lt": 85899345920,
+    "wall_time_seconds_lt": 7200
+  },
+  "output_dir": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1",
+  "command": [
+    "conda",
+    "run",
+    "-n",
+    "ms",
+    "python",
+    "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+    "--output-dir",
+    "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n2-adamw-ce-v1",
+    "--steps",
+    "300",
+    "--learning-rate",
+    "0.003",
+    "--weight-decay",
+    "0",
+    "--adam-beta1",
+    "0.9",
+    "--adam-beta2",
+    "0.999",
+    "--adam-eps",
+    "1e-8",
+    "--check-every",
+    "10",
+    "--seed",
+    "0"
+  ],
+  "candidate_gate": {
+    "required_disposition": "FINITE_MARGIN_PASS",
+    "minimum_margin": 0.00998,
+    "full_vocabulary_width": 152670,
+    "source_restored": true,
+    "next_on_pass": "adapter-only unmerged save/readback and fresh natural greedy",
+    "next_on_hold": "stop and classify the frozen optimization attempt; do not build QP or distributed solver infrastructure"
+  },
+  "attempt_budget": {
+    "scientific_training_attempts": 1,
+    "mechanical_rerun_allowed": 1,
+    "mechanical_rerun_condition": "only after a demonstrated mechanics defect, with this exact schedule unchanged"
+  }
+}

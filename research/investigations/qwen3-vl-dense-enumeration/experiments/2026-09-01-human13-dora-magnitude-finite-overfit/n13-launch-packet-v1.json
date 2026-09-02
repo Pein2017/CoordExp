@@ -1,0 +1,117 @@
+{
+  "schema_version": "human13_dora_magnitude_finite_overfit_launch.v1",
+  "status": "frozen_before_execution",
+  "stage": "N13",
+  "estimand": "From the exact step-2444 Source, can one fresh shared update to only the 196 language-DoRA magnitude vectors compile the complete fixed Human13 canonical policy and then survive unmerged natural readback?",
+  "strongest_alternative": "N2 and N4 may fit while the unchanged magnitude surface and optimizer schedule fail at N13; such a failure rejects this registered attempt, not full DoRA or magnitude-only representability under another optimizer.",
+  "prerequisite": {
+    "stage": "N4",
+    "disposition": "N4_PASS",
+    "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n4-adamw-ce-v1/human13-n4-acceptance.json",
+    "acceptance_receipt_file_sha256": "956228b9a4a4046652284cdd4d8e3781b6c72c10e680277b97809f0be4e69e3f",
+    "acceptance_receipt_content_sha256": "450b60d7c181d4e7266e0a4f04d2effa423bafc2f0f247804ae83caa49449634",
+    "readback_launch_packet_sha256": "9131d3ba90fa499b051614c8bf4a9f76c6cd6552925aae1151a5e640a5e15551"
+  },
+  "source": {
+    "checkpoint": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "adapter_sha256": "49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da",
+    "selected_token_delta_sha256": "a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2",
+    "panel": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-crossover/inputs/human-refined-13.geo_sorted_xy.coord.jsonl",
+    "panel_sha256": "5c6cc95965c6dd24d7f61f09a0c56edb71eb5a9a05664fa7d26269718f741f23",
+    "data_authority": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl",
+    "data_authority_sha256": "81d674070d4b588488a2cb911c09f765b63c0e6d035b50db27ee0a41ff2a1894",
+    "resize_target": 1024,
+    "global_max_length": 12000,
+    "prompt_config_sha256": "d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b",
+    "fresh_source_initialization": true,
+    "forbidden_initialization": "the N2 or N4 learned adapter"
+  },
+  "prior_source_natural_receipts": [
+    {"image_id": 1584, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-1584/capture-1584.json", "sha256": "b4eb8fc489e420f1ce85386ea9e420c11098dd01c799204c64bd0614cfdce385"},
+    {"image_id": 2299, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-2299/capture-2299.json", "sha256": "fc54ae714f3b7cd2a2315194306b83e752205f829409ff3255f9ff55e4562757"},
+    {"image_id": 2685, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-2685/capture-2685.json", "sha256": "a15333b7726b5c824d8960df73029f67a20de07f7fa520b119d283d1115663a8"},
+    {"image_id": 4134, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-4134/capture-4134.json", "sha256": "d28a55328ed2ee3ad9a36372b015d37de0b961e54a7420e92e15b56e03ea9202"},
+    {"image_id": 5001, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-5001/capture-5001.json", "sha256": "e102ad1f13076b9f3e556a6c264972f65b2805d0c082488e6f70111df2907311"},
+    {"image_id": 6040, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-6040/capture-6040.json", "sha256": "4b6a4f74d8cf6a1c6ad8db45af77236c66f5c5003fe5f3de60ed54d9ae772ed6"},
+    {"image_id": 7511, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-7511/capture-7511.json", "sha256": "785cc333f229b9fb5057f2ade0e3b17c43ec31feb3979e16921836fe7af423d9"},
+    {"image_id": 10707, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-10707/capture-10707.json", "sha256": "9abc27f16bcdc19cbb62ac1f1f9e1b5b68c3ffa042beacb0caa6f585ac3f0b2b"},
+    {"image_id": 13348, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-13348/capture-13348.json", "sha256": "57d5694530ff54b87914803ede31fd6b5992fd5b3e67ab4ce89fce00df194e7c"},
+    {"image_id": 13923, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-13923/capture-13923.json", "sha256": "c08ebad741b6906b7d4afa4c284f4a55c26ad628d4fe519c37eb9ce2481f08a9"},
+    {"image_id": 14038, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-14038/capture-14038.json", "sha256": "4d8077d25b874b3acfac089ac70072f8c1ab85f06263db9dfb349778ea79f435"},
+    {"image_id": 14439, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-14439/capture-14439.json", "sha256": "c54fc3aefdb84f3afb50756b092b99c1ec59beff97ce3189583058b61dbf70de"},
+    {"image_id": 16228, "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-human13-shared-output-qp-same-panel-overfit/20260831T-n13-v1/capture-16228/capture-16228.json", "sha256": "ac04ff24557a42bc13c0e759b34bbc5996107434fe5077014d526bfa533ae4f0"}
+  ],
+  "implementation": {
+    "git_head": "8003ce4c4b31e13b2a0fe28564486f0c6761cc76",
+    "runner": "scripts/research/run_human13_dora_magnitude_finite_overfit.py",
+    "runner_sha256": "6c908308363d83db9020ecb299882c8dd4ce5177841b67eef3622b1cc7c460bf",
+    "same_panel_runtime_sha256": "83f60c5362b88427d981303be2c8ece4b544346a6ffb352390812a6f1ef353fb",
+    "magnitude_surface_helper_sha256": "158601bb15479a64e4e83b85b5555661b3ef391982f208c333bc196368a648e1",
+    "test_sha256": "13d2cf2e2d046f44ff57bb124966b04c7af264483e4d0be6781a0894c6d9d537",
+    "focused_pytest": "8 passed",
+    "one_model_session": true,
+    "actual_selected_delta_output_wrapper": true,
+    "durable_merge_allowed": false
+  },
+  "population": {
+    "image_ids": [1584, 2299, 2685, 4134, 5001, 6040, 7511, 10707, 13348, 13923, 14038, 14439, 16228],
+    "owner_count": 392,
+    "canonical_decision_count": 3637,
+    "canonical_route_token_counts": {"1584": 172, "2299": 415, "2685": 282, "4134": 345, "5001": 212, "6040": 136, "7511": 400, "10707": 184, "13348": 138, "13923": 210, "14038": 438, "14439": 249, "16228": 456}
+  },
+  "trainable_surface": {
+    "magnitude_vector_count": 196,
+    "magnitude_scalar_count": 573440,
+    "fixed": ["all DoRA A/B factors", "base weights", "vision tower and multimodal aligner", "selected-token delta", "input embedding and output head"]
+  },
+  "objective": {
+    "name": "full_vocabulary_canonical_cross_entropy",
+    "reduction": "sum_per_image_divided_by_total_3637_decisions",
+    "optimizer": "AdamW",
+    "learning_rate": 0.003,
+    "weight_decay": 0.0,
+    "betas": [0.9, 0.999],
+    "epsilon": 1e-8,
+    "maximum_steps": 300,
+    "margin_check_every_steps": 10,
+    "seed": 0,
+    "scheduler": "none",
+    "early_stop": "first check where every canonical target-vs-full-vocabulary margin is at least 0.00998",
+    "schedule_identity": "identical to the frozen N2 and N4 schedule"
+  },
+  "resource_bounds": {
+    "cuda_visible_devices": "3",
+    "world_size": 1,
+    "model_loads": 1,
+    "source_full_forwards": 13,
+    "source_language_replay_forwards": 13,
+    "training_language_forwards_max": 3900,
+    "backwards_max": 3900,
+    "margin_language_forwards_max": 390,
+    "optimizer_steps_max": 300,
+    "peak_gpu_reserved_bytes_lt": 85899345920,
+    "wall_time_seconds_lt": 10800
+  },
+  "outputs": {
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n13-adamw-ce-v1",
+    "candidate": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n13-adamw-ce-v1/human13-n13-dora-magnitude-finite.safetensors",
+    "candidate_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n13-adamw-ce-v1/human13-n13-dora-magnitude-finite.json",
+    "log": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n13-adamw-ce-v1/train.log"
+  },
+  "command": [
+    "/usr/bin/env", "CUDA_VISIBLE_DEVICES=3", "/root/miniconda3/bin/conda", "run", "--no-capture-output", "-n", "ms", "python", "scripts/research/run_human13_dora_magnitude_finite_overfit.py", "--stage", "n13", "--output-dir", "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-human13-dora-magnitude-finite-overfit/20260901T-n13-adamw-ce-v1", "--steps", "300", "--learning-rate", "0.003", "--weight-decay", "0", "--adam-beta1", "0.9", "--adam-beta2", "0.999", "--adam-eps", "1e-8", "--check-every", "10", "--seed", "0"
+  ],
+  "candidate_gate": {
+    "required_disposition": "FINITE_MARGIN_PASS",
+    "minimum_margin": 0.00998,
+    "full_vocabulary_width": 152670,
+    "source_restored": true,
+    "next_on_pass": "materialize one standard unmerged N13 adapter and run fresh canonical plus RP1.0/RP1.10 natural readback",
+    "next_on_hold": "stop the ladder and classify the unchanged N13 optimization attempt; do not build QP or distributed solver infrastructure"
+  },
+  "attempt_budget": {
+    "scientific_training_attempts": 1,
+    "mechanical_rerun_allowed": 1,
+    "mechanical_rerun_condition": "only after a demonstrated mechanics defect, with this exact schedule unchanged"
+  }
+}

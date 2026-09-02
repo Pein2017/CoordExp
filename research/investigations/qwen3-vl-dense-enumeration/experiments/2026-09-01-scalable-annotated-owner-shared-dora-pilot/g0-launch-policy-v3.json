@@ -1,0 +1,338 @@
+{
+  "attempt_budget": {
+    "g0_3_radius_attempts_max": 2,
+    "g0_4": 1,
+    "new_split_seed_radius_subset_boundary_checkpoint_or_continuation": false
+  },
+  "binning": {
+    "cutpoint_rule": "for K in {4,2}, c[K,j] is the 1-based nearest-rank value x[ceil(j*N/K)]; label is the count of cutpoints strictly below x; K=1 label is zero",
+    "degenerate_distribution": "retain repeated cutpoints and empty labels; all-equal values map to zero",
+    "features": {
+      "full_tuple_source_deficit": "Source grouped-positive complete-row loss for the whole event at temperature 0.25",
+      "normalized_gt_area": "binary64 candidate area divided by image area; bundle label retains the canonical sorted candidate-bin multiset",
+      "realized_metric_event_gradient_norm": "sqrt(g_e^T (J^T J)^+ g_e) for the whole grouped event, accumulated in binary64"
+    },
+    "mechanics_may_derive_boundaries": false,
+    "population": "all G0.4 positive events before null assignment",
+    "serialization": "float.hex values/cutpoints plus literal per-event labels and hashes",
+    "ties": "strict_greater_than_keeps_ties_intact"
+  },
+  "claim_boundary": "G0 is a local signal/transfer falsification probe on the frozen COCO train2017 cohort; it is not training, G1 authorization, population generalization, precision, hallucination, or production evidence.",
+  "cohort": {
+    "annotation_path": "/data/CoordExp/public_data/coco/raw/annotations/instances_train2017.json",
+    "annotation_sha256": "610fce4944abdeb15354cc765333805529359d12d88f2f711393ca586901d01d",
+    "cohort_file_sha256": "14bb332dda54e6cb2964664868eea2d7cdaf68ce9534614726d1b3a16f326e90",
+    "cohort_logical_sha256": "b6e7f8f842a9de8ac4c5970c286e9f409577559368a8e92134b5726bbf82e724",
+    "image_disjoint": true,
+    "ledger_file_sha256": "4cbf43670189a9a0671af594d9a1df2f5b905e5868997085dcd42a8a7c18ad1a",
+    "ledger_logical_sha256": "e5ced3b8594ebd6fca318094a15b0e6facd4808ba11538afdca8151193caea99",
+    "raw_train_path": "/data/CoordExp/public_data/coco/raw/train.jsonl",
+    "raw_train_sha256": "4e52b5e1b77f2c3d8e06c5e7166263e06ccc66eb92b9ae9ad854346c6aad3b58",
+    "receipt_file_sha256": "6a3850bfb220028e42915ac342dbfa91f5a65a3b7bf8449dc68a356834ea292d",
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/cohort-v1",
+    "screen_dev_annotated_owners": 891,
+    "screen_dev_images": 128,
+    "train_annotated_owners": 1955,
+    "train_images": 256
+  },
+  "commands": {
+    "g0_3_run": "conda run -n ms python scripts/research/run_annotated_owner_g0_cross_image.py g0.3-tangent-sentinel --policy research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v3.json",
+    "g0_3_validate": "conda run -n ms python scripts/research/run_annotated_owner_g0_cross_image.py g0.3-validate --policy research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v3.json",
+    "g0_4_run": "conda run -n ms python scripts/research/run_annotated_owner_g0_cross_image.py g0.4-source-signal --policy research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v3.json",
+    "g0_4_validate": "conda run -n ms python scripts/research/run_annotated_owner_g0_cross_image.py g0.4-validate --policy research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v3.json"
+  },
+  "decode": {
+    "batch_size": 1,
+    "max_new_tokens": 3084,
+    "mode": "greedy",
+    "n": 1,
+    "object_ordering": "geo_sorted_xy",
+    "ordering_key": "lexicographic_quantized_(x1,y1)",
+    "ordering_semantics": "training_transcript_preference_and_non_gating_natural_structural_monitor",
+    "prompt": "original_source_prompt",
+    "repetition_penalty": 1.0,
+    "temperature": 0.0,
+    "top_p": 1.0
+  },
+  "execution_media": {
+    "counts": {
+      "factor_32_records": 384,
+      "owners": 2846,
+      "processed_owner_category_mismatch_count": 0,
+      "processed_owner_missing_or_duplicate_count": 0,
+      "quantization_mismatch_count": 0,
+      "records": 384,
+      "screen_dev_images": 128,
+      "screen_dev_owners": 891,
+      "train_images": 256,
+      "train_owners": 1955
+    },
+    "do_resize": false,
+    "geometry_transform": "x'=x*W_exec/W_raw; y'=y*H_exec/H_raw; no_crop_pad_offset",
+    "global_max_length": 12000,
+    "ledger_file_sha256": "a683a4cb20d801a43b253485fbf67b96f679b1c5adac0bcd9b04dd7de06dfc65",
+    "ledger_logical_sha256": "968c402e9d6945f5ad61f43f8fafa9701aa933c4d7ba58230c1524aceb4845d3",
+    "ledger_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/execution-media-v1/execution-media-ledger.json",
+    "manifest_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/pipeline_manifest.json",
+    "manifest_sha256": "f8162b91798fd5ac0e5612b5910b93adeb0cace1d9c12bca3fcd92e500bba378",
+    "object_ordering": "geo_sorted_xy",
+    "processed_dataset_path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/train.coord.jsonl",
+    "processed_dataset_sha256": "ecf07a40856ee96a92c9093139abe24facfa600136e04f3c1bcbd02e039aaad1",
+    "processed_objects_authority": false,
+    "raw_owner_authority": true,
+    "receipt_file_sha256": "5d2d86bfdc2714d32824c63f458744dde63af3091d34fb93bac08b30276667cd",
+    "receipt_id": "03c3f9873a6a9d4515809b0620e962db0ac3c63a457ccc754002dab8f79253fc",
+    "receipt_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/execution-media-v1/receipt.json",
+    "resolved_config_path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/resolved_config.json",
+    "resolved_config_sha256": "8c4126e1bce845e8edb1b311515c18a21db5f059c43d98a539b0d142c44b8163",
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/execution-media-v1"
+  },
+  "g0_4_event_construction": {
+    "execution_order": [
+      "validate_execution_media_before_model",
+      "decode_train_source_once",
+      "validate_and_seal_source_trajectories",
+      "materialize_canonical_state_bank",
+      "count_signal",
+      "run_one_bin_null_necessary_condition"
+    ],
+    "image_event_eligibility": {
+      "dropped_or_malformed_rows": 0,
+      "natural_eos_required": true,
+      "parser_accepted": true,
+      "valid_complete_rows": true
+    },
+    "keep_event": {
+      "candidate_row": "the exact emitted complete Source row",
+      "ordering_admission": "exact Source preservation rows are admitted regardless of natural emitted-anchor order",
+      "owner_multiplicity": "each matched annotated owner contributes to at most one keep event",
+      "role": "preservation",
+      "unit": "one exact prefix before each complete valid Source row credited to one annotated owner at IoU50"
+    },
+    "minimum_keep_events": 64,
+    "minimum_positive_events": 64,
+    "positive_event": {
+      "candidate_row": "complete canonical quantized COCO annotated-owner row",
+      "final_eos_supervision": false,
+      "grouping": "owners assigned to the same exact prefix remain one grouped event; aliases remain grouped by physical owner",
+      "owner_assignment": "each Source-uncovered IoU50 annotated owner is assigned once to the prefix immediately before the first emitted complete Source row whose quantized (x1,y1) anchor is greater than or equal to the owner anchor, otherwise to the natural terminal prefix; natural-order monitor crossings never reorder or exclude a row",
+      "owner_multiplicity": "each annotated owner contributes to at most one positive event",
+      "prefix_kind": "natural",
+      "role": "positive",
+      "unit": "one exact receiving prefix with its whole order-eligible grouped candidate bundle"
+    },
+    "natural_order_monitor": {
+      "fields": [
+        "natural_order_violation_image_count",
+        "natural_order_violation_row_count"
+      ],
+      "gating": false,
+      "image_denominator": "event_eligible_train_images",
+      "row_violation": "emitted quantized (x1,y1) anchor is strictly below the lexicographic maximum of preceding emitted complete-row anchors"
+    },
+    "serialized_bank_ceiling_bytes": 2147483648,
+    "signal_denominator": "canonical loaded state-bank event contexts, not owners, candidates, tokens, aliases, prefixes, or images",
+    "stop_if_below_minimum": true
+  },
+  "local_agreement": {
+    "actual_improvement": "Source screen objective minus scoped-actuator screen objective",
+    "predicate": "signs agree after sign_epsilon and absolute(actual-predicted)/max(abs(actual),abs(predicted),1e-12) <= 0.5",
+    "predicted_improvement": "negative screen objective gradient inner product with the arm direction",
+    "retry": "if either arm fails at r0, retry both arms together exactly once at r0/2; no other failure permits a retry",
+    "sign_epsilon": 1e-12,
+    "surface": "fixed-prefix screen-dev grouped complete-row objective; natural greedy is evaluated as an actual outcome and is not linearly simulated",
+    "symmetric_relative_error_max": 0.5
+  },
+  "natural_readout": {
+    "credit": "annotated-owner IoU50 only",
+    "paired_bootstrap": {
+      "bit_generator": "PCG64",
+      "method": "linear",
+      "quantiles": [
+        0.025,
+        0.975
+      ],
+      "replicates": 10000,
+      "seed_literal": "20260901:g0.3:bootstrap-v1",
+      "seed_uint64": 2974119100189906795,
+      "statistic": "sum(semantic_matched - permutation_matched) / sum(annotated_owner_denominator) on resampled images",
+      "unit": "image_cluster"
+    },
+    "pass": "semantic owner-micro transfer > 0 and semantic-minus-permutation paired-bootstrap lower bound > 0",
+    "point_estimand": "owner-micro Source-to-arm transfer and semantic-minus-permutation transfer",
+    "unmatched_rows": "count and generated-token burden only; excluded from credit, transfer, bootstrap, agreement, and STOP"
+  },
+  "objectives": {
+    "direction": "negative global realized-Frobenius projection of each arm's aggregate parameter gradient",
+    "grouped_positive_temperature": 0.25,
+    "permutation": "the same objective and denominators with whole positive bundles transplanted by the frozen null assignment and preservation unchanged",
+    "positive_weight": 1.0,
+    "preservation_weight": 1.0,
+    "semantic": "mean grouped-positive loss over positive events plus mean complete-row loss over preservation events",
+    "structural_weight": 0.0
+  },
+  "ordering_recovery": {
+    "diagnostic_source_capture_preserved": true,
+    "diagnostic_root": {
+      "diagnostic_file_sha256": "c90100bf6469cb275f82ae11ffb075b71f3b7d2c77794b440cf4da3c34d74aa9",
+      "diagnostic_id": "46e05f040c34c3d3a64f7bbb3fec9a885710bd13454700bb505525485c1e6289",
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/g0.4-ordering-diagnostic-v1-image102420",
+      "requests_file_sha256": "8efc6680dcad0211168420fc0a2b8d01825c62daeccf11c8e30c5d855c513fc0",
+      "source_capture_file_sha256": "299f8fa143033555bc3b7426723b3886209cfd7ab23830ba7da3f8ce0c5972fb",
+      "source_capture_sha256": "139e5121889efbe62393f8ffeb92785a1268f34aa13bda7856c6bd207de84e07",
+      "source_record_sha256": "597ae6d0cf183c4bfb0f6b15051ef59ac6939916faa485633c98a9b50d12d92a"
+    },
+    "forbidden_work_performed": false,
+    "natural_order_monitor": "for each complete emitted row after the first, count one violation iff quantized anchor (x1,y1) is strictly below the lexicographic maximum anchor of all preceding complete emitted rows; count images with one or more violations",
+    "root_cause": "v2 StateBank applied positive-row ordering admission to exact preservation rows and used full-XYXY strict-greater comparisons; a superseded unlaunched v3 draft then wrongly proposed whole-image monotonicity admission. Corrected v3 uses (x1,y1), positive-only earlier-key rejection with equality allowed, preservation bypass, and a non-gating natural-order monitor.",
+    "scientific_evidence": false,
+    "v2_invalid_receipt": {
+      "file_sha256": "6aa90d0af6055d2d1dfbe0b49b5f9474ccef71b25794c2efee7d1ec47c8b86c7",
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/g0.4-source-signal-v2/receipt.json",
+      "receipt_id": "3cd3a6801f6017634849499802c9ca321e7901582a0319049fb93cf8900241b8",
+      "scientific_evidence": false,
+      "status": "MECHANICAL_INVALID"
+    },
+    "v2_source_capture_preserved": false
+  },
+  "outputs": {
+    "collision_policy": "fail",
+    "g0_3_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/g0.3-tangent-sentinel-v3",
+    "g0_4_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/g0.4-source-signal-v3",
+    "terminal_receipt": "receipt.json"
+  },
+  "owner_credit": {
+    "matcher": "scripts/research/compare_clean_rollout_owner_coverage.py::_global_matches",
+    "matcher_file_sha256": "5865bbbc7774e543c1002b0e0bed0cdf03af4b5ccf63a5639874b3727c481f7d",
+    "policy": "strict_category_compatible_global_one_to_one_cardinality_first_max_iou",
+    "threshold": 0.5,
+    "unmatched_predictions": "unknown_monitor_only"
+  },
+  "permutation_null": {
+    "common_surface": "all preservation events remain byte-identical in both arms",
+    "complete_assignment": true,
+    "edge_requirements": [
+      "different_image",
+      "disjoint_owner_sets",
+      "no_fixed_point",
+      "exact_canonical_multiset_of_(category_token_tuple,row_length)",
+      "equal_frozen_continuous_bin_label_bundle"
+    ],
+    "level_order": [
+      4,
+      2,
+      1
+    ],
+    "partial_bundle": false,
+    "permuted_surface": "whole positive grouped candidate bundles only",
+    "preflight": "test the 1-bin graph immediately after G0.4; infeasibility there proves all finer levels infeasible and stops before deficits or gradients",
+    "resample": false,
+    "subset_shrink": false
+  },
+  "recovery": {
+    "forbidden_work_performed": false,
+    "reason_boundary": "pre-model raw 7116 media was 640x427 and not divisible by 32",
+    "scientific_evidence": false,
+    "superseded_attempt_receipt_file_sha256": "4764f06d2fd72e83b8752b788dcc81648f56e180a0e3e78645e760e37aeede55",
+    "superseded_attempt_receipt_id": "18b225288d5daad751351ec4dbb84e8940c8c69ac96ae912574c46dd4d2bc686",
+    "superseded_attempt_receipt_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/g0.4-source-signal-v1/receipt.json",
+    "superseded_attempt_status": "MECHANICAL_INVALID"
+  },
+  "research_unit": {
+    "path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/unit-v3.md",
+    "sha256": "7d40b444f531dc677cb3ef11d1f792be0faf211681045978751ea02b8327b69b"
+  },
+  "resources": {
+    "collectives": 0,
+    "durable_artifact_bytes_max": 8589934592,
+    "event_cache_bytes_max": 2147483648,
+    "forbidden_durable_artifacts": [
+      "checkpoint",
+      "optimizer_state",
+      "merged_or_exported_adapter",
+      "external_memory",
+      "dense_J",
+      "dense_projector",
+      "dense_deltaW"
+    ],
+    "generated_tokens_max": 2763264,
+    "model_constructions_max": 1,
+    "natural_decode_requests_max": 896,
+    "optimizer_steps": 0,
+    "peak_gpu_reserved_bytes": 34359738368,
+    "peak_host_rss_bytes": 68719476736,
+    "resident_models_max": 1,
+    "train_row_equivalent_backwards_max": 3910,
+    "train_row_equivalent_forwards_max": 3910,
+    "wall_seconds_max": 43200,
+    "workers_max": 4,
+    "world_size": 1
+  },
+  "schema_version": "annotated-owner-g0-launch-policy.v3",
+  "source": {
+    "adapter_mode": "unmerged_hf",
+    "adapter_sha256": "49aa206cb43ebc61bf0413e6de6d81cea725549c71d38b596826fda5f523b5da",
+    "base_config_sha256": "c7d172360d0ff881db59a6f34865c379bbef40d976ad79cfe5fbbf50483655de",
+    "base_model": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+    "checkpoint": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "embedding_delta_sha256": "a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2",
+    "infer_config": "configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml",
+    "infer_config_sha256": "d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b",
+    "peft_version": "0.17.1",
+    "target_count": 196,
+    "target_towers": [
+      "language"
+    ],
+    "tokenizer_sha256": "ca7e80dee65c629af3b314e76a7587490db3f4e6412df4af9f3b690a9e9916f8"
+  },
+  "status": "frozen_after_natural_order_monitor_recovery",
+  "tangent": {
+    "dense_global_delta_allowed": false,
+    "gauge_stress": 100000000.0,
+    "mechanics_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0/cross-image-v1/g0-tangent-mechanics-v2/receipt.json",
+    "mechanics_receipt_file_sha256": "ca8d8f7d3d8b36fe26c05fff7ea919dd83ee7b70ac488cb4f72cc9afa34adce5",
+    "mechanics_receipt_id": "f1ad4ccfd8ffd6bc47d6009b033c47eb2fbed60c664643bd5cf8643c98965c8e",
+    "metric": "global_realized_weight_frobenius",
+    "paired_code_sha256": "09bc003e9692a4bd46e3b02d47d5d8700fa197f6e8bd25efba16db095cefc5f3",
+    "radius": 0.06507405366335849,
+    "radius_source": "realized effective-weight distance from Source to the accepted one-update mechanics adapter across 196 language targets",
+    "radius_sum_square": 0.0042346324601816605,
+    "radius_tolerance": {
+      "absolute": 1e-08,
+      "relative": 1e-06
+    },
+    "sole_retry_radius": 0.03253702683167924,
+    "tangent_code_sha256": "dbc176dd5f321a90422e51f9fc6a2b88ff452c5930b13567f70452e97f685101",
+    "terminal_code_sha256": "2e1e7e7e101d8125bddb1f0cc8a9f43cb20c44874b61f59e636afc2499242ac1",
+    "training_tangent": "PEFT_0.17.1_detached_row_norm_for_A_B_active_magnitude"
+  },
+  "terminal_classification": {
+    "go_g1_decided_here": false,
+    "mechanical_invalid": [
+      "identity_or_hash_drift",
+      "target_layout_or_PEFT_semantics_drift",
+      "nonfinite_or_unstable_numerical_rank",
+      "solver_nonconvergence_or_gauge_replay_failure",
+      "radius_or_matcher_drift",
+      "ordering_key_or_coordinate_projection_drift",
+      "source_mutation_or_restoration_failure",
+      "merge_export_dense_payload_or_resource_contract_failure"
+    ],
+    "scientific_stop": [
+      "fewer_than_64_positive_events",
+      "fewer_than_64_keep_events",
+      "null_infeasible_at_1_bin_or_all_4_2_1_levels",
+      "exact_finite_global_zero_tangent",
+      "finite_train_fit_failure",
+      "local_agreement_failure_after_r0_over_2",
+      "semantic_natural_transfer_not_positive",
+      "paired_bootstrap_lower_bound_not_positive"
+    ]
+  },
+  "train_fit_gate": {
+    "both_arms_required": true,
+    "epsilon": "1e-8 * max(1, abs(Source arm objective))",
+    "predicted_and_actual_arm_objective_reduction_positive": true,
+    "preservation_component_max_worsening": "the same epsilon"
+  }
+}
