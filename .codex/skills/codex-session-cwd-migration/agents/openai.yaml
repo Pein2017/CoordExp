@@ -1,0 +1,4 @@
+interface:
+  display_name: "Session CWD Migration"
+  short_description: "Safely rebind an existing Codex session cwd"
+  default_prompt: "Use $codex-session-cwd-migration to rebind an existing Codex session to a worktree while preserving its history and identity."

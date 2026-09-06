@@ -36,6 +36,14 @@ behavior, the owning code/config/runtime path for a reproducible mechanical
 failure, `coordexp-infer-eval-workflow` for run operations, and `git-hygiene`
 for repository publication.
 
+These skills answer different questions, not successive mandatory approvals.
+Reuse evidence closing the same phase/target/risk; changing skills does not
+restart the review budget. When delegation is worthwhile, use
+`native-subagents-guidance` for roles, model/effort, and message flow. Package
+owners integrate their work; the lead verifies the decision-bearing boundary
+rather than repeating every internal check. Model capability never substitutes
+for evidence or grants research authority.
+
 ## Active-contract gate
 
 Before executing a probe or training step, freeze one current sentence:
@@ -44,11 +52,12 @@ Before executing a probe or training step, freeze one current sentence:
 From anchor A, does intervention X change decision outcome Y under gate Z?
 ```
 
-Bind it to one immutable specimen packet: checkpoint/config identity, natural
-prefix identity, intervention boundary and provenance, evaluation/owner ledger,
-primary acceptance level, attempt budget, and stop rule. Exact-token identity is
-a replay/provenance diagnostic unless the unit explicitly makes exact replay the
-estimand.
+Bind it to immutable checkpoint/config/input identities, intervention boundary
+and provenance, evaluation/owner ledger, acceptance level, attempt budget, and
+stop rule. Existing unit/config/receipts may hold this contract; do not create
+a duplicate packet. Bind prefix identity when conditioning or replay depends
+on it. Exact-token identity is a replay/provenance diagnostic unless the unit
+explicitly makes exact replay the estimand.
 
 An auxiliary proxy, null, mechanism diagnostic, or gradient screen is
 decision-owning only when the active contract explicitly names it and its stop
@@ -88,6 +97,10 @@ prior iteration from conversation rather than from the packet.
      mechanism promotion, and implementation authorization.
    - For executed work, state scientific disposition separately from
      mechanical validity and infrastructure follow-up.
+   - Distinguish observations, hypotheses, and supported inferences. When
+     interpreting a mechanism or choosing the next experiment, name the
+     strongest remaining alternative and cheapest discriminating evidence;
+     do not expand this into a mandatory mechanism matrix.
    - For research units, apply
      [Research Graph and Unit Contract](references/research-graph-contract.md).
    - Complete when one tracked unit/result/decision owns the current statement.
@@ -108,12 +121,6 @@ prior iteration from conversation rather than from the packet.
    - Complete when derived constraints are either authorized or explicitly
      labeled proposals.
 
-   For sequential interventions, regenerate each later intervention from the
-   cold-read native state produced by the accepted earlier intervention. Never
-   compose a decision-bearing route from a teacher-forced, jointly sampled, or
-   otherwise hypothetical prefix unless that conditioning is itself the frozen
-   estimand.
-
 5. **Gate evidence on both axes.**
    - On the research axis, verify the declared question, contrast, denominator,
      conditioning, evaluation surface, and permitted claim.
@@ -123,20 +130,22 @@ prior iteration from conversation rather than from the packet.
    - Treat oracle, forced-prefix, teacher-forced, retrieval, and mechanics-smoke
      observations as evidence only for their exact surface. Do not promote them
      to natural behavior or trainability without an explicit transfer test.
-   - Keep technical-invalid, unexecuted, missing-support, unknown, and unmatched
-     cases neutral unless the frozen protocol explicitly makes one a scientific
-     outcome. A technical failure blocks the affected contrast; an
-     infrastructure repair enables a fresh immutable run but cannot revive old
-     evidence. A green infrastructure check proves mechanics only.
+   - Do not interpret technical-invalid, unexecuted, or missing-support cases
+     as scientific negatives unless the frozen protocol explicitly measures
+     that failure as an outcome. Unknown/unmatched cases have only the meaning
+     assigned by the frozen protocol: neutrality does not authorize dropping
+     rows, changing denominators, or forcing zero gradient. Reward-neutral is
+     not necessarily gradient-neutral; valid empty/dropped model outputs may
+     be real zero-score outcomes rather than technical failures.
+   - Bound a technical failure to the affected evidence/contrast. For a
+     derived-evaluation-only defect, complete retained raw evidence may support
+     a new versioned evaluation after verifying execution was unaffected and
+     the repaired evaluator preserves the frozen semantics. Preserve the old
+     invalid evaluation; missing raw evidence or affected model execution
+     requires a fresh affected run. Never silently rehabilitate old metrics.
+     A green infrastructure check proves mechanics only.
    - Complete when every verdict names both the accepted mechanical path and
      the evidence-bearing scientific contrast, or states that one is absent.
-
-   Validate a mutable runner with one sentinel covering intervention
-   consumption, gradient/update direction when relevant, rejection/rollback,
-   receipt completion ordering, and cold readback before the foreground run.
-   If a runner invariant fails, classify the affected run as technical-invalid,
-   repair the instrument, and restart from the immutable parent; do not turn
-   the repair into another scientific arm.
 
 6. **Close routing once.**
    - When evidence changes the route, update the owning result/unit, experiment
@@ -162,26 +171,18 @@ prior iteration from conversation rather than from the packet.
    - Complete when the reading path is coherent and the authority boundary is
      explicit.
 
-## Receipt-Grounded Research OpenSpec Closeout
+## Research OpenSpec Closeout
 
 When closing, retiring, or preparing to archive a research-owned OpenSpec
-change, reconcile the literal task condition before changing a checkbox.
-
-1. For every affected task, record its exact wording, the immutable receipt
-   path and identity, the exact receipt field (including nested evidence), and
-   the matching unit, index, and report disposition.
-2. Mark a task complete only when its own literal condition is met. A completed
-   mechanical subtask does not imply an experiment, backward pass, model result,
-   or promotion succeeded.
-3. Leave unexecuted or retired work unchecked. Later evidence may not backfill
-   an older task whose condition it did not satisfy.
-4. Stop with the existing state unchanged when task wording is ambiguous, a
-   receipt is stale or unbound, or the reconciliation changes a user-owned
-   claim. Archive authorization remains separate; vendor OpenSpec workflows do
-   not redefine research acceptance.
+change, read [Receipt-Grounded Closeout](references/openspec-closeout.md) before
+changing checkboxes. Literal task conditions and immutable receipts govern
+completion; archive authorization remains separate.
 
 ## Conditional Branches
 
+- For sequential interventions or mutable runners, apply the conditional
+  execution checks in [Research Graph and Unit Contract](references/research-graph-contract.md).
+  Do not require prefix or rollback machinery for unrelated static work.
 - For raw Markdown union collection, preserve a manifest and byte-faithful
   snapshots before synthesis.
 - For supervisor or independent-model packets, make the packet
@@ -196,8 +197,9 @@ change, reconcile the literal task condition before changing a checkbox.
   outputs or helper-only tests stand in for durable end-to-end evidence.
 - For a long self-driven loop, predeclare the attempt budget and phase-reset
   triggers. Use at most one advisory pass at an unresolved semantic fork and
-  one independent review at promotion or flatten; do not review a target that
-  is still changing or run maintenance/cleanup lanes against active science.
+  at most one independent review when a named promotion/flatten risk needs it
+  or the governing contract requires it. Share that budget across skills; do
+  not review a changing target or run cleanup lanes against active science.
 - Report launch, anomaly, decision-bearing result, and closure. Do not turn
   command liveness, buffered logs, or routine receipt reads into a second
   status stream.

@@ -107,7 +107,8 @@ Track a research unit and its supporting infrastructure independently:
 | --- | --- | --- |
 | Mechanical path is invalid before an affected contrast is durably recorded | The question is unanswered for that contrast; keep the result neutral and the evidence `none` or `partial` | Preserve the failed run receipt and route the defect to the named infrastructure owner |
 | Mechanical path is accepted and the declared contrast yields a null effect | Admit bounded negative evidence if denominator, controls, and uncertainty are satisfied | Record mechanics as accepted without claiming scientific meaning |
-| Infrastructure is repaired after a failed run | Keep the old run technically invalid and scientifically unusable for the affected contrast | Validate the repair independently and require a fresh immutable run identifier |
+| Model execution is affected or required raw evidence is missing | Keep the old affected contrast technically invalid and scientifically unusable | Validate the repair and require a fresh immutable affected run |
+| Only derived evaluation is defective; complete raw evidence is retained | Old affected metrics remain invalid; unchanged execution may support newly derived evidence | Verify execution independence and frozen evaluation semantics, then publish a new versioned evaluation bound to the raw inputs and repaired evaluator; preserve the old artifact |
 | Conditioning, population, estimand, control, or stop rule changes | Apply the semantic-delta gate and obtain any owning decision; use a new unit when the question changed | Do not disguise the semantic change as an implementation repair |
 
 A technically invalid run is immutable provenance; it does not automatically
@@ -115,6 +116,11 @@ invalidate the research unit. Recoverable arm evidence may support only an
 unaffected declared contrast. Infrastructure validation can unblock execution
 but cannot complete a research unit, promote a mechanism, or rehabilitate
 missing evidence.
+
+Do not reuse execution if parser/evaluator output fed sampling, rewards,
+updates, selection, or stopping affected by the defect. Such feedback requires
+a fresh affected run. A repaired evaluator that changes the intended metric,
+population, or claim still needs the semantic-delta gate, not just a new version.
 
 ## Originating Intent And Semantic Delta Gate
 
@@ -183,9 +189,12 @@ Before accepting a positive, negative, or null scientific result:
 - distinguish natural behavior from oracle, forced-prefix, teacher-forced, or
   retrieval-conditioned behavior, and distinguish precondition or admission
   from realization after the condition is supplied;
-- keep technical-invalid, unexecuted, missing-support, unknown, and unmatched
-  cases neutral unless the frozen protocol explicitly defines one as the
-  scientific outcome; and
+- do not treat technical-invalid, unexecuted, or missing-support cases as
+  scientific negatives unless the frozen protocol explicitly measures that
+  failure as an outcome. Unknown/unmatched neutrality does not permit row
+  exclusion, denominator changes, or automatic zero gradient; reward-neutral
+  can still receive trajectory-level gradient. Valid empty/dropped outputs
+  are scored under the frozen protocol, not relabeled technical failures; and
 - state the transfer needed when an intermediate intervention, proxy, or readout
   differs from the final evaluation surface. Evidence supports the exact
   observed surface until that transfer survives its declared control.
@@ -234,10 +243,11 @@ represented by a proxy, name it and narrow the claim.
 ### Decision-grade additions
 
 Add a frozen cohort, primary estimand, minimum meaningful effect, paired
-controls, uncertainty plan, safety gate, complete artifact identities, and an
-independent evidence audit only after the exploratory observation survives its
-control and the semantic-delta gate is closed. Publication- or production-grade
-work may then add broader replication, human annotation, stable schemas, and
+controls, uncertainty plan, safety gate, and complete artifact identities only
+after the exploratory observation survives its control and the semantic-delta
+gate is closed. Add independent review when a named unresolved risk needs it
+or the governing contract requires it, not automatically. Publication- or
+production-grade work may then add broader replication, human annotation, stable schemas, and
 operational hardening. Do not use randomization journals, exhaustive source
 closures, adversarial mutation defenses, or resume machinery to make a
 pre-observation exploratory unit appear ready.
@@ -248,10 +258,11 @@ Ordinary implementation repairs do not require a new protocol ceremony. Never
 rewrite a declared scope after observing results; label partial execution as
 partial evidence.
 
-Record an ordinary implementation repair in the run lineage with its exact
-mechanical acceptance. Reuse the unit only when its scientific question and
-frozen semantics are unchanged; always use a new run identifier. A repair does
-not convert a prior technical failure into scientific evidence.
+Record an ordinary implementation repair with its exact mechanical acceptance.
+Reuse the unit only when its scientific question and frozen semantics are
+unchanged. New execution needs a new run identifier; derived-only repair uses
+a new evaluation identity under the research/infrastructure rules above. Do
+not overwrite prior failed evidence or pass its old metrics off as repaired.
 
 Before scaling a treatment, distinguish lack of signal supply, optimization
 failure, proxy-to-outcome transfer failure, and failure of the intended
@@ -263,12 +274,27 @@ positive and negative patterns.
 When closing a non-trivial unit, separate `Observed`, `Supported`, `Ruled out`,
 `Unresolved`, and `Not claimed`, then name the next discriminator.
 
+### Conditional execution checks
+
+For sequential interventions, regenerate each later intervention from the
+cold-read native state produced by the accepted earlier intervention. Never
+compose a decision-bearing route from a teacher-forced, jointly sampled, or
+hypothetical prefix unless that conditioning is the frozen estimand.
+
+For mutable runners, use one production-shaped sentinel for the applicable
+invariants: intervention consumption, gradient/update direction for training,
+rejection/rollback where supported, receipt completion ordering, and required
+cold readback. Reuse unchanged accepted evidence; do not add rollback machinery
+to a static path merely for this checklist. If an execution invariant fails,
+repair the instrument and restart affected execution from the immutable parent,
+not as an additional scientific arm.
+
 ## Independent Advanced-Model Review Gate
 
-An **independent advanced-model reviewer** is an advanced model or agent outside
-the primary implementation and internal-audit chain. Pro, Fable, or any future
-model may fill this role; the provider name is not part of the research
-contract. The reviewer supplies independent scientific criticism and advice.
+An **independent advanced-model reviewer** is a capable model or agent outside
+the primary implementation and internal-audit chain. Use
+`native-subagents-guidance` for task-shaped routing; the provider and effort
+are not part of the scientific contract. The reviewer supplies criticism and advice.
 The research lead remains responsible for the final decision.
 
 Use this gate when at least one of the following is true:
@@ -298,9 +324,9 @@ Apply the gate as follows:
    exact source and receipt handles, the requested questions, excluded or
    unavailable evidence, the expected verdict format, and the review stop
    condition. A full chat transcript is not the primary packet.
-4. When using multiple reviewers, give them the same core packet independently
-   and do not reveal another reviewer's reasoning or verdict. Choose the model
-   dynamically for the scientific difficulty; do not hard-code a provider.
+4. Respect the phase/target/risk review budget across all skills. Use multiple
+   reviewers only when separately authorized; give them the same core packet
+   independently without revealing another reviewer's reasoning or verdict.
 5. Require each response to state its assumptions, strongest counterexample,
    recommended disposition, minimal discriminating experiment, and permitted
    claim boundary. Useful dispositions are `proceed`, `narrow`, `probe`,

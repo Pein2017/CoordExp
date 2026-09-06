@@ -25,10 +25,9 @@ One read-only reviewer is allowed only when all four conditions hold:
    integration, and acceptance cost.
 4. This frozen phase and target have not already received the review.
 
-Then use:
+Choose an available model and supported effort sufficient for the review,
+following the user-wide routing rules. Keep:
 
-- `model: gpt-5.6-sol`
-- `reasoning_effort: high`
 - `fork_turns: "none"`
 - no writes, subagents, or full-history reconstruction
 

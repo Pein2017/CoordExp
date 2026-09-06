@@ -1,5 +1,9 @@
 ## Audit Report Template (Read-Only)
 
+Use only sections needed for the decision. Omit empty severity headings and
+unrequested P2 hardening. Separate demonstrated defects from missing evidence;
+the latter is blocking only when the declared decision or a required gate needs it.
+
 ### Scope
 - Target: `<paths / change id / feature>`
 - Mode: `run/artifact audit` | `claim validity` | `launch/promotion gate` | `implementation versus vertical contract`
@@ -46,3 +50,4 @@
 ### Verdict
 - `<approve | hold | reject | probe required | needs user decision>`
 - Residual risk: `<what remains unverified>`
+- Authorization: evidence recommendation only; no permission to implement, launch, or publish.

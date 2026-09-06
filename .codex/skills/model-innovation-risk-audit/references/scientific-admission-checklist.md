@@ -10,6 +10,8 @@ the wrong thing.
 
 For each row, record the invariant, executable owner, cheapest counterexample,
 closing evidence, and whether it is CPU-contract or live-vertical evidence.
+Select only relevant rows; a short section in the existing unit is sufficient.
+The categories below are examples, not a requirement to cover every surface.
 
 | Surface | Invariant | Minimal counterexample |
 |---|---|---|
@@ -44,9 +46,15 @@ primary observation without detection.
 
 ## Review Budget And Stop Rule
 
-1. Freeze the target hash and failure-mode matrix before implementation.
-2. Let the implementer run the matrix and self-review once.
-3. Run one independent review against that fixed target.
+1. Before implementation, freeze contract/input identities and relevant risks,
+   not the hash of an implementation that does not yet exist.
+2. Let the implementer check the applicable invariants through the real
+   caller/consumer; retain the exact implementation version and evidence.
+3. Use independent review only for a named unresolved decision-changing risk
+   that it can close more effectively than a local check, or when the governing
+   contract requires it. Freeze the implemented target hash before that review.
+   Share the same phase/target/risk budget with other skills; do not reopen
+   already closed findings under another audit name.
 4. Disposition accepted findings as one correction bundle, grouped by invariant
    class, then recheck only those findings and materially changed evidence.
 5. If the recheck finds another bypass in the same class, repair the shared
@@ -55,6 +63,7 @@ primary observation without detection.
 6. If no new conclusion-changing class remains, stop CPU hardening and move to
    the smallest production-shaped vertical. Record live-only risks there.
 
-Additional reassurance tests, arbitrary-object tamper resistance, and broad
-suite reruns are P2 unless they have a plausible path to changing the selected
-condition, gradient, artifact attribution, or decision-owning result.
+Optional reassurance tests, arbitrary-object tamper resistance, and broad
+suite reruns stay off the critical path without a demonstrated impact on the
+selected condition, gradient, artifact attribution, or decision-owning result.
+Do not manufacture P2 findings merely to fill a report.

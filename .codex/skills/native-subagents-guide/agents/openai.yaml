@@ -1,0 +1,4 @@
+interface:
+  display_name: "Native Agent Team Guide"
+  short_description: "Task-shaped teams, model effort, and package ownership"
+  default_prompt: "Use $native-subagents-guidance to choose the smallest useful native team, model and effort, ownership, and message flow; consider nested package delegation only when authorized and worthwhile."

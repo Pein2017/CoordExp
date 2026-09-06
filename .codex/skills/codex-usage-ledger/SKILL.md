@@ -1,6 +1,6 @@
 ---
 name: codex-usage-ledger
-description: Read-only offline audit of Codex rollout sessions for subagent token usage, model-effort route cost, parent-invocation attempts, completion or acceptance evidence, and cost_per_accepted_task. Use when a session needs to inspect many subagents, scope the report to one root thread and its descendants, compare routing choices, estimate historical cost, or verify a ledger report from $CODEX_HOME/sessions.
+description: Audit persisted Codex rollout usage, model-effort routing cost, or acceptance-cost evidence for a bounded task or date window. Not for ordinary session recall or live quota checks.
 ---
 
 # Codex Usage Ledger
@@ -28,38 +28,14 @@ reports requested by the caller, preferably under a temporary directory.
    paths.
 2. Set a task-specific report directory, then invoke the bundled wrapper:
 
-   ```bash
-   export CODEX_HOME=/data/CoordExp/.codex
-   ledger_report_dir=$(mktemp -d)
-   python /data/CoordExp/.codex/skills/codex-usage-ledger/scripts/run_ledger.py \
-     --sessions "$CODEX_HOME/sessions" \
-     --since YYYY-MM-DD \
-     --until YYYY-MM-DD \
-     --prices /data/CoordExp/codex-usage-ledger/prices-gpt56-standard.toml \
-     --disposition-policy followup_aware \
-     --format jsonl \
-     --output "$ledger_report_dir/attempts.jsonl" \
-     --summary-out "$ledger_report_dir/summary.json" \
-     --pretty
-   ```
+   Read [Invocation Examples](references/invocation-examples.md) before
+   running the wrapper; use the example matching the requested scope.
 
    To keep an audit attached to one lead task, pass the lead's persisted
    `thread_id` as `--root-thread-id`. The ledger then follows
    `parent_thread_id` recursively and ignores unrelated sessions. Add
    `--include-root` when the lead's own usage belongs in the total; omit it
-   when the report should contain child-agent usage only:
-
-   ```bash
-   export CODEX_HOME=/data/CoordExp/.codex
-   python /data/CoordExp/.codex/skills/codex-usage-ledger/scripts/run_ledger.py \
-     --root-thread-id "$SESSION_A_THREAD_ID" \
-     --include-root \
-     --prices /data/CoordExp/codex-usage-ledger/prices-gpt56-standard.toml \
-     --disposition-policy followup_aware \
-     --format json \
-     --summary-out "$ledger_report_dir/session-a-summary.json" \
-     --pretty
-   ```
+   when the report should contain child-agent usage only.
 
    `--thread-id ID` selects one exact rollout. `--session-id ID` selects
    records with an exact persisted `session_id`. These options are mutually

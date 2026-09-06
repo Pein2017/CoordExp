@@ -20,10 +20,12 @@ Use this reference when an audit touches stable contracts, OpenSpec state, bench
 
 ## Review Closure
 
-- Explicit reviewer pass is required to close a gate.
-- Timeout, disconnection, or missing reviewer output is unresolved.
-- Style-only notes are not blockers unless they hide contract, correctness, eval-validity, or maintainability risk.
+- Require an explicit independent reviewer pass only when the governing contract names it as a gate; otherwise proportionate lead verification may close the decision.
+- Missing required review remains unresolved. An unavailable optional adviser does not create a new blocker.
+- Reuse accepted evidence for the same phase/target/risk across skills; switching audit names does not authorize another review.
+- Style or optional maintainability notes are not blockers without a demonstrated impact on the declared decision or acceptance invariant.
 - If the user asks for blocker-only review, do not drift into open-ended audit.
+- `approve`/`promote` is an evidence recommendation, not implementation, launch, publication, or semantic-change authorization.
 
 ## Claim Validity
 

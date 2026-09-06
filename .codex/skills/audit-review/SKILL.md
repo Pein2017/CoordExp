@@ -25,6 +25,11 @@ Use `model-diagnosis` for an existing behavioral symptom,
 `model-innovation-risk-audit` for a silent pre-launch contract risk, and the
 owning code/config/runtime surface for a reproducible engineering failure.
 
+These are alternative lenses, not consecutive approvals. Share the review
+budget and closed findings for the same phase/target/risk across skills. Use
+`native-subagents-guidance` only when delegation adds value; loading an audit
+skill does not require another agent or a particular model/effort.
+
 ## Audit
 
 1. **Pin the decision and evidence.**
@@ -47,6 +52,9 @@ owning code/config/runtime surface for a reproducible engineering failure.
      condition, corrupt meaning-bearing alignment, change more than the declared
      factor, lose attribution, or make the primary observation uninterpretable.
    - Complete when each plausible P0/P1 has evidence or a named discriminator.
+   - Separate demonstrated defects from unproven requirements. Missing evidence
+     blocks only when a required gate or the decision depends on it; state the
+     missing discriminator rather than presenting uncertainty as a proven bug.
 
 4. **Decide before prescribing.**
    - Classify each material finding as:
@@ -77,6 +85,8 @@ revision workflow, let the lead disposition findings and let the owning
 implementation path apply accepted changes. Re-audit only those findings and
 materially changed evidence; stop when no new accepted P0/P1 changes the
 decision. The audit verdict never grants implementation or launch authority.
+`approve` or `promote` means evidence supports a recommendation, not permission
+to mutate, launch, publish, or change the scientific contract.
 
 Freeze the target hash and finding ledger before the first independent review.
 Group findings by violated invariant rather than by individual exploit. After
@@ -101,6 +111,9 @@ Lead with severity-ranked findings:
 Each finding includes an evidence handle, impact, disposition, smallest next
 action, and verification. Then report confirmed OK checks, verdict, skipped
 checks, and residual risk.
+
+Default to decision-changing findings. P2 is not a required quota or blocker;
+omit empty severity sections and optional hardening unless explicitly requested.
 
 If no material finding remains, say so and name the residual risk rather than
 manufacturing reassurance work.

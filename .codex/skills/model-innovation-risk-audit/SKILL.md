@@ -15,6 +15,12 @@ factor, semantic alignment, actual path execution, objective wiring when
 training, and raw output attribution. Escalate when silent drift can reverse the
 observation or the evidence is being promoted.
 
+This gate tests mechanism fidelity; `audit-review` tests whether evidence
+supports a decision, and `research-flow` owns the scientific question and
+interpretation. They are not three mandatory approvals. Share closed findings
+and the phase/target/risk review budget. Use `native-subagents-guidance` for
+delegation only when useful, not a separate routing or mandatory-review policy.
+
 ## Gate Timing
 
 Run one risk gate before broad costly implementation. Repeat it on a frozen
@@ -23,9 +29,11 @@ risk, the execution shape, or the evidence claim. Do not run a full risk audit
 for every routine wave or after a localized fix whose owning risk and evidence
 did not change.
 
-Before implementation, freeze one **failure-mode matrix** for the scientific
-path: each conclusion-changing invariant, its executable owner, one minimal
-counterexample, and the evidence that will close it. Use
+Before implementation, freeze the contract/input identities and record the
+relevant conclusion-changing invariants, executable owners, minimal
+counterexamples, and closing evidence. A few rows in the existing unit suffice;
+no separate matrix artifact or exhaustive category coverage is required.
+Freeze the actual implementation/artifact version before any independent review. Use
 [scientific-admission-checklist.md](references/scientific-admission-checklist.md)
 when the mechanism derives semantic labels, joins multiple artifacts, replays
 policy evidence, uses packing, or exposes public construction/load paths.
@@ -42,7 +50,9 @@ the system.
    - Compare intended behavior, authored config, resolved config/schema,
      executable data/model/loss/decode/eval objects, emitted artifacts, and
      evidence claim.
-   - Complete when every layer is `matched`, `mismatched`, or `unproven`.
+   - Complete when each relevant layer is `matched`, `mismatched`, or `unproven`.
+     Do not present an unproven requirement as a demonstrated defect; name its
+     discriminator and block only if the decision or a required gate needs it.
 
 2. **Identify executable owners.**
    - Trace who actually controls tokenizer/template, data and collator,
@@ -64,12 +74,15 @@ the system.
 
    If several findings are instances of one invariant (for example, direct
    construction, deserialization, and reload bypassing the same admission
-   rule), repair and test the shared choke point once. Do not create a separate
+   rule), direct the implementation owner to repair and test the shared choke
+   point once. This read-only gate does not authorize the repair or a separate
    review cycle for every equivalent bypass.
 
 4. **Return a launch decision.**
    - Report `promote`, `hold`, `rerun gate`, or `needs user decision` with the
      smallest evidence that would change it.
+   - `promote` is an evidence-supported recommendation, not authority to launch,
+     implement, publish, or change the scientific contract.
    - Do not inflate severity or harden exploratory infrastructure without a
      demonstrated conclusion-changing failure.
    - Do not block a bounded pilot on arbitrary in-process object tampering
@@ -79,9 +92,10 @@ the system.
 
 ## Report
 
-Lead with P0/P1/P2 findings, then the contract diff, confirmed OK checks,
-decision questions, correction or probe direction, verification, and residual
-risk. Each finding needs an evidence handle and an explicit decision impact.
+Lead with decision-changing findings, then only the contract diff, checks,
+questions, verification, and residual risk needed to support the verdict.
+Each finding needs an evidence handle and explicit decision impact. Distinguish
+P0/P1 defects from unproven gates; P2 and empty severity sections are not quotas.
 
 Load only when needed:
 

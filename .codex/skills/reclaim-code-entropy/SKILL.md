@@ -1,6 +1,6 @@
 ---
 name: reclaim-code-entropy
-description: Find, rank, and safely remove accidental codebase complexity by proving real consumers, dynamic entrypoints, compatibility obligations, duplicate representations, speculative surfaces, and lifecycle ownership. Use when asked to simplify or clean up a repository, reclaim code entropy, reduce over-engineering or redundancy, find deletion candidates, collapse duplicate state/APIs, remove dead or added-then-abandoned code beyond static-tool output, or implement an evidence-backed simplification pass in any language or stack. Also trigger for 代码化简、熵回收、删代码、清理冗余、收敛抽象、去除过度设计. Do not use as a performance audit unless simplification is the stated goal.
+description: Audit or apply repository code simplification, dead-code removal, or deduplication (代码化简、熵回收、清理冗余). Not for prose cleanup, ordinary feature work, or performance-only audits.
 ---
 
 # Reclaim Code Entropy
@@ -17,7 +17,7 @@ Core rule: a scanner produces candidates; only consumer, ownership, history, and
 
 ## Establish The Contract
 
-1. Read repository instructions and the nearest scoped equivalents: `AGENTS.md`, `CONTRIBUTING`, architecture docs, ADRs/RFCs/decision notes, package manifests, and test guidance.
+1. Start from the requested target and applicable `AGENTS.md`. Read further documentation only to resolve an ownership, compatibility, or verification gap.
 2. Inspect `git status`; preserve unrelated work. Identify generated, vendored, migration, fixture, and public-package paths before classifying code.
 3. Trace the real runtime flow through entrypoints, configuration, registries, dependency injection, events, queues, persistence, processes/workers, and wire protocols.
 4. In apply mode, discover the repository's actual narrow and broad verification commands and run a proportional baseline when feasible. A red baseline limits what later checks can prove; record it instead of claiming a regression.
