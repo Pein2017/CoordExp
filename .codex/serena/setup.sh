@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-readonly serena_bin="/root/.local/bin/serena"
+readonly serena_bin="/data/CoordExp/.codex/serena/runtime/bin/serena"
 readonly language_setup="${repo_root}/.codex/serena/setup_language_servers.sh"
 
 check_official_serena() {
@@ -12,7 +12,7 @@ check_official_serena() {
         return 1
     }
     version="$("${serena_bin}" --version)"
-    [[ "${version}" == "Serena 1.7.0" ]] || {
+    [[ "${version}" == "Serena 1.7.0"* ]] || {
         echo "unexpected official Serena version: ${version}" >&2
         return 1
     }

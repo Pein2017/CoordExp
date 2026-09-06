@@ -974,6 +974,8 @@ project_serena_folder_location: "/data/CoordExp/.codex/serena/projects/$projectF
 # The pattern "**" matches any project path, so it can be used to trust all projects.
 trusted_project_path_patterns:
 - /data/CoordExp/**
+- /data/deepseek-harness
+- /data/deepseek-harness/**
 - /data/ms-swift/**
 - /root/miniconda3/envs/**
 
@@ -984,22 +986,25 @@ projects:
 - /data/CoordExp/.codex/plugins/data/codex-harnessdock
 - /data/CoordExp/.codex/skills/safe-runtime-maintenance
 - /data/CoordExp/.worktrees/CoordExp-swift
-- /data/CoordExp/.worktrees/benchmark-infra-base-codex
-- /data/CoordExp/.worktrees/benchmark-infra-base-opencode
-- /data/CoordExp/.worktrees/benchmark-infra-base-pi
-- /data/CoordExp/.worktrees/benchmark-infra-base-v2-codex
-- /data/CoordExp/.worktrees/benchmark-infra-base-v2-opencode
-- /data/CoordExp/.worktrees/benchmark-infra-base-v2-pi
-- /data/CoordExp/.worktrees/image2299-mechanism-microscope
+- /data/CoordExp/.worktrees/c-anchored-owner-mechanism-audit
+- /data/CoordExp/.worktrees/dora-prox-linear-n2
+- /data/CoordExp/.worktrees/human13-output-qp-identity-generalization
+- /data/CoordExp/.worktrees/n256-shared-output-qp-norm-scaling
 - /data/CoordExp/.worktrees/research-probe-infras
 - /data/CoordExp/.worktrees/research-probes
 - /data/CoordExp/codex-harnessdock
 - /data/CoordExp/codex-harnessdock-dev
 - /data/CoordExp/codex-usage-ledger
 - /data/CoordExp/codex-wake-me-up
+- /data/CoordExp/codex-web
 - /data/CoordExp/external/agent-orchestrator
 - /data/CoordExp/external/codex-host
+- /data/CoordExp/external/harness
 - /data/CoordExp/external/harness/codex
+- /data/CoordExp/external/harness/deepseek-harness
+- /data/CoordExp/external/harness/opencode
+- /data/CoordExp/external/harness/pi
 - /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/20260831T-image2299-canonical-g46-global-qp-v1
 - /data/CoordExp/serena-light
+- /data/deepseek-harness
 - /data/ms-swift
