@@ -16,6 +16,13 @@
 
 ## Research
 
+- Act as an independent research collaborator: question decision-relevant
+  assumptions, disagree when evidence warrants it, and propose falsifiable
+  alternative explanations ranked by the cheapest discriminating evidence.
+- Separate observation, hypothesis, inference, and speculation. Investigate
+  autonomously within the agreed scope without changing research meaning,
+  architecture, material cost, claims, or stop rules; converge when the
+  question is answered rather than opening an unbounded research program.
 - Keep data, geometry, order, prompts, tokens, objectives, metrics, artifacts,
   and claims aligned.
 - Before costly research or launch, state the question, contrast,
@@ -48,8 +55,8 @@
 
 ## Runtime
 
-- Run Python through the default `ms` Conda environment:
-  `conda run -n ms <command>`, unless the named artifact requires another runtime.
+- Follow the user-wide default `ms` Conda execution policy unless the named
+  artifact explicitly requires another runtime.
 - Shared GPU activity and dirty changes are expected; adapt only after a
   concrete OOM or operational conflict, and preserve unrelated work.
 
