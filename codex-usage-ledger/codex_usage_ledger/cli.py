@@ -4,13 +4,12 @@ import argparse
 import csv
 import json
 import os
-import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from .parser import SessionRecord, parse_rollout
+from .parser import SessionRecord, parse_rollout, reconcile_usage
 from .pricing import build_price_receipt, load_rates
 from .attempts import (
     annotate_attempts,
@@ -22,9 +21,6 @@ from .attempts import (
 from .report import enrich_record, summarize, summarize_totals
 
 
-_DATE_IN_FILENAME = re.compile(r"rollout-(\d{4}-\d{2}-\d{2})T")
-
-
 def _parse_date(value: str | None) -> date | None:
     if value is None:
         return None
@@ -34,26 +30,15 @@ def _parse_date(value: str | None) -> date | None:
         raise argparse.ArgumentTypeError(f"invalid ISO date: {value}") from exc
 
 
-def _file_date(path: Path) -> date | None:
-    match = _DATE_IN_FILENAME.search(path.name)
-    if not match:
-        return None
-    try:
-        return date.fromisoformat(match.group(1))
-    except ValueError:
-        return None
-
-
 def discover_files(
     root: Path, since: date | None, until: date | None, limit: int | None
 ) -> list[Path]:
+    # A rollout filename records when a physical page was created, not the
+    # timestamp of every response it contains. Apply date boundaries after
+    # parsing so pagination and resumed pages cannot hide in-window receipts.
+    del since, until
     paths: list[Path] = []
     for path in root.rglob("rollout-*.jsonl"):
-        file_date = _file_date(path)
-        if since and file_date and file_date < since:
-            continue
-        if until and file_date and file_date > until:
-            continue
         paths.append(path)
     paths.sort()
     return paths[-limit:] if limit else paths
@@ -66,6 +51,8 @@ def _scan(
     thread_id: str | None = None,
     session_id: str | None = None,
     root_thread_id: str | None = None,
+    receipt_since: datetime | None = None,
+    receipt_until: datetime | None = None,
 ) -> tuple[list[SessionRecord], list[SessionRecord], dict[str, Any]]:
     all_records: list[SessionRecord] = []
     files_seen = 0
@@ -80,6 +67,11 @@ def _scan(
         session_id=session_id,
         root_thread_id=root_thread_id,
     )
+    usage = reconcile_usage(
+        records,
+        since=receipt_since,
+        until=receipt_until,
+    )
     return (
         records,
         all_records,
@@ -89,6 +81,7 @@ def _scan(
             "records_emitted": len(records),
             "skipped_non_subagents": scope["scope_records"] - len(records),
             "parse_errors": sum(record.parse_errors for record in records),
+            "usage": usage,
         },
     )
 
@@ -334,12 +327,26 @@ def main(argv: list[str] | None = None) -> int:
         pricing_snapshot = build_price_receipt(args.prices, rates)
         outcomes = load_outcomes(args.outcomes)
         paths = discover_files(args.sessions, args.since, args.until, args.max_files)
+        receipt_since = (
+            datetime.combine(args.since, time.min, tzinfo=timezone.utc)
+            if args.since
+            else None
+        )
+        receipt_until = (
+            datetime.combine(
+                args.until + timedelta(days=1), time.min, tzinfo=timezone.utc
+            )
+            if args.until
+            else None
+        )
         records, all_records, scan = _scan(
             paths,
             args.include_root,
             thread_id=args.thread_id,
             session_id=args.session_id,
             root_thread_id=args.root_thread_id,
+            receipt_since=receipt_since,
+            receipt_until=receipt_until,
         )
     except (OSError, ValueError) as exc:
         print(f"scan failed: {exc}", file=sys.stderr)
@@ -355,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
         "filters": {
             "since": args.since.isoformat() if args.since else None,
             "until": args.until.isoformat() if args.until else None,
+            "receipt_since": receipt_since.isoformat() if receipt_since else None,
+            "receipt_until": receipt_until.isoformat() if receipt_until else None,
             "max_files": args.max_files,
             "include_root": args.include_root,
             "thread_id": args.thread_id,

@@ -6,8 +6,8 @@ contexts, and optionally estimates cost from a user-owned provider price table.
 
 The tool does not modify Codex, the app-server, `$CODEX_HOME`, or rollout
 files. It uses only the persisted `session_meta`, `turn_context`, lifecycle,
-`event_msg/token_count`, `event_msg/sub_agent_activity`, and agent tool-call
-records.
+`token_usage_record`, `event_msg/token_count`, `event_msg/sub_agent_activity`,
+and agent tool-call records.
 
 ## Quick start
 
@@ -156,14 +156,30 @@ input and replace it when the provider price sheet changes.
 
 ## Interpretation limits
 
-`latest_total_usage` is the cumulative usage recorded for the thread. Forked
-subagent rollouts may embed the parent thread's history before the child's own
-task; the ledger detects the first `task_started` boundary and reports the
-post-boundary delta as `measured_usage`. The `usage_by_route` field uses those
-cumulative-token deltas and the surrounding `turn_context` timeline to
-approximate model/effort segments. It is useful for triage, but it is not an
-invoice-grade per-response join; inspect multi-model threads before using them
-as matched routing evidence.
+Modern `token_usage_record` entries are the primary accounting source. The
+ledger validates their per-response usage, keeps receipts owned by the
+persisted `thread_id`, and deduplicates `(thread_id, response_id)` across
+pagination files. Duplicate receipts with the same usage are counted once;
+metadata differences are reported under `scan.usage.metadata_conflicts`.
+Duplicates with conflicting usage are excluded and reported under
+`scan.usage`. A receipt whose thread identity differs from the enclosing file
+is excluded as foreign.
+
+Files without modern receipts use the older cumulative `event_msg/token_count`
+fallback. A reset to a lower cumulative counter starts a new legacy epoch, and
+the existing task boundary still excludes inherited fork history. Files that
+contain both formats report `usage_format: "mixed"` and use modern receipts so
+the legacy events cannot double-count the same responses.
+
+`--since` and `--until` are inclusive calendar-date filters in the CLI. After
+file discovery, receipt and legacy event timestamps are applied as a half-open
+UTC window; a receipt without a valid timestamp is excluded from a bounded
+window and reported. The summary records the effective `receipt_since` and
+`receipt_until` boundaries.
+
+Reasoning output is a subset of `output_tokens`; it is retained as a diagnostic
+dimension and is never added to `total_tokens` a second time. These persisted
+receipts are measurement evidence, not invoice-grade provider billing.
 
 This is a measurement and routing aid, not an invoice. Keep the provider,
 gateway, pricing source, currency, and effective date with any decision-bearing

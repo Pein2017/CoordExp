@@ -48,6 +48,16 @@ class Usage:
             }
         )
 
+    def has_decrease_from(self, previous: "Usage") -> bool:
+        return any(
+            getattr(self, field) < getattr(previous, field) for field in USAGE_FIELDS
+        )
+
+    def delta_from(self, previous: "Usage") -> "Usage":
+        """Return a cumulative delta, treating a lower counter as a reset."""
+
+        return self if self.has_decrease_from(previous) else self.subtract(previous)
+
     def add(self, other: "Usage") -> "Usage":
         return Usage(
             **{
@@ -88,3 +98,33 @@ class TokenEvent:
     context_index: int
     total: Usage
     last: Usage
+
+
+@dataclass(frozen=True)
+class UsageReceipt:
+    """One response-scoped usage record from the modern rollout format."""
+
+    timestamp: str | None
+    thread_id: str | None
+    turn_id: str | None
+    session_id: str | None
+    root_turn_id: str | None
+    response_id: str | None
+    usage: Usage
+
+    @property
+    def key(self) -> tuple[str, str] | None:
+        if not self.thread_id or not self.response_id:
+            return None
+        return self.thread_id, self.response_id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "thread_id": self.thread_id,
+            "turn_id": self.turn_id,
+            "session_id": self.session_id,
+            "root_turn_id": self.root_turn_id,
+            "response_id": self.response_id,
+            "usage": self.usage.to_dict(),
+        }

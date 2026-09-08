@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
-from codex_usage_ledger.parser import parse_rollout
+from codex_usage_ledger.parser import parse_rollout, reconcile_usage
 from codex_usage_ledger.pricing import load_rates
 from codex_usage_ledger.report import enrich_record, summarize, summarize_totals
 from codex_usage_ledger.cli import filter_records, main
@@ -22,7 +23,610 @@ def _line(timestamp: str, kind: str, payload: dict) -> str:
     return json.dumps({"timestamp": timestamp, "type": kind, "payload": payload}) + "\n"
 
 
+def _usage_line(
+    timestamp: str,
+    *,
+    thread_id: str,
+    response_id: str,
+    usage: dict,
+    turn_id: str = "turn-1",
+    session_id: str | None = None,
+) -> str:
+    return _line(
+        timestamp,
+        "token_usage_record",
+        {
+            "thread_id": thread_id,
+            "turn_id": turn_id,
+            "session_id": session_id or thread_id,
+            "root_turn_id": turn_id,
+            "response_id": response_id,
+            "usage": usage,
+        },
+    )
+
+
 class LedgerTests(unittest.TestCase):
+    def test_legacy_reset_starts_a_new_cumulative_epoch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout-2026-08-06T00-00-00-legacy.jsonl"
+
+            def usage(total: int) -> dict[str, int]:
+                return {
+                    "input_tokens": total,
+                    "cached_input_tokens": 0,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 0,
+                    "reasoning_output_tokens": 0,
+                    "total_tokens": total,
+                }
+
+            lines = [
+                _line(
+                    "2026-08-06T00:00:00Z",
+                    "session_meta",
+                    {"id": "legacy-thread", "thread_source": "subagent"},
+                ),
+                _line(
+                    "2026-08-06T00:00:01Z",
+                    "event_msg",
+                    {"type": "task_started", "turn_id": "turn-1"},
+                ),
+                _line(
+                    "2026-08-06T00:00:01Z",
+                    "turn_context",
+                    {"turn_id": "turn-1", "model": "legacy-model", "effort": "low"},
+                ),
+            ]
+            for index, total in enumerate((100, 120, 10, 15), start=2):
+                value = usage(total)
+                lines.append(
+                    _line(
+                        f"2026-08-06T00:00:{index:02d}Z",
+                        "event_msg",
+                        {
+                            "type": "token_count",
+                            "info": {
+                                "total_token_usage": value,
+                                "last_token_usage": value,
+                            },
+                        },
+                    )
+                )
+            path.write_text("".join(lines), encoding="utf-8")
+
+            record = parse_rollout(path)
+            self.assertEqual(record.usage_format, "legacy")
+            self.assertEqual(record.scoped_usage().total_tokens, 135)
+            stats = reconcile_usage(
+                iter([record]),
+                since=datetime(2026, 8, 6, 0, 0, 4, tzinfo=timezone.utc),
+            )
+            self.assertEqual(stats["legacy_events_accounted"], 2)
+            self.assertEqual(record.scoped_usage().total_tokens, 15)
+
+    def test_modern_receipts_recover_resets_and_compaction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout-2026-08-06T00-00-00-modern.jsonl"
+            first = {
+                "input_tokens": 10,
+                "cached_input_tokens": 4,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 1,
+                "total_tokens": 11,
+            }
+            second = {
+                "input_tokens": 6,
+                "cached_input_tokens": 2,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 1,
+                "total_tokens": 7,
+            }
+            legacy_before = {**first, "total_tokens": 100}
+            legacy_after = {**first, "total_tokens": 11}
+            path.write_text(
+                "".join(
+                    [
+                        _line(
+                            "2026-08-06T00:00:00Z",
+                            "session_meta",
+                            {
+                                "id": "modern-thread",
+                                "session_id": "modern-thread",
+                                "thread_source": "subagent",
+                                "parent_thread_id": "root-thread",
+                                "model_provider": "openai",
+                            },
+                        ),
+                        _line(
+                            "2026-08-06T00:00:01Z",
+                            "event_msg",
+                            {"type": "task_started", "turn_id": "turn-1"},
+                        ),
+                        _line(
+                            "2026-08-06T00:00:01Z",
+                            "turn_context",
+                            {
+                                "turn_id": "turn-1",
+                                "model": "gpt-5.6-luna",
+                                "effort": "medium",
+                            },
+                        ),
+                        _line(
+                            "2026-08-06T00:00:02Z",
+                            "event_msg",
+                            {
+                                "type": "token_count",
+                                "info": {
+                                    "total_token_usage": legacy_before,
+                                    "last_token_usage": legacy_before,
+                                },
+                            },
+                        ),
+                        _usage_line(
+                            "2026-08-06T00:00:03Z",
+                            thread_id="modern-thread",
+                            response_id="response-1",
+                            usage=first,
+                        ),
+                        _line(
+                            "2026-08-06T00:00:04Z",
+                            "event_msg",
+                            {
+                                "type": "token_count",
+                                "info": {
+                                    "total_token_usage": legacy_after,
+                                    "last_token_usage": first,
+                                },
+                            },
+                        ),
+                        _usage_line(
+                            "2026-08-06T00:00:05Z",
+                            thread_id="modern-thread",
+                            response_id="response-2",
+                            usage=second,
+                        ),
+                        _line(
+                            "2026-08-06T00:00:06Z",
+                            "event_msg",
+                            {
+                                "type": "token_count",
+                                "info": {
+                                    "total_token_usage": legacy_after,
+                                    "last_token_usage": second,
+                                },
+                            },
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            record = parse_rollout(path)
+            self.assertEqual(record.usage_format, "mixed")
+            self.assertEqual(record.modern_usage_records_seen, 2)
+            self.assertEqual(reconcile_usage([record])["accounted_receipts"], 2)
+            self.assertEqual(
+                record.scoped_usage().to_dict(),
+                {
+                    "input_tokens": 16,
+                    "cached_input_tokens": 6,
+                    "cache_write_input_tokens": 0,
+                    "output_tokens": 2,
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 18,
+                },
+            )
+            self.assertEqual(
+                {
+                    route["model"]: route["usage"]["total_tokens"]
+                    for route in record.route_usage()
+                },
+                {"gpt-5.6-luna": 18},
+            )
+
+    def test_duplicate_usage_with_metadata_difference_is_accounted_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            usage = {
+                "input_tokens": 4,
+                "cached_input_tokens": 2,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 5,
+            }
+
+            def write(path: Path, timestamp: str) -> None:
+                path.write_text(
+                    "".join(
+                        [
+                            _line(
+                                "2026-08-01T00:00:00Z",
+                                "session_meta",
+                                {
+                                    "id": "metadata-thread",
+                                    "thread_source": "subagent",
+                                },
+                            ),
+                            _usage_line(
+                                timestamp,
+                                thread_id="metadata-thread",
+                                response_id="same-response",
+                                usage=usage,
+                            ),
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+            first_path = root / "rollout-2026-08-01T00-00-00-a.jsonl"
+            second_path = root / "rollout-2026-08-01T00-00-01-b.jsonl"
+            write(first_path, "2026-08-01T00:00:02Z")
+            write(second_path, "2026-08-01T00:00:03Z")
+            first = parse_rollout(first_path)
+            second = parse_rollout(second_path)
+
+            stats = reconcile_usage([first, second])
+            self.assertEqual(stats["accounted_receipts"], 1)
+            self.assertEqual(stats["duplicate_receipts"], 1)
+            self.assertEqual(stats["metadata_conflicts"], 1)
+            self.assertEqual(stats["conflicting_duplicates"], 0)
+            self.assertEqual(first.scoped_usage().total_tokens, 5)
+            self.assertEqual(second.scoped_usage().total_tokens, 0)
+            self.assertIn(
+                "duplicate_receipt_metadata_conflict",
+                second.usage_reconciliation_warnings,
+            )
+
+    def test_receipt_window_does_not_trust_filename_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            usage = {
+                "input_tokens": 4,
+                "cached_input_tokens": 2,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 5,
+            }
+            path = root / "rollout-2026-08-04T00-00-00-late-page.jsonl"
+            path.write_text(
+                "".join(
+                    [
+                        _line(
+                            "2026-08-04T00:00:00Z",
+                            "session_meta",
+                            {"id": "late-page-thread", "thread_source": "subagent"},
+                        ),
+                        _usage_line(
+                            "2026-08-03T23:59:59Z",
+                            thread_id="late-page-thread",
+                            response_id="in-window",
+                            usage=usage,
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            summary = root / "summary.json"
+            self.assertEqual(
+                main(
+                    [
+                        "--sessions",
+                        str(root),
+                        "--since",
+                        "2026-08-03",
+                        "--until",
+                        "2026-08-03",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(root / "report.json"),
+                        "--summary-out",
+                        str(summary),
+                    ]
+                ),
+                0,
+            )
+            report = json.loads(summary.read_text(encoding="utf-8"))
+            self.assertEqual(report["totals"]["measured_tokens"], 5)
+            self.assertEqual(report["scan"]["files_seen"], 1)
+            self.assertEqual(
+                report["filters"]["receipt_until"], "2026-08-04T00:00:00+00:00"
+            )
+
+    def test_cli_reconciles_pagination_duplicates_foreign_and_receipt_window(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            usage_one = {
+                "input_tokens": 4,
+                "cached_input_tokens": 2,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 5,
+            }
+            usage_two = {
+                "input_tokens": 6,
+                "cached_input_tokens": 3,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 7,
+            }
+            usage_three = {
+                "input_tokens": 8,
+                "cached_input_tokens": 4,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 9,
+            }
+
+            def page(path: Path, lines: list[str]) -> None:
+                path.write_text(
+                    "".join(
+                        [
+                            _line(
+                                "2026-08-01T00:00:00Z",
+                                "session_meta",
+                                {
+                                    "id": "paged-thread",
+                                    "session_id": "paged-session",
+                                    "thread_source": "subagent",
+                                    "parent_thread_id": "root-thread",
+                                    "model_provider": "openai",
+                                },
+                            ),
+                            _line(
+                                "2026-08-01T00:00:01Z",
+                                "turn_context",
+                                {
+                                    "turn_id": "turn-1",
+                                    "model": "gpt-5.6-luna",
+                                    "effort": "medium",
+                                },
+                            ),
+                            *lines,
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+            page(
+                root / "rollout-2026-08-01T00-00-00-page-a.jsonl",
+                [
+                    _usage_line(
+                        "2026-08-01T00:00:02Z",
+                        thread_id="paged-thread",
+                        response_id="response-1",
+                        usage=usage_one,
+                    ),
+                    _usage_line(
+                        "2026-08-02T00:00:02Z",
+                        thread_id="paged-thread",
+                        response_id="response-2",
+                        usage=usage_two,
+                    ),
+                ],
+            )
+            page(
+                root / "rollout-2026-08-02T00-00-00-page-b.jsonl",
+                [
+                    _usage_line(
+                        "2026-08-02T00:00:02Z",
+                        thread_id="paged-thread",
+                        response_id="response-2",
+                        usage=usage_two,
+                    ),
+                    _usage_line(
+                        "2026-08-03T00:00:02Z",
+                        thread_id="paged-thread",
+                        response_id="response-3",
+                        usage=usage_three,
+                    ),
+                    _usage_line(
+                        "2026-08-02T00:00:03Z",
+                        thread_id="root-thread",
+                        response_id="foreign-response",
+                        usage=usage_one,
+                    ),
+                ],
+            )
+            output = root / "report.json"
+            summary = root / "summary.json"
+            self.assertEqual(
+                main(
+                    [
+                        "--sessions",
+                        str(root),
+                        "--include-root",
+                        "--since",
+                        "2026-08-02",
+                        "--until",
+                        "2026-08-02",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(output),
+                        "--summary-out",
+                        str(summary),
+                    ]
+                ),
+                0,
+            )
+            report = json.loads(summary.read_text(encoding="utf-8"))
+            self.assertEqual(report["totals"]["measured_tokens"], 7)
+            self.assertEqual(report["scan"]["usage"]["modern_receipts_seen"], 5)
+            self.assertEqual(report["scan"]["usage"]["accounted_receipts"], 1)
+            self.assertEqual(report["scan"]["usage"]["duplicate_receipts"], 1)
+            self.assertEqual(report["scan"]["usage"]["foreign_receipts"], 1)
+            self.assertEqual(report["scan"]["usage"]["out_of_window_receipts"], 2)
+
+    def test_cli_conflicting_duplicate_is_excluded_and_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            usage_one = {
+                "input_tokens": 4,
+                "cached_input_tokens": 2,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 5,
+            }
+            usage_conflict = {**usage_one, "input_tokens": 5, "total_tokens": 6}
+
+            def page(name: str, usage: dict) -> None:
+                (root / name).write_text(
+                    "".join(
+                        [
+                            _line(
+                                "2026-08-01T00:00:00Z",
+                                "session_meta",
+                                {
+                                    "id": "conflict-thread",
+                                    "session_id": "conflict-session",
+                                    "thread_source": "subagent",
+                                    "parent_thread_id": "root-thread",
+                                },
+                            ),
+                            _line(
+                                "2026-08-01T00:00:01Z",
+                                "turn_context",
+                                {
+                                    "turn_id": "turn-1",
+                                    "model": "gpt-5.6-luna",
+                                    "effort": "medium",
+                                },
+                            ),
+                            _usage_line(
+                                "2026-08-01T00:00:02Z",
+                                thread_id="conflict-thread",
+                                response_id="same-response",
+                                usage=usage,
+                            ),
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+            page("rollout-2026-08-01T00-00-00-a.jsonl", usage_one)
+            page("rollout-2026-08-01T00-00-00-b.jsonl", usage_conflict)
+            summary = root / "summary.json"
+            self.assertEqual(
+                main(
+                    [
+                        "--sessions",
+                        str(root),
+                        "--include-root",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(root / "report.json"),
+                        "--summary-out",
+                        str(summary),
+                    ]
+                ),
+                0,
+            )
+            report = json.loads(summary.read_text(encoding="utf-8"))
+            self.assertEqual(report["totals"]["measured_tokens"], 0)
+            self.assertEqual(report["scan"]["usage"]["conflicting_duplicates"], 1)
+
+    def test_cli_root_subtree_keeps_fork_ownership_and_excludes_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            usage_root = {
+                "input_tokens": 90,
+                "cached_input_tokens": 40,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 10,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 100,
+            }
+            usage_child = {
+                "input_tokens": 4,
+                "cached_input_tokens": 2,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 1,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 5,
+            }
+
+            def write(path: Path, meta: dict, thread_id: str, usage: dict) -> None:
+                path.write_text(
+                    "".join(
+                        [
+                            _line("2026-08-01T00:00:00Z", "session_meta", meta),
+                            _line(
+                                "2026-08-01T00:00:01Z",
+                                "turn_context",
+                                {
+                                    "turn_id": "turn-1",
+                                    "model": "gpt-5.6-luna",
+                                    "effort": "medium",
+                                },
+                            ),
+                            _usage_line(
+                                "2026-08-01T00:00:02Z",
+                                thread_id=thread_id,
+                                response_id=f"{thread_id}-response",
+                                usage=usage,
+                            ),
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+            write(
+                root / "rollout-2026-08-01T00-00-00-root.jsonl",
+                {
+                    "id": "root-thread",
+                    "session_id": "root-session",
+                    "thread_source": "user",
+                },
+                "root-thread",
+                usage_root,
+            )
+            write(
+                root / "rollout-2026-08-01T00-00-01-child.jsonl",
+                {
+                    "id": "child-thread",
+                    "session_id": "child-session",
+                    "thread_source": "subagent",
+                    "parent_thread_id": "root-thread",
+                },
+                "child-thread",
+                usage_child,
+            )
+            summary = root / "summary.json"
+            self.assertEqual(
+                main(
+                    [
+                        "--sessions",
+                        str(root),
+                        "--root-thread-id",
+                        "root-thread",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(root / "report.json"),
+                        "--summary-out",
+                        str(summary),
+                    ]
+                ),
+                0,
+            )
+            report = json.loads(summary.read_text(encoding="utf-8"))
+            self.assertEqual(report["scan"]["scope_records"], 2)
+            self.assertEqual(report["scan"]["records_emitted"], 1)
+            self.assertEqual(report["totals"]["measured_tokens"], 5)
+
     def test_scope_filters_exact_thread_session_and_root_subtree(self) -> None:
         root = SessionRecord(
             file="root",
