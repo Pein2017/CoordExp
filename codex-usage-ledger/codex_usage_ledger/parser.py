@@ -168,19 +168,21 @@ class SessionRecord:
             for context in self.turn_contexts
             if receipt.turn_id and context.turn_id == receipt.turn_id
         ]
-        if candidates:
-            return candidates[-1]
-
         receipt_time = _parse_timestamp(receipt.timestamp)
         if receipt_time is not None:
-            prior = [
-                context
-                for context in self.turn_contexts
-                if (context_time := _parse_timestamp(context.timestamp)) is not None
-                and context_time <= receipt_time
-            ]
+            prior: list[tuple[int, TurnContext, datetime]] = []
+            for index, context in enumerate(candidates or self.turn_contexts):
+                context_time = _parse_timestamp(context.timestamp)
+                if context_time is not None and context_time <= receipt_time:
+                    prior.append((index, context, context_time))
             if prior:
-                return prior[-1]
+                return max(prior, key=lambda item: (item[2], item[0]))[1]
+            # Do not attribute a receipt to a context that was persisted later
+            # in the timeline. A missing context is safer than charging it to a
+            # future model/effort route.
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
         return None
 
     def route_usage(self) -> list[dict[str, Any]]:

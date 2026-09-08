@@ -163,7 +163,9 @@ pagination files. Duplicate receipts with the same usage are counted once;
 metadata differences are reported under `scan.usage.metadata_conflicts`.
 Duplicates with conflicting usage are excluded and reported under
 `scan.usage`. A receipt whose thread identity differs from the enclosing file
-is excluded as foreign.
+is excluded as foreign. Route attribution uses the latest matching context at
+or before the receipt timestamp, so a future context cannot receive earlier
+usage.
 
 Files without modern receipts use the older cumulative `event_msg/token_count`
 fallback. A reset to a lower cumulative counter starts a new legacy epoch, and

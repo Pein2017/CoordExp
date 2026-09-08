@@ -281,6 +281,79 @@ class LedgerTests(unittest.TestCase):
                 second.usage_reconciliation_warnings,
             )
 
+    def test_receipt_route_uses_context_at_or_before_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rollout-2026-08-01T00-00-00-route.jsonl"
+            usage_one = {
+                "input_tokens": 100,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 0,
+                "reasoning_output_tokens": 0,
+                "total_tokens": 100,
+            }
+            usage_two = {**usage_one, "input_tokens": 200, "total_tokens": 200}
+            path.write_text(
+                "".join(
+                    [
+                        _line(
+                            "2026-08-01T09:59:00Z",
+                            "session_meta",
+                            {
+                                "id": "route-thread",
+                                "thread_source": "subagent",
+                            },
+                        ),
+                        _line(
+                            "2026-08-01T10:00:00Z",
+                            "turn_context",
+                            {
+                                "turn_id": "same-turn",
+                                "model": "gpt-5.6-luna",
+                                "effort": "medium",
+                                "multi_agent_version": "v2",
+                            },
+                        ),
+                        _usage_line(
+                            "2026-08-01T10:01:00Z",
+                            thread_id="route-thread",
+                            response_id="response-one",
+                            usage=usage_one,
+                            turn_id="same-turn",
+                        ),
+                        _line(
+                            "2026-08-01T11:00:00Z",
+                            "turn_context",
+                            {
+                                "turn_id": "same-turn",
+                                "model": "gpt-5.6-astra",
+                                "effort": "high",
+                                "multi_agent_version": "v2",
+                            },
+                        ),
+                        _usage_line(
+                            "2026-08-01T11:01:00Z",
+                            thread_id="route-thread",
+                            response_id="response-two",
+                            usage=usage_two,
+                            turn_id="same-turn",
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            record = parse_rollout(path)
+            reconcile_usage([record])
+            route_totals = {
+                route["model"]: route["usage"]["total_tokens"]
+                for route in record.route_usage()
+            }
+            self.assertEqual(
+                route_totals,
+                {"gpt-5.6-astra": 200, "gpt-5.6-luna": 100},
+            )
+
     def test_receipt_window_does_not_trust_filename_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
