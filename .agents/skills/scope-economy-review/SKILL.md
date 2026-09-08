@@ -28,8 +28,8 @@ One read-only reviewer is allowed only when all four conditions hold:
 Choose an available model and supported effort sufficient for the review,
 following the user-wide routing rules. Keep:
 
-- `fork_turns: "none"`
-- no writes, subagents, or full-history reconstruction
+- lead-selected `fork_turns` under the agent contract
+- no writes or subagents; stay within the frozen review target
 
 Give it only the frozen outcome, acceptance and stop rule; next actions; shortest
 real path; claimed consumer; and user-owned decisions. If any condition fails,

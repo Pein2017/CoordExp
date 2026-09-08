@@ -21,8 +21,10 @@ permanent posts or model ranks:
 
 - **Lead:** user intent, scientific/spec meaning, cross-package interfaces,
   resource allocation, integration, and final acceptance.
-- **Package owner:** investigate, implement, test the real entry/consumer,
-  correct defects, and deliver one coherent candidate within the frozen scope.
+- **Package owner:** own one independently assessable research or engineering
+  question, gather the required evidence, and deliver a coherent result within
+  the agreed scope. Implementation and real entry/consumer checks apply when
+  the task requires them.
 - **Optional specialist:** answer one evidence question, challenge one named
   failure mode, or analyze one difficult idea. No automatic reviewer per task.
 
@@ -70,11 +72,16 @@ real acceptance command/evidence; deliverable and stop rule;
 delegation allowed or forbidden (plus bounds if allowed).
 ```
 
+When coordination matters, identify relevant peers and their responsibilities,
+which changes require notification, and the shared record location.
+
 Reference the existing spec, config, or research record instead of copying it
 into every message. Identify mutable inputs by a checkpoint/hash when drift
 would change the result. Shared files are not automatically shared knowledge.
-Set model, reasoning_effort, and fork_turns explicitly under the agent contract;
-builders/reviewers use `fork_turns: "none"`. Avoid inherited full transcripts.
+Let the lead choose `fork_turns` dynamically under the agent contract; worker
+roles do not impose a fixed mode or turn cap. Inherit context when it saves
+rebriefing, and supply task scope and missing evidence explicitly. Respect the
+selected fork mode's model and effort inheritance constraints.
 
 Use the native v2 tools according to their actual semantics:
 
@@ -82,9 +89,11 @@ Use the native v2 tools according to their actual semantics:
 - `send_message`: deliver a fact/question without starting an idle target's
   turn. Use canonical paths such as `/root/package/worker` across branches.
 - `followup_task`: continue a non-root target and start a turn if idle. Reuse
-  only while goal, owner, permissions, constants, and acceptance remain valid.
+  follows the agent contract's continuity and authority checks.
 - `wait_agent`: event-driven mailbox wait; follow contract wait bounds. Use
-  `list_agents` to reconcile ownership when needed, not as a polling loop.
+  `list_agents` to discover peers and reconcile the roster when needed, not as
+  a polling loop. Names and status do not establish responsibilities; use the
+  brief or ask the owner.
 - `interrupt_agent`: reconcile interrupted work before handing off its surface;
   do not assume interrupting a reasoning turn terminates its external jobs.
 
@@ -95,6 +104,11 @@ authority, redirect another owner's work, or change a shared contract. Route
 cross-package decisions to L0 and update the single authoritative artifact.
 Do not broadcast logs/transcripts; native completion normally returns to the
 immediate parent, so a package owner must synthesize its children's results.
+
+Use existing research records for shared evidence, with each agent updating
+its owned file or section. Avoid a duplicate board or competing writers.
+Record updates do not notify peers automatically: send affected peers a short
+change summary and evidence path when their decisions or execution may change.
 
 ## Optional L0 -> L1 -> L2 package delegation
 

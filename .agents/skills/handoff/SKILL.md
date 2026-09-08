@@ -10,11 +10,13 @@ creating a second project state.
 
 ## Phase Boundaries
 
-Prefer a fresh non-forked task when moving from approved design to
-implementation, or from fixed implementation to costly launch or recovery, and
-the prior transcript is no longer needed to act safely. The handoff carries
-only the state required by the next phase; it never inherits launch, recovery,
-or research authority from the previous task.
+Create a handoff for an actual transfer to another agent, task, or machine, or
+when the current context cannot be reliably continued. A phase change alone
+does not require a new task or handoff. Let the lead choose continuity,
+replacement, and context inheritance under the agent contract, based on
+context reliability, responsibility changes, and total completion cost.
+The handoff carries only the state needed to continue; it never grants launch,
+recovery, or research authority from the previous task.
 
 ## Write
 
