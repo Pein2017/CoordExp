@@ -444,7 +444,7 @@ def rewrite_pytest_with_generic_filter(
 ) -> str | None:
     """Preserve collection output while avoiding RTK's lossy pytest summary.
 
-    RTK 0.45's specialized ``rtk pytest`` parser still reports ``No tests
+    RTK 0.48.0's specialized ``rtk pytest`` parser still reports ``No tests
     collected`` for a successful ``--collect-only`` run.  ``rtk test`` keeps
     the original command and exit code, preserves the collection output, and
     never invents a collection result.  Normal pytest commands use upstream's
