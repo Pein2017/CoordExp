@@ -125,6 +125,13 @@
 # Ignore downloaded/installed skill system runtime artifacts
 .codex/skills/.system/
 
+# Shared agent skills are tracked; local markers and bytecode stay ignored
+!.agents/
+!.agents/skills/
+!.agents/skills/**
+.agents/skills/.openspec-target
+.agents/skills/**/__pycache__/
+
 # Ignore common Python cache folders
 **/__pycache__/**
 **/*.pyc
