@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask Pro"
+  short_description: "为关键难题准备可直接复制给网页版 GPT-pro 的自洽咨询提示词"
+  default_prompt: "使用 $ask-pro，把当前关键难题、必要证据和真正需要外部推理的分歧，整理成我可直接复制给网页版 GPT-pro 的自洽 prompt。"

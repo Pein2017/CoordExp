@@ -1,5 +1,5 @@
 ---
-name: native-subagents-guidance
+name: native-agent-team-guidance
 description: Choose native agent-team topology, package ownership, model and effort, and concise message flow when delegation can reduce time or lead context. Flat by default; nested package delegation only when authorized and worthwhile.
 ---
 
@@ -29,33 +29,52 @@ permanent posts or model ranks:
   failure mode, or analyze one difficult idea. No automatic reviewer per task.
 
 Split by independently acceptable outcomes, not by files or process steps.
+If one lane's findings would repeatedly redefine another lane's task, settle
+that dependency first or keep the coupled work with one owner.
 Keep one bug's diagnosis/fix/check loop together unless a real independent lane
 exists. Parallelize independent reads or disjoint writes, not competing fixes,
 shared-state debugging, or the same scarce runtime. Do not assign a scout if
 the lead will repeat its entire investigation anyway.
 
-## Model and effort: broad roles, task-shaped choices
+## Model and effort: experimental, temporary priors
 
-These are user-preferred starting hypotheses, not measured model rankings.
+Prefer Luna + Astra provisionally; these are user-preferred starting hypotheses,
+not locally measured quality or total-cost rankings. Keep Sol available as an
+optional comparator or fallback, not a mandatory middle tier or retired model.
+The suggested roles and effort ranges below are not requirements; revise them
+when task-specific acceptance, latency, or cost evidence favors another route.
 Check actual callable models/efforts; select directly rather than forcing an
 escalation ladder. Effort buys search depth, not authority or automatic quality.
-Compare model x effort pairs, not just families: lower-effort Astra can be a
-candidate against higher-effort Sol. Treat supplied benchmarks as task-specific
-priors, not proof of lead quality, local prices, or monotonic effort gains.
+The user reports benchmarks of Astra-light >= Sol-high and Astra-medium >=
+Sol-xhigh/max; treat these as supplied priors, not independently verified local
+acceptance or cost evidence. In the current native tool, the user's "light"
+maps to callable `low`; do not pass an unsupported `light` effort.
 
 | Model | Working range and roles |
 |---|---|
-| `gpt-5.6-luna` | Use `medium/high/xhigh/max`, not low. Medium for exact evidence and mechanics; high for bounded fixes and checks; xhigh/max for deeper or multi-file implementation with clear invariants and a strong verifier. Not scout-only. |
-| `gpt-5.6-sol` | Use `low/medium/high/xhigh/max`. Low for clear small implementation/review; medium for ordinary complete packages; high for hard/long implementation, integration, recovery, and audit; xhigh/max for difficult debugging, hidden correctness, architecture, or mechanism analysis. Not a fallback-only model. |
-| `gpt-6-astra` | Consider every supported effort and role, including low for bounded work. Medium/high are the normal lead candidates; use xhigh/max/ultra when concrete uncertainty justifies them, often as a focused adviser rather than an always-deep lead. |
+| `gpt-5.6-luna` | `medium/high` for cheap scouting, mechanical work, evidence extraction, and summaries; `xhigh/max` for simple or moderate implementation with clear invariants and a strong verifier. Not scout-only. |
+| `gpt-6-astra` | `low` (user's light) for complex implementation; consider `medium` when uncertainty warrants more depth. `high` or above for consequential review/audit; `xhigh/max` for decisive reasoning, brainstorming, or a focused adviser. Advice does not transfer user-owned decisions. |
+| `gpt-5.6-sol` | Optional comparator or fallback at a supported effort when task-specific evidence favors it. Its total accepted-task cost versus Astra `low/medium` is unresolved; do not require it between Luna and Astra. |
 
-Sol high/xhigh is a normal review/audit choice. Astra subagents are exceptional,
-not forbidden: use them for complex consequential review, uncertain ideas, or
-a demonstrated task-specific advantage. Task length alone does not require
-Astra. Terra remains outside the default rotation, not unavailable.
+Two provisional operating patterns:
+
+- For clear, readily verifiable work that can tolerate latency, consider Luna
+  `xhigh/max` owning the whole package rather than duplicating its work in Astra.
+- For complex or time-sensitive work, consider Astra `low/medium` as owner,
+  with Luna handling independent evidence or mechanical work in parallel.
+  Useful owner work need not wait for unrelated scouts to finish.
+
+Treat Luna's token price as a low-weight concern, not its waiting, integration,
+or rework cost. Cheap calls favor useful delegation, not redundant reports.
+Route summaries by semantic risk, not the label "summary" alone.
+
+Astra is a normal worker/adviser choice in this routing, not exceptional.
+Task length alone does not require it, and a model preference does not create
+a review gate. Terra remains outside the default rotation, not unavailable.
 
 If making Luna reliable requires the lead to solve the task in an over-detailed
-prompt, prefer Sol. A concise invariant plus a real counterexample/consumer
+prompt, prefer Astra `low/medium` rather than solving the task for Luna. A
+concise invariant plus a real counterexample/consumer
 check is more useful than a longer list of instructions. Do not claim that
 lower lead effort preserves quality until real acceptance evidence supports it;
 escalate proactively at ambiguous semantic or high-consequence boundaries.
@@ -66,22 +85,41 @@ Writing a preferred effort in a brief does not change the running lead setting.
 Give a self-contained brief with only execution-changing information:
 
 ```text
-goal / non-goals; cwd; authoritative artifact and version;
+goal / non-goals; overall decision this result informs;
+cwd; authoritative artifact and version;
 owned read/write paths; permissions and frozen invariants;
 real acceptance command/evidence; deliverable and stop rule;
 delegation allowed or forbidden (plus bounds if allowed).
 ```
 
-When coordination matters, identify relevant peers and their responsibilities,
-which changes require notification, and the shared record location.
+Distinguish the assignment, not another topology: a **research-question owner**
+gets the frozen question, claim/resource boundaries, decision-bearing evidence,
+and stop rule, with freedom to choose methods inside those bounds. Do not solve
+the investigation in its brief. An **execution owner** implements the accepted
+design and verifies its real entry/consumer; it does not reopen frozen research
+meaning. Escalate conflicts rather than silently switching assignments.
+
+For evolving research, use a short current-context section in the existing
+authoritative record: overall question and outcome criterion, fixed boundaries
+and open decisions, what L0 is deciding or awaiting, active owners and their
+dependencies, and the latest changes that affect work. Give that section one
+owner; link package evidence rather than duplicating it. All nodes need the
+overall purpose; each needs detail about its own dependencies, not every log.
+Identify relevant peers, which changes require notification, and this entry
+point in the brief. Read it on assignment or resumption and refresh affected
+inputs after a relevant change, before dependent costly execution or submission.
+Do not add periodic polling or require a separate board for a simple task.
 
 Reference the existing spec, config, or research record instead of copying it
 into every message. Identify mutable inputs by a checkpoint/hash when drift
 would change the result. Shared files are not automatically shared knowledge.
-Let the lead choose `fork_turns` dynamically under the agent contract; worker
-roles do not impose a fixed mode or turn cap. Inherit context when it saves
-rebriefing, and supply task scope and missing evidence explicitly. Respect the
-selected fork mode's model and effort inheritance constraints.
+Choose `fork_turns` dynamically: consider `all` when research history and prior
+tradeoffs materially affect the assignment, limited turns when recent context
+suffices, and `none` for self-contained work or an independent challenge that
+benefits from isolation. Supply current scope and missing evidence either way.
+Inherited history is a spawn-time snapshot, not a live feed of later parent or
+sibling work; mark superseded assumptions explicitly. Respect the selected
+fork mode's model and effort inheritance constraints; no role mandates a mode.
 
 Use the native v2 tools according to their actual semantics:
 
@@ -109,6 +147,14 @@ Use existing research records for shared evidence, with each agent updating
 its owned file or section. Avoid a duplicate board or competing writers.
 Record updates do not notify peers automatically: send affected peers a short
 change summary and evidence path when their decisions or execution may change.
+For a changed invariant, decision-bearing input, or producer/consumer interface,
+identify the affected work and whether existing results remain valid, need
+recomputation, or still need checking. The affected owner acknowledges and
+reconciles that change before further dependent execution or submission; do
+not require acknowledgments for routine evidence updates. Use `followup_task`
+if an idle owner must act. Peer interface facts can travel directly while the
+package owner retains integration; shared understanding does not replace a
+real consumer check on a changed artifact.
 
 ## Optional L0 -> L1 -> L2 package delegation
 
@@ -130,7 +176,8 @@ For an authorized nested package:
   delegation ceiling, total worker/resource allowance, and allowed model/effort
   choices. All descendants share that allowance; it is not multiplied per L1.
 - L1 decomposes only that package, dispatches with explicit model/effort/fork,
-  assigns disjoint write ownership, integrates L2 candidates, and runs the
+  names upstream inputs and affected peers, assigns disjoint write ownership,
+  integrates L2 candidates, and runs the
   package's consumer-facing checks. It is not a second portfolio scheduler.
 - L2 implements or investigates its bounded part; it cannot spawn L3, alter the
   package contract, or bypass L1's integration. L1 does not concurrently edit
@@ -152,8 +199,23 @@ counterexample and the acceptance commands, not another broad review round.
 Fresh contexts are appropriate when the contract or foundational assumptions
 change; otherwise let the same owner finish its correction loop.
 
+Before an expensive rerun, distinguish failed execution from a derived-only
+evaluation defect. For research work, use the retained-evidence recovery rule in
+[research-flow](../research-flow/SKILL.md) before deciding whether execution must
+repeat; a failed reducer alone is not a reason to repeat valid model work.
+
 Optimize the whole accepted outcome: worker usage, lead intervention, rework,
 integration/verification, and runtime wait. Cached tokens are not unique text
 or a complete cost measure; completed workers are not accepted-task evidence.
-Use existing checks, receipts, and usage when available, not duplicate model
-benchmarks or new accounting machinery. Stop when acceptance is satisfied.
+The current experimental question is whether Sol at a supported effort or
+Astra `low/medium` delivers comparable accepted work at lower total token cost.
+When existing receipts support it, compare similar task shapes and acceptance
+requirements, including helper usage, substantive rework, and attributable lead
+integration or takeover. Separate cached input, uncached input, and output;
+use dated applicable rates rather than raw token totals, and report elapsed
+time separately. Missing usage is unknown, not zero; different tasks do not
+establish a causal model ranking.
+Use naturally occurring acceptance evidence to revise these priors, not a
+mandatory model alternation, duplicate runs, or new accounting infrastructure.
+Sol retirement remains an open decision, not an automatic consequence of this
+preference. Stop when acceptance is satisfied.
