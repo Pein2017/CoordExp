@@ -30,8 +30,8 @@
 
 ## 5. Learning and parameter foundations — L and P, disjoint from M
 
-- [ ] 5.1 Add aligned differentiable token scoring below packed `LossContext`, adapt matching packed CE use and retain explicit caller reductions; verify score/gradient parity, full/compact causal positions and DORA CE/RLOO versus coordinate/full-action formulas.
-- [ ] 5.2 Remove unused `BackendScalingReceipt`, its validator/private helper and dedicated exports/tests after replaying scoped reachability; verify the actual runtime extra-accumulation rejection, planned-step normalization and runtime sequencing remain intact.
+- [x] 5.1 Add aligned differentiable token scoring below packed `LossContext`, adapt matching packed CE use and retain explicit caller reductions; verify score/gradient parity, full/compact causal positions and DORA CE/RLOO versus coordinate/full-action formulas.
+- [x] 5.2 Remove unused `BackendScalingReceipt`, its validator/private helper and dedicated exports/tests after replaying scoped reachability; verify the actual runtime extra-accumulation rejection, planned-step normalization and runtime sequencing remain intact.
 - [ ] 5.3 Expose adapter parameter selection at the existing owner and accept explicit optimizer groups without unused embedding settings; verify order, uniqueness, exact trainable coverage and Human13 raw-AdamW/prepared-wrapper CPU acceptance.
 - [ ] 5.4 Refine adapter/embedding attachment inputs so native research does not build whole inference/train configs merely to load a model; verify existing attachment validation, selected parameter identity and persisted optimizer/adapter continuation checks. P owns these files exclusively and hands signatures to M.
 - [ ] 5.5 Retain concrete packed training/runtime/calibration behavior and move only selected Human13 arm composition to its direction owner; verify existing streamed-gradient/strict-crossing tests and no new universal training/context layer appears.

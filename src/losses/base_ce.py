@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
-import torch.nn.functional as F
 
 from src.common.errors import LossContractError
 from src.losses.context import LossContext
+from src.losses.token_scores import aligned_token_logprobs
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class BaseTokenCE:
                 code="loss.base_ce_empty",
                 context={"term": self.name},
             )
-        return F.cross_entropy(logits_fp32, target_ids, reduction="none")
+        return -aligned_token_logprobs(logits_fp32, target_ids)
 
 
 __all__ = ["BaseTokenCE"]

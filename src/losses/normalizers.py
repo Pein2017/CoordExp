@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from numbers import Real
 
 import torch
 
 from src.common.errors import LossContractError
-from src.config.models import RuntimeBatchResolution
 from src.losses.context import LossContext
 
 
@@ -136,26 +134,6 @@ class SegmentBalancedLossResult:
         return self.denominator.context_count
 
 
-@dataclass(frozen=True)
-class BackendScalingReceipt:
-    normalizer_scope: str
-    world_size: int
-    effective_batch_size: int
-    resolved_grad_accum_steps: int
-    runtime_loss_divisor: float
-    backend_loss_divisor: float
-
-    def to_artifact_dict(self) -> dict[str, float | int | str]:
-        return {
-            "normalizer_scope": self.normalizer_scope,
-            "world_size": self.world_size,
-            "effective_batch_size": self.effective_batch_size,
-            "resolved_grad_accum_steps": self.resolved_grad_accum_steps,
-            "runtime_loss_divisor": self.runtime_loss_divisor,
-            "backend_loss_divisor": self.backend_loss_divisor,
-        }
-
-
 def build_segment_balanced_denominator(
     slices: Sequence[PlannedStepLossSlice],
 ) -> SegmentBalancedDenominator:
@@ -254,43 +232,6 @@ def segment_balanced_contribution(
     return segment_mean_sum / float(denominator.eligible_segment_count)
 
 
-def validate_planned_step_backend_scaling(
-    runtime_batch: RuntimeBatchResolution,
-    *,
-    runtime_loss_divisor: int | float = 1,
-    backend_loss_divisor: int | float = 1,
-) -> BackendScalingReceipt:
-    runtime_divisor = _positive_float_divisor(
-        runtime_loss_divisor,
-        name="runtime_loss_divisor",
-    )
-    backend_divisor = _positive_float_divisor(
-        backend_loss_divisor,
-        name="backend_loss_divisor",
-    )
-    if runtime_divisor != 1.0 or backend_divisor != 1.0:
-        raise LossContractError(
-            "planned-step normalized losses must not receive extra accumulation divisors",
-            code="loss.backend_double_scaling",
-            context={
-                "normalizer_scope": "planned_step",
-                "world_size": runtime_batch.world_size,
-                "effective_batch_size": runtime_batch.effective_batch_size,
-                "resolved_grad_accum_steps": runtime_batch.resolved_grad_accum_steps,
-                "runtime_loss_divisor": runtime_divisor,
-                "backend_loss_divisor": backend_divisor,
-            },
-        )
-    return BackendScalingReceipt(
-        normalizer_scope="planned_step",
-        world_size=runtime_batch.world_size,
-        effective_batch_size=runtime_batch.effective_batch_size,
-        resolved_grad_accum_steps=runtime_batch.resolved_grad_accum_steps,
-        runtime_loss_divisor=runtime_divisor,
-        backend_loss_divisor=backend_divisor,
-    )
-
-
 def _checked_slices(
     slices: Sequence[PlannedStepLossSlice],
 ) -> tuple[PlannedStepLossSlice, ...]:
@@ -357,30 +298,11 @@ def _zero_scalar(tensor: torch.Tensor) -> torch.Tensor:
     return tensor.new_zeros(())
 
 
-def _positive_float_divisor(value: int | float, *, name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, Real):
-        raise LossContractError(
-            "backend scaling divisor must be numeric",
-            code="loss.backend_scaling_divisor",
-            context={"field": name, "value_type": type(value).__name__},
-        )
-    divisor = float(value)
-    if divisor <= 0.0:
-        raise LossContractError(
-            "backend scaling divisor must be positive",
-            code="loss.backend_scaling_divisor",
-            context={"field": name, "value": value},
-        )
-    return divisor
-
-
 __all__ = [
-    "BackendScalingReceipt",
     "PlannedStepLossSlice",
     "SegmentBalancedDenominator",
     "SegmentBalancedLossResult",
     "build_segment_balanced_denominator",
     "reduce_segment_balanced_planned_step",
     "segment_balanced_contribution",
-    "validate_planned_step_backend_scaling",
 ]

@@ -105,6 +105,33 @@ def test_base_token_ce_matches_full_vocab_cross_entropy_for_selected_atoms() -> 
     assert torch.allclose(losses, expected)
 
 
+def test_packed_ce_full_and_compact_preserve_selected_gradients() -> None:
+    sequence = _sequence(
+        (
+            _atom(target_position=2, token_id=7, token_type="desc_text"),
+            _atom(target_position=3, token_id=3, token_type="coordinate"),
+        )
+    )
+    full = torch.randn(1, 4, 8, generator=torch.Generator().manual_seed(17), requires_grad=True)
+    compact = full.detach()[:, (1, 2)].clone().requires_grad_()
+    reference = full.detach().clone().requires_grad_()
+    weights = torch.tensor([2.0, -0.5])
+    full_losses = BaseTokenCE().per_atom_loss(
+        LossContext(full, sequence, _groups())
+    )
+    compact_losses = BaseTokenCE().per_atom_loss(
+        LossContext(compact, sequence, _groups(), logits_position_ids=(1, 2))
+    )
+    expected = F.cross_entropy(reference[0, (1, 2)].float(), torch.tensor([7, 3]), reduction="none")
+    for loss, tensor in ((full_losses, full), (compact_losses, compact), (expected, reference)):
+        (loss * weights).sum().backward()
+    torch.testing.assert_close(full_losses, expected)
+    torch.testing.assert_close(compact_losses, expected)
+    torch.testing.assert_close(full.grad, reference.grad)
+    torch.testing.assert_close(compact.grad, reference.grad[:, (1, 2)])
+    assert torch.count_nonzero(full.grad[:, (0, 3)]) == 0
+
+
 def test_token_type_gate_loss_uses_exact_logsumexp_group_mass() -> None:
     sequence = _sequence(
         (

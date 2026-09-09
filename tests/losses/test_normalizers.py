@@ -4,14 +4,12 @@ import pytest
 import torch
 
 from src.common.errors import LossContractError
-from src.config.models import RuntimeBatchResolution
 from src.losses import (
     LossContext,
     PlannedStepLossSlice,
     TokenVocabularyGroups,
     reduce_segment_balanced_planned_step,
     segment_balanced_contribution,
-    validate_planned_step_backend_scaling,
 )
 from src.packing.planner import PackedSegment
 from src.supervision import TokenAtom, TokenSequence
@@ -189,67 +187,6 @@ def test_segment_balanced_reducer_excludes_empty_segments_and_rejects_zero_globa
         )
 
     assert exc_info.value.code == "loss.segment_balanced_zero_eligible"
-
-
-def test_planned_step_backend_scaling_guard_rejects_extra_accumulation_divisors() -> None:
-    runtime_batch = RuntimeBatchResolution(
-        world_size=2,
-        effective_batch_size=8,
-        resolved_grad_accum_steps=4,
-    )
-
-    receipt = validate_planned_step_backend_scaling(
-        runtime_batch,
-        runtime_loss_divisor=1,
-        backend_loss_divisor=1,
-    )
-
-    assert receipt.normalizer_scope == "planned_step"
-    assert receipt.resolved_grad_accum_steps == 4
-    assert receipt.runtime_loss_divisor == 1
-    assert receipt.backend_loss_divisor == 1
-
-    with pytest.raises(LossContractError) as exc_info:
-        validate_planned_step_backend_scaling(
-            runtime_batch,
-            runtime_loss_divisor=4,
-            backend_loss_divisor=1,
-        )
-
-    assert exc_info.value.code == "loss.backend_double_scaling"
-
-    with pytest.raises(LossContractError) as exc_info:
-        validate_planned_step_backend_scaling(
-            runtime_batch,
-            runtime_loss_divisor=1,
-            backend_loss_divisor=4,
-        )
-
-    assert exc_info.value.code == "loss.backend_double_scaling"
-
-
-def test_planned_step_backend_scaling_guard_rejects_non_numeric_divisors() -> None:
-    runtime_batch = RuntimeBatchResolution(
-        world_size=1,
-        effective_batch_size=1,
-        resolved_grad_accum_steps=1,
-    )
-
-    with pytest.raises(LossContractError) as exc_info:
-        validate_planned_step_backend_scaling(
-            runtime_batch,
-            runtime_loss_divisor="1",  # type: ignore[arg-type]
-        )
-
-    assert exc_info.value.code == "loss.backend_scaling_divisor"
-
-    with pytest.raises(LossContractError) as exc_info:
-        validate_planned_step_backend_scaling(
-            runtime_batch,
-            backend_loss_divisor=True,
-        )
-
-    assert exc_info.value.code == "loss.backend_scaling_divisor"
 
 
 def _context(

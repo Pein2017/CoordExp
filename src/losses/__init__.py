@@ -8,14 +8,12 @@ from src.losses.coord_gaussian_rps import (
     ranked_probability_score,
 )
 from src.losses.normalizers import (
-    BackendScalingReceipt,
     PlannedStepLossSlice,
     SegmentBalancedDenominator,
     SegmentBalancedLossResult,
     build_segment_balanced_denominator,
     reduce_segment_balanced_planned_step,
     segment_balanced_contribution,
-    validate_planned_step_backend_scaling,
 )
 from src.losses.runner import LossBundle, LossRunner, LossTermResult
 from src.losses.rollout_calibration import (
@@ -41,6 +39,7 @@ from src.losses.rollout_calibration import (
     rollout_site_token_type_gate,
 )
 from src.losses.token_type_gate import TokenTypeGateLoss
+from src.losses.token_scores import aligned_token_logprobs
 from src.losses.vocab import (
     KNOWN_CONTROL_TOKENS,
     V1_TOKEN_TYPES,
@@ -51,7 +50,6 @@ from src.losses.vocab import (
 
 __all__ = [
     "BaseTokenCE",
-    "BackendScalingReceipt",
     "CandidatePath",
     "CandidatePathScore",
     "CoordGaussianRPSLoss",
@@ -91,5 +89,5 @@ __all__ = [
     "reduce_segment_balanced_planned_step",
     "rollout_site_token_type_gate",
     "segment_balanced_contribution",
-    "validate_planned_step_backend_scaling",
+    "aligned_token_logprobs",
 ]
