@@ -1,11 +1,58 @@
 # Operator procedure
 
-Status: r2 is staged and verified; shared runtime activation is pending.
+Status: r2 is active and live-verified on 2026-09-09, following explicit user authorization.
 Package:
 `/data/CoordExp/.codex/packages/standalone/releases/0.153.4-mcp-idle-20260909-r2-x86_64-unknown-linux-gnu`.
 Its `mcp-idle-manifest.json` binds the binary and source commit, and
 `validation/acceptance.json` binds all seven isolated entry scenarios.
-This document does not authorize or report a shared runtime restart.
+The activation receipt is `operations/activation-receipt.json` in that package;
+the actual shared-Core Serena test is `operations/live-20260909T112842Z/receipt.json`.
+
+## Current mechanism
+
+Core owns the timer and MCP connection lifecycle. Main tasks use 900 seconds of
+idle grace; completed native subagents use 120 seconds. Active turns, operations,
+pending interactions, and uncertain completion prevent suspension. Only the
+opted-in Serena stdio instance is closed; task history and background execution
+are retained. The next real MCP demand reconstructs one instance, rechecks its
+handshake/catalog, and preserves the proven startup project. Passive status does
+not recreate it. A different or ambiguous project/context mutation may retain
+the instance instead. This is a Core patch, not an external PID-cleanup daemon
+or a modified Serena distribution.
+
+## Upgrading Codex or Serena
+
+This patch is currently based on Codex 0.153.4. Source commit
+`1208c8f07f480e3e778118a80fad99e5a62e742a` is maintained on
+`codex/mcp-idle-lifecycle` in
+`/data/CoordExp/external/harness/codex-mcp-idle-lifecycle-0.153.4`.
+The version string alone does not distinguish this build from stock; check the
+resolved executable, manifest, and binary hash.
+
+For a future CLI/Core upgrade:
+
+1. Preserve the currently working package and configuration. Prepare a new
+   isolated checkout of the intended release and port this commit there.
+2. Resolve changes at configuration parsing, actual-turn admission, MCP client
+   lifecycle, and passive-status collection. A clean cherry-pick is not proof
+   of behavioral compatibility.
+3. Run the affected Rust checks and all three packaged harnesses in `validation/`
+   (main including real Serena, native child, wake). Bind results to the new
+   binary and its matching code-mode host.
+4. Stage a new versioned package, then perform a controlled switch and live
+   Serena smoke. Do not overwrite the working release in place.
+
+Installing an unpatched official CLI does not carry this source patch forward;
+the three configuration keys alone cannot provide reclamation. The relevant
+upgrade is the executable that owns MCP, not merely the Desktop UI version.
+Porting may be small or require adaptation; do not assume either in advance.
+
+A Serena upgrade usually does not require rebuilding Core, but its startup CLI,
+project behavior, handshake and tool catalog must still satisfy the reconstruction
+contract. Re-run the real Serena scenario; contract changes may require a Core
+adjustment. Changing only the grace intervals requires configuration reload,
+not recompilation. Removing all three policy keys and reloading configuration
+disables automatic reclamation.
 
 ## Policy
 

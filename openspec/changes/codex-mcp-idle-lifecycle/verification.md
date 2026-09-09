@@ -1,6 +1,6 @@
 # Verification receipt
 
-Status: **lead-accepted implementation and isolated package; shared runtime not activated**.
+Status: **lead-accepted implementation; shared runtime active and live-verified**.
 
 ## Frozen delivery
 
@@ -60,4 +60,14 @@ The generated config schema hash is `227a4dd5c3175c58cd7201cb95d9d6633f72a50a097
 
 `just bazel-lock-update` could not run because Bazel is absent (exit 127). The lockfile proof shows exactly 149 workspace version changes from 0.0.0 to 0.153.4, with no external dependency drift. Workspace-wide tests were not run. These limitations do not replace the scoped checks and real entry evidence above.
 
-Production grace examples are 900 seconds for main tasks and 120 seconds for completed native subagents; isolated acceptance uses shorter positive intervals. No production configuration was changed. The installed shared Core remains stock 0.153.4, and both the standalone proxy and separate legacy 0.151.0 instance were preserved. Activation must follow `OPERATIONS.md` and a fresh identity/active-task check within an authorized maintenance boundary. The installed wake plugin remains non-opted unless its manifest is separately updated; the implementation supports its explicit manifest policy without rewriting plugin caches.
+Production graces are now 900 seconds for main tasks and 120 seconds for completed native subagents; bounded tests use shorter positive intervals. The installed wake plugin remains non-opted unless its manifest is separately updated; the implementation supports its explicit manifest policy without rewriting plugin caches.
+
+## Authorized live activation
+
+The user explicitly authorized activation after reviewing the staged package. Fresh preflight found 51 loaded tasks with only this lead active; old Core identity, configuration hash and current-package target matched the frozen plan. The activation helper rejected a stale process identity in its sensitivity check; TOML validation proved the configuration change was exactly the three Serena policy keys.
+
+Old Core PID 224609 did not exit within the 30-second graceful interval, so the user-authorized controlled restart used its verified pidfd to terminate that exact process. New Core PID 1567165 runs the r2 packaged binary with the preserved working directory, environment and CLI flags. The application subsequently established a new proxy (PID 1586371); the old proxy exited without a signal from the helper. The independent legacy 0.151.0 instance was not changed.
+
+Live verification against the actual shared Unix socket passed, including peer-PID validation, production configuration, and real Serena symbol queries in one ephemeral test task. With a two-second task-local override, Serena PID 1567742 exited; the same task reconstructed PID 1569746 and returned the expected symbol. Both test processes subsequently exited. No external model or GPU was used.
+
+Package receipts: `operations/activation-receipt.json`, `operations/preflight.json`, and `operations/live-20260909T112842Z/receipt.json`. Terminal `codex` and shared Core both resolve to the r2 package. The original package and a private configuration backup remain available for rollback. Future CLI/Core upgrades follow the port/build/entry-test procedure in `OPERATIONS.md`; stock releases do not automatically include this custom patch.
