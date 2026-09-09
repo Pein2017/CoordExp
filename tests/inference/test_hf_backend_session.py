@@ -355,7 +355,7 @@ def test_hf_session_native_batch_records_policy_and_raw_fp32_channels(
 
 
 def test_policy_logprob_extraction_chunks_long_generation_scores() -> None:
-    from src.inference.hf_backend import _policy_chosen_token_logprobs
+    from src.qwen.generation import policy_chosen_token_logprobs
 
     batch_size = 2
     prompt_width = 3
@@ -376,7 +376,7 @@ def test_policy_logprob_extraction_chunks_long_generation_scores() -> None:
     )
     model = FakeHFModel(sequences=sequences.tolist(), score_steps=list(scores))
 
-    observed = _policy_chosen_token_logprobs(
+    observed = policy_chosen_token_logprobs(
         model=model,
         sequences=sequences,
         scores=scores,
@@ -446,7 +446,7 @@ def test_hf_session_forces_left_padding_for_heterogeneous_prompts(
 def test_hf_repetition_penalty_groups_native_batches_by_prompt_width(
     tmp_path: Any,
 ) -> None:
-    from src.inference.hf_backend import _native_batch_groups
+    from src.inference.hf_backend import HFBackendSession
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (2, 2), color="white").save(image_path)
@@ -471,12 +471,26 @@ def test_hf_repetition_penalty_groups_native_batches_by_prompt_width(
         ),
     )
 
-    groups = _native_batch_groups(requests, batch_size=3)
-
-    assert [[item.request_id for item in group] for group in groups] == [
-        ["short-1", "short-2"],
-        ["long"],
-    ]
+    tokenizer = FakeTokenizer()
+    seen = []
+    class Model:
+        def generate(self, **kwargs):
+            ids = kwargs["input_ids"]
+            seen.append(ids.tolist())
+            suffix = torch.tensor([[21, tokenizer.eos_token_id]] * ids.shape[0])
+            return SimpleNamespace(sequences=torch.cat((ids, suffix), dim=1), scores=(
+                _logits_for_tokens([21] * ids.shape[0]),
+                _logits_for_tokens([tokenizer.eos_token_id] * ids.shape[0]),
+            ))
+    session = HFBackendSession(
+        launch=_backend_launch(batch_size=3), model=Model(),
+        processor=FakeNativeProcessor([[11], [11, 12], [13]]), tokenizer=tokenizer,
+        receipt=_session_receipt(batch_size=3),
+    )
+    results = session.decode(requests)
+    assert seen == [[[11], [13]], [[11, 12]]]
+    assert [result.request_id for result in results] == ["short-1", "long", "short-2"]
+    assert all(result.generated_token_ids == (21, tokenizer.eos_token_id) for result in results)
 
 
 def test_hf_raw_trace_fails_when_generate_returns_no_raw_logits(tmp_path: Any) -> None:
@@ -654,7 +668,7 @@ class _RopeOwner:
 def test_position_id_derivation_resolves_first_rope_owner_down_model_chain(
     wrapper_depth: int,
 ) -> None:
-    from src.inference.hf_backend import _derive_qwen_position_ids
+    from src.qwen.native import derive_position_ids
 
     owner = _RopeOwner()
     model: Any = owner
@@ -662,7 +676,7 @@ def test_position_id_derivation_resolves_first_rope_owner_down_model_chain(
         model = SimpleNamespace(model=model)
     input_ids = torch.tensor([[11, 12, 13]], dtype=torch.long)
 
-    position_ids = _derive_qwen_position_ids(
+    position_ids = derive_position_ids(
         model=model,
         input_ids=input_ids,
         attention_mask=torch.ones_like(input_ids),
@@ -692,12 +706,12 @@ def _cyclic_wrapper_without_rope_owner() -> SimpleNamespace:
 def test_position_id_derivation_fails_closed_without_a_real_rope_owner(
     model: SimpleNamespace,
 ) -> None:
-    from src.inference.hf_backend import _derive_qwen_position_ids
+    from src.qwen.native import derive_position_ids
 
     input_ids = torch.tensor([[11, 12]], dtype=torch.long)
 
     with pytest.raises(RuntimeContractError) as exc_info:
-        _derive_qwen_position_ids(
+        derive_position_ids(
             model=model,
             input_ids=input_ids,
             attention_mask=torch.ones_like(input_ids),
@@ -707,3 +721,43 @@ def test_position_id_derivation_fails_closed_without_a_real_rope_owner(
 
     assert exc_info.value.code == "hf_backend.position_ids_unavailable"
     assert exc_info.value.context["searched_model_chain"]
+
+
+def test_hf_staggered_eos_retains_padding_trace_steps(tmp_path):
+    from src.inference.hf_backend import HFBackendSession
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2)).save(image_path)
+    tokenizer = FakeTokenizer()
+    eos = tokenizer.eos_token_id
+    steps = [_logits_for_tokens([eos, 21]), _logits_for_tokens([0, eos])]
+    model = FakeRawHFModel(sequences=[[11, 12, eos, 0], [11, 12, 21, eos]], score_steps=steps, raw_logit_steps=steps)
+    session = HFBackendSession(
+        launch=_backend_launch(), model=model, processor=FakeNativeProcessor([[11, 12], [11, 12]]),
+        tokenizer=tokenizer, receipt=_session_receipt(),
+    )
+    results = session.decode([_semantic_request(image_path, request_id="first", raw=True),
+                              _semantic_request(image_path, request_id="second", raw=True)])
+    assert results[0].generated_token_ids == (eos,)
+    assert [step.token_id for step in results[0].token_trace] == [eos, 0]
+    assert [step.is_pad for step in results[0].token_trace] == [False, True]
+    assert results[0].token_trace[1].policy_logprob is None
+    assert results[0].token_trace[1].raw_model_logprob is None
+
+
+@pytest.mark.parametrize("suffix,code", [([0, 151645], "hf_backend.unexpected_pad_token"),
+                                         ([151645, 21], "hf_backend.post_stop_content")])
+def test_hf_malformed_generation_preserves_runtime_error_family(tmp_path, suffix, code):
+    from src.inference.hf_backend import HFBackendSession
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (2, 2)).save(image_path)
+    steps = [_logits_for_tokens([token]) for token in suffix]
+    model = FakeRawHFModel(sequences=[[11, 12, *suffix]], score_steps=steps, raw_logit_steps=steps)
+    session = HFBackendSession(
+        launch=_backend_launch(batch_size=1), model=model, processor=FakeNativeProcessor([[11, 12]]),
+        tokenizer=FakeTokenizer(), receipt=_session_receipt(batch_size=1),
+    )
+    with pytest.raises(RuntimeContractError) as exc:
+        session.decode([_semantic_request(image_path)])
+    assert exc.value.code == code

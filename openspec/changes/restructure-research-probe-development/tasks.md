@@ -21,11 +21,11 @@
 
 ## 4. Native model operations — M
 
-- [ ] 4.1 Characterize exact-history preparation and position behavior in HF, DORA and row-cross callers; add a tiny-model forward/backward sensitivity check that catches causal shifts and inference-mode tensor leakage before extracting implementation.
-- [ ] 4.2 Implement cohesive Qwen-native input/history/forward operations beneath the strict HF adapter; verify literal IDs, image grids, stale-cache behavior, gradients and existing HF exact-history/position tests, then delete replaced native-input/position implementations.
-- [ ] 4.3 Move row-cross exact continuation to public native generation, including heterogeneous padding/budgets, terminal-action no-forward behavior and disabled traces; verify tiny-model request/result parity and the existing committed row-cross tests before removing private HF and COCO runner dependencies.
-- [ ] 4.4 Migrate seeded rollout while preserving DORA's raw-softmax/top-k/config differences and fixed-seed/fixed-batch behavior; verify resolved policy and raw/policy score separation without changing deterministic scored-inference contracts.
-- [ ] 4.5 Extract named Qwen capture/cleanup used by logit-lens and Human13; verify pre-injection clone sensitivity, exception cleanup and repeated calls while leaving intervention formulas local.
+- [x] 4.1 Characterize exact-history preparation and position behavior in HF, DORA and row-cross callers; add a tiny-model forward/backward sensitivity check that catches causal shifts and inference-mode tensor leakage before extracting implementation.
+- [x] 4.2 Implement cohesive Qwen-native input/history/forward operations beneath the strict HF adapter; verify literal IDs, image grids, stale-cache behavior, gradients and existing HF exact-history/position tests, then delete replaced native-input/position implementations.
+- [x] 4.3 Move row-cross exact continuation to public native generation, including heterogeneous padding/budgets, terminal-action no-forward behavior and disabled traces; verify tiny-model request/result parity and the existing committed row-cross tests before removing private HF and COCO runner dependencies.
+- [x] 4.4 Migrate seeded rollout while preserving DORA's raw-softmax/top-k/config differences and fixed-seed/fixed-batch behavior; verify resolved policy and raw/policy score separation without changing deterministic scored-inference contracts.
+- [x] 4.5 Extract named Qwen capture/cleanup used by logit-lens and Human13; verify pre-injection clone sensitivity, exception cleanup and repeated calls while leaving intervention formulas local.
 - [ ] 4.6 Exercise the migrated real package preflight/evidence consumer and relevant HF tests; define and run any necessary bounded model smoke before claiming model-semantic parity, with explicit inputs and resource bounds. Do not substitute helper tests for that claim or launch a scientific rerun.
 
 ## 5. Learning and parameter foundations — L and P, disjoint from M
