@@ -14,10 +14,10 @@
 
 ## 3. Assignment and first offline package — E
 
-- [ ] 3.1 Freeze current global assignment behavior using the existing cardinality-first counterexample plus tie/quantization/category/threshold cases; verify the oracle distinguishes the retained greedy visualization algorithm.
-- [ ] 3.2 Move global assignment to `src/eval/assignment.py` and shared pixel IoU to the geometry owner, updating retained callers; verify current coverage fixture metrics and visualization tests preserve their separate semantics.
-- [ ] 3.3 Migrate committed Source/Rweak reduction into `probes/source_rweak_row_cross/reduce.py` with native parser/assignment and local scientific attribution; verify its existing direct-replacement/global-reassignment counterexamples and saved-input reduction match before removing COCO imports; resolve original manifest code-path/hash bindings from preserved sources without rewriting old receipts.
-- [ ] 3.4 Establish package discovery and one documented offline command with the lead-owned Git/pytest integration; verify it in an independent checkout without sibling code and run targeted tests, residue checks and strict OpenSpec validation. Record this as offline acceptance, not model acceptance.
+- [x] 3.1 Freeze current global assignment behavior using the existing cardinality-first counterexample plus tie/quantization/category/threshold cases; verify the oracle distinguishes the retained greedy visualization algorithm.
+- [x] 3.2 Move global assignment to `src/eval/assignment.py` and shared pixel IoU to the geometry owner, updating retained callers; verify current coverage fixture metrics and visualization tests preserve their separate semantics.
+- [x] 3.3 Migrate committed Source/Rweak reduction into `probes/source_rweak_row_cross/reduce.py` with native parser/assignment and local scientific attribution; verify its existing direct-replacement/global-reassignment counterexamples and saved-input reduction match before removing COCO imports; resolve original manifest code-path/hash bindings from preserved sources without rewriting old receipts.
+- [x] 3.4 Establish package discovery and one documented offline command with the lead-owned Git/pytest integration; verify it in an independent checkout without sibling code and run targeted tests, residue checks and strict OpenSpec validation. Record this as offline acceptance, not model acceptance.
 
 ## 4. Native model operations — M
 

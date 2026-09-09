@@ -145,7 +145,27 @@ __all__ = [
     "COORD_BIN_MIN",
     "COORD_TOKEN_PATTERN",
     "coord_bins_to_pixel_xyxy",
+    "iou_xyxy",
     "parse_coord_token",
     "parse_source_bbox_tokens",
     "validate_bbox_bins",
 ]
+
+
+def iou_xyxy(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+) -> float:
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    inter_w = max(0.0, ix2 - ix1)
+    inter_h = max(0.0, iy2 - iy1)
+    inter = inter_w * inter_h
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union else 0.0

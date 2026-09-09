@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from src.data.geometry import iou_xyxy
 from src.vis.normalization import VisualObject, VisualRow
 
 
@@ -120,25 +121,6 @@ def match_row(
         fp_pred_indices=tuple(index for index in range(len(row.pred)) if index not in used_pred),
         duplicate_candidates=tuple(duplicates),
     )
-
-
-def iou_xyxy(
-    a: tuple[float, float, float, float],
-    b: tuple[float, float, float, float],
-) -> float:
-    ax1, ay1, ax2, ay2 = a
-    bx1, by1, bx2, by2 = b
-    ix1 = max(ax1, bx1)
-    iy1 = max(ay1, by1)
-    ix2 = min(ax2, bx2)
-    iy2 = min(ay2, by2)
-    inter_w = max(0.0, ix2 - ix1)
-    inter_h = max(0.0, iy2 - iy1)
-    inter = inter_w * inter_h
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    union = area_a + area_b - inter
-    return inter / union if union else 0.0
 
 
 def _duplicate_candidates(
