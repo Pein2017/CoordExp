@@ -70,20 +70,26 @@ def test_inference_adapter_status_rejects_nested_irregular_requires_grad() -> No
     assert exc_info.value.context["irregular_fields"] == ["requires_grad"]
 
 
-def test_inference_dora_adapter_loader_captures_load_result_and_status() -> None:
+@pytest.mark.parametrize("direct", [False, True])
+def test_inference_dora_adapter_loader_captures_load_result_and_status(direct) -> None:
     from src.adapters.dora import load_inference_dora_adapter
 
     model = FakePeftModel()
-    result = load_inference_dora_adapter(
-        config=SimpleNamespace(
-            adapter=SimpleNamespace(
-                type="dora",
-                path="/tmp/adapter",
-                name="default",
-            )
-        ),
-        qwen=SimpleNamespace(model=model, base_model_path="/tmp/base"),
-    )
+    if direct:
+        from src.adapters.dora import attach_dora_adapter
+
+        result = attach_dora_adapter(model, adapter_path="/tmp/adapter", adapter_name="default", base_model_path="/tmp/base")
+    else:
+        result = load_inference_dora_adapter(
+            config=SimpleNamespace(
+                adapter=SimpleNamespace(
+                    type="dora",
+                    path="/tmp/adapter",
+                    name="default",
+                )
+            ),
+            qwen=SimpleNamespace(model=model, base_model_path="/tmp/base"),
+        )
 
     assert model.loaded_path == "/tmp/adapter"
     assert model.loaded_adapter_name == "default"

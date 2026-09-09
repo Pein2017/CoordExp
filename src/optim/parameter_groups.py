@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,6 +76,40 @@ def build_optimizer_group_plan(
     adapter_receipt: DoraAdapterSetupReceipt | None,
     special_token_receipt: SpecialTokenEmbeddingInstallReceipt | None,
 ) -> OptimizerGroupPlan:
+    return build_optimizer_group_plan_from_groups(
+        model,
+        {
+            "adapter.language": optimizer_config.groups.adapters.language,
+            "adapter.vision": optimizer_config.groups.adapters.vision,
+            "adapter.aligner": optimizer_config.groups.adapters.aligner,
+            TOKEN_EMBEDDINGS_GROUP: optimizer_config.groups.token_embeddings,
+        },
+        adapter_receipt=adapter_receipt,
+        special_token_receipt=special_token_receipt,
+    )
+
+
+def build_optimizer_group_plan_from_groups(
+    model: nn.Module,
+    groups: Mapping[str, OptimizerGroupConfig | None],
+    *,
+    adapter_receipt: DoraAdapterSetupReceipt | None,
+    special_token_receipt: SpecialTokenEmbeddingInstallReceipt | None,
+) -> OptimizerGroupPlan:
+    """Resolve only populated parameter groups with exact trainable coverage."""
+    group_order = (
+        "adapter.language",
+        "adapter.vision",
+        "adapter.aligner",
+        TOKEN_EMBEDDINGS_GROUP,
+    )
+    unknown_groups = set(groups) - set(group_order)
+    if unknown_groups:
+        raise RuntimeContractError(
+            "unsupported optimizer group configuration",
+            code="optimizer.group_unsupported",
+            context={"group_names": sorted(unknown_groups)},
+        )
     parameters_by_name = {
         name: parameter
         for name, parameter in model.named_parameters()
@@ -119,12 +154,7 @@ def build_optimizer_group_plan(
         )
 
     assignments: list[OptimizerGroupAssignment] = []
-    for group_name in (
-        "adapter.language",
-        "adapter.vision",
-        "adapter.aligner",
-        TOKEN_EMBEDDINGS_GROUP,
-    ):
+    for group_name in group_order:
         parameter_names = tuple(
             name
             for name, matched_groups in group_names_by_parameter.items()
@@ -132,7 +162,7 @@ def build_optimizer_group_plan(
         )
         if not parameter_names:
             continue
-        group_config = _optimizer_group_config(optimizer_config, group_name)
+        group_config = _optimizer_group_config(groups, group_name)
         assignments.append(
             OptimizerGroupAssignment(
                 group_name=group_name,
@@ -211,19 +241,10 @@ def _match_token_embedding_parameters(
 
 
 def _optimizer_group_config(
-    optimizer_config: OptimizerConfig,
+    groups: Mapping[str, OptimizerGroupConfig | None],
     group_name: str,
 ) -> OptimizerGroupConfig:
-    if group_name == TOKEN_EMBEDDINGS_GROUP:
-        return optimizer_config.groups.token_embeddings
-    if group_name == "adapter.language":
-        group_config = optimizer_config.groups.adapters.language
-    elif group_name == "adapter.vision":
-        group_config = optimizer_config.groups.adapters.vision
-    elif group_name == "adapter.aligner":
-        group_config = optimizer_config.groups.adapters.aligner
-    else:
-        group_config = None
+    group_config = groups.get(group_name)
     if group_config is None:
         raise RuntimeContractError(
             "optimizer group requires an explicit learning-rate configuration",

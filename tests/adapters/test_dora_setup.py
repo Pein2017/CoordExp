@@ -630,6 +630,30 @@ def test_dora_trainable_surface_rejects_substring_impostor_name() -> None:
     ]
 
 
+def test_selected_dora_parameters_preserve_identity_order_and_frozen_state() -> None:
+    from src.adapters.dora import select_dora_parameters
+
+    result = setup_dora_adapter(
+        TinyQwenLikeModel(), _setup_plan(target_towers=("language", "vision", "aligner"))
+    )
+    named = tuple(result.model.named_parameters())
+    for _, parameter in named:
+        parameter.requires_grad_(False)
+    selected = select_dora_parameters(result.model, towers=("language",))
+    expected_names = tuple(name for name in result.receipt.trainable_names if "language_model" in name)
+    assert tuple(name for name, _ in selected) == expected_names
+    assert len(selected) == 3
+    assert len({id(parameter) for _, parameter in selected}) == len(selected)
+    assert all(parameter is dict(named)[name] for name, parameter in selected)
+    assert all(not parameter.requires_grad for _, parameter in named)
+    all_selected = select_dora_parameters(result.model, towers=("aligner", "vision", "language"))
+    assert tuple(name for name, _ in all_selected) == result.receipt.trainable_names
+    with pytest.raises(RuntimeContractError):
+        select_dora_parameters(result.model, adapter_name="absent", towers=("language",))
+    with pytest.raises(RuntimeContractError):
+        select_dora_parameters(result.model, towers=("unknown",))
+
+
 class TinyQwenLikeModel(nn.Module):
     def __init__(self) -> None:
         super().__init__()

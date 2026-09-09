@@ -24,6 +24,11 @@ The initial maintained direction set SHALL cover differentiable DORA owner learn
 
 Unselected historical producers SHALL remain recoverable without being automatically repackaged as maintained directions. Operational agent benchmarks MUST remain distinct from the scientific producer and its result interpretation.
 
+#### Scenario: A profile moves out of the production directory
+
+- **WHEN** a maintained direction loads the same valid source configuration from its package
+- **THEN** shared resolution and value validation preserve its effective values and fingerprint without turning on debug mode; the canonical production loader retains its existing authoring restrictions
+
 #### Scenario: Two learning objectives inhabit one direction
 
 - **WHEN** coordinate-credit and full-action profiles reuse a direction's execution operations

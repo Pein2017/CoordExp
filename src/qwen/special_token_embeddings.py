@@ -622,7 +622,13 @@ def validate_inference_embedding_delta_identity(
             "inference embedding-delta identity validation requires delta config",
             code="special_token_embeddings.inference_config_missing",
         )
-    delta_path = Path(embedding_delta.path)
+    return _validate_embedding_delta_identity(delta_path=embedding_delta.path, qwen=qwen)
+
+
+def _validate_embedding_delta_identity(
+    *, delta_path: str | Path, qwen: Any,
+) -> dict[str, Any]:
+    delta_path = Path(delta_path)
     metadata_path = _inference_delta_metadata_path(delta_path)
     metadata = _load_metadata(metadata_path)
     _validate_inference_delta_metadata(metadata, qwen=qwen)
@@ -642,10 +648,34 @@ def load_inference_embedding_delta(
     qwen: Any,
     source_gate_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    identity_receipt = validate_inference_embedding_delta_identity(
-        config=config,
+    embedding_delta = getattr(config, "embedding_delta", None)
+    if embedding_delta is None:
+        raise RuntimeContractError(
+            "inference embedding-delta identity validation requires delta config",
+            code="special_token_embeddings.inference_config_missing",
+        )
+    return attach_embedding_delta(
+        delta_path=embedding_delta.path,
         qwen=qwen,
+        source_gate_root=(
+            source_gate_root if source_gate_root is not None
+            else getattr(embedding_delta, "source_gate_root", None)
+        ),
     )
+
+
+def attach_embedding_delta(
+    *,
+    delta_path: str | Path,
+    qwen: Any,
+    source_gate_root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Attach a selected embedding payload to loaded Qwen components.
+
+    Runtime identity, token selection, tied weights and source gates are checked
+    by the same path used by inference. Trainability remains caller-owned.
+    """
+    identity_receipt = _validate_embedding_delta_identity(delta_path=delta_path, qwen=qwen)
     model = _qwen_model(qwen)
     if model is None:
         raise RuntimeContractError(
@@ -660,27 +690,17 @@ def load_inference_embedding_delta(
         )
     metadata = identity_receipt["metadata"]
     selection = _selection_for_runtime_metadata(metadata, qwen=qwen)
-    configured_source_gate_root = getattr(
-        config.embedding_delta,
-        "source_gate_root",
-        None,
-    )
-    effective_source_gate_root = (
-        source_gate_root
-        if source_gate_root is not None
-        else configured_source_gate_root
-    )
     install_result = install_special_token_embedding_deltas(
         model,
         selection,
         source_gate=load_default_special_token_embedding_source_gate_evidence(
             Path.cwd()
-            if effective_source_gate_root is None
-            else effective_source_gate_root,
+            if source_gate_root is None
+            else source_gate_root,
             selection,
         ),
     )
-    payload_dir = _inference_delta_payload_dir(Path(config.embedding_delta.path))
+    payload_dir = _inference_delta_payload_dir(Path(delta_path))
     load_receipt = load_special_token_embedding_deltas(
         install_result,
         payload_dir,

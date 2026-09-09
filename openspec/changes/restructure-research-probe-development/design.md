@@ -96,7 +96,7 @@ Do not substitute `src/vis/matching.py::match_row`: it is greedy, and the existi
 | `rollout_calibration` | Retain existing state-bank/config behavior; new exact replay does not depend on it | Persisted event/candidate meanings are not generic trajectory inputs |
 | `data` / root `coordinate_targets.py` | Retain geometry/token/image semantics; own shared pixel IoU | Shared consumers; no vocabulary/coordinate conversion change |
 | `templates` / `augmentation` | Retain current encoding/image callers | Used by data preparation and packed/native flows; no proven benefit from rewriting |
-| `config` | Retain schemas/loader and accepted hash domains; bypass irrelevant train config in probes | Direct options reduce burden without a new universal config system |
+| `config` | Reuse resolution/value validation through `load_research_infer_config`; retain canonical production loader and accepted hash domains | Package profiles keep identical effective values without using debug flags to evade production authoring rules |
 | `artifacts` | Keep leaf publication, journal, admission, lazy facade | Existing recovery and public/persisted consumers; make strict paths explicit opt-ins |
 | `eval` / `vis` | Add public global assignment; preserve distinct greedy/COCO semantics | Tests distinguish algorithms; presentation is not evaluation authority |
 | `analysis` | Historical cleanup candidate only after retained import closure is removed | Base survey found six script consumers; no assumption that scientific helpers are dead |
@@ -217,3 +217,9 @@ Stronger sampled invariance across batch sizes/order, a model-family abstraction
 ## Design Review and Implementation Authorization
 
 The user requested one independent reviewer and explicitly authorized implementation after convergence. The independent Astra high review found no blocking design issue; it confirmed native-gradient, assignment, generation, writer-ownership and preservation boundaries. The lead accepted the design after carrying forward the row-cross absolute source-binding check and fresh clean-source state. This is the sole delegated design review for this target; scoped corrections are checked by the lead. No implementation or scientific acceptance is implied by this design receipt.
+
+## Implementation refinements within the accepted boundary
+
+Real package entry checks exposed `config.noncanonical_infer_path`: a copied Source YAML with debug disabled could not load outside the production directory. The public research loading entry shares the existing resolver/schema/fingerprint implementation and omits only production namespace/leaf-authorship rules. Canonical inference remains unchanged; tests demonstrate equal effective configuration/fingerprint and unchanged debug flags, inherited research profiles and continued unknown-field rejection. This replaces per-package parsing or debug-mode workarounds.
+
+New Human13 finite receipts use an explicit v2 producer marker to permit newly executed N2 artifacts under their content/payload/stage/count contract. Legacy v1/schema-absent N2 keeps its original pinned digest, even if a stage field is added. New producer source metadata is descriptive: the loader does not require that source path to still exist. This implements the already accepted separation of preserved historical identities from new executions.

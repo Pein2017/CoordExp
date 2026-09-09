@@ -271,6 +271,19 @@ class ResolvedInferConfig:
 
 
 def load_infer_config(path: str | Path) -> ResolvedInferConfig:
+    return _load_infer_config(path, production_entry=True)
+
+
+def load_research_infer_config(path: str | Path) -> ResolvedInferConfig:
+    """Resolve a direction-local V1 profile without production authoring rules.
+
+    Values, path resolution and fingerprints use the same resolver as canonical
+    inference. This does not turn on debug mode or relax the config value schema.
+    """
+    return _load_infer_config(path, production_entry=False)
+
+
+def _load_infer_config(path: str | Path, *, production_entry: bool) -> ResolvedInferConfig:
     entry_path = Path(path).expanduser().resolve()
     _reject_legacy_infer_path(entry_path)
     merged, origins, sources = _load_with_extends(entry_path, stack=())
@@ -288,8 +301,9 @@ def load_infer_config(path: str | Path) -> ResolvedInferConfig:
         raise
     except ValidationError as exc:
         _raise_validation_error(exc, entry_path)
-    _validate_canonical_namespace(config, entry_path)
-    _validate_leaf_authorship(config, entry_path, origins)
+    if production_entry:
+        _validate_canonical_namespace(config, entry_path)
+        _validate_leaf_authorship(config, entry_path, origins)
     config_dict = config.model_dump(mode="json")
     fingerprint = sha256_json(config_dict)
     return ResolvedInferConfig(

@@ -558,12 +558,28 @@ def load_inference_dora_adapter(
             "inference DoRA adapter load requires adapter config",
             code="adapter.inference_config_missing",
         )
-    model = _qwen_model(qwen)
+    return attach_dora_adapter(
+        _qwen_model(qwen),
+        adapter_path=adapter.path,
+        adapter_name=adapter.name,
+        base_model_path=_qwen_base_model_path(qwen),
+    )
+
+
+def attach_dora_adapter(
+    model: Any,
+    *,
+    adapter_path: str | Path,
+    base_model_path: str | Path | None,
+    adapter_name: str = DEFAULT_ADAPTER_NAME,
+) -> dict[str, Any]:
+    """Attach a frozen, unmerged DoRA payload and validate its load evidence."""
+    base_model_path = None if base_model_path is None else str(base_model_path)
     if model is None:
         raise RuntimeContractError(
             "inference DoRA adapter load requires a loaded model",
             code="adapter.inference_model_required",
-            context={"adapter_path": str(adapter.path)},
+            context={"adapter_path": str(adapter_path)},
         )
     if not hasattr(model, "load_adapter"):
         raise RuntimeContractError(
@@ -571,25 +587,25 @@ def load_inference_dora_adapter(
             code="adapter.inference_load_adapter_unavailable",
             context={
                 "model_class": type(model).__name__,
-                "adapter_path": str(adapter.path),
+                "adapter_path": str(adapter_path),
             },
         )
     load_result = model.load_adapter(
-        adapter.path,
-        adapter_name=adapter.name,
+        adapter_path,
+        adapter_name=adapter_name,
         is_trainable=False,
     )
-    model.set_adapter(adapter.name)
+    model.set_adapter(adapter_name)
     _freeze_model_for_inference(model)
     status = _get_inference_adapter_status(model)
-    adapter_path = Path(adapter.path)
+    adapter_path = Path(adapter_path)
     load_result_available = load_result is not None
     payload_evidence = (
         {"payload_checked": False, "reason": "load_result_available"}
         if load_result_available
         else _validate_inference_adapter_payload(
             adapter_path,
-            expected_base_model_path=_qwen_base_model_path(qwen),
+            expected_base_model_path=base_model_path,
         )
     )
     state_evidence = (
@@ -598,20 +614,20 @@ def load_inference_dora_adapter(
         else _validate_transformers_mixin_adapter_state(
             model,
             adapter_path=adapter_path,
-            adapter_name=adapter.name,
+            adapter_name=adapter_name,
         )
     )
     status_receipt = validate_inference_adapter_status(
         load_result=load_result or SimpleLoadResult(),
         status=status,
-        expected_adapter_name=adapter.name,
+        expected_adapter_name=adapter_name,
     )
     artifact = status_receipt.to_artifact_dict()
     artifact.update(
         {
-            "adapter_type": adapter.type,
+            "adapter_type": "dora",
             "adapter_path": str(adapter_path),
-            "base_model_path": _qwen_base_model_path(qwen),
+            "base_model_path": base_model_path,
             "load_result_available": load_result_available,
             "load_result_api": "peft.PeftModel.load_adapter"
             if load_result_available
@@ -768,11 +784,11 @@ def _validate_transformers_mixin_adapter_state(
     with safe_open(str(tensor_path), framework="pt", device="cpu") as handle:
         saved_keys = list(handle.keys())
     normalized_saved = {
-        _normalize_adapter_state_key(key, adapter_name=adapter_name)
+        normalize_dora_state_key(key, adapter_name=adapter_name)
         for key in saved_keys
     }
     normalized_state = {
-        _normalize_adapter_state_key(str(key), adapter_name=adapter_name)
+        normalize_dora_state_key(str(key), adapter_name=adapter_name)
         for key in state
     }
     missing = sorted(normalized_saved - normalized_state)
@@ -796,7 +812,8 @@ def _validate_transformers_mixin_adapter_state(
     }
 
 
-def _normalize_adapter_state_key(key: str, *, adapter_name: str) -> str:
+def normalize_dora_state_key(key: str, *, adapter_name: str) -> str:
+    """Normalize equivalent PEFT/mixin adapter keys for payload comparison."""
     parts = [part for part in key.split(".") if part != adapter_name]
     normalized = ".".join(parts)
     while normalized.startswith("base_model.model."):
@@ -1602,6 +1619,38 @@ def _validate_trainable_dora_surface(
                 "trainable_counts": dict(trainable_counts),
             },
         )
+
+
+def select_dora_parameters(
+    model: nn.Module,
+    *,
+    towers: tuple[str, ...],
+    adapter_name: str = DEFAULT_ADAPTER_NAME,
+) -> tuple[tuple[str, nn.Parameter], ...]:
+    """Select named adapter tensors in model order without changing gradients.
+
+    Selection includes frozen adapter tensors; the caller owns whether to enable
+    them. Every requested tower must be present, and base weights are excluded.
+    """
+    if not towers or len(set(towers)) != len(towers) or set(towers) - {"language", "vision", "aligner"}:
+        raise RuntimeContractError(
+            "DoRA selection requires distinct supported towers",
+            code="adapter.selection_towers",
+        )
+    selected = tuple(
+        (name, parameter)
+        for name, parameter in model.named_parameters()
+        if _is_dora_adapter_trainable_name(name, adapter_name=adapter_name)
+        and any(_linear_belongs_to_tower(name, tower) for tower in towers)
+    )
+    missing = tuple(tower for tower in towers if not any(_linear_belongs_to_tower(name, tower) for name, _ in selected))
+    if missing:
+        raise RuntimeContractError(
+            "requested DoRA parameter tower is absent",
+            code="adapter.selection_empty",
+            context={"adapter_name": adapter_name, "missing_towers": list(missing)},
+        )
+    return selected
 
 
 def _is_dora_adapter_trainable_name(

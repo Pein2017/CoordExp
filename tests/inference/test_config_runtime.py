@@ -540,6 +540,42 @@ def test_noncanonical_production_config_path_is_rejected_but_debug_is_allowed(
     assert load_infer_config(debug_path).config.debug.dry_run is True
 
 
+def test_research_profile_preserves_values_without_debug_or_namespace_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.config.inference import load_infer_config, load_research_infer_config
+
+    monkeypatch.chdir(tmp_path)
+    canonical = _write_config(tmp_path / "configs/coordexp_swift/infer/source.yaml")
+    profile = tmp_path / "probes/example/configs/source.yaml"
+    profile.parent.mkdir(parents=True)
+    profile.write_bytes(canonical.read_bytes())
+    expected = load_infer_config(canonical)
+    with pytest.raises(ConfigContractError) as exc_info:
+        load_infer_config(profile)
+    assert exc_info.value.code == "config.noncanonical_infer_path"
+    observed = load_research_infer_config(profile)
+    assert observed.config_dict == expected.config_dict
+    assert observed.fingerprint == expected.fingerprint
+    assert observed.config.debug.smoke is False
+    assert observed.config.debug.dry_run is False
+
+
+def test_research_profile_reuses_resolution_and_value_validation(tmp_path: Path) -> None:
+    from src.config.inference import load_research_infer_config
+
+    parent = _write_config(tmp_path / "probes/example/configs/base.yaml")
+    profile = parent.with_name("profile.yaml")
+    profile.write_text("extends: base.yaml\nrun:\n  name: research-profile\n")
+    observed = load_research_infer_config(profile)
+    assert observed.config.run.name == "research-profile"
+    assert observed.config.debug.smoke is False
+    assert observed.config.data.input_jsonl == load_research_infer_config(parent).config.data.input_jsonl
+    profile.write_text("extends: base.yaml\nmodel:\n  do_not_validate_me: true\n")
+    with pytest.raises(ConfigContractError):
+        load_research_infer_config(profile)
+
+
 def test_resolved_config_artifacts_are_written_under_configs(tmp_path: Path) -> None:
     from src.config.inference import load_infer_config
     from src.config.writer import write_resolved_config_artifacts

@@ -712,8 +712,9 @@ def test_inference_embedding_delta_identity_accepts_matching_metadata(
     assert receipt["metadata"]["tokenizer_sha256"] == "tokenizer-sha"
 
 
+@pytest.mark.parametrize("direct", [False, True])
 def test_inference_embedding_delta_load_installs_wrappers_and_payload(
-    tmp_path: Path,
+    tmp_path: Path, direct: bool,
 ) -> None:
     qwen = _qwen_identity_context(
         model=TinyTiedQwenModel(vocab_size=152670, hidden_size=4)
@@ -742,11 +743,16 @@ def test_inference_embedding_delta_load_installs_wrappers_and_payload(
         tokenizer_sha256="tokenizer-sha",
     )
 
-    receipt = load_inference_embedding_delta(
-        config=_delta_config(tmp_path),
-        qwen=qwen,
-        source_gate_root=_canonical_source_gate_root(),
-    )
+    if direct:
+        from src.qwen.special_token_embeddings import attach_embedding_delta
+
+        receipt = attach_embedding_delta(delta_path=tmp_path, qwen=qwen, source_gate_root=_canonical_source_gate_root())
+    else:
+        receipt = load_inference_embedding_delta(
+            config=_delta_config(tmp_path),
+            qwen=qwen,
+            source_gate_root=_canonical_source_gate_root(),
+        )
 
     assert receipt["status"] == "loaded"
     assert receipt["identity"]["status"] == "validated"

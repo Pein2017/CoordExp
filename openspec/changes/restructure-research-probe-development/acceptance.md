@@ -21,3 +21,13 @@ Extracted the existing cardinality-first, quantized-IoU matcher and pixel IoU wi
 - Lead executed the documented CLI into `preservation-20260909/row-cross-lead-replay`; exact equality after removing only `execution` was asserted.
 - Worker independent-copy run forbade all original-worktree file opens and had no scripts directory; same result. This is offline qualification-subset acceptance, not final32-case or model evidence.
 - Standards: public owner, original counterexample, no import fallback and exact saved-input consumption verified. Intent: shared assignment plus usable package without sibling code. Lead-accepted for tasks3.1-3.4.
+
+## Research profile entry
+
+A real Human13/logit package entry reproduced the production-directory rejection before model work. The shared research loader uses the same V1 resolution/value/fingerprint code, without production-only authoring rules. Two new tests failed before the API existed; six targeted production/research/invalid-value tests then passed. The packages compare against original effective-config snapshots, including debug.smoke=False. No model or data semantics changed.
+
+## Explicit parameter and attachment inputs
+
+Existing config entry points now use the same attachment/group core as direct research callers. Named parameter selection preserves identity/order without changing gradient flags; state-key normalization is the unchanged transformation exposed publicly.
+
+Worker pre-change122passed/2failed and post-change126passed/the same2failed. The two source-gate cases reference absent historical owner-commit-binding paths; their checks were not relaxed. Lead inspected all three core diffs and replayed adapter setup/reload, parameter groups and special-embedding checks, excluding those exact pre-existing failures:85passed. Direction consumers use direct public attachments/selection; simple native AdamW remains valid. Standards and intent both accepted for the changed inputs; no claim that the external source-gate fixture failures are repaired.

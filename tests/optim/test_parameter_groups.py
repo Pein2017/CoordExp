@@ -150,6 +150,35 @@ def test_optimizer_group_plan_rejects_duplicate_group_match() -> None:
     ]
 
 
+def test_explicit_groups_match_config_plan_without_dummy_embedding_settings() -> None:
+    from src.optim.parameter_groups import build_optimizer_group_plan_from_groups
+
+    target = "model.language_model.q_proj"
+    model = FakeTrainableSurface(adapter_targets=(target,))
+    receipt = _adapter_receipt(targets=(target,))
+    config_plan = build_optimizer_group_plan(
+        model, _optimizer_config(language=_group()),
+        adapter_receipt=receipt, special_token_receipt=None,
+    )
+    plan = build_optimizer_group_plan_from_groups(
+        model, {"adapter.language": _group()},
+        adapter_receipt=receipt, special_token_receipt=None,
+    )
+    assert plan.to_artifact_dict() == config_plan.to_artifact_dict()
+    actual = plan.to_torch_param_groups()[0]["params"]
+    expected = config_plan.to_torch_param_groups()[0]["params"]
+    assert len(actual) == len(expected) and all(a is b for a, b in zip(actual, expected))
+    with pytest.raises(RuntimeContractError) as error:
+        build_optimizer_group_plan_from_groups(model, {}, adapter_receipt=receipt, special_token_receipt=None)
+    assert error.value.code == "optimizer.group_missing"
+    with pytest.raises(RuntimeContractError) as error:
+        build_optimizer_group_plan_from_groups(
+            model, {"adapter.language": _group(), "typo": _group()},
+            adapter_receipt=receipt, special_token_receipt=None,
+        )
+    assert error.value.code == "optimizer.group_unsupported"
+
+
 class ParamLeaf(nn.Module):
     def __init__(self) -> None:
         super().__init__()
