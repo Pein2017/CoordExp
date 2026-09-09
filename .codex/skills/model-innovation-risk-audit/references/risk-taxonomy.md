@@ -1,338 +1,205 @@
 # Risk Taxonomy
 
-Use this reference when the audit needs a systematic checklist of silent model-innovation failure modes.
+Select only failure classes that could change the current decision. This is a
+menu of counterexamples, not fourteen required gates. Reuse closed evidence;
+apply artifact, topology, scale, or activation checks only when the declared
+execution or claim depends on that surface. Routine model implementation uses
+`qwen3-vl-execution`; this reference supports a read-only fidelity audit.
 
 ## 1. Config Truthfulness Risk
 
-Look for cases where the config or resolved config says one thing but runtime hard-codes another.
+Compare intended behavior with authored/resolved config, the executable owner,
+and emitted evidence. A matching key name does not prove matching semantics.
 
-Examples:
+Decision-changing examples:
 
-- config says `normalization=token_mean`, runtime uses semantic bucket balancing,
-- authored `gradient_accumulation_steps` conflicts with derived effective batch,
-- stale `custom.*` aliases are still accepted,
-- production and ablation surfaces share unsafe defaults,
+- `normalization=token_mean` resolves to semantic bucket balancing;
+- authored accumulation conflicts with the effective-batch derivation;
+- a stale alias or shared ablation default changes the declared factor;
 - materialized config omits the objective identity that actually trained.
 
-Diagnostics:
-
-- inspect authored YAML,
-- inspect materialized config,
-- inspect runtime object,
-- compare against sidecars or emitted artifacts.
+Close the relevant mismatch through the current config-to-runtime path, not an
+additional config representation.
 
 ## 2. Tokenizer And Template Stop Risk
 
-Check whether training, inference, parser, and diagnostics agree on:
+Bind training, generation, parser, and diagnostic meanings for EOS, pad,
+assistant closure, image markers, and expanded vocabulary. For example,
+training may supervise `<|im_end|>` while generation also stops on
+`<|endoftext|>`; that extra stop changes the observed completion population.
 
-- EOS token,
-- pad token,
-- text-level terminators,
-- assistant stop marker,
-- chat-template closure,
-- image marker rendering,
-- added tokens and expanded vocab.
-
-Common hidden failure:
-
-- training supervises `<|im_end|>`,
-- generation also treats `<|endoftext|>` as EOS,
-- decode can stop early with a token never used as semantic training EOS.
-
-Diagnostics:
-
-- real tokenizer id probe,
-- real `apply_chat_template` text probe,
-- generation config probe,
-- compact/generated output scan for leaked terminators.
+Use [chat templates and real encoded inputs](../../qwen3-vl-execution/references/execution-checks.md#chat-templates-and-real-encoded-inputs)
+for the actual processor/token-history checks. Inspect stop configuration and
+leaked terminators only where they distinguish the suspected mismatch.
 
 ## 3. Data And Geometry Risk
 
-Check that labels match pixels and geometry.
+Verify the declared sample still denotes the same pixels, objects, and order:
 
-Audit:
+- image roots resolve and recorded dimensions match the actual image;
+- coordinates and bbox ordering match the declared representation;
+- object order agrees with the prompt/target contract;
+- object or token caps do not silently remove evidence-bearing targets;
+- temporary subsets preserve image-root and sample identity.
 
-- image paths resolve strictly,
-- images exist,
-- row dimensions match actual PIL dimensions,
-- coords are valid and canonical,
-- bbox order is valid for the declared format,
-- source object order matches the prompt/object-order contract,
-- object count caps fail fast rather than silently truncate,
-- temp/subset JSONLs do not infer wrong image roots.
-
-Diagnostics:
-
-- JSONL schema scan,
-- bbox decode and validity scan,
-- image existence/dimension preflight,
-- max object and max token-length risk scan.
+A bounded raw-image/JSONL check should expose the claimed failure before a
+larger run. Do not infer geometric correctness from parser success.
 
 ## 4. Sidecar Alignment Risk
 
-For objectives using sidecars, sparse targets, token weights, masks, or object metadata, verify alignment after every transformation.
+Sidecars, sparse targets, weights, and object metadata must follow their tokens
+through encoding, collation, padding, packing, and logits selection.
 
-Audit:
+The late loss-boundary invariant is semantic: each supervised target retains
+its literal token identity, sample/segment identity, weight, and declared
+support; its mapped logit row predicts that target from its preceding causal
+context without crossing a segment boundary.
 
-- prepared token positions,
-- encoded positions,
-- shifted positions,
-- collated positions,
-- padding offsets,
-- packed offsets,
-- labels,
-- attention masks,
-- causal logits row.
+Use the actual logical-to-physical and target-to-logit maps. Native execution
+may use `labels=None`, compact logits, or packed tensors; do not require a
+universal `labels[b, position]` or two-dimensional attention-mask layout. When
+labels or masks are present, verify their meaning against the same target map.
 
-Late invariant:
-
-```text
-For each target:
-1 <= target.position < seq_len
-input_ids[b, target.position] == target.teacher_token_id
-labels[b, target.position] == target.teacher_token_id
-attention_mask[b, target.position] == 1
-attention_mask[b, target.position - 1] == 1
-loss consumes logits[b, target.position - 1]
-```
-
-This check belongs as late as possible before loss computation.
+The execution owner supplies [causal positions, padding and packing](../../qwen3-vl-execution/references/execution-checks.md#causal-positions-padding-and-packing).
+A wrong causal row with otherwise valid token IDs is a useful counterexample.
 
 ## 5. Logits, Padding, And Packing Risk
 
-Audit all paths that can change time dimensions or target offsets:
+Select offset-changing paths actually enabled: `logits_to_keep`, left/right
+padding, packed attention, segment/position metadata, truncation, or cache reuse.
+Absolute target indexing into compact logits can silently score another token;
+a shape check alone will not detect that mistake.
 
-- `logits_to_keep`,
-- left padding,
-- right padding,
-- static packing,
-- padding-free packing,
-- packed attention kwargs,
-- `position_ids`,
-- `cu_seq_lens`,
-- template truncation,
-- cache reuse.
-
-Danger sign:
-
-- loss indexes absolute target positions, but runtime enables any feature that changes token offsets or slices logits.
-
-Diagnostics:
-
-- fail fast on unsupported offset-changing modes,
-- full logits shape check,
-- synthetic tests for target at boundary positions,
-- separate packed-runtime design if packing is allowed.
+Follow the [causal mapping checks](../../qwen3-vl-execution/references/execution-checks.md#causal-positions-padding-and-packing)
+for unequal lengths and segment boundaries. Unsupported mappings should fail
+at the owning boundary; a supported packed path needs evidence for its actual
+mapping, not a second generic packed-runtime design.
 
 ## 6. Loss Composition Risk
 
-Inspect whether the actual differentiable scalar matches the intended formula.
+Verify the differentiable scalar, including hard/soft CE, support/balance,
+per-target and EOS weights, auxiliary terms, empty support, zero weights,
+duplicate candidates, and teacher-token membership where relevant.
 
-Audit:
-
-- hard CE vs soft CE,
-- support and balance decomposition,
-- per-position weights,
-- EOS trust weights,
-- type-gate or schema auxiliary terms,
-- semantic normalizer,
-- zero-weight target behavior,
-- duplicate candidate multiplicity,
-- teacher token in positive set.
-
-Common hidden failure:
+A concrete composition error is:
 
 ```text
 intended: eos_weight * CE + type_gate
 actual:   eos_weight * (CE + type_gate)
 ```
 
-Diagnostics:
-
-- deterministic tiny-logit tests,
-- formula tests with expected scalar,
-- metric tests that distinguish raw and effective weighted terms.
+Use [objective and denominator checks](../../qwen3-vl-execution/references/execution-checks.md#objective-denominator-and-distributed-reduction)
+for reduction semantics and [autograd checks](../../qwen3-vl-execution/references/execution-checks.md#autograd-tensor-meaning-and-capture)
+for differentiability. A tiny formula counterexample should distinguish the
+intended scalar and gradient from the suspected implementation.
 
 ## 7. Precision Risk
 
-For probability math, check dtype and autocast behavior.
+A finite loss can conceal inaccurate support mass, soft CE, KL/entropy,
+conditional balance, or log-probability reductions. Solver feasibility can also
+fail to survive materialization or replay at the accepted precision.
 
-Audit:
-
-- `log_softmax`,
-- `logsumexp`,
-- sparse soft CE,
-- support mass,
-- balance conditional distribution,
-- KL/entropy-like terms,
-- valid mass metrics.
-
-Rule:
-
-```text
-Use fp32 for probability/log-probability math even when model forward uses bf16.
-```
-
-Diagnostics:
-
-- bf16 logits test,
-- autocast test,
-- finite gradient test,
-- metrics detach/no-grad test.
+Use [precision and numerical acceptance](../../qwen3-vl-execution/references/execution-checks.md#precision-and-numerical-acceptance)
+for arithmetic ownership, autocast, gradient preservation, and tolerance rules.
+Test the claimed arithmetic boundary; do not treat an output upcast or a change
+to all parameter dtypes as proof that the required precision was preserved.
 
 ## 8. Metrics Blind-Spot Risk
 
-Metrics can be correct but misleading if they log raw terms instead of effective contributions.
+Ask whether the model could train the wrong objective while displayed metrics
+remain normal. Inspect only the counters that could expose that mismatch:
 
-Audit:
+- raw terms versus effective weighted contributions;
+- absent or wrong denominators and zero-weight/empty-support counts;
+- parse/drop counts and eligible/executed/analyzable population differences;
+- EOS/continue, valid-mass, or type-violation diagnostics when claim-bearing.
 
-- raw loss vs weighted loss,
-- per-rank mean vs all-reduced numerator/denominator,
-- absent denominator keys,
-- zero-weight target counts,
-- parse/drop counters,
-- EOS/continue margins,
-- valid-mass metrics,
-- type-violation metrics.
-
-Ask:
-
-```text
-Could the model be training the wrong thing while all logged metrics look normal?
-```
-
-If yes, add a diagnostic or explicit artifact.
+For matching-based outcomes, bind geometry/category policy, threshold and tie
+rules, duplicate handling, and unmatched denominator to the canonical evaluator.
+Two predictions competing for one owner can distinguish per-prediction matching
+from the declared owner-set outcome. Do not substitute a visual/proxy matcher
+for benchmark semantics.
 
 ## 9. Train/Decode/Eval Parity Risk
 
-Compare training and inference:
+Compare the surfaces required by the claim: prompt and literal history, image
+preprocessing/resize, coordinate serialization, stop policy, grammar/logits
+processors, parser, and confidence/scoring postprocess. Natural generation,
+forced-prefix continuation, and teacher-forced replay support different claims.
 
-- prompt construction,
-- chat template,
-- image preprocessing,
-- `do_resize`,
-- EOS/pad ids,
-- grammar/logits processors,
-- generation config,
-- parser mode,
-- coordinate surface,
-- bbox format,
-- confidence/scoring postprocess.
-
-Diagnostics:
-
-- exact train prompt vs infer prompt comparison,
-- exact processor kwargs comparison,
-- generation config dump,
-- parse/drop summary by failure mode.
+Use the [encoded-input checks](../../qwen3-vl-execution/references/execution-checks.md#chat-templates-and-real-encoded-inputs)
+and the actual generation/evaluator owners. Preserve intentional differences;
+call them confounds or transfer assumptions rather than silently normalizing
+them into parity. Label parser failures separately from model-quality outcomes
+according to the frozen protocol.
 
 ## 10. Distributed And Effective Batch Risk
 
-Audit optimizer-step semantics.
+Resolve supported batch/packing shape from the current config and trainer;
+there is no universal packed batch size. Bind effective-batch units separately
+from the objective's loss denominator and reject conflicting authored versus
+derived accumulation settings.
 
-Check:
-
-- `effective_batch_size` source of truth,
-- world size,
-- per-device train batch,
-- gradient accumulation,
-- packing units,
-- padding units,
-- final partial accumulation windows,
-- DDP metric reducers.
-
-Preferred contract:
-
-- Under packing or padding-free packing, `per_device_train_batch_size=1`; effective batch is in packs/global sequences per optimizer step.
-- Under non-packing padded training, `per_device_train_batch_size` may be greater than 1; effective batch remains the source of truth and gradient accumulation is derived from world size.
-- Do not let authored `gradient_accumulation_steps` silently conflict with derived effective batch.
+The [distributed reduction checks](../../qwen3-vl-execution/references/execution-checks.md#objective-denominator-and-distributed-reduction)
+own weighting across ranks, accumulation, and unequal local counts. Include a
+final partial accumulation window when it can change the claimed optimizer-step
+semantics. Equal-sized batches or equal displayed losses do not prove gradient
+normalization equivalence.
 
 ## 11. Artifact And Portability Risk
 
-Audit whether a future agent can reproduce the run.
+For a retained result or reproducibility claim, follow the current artifact
+contract instead of prescribing a second filename list. Required evidence must
+bind the effective config and source/code version, model/adapter/tokenizer,
+input/template, runtime, and evaluation scope relevant to that result.
 
-Check artifacts include:
-
-- resolved config,
-- source config chain,
-- git commit,
-- command,
-- checkpoint path,
-- adapter path,
-- base model path,
-- tokenizer path,
-- base model fingerprints,
-- generation config,
-- processor config,
-- dataset JSONL,
-- image root,
-- prompt/template identity,
-- metric scope,
-- eval parser and coordinate surface.
-
-Danger sign:
-
-- adapter checkpoint is cited without its expanded-vocab base model bundle.
+An adapter cited without its required expanded-vocabulary base bundle is not a
+portable checkpoint. Resolve required payloads through the owning writer/loader
+and verify the consumer can reconstruct the claimed execution. Historical
+artifacts retain their version-bound contract.
 
 ## 12. Execution Topology Risk
 
-Audit behavior that can be locally correct while the real process graph hangs,
-double-reduces, skips mutation, or diverges by rank.
+A locally correct path may hang, double-reduce, skip mutation, or diverge by rank.
+For topology-dependent behavior, inspect:
 
-Check:
-
-- wrapped versus unwrapped model calls;
-- model forward counts per sample, pack, segment, and rank;
-- collective sequence when ranks have intentionally different local work;
-- autograd-hook order, activation recomputation, and no-sync boundaries;
+- wrapped versus unwrapped calls and forward counts per sample/pack/rank;
+- collective order with intentionally unequal local work;
+- autograd hooks, recomputation, and no-sync boundaries;
 - optimizer mutation relative to finite/error consensus;
-- pre- and post-process-group work, including rank-zero-only materialization;
-- parent, worker, and child-process ownership on exit or interruption.
+- rank-zero materialization before/after process-group work;
+- parent/worker/child ownership on exit or interruption.
 
-Diagnostics:
-
-- a real two-process asymmetric-work smoke through the production wrapper;
-- per-rank forward and collective receipts;
-- an injected rank-local failure before optimizer mutation;
-- process-tree and exit-status verification.
-
-A single-rank or leaf-helper test cannot close this risk.
+Close the implicated seam with real multi-process asymmetric work through the
+production wrapper. A rank-local failure before mutation is discriminating
+when consensus/recovery is the risk. Keep per-rank call/collective and exit
+evidence needed for that conclusion; a single-rank or leaf test cannot close it.
 
 ## 13. Scale And Resource Risk
 
-Audit paths whose correctness survives small tests but whose complexity makes
-production execution impractical or changes the effective behavior.
+Before promoting a scale-dependent path, declare and measure relevant bounds:
+forwards per sample/pack/segment/rank; full cache/materialization passes and I/O;
+wall time, peak RSS, workers/queues/concurrency; and merged artifact bytes.
+Record the representative case and extrapolation that would reject promotion.
 
-Declare and measure:
-
-- full model forwards per sample, pack, segment, and rank;
-- complete cache or materialization passes and representative bytes;
-- I/O amplification and repeated deserialization;
-- wall time, peak RSS, workers, queues, and concurrency caps;
-- artifact bytes before and after rank aggregation;
-- representative-scale extrapolation and the bound that rejects promotion.
-
-Danger signs:
-
-- a full-data pass is repeated only to reprove unchanged content;
-- validation materializes full objects when a content-bound attestation exists;
-- a branch grows with segments, ranks, or samples without a declared ceiling;
-- timeout increases substitute for a complexity diagnosis.
+Reject unbounded growth or a measured bound violation. Repeated full-data passes
+to reprove unchanged content, full-object validation despite a sufficient
+content-bound attestation, or escalating timeouts without complexity diagnosis
+are reasons to test the cost assumption before scaling.
 
 ## 14. Artifact And Activation Lifecycle Risk
 
-Treat artifact production and activation as runtime protocols, not logging or
-operator ceremony.
+Use this branch only when publication, downstream reload, or activation is part
+of the selected contract. Exercise required canonical serialization, finite
+values, identity/hash and size bounds, atomic publication, and fresh consumption
+on a non-empty artifact. In-memory success does not establish durable success.
 
-Exercise:
+For at-most-once activation, bind intent, target/run identity, and terminal
+outcome. Source/config drift invalidates the relevant attestation. Follow the
+owning protocol for partial or uncertain activation and bounded recovery; retain
+attempt linkage where that protocol requires it. Never retry an uncertain
+activation merely because no final artifact appeared.
 
-- non-empty canonical serialization and finite-value validation;
-- hashing, byte-size bounds, rank transport, and atomic publication;
-- fresh reload through the production-owned downstream consumer;
-- target-bound attestations and invalidation after source or config drift;
-- intent publication, process/run identity binding, and terminal receipts;
-- at-most-once claim consumption, partial activation, and uncertain outcome;
-- append-only parent-linked recovery with a fresh attempt identity and ceiling.
-
-Run the complete canonicalize-to-consume path before expensive broad execution.
-Never retry an uncertain activation merely because no final artifact appeared.
+Before expensive broad execution, close the lifecycle seam actually relied on
+by that run. Do not add activation or append-only recovery machinery to an
+ordinary probe that has no such contract.

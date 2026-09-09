@@ -20,14 +20,12 @@ current-behavior documentation, production code, or an ordinary audit.
   behavior. Neither owner's acceptance closes the other.
 - Historical records are provenance; legacy progress archives receive no new
   records.
-- Worktree lifecycle for a research direction — forking `probe/<direction>`
-  from the `research-probes` worktree HEAD, records-only return (units,
-  routers, provenance; code stays on the branch), `probe-final/` and
-  `archive/` tag-then-remove retirement, and `research-base-vN` milestones — is
-  owned by the "Research-probe routing" section of that worktree's
-  `docs/BRANCH_AND_WORKTREE_POLICY.md`. Follow it; do not restate or reinvent
-  it here. (The root `main` copy of that file is production-only and does not
-  carry this section.)
+- Research worktree lifecycle, return or migration of knowledge and maintained
+  code, and retirement are owned by the current research base's
+  `docs/BRANCH_AND_WORKTREE_POLICY.md`. Resolve that owner before acting; follow
+  its preservation distinctions rather than imposing a blanket records-only
+  return. Do not restate lifecycle rules here or substitute the root production
+  policy for the research-base policy.
 - Reviews, handoffs, packets, and memory route to owners but do not become
   authority.
 
@@ -39,7 +37,7 @@ for repository publication.
 These skills answer different questions, not successive mandatory approvals.
 Reuse evidence closing the same phase/target/risk; changing skills does not
 restart the review budget. When delegation is worthwhile, use
-`native-subagents-guidance` for roles, model/effort, and message flow. Package
+`native-agent-team-guidance` for roles, model/effort, and message flow. Package
 owners integrate their work; the lead verifies the decision-bearing boundary
 rather than repeating every internal check. Model capability never substitutes
 for evidence or grants research authority.

@@ -27,7 +27,7 @@ owning code/config/runtime surface for a reproducible engineering failure.
 
 These are alternative lenses, not consecutive approvals. Share the review
 budget and closed findings for the same phase/target/risk across skills. Use
-`native-subagents-guidance` only when delegation adds value; loading an audit
+`native-agent-team-guidance` only when delegation adds value; loading an audit
 skill does not require another agent or a particular model/effort.
 
 ## Audit

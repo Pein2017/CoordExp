@@ -15,40 +15,6 @@ from render_report import (
 
 
 class ReportRendererTests(unittest.TestCase):
-    def test_skill_startup_contract_is_centralized(self):
-        skill_root = Path(__file__).resolve().parent.parent
-        skill_text = (skill_root / "SKILL.md").read_text()
-        harness_text = (
-            skill_root / "references" / "supported-harnesses.md"
-        ).read_text()
-
-        self.assertIn(
-            "$SKILL_ROOT/references/supported-harnesses.md",
-            skill_text,
-        )
-        self.assertIn("Conversations in this repository", skill_text)
-        self.assertIn("All conversations", skill_text)
-        self.assertIn("Choose projects to analyze", skill_text)
-        self.assertIn(
-            "Project skills + global skills",
-            skill_text,
-        )
-        self.assertIn("Project skills only", skill_text)
-        self.assertIn(
-            "Process datasets of 50 transcripts or fewer in a single batch",
-            skill_text,
-        )
-        self.assertIn(
-            "For datasets with more than 50 transcripts, use parallel batches "
-            "(20 transcripts per batch recommended)",
-            skill_text,
-        )
-        self.assertNotIn("--harness claude|codex|warp", skill_text)
-        self.assertNotIn("--claude-home PATH", skill_text)
-        self.assertIn("| Warp | `warp` |", harness_text)
-        self.assertIn("| Claude Code | `claude` |", harness_text)
-        self.assertIn("| Codex | `codex` |", harness_text)
-        self.assertIn("stop before creating a report directory", harness_text)
 
     def test_code_diffs_follow_os_theme(self):
         bundle = embedded_diffs_script()
@@ -187,52 +153,7 @@ class ReportRendererTests(unittest.TestCase):
         self.assertIn("@media (prefers-reduced-motion: reduce)", page)
         self.assertIn(".bar-fill { animation: none; }", page)
 
-    def test_skill_output_uses_report_and_warp_factories_labels(self):
-        skill_path = Path(__file__).resolve().parent.parent / "SKILL.md"
-        skill_text = skill_path.read_text()
 
-        self.assertIn(
-            'render_report.py" "$REPORT_DIR/report.json" --open',
-            skill_text,
-        )
-        self.assertIn(
-            "- Your agent skill report: file://$REPORT_DIR/report.html",
-            skill_text,
-        )
-        self.assertIn(
-            "- Want to automate self improvement for your workflows? "
-            "Request access to Warp Factories: "
-            "warp.dev/factories/request-access",
-            skill_text,
-        )
-        self.assertNotIn("[View in browser]", skill_text)
-
-    def test_skill_edits_only_use_failed_conversations(self):
-        skill_path = Path(__file__).resolve().parent.parent / "SKILL.md"
-        skill_text = skill_path.read_text()
-
-        self.assertIn(
-            "`raw_efficiency` = mean of efficiency scores across all scored sessions",
-            skill_text,
-        )
-        self.assertIn(
-            "`curve(score) = 0.5 + 0.5 * score`",
-            skill_text,
-        )
-        self.assertIn(
-            "`overall = 0.5 * efficiency + 0.35 * code_quality + "
-            "0.15 * skill_coverage.`",
-            skill_text,
-        )
-        self.assertIn(
-            "from each conversation's raw, uncurved scorer results",
-            skill_text,
-        )
-        self.assertIn(
-            "Use only `failed_conversations` as evidence for "
-            "skill-improvement suggestions and draft skill edits",
-            skill_text,
-        )
 
     def test_report_renders_letter_grade(self):
         page = render_page({

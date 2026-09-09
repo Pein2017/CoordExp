@@ -32,8 +32,8 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - Outputs include enough metadata to reproduce: dataset id, preset/run name, seed, max_objects, etc.
 - Artifact naming is self-describing (avoid ambiguous “train.jsonl” meaning multiple things).
 - Manifest/summaries are written deterministically and consistently.
-- Training outputs include the expected manifest family: `resolved_config.json`, `runtime_env.json`, `effective_runtime.json`, `pipeline_manifest.json`, `experiment_manifest.json`, `run_metadata.json`.
-- Infer/eval outputs include the expected artifact family: `summary.json`, `resolved_config.json`, `resolved_config.path`, `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, `metrics.json`, and guarded companions when enabled.
+- Resolve required artifact names and schemas through the audited checkout's `docs/AGENT_INDEX.md` and `docs/IMPLEMENTATION_MAP.md`; do not apply an older pipeline's manifest list to a current run.
+- For current CoordExp-Swift training, verify outputs against the `coordexp-swift-training-artifacts` contract and its `src/artifacts/run_writer.py` / `src/artifacts/checkpoints.py` owners. For inference/evaluation, use `coordexp-infer-eval-workflow` and the owning inference-scoring-artifacts / detection-evaluator contracts. Historical runs retain their version-bound contracts.
 - Downstream eval/vis jobs can recover authoritative root-image and config provenance without guessing from the current working directory.
 
 ### 6.1 Evaluation Validity

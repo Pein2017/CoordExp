@@ -1,13 +1,14 @@
 ---
 name: native-agent-team-guidance
-description: Choose native agent-team topology, package ownership, model and effort, and concise message flow when delegation can reduce time or lead context. Flat by default; nested package delegation only when authorized and worthwhile.
+description: Choose native agent-team topology, package ownership, model and effort, and concise message flow when delegation can reduce time or lead context; choose direct, flat, or bounded nested delegation by package shape and authorization.
 ---
 
 # Native Agent Team Guide
 
 Use native tools, not another scheduler or mandatory team workflow. The
 [agent contract](../../../.codex/AGENTS.md) owns authority, delegation permission, and
-acceptance. Loading this skill does not authorize a launch or deeper topology.
+acceptance. Loading this skill does not authorize a research launch or exceed
+the active delegation boundary.
 
 ## Choose the smallest useful team
 
@@ -16,7 +17,10 @@ complete, independently verifiable outcome when briefing, integration, and
 acceptance cost less than the work saved. A frozen command plus an event monitor
 often needs no agent. Scouting is optional, not a required first stage.
 
-Default to `L0 lead -> L1 package owner(s)`. These are responsibilities, not
+Choose direct work, a flat `L0 lead -> L1 package owner(s)` shape, or bounded
+`L0 -> L1 -> L2` delegation inside an owned package. Do not default to flat or
+nested topology, and do not add a scout or nesting ceremony unless it reduces
+lead work while preserving genuine integration. These are responsibilities, not
 permanent posts or model ranks:
 
 - **Lead:** user intent, scientific/spec meaning, cross-package interfaces,
@@ -36,25 +40,27 @@ exists. Parallelize independent reads or disjoint writes, not competing fixes,
 shared-state debugging, or the same scarce runtime. Do not assign a scout if
 the lead will repeat its entire investigation anyway.
 
-## Model and effort: experimental, temporary priors
+## Model and effort routing
 
-Prefer Luna + Astra provisionally; these are user-preferred starting hypotheses,
-not locally measured quality or total-cost rankings. Keep Sol available as an
-optional comparator or fallback, not a mandatory middle tier or retired model.
-The suggested roles and effort ranges below are not requirements; revise them
-when task-specific acceptance, latency, or cost evidence favors another route.
-Check actual callable models/efforts; select directly rather than forcing an
-escalation ladder. Effort buys search depth, not authority or automatic quality.
-The user reports benchmarks of Astra-light >= Sol-high and Astra-medium >=
-Sol-xhigh/max; treat these as supplied priors, not independently verified local
-acceptance or cost evidence. In the current native tool, the user's "light"
-maps to callable `low`; do not pass an unsupported `light` effort.
+Prefer Astra `low/medium` for complex or consequential work. Prefer Luna
+`medium/high` for routine scouts, collectors, evidence extraction, summaries,
+and bounded dirty or mechanical work; use Luna `xhigh/max` for bounded,
+verifiable implementation with clear invariants. These are routing priors, not
+authority or automatic quality gates. Check actual callable models/efforts and
+select directly rather than forcing an escalation ladder. Effort buys search
+depth, not authority or automatic quality. In the current native tool, the
+user's "light" maps to callable `low`; do not pass an unsupported `light`
+effort.
+
+`gpt-5.6-sol` is temporarily retired from default routing. Use it only after
+explicit user opt-in for a comparison or fallback; never reactivate it as an
+automatic fallback or escalation tier.
 
 | Model | Working range and roles |
 |---|---|
 | `gpt-5.6-luna` | `medium/high` for cheap scouting, mechanical work, evidence extraction, and summaries; `xhigh/max` for simple or moderate implementation with clear invariants and a strong verifier. Not scout-only. |
 | `gpt-6-astra` | `low` (user's light) for complex implementation; consider `medium` when uncertainty warrants more depth. `high` or above for consequential review/audit; `xhigh/max` for decisive reasoning, brainstorming, or a focused adviser. Advice does not transfer user-owned decisions. |
-| `gpt-5.6-sol` | Optional comparator or fallback at a supported effort when task-specific evidence favors it. Its total accepted-task cost versus Astra `low/medium` is unresolved; do not require it between Luna and Astra. |
+| `gpt-5.6-sol` | Explicit-opt-in comparison or fallback only; never part of default routing. |
 
 Two provisional operating patterns:
 
@@ -64,8 +70,9 @@ Two provisional operating patterns:
   with Luna handling independent evidence or mechanical work in parallel.
   Useful owner work need not wait for unrelated scouts to finish.
 
-Treat Luna's token price as a low-weight concern, not its waiting, integration,
-or rework cost. Cheap calls favor useful delegation, not redundant reports.
+Treat Luna's source token price as a low-weight concern, not its waiting,
+integration, or rework cost. Cheap calls favor useful delegation, not
+redundant reports.
 Route summaries by semantic risk, not the label "summary" alone.
 
 Astra is a normal worker/adviser choice in this routing, not exceptional.
@@ -79,6 +86,28 @@ check is more useful than a longer list of instructions. Do not claim that
 lower lead effort preserves quality until real acceptance evidence supports it;
 escalate proactively at ambiguous semantic or high-consequence boundaries.
 Writing a preferred effort in a brief does not change the running lead setting.
+
+## Name tasks with their actual model and effort
+
+Set `spawn_agent.task_name` to `<model>_<effort>_<task_slug>`, using lowercase
+letters, digits, and underscores. Use the model shorthand (`astra`, `luna`,
+`sol`, or `terra`) and the actual callable effort, followed by a concise task
+description: `astra_low_server_lifecycle`, `luna_max_remove_serena_reminder`,
+or `luna_medium_wake_schema_audit`. Use a `sol_*` name only for an explicitly
+user-authorized comparison or fallback.
+
+Match the prefix to the effective spawn settings, including inherited settings
+for a full-history fork; never label a planned model or effort as the actual one.
+Use `low`, not the informal `light`. The name is a display aid, not a routing
+parameter: configure model and effort separately where the tool permits it.
+System-assigned nicknames do not replace this task-name convention.
+
+## Scout and collector outputs
+
+When a Luna scout or collector is used, return a compact handoff containing:
+the question and scope; a small evidence table with counts and exact artifact
+paths; and gaps or unknowns. Do not return raw logs. The lead should be able to
+integrate the evidence without repeating the inventory.
 
 ## Brief once; share changes, not whole histories
 
@@ -156,14 +185,18 @@ if an idle owner must act. Peer interface facts can travel directly while the
 package owner retains integration; shared understanding does not replace a
 real consumer check on a changed artifact.
 
-## Optional L0 -> L1 -> L2 package delegation
+## Bounded L0 -> L1 -> L2 package delegation
 
-Use a nested package only when explicitly authorized under the agent contract.
-Name levels unambiguously: L0 is root, L1 its child, L2 its grandchild. Native
-capability does not grant permission; do not infer a hard v2 depth guard from
-`agents.max_depth` (the inspected v2 implementation ignores it). Check current
-tool availability and limits before relying on them; do not change runtime
-configuration to satisfy this skill.
+Under the user's standing authorization, an L1 package owner may dispatch
+bounded Luna scouts, collectors, or mechanical workers at L2 without a fresh
+permission request for each helper. Stay inside the owned package and its
+shared resource allowance; this does not authorize L3, extra material GPU use,
+or expansion of semantic scope. Name levels
+unambiguously: L0 is root, L1 its child, L2 its grandchild. Native capability
+does not grant permission beyond this standing bound; do not infer a hard v2
+depth guard from `agents.max_depth` (the inspected v2 implementation ignores
+it). Check current tool availability and limits before relying on them; do not
+change runtime configuration to satisfy this skill.
 
 Nesting is useful when a package contains independent, disjoint subwork and L1
 can absorb its implementation detail, correction, and integration instead of
@@ -205,17 +238,13 @@ evaluation defect. For research work, use the retained-evidence recovery rule in
 repeat; a failed reducer alone is not a reason to repeat valid model work.
 
 Optimize the whole accepted outcome: worker usage, lead intervention, rework,
-integration/verification, and runtime wait. Cached tokens are not unique text
-or a complete cost measure; completed workers are not accepted-task evidence.
-The current experimental question is whether Sol at a supported effort or
-Astra `low/medium` delivers comparable accepted work at lower total token cost.
-When existing receipts support it, compare similar task shapes and acceptance
-requirements, including helper usage, substantive rework, and attributable lead
-integration or takeover. Separate cached input, uncached input, and output;
-use dated applicable rates rather than raw token totals, and report elapsed
-time separately. Missing usage is unknown, not zero; different tasks do not
-establish a causal model ranking.
-Use naturally occurring acceptance evidence to revise these priors, not a
+integration/verification, and runtime wait. Luna's token price is low-weight;
+waiting, integration, and rework are not free. Cached tokens are not unique
+text or a complete cost measure; completed workers are not accepted-task
+evidence. When cost bears on a routing decision, separate cached input,
+uncached input, and output using dated applicable rates; missing usage or
+rates remain unknown, not zero. Compare like tasks at like acceptance, including
+failed attempts, substantive rework and attributable lead integration.
+Use naturally occurring acceptance evidence to revise routing, not a
 mandatory model alternation, duplicate runs, or new accounting infrastructure.
-Sol retirement remains an open decision, not an automatic consequence of this
-preference. Stop when acceptance is satisfied.
+Stop when acceptance is satisfied.

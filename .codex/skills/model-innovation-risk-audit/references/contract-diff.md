@@ -27,5 +27,5 @@ Do not treat a smoke as trustworthy if any layer silently falls back to legacy b
 - Verify the differentiable scalar, not only logged labels.
 - Compare raw terms and effective weighted contributions.
 - Check zero-weight targets, support size, target membership, duplicate multiplicity, and EOS/type-gate composition.
-- Use fp32 for probability/log-probability math even when model forward uses bf16.
+- Apply the [precision checks](risk-taxonomy.md#7-precision-risk) when the objective uses probability or log-probability math.
 - Prefer deterministic tiny-logit scalar tests before trusting aggregate loss curves.

@@ -13,27 +13,15 @@ cheaply than the existing real path.
 
 ## Invocation contract
 
-Automatic invocation loads a lead-local check; it does not authorize delegation.
-A user correction about overdesign triggers local reconsideration, never a
-spawn. Do not launch a reviewer to decide whether to launch one.
+Apply the check locally. A user correction about overdesign triggers local
+reconsideration; do not launch a reviewer to decide whether to launch one.
+The current `AGENTS.md` owns delegation permission, review budget, and model
+routing; use `native-agent-team-guidance` when a bounded independent review is
+justified under that contract.
 
-One read-only reviewer is allowed only when all four conditions hold:
-
-1. A named unresolved risk can change acceptance, evidence identity, safety, or behavior.
-2. Local inspection or a deterministic check cannot close it more cheaply.
-3. Expected decision value or lead-context/wall-time savings exceed briefing,
-   integration, and acceptance cost.
-4. This frozen phase and target have not already received the review.
-
-Choose an available model and supported effort sufficient for the review,
-following the user-wide routing rules. Keep:
-
-- lead-selected `fork_turns` under the agent contract
-- no writes or subagents; stay within the frozen review target
-
-Give it only the frozen outcome, acceptance and stop rule; next actions; shortest
-real path; claimed consumer; and user-owned decisions. If any condition fails,
-keep the check local.
+For such a review, provide the frozen outcome, acceptance and stop rule, next
+actions, shortest real path, claimed consumer, and user-owned decisions. Keep
+it read-only, within that target, and without subagents.
 
 ## Decision rule
 

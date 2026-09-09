@@ -58,6 +58,12 @@ the user names it explicitly.
      back to the authoritative run manifest, config, and predictions. Use the
      visualization skill when per-row visual evidence is required.
 
+For matching-policy, F1/AP, crowd or category-ID questions, read only the
+relevant section of the selected checkout's `docs/eval/INTERPRETATION.md`
+([research copy](/data/CoordExp/.worktrees/research-probes/docs/eval/INTERPRETATION.md)).
+For model forward/replay implementation, use `qwen3-vl-execution`; a routine run
+does not require that additional technical investigation.
+
 ## Repair
 
 When a stage fails, preserve the exact failure identity, classify whether the

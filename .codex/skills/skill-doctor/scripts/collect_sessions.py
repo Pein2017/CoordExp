@@ -381,6 +381,7 @@ def parse_codex_session(path: Path, skill_names, include_subagents: bool):
 
     meta = {}
     stats = {"user_turns": 0, "assistant_turns": 0, "tool_calls": 0, "repeated_tool_calls": 0, "error_outputs": 0}
+    response_turns = {"user_turns": 0, "assistant_turns": 0}
     entries = []
     seen_calls = {}
     call_args_text = []
@@ -433,8 +434,11 @@ def parse_codex_session(path: Path, skill_names, include_subagents: bool):
                 if role == "user":
                     if looks_injected(text):
                         continue
+                    response_turns["user_turns"] += 1
                     entries.append(("user", truncate(text, MAX_MSG_CHARS)))
                 elif role == "assistant":
+                    if not looks_injected(text):
+                        response_turns["assistant_turns"] += 1
                     entries.append(("assistant", truncate(text, MAX_MSG_CHARS)))
             elif ptype in ("function_call", "custom_tool_call", "local_shell_call"):
                 stats["tool_calls"] += 1
@@ -459,6 +463,12 @@ def parse_codex_session(path: Path, skill_names, include_subagents: bool):
 
     if not meta:
         meta = {"id": path.stem, "cwd": None, "started_at": first_ts}
+
+    # Some Codex rollouts contain messages only as response items. Keep legacy
+    # event counts when present so mixed-format rollouts are not counted twice.
+    for key, count in response_turns.items():
+        if stats[key] == 0:
+            stats[key] = count
 
     # A skill counts as used only when a tool call actually touched it (read its
     # SKILL.md or ran something under its directory). The raw session text is

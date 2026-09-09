@@ -36,6 +36,13 @@ silent newly wired contract mismatch.
    - Aggregate failure families before sampling examples.
    - Complete when the visible failure has a bounded unit and onset.
 
+   For detection symptoms, read the selected checkout's
+   `docs/eval/INTERPRETATION.md` when matcher, label/geometry, annotation or
+   denominator meaning is uncertain (maintained research copy:
+   [metric interpretation](/data/CoordExp/.worktrees/research-probes/docs/eval/INTERPRETATION.md)).
+   A parser-valid unmatched row is not the same failure as malformed output;
+   this distinction changes the plausible intervention.
+
 4. **Separate hypotheses with the smallest probe.**
    - Inspect raw behavior and use matched baselines, teacher-forced/free-rollout
      contrast, slot or boundary readouts, visual review, tiny controlled runs, or

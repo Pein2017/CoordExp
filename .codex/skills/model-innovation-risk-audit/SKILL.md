@@ -8,6 +8,8 @@ description: Use when a high-risk or decision-grade CoordExp mechanism could sil
 Run a read-only **contract gate** for mismatches that can pass a smoke and still
 train or evaluate a different mechanism. Use `model-diagnosis` when an existing
 behavioral symptom is the main question.
+Use `qwen3-vl-execution` for routine forward, replay, template, or loss
+implementation; reading its technical checks does not invoke this risk gate.
 
 Do not invoke the full gate merely because a pilot is new. For an exploratory
 first observation, protect checkpoint/config/input identity, the declared
@@ -18,7 +20,7 @@ observation or the evidence is being promoted.
 This gate tests mechanism fidelity; `audit-review` tests whether evidence
 supports a decision, and `research-flow` owns the scientific question and
 interpretation. They are not three mandatory approvals. Share closed findings
-and the phase/target/risk review budget. Use `native-subagents-guidance` for
+and the phase/target/risk review budget. Use `native-agent-team-guidance` for
 delegation only when useful, not a separate routing or mandatory-review policy.
 
 ## Gate Timing
