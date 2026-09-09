@@ -1,0 +1,69 @@
+{
+  "unit_id": "2026-09-08-logit-lens-natural-continuation",
+  "date": "2026-09-08",
+  "status": "lead-accepted",
+  "technical_status": "verified",
+  "scientific_status": "no clean owner benefit under frozen primary rule",
+  "architecture_promotion_status": "not_promoted",
+  "branch_status": "closed",
+  "successor_authorized": false,
+  "evidence": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-natural-continuation/run-v1/receipt.json",
+      "sha256": "4c4d5ab2a73bd12e740f1efa198d7932ba15d69c7c2f5f7c397cd19eb86935bc"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-natural-continuation/analysis-v1/summary.json",
+      "sha256": "b574c2d5de9654564212bdcf6b5b7f0363adf309e45a072af00fe0b7c16fd3e3"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-natural-continuation/analysis-v1/gt_vs_pred.jsonl",
+      "sha256": "8c0625633dc33c55502ddb391980a67659bbab7e53d262f6f67e0ddc4154fb1c"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/image2299-logit-lens/scripts/research/probe_logit_lens_natural_continuation.py",
+      "sha256": "3aec585f4a94b850c3413714af9ca9a68289de986c92d96b927ac2f06c9e1766"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/image2299-logit-lens/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-natural-continuation/analyze.py",
+      "sha256": "ebfeb7a66bb47b6a677f99c8a9b0abab2793b24e2019dc8005b3d82c3d7568c1"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/image2299-logit-lens/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-natural-continuation/test_analyze.py",
+      "sha256": "e75a878b05b6af564d4a95dcf8c354869734e1c89a14b83381c0f083bc26017d"
+    }
+  ],
+  "checks": {
+    "execution_artifact_hashes_verified": 53,
+    "image_receipts_verified": 13,
+    "all_image_mechanical_checks": true,
+    "runner_identity": true,
+    "independent_cpu_reduction": true,
+    "runner_and_reducer_tests_passed": 11,
+    "strict_duplicate_boundary_sensitivity_passed": true,
+    "gpu_released": true
+  },
+  "primary_result": {
+    "iou": 0.5,
+    "gt_owners": 392,
+    "baseline": {
+      "TP": 277,
+      "FP": 39,
+      "FN": 115,
+      "strict_duplicate_candidates": 7
+    },
+    "direction_only": {
+      "TP": 277,
+      "FP": 46,
+      "FN": 115,
+      "strict_duplicate_candidates": 8
+    },
+    "gained": 5,
+    "lost": 5,
+    "net": 0,
+    "first_token_changed_images": 13,
+    "clean_positive_pilot": false
+  },
+  "claim_boundary": "One block27 direction graft followed by native cached greedy continuation, conditional on fixed overfit-generated prefixes on 13 training images. No held-out or from-original-prompt owner-benefit claim.",
+  "stop": "User-authorized quick check complete; no further launch or queued successor."
+}

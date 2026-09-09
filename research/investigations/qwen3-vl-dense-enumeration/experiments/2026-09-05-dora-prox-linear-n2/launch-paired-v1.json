@@ -1,0 +1,28 @@
+{
+  "unit_id": "2026-09-05-dora-prox-linear-n2",
+  "phase": "single_paired_scientific_run",
+  "worktree": "/data/CoordExp/.worktrees/dora-prox-linear-n2",
+  "runner": "scripts/research/run_dora_prox_linear_n2.py",
+  "runner_sha256": "fe5eaafe21e964dcb1fa5f28b3c1caf7ffb0ecd8beba52505a98b1357b5d2b71",
+  "tests_sha256": "1d8470babbc2d975010f15358f3d6fbbe1e67ef834a33903068a6e41ba60199e",
+  "source_packet": "../2026-09-01-human13-dora-magnitude-finite-overfit/n2-launch-packet-v1.json",
+  "source_packet_sha256": "a96002b7bf189529b3487bd6c0ea28821df54701c58a7a4007b11b8e82008653",
+  "mechanics_train_terminal_sha256": "491319d5328acacb17cfeafdd1848d92841540f8f92de980f52f21af4ba917c5",
+  "mechanics_cold_terminal_sha256": "6c108bd20af457eea370da48204648c24238850f36baa9d3d1fd5fe0422d9089",
+  "mechanics_acceptance": {"accepted_nonzero_updates": 1, "train_seconds": 83.09946661442518, "cold_seconds": 45.323339104652405, "source_restored": true, "cold_exact_tensor_count": 588, "peak_gpu_reserved_bytes": 33384562688, "full_inner_certificate": false, "interpretation": "mechanics only; bounded inexact joint update and real cold readback"},
+  "objective": "sum_position squared positive worst-competitor margin deficit / (2*592)",
+  "image_ids": [6040, 16228],
+  "joint_positions": 592,
+  "owners": 65,
+  "fresh_source_for_each_arm": true,
+  "do_not_initialize_from_smoke_adapter": true,
+  "common_bounds": {"steps": 300, "train_seconds": 1800, "cold_seconds": 600, "world_size_per_arm": 1},
+  "numerical_work_profile": {"requested_maxiter": 4, "requested_maxfun": 12, "maxls": 6, "hard_oracle_evaluations": 100, "max_cut_solves": 2, "ftol": 1e-12, "gtol": 1e-7, "separation_tolerance": 2e-5, "gap_tolerance": 1e-6},
+  "run_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-05-dora-prox-linear-n2/paired-v1",
+  "arms": {
+    "adam": {"cuda_visible_devices": "0", "train_output": "adam", "cold_output": "adam-cold", "train_log": "adam.log", "cold_log": "adam-cold.log"},
+    "qp": {"cuda_visible_devices": "1", "train_output": "qp", "cold_output": "qp-cold", "train_log": "qp.log", "cold_log": "qp-cold.log"}
+  },
+  "launcher_contract": "Lead creates only paired-v1 log parent. Executors must never precreate train_output or cold_output; the runner owns those directories. Use exactly one train command and, for a valid persisted nontechnical candidate including budget_partial, one independent verify command per arm.",
+  "stop": "No retries, numerical changes, arm substitution or N4/N13 expansion. A bounded partial result is terminal evidence, not permission to continue."
+}

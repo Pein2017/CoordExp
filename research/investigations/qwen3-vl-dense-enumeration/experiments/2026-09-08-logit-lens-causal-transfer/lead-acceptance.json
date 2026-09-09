@@ -1,0 +1,47 @@
+{
+  "unit_id": "2026-09-08-logit-lens-causal-transfer",
+  "status": "lead-accepted",
+  "scientific_disposition": "local_checkpoint_transfer_replicated_across_fitted_images_with_directional_and_metric_limits",
+  "infrastructure_disposition": "experiment_local_mechanics_verified_not_promoted",
+  "stage_a": {
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-causal-transfer/run-v1/evaluation-v2/receipt.json",
+    "sha256": "082ffdb2ba027869168dac268764559f90e156ed5ed5a84ee94560781d167db1",
+    "disposition": "derived_evaluation_only_recovery_of_unchanged_raw_execution",
+    "caveat": "Pilot self-patch status inferred from fail-fast execution path; per-self details were not persisted. Original failed receipt and exact launched source retained."
+  },
+  "stage_b": {
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-causal-transfer/stage-b-v1/receipt.json",
+    "sha256": "974980e16baaa45fd292c503449ca8676f84bd2e3436f0d42a90ff743b44231a",
+    "disposition": "fresh_full_fixed_replication_passed_with_persisted_self_checks"
+  },
+  "independent_reduction": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-causal-transfer/replication-analysis-v1/summary.json",
+    "sha256": "1ea5f6dc0b199573ed8f10abca7b6fbdb3a54eeecdcbb3c949cd4a13fc5c913b",
+    "weighting": "equal_images_after_seed_mean; raw eligible-site counts also exposed"
+  },
+  "geometry_reduction": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-causal-transfer/replication-geometry-v1/summary.json",
+    "sha256": "8f4f19f8455affd6d7127f467e4ee1acf50f0dae0593dd371e915c5fd10670d5"
+  },
+  "lead_checks": [
+    "Fresh seven focused tests passed, including shifted-site/corrupted-state and norm-predicate regression",
+    "All raw execution artifact hashes, per-image receipt hashes and launched-code identities checked",
+    "Independently rebuilt per-site margin arithmetic, donor-top-one and third-token rates",
+    "Independently rechecked all pilot and replication random norms against the original combined tolerance",
+    "Exact four-corner identity and bidirectional endpoint/site alignment passed",
+    "Fixed intended/executed/eligible image and site counts reconciled with exclusions",
+    "Per-image native/text replay, self-patch, block28 donor parity and unchanged-position receipts passed",
+    "Rendered and visually inspected image-equal transfer figure",
+    "GPU0 released; no live experiment invocation remains"
+  ],
+  "claim_limits": [
+    "Human13 is the overfit training panel, not held-out generalization",
+    "Teacher-forced exact-prefix coordinate decisions, not natural owner recovery",
+    "Margin erasure is not donor-token transfer; third-token outcomes are explicit",
+    "Equal delta norm does not match resulting residual radius",
+    "Full-prefix state includes visual, prompt and generated-history positions",
+    "Four-corner allocation depends on the defined hybrid intervention and metric",
+    "Depth-indexed transfer is not training-time dynamics or a recovered symbolic covered set"
+  ],
+  "stop": "pilot_fixed_replication_and_framework_synthesis_complete_no_further_runtime"
+}

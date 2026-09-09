@@ -1,0 +1,61 @@
+{
+  "attempt_ids": {
+    "capture-null-n2": "full-n2-v1-capture-null-n2-attempt-1",
+    "capture-semantic-n256": "full-n2-v1-capture-semantic-n256-attempt-1",
+    "screen-n2-null-0": "full-n2-v1-screen-null-0-attempt-1",
+    "screen-n2-semantic": "full-n2-v1-screen-semantic-attempt-1",
+    "screen-n2-source": "full-n2-v1-screen-source-attempt-1"
+  },
+  "attempts_per_process": 1,
+  "authorization": {
+    "attachment_path": "/data/CoordExp/.codex/attachments/9d55582b-bc32-4424-963c-b876d7290b76/pasted-text.txt",
+    "attachment_sha256": "3657575976a8755e7688fe2a00a4139688c6e2aa67e4a4aec208c1adbf9f004b",
+    "resource_override": "不设置scaling explosion的限制. 优先科学实验而非担心资源",
+    "scope": "one-time autonomous progression of the frozen research unit to a scientific disposition"
+  },
+  "authorized": true,
+  "bindings": {
+    "core_runner": "scripts/research/run_n256_shared_output_qp_norm_scaling.py",
+    "core_runner_sha256": "eb1d75e4f122bccc979fa6f7331c481b9d986830f1124ad6bd01338a607af7e4",
+    "input_receipt": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-input-build-receipt-v1.json",
+    "input_receipt_sha256": "065c01b85068bb9233902cf604b94d12640abb3dc82c8417f629cc2b9cee0bc7",
+    "n2_smoke_policy": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/n2-smoke-policy-v2.json",
+    "n2_smoke_policy_sha256": "0d7bb02ad12c9451627fa66662c4a8eee934c5d6ebcef569c075a15b93e3910e",
+    "output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-v1",
+    "policy": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/policy-v2.json",
+    "policy_sha256": "53721ce0475d60dea122c0f5c24cd183c02f16735ba4cde17fbd27caeafbac90",
+    "runner_sha256": "140218a441ec9e3e55f168f4bab6e1482431be7451b41c574708ee0701da23fe",
+    "screen_gt": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-screen-gt-lockbox-v1.json",
+    "screen_gt_sha256": "72d1557da89cb831cd1558dd7d8e155a78dbfa3830dca2a413a275df873330d6",
+    "screen_input": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-screen-input-lockbox-v1.jsonl",
+    "screen_input_sha256": "718a32707aa73f558ca546380bf577629537986a10aca831626f201546eb2ca3",
+    "train_input": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-train-input-v1.jsonl",
+    "train_input_sha256": "0a058c27f7103a7791f260c2291e9ffaabf953185fba0f7601a6c523eca5db09",
+    "unit": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/unit.md",
+    "unit_sha256": "6d79056c093e223ac009b5d9b518491dbcfddd5a6ccb50c2c68b93a5f30ea425"
+  },
+  "commands": [
+    "validate-launch",
+    "capture-semantic-n256",
+    "plan-null-n2",
+    "capture-null-n2",
+    "solve-n2",
+    "screen-n2 source",
+    "screen-n2 semantic",
+    "screen-n2 null-0",
+    "aggregate-n2"
+  ],
+  "corrected_launch_policy": "one minimal correction per independent implementation root cause; never overwrite an attempt",
+  "git_head": "0dc1dfc7b4fd793c1b51505f6c1375c99aab4b2e",
+  "mode": "full_n2_then_stage_gate",
+  "natural_decoded_prediction_order": "arbitrary; global category-compatible order-agnostic IoU50 matching",
+  "physical_gpu": "7",
+  "resource_mode": "observe_only_no_scientific_ceiling",
+  "run_id": "n256-full-n2-v1-20260901T145100Z",
+  "schema_version": "n256_shared_output_qp_scaling_launch.v1",
+  "sealed_at_utc": "2026-09-01T14:51:00Z",
+  "serial_visible_gpu_count": 1,
+  "stage_gate": "N2 full 128-image screen receipt must be sealed before any N4 command exists or is launched",
+  "stop_rule_override": "scaling, active constraints, norm, rank, wall time, memory, and artifact growth are measured only; no scaling-explosion ceiling",
+  "target_blindness": "screen input and GT may be opened only after both immutable N2 payloads exist"
+}

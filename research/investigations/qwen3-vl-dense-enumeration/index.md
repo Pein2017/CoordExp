@@ -1,5 +1,17 @@
 # Qwen3 Vision-Language Dense Enumeration Bottleneck
 
+## Current reading path — 2026-09-09
+
+Use the [current compass](compass.md) for the concise question-oriented
+synthesis, the [detailed overview](overview.md) for the historical hypothesis
+atlas plus its current synthesis, and the [experiment router](experiments/index.md)
+for selected original protocols/results. The current questions are finite-panel
+programmability versus transfer, natural owner coverage and objective burden,
+semantic compression versus matched nulls, and causal row state versus layer
+consumption. N256 N32 and row-boundary feedback remain partial technical
+records. The Source/Rweak routing benchmark is preserved separately under
+`research/archive/self-rollout-source-rweak-routing-benchmark/`.
+
 This investigation asks why a geometry-sorted Qwen3 Vision-Language
 (`Qwen3-VL`) detector can describe and localize many individual Common Objects
 in Context 80-category (`COCO-80`) objects, yet becomes conservative and

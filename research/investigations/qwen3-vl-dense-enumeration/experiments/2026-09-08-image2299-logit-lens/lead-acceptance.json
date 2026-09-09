@@ -1,0 +1,30 @@
+{
+  "unit_id": "2026-09-08-image2299-logit-lens",
+  "status": "lead-accepted",
+  "research_disposition": "descriptive_matched_prefix_checkpoint_readouts_on_one_training_image",
+  "infrastructure_disposition": "experiment_local_mechanics_verified_not_promoted",
+  "execution_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-image2299-logit-lens/run-v2/receipt.json",
+  "execution_receipt_sha256": "0fc018e26e42d97a08b8a4a6d1e1f56dfd52f279d0637dcbb0c5e49890aa3e58",
+  "analysis_summary": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-image2299-logit-lens/analysis-v2/summary.json",
+  "analysis_summary_sha256": "1152376d99d5d350bf7212a7eb627ee68caf857736d5d0ba15d448013ba215e1",
+  "lead_verification": [
+    "Replayed focused pytest: 4 passed, including text-delta sensitivity rejection",
+    "Recomputed all paired rank and coordinate-bin summaries from 112 JSONL rows",
+    "Verified every execution artifact byte count and SHA256 against receipt",
+    "Verified current runner SHA256 equals launched runner",
+    "Verified staged source-gate files equal their provenance source hashes",
+    "Inspected cloned pre-injection capture, post-injection seam and final norm handling",
+    "Inspected all four exact hook-parity and final-reconstruction receipts",
+    "Generated and visually inspected paired-rank figure; paired token identities checked",
+    "External exit receipt reports exit code zero; failed first attempt retained"
+  ],
+  "limits": [
+    "One training image and 21 selected sites per prefix origin, not a census",
+    "Reference tokens come from generated trajectories, not unique ground-truth owners",
+    "Exact coordinate token rank is not geometry or owner correctness",
+    "Late readout emergence does not locate causal computation",
+    "Immediate DeepStack text equality is architecture expected",
+    "No replication, causal intervention, checkpoint training or model promotion"
+  ],
+  "stop": "single_image_paired_probe_complete_no_automatic_successor"
+}

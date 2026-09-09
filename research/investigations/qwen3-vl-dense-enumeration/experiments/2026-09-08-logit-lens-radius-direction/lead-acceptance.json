@@ -1,0 +1,33 @@
+{
+  "unit_id": "2026-09-08-logit-lens-radius-direction",
+  "date": "2026-09-08",
+  "status": "lead-accepted",
+  "scientific_status": "bounded fixed-prefix direction-dominant local transfer",
+  "architecture_promotion_status": "not_promoted",
+  "branch_status": "closed",
+  "successor_authorized": false,
+  "evidence": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-radius-direction/final-v1/receipt.json",
+      "sha256": "d6262dcab25b6dbe53e975e6d661b56c8b6f3adca031e8821b363a242693e3ed"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-logit-lens-radius-direction/analysis-v1/summary.json",
+      "sha256": "e08142c7076d164cac6fb3ed101856c8fd992ac8d45ed19604f4f9e789ba5a22"
+    }
+  ],
+  "runner_sha256": "e4eb22850126f36c63eb4329cef204d4f3c8c6ab0ffe145c295e1ff0d379cd88",
+  "independent_reducer_sha256": "0c87d2275ab193d45d9df989cfd80849e1499d7df62c9a9d8c66d6d043454e16",
+  "lead_checks": {
+    "all_execution_artifact_hashes": true,
+    "all_13_image_receipt_hashes": true,
+    "all_mechanical_checks": true,
+    "prior_full_current_anchors": 240,
+    "independent_raw_reduction": true,
+    "figure_inspected": true,
+    "tests_passed": 3,
+    "runner_identity": true
+  },
+  "claim_boundary": "13 training images, 60 fixed-prefix sites, 59 distinct endpoints; no natural-generation, owner-coverage, EOS, training-dynamics, generalization or unique semantic-concept claim.",
+  "stop": "Final user-authorized round completed; no further launch or queued successor."
+}

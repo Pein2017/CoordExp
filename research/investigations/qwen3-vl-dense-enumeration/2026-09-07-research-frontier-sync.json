@@ -1,0 +1,207 @@
+{
+  "schema": "coordexp_research_frontier_sync_v1",
+  "date": "2026-09-07",
+  "status": "completed",
+  "scope": "Dense-enumeration research synthesis; current worktree results plus bounded read-only sibling snapshots",
+  "notion_main_url": "https://app.notion.com/p/3d49d9ce3f5981cdb5dbdca4c4e7d379?pvs=204",
+  "notion_created_pages": 1,
+  "notion_updated_existing_pages": 8,
+  "notion_readback": [
+    {
+      "page_id": "3d49d9ce-3f59-81cd-b5db-dca4c4e7d379",
+      "url": "https://app.notion.com/p/3d49d9ce3f5981cdb5dbdca4c4e7d379?pvs=204",
+      "title": "Research Frontier — 2026-09-07 | QP, CE, RLOO and Generalization",
+      "last_edited_at": "2026-09-07T01:50:43.781Z",
+      "readback_status": "verified",
+      "body_characters": 19248,
+      "unknown_blocks_observed": false,
+      "artifact_identities_checked": 12
+    },
+    {
+      "page_id": "3539d9ce-3f59-814f-ad41-ce04ae1e42a9",
+      "url": "https://app.notion.com/p/3539d9ce3f59814fad41ce04ae1e42a9?pvs=204",
+      "title": "CoordExp",
+      "last_edited_at": "2026-09-07T01:48:52.154Z",
+      "readback_status": "verified",
+      "body_characters": 4349,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3c79d9ce-3f59-8148-96e7-c63c2a8e68ad",
+      "url": "https://app.notion.com/p/3c79d9ce3f59814896e7c63c2a8e68ad?pvs=204",
+      "title": "🗺️ CoordExp Research OS — Global Map & Agent Contract",
+      "last_edited_at": "2026-09-07T01:48:53.565Z",
+      "readback_status": "verified",
+      "body_characters": 13814,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3ce9d9ce-3f59-81c1-a1a3-e887c80d5858",
+      "url": "https://app.notion.com/p/3ce9d9ce3f5981c1a1a3e887c80d5858?pvs=204",
+      "title": "🧮 Human13 Shared Output-QP Same-Panel Overfit & Transfer Boundary — 2026-08-31/09-01",
+      "last_edited_at": "2026-09-07T01:48:54.612Z",
+      "readback_status": "verified",
+      "body_characters": 5431,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3cf9d9ce-3f59-8178-b5a9-c212095862f6",
+      "url": "https://app.notion.com/p/3cf9d9ce3f598178b5a9c212095862f6?pvs=204",
+      "title": "📐 N256 Shared Output-QP Norm Scaling — N2 Transfer Stop & N4 Mechanism — 2026-09-01/02",
+      "last_edited_at": "2026-09-07T01:48:55.766Z",
+      "readback_status": "verified",
+      "body_characters": 6508,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3c79d9ce-3f59-8186-838b-c775b98c787c",
+      "url": "https://app.notion.com/p/3c79d9ce3f598186838bc775b98c787c?pvs=204",
+      "title": "⚙️ Training Dynamics & Optimization",
+      "last_edited_at": "2026-09-07T01:48:56.805Z",
+      "readback_status": "verified",
+      "body_characters": 6130,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3c79d9ce-3f59-814e-aeef-d9f755c10afe",
+      "url": "https://app.notion.com/p/3c79d9ce3f59814eaeefd9f755c10afe?pvs=204",
+      "title": "🧩 Set Coverage, Credit Assignment & Safe Compilation",
+      "last_edited_at": "2026-09-07T01:48:57.830Z",
+      "readback_status": "verified",
+      "body_characters": 5000,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3c79d9ce-3f59-81ff-83ef-d058775c28d9",
+      "url": "https://app.notion.com/p/3c79d9ce3f5981ff83efd058775c28d9?pvs=204",
+      "title": "🌐 Data Regimes, Annotation Quality & Generalization",
+      "last_edited_at": "2026-09-07T01:48:58.755Z",
+      "readback_status": "verified",
+      "body_characters": 2917,
+      "unknown_blocks_observed": false
+    },
+    {
+      "page_id": "3c79d9ce-3f59-812b-a0e7-cd61a84de65a",
+      "url": "https://app.notion.com/p/3c79d9ce3f59812ba0e7cd61a84de65a?pvs=204",
+      "title": "🧬 Autoregressive State, Visitation & Termination",
+      "last_edited_at": "2026-09-07T01:48:59.849Z",
+      "readback_status": "verified",
+      "body_characters": 3695,
+      "unknown_blocks_observed": false
+    }
+  ],
+  "source_documents": [
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md",
+      "sha256": "fc61aec7643adbc376d06717e761ef9edb1c154a4f32ddfb930aaf701f49f7e6"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md",
+      "sha256": "6bec9a560f9a2bfe51ee87462e041e8194f273d5a49720d8233c1a482eb57be5"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-dora-prox-linear-n2/results.md",
+      "sha256": "7fb88f610b6a20def513a87605d40996968dcfb58151f08438a470ae2180d944"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-dora-ce-margin-n2-ablation/results.md",
+      "sha256": "f9069995de04b851f0a4e91271936c69915d11531ec5c416967383d2796fb07f"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-human13-pure-ce-replay/results.md",
+      "sha256": "1f329da5af2e2a348d1766c5fb0d99c2c00efac5981db3307f12838a7ece7316"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-sft256-dev128-baseline/results.md",
+      "sha256": "62e1ff9b06b5845e492bf91d4fbec0893450ecb3be73a66600ccd0461be36cc4"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-06-eos-numerator-control/results.md",
+      "sha256": "1646470eb6c758fe62bf1bbe79cf65eff11d4d493b6257e8275a7a3b3ffd35fa"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-06-dora-surface-control/results.md",
+      "sha256": "a3196e94a2ceb608ceb1402c574870e0e9217287438fcbd210ebb43e96967c89"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-06-density2048-exposure-control/results.md",
+      "sha256": "e0c565103948c3a1c4e4b868f13125f42498023e6ccc6fae2c6cf071b4b7646d"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-06-source256-ce-rloo/results.md",
+      "sha256": "a87fc4c84aa2e600ed64f6d2af2288f97a792bcd900679080afe2bdb908e41f4"
+    },
+    {
+      "path": "/data/CoordExp/.worktrees/c-anchored-owner-mechanism-audit/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-03-iterative-soft-owner-qp-vs-rloo-vertical/results.md",
+      "sha256": "a9c1c71a30922eb7bfc4c0f9e2a9232482e18d6275d7b66a4f5d1d61a8cc9c38"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-05-dora-prox-linear-n2/paired-v1/comparison.json",
+      "sha256": "1a35a6e327603480b0796be6fa29246fb1a7ba787d9f47ec6a3754cef66c1cc5"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-05-human13-pure-ce-replay/run-v2/lead-acceptance.json",
+      "sha256": "f4a06a116798d24ee7bd10dfb2fdb487243bc3f856fb6c5698e638eab4b5e372"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-05-sft256-dev128-baseline/natural-eval-v1/reduction-v1/aggregate.json",
+      "sha256": "0f6c005b5b0926e0001a604778c5405ee7c6ef693fbdcbdb64b0d9c404801624"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-06-ce-controls-rloo-successor/ce-rloo-v1/analysis-v1/aggregate.json",
+      "sha256": "366dfcf0d4643e1542db3e68c238e849b3290f8028a5d2e1ae0057b22f394f9d"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-03-iterative-soft-owner-qp-vs-rloo-vertical/train248-analysis-v2.json",
+      "sha256": "5b97acdeb01fd863b1d84439c32c4990504a5bc63f44eafc6e6b2a425d7ae0c8"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/train-n4-v3/aggregate-train-n4.json",
+      "sha256": "999ffa8c72b3774bf09022bf533573b94266c8633fbb397212e288abadcca038"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/train-n8-v1/aggregate-train-n8.json",
+      "sha256": "bc47d0c8871a9653e915b84b02a5ee728e0d34d0f9ecfe125177af6c0ebdf9b6"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/train-n16-v1/aggregate-train-n16.json",
+      "sha256": "d7493015e13541762f5f60735d9c73ef0e12cd85e0011914b47ca888feeded87"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-06-ce-controls-rloo-successor/native-ce/analysis-eos_zero-v1/aggregate.json",
+      "sha256": "b7df0a7a819736d87fda1af8eb266ba91bb088e34276e48bfdac3f16a3010a5a"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-06-ce-controls-rloo-successor/native-ce/analysis-magnitude_small_lr-v1/aggregate.json",
+      "sha256": "675c25c9e81bfc25a6970bab75ad77e8f9f17876cdadb1302eb6048ccbe94096"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-06-ce-controls-rloo-successor/native-ce/analysis-magnitude_prior_lr-v2/aggregate.json",
+      "sha256": "a143ea90f1d941f2e7332c31d7d08ba26e1b9a879dc1d42b9e940a6c595e42a8"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-06-ce-controls-rloo-successor/native-ce/analysis-density2048-v2/aggregate.json",
+      "sha256": "6440e2d1f0884617ff3dc1457d0202c01ad09e332f4e59499dff70359fa1e5b0"
+    }
+  ],
+  "synthesis": {
+    "path": "/data/CoordExp/.worktrees/dora-prox-linear-n2/research/investigations/qwen3-vl-dense-enumeration/2026-09-07-research-frontier-synthesis.md",
+    "sha256": "9c9b5dd9dacda38e32ef54c2e3aabaf42310376d57da4908c5de464f6400b5b8"
+  },
+  "n32_snapshot": {
+    "complete_matched_aggregate_observed": false,
+    "semantic_receipt_observed": true,
+    "scientific_verdict": "unresolved",
+    "runtime_takeover": false
+  },
+  "boundaries": {
+    "new_training_launched": false,
+    "sibling_files_modified": false,
+    "raw_artifacts_modified": false,
+    "public_web_sharing_enabled": false,
+    "gpt_web_session_connectivity_tested": false,
+    "mirror_format": "Full synthesis text and all four result tables; local frontmatter omitted, relative paths rendered as provenance, artifact SHA appendix added."
+  }
+}

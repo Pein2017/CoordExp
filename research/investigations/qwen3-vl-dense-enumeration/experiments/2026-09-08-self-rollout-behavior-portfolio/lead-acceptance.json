@@ -1,0 +1,62 @@
+{
+  "status": "lead-accepted-bounded-inference-evidence",
+  "date": "2026-09-08",
+  "owner": "root",
+  "output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-08-self-rollout-behavior",
+  "evidence_sha256": {
+    "a/analysis.json": "5a067628fb3cd4ffe47404a83fe50ce68cfb3571257952d0c8bf495be1767cc8",
+    "a/consumer-verification.json": "c0c626a1a332654eff25ea263cc1eabae42d3e475565f35865e5fe5b2e911633",
+    "b/results.json": "51893fed4e648ac3c5666fdf20c7697791000acc1be2f1b8642ee3b18e0ad3bb",
+    "b/verification.json": "e701a58c3ab2f039596b5e52f804a1bdc1aa2c351b583d26a28cd876bf29b6d2",
+    "p/summary.json": "921492c82339cbecb185923434db43063533e933137386ee34a8f6c201aa70ab",
+    "p/verification.json": "e8704d1e021292d605f6ae2f715945ee44b8e9440f4a3442592dc98f08408d70",
+    "p-review-v1/lead-summary.json": "dab21dbabe02805438c7437a810cf829a230b905972b8f7815d84ba3f8291f88",
+    "p-review-v1/category-agnostic-diagnostic.json": "8b3a1459c214b42c09cfb4b1c5a907df573b6d83e029b4282b97be9a70187b39",
+    "feedback-off-v1/results.json": "c96501616f8525b21ee6b44017c49b51ee454cc4a5df3254756a2c9991d07240"
+  },
+  "lead_checks": {
+    "A_native_token_parser_matcher_rows_replayed": 160,
+    "A_midpoints_replayed": 16,
+    "A_reducer_replay_identical": true,
+    "A_independent_raw_pair_recount": {"equal_immediate_different_final_pairs": 16, "images": 6, "strict_reversals": 2},
+    "A_corrupt_owner_count_rejected": true,
+    "A_cpu_tests_passed": 3,
+    "A_source_adapter_delta_helper_manifest_runner_pins_verified": true,
+    "B_exact_swap_and_source_pin_verifier_replayed": true,
+    "B_reducer_replay_identical": true,
+    "B_cpu_tests_passed": 10,
+    "P_score_consumer_and_corruption_sensitivity_replayed": true,
+    "P_blinded_review_hash_identity_and_aggregation_replayed": true,
+    "P_user_category_non_veto_ruling_applied": true,
+    "P_owner_binding_candidates_among_reviewed_unmatched": 4,
+    "P_category_agnostic_auxiliary_matches": 295,
+    "P_description_invariance_and_geometry_instance_sensitivity_passed": true,
+    "routing_two_exact_fresh_source_files_hash_usage_wall_replayed": true,
+    "F_payload_qualification_raw64_matching_and_bootstrap_replayed": true,
+    "both_routing_candidates_mechanically_accepted": true,
+    "owned_gpu_pids_confirmed_exited": [3572953, 3565816, 3529474, 3593026, 3603302, 3626629]
+  },
+  "scientific_dispositions": {
+    "A": "Immediate coverage does not determine downstream coverage on this sampled support; training efficacy and action groundedness are unestablished",
+    "B": "Local history sensitivity with zero aggregate recovery; no new memory module or automatic recovery training justified",
+    "P": "Category does not veto owner binding; four reviewed unmatched candidates; triage-only pending true unique-owner labels, model review is not gold",
+    "F": "Inference contribution harmful conditional on feedback-trained DoRA on dev64; no promotion"
+  },
+  "stop": {
+    "optimizer_updates": 0,
+    "sample_extension": false,
+    "architecture_promotion": false,
+    "proxy_reward_promotion": false,
+    "old_payload_mutation": false,
+    "model_config_changes": false,
+    "routing_comparison": "Recommend Astra-low for the bounded engineering default, Sol manual fallback; no configuration changed"
+  },
+  "routing_usage": {
+    "path": "/data/CoordExp/.worktrees/self-rollout-behavior/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-self-rollout-behavior-portfolio/model-routing/usage/sol-vs-astra-usage-wall-v1.json",
+    "sha256": "9777b16e76fb8d1dbdbc20433a0477ff887a27f7d03930245b9cddb35a207146",
+    "astra_worker_wall_seconds": 365.606,
+    "sol_worker_wall_seconds": 881.495,
+    "both_qualified_with_zero_lead_repairs": true,
+    "dollar_comparison_available": false
+  }
+}

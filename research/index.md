@@ -14,6 +14,9 @@ behavior remain in `docs/`. Stable compatibility-sensitive contracts remain in
 
 ## Entry Points
 
+- [Qwen3-VL Dense Enumeration Current Compass](investigations/qwen3-vl-dense-enumeration/compass.md) - current question-oriented synthesis for finite-panel programmability, owner coverage, semantic compression, and causal row/layer evidence
+- [Qwen3-VL Dense Enumeration Detailed Overview](investigations/qwen3-vl-dense-enumeration/overview.md) - detailed hypothesis atlas with the current synthesis at the top
+- [Dense Enumeration Experiment Router](investigations/qwen3-vl-dense-enumeration/experiments/index.md) - selected protocols/results and bounded technical records
 - [Pi Lightweight External Worker Ablation](archive/pi-lightweight-worker-ablation/) - Stage 0 capability and total-cost screen for bounded, mechanically verifiable CoordExp tasks
 - [Qwen3-VL Dense Enumeration Weekly Research Report, 2026-07-13 through 2026-07-16](investigations/qwen3-vl-dense-enumeration/2026-07-13-to-2026-07-16-weekly-research-report.md) - integrated executed evidence, mechanism synthesis, implementation retrospective, and GPT-Pro handoff
 - [Qwen3-VL Autoregressive Detection Research Compass](investigations/qwen3-vl-dense-enumeration/compass.md) - program-level north star, current belief register, discriminator queue, and paper-thesis boundary
@@ -101,12 +104,10 @@ promotion when a result hardens into a stable compatibility-sensitive contract.
 
 ## Active Frontier
 
-| Question | Current belief | Decision |
-|---|---|---|
-| Can Qwen3 Vision-Language (`Qwen3-VL`) consume an object-specific visual control signal? | Yes, under bounded painted/post-scatter interventions; this is a privileged causal handle, not a final interface. | [Use visual designation as a causal teacher](decisions/use-visual-designation-as-a-causal-teacher.md) |
-| Does pure cross-entropy (`CE`) serialization learn an order-free object ledger? | No stable order-free ledger is established. At one exact state, a coherent phrase-geometry row controls the successor, but this may still be a textual geometry-sorted serialization transition rather than visual commit. | [Separate selection, transcription, commit, and stop](decisions/separate-selection-transcription-commit-and-stop.md) |
-| Is a decodable proposal representation sufficient? | No. The tested bridge produced non-specific continuation and unsafe rollout behavior. | [Require target-specific causal consumption](decisions/require-target-specific-causal-consumption.md) |
-| May a row-specialized checkpoint replace the detector baseline? | No. Cursor-row specialization can preserve designation while collapsing enumeration. | [Protect native capability during specialization](decisions/protect-native-capability-during-specialization.md) |
-| Should slots, a ledger, or a final architecture be built now? | Not from current evidence. Promote only the smallest mechanism that passes its discriminator. | [Let architecture emerge from hypothesis gates](decisions/let-architecture-emerge-from-hypothesis-gates.md) |
-| What does repeated full-image bagging establish? | It can expose valid competing object modes at one identical prefix, but mode availability is trajectory-state dependent and bagging is not a safe final enumeration policy. | [Use bagging as an object-support probe](decisions/use-bagging-as-an-object-support-probe.md) |
-| Where should the dense-enumeration program look next? | Human13 establishes finite-panel shared-output and magnitude-only DoRA programmability, not generalization. The image-disjoint Direct C-D0 pilot is mechanically valid but terminal: D0 matches 606 versus C's 630 IoU50 owners, retains only 95.44% of Source-covered owners, and fails all four GO predicates. This rejects the frozen D0 bundle, not DoRA or actual-prefix learning generally. The next bounded discriminator is a new C-anchored zero-update mechanism audit; active-set projection remains conditional. Production remains on hold. | [Direct C-D0 result](investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md) |
+The current frontier is maintained in the [Qwen3-VL research compass](investigations/qwen3-vl-dense-enumeration/compass.md)
+and detailed in its [overview](investigations/qwen3-vl-dense-enumeration/overview.md).
+It is organized by four questions: finite-panel programmability versus
+transfer; natural owner coverage and objective burden; semantic compression
+versus matched nulls; and causal row state versus layer consumption. The
+Source/Rweak routing benchmark is preserved separately as operational research
+archive material.

@@ -1,0 +1,71 @@
+{
+  "schema_version": "n256_shared_output_qp_n4_train_launch.v1",
+  "run_id": "n256-train-n4-v3-20260902T021851Z",
+  "authorized": true,
+  "mode": "train_only_n4_low_norm",
+  "resource_mode": "observe_only_no_scientific_ceiling",
+  "physical_gpu": 1,
+  "serial_visible_gpu_count": 1,
+  "attempts_per_process": 1,
+  "supersedes": {
+    "launch": "launch-packet-train-n4-v2.json",
+    "launch_sha256": "62c2c6ac1e419b961363074ffe0d44786f8b9ef7c0d0d1652b5fa6050301b923",
+    "status": "TECHNICAL_INVALID-solve-only",
+    "reason": "first null FP32 replay missed the frozen tolerance by 7.52e-7; the valid null captures are reused"
+  },
+  "technical_correction": {
+    "status": "authorized_numeric_correction",
+    "root_cause": "FP64 separation consumed the full replay tolerance and left no budget for FP32 rounding",
+    "correction": "solve to 1e-5 FP64 tolerance and retain the frozen 2e-5 FP32 replay tolerance",
+    "source_output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/train-n4-v2",
+    "null_plan_sha256": "d832e706702e3133e16cb9fcd068d1ffb3daa6ce2ab5eed2f67e260d483b315a",
+    "null_capture_sha256": "b626867c6ff0f322279c22caf25227577f9398af3ce779ff51b5e37dc1f98af3"
+  },
+  "authorization": {
+    "date": "2026-09-02",
+    "user_message": "好的,请进行 N4, 回答一下是否存在低范数结构!",
+    "phase_reset": "train-only N4 discriminator after terminal N2 transfer STOP"
+  },
+  "attempt_ids": {
+    "capture-null-n4": "reused-from-train-n4-v2"
+  },
+  "commands": [
+    "validate-launch",
+    "plan-null-n4",
+    "capture-null-n4",
+    "solve-n4",
+    "aggregate-n4"
+  ],
+  "decision_gate": {
+    "positive": "semantic Frobenius norm and norm_squared_per_standardized_deficit_energy are both below every one of four unique nulls",
+    "stop": "terminal aggregate after N4 regardless of outcome",
+    "screen": "not bound or opened",
+    "claim": "N4 train-prefix low-norm programmability only"
+  },
+  "bindings": {
+    "amendment": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/n4-train-only-amendment-v1.md",
+    "amendment_sha256": "f68d20d7441ace5a555694d480a0b2ad709690c1dd64222425fb807c3d0fd9e7",
+    "policy": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/policy-v2.json",
+    "policy_sha256": "53721ce0475d60dea122c0f5c24cd183c02f16735ba4cde17fbd27caeafbac90",
+    "unit": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/unit.md",
+    "unit_sha256": "6d79056c093e223ac009b5d9b518491dbcfddd5a6ccb50c2c68b93a5f30ea425",
+    "core_runner": "scripts/research/run_n256_shared_output_qp_norm_scaling.py",
+    "core_runner_sha256": "380ac5bb0834af03942ee4ba6410243a5e797d906a911e3782113b4dfaf9afac",
+    "full_runner": "scripts/research/run_n256_shared_output_qp_scaling_full.py",
+    "full_runner_sha256": "140218a441ec9e3e55f168f4bab6e1482431be7451b41c574708ee0701da23fe",
+    "runner_sha256": "86184e0c1b0a61ffafd5d8a539c860a29c53b755a2b228dd092f3d3365f620b4",
+    "n2_smoke_policy": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/n2-smoke-policy-v2.json",
+    "n2_smoke_policy_sha256": "0d7bb02ad12c9451627fa66662c4a8eee934c5d6ebcef569c075a15b93e3910e",
+    "train_input": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-train-input-v1.jsonl",
+    "train_input_sha256": "0a058c27f7103a7791f260c2291e9ffaabf953185fba0f7601a6c523eca5db09",
+    "input_receipt": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-input-build-receipt-v1.json",
+    "input_receipt_sha256": "065c01b85068bb9233902cf604b94d12640abb3dc82c8417f629cc2b9cee0bc7",
+    "semantic_capture_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-v1/capture-semantic-n256.json",
+    "semantic_capture_receipt_sha256": "1103adc9b366d4e9eba08136c2809541f4ffbdfd0e2000e53ebab055c7ca4d96",
+    "semantic_capture_tensor": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-v1/capture-semantic-n256.safetensors",
+    "semantic_capture_tensor_sha256": "1e0e724cd7824110caa6a10ae3ba71fb5f06489540d39e00cb4e301e535d48bf",
+    "n2_terminal_aggregate": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-v1/aggregate-full-n2.json",
+    "n2_terminal_aggregate_sha256": "98f514c734a95a02b7f5920757d3783694f360f7226f593b9b46b8a29f35cbf2",
+    "output_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-01-n256-shared-output-qp-norm-scaling/train-n4-v3"
+  }
+}
