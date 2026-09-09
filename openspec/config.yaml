@@ -5,18 +5,18 @@ context: |
   accepted CoordExp-Swift production-training and evaluation route. The fixed
   research authority is the research-probes worktree; use it for probe
   hypotheses, disposable experiment worktrees, research records, and reusable
-  probe mechanics. research-probe-infras is an integration lane, not a probe
-  entrypoint. Read docs/PROJECT_CONTEXT.md and
+  probe mechanics. shared mechanics are maintained in that research base. Read docs/PROJECT_CONTEXT.md and
   docs/BRANCH_AND_WORKTREE_POLICY.md first, then select the Swift or research
   route from the user-named task. Do not infer a research task should start on
   main merely because it is the repository root.
 
-  A new research direction forks probe/<direction> from research-probes HEAD
-  at .worktrees/<direction>; no tag is required to fork, and the admission
-  owner binds the exact commit and clean status. research-base-vN tags are cut
-  as milestones after a reusable-mechanics merge into research-probes, not as
-  fork prerequisites; research-probe-infras is the permanent integration lane
-  and never a fork point or retirement target.
+  New research directions use ordinary probes/<direction> packages and fork
+  from research-probes when isolation is useful. No tag or admission is a
+  prerequisite for ordinary exploratory work. Record code/config context and
+  select strict binding, journal or admission only when its contract is needed.
+  research-probes is the single permanent research base. The former infra lane
+  retires after preservation and integration; temporary development lanes do
+  not become a permanent integration layer.
 
   docs/ describes accepted current architecture and operator workflows.
   openspec/specs/ owns stable compatibility-sensitive behavior contracts.
@@ -24,9 +24,10 @@ context: |
   that benefit from durable proposal, design, tasks, implementation,
   verification, and archive state.
 
-  PWSG is sequencing discipline inside a change: Program is the change, Wave
-  is a task group, Slice is a small dependency-ordered task, and Gate is
-  verification plus an independent audit. Detail only the active wave.
+  Implement dependency-ordered slices with explicit write ownership and real
+  consumer checks. The lead accepts each slice; independent review is bounded
+  to an explicitly requested or decision-bearing risk, not an automatic round
+  after every change. Detail only the active implementation work.
 
   Protect semantic alignment across data, images, geometry, ordering,
   templates, tokens, packing, forward behavior, losses, metrics, configs,

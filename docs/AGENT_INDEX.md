@@ -64,11 +64,11 @@ documented here.
   [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md)
 - Research interpretation, units, and durable results:
   [research/index.md](../research/index.md)
-- Reusable probe mechanics integration lane: the permanent worktree
-  `/data/CoordExp/.worktrees/research-probe-infras`; merge accepted mechanics
-  into `research-probes`, but never use this lane as a probe fork point or a
-  retirement target. Route capability selection and public mechanics imports
-  through [RESEARCH_PROBE_INFRA_BASE.md](RESEARCH_PROBE_INFRA_BASE.md).
+- Shared research mechanics live directly in the fixed `research-probes`
+  base. Large/conflicting work can use temporary development worktrees; the
+  former permanent infra lane retires after preservation and integration.
+  Route direct execution and optional strict capabilities through
+  [RESEARCH_PROBE_INFRA_BASE.md](RESEARCH_PROBE_INFRA_BASE.md).
 - Fork a new research direction as `probe/<direction>` from `research-probes`
   HEAD at `.worktrees/<direction>`; no tag is required to fork. Cut a
   `research-base-vN` tag only as a milestone after a reusable-mechanics merge

@@ -4,173 +4,90 @@ layer: docs
 doc_type: workflow
 status: canonical
 domain: research
-summary: Selects the smallest existing mechanics owner for a research-probe producer.
-tags: [research, probes, artifacts, admission, inference]
-updated: 2026-08-30
+summary: Direct research execution and optional integrity capabilities at their existing owners.
+tags: [research, probes, artifacts, inference]
+updated: 2026-09-09
 ---
 
 # Research Probe Infrastructure Base
 
-This page routes each producer to existing mechanics. It does not define a
-runner, lifecycle, scientific plan, or result schema. The fixed integration
-route is `research-probe-infras -> research-probes -> probe/<direction>`; the
-authoritative rules and authorization gates are in
-[`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_POLICY.md).
+Maintain shared mechanics directly in `research-probes`. Experimental profiles
+live in ordinary `probes/<direction>/` packages. The
+[branch/worktree policy](BRANCH_AND_WORKTREE_POLICY.md) owns lifecycle;
+capability selection never performs worktree or branch operations.
 
-## Select The Smallest Profile
+## Ordinary execution
 
-Select capabilities independently for each operating-system producer. Adding a
-journal does not imply admission; adding admission does not imply the inference
-session. A custom differentiable runtime does not fit the deterministic decode
-session and remains direction-local.
+Start with the model/data operations the experiment needs and a small explicit
+configuration. Record the actual configuration, code revision and dirty status,
+input/model locations, output location and seed where relevant. Dirty status is
+not a promise of exact replay: save effective source/configuration when a result
+will be cited or replayed.
 
-| Producer need | Public owner | Caller still owns | Failure meaning | Cheapest acceptance check |
-| --- | --- | --- | --- | --- |
-| One strict immutable result | `src.artifacts`: `validate_json_value`, `canonical_json_bytes`, `json_sha256`, `publish_json_exclusive`, `load_canonical_json` | Payload schema and meaning, output path, whether write-once publication fits | Invalid strict JSON or an occupied path fails closed; existing bytes are not replaced | Publish and reload one temporary CPU result, then verify a second publication is rejected without changing its hash |
-| Several durable work items or process continuation | `src.artifacts.ExecutionEvidenceJournal` | Plan meaning, producer scheduling, retry authorization, terminal interpretation | Accepted records remain durable; an incomplete or failed attempt is not execution completion and does not authorize retry | Complete a temporary CPU journal, reopen or inspect it, and verify its exact identity and record set |
-| CPU evidence before a bounded model launch | `src.artifacts`: binding request types, capture/revalidation functions, and `ResearchProbeAdmission` | Scientific plan, target worktree choice, launcher, output meaning, launch authorization, continuation and stop rule | A typed binding, target, stage, or durability failure closes the mechanics gate; `mechanically_admitted` is non-authorizing | Run the owner-specific CPU preflight and inspect the resulting mechanics-only dossier |
-| Production-aligned deterministic decode | `src.inference.runtime` frontend/launch and `src.inference.backend` request/result/session contracts | Requested contrast, model suitability, parsing, evaluation, metrics, and claims | Contract or session failure is decode-mechanics evidence only; explicit cleanup still applies | Exercise an injectable CPU session contract, or the smallest separately authorized production-shaped smoke |
+No journal, admission dossier, per-source hash chain or completely clean Git
+worktree is required merely to run an exploratory producer. A profile is a
+local scientific configuration, not a global runtime class or registry.
 
-The normative owners remain the
-[journal contract](../openspec/specs/coordexp-swift-execution-evidence-journal/spec.md),
+| Need | Existing owner | Caller keeps explicit |
+| --- | --- | --- |
+| Qwen processor/tokenizer/model loading | `src.qwen.runtime_loading.QwenLoadOptions`, `load_qwen_components_from_options` | Device, model lifetime, train/eval mode and selected checkpoint |
+| Deterministic scored inference | `src.inference.runtime` and `src.inference.backend` | Input/policy, output interpretation and claims |
+| Packed training | `src.training`, `src.runtime`, `src.supervision`, `src.packing` | Selected training config, loss and synchronization contract |
+| Simple validated result publication | `src.artifacts.publish_json_exclusive` | Payload meaning and an absent final output path |
+
+Native research operations do not need to manufacture packed sequences or a
+strict HF evidence session. Their maintained package examples document exact
+history, scoring, continuation and capture usage. The stable research behavior
+is owned by the [infra-base contract](../openspec/specs/coordexp-swift-research-probe-infra-base/spec.md).
+
+For one immutable result, use the leaf directly:
+
+```python
+from src.artifacts import load_canonical_json, publish_json_exclusive
+
+publish_json_exclusive(result_path, payload)
+assert load_canonical_json(result_path) == payload
+```
+
+An occupied final path is an error; this API does not overwrite existing bytes.
+Mutable intermediate files remain explicitly caller-owned. Do not add another
+result writer merely to avoid knowing this distinction.
+
+## Select strict capabilities only when needed
+
+| Need | Public owner | What it protects | What it does not decide |
+| --- | --- | --- | --- |
+| Durable work across process attempts | `src.artifacts.ExecutionEvidenceJournal` | Identity, records, attempts and terminal completeness across interruption | Work-item meaning, retry policy, scheduling or scientific success |
+| Declared CPU-to-model mechanics gate | `src.artifacts.ResearchProbeAdmission` and its binding operations | Exact selected bindings, reserved outputs and two-stage mechanics admission | Launch authorization, cohort, objective, outcome or continuation decision |
+| Stable cached/exported inference execution | Existing inference context/model-export owners | Worker transport, cache identity, merge/fold and persisted artifacts | A requirement that ordinary dynamic HF startup use the same machinery |
+
+These optional APIs keep their strict contracts. Ordinary producer simplicity
+does not weaken collision checks, exact recovery identity, finite values,
+geometry/token alignment, gradient scaling or persisted compatibility. The
+artifact facade remains lazy so JSON-only callers do not initialize models.
+
+See the [journal contract](../openspec/specs/coordexp-swift-execution-evidence-journal/spec.md),
 [admission contract](../openspec/specs/coordexp-swift-research-probe-admission/spec.md),
-and existing [inference runtime](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md)
-and [pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md) contracts.
+[inference runtime](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md)
+and [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
+for the selected API and failure behavior. Do not copy the full typed admission
+surface into a producer that only needs to save one result.
 
-## Public Imports
+## Sharing and acceptance
 
-The one-shot profile needs no journal, admission root, or generated runner:
+Share demonstrated repeated operations at their concept owner. Keep scientific
+thresholds, reductions, interventions and stop rules in direction code. Match
+assignment, greedy visualization and official COCO scoring are distinct
+contracts even when all use IoU. Differentiable replay and inference-only
+evidence likewise have different gradient and output requirements.
 
-```python
-from src.artifacts import (
-    canonical_json_bytes,
-    json_sha256,
-    load_canonical_json,
-    publish_json_exclusive,
-    validate_json_value,
-)
+Use a real retained caller and the smallest decisive test. Historical files
+alone do not justify a general framework, and experiments need not be running
+to justify reuse. No global coordinator, scheduler, optimizer transaction layer
+or hook/plugin registry follows from sharing tensor or model operations.
 
-publish_json_exclusive(result_path, caller_owned_payload)
-assert load_canonical_json(result_path) == caller_owned_payload
-```
-
-`publish_json_exclusive` never offers overwrite fallback. Use it only for a
-final path that must be absent. Overwrite-permitted intermediates remain
-caller-owned.
-
-The journaled profile adds one owner directly:
-
-```python
-from src.artifacts import ExecutionEvidenceJournal
-
-journal = ExecutionEvidenceJournal.create(
-    root=producer_root,
-    execution_id=producer_id,
-    execution_identity=caller_owned_identity,
-    expected_work_item_ids=caller_owned_work_items,
-    context=caller_owned_strict_context,
-)
-```
-
-Each independently scheduled producer uses its own output or journal root and
-its own local record sequence. A common immutable input may be digest-bound in
-each execution identity. This does not create an experiment-global journal,
-lock, append order, stage order, worker registry, DAG, or terminal barrier.
-
-The admitted-launch profile uses the public artifact facade while keeping all
-behavior in the admission owner:
-
-```python
-from src.artifacts import (
-    AbsoluteExecutableBinding,
-    AdmissionInspection,
-    BindingManifest,
-    DirectoryTreeBinding,
-    RegularFileBinding,
-    ResearchProbeAdmission,
-    ResearchProbeAdmissionError,
-    ReservedOutputPath,
-    ResolvedDataFileBinding,
-    StageEvidence,
-    StrictValueBinding,
-    TargetTreeBinding,
-    TargetTreeIdentity,
-    capture_binding_manifest,
-    capture_target_tree_binding,
-    revalidate_binding_manifest,
-    revalidate_target_tree_binding,
-)
-```
-
-The caller must revalidate the complete target-tree identity immediately before
-any launcher, model load, GPU allocation, or vertical artifact creation.
-
-Inference keeps its own public module paths rather than being re-exported by
-`src.artifacts`:
-
-```python
-from src.inference.backend import (
-    BackendLaunch,
-    BackendSession,
-    BackendSessionReceipt,
-    DecodeRequest,
-    DecodeResult,
-    open_backend_session,
-)
-from src.inference.runtime import (
-    InferenceFrontend,
-    assemble_frontend,
-    prepare_backend_launch,
-)
-```
-
-Use the context-managed session so cleanup remains explicit. Do not wrap direct
-differentiable model mutation as ordinary inference.
-
-## Evidence Boundary
-
-Shared validation may report strict serialization, exact identity, exclusive
-durability, plan completeness, attempt history, or launch-gate closure. Payload
-fields such as cohort, intervention, objective, optimizer, metric, threshold,
-outcome, claim, continuation decision, and stop rule remain opaque and
-caller-owned. `completed` and `mechanically_admitted` are mechanical statuses,
-not scientific success, promotion, retry, launch, or publication decisions.
-
-The base does not own worktree lifecycle, producer scheduling, distributed rank
-groups or barriers, training mutation, optimizer or RNG state, rollback,
-checkpoint semantics, monitoring, metrics, claims, continuation, or stop rules.
-
-## Specimen Boundary
-
-Image2299 is the live reference specimen. Its immutable leaves can reuse strict
-identity and exclusive publication, but its distributed stages, barriers,
-direct differentiable HF runtime, updates, checkpoints, metrics, and stop rules
-remain direction-local.
-
-Human13 is a historical specimen, not a live consumer or resumed route. Its
-independently scheduled acquisition, rebase, and cell producers demonstrate
-per-producer identity and durability. Its optimizer/RNG transaction, rollback,
-restoration, unfinished all-HF route, metrics, and stop rules are not part of
-the shared base.
-
-The specimens therefore establish only common identity and artifact durability;
-they do not establish common runtime, scheduling, rollback, checkpoint, or
-scientific semantics.
-
-## Promotion Gate
-
-Before proposing another shared execution layer, all of the following must be
-true:
-
-- At least two live cross-direction consumers use the same caller-visible
-  contract; repeated use in one direction plus a historical specimen does not
-  qualify.
-- Their semantics, scheduling topology, artifacts, and failure behavior agree.
-- The duplicated mechanics are identified and direct composition of current
-  owners is shown to be insufficient.
-- The smallest proposed seam preserves each producer's topology.
-- One cheapest bounded comparison is named that would falsify the common seam.
-
-A generic coordinator, phase DSL, trainable-HF session, optimizer/RNG
-transaction, checkpoint API, monitor, and lifecycle automation are deferred,
-not planned features.
+Leaf publication can be checked with a temporary CPU result and occupied-path
+counterexample. Recovery uses an actual interrupted/reopened producer.
+Model-facing changes need the applicable native/adapter consumer checks;
+helper tests alone do not establish real-model parity. Record that evidence
+boundary rather than adding ceremonial receipts.

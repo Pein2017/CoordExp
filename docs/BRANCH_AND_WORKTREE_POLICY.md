@@ -6,7 +6,7 @@ status: canonical
 domain: repo
 summary: Current production and research branch, worktree, and Codex-session routing for CoordExp.
 tags: [git, branches, worktrees, codex, coordexp-swift, research-probes]
-updated: 2026-08-28
+updated: 2026-09-09
 ---
 
 # Branch And Worktree Policy
@@ -41,61 +41,51 @@ root `main` checkout; then update the development branch from the promoted
 
 ## Research-probe routing
 
-- The current research authority is the fixed worktree
-  `/data/CoordExp/.worktrees/research-probes`, currently on the
-  `research-probes` branch. Resolve its live ref and commit at use time; branch
-  names may change, but this fixed directory is never moved, recreated, or
-  retired by probe lifecycle work.
-- `/data/CoordExp/.worktrees/research-probe-infras` on branch
-  `research-probe-infras` is the permanent integration lane for reusable probe
-  mechanics. It merges accepted reusable mechanics into `research-probes` and
-  is fast-forwarded from `research-probes` after each accepted lifecycle
-  change; it is never a fork point for a new direction and never a retirement
-  target. The [research-probe infrastructure base](RESEARCH_PROBE_INFRA_BASE.md)
-  routes capability selection without changing these lifecycle rules.
-- Both fixed research worktrees are protected by native Git worktree locks.
-  Their current local protection is not an off-host backup, a remote branch
-  promise, or approval to unlock, remove, prune, or rename either path.
+`/data/CoordExp/.worktrees/research-probes` is the single permanent research
+base and fork point. Its protected directory is never moved, recreated or
+retired by probe lifecycle work. Resolve its current ref at use time.
+Research-owned `src/` can evolve independently of production main/Swift.
 
-For a new research direction:
+Routine shared research changes happen in this base. Large or conflicting
+changes can use a temporary development worktree, integrate accepted changes,
+and retire it. The former `research-probe-infras` lane is no longer permanent;
+retire it only after preservation and content integration. Do not unlock the
+fixed research base or touch production worktrees, remote refs or shared
+agent/runtime configuration as part of that retirement.
 
-1. Fork `probe/<direction>` from `research-probes` HEAD:
-   `git worktree add /data/CoordExp/.worktrees/<direction> -b probe/<direction>
-   research-probes`. The admission owner binds the exact commit and clean
-   status at use time; no tag is required to fork. A direction worktree has no
-   obligation to sync from `research-probes` during its life; run
-   `git merge research-probes` inside it on demand, when the direction needs a
-   new reusable mechanic.
-2. Return records-only, not code. On `research-probes`:
-   `git checkout probe/<direction> -- research/<unit-dirs>` for the unit
-   directories, then hand-merge (append, do not overwrite) the shared routers a
-   direction worktree diverges on — the investigation's `experiments/index.md`,
-   `compass.md`, `research/index.md`, and any `research/decisions/` entry it
-   touches. Code stays on the direction branch and is not returned by default
-   (see promotion below). Follow the research-flow closeout order — result,
-   then experiment router, then decision/compass, then `memories/current.md`
-   — so a result never lives only in `memories/`.
-3. Promote code only when a real second consumer exists; the default is
-   experiment-local. When promotion is warranted, either
-   `probe/<direction> → research-probes` directly or
-   `probe/<direction> → research-probe-infras → research-probes` is
-   acceptable; choose per case.
-4. Cut a `research-base-vN` tag after a reusable-mechanics merge into
-   `research-probes`, not after a records-only return, and record it in a
-   one-paragraph receipt. `research-base-v2` (`8dac2d041`) is the replay
-   anchor for every `scripts/research/` producer this repository has since
-   deleted: replay by `git worktree add <tmp-path> research-base-v2` and read
-   the producer from there.
-5. Retire a direction lane once its worktree is clean
-   (`git -C <wt> status --short` empty): tag first, then remove.
-   `git tag -a probe-final/<direction> <tip> -m "..."` when the lifecycle
-   completed and its records were returned; `git tag -a archive/<name> <tip>
-   -m "..."` when the lane is untriaged and its content is preserved but not
-   returned. Then `git worktree remove <wt>` and `git branch -D <branch>`.
-   Recovery is `git branch <branch> <tag>^{}` followed by `git worktree add`.
-   Remote-tracking refs are never touched. `image2299-mechanism-microscope` is
-   the current live direction worktree and the reference specimen for this
-   model.
+For a new direction:
+
+1. Fork from research-probes HEAD into an isolated direction worktree when
+   isolation is useful. A tag or clean-tree admission dossier is not a fork
+   prerequisite. Record the actual code revision and dirty status; strict
+   admission remains an explicit capability with its own unchanged contract.
+2. Put maintained experimental code in `probes/<direction>/` with ordinary
+   imports, local profiles/configs, documented module entries and explicit
+   tests. A continuing direction can contain several units/runs. Shared code
+   lives at its `src` owner and never imports direction packages; executable
+   imports must not depend on another temporary worktree.
+3. Return unique research knowledge by an explicit file list selected for
+   purpose, not by checking out entire unit directories. Units can contain
+   producer code. Preserve original results, then update routers and rewrite
+   current synthesis; compass is not append-only history. Keep conflicting
+   evidence scopes visible. Code promotion and knowledge intake are separate.
+4. Share an operation when actual retained callers justify its behavior;
+   preserve scientific choices and delete superseded implementations after
+   consumer checks. Do not merge an entire experiment branch to acquire a
+   helper. Research-base changes do not automatically promote production code.
+5. Before retiring a direction, preserve relevant effective sources/configs,
+   modified/untracked content and necessary ignored outputs; verify source
+   recovery and evidence accessibility without its directory. Recheck clean
+   status and relevant execution/write holders, preserve a recoverable ref,
+   then remove the eligible worktree and branch. Never treat ignored outputs
+   as disposable caches or a stopped job as scientific completion.
+
+Historical producers use their specific saved versions. `research-base-v2`
+remains an older replay anchor, not a universal source for subsequently removed
+code. The current restructuring's per-worktree archive refs and output locators
+are in [its preservation record](../openspec/changes/restructure-research-probe-development/preservation.md).
+See [Research Probe Infrastructure Base](RESEARCH_PROBE_INFRA_BASE.md) for
+lightweight direct execution and optional strict capabilities.
 
 ## Codex sessions and task worktrees
 
