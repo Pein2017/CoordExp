@@ -268,6 +268,15 @@ def rewrite_compound_command(command: str, tokens: list[str]) -> str | None:
     if any(is_machine_output_flag(token) for token in tokens):
         return None
 
+    # shlex discards quoting: rebuilding a compound command can literalize
+    # expansions or turn shell grammar into ordinary arguments.
+    # Keep those commands byte-for-byte rather than attempt shell parsing.
+    if (
+        has_shell_expansion(tokens, -1)
+        or any(token in MULTILINE_CONTROL_WORDS for token in tokens)
+    ):
+        return None
+
     shell_tokens = split_shell_tokens(command)
     if not shell_tokens:
         return None
@@ -401,6 +410,9 @@ def rewrite_simple_command(command: str) -> str | None:
     if candidate == "rtk":
         return None
 
+    if should_skip_exact_output(tokens, candidate_index):
+        return None
+
     has_expansion = has_shell_expansion(tokens, candidate_index)
     pytest_rewrite = rewrite_pytest_with_generic_filter(
         tokens, candidate_index, stripped, has_expansion=has_expansion
@@ -414,9 +426,6 @@ def rewrite_simple_command(command: str) -> str | None:
         # such as conda/uv cannot be edited safely without a shell parser.
         if candidate_index == 0 and candidate in NOISY_COMMANDS:
             return f"rtk {stripped}"
-        return None
-
-    if should_skip_exact_output(tokens, candidate_index):
         return None
 
     rewritten = rewrite_with_rtk(stripped)

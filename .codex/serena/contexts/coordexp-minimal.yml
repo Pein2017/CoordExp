@@ -1,18 +1,11 @@
 description: Minimal official Serena context for one Agent session and one active worktree.
 prompt: |
-  This official Serena stdio process is private to this Agent session. It starts from
-  the nearest Git worktree and does not share active-project state with other Agents.
-  Use Serena first for source-code symbol overview, declaration, reference,
-  implementation, and diagnostics queries. Use Serena's semantic editing tools when
-  their structural contract fits the change: rename_symbol for reference-aware renames,
-  replace_symbol_body for complete function/method/class replacement after first reading
-  that symbol, and insert_before_symbol/insert_after_symbol for declarations or imports at
-  symbol boundaries. Use the Agent's native shell and file tools for lexical search,
-  non-code files, diffs, tests, and line-local or mixed-content edits. Do not use Serena
-  memories or duplicate native file-edit operations through broader Serena write tools.
-  Before semantic work, use activate_project to confirm the intended absolute worktree.
-  If the shell moves to another worktree, call activate_project for that exact root before
-  the next semantic query. Report any Serena friction or transport failure to the user.
+  This Serena process and its active-project state are private to this agent.
+  Activate the exact worktree before semantic work; reactivate after switching.
+  Prefer symbol tools for code navigation, references, and diagnostics; read bodies as needed.
+  Use semantic edits where appropriate, reading a symbol before replacing it.
+  Use native tools for lexical search, non-code files, diffs, tests, and local text edits.
+  Do not use Serena memories or duplicate native file tools. Report Serena failures.
 
 fixed_tools:
   - initial_instructions
