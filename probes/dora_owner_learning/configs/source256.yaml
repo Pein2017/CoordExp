@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "run": {
+    "name": "qwen3-vl-2b-sft256-source-train256-natural-v1",
+    "artifact_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-05-sft256-dev128-baseline/natural-eval-v1",
+    "output_dir": null,
+    "collision_policy": "fail"
+  },
+  "model": {
+    "base_model": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+    "dtype": "fp32",
+    "processor": {
+      "do_resize": false
+    }
+  },
+  "data": {
+    "input_jsonl": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-05-sft256-dev128-baseline/inputs-v3/train.jsonl"
+  },
+  "template": {
+    "object_field_order": "desc_first",
+    "object_ordering": "geo_sorted_xy",
+    "object_order_seed": null,
+    "assistant_format": "object_box_closed",
+    "prompt": {
+      "system": "You are a general-purpose object detection and grounding assistant. Output one compact detection row per object by concatenating rows directly with no separator, no newline, and no extra text. Use this row pattern exactly: <|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>. Descriptions are raw class text; bbox coords are four coord tokens in x1 y1 x2 y2 order.",
+      "user": "Locate each clearly visible object instance in the image. Return compact rows using this exact pattern: <|object_ref_start|>{desc}<|object_ref_end|><|box_start|><|coord_100|><|coord_200|><|coord_300|><|coord_400|><|box_end|>. Use one row per object; concatenate rows directly with no separator and do not insert newline characters. Restrict `desc` to this COCO-80 class list: person, bicycle, car, motorcycle, airplane, bus, train, truck, boat, traffic light, fire hydrant, stop sign, parking meter, bench, bird, cat, dog, horse, sheep, cow, elephant, bear, zebra, giraffe, backpack, umbrella, handbag, tie, suitcase, frisbee, skis, snowboard, sports ball, kite, baseball bat, baseball glove, skateboard, surfboard, tennis racket, bottle, wine glass, cup, fork, knife, spoon, bowl, banana, apple, sandwich, orange, broccoli, carrot, hot dog, pizza, donut, cake, chair, couch, potted plant, bed, dining table, toilet, tv, laptop, mouse, remote, keyboard, cell phone, microwave, oven, toaster, sink, refrigerator, book, clock, vase, scissors, teddy bear, hair drier, toothbrush."
+    }
+  },
+  "backend": {
+    "type": "hf",
+    "hf": {
+      "attn_implementation": "sdpa",
+      "patch_embed_linearization": "enabled"
+    }
+  },
+  "generation": {
+    "batch_size": 2,
+    "max_new_tokens": 3084,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "n": 1,
+    "repetition_penalty": 1.0
+  },
+  "scoring": {
+    "enabled": true
+  },
+  "artifacts": {
+    "write_token_trace": true,
+    "write_parse_diagnostics": true,
+    "include_raw_model_logprob": false
+  },
+  "debug": {
+    "smoke": false,
+    "dry_run": false
+  },
+  "adapter": {
+    "type": "dora",
+    "path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/adapter",
+    "name": "default"
+  },
+  "embedding_delta": {
+    "path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444/special_token_embeddings",
+    "source_gate_root": null
+  }
+}

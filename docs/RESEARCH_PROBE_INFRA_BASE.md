@@ -33,6 +33,11 @@ local scientific configuration, not a global runtime class or registry.
 | Direction-local V1 inference profile | `src.config.inference.load_research_infer_config` | Scientific values and actual native generation policy; this loader does not enable debug or relax value validation |
 | Qwen processor/tokenizer/model loading | `src.qwen.runtime_loading.QwenLoadOptions`, `load_qwen_components_from_options` | Device, model lifetime, train/eval mode and selected checkpoint |
 | Deterministic scored inference | `src.inference.runtime` and `src.inference.backend` | Input/policy, output interpretation and claims |
+| Exact multimodal history/replay | `src.qwen.native.prepare_native_inputs`, `prepare_replay` | Literal token IDs, images, model mode/device; invalid shapes and token histories fail |
+| Budgeted native continuation | `src.qwen.generation.generate_continuations`, `NativeGenerationPolicy` | Per-request budgets, seed/batch order, policy and optional traces |
+| Named layer capture | `src.qwen.inspection.CaptureInputs`, `CaptureHiddenRows` | Selected sites and intervention formulas; context exit removes hooks |
+| Aligned differentiable scores | `src.losses.token_scores.aligned_token_logprobs` | Causal alignment, masks, reductions, credit and distributed factors |
+| Global annotated-owner assignment | `src.eval.assignment.global_matches` | Category/threshold policy; cardinality then quantized IoU, distinct from greedy visualization |
 | Packed training | `src.training`, `src.runtime`, `src.supervision`, `src.packing` | Selected training config, loss and synchronization contract |
 | Simple validated result publication | `src.artifacts.publish_json_exclusive` | Payload meaning and an absent final output path |
 
@@ -92,3 +97,14 @@ counterexample. Recovery uses an actual interrupted/reopened producer.
 Model-facing changes need the applicable native/adapter consumer checks;
 helper tests alone do not establish real-model parity. Record that evidence
 boundary rather than adding ceremonial receipts.
+
+## Maintained direction entries
+
+- [DORA owner learning](../probes/dora_owner_learning/README.md): Source256 preparation, sampling and CE/RLOO; separate coordinate/full-action scoring.
+- [Source/Rweak row crossing](../probes/source_rweak_row_cross/README.md): frozen manifest preparation, native continuation and offline assignment/reduction.
+- [Human13](../probes/human13/README.md): output-QP and magnitude finite-panel profiles.
+- [Logit lens](../probes/logit_lens/README.md): base, causal, radius/direction and natural continuation profiles.
+
+Each README supplies real inputs and the cheapest CPU entry. Run `python -m pytest -q probes` for their joint regression suite; saved-input row-cross checks require the documented manifest and preserved original-code root. The [acceptance record](../openspec/changes/restructure-research-probe-development/acceptance.md) separates these checks from the one-case Source model smoke.
+
+The remaining `scripts/research` closure supports existing optional admission/evidence consumers, coverage comparison and research navigation checks. Its historical producers and dedicated tests are listed in the [retirement disposition](../openspec/changes/restructure-research-probe-development/retired-files.md); new direction work starts in the four packages above or a new ordinary direction package.

@@ -123,4 +123,3 @@ def load_frozen_panel(path: str | Path = PANEL_PATH) -> tuple[FrozenPanelRow, ..
     if sum(len(row.owners) for row in rows) != 392:
         raise ValueError("frozen Human-13 panel must contain exactly 392 owners")
     return tuple(rows)
-

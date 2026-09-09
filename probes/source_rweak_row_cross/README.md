@@ -88,10 +88,11 @@ ROW_CROSS_MANIFEST=/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/20
   python -m pytest -q probes/source_rweak_row_cross/tests/test_prepare_saved.py
 ```
 
-CPU checks do not certify Qwen parity. A minimal pending model check is Source
-qualification on `coco2017_val_000000322574`, B1, FP32/SDPA with patch linearization,
-under a 300-second execution deadline. The saved diagonal has 21 tokens and a
-10-token forced action, so the expected suffix is 11 tokens. The unchanged cap
-bounds a divergent execution. Historical four-case B1 measurements were 9.38 GB
-peak allocated GPU memory and 12.25 GB host RSS; these are not guarantees for the
-migrated runtime.
+The bounded real Source check passed on `coco2017_val_000000322574`, B1,
+FP32/SDPA with patch linearization: all 21 frozen diagonal tokens matched,
+including the 11-token suffix. It completed in 11.11 seconds under the
+300-second deadline, with 9,361,506,304 peak allocated GPU bytes and
+9,698,369,536 host RSS bytes. The receipt is at
+`/data/CoordExp/outputs/research/restructure-research-probe-development/preservation-20260909/source-native-smoke-67d305d57/receipt.json`.
+This is one-case engineering acceptance; it does not establish full-panel or
+Rweak model parity or a new scientific result.
