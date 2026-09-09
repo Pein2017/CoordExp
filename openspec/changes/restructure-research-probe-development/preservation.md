@@ -25,3 +25,11 @@ The inspected source-directory holders were editor/index tooling, including this
 Row-cross frozen COCO code bindings: seven files materialized at `/data/CoordExp/outputs/research/restructure-research-probe-development/preservation-20260909/coco-original-code` from the saved COCO ref, with byte counts and existing manifest hashes verified. Use the reducer's explicit original-code-root option; the historical manifest is unchanged.
 
 Other open changes remain unfinished: the Human13 all-HF shared-surface vertical still has five baseline/prelaunch/update tasks; target-binding hardening still has one separately authorized GPU task; Human13 K-trajectory crossover still has nine dose/vertical/matrix tasks. This refactor preserves their contracts and does not claim those experiments complete. The initial four-package maintenance selection and shared implementation ownership are specified in design section8.
+
+## Completed retirement (2026-09-09)
+
+All eight eligible source worktrees and their local branches were removed after a fresh clean-tip/ref check and a `/proc` cwd/open-file scan found no holders. The fixed `research-probes` remains locked. Production/Swift, excluded bridge-cache content, remote refs and shared configuration were not changed.
+
+The preservation root additionally contains `ignored-local/` (54 files, 547,780,664 bytes), copied and byte-compared before retirement; `ignored-local-preservation.json` records counts. These include packing caches and local research/index material, beyond the separately preserved outputs. `retirement.json` records exact removed paths, local branches and archived commits. `pre-retirement-holders.json` records the empty holder scan. Historical Markdown targets are materialized under `historical-links/`; source recovery refs remain the authority for complete trees.
+
+Recovered outputs and maintained package consumers are checked after retirement. The complete original source/hash identity is preserved; historical absolute paths written inside old receipts are not rewritten or promised as still existing directories.

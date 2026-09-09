@@ -1207,5 +1207,3 @@ After each closed research unit:
    mechanism thread, require the next unit to estimate how common the effect is,
    compare a standing checkpoint or ordering control, or test a concrete
    training change.
-
-
