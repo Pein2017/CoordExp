@@ -6,10 +6,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks remind --client=codex"
-          },
-          {
-            "type": "command",
             "command": "/root/miniconda3/envs/ms/bin/python /data/CoordExp/.codex/hooks/rtk-pretooluse.py",
             "statusMessage": "Checking whether shell output should use RTK"
           }
@@ -18,10 +14,6 @@
       {
         "matcher": "shell",
         "hooks": [
-          {
-            "type": "command",
-            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks remind --client=codex"
-          },
           {
             "type": "command",
             "command": "/root/miniconda3/envs/ms/bin/python /data/CoordExp/.codex/hooks/rtk-pretooluse.py",
@@ -34,22 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks remind --client=codex"
-          },
-          {
-            "type": "command",
             "command": "/root/miniconda3/envs/ms/bin/python /data/CoordExp/.codex/hooks/rtk-pretooluse.py",
             "statusMessage": "Checking whether shell output should use RTK"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "SERENA_HOME=/data/CoordExp/.codex/serena /root/.local/bin/serena-hooks cleanup --client=codex"
           }
         ]
       }
