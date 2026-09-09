@@ -1,0 +1,66 @@
+{
+  "argv": [
+    "scripts/probes/coordexp_swift/special_token_embeddings_roundtrip.py",
+    "--model-path",
+    "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+    "--device",
+    "cuda",
+    "--dtype",
+    "bfloat16"
+  ],
+  "behavior": {
+    "assertions": {
+      "base_embedding_grad_absent_or_zero": true,
+      "base_lm_head_grad_absent_or_zero": true,
+      "non_selected_input_unchanged": true,
+      "non_selected_output_columns_unchanged": true,
+      "selected_delta_grad_nonzero": true,
+      "selected_input_delta_matches": true,
+      "selected_output_columns_match_hidden_delta": true
+    },
+    "delta_abs_sum": 384.0,
+    "delta_grad_abs_sum": 1536.0,
+    "perturbed_row": 4,
+    "perturbed_token": "<|coord_0|>",
+    "perturbed_token_id": 151670
+  },
+  "created_at_utc": "2026-07-10T05:12:58.615193+00:00",
+  "cuda_visible_devices": "0",
+  "fresh_base_reload": {
+    "fresh_base_reloaded": true,
+    "metadata_validated": true,
+    "non_selected_input_unchanged": true,
+    "non_selected_output_columns_unchanged": true,
+    "runtime_tied_input_lm_head_identity": true,
+    "selected_input_delta_matches": true,
+    "selected_output_columns_match_hidden_delta": true,
+    "tensor_loaded": true
+  },
+  "in_process_reload": {
+    "non_selected_input_unchanged": true,
+    "non_selected_output_columns_unchanged": true,
+    "selected_input_delta_matches": true,
+    "selected_output_columns_match_hidden_delta": true
+  },
+  "model_path": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
+  "num_selected_tokens": 1004,
+  "ok": true,
+  "output_dir": "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip",
+  "payload": {
+    "metadata": "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/special_token_embeddings.json",
+    "safetensors": "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/special_token_embeddings.safetensors"
+  },
+  "runtime_tied_input_lm_head_identity": true,
+  "semantics": "additive_delta",
+  "tokenizer_identity": {
+    "all_selected_tokens_single_token": true,
+    "coordinate_token_ids_contiguous": true,
+    "selected_count_is_1004": true,
+    "selected_token_ids_unique": true
+  },
+  "versions": {
+    "safetensors": "0.6.2",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.1"
+  }
+}
