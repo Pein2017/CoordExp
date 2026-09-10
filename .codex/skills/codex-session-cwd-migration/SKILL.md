@@ -24,6 +24,22 @@ when the session belongs to a non-default Codex installation or backup policy.
 Use `--dry-run` to validate the session, target, and persisted records without
 changing anything.
 
+For a bounded set of deleted worktree roots, use the batch entrypoint. It
+selects only non-subagent rows whose exact current cwd is missing; existing
+directories and multi-agent subagent rows are skipped:
+
+```bash
+python /data/CoordExp/.agents/skills/codex-session-cwd-migration/scripts/migrate_session_cwd_batch.py \
+  --cwd /data/CoordExp/.worktrees/research-probes \
+  --root image2299-mechanism-microscope \
+  --root human13-output-qp-identity-generalization \
+  --root dora-prox-linear-n2
+```
+
+Use the batch script's `--dry-run` first. It makes one SQLite backup and one
+rollout backup set, then uses one app-server connection; it does not repeat a
+full database backup for every session.
+
 ## Safety contract
 
 The script:
