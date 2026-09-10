@@ -15,8 +15,6 @@ Use this folder for stable repo policy and engineering conventions.
 
 ## Pages
 
-- [../AGENT_ENGINEERING_CONSTITUTION.md](../AGENT_ENGINEERING_CONSTITUTION.md)
-  - lightweight agent engineering and exploratory implementation posture
 - [REPO_HYGIENE.md](REPO_HYGIENE.md)
   - where things live and how work is promoted
 - [CODE_STYLE.md](CODE_STYLE.md)
@@ -28,4 +26,4 @@ Use this folder for stable repo policy and engineering conventions.
 - [PORTING.md](PORTING.md)
   - porting notes and compatibility guidance
 - [OUTPUT_SYNC_AND_DATA_PROVENANCE.md](OUTPUT_SYNC_AND_DATA_PROVENANCE.md)
-  - Baidu Netdisk ownership for `output/` and git provenance for processed `public_data/`
+  - output backup ownership and processed-data provenance

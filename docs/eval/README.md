@@ -11,31 +11,32 @@ updated: 2026-07-11
 
 # Evaluation & Inference
 
-Use this folder for the current infer -> score -> evaluate workflow, official
-COCO export, and additive analysis studies.
+Use this folder for current Swift inference, scoring, evaluation and metric
+interpretation. Historical export and analysis routes are labeled separately.
 
 CoordExp-Swift note:
 
-- Start with [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md) for the rebuilt
-  worktree route.
+- Start with the named config/artifact and select the relevant page below.
 - The accepted Swift V1 validation gate is the fixed val200 inference/eval run,
   not a full validation-dataset run.
 - Full validation-dataset or official test-dev evaluation remains optional and
   should be launched only when explicitly requested.
 
-## Read Order
+## Select the task
 
-1. [CONTRACT.md](CONTRACT.md)
-2. [WORKFLOW.md](WORKFLOW.md)
-3. [../ARTIFACTS.md](../ARTIFACTS.md)
-4. [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md) for official test-dev benchmarking
+Use [WORKFLOW.md](WORKFLOW.md) for a run, [CONTRACT.md](CONTRACT.md) for
+artifact compatibility, and [INTERPRETATION.md](INTERPRETATION.md) for metric,
+matching, category or annotation questions. Read [../ARTIFACTS.md](../ARTIFACTS.md)
+only when artifact ownership is unclear. Official test-dev export has a separate
+[submission scope](COCO_TEST_SUBMISSION.md); it is not a prerequisite for a local
+research comparison.
 
 ## Page Roles
 
 - [CONTRACT.md](CONTRACT.md)
   - evaluator inputs, record shape, coordinate handling, scoring rules, output invariants, failure policy, and shared visualization contract
 - [WORKFLOW.md](WORKFLOW.md)
-  - YAML-first operational flow from inference to visualization, including raw-text norm1000, non-canonical bbox caveats, duplicate control, LVIS proxy views, and Oracle-K analysis
+  - current Swift inference, selected-token scoring, aggregate COCO evaluation and direct run visualization
 - [../ARTIFACTS.md](../ARTIFACTS.md)
   - full infer/eval/training artifact inventory, provenance, helper ownership, and run-directory expectations
 - [COCO_TEST_SUBMISSION.md](COCO_TEST_SUBMISSION.md)
@@ -43,6 +44,9 @@ CoordExp-Swift note:
     official submission export; verify current Swift support separately
 - [drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md](drafts/UNMATCHED_PROPOSAL_VERIFIER_STUDY.md)
   - draft supplementary study; not part of the default infer -> score -> evaluate path
+
+- [Legacy evaluation reference](../history/evaluation/2026-09-09-legacy-eval-reference.md)
+  - preserved MS-Swift/mainline commands and schemas for historical reconstruction
 
 ## Normative Specs
 

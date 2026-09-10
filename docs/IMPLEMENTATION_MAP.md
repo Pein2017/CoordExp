@@ -25,7 +25,7 @@ reuse.
 | Config schema and resolution | `src/config/loader.py`, `src/config/models.py`, `src/config/resolve.py` | `tests/config/` and strict-config tests |
 | Raw JSONL and geometry | `src/data/` | `docs/data/CONTRACT.md`, `tests/data/` |
 | Prompt and semantic spans | `src/templates/` | `tests/templates/` |
-| Qwen load/encode/forward | `src/qwen/` | `tests/qwen/` |
+| Qwen load/encode/forward | `src/qwen/`; [execution boundaries and upstream internals](standards/upstream/QWEN_VL.md#local-execution-boundaries) | `tests/qwen/` |
 | Packing | `src/packing/`, `src/training/pack_cache.py` | `tests/packing/`, `tests/training/test_pack_cache.py` |
 | Token supervision | `src/supervision/` | `tests/supervision/` |
 | Loss assembly | `src/losses/` | `tests/losses/` |
@@ -115,7 +115,6 @@ documentation and must not be used as current Swift entrypoints:
 
 Consult [`docs/history/README.md`](history/README.md) only for explicit
 provenance reconstruction. Use
-[`docs/architecture/README.md`](architecture/README.md) for accepted current
-architecture. Do not
+[`SYSTEM_OVERVIEW.md`](SYSTEM_OVERVIEW.md) for current system relationships. Do not
 promote historical material by copying its wording into a canonical current
 page.

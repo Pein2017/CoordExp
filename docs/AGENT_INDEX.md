@@ -116,11 +116,13 @@ pre-promotion spec path to make a link look normative.
 
 - Current research probe or result: [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md), [research/index.md](../research/index.md), then the named bound worktree/artifact record
 - Current production architecture or source ownership: [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md), [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md), [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
+- Qwen3-VL internals, processor/grid, MRoPE, DeepStack, native replay, or packed forward: [Qwen-VL manual](standards/upstream/QWEN_VL.md), especially [local execution boundaries](standards/upstream/QWEN_VL.md#local-execution-boundaries); follow its exact source and contract links for the selected path
 - Data and preprocessing: [docs/data/README.md](data/README.md), [docs/data/CONTRACT.md](data/CONTRACT.md), [docs/data/PREPARATION.md](data/PREPARATION.md), [docs/data/PACKING.md](data/PACKING.md)
 - Current inference/evaluation: [docs/eval/README.md](eval/README.md), [docs/eval/WORKFLOW.md](eval/WORKFLOW.md), [ARTIFACTS.md](ARTIFACTS.md)
+- Detection mAP/F1, matching, category IDs, crowd or unmatched predictions: [metric interpretation](eval/INTERPRETATION.md), then the metric's actual evaluator or research owner
 - Training-history interpretation: [docs/training/README.md](training/README.md), marked as a legacy router for old MS-Swift/mainline runs
 - Standards: [docs/standards/README.md](standards/README.md)
-- Accepted architecture: [docs/architecture/README.md](architecture/README.md)
+- Current system relationships: [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md); use [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md) for the specific source/test owner
 - Active research beliefs and route gates: [research/decisions/](../research/decisions/)
 
 ## Historical-material rule

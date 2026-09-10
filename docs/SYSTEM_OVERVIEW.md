@@ -134,4 +134,4 @@ routing, and the relevant `coordexp-swift-*` stable spec for normative details.
 Old `src/sft.py`, `src/trainers/`, `src/datasets/`, `src/detection/`, and
 `src/infer/` references are historical or comparator-only. Old plans and
 architecture proposals are not current behavior authority and are routed by
-[`architecture/README.md`](architecture/README.md).
+[architecture history](history/architecture/README.md).

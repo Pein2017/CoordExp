@@ -3,146 +3,64 @@ doc_id: docs.standards.repo-hygiene
 layer: docs
 doc_type: standard
 status: canonical
-domain: standards
-summary: Repo layout, promotion rules, and reproducibility hygiene.
-updated: 2026-05-20
+domain: repo
+summary: Place source, research knowledge and runtime artifacts under their current owners.
+updated: 2026-09-09
 ---
 
-# Repo Hygiene Constitution (CoordExp)
+# Repository Layout And Retention
 
-This document defines **where things go**, **what gets tracked**, and **how one-shot work gets promoted** so the repo stays reproducible and paper-ready.
+Use the selected checkout's [branch/worktree policy](../BRANCH_AND_WORKTREE_POLICY.md)
+for source ownership and lifecycle. This page identifies storage roles; it does
+not authorize deleting artifacts, changing scientific meaning or moving worktrees.
 
-## 1) Folder roles (authoritative)
+## Place content by its purpose
 
-Tracked, reviewable:
-- `src/`: importable library code (training/infer/eval). No ad-hoc experiments here.
-- `configs/`: YAML-first experiments. Any result worth keeping must be reproducible from a config.
-- `scripts/`: stable entrypoints + small maintained utilities (thin wrappers, minimal logic).
-- `tests/`: contracts + regressions (especially geometry + template invariants).
-- `docs/`: runbooks and user-facing documentation.
-- `public_data/`: dataset tooling and public artifacts (builders, validators, exporters).
-- `openspec/`: design/contract governance (treat as source-of-truth for behavior changes).
-- `progress/`: short research notes / decision logs (keep concise; link to `docs/` when something becomes stable).
+| Content | Maintained location |
+| --- | --- |
+| Reusable executable behavior | The existing `src/` concept owner; use the [implementation map](../IMPLEMENTATION_MAP.md) when it is unknown |
+| Maintained research implementation | `probes/<direction>/` in the research base, with explicit profiles and dependencies; see [research mechanics](../RESEARCH_PROBE_INFRA_BASE.md) |
+| Current production configuration | The selected `configs/coordexp_swift/` family and its schema; direction-owned profiles remain with their package |
+| CLI entry or operational utility | An existing maintained script/package entry, without duplicating its underlying library behavior |
+| Behavioral invariants | Tests at the relevant caller or contract owner |
+| Current usage and explanation | `docs/`; stable compatibility requirements are in `openspec/specs/` |
+| Research question, interpretation or negative result | `research/`, with source evidence and the owning scientific scope |
+| Superseded documentation/provenance | `docs/history/`; old scientific records remain in their research reading path or archive |
+| Checkpoints, rollouts, large tables, logs and galleries | The run's declared `outputs/` or external artifact root; docs keep handles rather than copied payloads |
+| Disposable local scratch | A task-specific temporary location; confirm ownership and necessary evidence before removal |
 
-Not tracked (workspace artifacts; safe to delete):
-- `outputs/`: training/infer/eval outputs (checkpoints, reports, JSONL
-  artifacts). **Do not delete automatically**; treat as valuable experiment
-  artifacts and the canonical Baidu Netdisk sync surface.
-- `output/`, `output_remote/`: legacy or transitional output roots. Do not
-  create new canonical workflows here. `output_remote/` may exist during local
-  migrations, but should not be part of durable repo structure.
-- `tb/`: TensorBoard event files.
-- `vis_out/`: visualization outputs.
-- `temp/`, `tmp/`: one-off scratch work.
-- `model_cache/`: local cached models (large; delete only when you accept re-download/rebuild).
-- `external/`, `.worktrees/`: local checkouts and worktrees, not vendored
-  project source.
-- `.codex/` except `.codex/skills/`: local agent runtime state. Memories,
-  sessions, plugin caches, logs, auth, and app state must stay local-only.
-- `.claude/`, `.gemini/`, `.history/`, `.gitnexus/`, `.vendor/`: local agent
-  and workstation state.
-- root-level credential or cookie files such as `baidu_net_cookie.txt` and
-  `github_personal_token.txt`.
+`progress/`, `output/` and `output_remote/` are legacy locations, not defaults for
+new records. Historical use of a directory does not prove its current contents
+are disposable. Public-data layout and regeneration are owned by the
+[output/data provenance standard](OUTPUT_SYNC_AND_DATA_PROVENANCE.md).
 
-## 2) Config-first rule
+## Keep one maintained implementation
 
-If it changes model behavior or evaluation, it must be expressible via `configs/`:
-- No “magic flags” hidden in scripts.
-- Prefer adding a YAML field over adding a new CLI arg.
-- Any experiment run should log `config_path` + resolved config dump + git SHA.
+Place a new reusable operation at an existing compatible owner. Promote a
+local utility when a retained consumer demonstrates the shared contract, not
+after a fixed number of uses. Keep direction-specific scientific choices local.
+Follow [CODE_STYLE.md](CODE_STYLE.md) for module and interface design.
 
-## 3) One-shot script lifecycle
+Production runs use their declared config interface. Research packages may own
+explicit local profiles or CLI options; do not invent global config fields or
+move them into a production config family merely for uniformity. A citable run
+needs enough effective code/config/input context to identify what executed;
+its run name is not a substitute for that evidence.
 
-### Stage A: scratch (allowed, untracked)
-Put exploratory scripts in `temp/YYYY-MM-DD_<topic>/` and assume they can be deleted.
+When an entry or profile retires, check current imports, commands, tests,
+document links and bound historical inputs. Preserve required source/evidence,
+redirect current callers, then remove obsolete implementation. Keep a pointer
+only when an actual reader needs the old location. A cleanup must not silently
+change geometry, loss, parser, matching, denominators or artifact interpretation.
 
-### Stage B: promoted utility (maintained)
-If you use it **twice**, promote it into:
-- `scripts/tools/` for utilities, or
-- `scripts/analysis/` for analysis/report scripts.
+## Separate source from runtime state
 
-Requirements to promote:
-- Deterministic defaults (explicit seeds when sampling).
-- Clear IO contract (`--input`, `--output`, or well-documented env vars).
-- Writes outputs under `output/` or `vis_out/` (never beside code).
+Human-maintained guidance, skills or tooling source may be versioned under their
+explicit owner. Credentials, sessions, memory stores, plugin caches, model
+caches and generated runtime state are not source by proximity. Never infer
+permission to stage or delete them from Git ignore or tracking status.
 
-### Stage C: library (stable API)
-If it becomes part of training/infer/eval, move logic into `src/` and add tests.
-
-## 4) Research asset lifecycle
-
-Use four asset classes:
-
-- **Core asset**: current library code, schema, config, docs, tests, and small
-  provenance manifests. Keep tracked and routed from `docs/` or
-  `docs/catalog.yaml`.
-- **Historical reference**: dated design notes, audits, benchmark summaries,
-  and failure analysis. Keep under `progress/` with a router entry when it is
-  worth rediscovering.
-- **Artifact**: checkpoints, rollout dumps, eval JSONL, large per-image tables,
-  visual galleries, TensorBoard, and raw run logs. Keep under `outputs/` or a
-  documented external artifact location; do not track by default.
-- **Scratch**: one-off probes, temporary scripts, local staging data, copied
-  logs, and debugging residue. Keep under `temp/` and delete after use.
-
-`progress/diagnostics/artifacts/` may contain small curated evidence copies, but
-avoid tracking large images, full per-image eval tables, launch logs, or copied
-run directories there. Prefer a short `README.md`, metrics summaries, and links
-or repo-relative pointers to the artifact root under `outputs/`.
-
-## 5) Config lifecycle
-
-Keep configs in lifecycle folders:
-
-- `prod/`: runnable current or comparator profiles that may be launched again.
-- `smoke/`: cheap validation profiles for a current surface.
-- `ablation/`: active or recently interpretable research variants.
-- `negative/`: intentional failure fixtures or preflight guards.
-- `profiles/`: legacy Stage-1 SFT profiles that are still documented.
-- `analysis/` and `bench/`: historical or report-building configs, not default
-  training authoring examples.
-
-When a config stops being useful:
-
-1. Move its conclusion into `progress/`.
-2. Remove the config if no current docs/tests reference it.
-3. Keep a `negative/` config only when a test or preflight uses it to enforce a
-   failure contract.
-
-## 6) Agent and ops policy
-
-Tracked agent assets should be capability surfaces, not state dumps:
-
-- Track `.codex/skills/` when the skill encodes non-obvious repo workflow.
-- Do not track `.codex/memories/`, sessions, logs, plugin caches, auth, app
-  state, or auto-generated runtime bundles.
-- Do not add auto-commit watchers for local agent memory. They mix source
-  changes with private runtime state and make repository history noisy.
-- Put workstation automation in `ops/`, not `scripts/`, unless it is a
-  maintained CoordExp training/infer/eval entrypoint.
-
-## 7) Deprecation & removal
-
-When replacing an entrypoint:
-1) Update docs/configs to the new canonical path.
-2) Remove the old wrapper, or leave a short pointer stub **for one release window**.
-3) Prefer “delete + git history” over keeping dead code indefinitely.
-
-## 8) Reproducibility minimum bar
-
-For any run you might cite:
-- Encode hypothesis in `training.run_name` (dataset, base ckpt, decode, key knobs, seed).
-- Log the exact git SHA and config used.
-- Keep evaluation scripts deterministic and versioned.
-
-Retention note:
-- `outputs/` is considered a persistent workspace artifact root
-  (checkpoints + logs). Do not delete it via cleanup scripts.
-
-## 9) Contract guardrails (do not violate)
-
-- Preserve geometry: never drop/reorder coords; use `src/data/geometry.py`.
-- Golden rule: all training and evaluation use offline-preprocessed images, and runtime vision processors must not resize them.
-- Training uses `do_resize: false` unless explicitly justified in config/docs.
-- Maintain Qwen3-VL chat-template compatibility.
-- Do not edit upstream HF model files (e.g., `modeling_qwen3_vl.py` is off-limits).
+Use the current retention/backup contract before touching outputs or caches.
+Preserve active work, external mounts and reproducibility dependencies; deleting
+a documented directory is not safe merely because its name says scratch or cache.
+This documentation workflow does not perform process cleanup or artifact deletion.

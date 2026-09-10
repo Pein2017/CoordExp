@@ -32,9 +32,13 @@ model/template boundary. Any port that changes processor class, model family,
 or `attn_implementation` must rerun placeholder-count, grid, position-id, and
 loss/logit availability checks.
 
-## Token-type metrics (desc/coord/format)
-- Feature source: Qwen3-VL `data_collators/dataset_metrics.py`, `token_types.py`, `metrics/dataset_metrics.py`.
-- Intentional delta in CoordExp: aggregate-only metrics (no per-dataset buckets) and packing support.
-- Metric keys (no `agg_` prefix): `loss`, `token_acc`, and `{desc,coord,format}_token_acc`.
-- Packing support added in CoordExp: token types computed per sample pre-pack and concatenated; on length mismatch metrics are skipped (IGNORE) instead of erroring.
-- Defaults differ: CoordExp includes only `lvis` by default; Qwen3-VL defaults to `target,lvis` includes and excludes `coig_lang_chat`.
+## Supervision and metric ownership
+
+Current CoordExp supervision is owned by
+[`src/supervision/`](../../src/supervision/) and loss assembly by
+[`src/losses/runner.py`](../../src/losses/runner.py). Use the
+[supervision/loss contract](../../openspec/specs/coordexp-swift-supervision-losses/spec.md)
+for token types, causal alignment, reductions, and emitted metrics, and the
+[implementation map](../IMPLEMENTATION_MAP.md) for verification owners.
+Porting a model family does not replace those local semantics with an upstream
+trainer's token labels, dataset defaults, or mismatch handling.

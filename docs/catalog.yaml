@@ -176,6 +176,10 @@ docs:
       title: Evaluation Contract
       type: contract
       status: canonical
+    - path: docs/eval/INTERPRETATION.md
+      title: Detection Metric Interpretation
+      type: reference
+      status: canonical
     - path: docs/eval/WORKFLOW.md
       title: Evaluation Workflow
       type: runbook
@@ -188,22 +192,13 @@ docs:
       title: Unmatched Proposal Verifier Study
       type: runbook
       status: draft
-  architecture:
-    - path: docs/architecture/README.md
-      title: Accepted Architecture
-      type: architecture-router
-      status: canonical-router
   standards:
-    - path: docs/AGENT_ENGINEERING_CONSTITUTION.md
-      title: Agent Engineering Constitution
-      type: agent-guide
-      status: canonical
     - path: docs/standards/README.md
       title: Standards
       type: router
       status: canonical
     - path: docs/standards/REPO_HYGIENE.md
-      title: Repo Hygiene Constitution (CoordExp)
+      title: Repository Layout And Retention
       type: standard
       status: canonical
     - path: docs/standards/CODE_STYLE.md
@@ -243,6 +238,14 @@ docs:
       type: standard
       status: canonical
   history:
+    - path: docs/history/engineering/2026-09-09-agent-engineering-constitution.md
+      title: Historical Agent Engineering Principles
+      type: historical-reference
+      status: historical-reference
+    - path: docs/history/evaluation/2026-09-09-legacy-eval-reference.md
+      title: Legacy Evaluation Reference (2026-09-09)
+      type: historical-reference
+      status: historical-reference
     - path: docs/history/README.md
       title: Documentation History
       type: history-router

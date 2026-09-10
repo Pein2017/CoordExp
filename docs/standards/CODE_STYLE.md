@@ -31,33 +31,11 @@ Non-goals:
 - broad rewrites to make the tree look newer;
 - changing a stable contract without the OpenSpec lifecycle.
 
-## Current module map
+## Source ownership
 
-Use the current source tree as the first routing signal:
-
-- `src/config/`: strict YAML loading, typed models, path resolution, and
-  resolved-config artifacts;
-- `src/data/`: raw examples, images, JSONL, and geometry validation;
-- `src/templates/`: prompt rendering and semantic spans;
-- `src/qwen/`: model/processor loading, encoding, image planning, positions,
-  forward helpers, and special-token embeddings;
-- `src/packing/`: no-padding pack planning and packed supervision;
-- `src/supervision/`: token-level target and span records;
-- `src/losses/`: CE, token-type gates, coordinate terms, normalization, and
-  loss diagnostics;
-- `src/runtime/`, `src/optim/`, `src/adapters/`: execution, optimizer, and
-  trainable-surface boundaries;
-- `src/training/`: training assembly, schedule, pack cache, and planned-step
-  trainer;
-- `src/artifacts/`: run manifest, metric streams, checkpoints, and handoff;
-- `src/inference/`: inference pipeline, runtime, backend, parsing, scoring,
-  artifact writing, and data-parallel merge;
-- `src/eval/`: forward-only evaluation and the detection consumer;
-- `src/vis/`: visualization normalization, matching, rendering, and API.
-
-The public entrypoints are `src/train.py` and `src/infer.py`. Do not route new
-Swift work through historical `src/sft.py`, `src/trainers/`, `src/datasets/`,
-`src/detection/`, or the old `src/infer/` package.
+Use the [implementation map](../IMPLEMENTATION_MAP.md) for current modules,
+entrypoints and verification owners. Keep source inventories there so style
+guidance does not become a second, drifting implementation map.
 
 ## Interfaces and module depth
 
@@ -83,6 +61,12 @@ Prefer small dataclasses or typed mappings over positional tuples. Document
 units and invariants, especially norm1000 versus pixel coordinates, logical
 versus packed positions, and raw versus scored artifacts.
 
+Use cohesive typed records for shapes shared across modules; prefer immutable
+records where callers should not mutate the contract. Dictionaries fit JSON/YAML
+IO boundaries, intentionally loose metadata, and local short-lived values.
+Normalize external data at the boundary and serialize records at the output
+boundary instead of passing anonymous dictionaries through many layers.
+
 Keep `src/__init__.py` and low-level import surfaces light. Stable records,
 config models, artifact receipts, and metric events should be explicit enough
 for tests and downstream readers to validate them without opening implementation
@@ -96,8 +80,9 @@ seams and fail with an actionable message that names the missing dependency and
 the supported alternative.
 
 Do not introduce a new backend or framework merely to make a document or
-interface symmetrical. The current inference source implements HF generation;
-reserved fields do not establish an available backend.
+interface symmetrical. Verify supported backends through the
+[implementation map](../IMPLEMENTATION_MAP.md) and their live source; reserved
+fields do not establish runtime support.
 
 ## Configuration: YAML first and strict
 
@@ -108,6 +93,12 @@ Treat configs as first-class artifacts:
 - reject unknown keys and invalid combinations at load time;
 - record authored/resolved config identity and fingerprints;
 - keep defaults neutral unless a research choice is intentionally explicit.
+
+Place label/loss choices near objective, template or data ownership; execution
+choices near runtime ownership; metric-comparability choices near evaluation.
+Names should distinguish serialized format, template contract, runtime mode and
+research variant. Preserve one spelling for shared concepts and keep aliases at
+explicit boundaries. Correctness that should always hold does not need a knob.
 
 The current config seam is `src/config/loader.py` and `src/config/models.py`.
 Do not copy an old schema from `configs/stage1/` or `configs/stage2/` into a

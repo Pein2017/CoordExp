@@ -15,13 +15,14 @@ This folder is retained for historical MS-Swift/mainline training contracts,
 old-run reproduction, and empirical context. It is not the current training
 route on `main`.
 
-For current implementation work, start with:
-
-1. [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md)
-2. [`../SYSTEM_OVERVIEW.md`](../SYSTEM_OVERVIEW.md)
-3. [`../IMPLEMENTATION_MAP.md`](../IMPLEMENTATION_MAP.md)
-4. `configs/coordexp_swift/` and `src/train.py`
-5. the relevant `openspec/specs/coordexp-swift-*` contract
+For current implementation work, start with the named config or source owner.
+Use [`../IMPLEMENTATION_MAP.md`](../IMPLEMENTATION_MAP.md) only to locate an
+unknown owner, then the relevant `openspec/specs/coordexp-swift-*` contract.
+For Qwen execution semantics, use the
+[Qwen manual](../standards/upstream/QWEN_VL.md); current launch code is under
+`configs/coordexp_swift/` and `src/train.py`. The research base also maintains
+[direction packages](../RESEARCH_PROBE_INFRA_BASE.md#maintained-direction-entries)
+with their own objectives. Do not read all architecture pages before a local edit.
 
 ## Historical surfaces
 
@@ -29,8 +30,8 @@ For current implementation work, start with:
   comparator vocabulary;
 - [`STAGE2_RUNBOOK.md`](STAGE2_RUNBOOK.md): legacy rollout-correction runbook;
 - [`METRICS.md`](METRICS.md): historical metric and loss interpretation;
-- [`../data/PACKING.md`](../data/PACKING.md): packing history and contract
-  comparisons;
+- [`../data/PACKING.md`](../data/PACKING.md): current packing ownership and contract
+  links (not a historical training surface);
 - [`drafts/`](drafts/): explicitly non-canonical experiment drafts.
 
 The old `configs/stage1/`, `configs/stage2/`, archived recursive-detection

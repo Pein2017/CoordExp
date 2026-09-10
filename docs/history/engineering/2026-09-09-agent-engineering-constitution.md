@@ -2,13 +2,21 @@
 doc_id: docs.agent-engineering-constitution
 layer: docs
 doc_type: agent-guide
-status: canonical
+status: historical-reference
 domain: repo
-summary: Lightweight engineering principles for agents working in CoordExp.
+summary: Superseded July 2026 engineering guidance; retained for provenance.
 updated: 2026-07-14
 ---
 
 # Agent Engineering Constitution
+
+> Archived on 2026-09-09. Current agent authority is the applicable AGENTS.md;
+> code style lives in [CODE_STYLE.md](../../standards/CODE_STYLE.md), source
+> ownership in [IMPLEMENTATION_MAP.md](../../IMPLEMENTATION_MAP.md), and
+> research/artifact lifecycle in the [branch policy](../../BRANCH_AND_WORKTREE_POLICY.md).
+> The original statements below are historical, including their usage-count
+> promotion and escalation rules. Original tracked source:
+> `390d8fd48:docs/AGENT_ENGINEERING_CONSTITUTION.md`.
 
 Purpose: give future coding agents a shared engineering posture for CoordExp.
 This is a lightweight constitution, not a rigid lawbook. Prefer these
