@@ -9,4 +9,5 @@
 - [Implementation](implementation.md)
 - [Experiments](experiments/)
 
-This idea is active and does not yet have a final `conclusion.md`.
+This idea is dormant pending the matched denoising-OFF control described in
+[the overview](overview.md); it has no final promotion or rejection conclusion.

@@ -1,16 +1,22 @@
 ---
 title: N256 shared output-QP norm-scaling handoff
-description: Current continuation point for the stopped N2 transfer ladder and positive train-only N4 low-norm mechanism result.
+description: Historical September 2 continuation snapshot and frozen N256 protocol; current route is maintained in the compass.
 type: investigation
 role: research-handoff
 authority: transport_only
-status: n2_transfer_stopped_n4_mechanism_complete
-updated: 2026-09-02
+status: historical_snapshot
+updated: 2026-09-09
 ---
 
 # N256 shared output-QP norm-scaling handoff
 
-## 2026-09-02 current continuation point
+> **Superseded continuation snapshot — 2026-09-09.** Use the
+> [current compass](compass.md) and [experiment router](experiments/index.md)
+> for the current evidence boundary. The September 2 continuation below,
+> including its then-unlaunched N8 next step, is historical. Its protocol,
+> measurements, source identities, and receipt links are preserved unchanged.
+
+## Historical continuation point — 2026-09-02
 
 The design below has now been implemented and partially executed. Treat this
 section and the linked terminal receipts as current; the original proposal is

@@ -3,15 +3,16 @@ type: idea
 title: Prefix Denoising SFT
 description: Explores whether Stage-1 compact detection teacher forcing can improve coordinate robustness by training on clean and coordinate-noised prefix views.
 tags: [stage1, compact-detection, prefix-denoising, teacher-forcing, coordinate-robustness]
-state: active
-updated: 2026-07-19
+state: dormant
+updated: 2026-09-09
 ---
 
 # Prefix Denoising SFT
 
 ## Current State
 
-Prefix Denoising SFT is a valid active idea, but it is not concluded. The V1
+Prefix Denoising SFT is dormant since 2026-06-20, as recorded in the
+[idea router](../index.md), and remains unconcluded. The V1
 branch has implementation, repair, launch-health, inference, and post-analysis
 records, but it does not yet have the matched control needed for a final
 promotion or rejection verdict.
@@ -78,7 +79,7 @@ Do not import the historical insensitivity claim into current checkpoints.
 - [Axis-Sort Repair Negative Result](experiments/2026-06-16-axis-sort-negative-result/unit.md)
 - [Inert Objective Root-Cause Analysis](experiments/2026-06-17-inert-objective-root-cause/unit.md)
 
-This idea is active and does not yet have a final `conclusion.md`.
+This idea is dormant and does not yet have a final `conclusion.md`.
 
 ## Key Evidence
 
@@ -160,7 +161,7 @@ Expanded snapshot handles:
 
 Run or locate a matched denoising-OFF hard-CE LoRA control with the same compact
 format, sorted marker prompt, train/eval data, adapter recipe, epoch/step
-budget, and decode settings. Without that control, keep the idea active but do
+budget, and decode settings. Without that control, keep the idea unconcluded and do
 not promote the V1 result into current training guidance.
 
 ## Sources

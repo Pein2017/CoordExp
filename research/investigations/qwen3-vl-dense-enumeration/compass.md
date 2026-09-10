@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -19,6 +19,68 @@ technical execution. It does not promote an architecture or a production
 checkpoint.
 
 ## Current questions and evidence
+
+### Are better natural complete outputs absent, or not realized by greedy/learning?
+
+The retained original-Source train256 K4 bank contains a net-improving complete
+output on54/256 images and an owner-preserving, no-extra-burden IoU50 witness
+on32. This is finite sampled-output opportunity, not a sample-union score,
+deployment selector, or learning-failure verdict. Of43 strong sample witnesses,
+37 received positive first-round RLOO advantage; two received zero and four
+negative because RLOO compares against the other samples, not greedy.
+The subsequently authorized immediate post-round1 train greedy read is now
+complete: TP50+3 (9 gains,6 losses), F1 down0.003114 and repeats+17. None of65
+distinct strong-candidate gained objects appears in the updated greedy output,
+including none of61 from positive-advantage candidates. This establishes weak
+immediate greedy realization at the one-update dose, not zero likelihood
+movement or a general inability to learn. The subsequently authorized fixed-
+witness read is complete:32/43 candidate likelihoods increase (29/37 positive-
+advantage samples), but none crosses its first fixed-route greedy obstacle.
+Only19/43 improve log-odds relative to fixed Source greedy;35/43 first forks
+are in other-owner rows. This identifies some probability movement without
+fixed-route realization, not a necessary owner-access barrier or an exclusive
+optimizer/representation diagnosis.
+
+- [Natural candidate opportunity protocol](experiments/2026-09-09-natural-candidate-opportunity/unit.md)
+- [Natural candidate opportunity result](experiments/2026-09-09-natural-candidate-opportunity/results.md)
+- [Round1 greedy realization result](experiments/2026-09-09-round1-greedy-realization/results.md)
+- [Fixed-witness update movement](experiments/2026-09-10-fixed-witness-route-access/results.md)
+
+The independent conditional row probe is also complete. Frozen eligibility
+narrows65 candidate-gained owners to5 CPU-eligible pairs,4 selected images and2
+visually admitted annotation-backed cases, without replacement. In both, a
+supplied x1 decision lets Source complete A, recover displaced B freely and
+retain the old IoU50 suffix owners. Full A and a one-bin x2 variant yield exact
+same free-suffix tokens. This establishes two locally usable continuations,
+not autonomous discovery, universal coordinate robustness or a guarantee for
+the updated checkpoint. Occlusion/projected overlap limits and one incompatible
+sample-history residual workload remain explicit.
+
+- [Conditional row realization and continuation](experiments/2026-09-10-owner-row-continuation-robustness/results.md)
+
+The FP follow-up separates484 automatic strict repeats from610 non-repeat FP.
+A fixed54-case visual audit finds14 visible instances without current GT
+coverage,7 localization cases,5 category errors,5 multi-instance boxes,
+6 grouping/scope ambiguities,3 looser visual reboxes and14 unresolved cases.
+These are stratified sample counts and non-certified visual judgments, not
+population prevalence or new GT. Uniformly treating unmatched predictions as
+hallucinations would conflate visibly different supervision problems.
+
+- [FP visual distribution and crop evidence](experiments/2026-09-09-fp-visual-distribution/results.md)
+
+### Can routine unmatched checks use an automated proxy?
+
+The closed investigation retains a screening-only combination of candidate-
+context Co-DETR localization and independent8B category observation. On64 new
+images,14 candidates are supported:11 clearly usable,1 box error and2 uncertain
+after an explicit visual-reference correction. The model/thresholds did not
+change after unblinding; original and adjudicated scores are both retained.
+Model-stage warm work averages0.63s/candidate, while a real cold8-case internal
+call takes80.8s including initialization and fingerprinting. This is useful
+selective evidence, not GT, a hard reward oracle, or proof that all remaining
+unmatched detections are false. No training or standing service was launched.
+
+- [Automated evaluator evidence and use boundary](experiments/2026-09-10-autonomous-unmatched-evaluator/results.md)
 
 ### Can the model fit a dense fixed panel through different parameter surfaces?
 
@@ -81,7 +143,7 @@ target-blind screen lost Source owners and increased debt. N32 has a sealed
 semantic payload, but no valid null solve or aggregate; it remains technically
 partial. No N256 scaling or transfer verdict is claimed.
 
-- [N256 handoff and current boundary](2026-09-01-n256-shared-output-qp-norm-scaling-handoff.md)
+- [N256 historical handoff and frozen protocol](2026-09-01-n256-shared-output-qp-norm-scaling-handoff.md)
 - [N256 N2 result](experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-results-v1.md)
 - [N256 N4 train-only result](experiments/2026-09-01-n256-shared-output-qp-norm-scaling/n4-train-only-results-v1.md)
 - [N256 N4 mechanism result](experiments/2026-09-01-n256-shared-output-qp-norm-scaling/n4-mechanism-results-v1.md)

@@ -2,12 +2,20 @@
 type: investigation
 role: handoff
 authority: non_normative_research
-status: awaiting_implementation_entry
+status: superseded
 updated: 2026-09-09
-summary: 将已获用户认可的研究开发架构交接到 research-probes；等待实验停止后实施。
+summary: 已完成改造的历史实施交接；原始等待条件和计划保留作时间点记录。
 ---
 
 # Research probe 开发流程改造：实施交接
+
+> **2026-09-09：已被完成验收取代。** 当前实现与验收见
+> [research-probe 开发改造验收](../openspec/changes/restructure-research-probe-development/acceptance.md)。
+> 下文保留交接时的原始状态、等待条件、身份和计划，不代表当前仍需等待实施，
+> 也不构成新的运行或修改授权。
+> 下文旧 worktree 路径是历史身份，目录已退役；源码由
+> `archive/research-restructure-20260909/<worktree-name>` 保存。
+> 新的证据定位与恢复方法见[保存记录](../openspec/changes/restructure-research-probe-development/preservation.md)。
 
 ## 目标与第一步
 

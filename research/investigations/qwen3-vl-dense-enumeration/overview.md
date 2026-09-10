@@ -16,39 +16,12 @@ evidence atlas. The [weekly integrated research
 report](2026-07-13-to-2026-07-16-weekly-research-report.md) is the compact
 supervisor handoff for the executed 2026-07-13 through 2026-07-16 sequence.
 
-## Current question-oriented synthesis — 2026-09-09
+## Current Research Route
 
-The current reading path is organized around four questions. The compass is the
-short current synthesis; the original units and results below retain protocol,
-population, metric, and stop-boundary detail.
-
-1. **Finite-panel programmability versus transfer.** Human13 has nested N=2,
-   N=4, and N=13 panels containing 65, 123, and 392 annotated owners. Shared
-   output-QP and magnitude-only DoRA each achieve every owner in the applicable
-   panel at each of IoU50/60/80 under RP1.0. The Direct C-D0 image-disjoint
-   screen rejects its frozen D0 bundle. These records do not establish
-   held-out transfer or a general DoRA limitation.
-2. **Natural owner coverage and objective burden.** C's broad RLOO and paired
-   soft-owner QP are train-side contrasts. COCO dedup lowers repeat/FP burden
-   without established owner recovery. Self owner-outcome training closes at
-   no net development owner gain for its four arms. The Source/Rweak row-cross
-   study is separate: its antecedent full512 reference is Source/Rweak
-   `2225/2310` IoU50 owners out of `3759` annotations, while its selected32
-   panel is outcome-stratified and not a population estimate. These populations
-   and denominators must not be pooled.
-3. **Semantic compression and mechanism.** N256 N4/N8/N16 train-only
-   semantic-versus-null evidence is bounded; N32 has a semantic receipt but no
-   valid null aggregate. This is incomplete technical evidence, not a null
-   scientific result or an N256 transfer claim.
-4. **Causal row state and layer consumption.** Logit-lens direction-dominant
-   fixed-prefix transfer and the net-zero natural continuation check remain
-   local intervention evidence. Source/Rweak four-cell crossing identifies
-   finite row/checkpoint contrasts, not gradients or a transferable owner-state
-   mechanism. DORA row-boundary feedback has CPU data only.
-
-The separate Source/Rweak model-routing benchmark is preserved under
-[`research/archive/self-rollout-source-rweak-routing-benchmark/`](../../archive/self-rollout-source-rweak-routing-benchmark/)
-and is not part of the scientific synthesis.
+The [current compass](compass.md) owns the current question-oriented synthesis
+and evidence boundaries. The atlas below preserves historical hypotheses and
+observations; the [experiment router](experiments/index.md) leads to original
+protocols and results.
 
 ## Terminology and Name Registry
 
