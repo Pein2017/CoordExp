@@ -66,7 +66,11 @@ def _snapshot(value: Any) -> Any:
 
 
 class CaptureInputs:
-    """Snapshot one actual call's positional inputs and selected keyword inputs."""
+    """Snapshot one call's inputs as detached, independently stored tensors.
+
+    The values can enter a later functional replay/autograd graph, but the
+    snapshot does not preserve the original call's gradient connection.
+    """
 
     def __init__(
         self, module: torch.nn.Module, *, keys: Sequence[str] | None = None
@@ -114,7 +118,9 @@ class CaptureHiddenRows:
     """Clone selected rows at an explicit input or output module boundary.
 
     Output snapshots are taken before a caller can mutate the returned tensor,
-    including Qwen's in-place DeepStack injection. Repeated calls are bounded by
+    including Qwen's in-place DeepStack injection. Captures are detached and
+    converted to the requested device/dtype: they are value diagnostics, not
+    differentiable views of the original computation. Repeated calls are bounded by
     the explicit max_calls; they are not silently overwritten.
     """
 
