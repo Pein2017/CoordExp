@@ -1,4 +1,0 @@
-interface:
-  display_name: "Project Memory (Experimental)"
-  short_description: "Maintain concise project continuity"
-  default_prompt: "Use $project-memory to recall or checkpoint durable continuation state for this task."
