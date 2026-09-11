@@ -35,7 +35,7 @@ def test_valid_production_infer_config_loads() -> None:
     expected_input = (
         repo_root / "tests" / "fixtures" / "smoke" / "qwen3_vl_single_image_pack" / "examples.jsonl"
     ).resolve()
-    expected_artifact_root = (repo_root / "outputs" / "coordexp_infras" / "infer").resolve()
+    expected_artifact_root = (repo_root / "outputs" / "coordexp_swift" / "infer").resolve()
 
     assert isinstance(resolved.config, InferConfig)
     assert resolved.config.backend.type == "hf"
