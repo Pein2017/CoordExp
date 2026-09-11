@@ -81,7 +81,7 @@ Important files:
   for multimodal models depending on Transformers/model support and is not
   implemented under sequence parallel in `Seq2SeqTrainer.prepare_logits_to_keep`.
 - CoordExp should not use ms-swift-owned `use_logits_to_keep` for token/loss
-  debugging. CoordExp-swift may use Qwen `logits_to_keep` only through its own
+  debugging. coordexp-infras may use Qwen `logits_to_keep` only through its own
   explicit physical-position map and `LossContext` coverage validation.
 
 ## Sequence Parallel

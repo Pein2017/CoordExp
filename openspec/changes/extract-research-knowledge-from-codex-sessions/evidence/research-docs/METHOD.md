@@ -52,7 +52,7 @@ captured with path, HEAD, branch/detached state, and porcelain-entry count:
 
 | worktree | HEAD | branch | dirty entries |
 |---|---|---|---:|
-| `CoordExp-swift` | `22f2fc9e0` | `coordexp-swift` | 0 |
+| `coordexp-infras` | `22f2fc9e0` | `coordexp-infras` | 0 |
 | `codex-rtk-correctness-first` | `38b30ebc1` | `codex/rtk-correctness-first` | 0 |
 | `codex-wake-me-up-event-monitor` | `8dfb8102a` | `codex/wake-me-up-event-monitor` | 0 |
 | `coverage-ledger-mechanistic-probing` | `77acee47c` | `codex/coverage-ledger-mechanistic-probing` | 0 |
@@ -116,7 +116,7 @@ Sample receipt (all paths were present and hash-checked):
   `research-probe-infras/.../2026-08-06-natural-boundary-routing-history-replication/results.md`,
   `vllm-mechanistic-round-gaussian-rps/.../gaussian-rps-mechanistic-round/2026-07-01_autoregressive_binding_prior_findings_synthesis.md`,
   `human13-live-model/.../research/investigations/qwen3-vl-dense-enumeration/index.md`.
-- Skip: direct branch routers under `CoordExp-swift/research/`, and nested
+- Skip: direct branch routers under `coordexp-infras/research/`, and nested
   `docs/history/worktree-cleanup/**/snapshots/**/research/**` and
   `.pi-worker/**/source/research/**` copies. Ten-plus skip rows were checked;
   their reasons and duplicate keys are retained per row in the manifest.

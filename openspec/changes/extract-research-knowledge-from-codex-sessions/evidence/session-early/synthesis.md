@@ -68,9 +68,9 @@ This is a bounded intake from May and June 2026 session JSONL. The session archi
 - Not claimed: no evidence that the ledger changes natural decoding, recall, duplication, or hidden-state memory.
 - Notion coverage: `needs-adjudication` — Set coverage/all-HF/credit owner `3c79d9ce-3f59-814e-aeef-d9f755c10afe`; the exact-parent provenance gap can change the comparison claim.
 
-### CoordExp-Swift pre-kickoff still had unresolved runtime authority questions
+### coordexp-infras pre-kickoff still had unresolved runtime authority questions
 - Sources: `/data/CoordExp/.codex/sessions/2026/06/30/rollout-2026-06-30T02-12-42-019f164c-d6e9-7c92-9c0e-712724a99162.jsonl` (`019f164c-d6e9-7c92-9c0e-712724a99162`).
-- Current owner: `/data/CoordExp/.worktrees/CoordExp-swift/openspec/changes/rebuild-coordexp-swift-training-infra`; implementation authority remains separate from this audit.
+- Current owner: `/data/CoordExp/.worktrees/coordexp-infras/openspec/changes/rebuild-coordexp-infras-training-infra`; implementation authority remains separate from this audit.
 - Question and contrast: whether config/runtime/artifact contracts are sufficiently fixed for a safe pre-kickoff rebuild.
 - Observed evidence surface: strict OpenSpec validation and read-only audit. The audit left tail-fill authority and whether a smoke fixture may also serve as eval unresolved; the worktree was broadly dirty with deleted legacy paths and untracked rebuild docs.
 - Scientific disposition: unexecuted; no model or training evidence.

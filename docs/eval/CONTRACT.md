@@ -19,12 +19,12 @@ This page defines the current infer/eval artifact contract.
   - `gt_vs_pred.jsonl`
 - score-aware COCO artifact:
   - `gt_vs_pred_scored.jsonl`
-- CoordExp-Swift score-aware provenance:
+- coordexp-infras score-aware provenance:
   - `gt_vs_pred_scored.jsonl.provenance.json`
 - canonical visualization sidecar:
   - `vis_resources/gt_vs_pred.jsonl`
 
-CoordExp-Swift standardized detection evaluator:
+coordexp-infras standardized detection evaluator:
 
 - consumes `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl`, and
   `gt_vs_pred_scored.jsonl.provenance.json` from the same artifact directory;
@@ -39,7 +39,7 @@ CoordExp-Swift standardized detection evaluator:
   `xyxy`;
 - writes aggregate bbox COCO metrics only in V1.
 
-CoordExp-Swift validation scope:
+coordexp-infras validation scope:
 
 - the fixed val200 inference/eval run is sufficient V1 validation evidence when
   it has scored artifacts, valid score provenance, and mAP/mRecall output from
@@ -80,7 +80,7 @@ CoordExp-Swift validation scope:
   compact rollout with some valid objects and some invalid spans should report
   `dropped_invalid_object` rather than erasing the whole prediction row.
 
-CoordExp-Swift rebuilt inference rows use the narrower fields `row_id`,
+coordexp-infras rebuilt inference rows use the narrower fields `row_id`,
 `row_index`, `example_id`, `image_path`, `image_width`, `image_height`, `gt`,
 `pred`, `raw_decode_text`, `parser_id`, `parser_policy`, `metric_bearing`,
 `parse_status`, `valid_prediction_count`, `dropped_prediction_count`, and
@@ -106,13 +106,13 @@ CoordExp-Swift rebuilt inference rows use the narrower fields `row_id`,
   and the carrier must include `score_policy_fingerprint`.
 - legacy/mainline evaluators may consume non-canonical `cxcy_logw_logh` or
   `cxcywh` scored artifacts materialized with deterministic constant-score
-  provenance. The direct CoordExp-Swift V1 evaluator does not consume that
+  provenance. The direct coordexp-infras V1 evaluator does not consume that
   constant-score family; it requires selected-token score provenance from the
   rebuilt inference artifact writer.
 - Scored COCO inputs must also include:
   - `pred_score_source`
   - `pred_score_version`
-- For CoordExp-Swift V1, each scored prediction carries `pred_score_source`
+- For coordexp-infras V1, each scored prediction carries `pred_score_source`
   inside the prediction object. That source must be a selected-token provenance
   mapping whose `row_id`, `object_span_id`, and `score_policy_fingerprint`
   match the evaluated row, prediction object, and scored-artifact provenance
@@ -133,7 +133,7 @@ CoordExp-Swift rebuilt inference rows use the narrower fields `row_id`,
 - Legacy evaluator families may additionally write `per_image.json`,
   `matches*.jsonl`, `per_class.csv`, or `coco_preds.json`; those names are not
   emitted by the current Swift direct consumer.
-- CoordExp-Swift direct evaluator:
+- coordexp-infras direct evaluator:
   - `metrics.json`
   - `evaluation_receipt.json`
   - `coco_gt.json`

@@ -135,7 +135,7 @@ metadata, and shared image resolution.
 
 #### Scenario: Current generation is materialized
 - **WHEN** the operator explicitly requests coord output for a terminal working generation
-- **THEN** the materializer emits one derived coord JSONL bound to that exact generation and accepted by the current CoordExp-Swift data path
+- **THEN** the materializer emits one derived coord JSONL bound to that exact generation and accepted by the current coordexp-infras data path
 
 ### Requirement: Iterative training-pair publication
 The system SHALL automatically publish every successful ordinary or
@@ -155,7 +155,7 @@ contract boundary.
 - **THEN** startup republishes that latest working state before binding the browser port and does not expose an older pair as current
 
 #### Scenario: Any refined row exceeds the budget
-- **WHEN** current CoordExp-Swift encoding reports more than 12000 tokens for any candidate row
+- **WHEN** current coordexp-infras encoding reports more than 12000 tokens for any candidate row
 - **THEN** publication fails with the offending sample identities and neither training target advances
 
 #### Scenario: Publication is interrupted

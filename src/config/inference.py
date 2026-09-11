@@ -1,4 +1,4 @@
-"""Strict CoordExp-swift inference configuration."""
+"""Strict coordexp-infras inference configuration."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from src.config.models import ConfigSource, PathOrigin, RunDirectory, StrictConf
 from src.config.paths import get_nested, set_nested
 
 
-INFER_CONFIG_LOADER_VERSION = "coordexp-swift-infer-config-v1"
+INFER_CONFIG_LOADER_VERSION = "coordexp-infras-infer-config-v1"
 INFER_PATH_FIELDS = (
     "run.artifact_root",
     "model.base_model",
@@ -85,7 +85,7 @@ class InferBackendConfig(StrictConfigModel):
     def _vllm_is_reserved_not_implemented(cls, value: str) -> str:
         if value == "vllm":
             raise ConfigContractError(
-                "vLLM backend is schema-reserved but not implemented for CoordExp-swift V1",
+                "vLLM backend is schema-reserved but not implemented for coordexp-infras V1",
                 code="config.backend_not_implemented",
                 context={"backend": value},
             )
@@ -265,7 +265,7 @@ def _reject_legacy_infer_path(path: Path) -> None:
     for index in range(len(parts) - 1):
         if parts[index] == "configs" and parts[index + 1] == "infer":
             raise ConfigContractError(
-                "legacy configs/infer files are reference-only for CoordExp-swift V1 inference",
+                "legacy configs/infer files are reference-only for coordexp-infras V1 inference",
                 code="config.legacy_infer_path",
                 context={"path": str(path)},
             )
@@ -274,12 +274,12 @@ def _reject_legacy_infer_path(path: Path) -> None:
 def _validate_canonical_namespace(config: InferConfig, entry_path: Path) -> None:
     if config.debug.smoke or config.debug.dry_run:
         return
-    canonical_root = Path.cwd().resolve() / "configs" / "coordexp_swift" / "infer"
+    canonical_root = Path.cwd().resolve() / "configs" / "coordexp_infras" / "infer"
     try:
         entry_path.relative_to(canonical_root)
     except ValueError as exc:
         raise ConfigContractError(
-            "production inference configs must live under configs/coordexp_swift/infer",
+            "production inference configs must live under configs/coordexp_infras/infer",
             code="config.noncanonical_infer_path",
             context={
                 "path": str(entry_path),

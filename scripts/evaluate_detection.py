@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Evaluate CoordExp-Swift scored detection artifacts with COCO bbox metrics."""
+"""Evaluate coordexp-infras scored detection artifacts with COCO bbox metrics."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from src.eval.detection_consumer import SCORED_NAME, evaluate_scored_detection_a
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Evaluate a CoordExp-Swift inference artifact directory containing "
+            "Evaluate a coordexp-infras inference artifact directory containing "
             "gt_vs_pred.jsonl, gt_vs_pred_scored.jsonl, and the scored provenance sidecar."
         )
     )

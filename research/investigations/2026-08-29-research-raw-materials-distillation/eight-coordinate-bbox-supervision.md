@@ -18,7 +18,7 @@ x-then-y ordering signal (`0.434394` versus retained old-order values), with no
 authorization to silently change legacy `geo_sorted` semantics.
 
 Canonical result:
-`/data/CoordExp/.worktrees/CoordExp-swift/research/investigations/eight-coordinate-bbox-supervision/results.md`.
+`/data/CoordExp/.worktrees/coordexp-infras/research/investigations/eight-coordinate-bbox-supervision/results.md`.
 
 ## Retention exception
 

@@ -18,7 +18,7 @@ define current behavior, implementation authorization, or stable contracts.
 Use current authority first:
 
 1. `docs/PROJECT_CONTEXT.md`
-2. `docs/COORDEXP_SWIFT.md`
+2. `docs/coordexp_infras.md`
 3. `docs/SYSTEM_OVERVIEW.md`
 4. `docs/IMPLEMENTATION_MAP.md`
 5. the relevant stable contract under `openspec/specs/`

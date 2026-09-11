@@ -1,6 +1,6 @@
 # Reference Code
 
-This directory contains historical material for the CoordExp-swift rebuild.
+This directory contains historical material for the coordexp-infras rebuild.
 
 `legacy_src/` is the previous active implementation moved out of the import
 root. It is reference-only code for source study, invariant recovery, and

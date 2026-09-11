@@ -71,11 +71,11 @@ Metric convention:
 | 11 | ET-RMP support2 ckpt3664 prompt-offset | 0.4251 | 0.5751 | 0.4477 | 0.6135 | 0.6630 | 0.4120 | 200, err 0, invalid 3, pred 1141, dup 233 | `outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_prompt_offset_fix_8gpu` |
 | 12 | ET-RMP support2 ckpt3664 chatfix | 0.4247 | 0.5752 | 0.4477 | 0.6138 | 0.6633 | 0.4116 | 200, err 0, invalid 3, pred 1140, dup 232 | `outputs/infer/recursive_detection_ce_latest/compact_full_support2_tokenrows_v2_ckpt3664_val200_bsz8_temp0_rep1p10_max3084_chatfix_4gpu` |
 | 13 | Natural-adjacent pure CE ckpt928 sampled | 0.4215 | 0.5951 | 0.4367 | 0.6410 | 0.7071 | 0.4078 | 200, err 2, invalid 1, pred 1415, dup 273 | `outputs/infer/natadj_len12000_free_val200/natadj_sorted_ckpt928_val200_sampling_t0p2_top0p9_rp1p10_max3084_bsz1_4gpu` |
-| 14 | CoordExp-Swift r16/a32 EBS64 step917 | 0.4149 | 0.5664 | 0.4456 | 0.6281 | 0.6944 | 0.4051 | 200, err 0, invalid 0, pred 1243, dup 201 | `outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_dora_r16a32_ebs64_step917_val200_bsz4_temp0_rp1p10_max3084_8gpu` |
+| 14 | coordexp-infras r16/a32 EBS64 step917 | 0.4149 | 0.5664 | 0.4456 | 0.6281 | 0.6944 | 0.4051 | 200, err 0, invalid 0, pred 1243, dup 201 | `outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_dora_r16a32_ebs64_step917_val200_bsz4_temp0_rp1p10_max3084_8gpu` |
 | 15 | Fullobj sorted SFT free-greedy ckpt3668 | 0.4072 | 0.5642 | 0.4226 | 0.5892 | 0.6471 | 0.3872 | 200, err 12, invalid 6, pred 1411, dup 311 | `outputs/infer/recursive_detection_ce_latest/compact_full_fullobj_sorted_sft_free_greedy_ckpt3668_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
 | 16 | A6 cIoU Gibbs ckpt3664 | 0.4053 | 0.5653 | 0.4169 | 0.5089 | 0.5577 | 0.3965 | 200, err 0, invalid 4, pred 1296, dup 470 | `outputs/infer/recursive_detection_ce_latest/a6_ciou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
 | 17 | A5 IoU Gibbs ckpt3664 | 0.4018 | 0.5513 | 0.4246 | 0.5047 | 0.5516 | 0.3950 | 200, err 0, invalid 4, pred 1272, dup 447 | `outputs/infer/recursive_detection_ce_latest/a5_iou_gibbs_ckpt3664_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
-| 18 | CoordExp-Swift EBS128 step459 | 0.4016 | 0.5559 | 0.4112 | 0.5892 | 0.6645 | 0.3946 | 200, err 6, invalid 0, pred 1098, dup 195 | `outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_dora_step459_val200_bsz4_temp0_rp1p10_max3084_8gpu` |
+| 18 | coordexp-infras EBS128 step459 | 0.4016 | 0.5559 | 0.4112 | 0.5892 | 0.6645 | 0.3946 | 200, err 6, invalid 0, pred 1098, dup 195 | `outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_dora_step459_val200_bsz4_temp0_rp1p10_max3084_8gpu` |
 | 19 | A6 CE Gaussian mix0.2 ckpt3664 | 0.3996 | 0.5429 | 0.4178 | 0.5264 | 0.5841 | 0.3881 | 201, err 5, invalid 7, pred 1265, dup 416 | `outputs/infer/recursive_detection_ce_latest/a6_ce_gaussian_mix0p2_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_1gpu` |
 | 20 | Random SFT bsz1 accum16 ckpt3664 | 0.3992 | 0.5577 | 0.4140 | 0.4433 | 0.4919 | 0.3827 | 200, err 652, invalid 21, pred 2261, dup 1148 | `outputs/infer/recursive_detection_ce_latest/compact_full_random_sft_bsz1_accum16_ckpt3664_val200_bsz4_temp0_rep1p10_max3084_chatfix_8gpu` |
 | 21 | Fullobj random SFT free-greedy ckpt3668 | 0.3914 | 0.5351 | 0.4054 | 0.4659 | 0.5266 | 0.3749 | 200, err 20, invalid 10, pred 1687, dup 739 | `outputs/infer/recursive_detection_ce_latest/compact_full_fullobj_random_sft_free_greedy_ckpt3668_val200_bsz8_temp0_rp1p10_max3084_chatfix_4gpu` |
@@ -93,10 +93,10 @@ Metric convention:
 - Best current closed-wrapper / compact-full style row in the swept artifacts is
   the coverage-ledger postmerge aligner DoRA checkpoint-928: AP `0.4446`,
   AP50 `0.6154`, full F1@.50 `0.6508`, guarded AP `0.4264`.
-- The CoordExp-Swift r16/a32 EBS64 retrain checkpoint-917 beats the older
-  CoordExp-Swift EBS128 checkpoint-459 on this val200 run:
+- The coordexp-infras r16/a32 EBS64 retrain checkpoint-917 beats the older
+  coordexp-infras EBS128 checkpoint-459 on this val200 run:
   AP `0.4149` vs `0.4016`, full F1@.50 `0.6281` vs `0.5892`.
-- The same CoordExp-Swift retrain is still below the stronger historical
+- The same coordexp-infras retrain is still below the stronger historical
   coordinate-token rows: mixed-objective ckpt1332, coverage-ledger ckpt928,
   and natural-adjacent pure CE ckpt928.
 

@@ -214,7 +214,7 @@ recomputed after the dirty candidate row was refreshed.
 
 - Sources: `/data/CoordExp/research/ideas/prefix-denoising-sft/experiments/2026-06-16-axis-sort-negative-result/unit.md`;
   `/data/CoordExp/research/ideas/prefix-denoising-sft/experiments/2026-06-17-inert-objective-root-cause/unit.md`;
-  `/data/CoordExp/research/investigations/coordexp-swift-physical-length/experiments/2026-07-physical-length-isolation/unit.md`.
+  `/data/CoordExp/research/investigations/coordexp-infras-physical-length/experiments/2026-07-physical-length-isolation/unit.md`.
 - Current owner: The exact research units in the root checkout; no OpenSpec
   contract owns these scientific verdicts.
 - Question and contrast: Do endpoint sorting, the tested prefix-denoising

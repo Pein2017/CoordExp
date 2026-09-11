@@ -4,13 +4,13 @@ layer: docs
 doc_type: overview
 status: canonical
 domain: repo
-summary: End-to-end current flow from data intake to CoordExp-Swift training, inference, evaluation, and artifacts.
+summary: End-to-end current flow from data intake to coordexp-infras training, inference, evaluation, and artifacts.
 updated: 2026-07-11
 ---
 
 # System Overview
 
-This page explains the current CoordExp-Swift flow. It is an explanatory
+This page explains the current coordexp-infras flow. It is an explanatory
 operator guide; exact compatibility-sensitive semantics belong to
 `openspec/specs/`, and historical MS-Swift routes belong in historical docs.
 
@@ -35,7 +35,7 @@ inference config + checkpoint composition
 
 Current public entrypoints are `src/train.py`, `src/infer.py`, and the wrapper
 `scripts/evaluate_detection.py` for scored detection evaluation. Current config
-roots are under `configs/coordexp_swift/`.
+roots are under `configs/coordexp_infras/`.
 
 ## Data and encoding
 
@@ -119,7 +119,7 @@ compact train/eval cache bindings are retained in `run.json`.
 
 Use [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) for precedence,
 [`IMPLEMENTATION_MAP.md`](IMPLEMENTATION_MAP.md) for targeted source/test
-routing, and the relevant `coordexp-swift-*` stable spec for normative details.
+routing, and the relevant `coordexp-infras-*` stable spec for normative details.
 Old `src/sft.py`, `src/trainers/`, `src/datasets/`, `src/detection/`, and
 `src/infer/` references are historical or comparator-only. Old plans and
 architecture proposals are not current behavior authority and are routed by

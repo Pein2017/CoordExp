@@ -322,11 +322,11 @@ Record exact PID, PPID, start time, argv, and project root for existing Serena/P
 
 - [ ] **Step 2: Same-worktree two-client acceptance**
 
-Launch two fresh protocol clients concurrently from `CoordExp-swift`. Both must complete MCP initialize, `initial_instructions`, `activate_project` for the exact same root, `get_symbols_overview`, `find_symbol` for `TrainRuntime`, and file diagnostics. Assert one backend PID and one Python language-server process group for the slot.
+Launch two fresh protocol clients concurrently from `coordexp-infras`. Both must complete MCP initialize, `initial_instructions`, `activate_project` for the exact same root, `get_symbols_overview`, `find_symbol` for `TrainRuntime`, and file diagnostics. Assert one backend PID and one Python language-server process group for the slot.
 
 - [ ] **Step 3: Cross-worktree acceptance**
 
-Concurrently run one client in `CoordExp-swift` and one in `research-probes`. Resolve `TrainRuntime` and `PipelinePlanner` respectively. Assert distinct slot keys, backend identities, ports, and project roots.
+Concurrently run one client in `coordexp-infras` and one in `research-probes`. Resolve `TrainRuntime` and `PipelinePlanner` respectively. Assert distinct slot keys, backend identities, ports, and project roots.
 
 - [ ] **Step 4: Crash and poisoned-proxy acceptance**
 

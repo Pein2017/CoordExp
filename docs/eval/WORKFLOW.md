@@ -14,7 +14,7 @@ updated: 2026-07-11
 Canonical Swift inference starts with:
 
 ```bash
-conda run -n ms python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml
+conda run -n ms python -m src.infer --config configs/coordexp_infras/infer/<config>.yaml
 ```
 
 The older `scripts/run_infer.py` and `configs/infer/pipeline.yaml` command
@@ -24,7 +24,7 @@ This page describes the current source path from inference to scored evaluation
 artifacts. Additive legacy analysis workflows are historical unless their own
 current contract is named.
 
-CoordExp-Swift rebuild note:
+coordexp-infras rebuild note:
 
 - the rebuilt `src/inference/*` artifact family uses the direct detection
   reducer `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`
@@ -35,7 +35,7 @@ CoordExp-Swift rebuild note:
   writer;
 - `scripts/evaluate_detection.py --config ...` is a legacy/mainline eval
   surface and is not the standardized Swift evaluator in this worktree.
-- The accepted CoordExp-Swift V1 validation gate is the fixed val200 run. A full
+- The accepted coordexp-infras V1 validation gate is the fixed val200 run. A full
   validation-dataset run is optional and is not required for the readiness claim.
 
 Implementation ownership note:
@@ -51,7 +51,7 @@ Implementation ownership note:
 input JSONL + checkpoint
   -> inference
   -> gt_vs_pred.jsonl
-  -> selected-token scoring for compact CoordExp-Swift outputs
+  -> selected-token scoring for compact coordexp-infras outputs
   -> gt_vs_pred_scored.jsonl
   -> direct Swift COCO bbox evaluation
   -> metrics.json / coco_gt.json / coco_predictions.json
@@ -60,7 +60,7 @@ input JSONL + checkpoint
 Official metric guardrail:
 
 - COCO/LVIS/both metric claims must consume `gt_vs_pred_scored.jsonl`.
-- The direct CoordExp-Swift evaluator accepts selected-token scored compact
+- The direct coordexp-infras evaluator accepts selected-token scored compact
   artifacts from the rebuilt `src/inference/*` writer.
 - Confidence post-op, constant-score compatibility scoring, LVIS reducers,
   duplicate-control guarded outputs, and F1-ish diagnostics are legacy/mainline
@@ -68,7 +68,7 @@ Official metric guardrail:
   shape.
 - Raw `gt_vs_pred.jsonl` evaluation is a debug/F1-ish surface only. Do not
   label raw-artifact metrics as COCO/LVIS benchmark results.
-- CoordExp-Swift direct COCO evaluation converts inline GT norm1000 coord-bin
+- coordexp-infras direct COCO evaluation converts inline GT norm1000 coord-bin
   boxes to pixel boxes, while scored predictions are already parser-normalized
   pixel boxes. Mixed-unit COCO sidecars are invalid.
 
@@ -85,7 +85,7 @@ Validation-scope rule:
 
 The commands in this section are retained for historical reproduction only.
 They are not the canonical `main` inference/evaluation route. Use
-`python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml`
+`python -m src.infer --config configs/coordexp_infras/infer/<config>.yaml`
 above for current Swift work.
 
 Run inference:
@@ -108,7 +108,7 @@ Non-canonical bbox note:
   `infer.bbox_format: cxcywh`
 - legacy/mainline pipelines may materialize `gt_vs_pred_scored.jsonl` directly
   from canonical standardized predictions with deterministic constant-score
-  provenance when COCO/LVIS metrics are requested; the direct CoordExp-Swift
+  provenance when COCO/LVIS metrics are requested; the direct coordexp-infras
   evaluator in this worktree does not consume that constant-score family in V1
 - only use this infer path with checkpoints that were actually trained against
   the matching non-canonical serialization contract
@@ -138,7 +138,7 @@ python scripts/evaluate_detection.py \
   --out-dir outputs/coordexp-swift/<run>/inference/eval
 ```
 
-Accepted CoordExp-Swift val200 evaluator handle:
+Accepted coordexp-infras val200 evaluator handle:
 
 ```bash
 python scripts/evaluate_detection.py \

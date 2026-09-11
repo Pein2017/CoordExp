@@ -24,8 +24,8 @@ different worktree. See [`BRANCH_AND_WORKTREE_POLICY.md`](BRANCH_AND_WORKTREE_PO
 for branch and worktree boundaries. Pin a commit in a dated audit or handoff,
 not in this evergreen router.
 
-CoordExp-Swift is the current implementation on `main`. The development
-worktree at `/data/CoordExp/.worktrees/CoordExp-swift` is a separate checkout
+coordexp-infras is the current implementation on `main`. The development
+worktree at `/data/CoordExp/.worktrees/coordexp-infras` is a separate checkout
 for active feature work; it is not a substitute for the fixed point when
 answering a question about `main`.
 
@@ -52,14 +52,14 @@ direction is useful, but it must not silently become a contract.
 The live Swift route is:
 
 ```text
-configs/coordexp_swift/
+configs/coordexp_infras/
   -> src/train.py -> src/training/pipeline.py
   -> src/training/supervised_trainer.py
   -> src/data -> src/templates -> src/qwen -> src/packing
   -> src/supervision -> src/losses -> Accelerate replicated DDP
   -> src/runtime -> src/artifacts/run_writer.py + src/artifacts/checkpoints.py
 
-configs/coordexp_swift/infer/
+configs/coordexp_infras/infer/
   -> src/infer.py -> src/inference/
   -> scored inference artifacts -> src/eval/detection_consumer.py
 ```

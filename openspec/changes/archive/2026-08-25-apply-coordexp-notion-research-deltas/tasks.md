@@ -1,7 +1,7 @@
 ## 1. Freeze targets and pre-write state
 
 - [x] 1.1 Fetch the ten reviewed Notion owners, record their stable IDs and pre-write markers, and confirm no target has been replaced or moved.
-- [x] 1.2 Resolve the terminal suffix packet against the live CoordExp-Swift renderer, tokenizer identity, supervision path, and current serialization page.
+- [x] 1.2 Resolve the terminal suffix packet against the live coordexp-infras renderer, tokenizer identity, supervision path, and current serialization page.
 
 ## 2. Update global contracts and serialization
 

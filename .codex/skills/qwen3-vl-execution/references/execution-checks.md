@@ -46,7 +46,7 @@ For a normalization-equivalence claim, compare gradients on unequal-length
 examples and uneven partitions, not just equal-sized batches or displayed loss.
 
 Packed-training owner:
-`openspec/specs/coordexp-swift-supervision-losses/spec.md`, `src/losses/`,
+`openspec/specs/coordexp-infras-supervision-losses/spec.md`, `src/losses/`,
 `src/runtime/train_runtime.py`, `tests/losses/`, `tests/runtime/`.
 Research examples: `probes/dora_owner_learning/README.md` and
 `probes/dora_owner_learning/tests/test_native_learning.py` keep Source CE/RLOO
@@ -68,7 +68,7 @@ stored actions or infer terminal status merely by stripping token values.
 
 Owners: the Qwen manual's `Local Execution Boundaries`,
 `src/qwen/native.py`, `src/qwen/generation.py`, `src/qwen/positions.py`,
-`openspec/specs/coordexp-swift-packing-forward/spec.md`.
+`openspec/specs/coordexp-infras-packing-forward/spec.md`.
 Counterexamples: `tests/qwen/test_native.py`, `tests/qwen/test_generation.py`,
 `tests/qwen/test_positions.py`, `tests/qwen/test_forward.py`.
 
@@ -101,7 +101,7 @@ resize policy and coordinate interpretation together.
 
 Owners: `src/templates/`, `src/qwen/encoding.py`, the Qwen manual's
 `Processor And Grid Rules`, and
-`openspec/specs/coordexp-swift-data-template-encoding/spec.md`.
+`openspec/specs/coordexp-infras-data-template-encoding/spec.md`.
 One real encoded sample with relevant image/template boundaries is more useful
 than repeated synthetic strings. For an actual launch, validate effective
 runtime settings at the real child/worker entry, not only in the parent shell.

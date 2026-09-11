@@ -11,7 +11,7 @@ updated: 2026-07-11
 # LVIS Integration Guide
 
 > Historical LVIS training/inference integration note. Current routing and
-> config ownership are defined by the CoordExp-Swift docs and source.
+> config ownership are defined by the coordexp-infras docs and source.
 
 This page explains how CoordExp's COCO-oriented training/eval stack changes when
 the dataset is LVIS.
@@ -337,7 +337,7 @@ PYTHONPATH=. conda run -n ms python scripts/run_infer.py --config configs/bench/
 
 Offline evaluator note:
 
-- `scripts/evaluate_detection.py` in the CoordExp-Swift worktree is the direct
+- `scripts/evaluate_detection.py` in the coordexp-infras worktree is the direct
   selected-token COCO bbox reducer for Swift artifacts:
 
 ```bash

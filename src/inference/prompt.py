@@ -16,7 +16,7 @@ from src.qwen.tokens import reject_invalid_qwen_aliases
 from src.templates import render_example
 
 
-TEMPLATE_ID = "coordexp-swift-template-v1"
+TEMPLATE_ID = "coordexp-infras-template-v1"
 
 
 @dataclass(frozen=True)

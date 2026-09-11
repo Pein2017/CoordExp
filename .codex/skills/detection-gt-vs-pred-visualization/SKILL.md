@@ -1,9 +1,9 @@
 ---
 name: detection-gt-vs-pred-visualization
-description: Render current CoordExp-Swift per-row GT/prediction images or two-run comparisons from scored inference artifacts.
+description: Render current coordexp-infras per-row GT/prediction images or two-run comparisons from scored inference artifacts.
 ---
 
-# CoordExp-Swift Detection Visualization
+# coordexp-infras Detection Visualization
 
 Use the shared renderer:
 

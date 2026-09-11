@@ -1,8 +1,8 @@
 schema: spec-driven
 
 context: |
-  CoordExp-Swift on repository main is the accepted implementation. Read
-  docs/PROJECT_CONTEXT.md, docs/COORDEXP_SWIFT.md, docs/SYSTEM_OVERVIEW.md,
+  coordexp-infras on repository main is the accepted implementation. Read
+  docs/PROJECT_CONTEXT.md, docs/coordexp_infras.md, docs/SYSTEM_OVERVIEW.md,
   and docs/IMPLEMENTATION_MAP.md before proposing a change.
 
   docs/ describes accepted current architecture and operator workflows.

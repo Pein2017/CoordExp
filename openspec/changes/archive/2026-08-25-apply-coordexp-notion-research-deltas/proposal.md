@@ -1,6 +1,6 @@
 ## Why
 
-The exhaustive Codex-session and research-document intake is complete, but its reviewed owner-level deltas have not yet been written back to Notion. The only prior blocker—the terminal suffix order—has now been resolved from the live CoordExp-Swift template and supervision path.
+The exhaustive Codex-session and research-document intake is complete, but its reviewed owner-level deltas have not yet been written back to Notion. The only prior blocker—the terminal suffix order—has now been resolved from the live coordexp-infras template and supervision path.
 
 ## What Changes
 
@@ -23,5 +23,5 @@ None.
 ## Impact
 
 - External writes are limited to the existing CoordExp Notion Research OS pages named in the reviewed update plan.
-- Local writes are limited to this change directory, plus the separately authorized one-line explanatory comment in the active CoordExp-Swift renderer.
+- Local writes are limited to this change directory, plus the separately authorized one-line explanatory comment in the active coordexp-infras renderer.
 - No code behavior, configuration, model, experiment, artifact, session, `research/`, or legacy `progress/` content changes.

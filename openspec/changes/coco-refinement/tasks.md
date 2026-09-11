@@ -51,7 +51,7 @@
 
 ## 5. Operator Handoff and Replacement Acceptance
 
-- [ ] 5.1 Run representative train/val human-only and inference-assisted sessions, materialize the terminal generation, load it through the current CoordExp-Swift data path, and verify positive/negative IDs, sparse category mapping, geometry, ordering, metadata, and shared images.
+- [ ] 5.1 Run representative train/val human-only and inference-assisted sessions, materialize the terminal generation, load it through the current coordexp-infras data path, and verify positive/negative IDs, sparse category mapping, geometry, ordering, metadata, and shared images.
 - [ ] 5.1a Add and attest the operator-approved training publisher that validates a terminal generation and the 12000-token ceiling, then transactionally replaces the selected max_len12000 norm/coord pair with shared image locators while preserving original COCO data and recovering the previous pair on failure.
 - [ ] 5.2 Add concise operator docs for dependencies, launch/shutdown, runtime roots, Draft versus Commit, recovery/status, output/materialization, ROI profiles, known exclusions, fallback, and protected source data.
 - [ ] 5.3 Record final legacy boundaries: archived vendor branch, old OpenSpec status, retained 8080/state disposition, new runtime identity, and the manual cleanup command for AgentGuard-blocked untracked harness files.

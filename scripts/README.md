@@ -3,13 +3,13 @@
 This directory contains user-facing entrypoints plus compatibility wrappers and
 historical diagnostics. The canonical training/inference implementation is
 owned by `src/train.py`, `src/infer.py`, and `src/inference/`; see
-`docs/COORDEXP_SWIFT.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
+`docs/coordexp_infras.md` and `docs/BRANCH_AND_WORKTREE_POLICY.md`.
 
 ## Stable entrypoints
 
-- Training (canonical Swift): `python -m src.train --config configs/coordexp_swift/...`.
-- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_swift/infer/...`.
-- Offline CoordExp-Swift detection evaluation (direct artifact reducer):
+- Training (canonical Swift): `python -m src.train --config configs/coordexp_infras/...`.
+- Inference (canonical Swift): `python -m src.infer --config configs/coordexp_infras/infer/...`.
+- Offline coordexp-infras detection evaluation (direct artifact reducer):
   `scripts/evaluate_detection.py --artifact-dir ... --out-dir ...`.
 - Export helper (merge LoRA + token-embeddings adapter offsets): `scripts/merge_coord.sh`.
 

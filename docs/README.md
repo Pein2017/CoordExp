@@ -15,13 +15,13 @@ Use this page as the human starting point for current CoordExp behavior. Agents
 start from the user-named evidence; when its owner is unclear, use
 [AGENT_INDEX.md](AGENT_INDEX.md) or [catalog.yaml](catalog.yaml) to select one
 narrow route. The canonical implementation at the current fixed point is
-CoordExp-Swift on `main`.
+coordexp-infras on `main`.
 
 ## Start here
 
 1. [Project Context & Documentation Authority](PROJECT_CONTEXT.md)
 2. [Branch And Worktree Policy](BRANCH_AND_WORKTREE_POLICY.md)
-3. [CoordExp-Swift](COORDEXP_SWIFT.md)
+3. [coordexp-infras](coordexp_infras.md)
 4. [System Overview](SYSTEM_OVERVIEW.md)
 5. [Implementation Map](IMPLEMENTATION_MAP.md)
 

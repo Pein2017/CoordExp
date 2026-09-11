@@ -32,7 +32,7 @@ TRANSACTION_NAME = ".training.publish.transaction.json"
 TARGET_RELATIVE_ROOT = Path("public_data/coco/rescale_32_1024_bbox_len12000")
 IMAGE_RELATIVE_ROOT = Path("public_data/coco/rescale_32_1024_bbox/images")
 DEFAULT_TRAINING_CONFIG = Path(
-    "configs/coordexp_swift/prod/"
+    "configs/coordexp_infras/prod/"
     "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_"
     "accelerate8_ebs128_4epoch.yaml"
 )
@@ -137,7 +137,7 @@ class CoordExpSwiftTokenBudgetValidator:
                 raise
             except Exception as exc:
                 raise DatasetPublishError(
-                    "candidate row failed the current CoordExp-Swift encoding path",
+                    "candidate row failed the current coordexp-infras encoding path",
                     code="coco_refinement.publish_token_validation",
                     context={
                         "example_id": raw_example.example_id,

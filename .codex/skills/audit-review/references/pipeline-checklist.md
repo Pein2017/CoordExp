@@ -33,7 +33,7 @@ Use this to find correctness, reproducibility, and evaluation-validity risks in 
 - Artifact naming is self-describing (avoid ambiguous “train.jsonl” meaning multiple things).
 - Manifest/summaries are written deterministically and consistently.
 - Resolve required artifact names and schemas through the audited checkout's `docs/AGENT_INDEX.md` and `docs/IMPLEMENTATION_MAP.md`; do not apply an older pipeline's manifest list to a current run.
-- For current CoordExp-Swift training, verify outputs against the `coordexp-swift-training-artifacts` contract and its `src/artifacts/run_writer.py` / `src/artifacts/checkpoints.py` owners. For inference/evaluation, use `coordexp-infer-eval-workflow` and the owning inference-scoring-artifacts / detection-evaluator contracts. Historical runs retain their version-bound contracts.
+- For current coordexp-infras training, verify outputs against the `coordexp-infras-training-artifacts` contract and its `src/artifacts/run_writer.py` / `src/artifacts/checkpoints.py` owners. For inference/evaluation, use `coordexp-infer-eval-workflow` and the owning inference-scoring-artifacts / detection-evaluator contracts. Historical runs retain their version-bound contracts.
 - Downstream eval/vis jobs can recover authoritative root-image and config provenance without guessing from the current working directory.
 
 ### 6.1 Evaluation Validity

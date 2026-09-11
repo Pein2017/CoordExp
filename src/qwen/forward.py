@@ -687,7 +687,7 @@ def _elapsed_ns(start_ns: int) -> int:
 
 
 def _profile_sync_enabled() -> bool:
-    return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
+    return os.environ.get("coordexp_infras_PROFILE_SYNC_TIMINGS") == "1"
 
 
 def _sync_model_inputs_if_requested(model_kwargs: Mapping[str, Any]) -> None:

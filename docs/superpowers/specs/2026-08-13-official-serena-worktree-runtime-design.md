@@ -130,7 +130,7 @@ the user-controlled official `uv tool` installation and upgrade lifecycle.
    `initial_instructions`, project activation, symbol overview, and a Python
    symbol query while exactly one Serena and one Python language server own that
    worktree.
-2. Concurrent clients in `CoordExp-swift` and `research-probes` use distinct
+2. Concurrent clients in `coordexp-infras` and `research-probes` use distinct
    slots and both complete semantic queries.
 3. Restarting the Codex app-server with multiple restored tasks does not create
    duplicate same-worktree backends or failed Pyright initializations.

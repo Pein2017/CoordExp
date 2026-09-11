@@ -50,7 +50,7 @@ The August manifest also contains distinct V1/source-preserving OwnerBridge sess
 
 ### Infra-base/HF-vLLM compatibility is fail-closed
 - Sources: `/data/CoordExp/.codex/sessions/2026/08/22/rollout-2026-08-22T04-50-58-01a02323-1107-7a02-8f28-31cb2d281f5b_01a027ce-ca6f-7481-8f1e-68cd10f95f7f.jsonl` (session `01a02323-1107-7a02-8f28-31cb2d281f5b`).
-- Current owner: training/infrastructure owner for `/data/CoordExp/.worktrees/CoordExp-swift`; Notion routing owner `3c79d9ce-3f59-8186-838b-c775b98c787c`.
+- Current owner: training/infrastructure owner for `/data/CoordExp/.worktrees/coordexp-infras`; Notion routing owner `3c79d9ce-3f59-8186-838b-c775b98c787c`.
 - Question and contrast: whether vLLM could reproduce the current HF/PEFT DoRA plus special-token embedding-delta semantics for CoordExp inference.
 - Observed evidence surface: dynamic HF/PEFT semantics, q_proj difference `0.03125`, full-vocabulary difference `1.5`, and a greedy token-13 flip; vLLM 0.14.1/0.26.0/main rejected `use_dora=true`.
 - Scientific disposition: no vLLM model-quality claim; HF remains semantic authority and the dense/vLLM route is HOLD.
@@ -72,7 +72,7 @@ The August manifest also contains distinct V1/source-preserving OwnerBridge sess
 
 ### Wave2 CPU/file/hash/config probe closed mechanics only
 - Sources: `/data/CoordExp/.codex/sessions/2026/08/09/rollout-2026-08-09T14-23-18-019fe6e8-19a8-7c72-857e-d9e10ff991ca.jsonl` (session `019fe6e8-19a8-7c72-857e-d9e10ff991ca`).
-- Current owner: `/data/CoordExp/.worktrees/CoordExp-swift` training/infrastructure route; Notion routing owner `3c79d9ce-3f59-8186-838b-c775b98c787c`.
+- Current owner: `/data/CoordExp/.worktrees/coordexp-infras` training/infrastructure route; Notion routing owner `3c79d9ce-3f59-8186-838b-c775b98c787c`.
 - Question and contrast: whether the planned Wave2 GPU experiment was mechanically bound to the intended plan, source-owner hashes, config, dependencies, and CPU fail-closed contract before launch.
 - Observed evidence surface: plan/receipt hashes, 21 source-owner hashes, config/dependency identity, sample/atom/loss settings, and a remaining `status_sha256` mismatch; no model/GPU/parity/logit/loss/gradient execution.
 - Scientific disposition: no model-quality or GPU conclusion; this is prelaunch validity evidence only.

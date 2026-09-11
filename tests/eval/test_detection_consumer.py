@@ -39,7 +39,7 @@ def test_detection_consumer_writes_official_coco_metrics_for_perfect_prediction(
 
     assert result.metrics_path == tmp_path / "eval" / "metrics.json"
     assert metrics["metric_artifact_name"] == "metrics.json"
-    assert metrics["metric_family"] == "coordexp_swift_detection_coco_bbox_v1"
+    assert metrics["metric_family"] == "coordexp_infras_detection_coco_bbox_v1"
     assert metrics["benchmark_metric"] is False
     assert metrics["metric_scope"] == "coco_bbox"
     assert metrics["row_count"] == 1

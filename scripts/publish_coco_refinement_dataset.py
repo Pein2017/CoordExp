@@ -33,7 +33,7 @@ def _parser() -> argparse.ArgumentParser:
         "--training-config",
         type=Path,
         default=DEFAULT_TRAINING_CONFIG,
-        help="Current CoordExp-Swift config used for exact 12000-token validation.",
+        help="Current coordexp-infras config used for exact 12000-token validation.",
     )
     parser.add_argument("--max-total-tokens", type=int, default=12000)
     return parser

@@ -14,9 +14,9 @@ updated: 2026-07-11
 > contract archaeology and old-run interpretation, not as a current `main`
 > entrypoint or launch authorization.
 
-Current implementation work starts from [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md),
+Current implementation work starts from [`../coordexp_infras.md`](../coordexp_infras.md),
 the current source tree, current configs, and the relevant stable
-`coordexp-swift-*` specs. The current Swift path does not route through the old
+`coordexp-infras-*` specs. The current Swift path does not route through the old
 Stage-2 trainer, rollout server, or `src/infer/` package described by the legacy
 runbook.
 

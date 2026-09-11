@@ -674,8 +674,8 @@ def _resolve_or_build_pack_cache(
 ) -> dict[str, Any]:
     cache_root = Path(
         os.environ.get(
-            "COORDEXP_SWIFT_PACK_CACHE_ROOT",
-            str(repo_root / ".cache" / "coordexp_swift" / "packing"),
+            "coordexp_infras_PACK_CACHE_ROOT",
+            str(repo_root / ".cache" / "coordexp_infras" / "packing"),
         )
     )
     cache_complete_before: bool | None = None
@@ -1466,7 +1466,7 @@ def _build_accelerator(training_precision: str) -> Any:
             code="runtime.accelerate_unavailable",
         )
     kwargs: dict[str, Any] = {
-        # CoordExp-Swift owns planned-step loss normalization and optimizer
+        # coordexp-infras owns planned-step loss normalization and optimizer
         # cadence. Accelerate's accumulation counter would additionally divide
         # loss inside accelerator.backward(), so keep it neutral and use
         # TrainRuntime.no_sync for intermediate microsteps.

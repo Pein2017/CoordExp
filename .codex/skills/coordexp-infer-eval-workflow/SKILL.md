@@ -1,9 +1,9 @@
 ---
 name: coordexp-infer-eval-workflow
-description: Launch, repair, validate, or summarize current CoordExp-Swift inference, scoring, and detection evaluation through HF or vLLM.
+description: Launch, repair, validate, or summarize current coordexp-infras inference, scoring, and detection evaluation through HF or vLLM.
 ---
 
-# CoordExp-Swift Inference And Evaluation
+# coordexp-infras Inference And Evaluation
 
 Use the current YAML-owned pipeline. Discover the live launcher, config family,
 backend contract, artifact writer, and evaluator from current authority and CLI

@@ -17,11 +17,11 @@ route on `main`.
 
 For current implementation work, start with:
 
-1. [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md)
+1. [`../coordexp_infras.md`](../coordexp_infras.md)
 2. [`../SYSTEM_OVERVIEW.md`](../SYSTEM_OVERVIEW.md)
 3. [`../IMPLEMENTATION_MAP.md`](../IMPLEMENTATION_MAP.md)
-4. `configs/coordexp_swift/` and `src/train.py`
-5. the relevant `openspec/specs/coordexp-swift-*` contract
+4. `configs/coordexp_infras/` and `src/train.py`
+5. the relevant `openspec/specs/coordexp-infras-*` contract
 
 ## Historical surfaces
 
@@ -44,7 +44,7 @@ comparator results. They are not current Swift config or source ownership.
 
 Do not copy a historical Stage-1/Stage-2 requirement into a current doc or
 config without checking the live `src/config/` models, current source, tests,
-and stable `coordexp-swift-*` specs. If a historical behavior must become a
+and stable `coordexp-infras-*` specs. If a historical behavior must become a
 supported contract, use a separate OpenSpec change and update current docs only
 after the behavior is implemented and verified.
 

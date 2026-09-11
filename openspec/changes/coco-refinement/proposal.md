@@ -70,7 +70,7 @@ change, and easier to reason about.
 
 ### Modified Capabilities
 
-None. Current CoordExp-Swift data, inference, training, artifact, and evaluation
+None. Current coordexp-infras data, inference, training, artifact, and evaluation
 contracts remain unchanged.
 
 ## Impact

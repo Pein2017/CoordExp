@@ -14,9 +14,9 @@ updated: 2026-07-11
 Use this folder for the current infer -> score -> evaluate workflow, official
 COCO export, and additive analysis studies.
 
-CoordExp-Swift note:
+coordexp-infras note:
 
-- Start with [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md) for the rebuilt
+- Start with [`../coordexp_infras.md`](../coordexp_infras.md) for the rebuilt
   worktree route.
 - The accepted Swift V1 validation gate is the fixed val200 inference/eval run,
   not a full validation-dataset run.
@@ -48,10 +48,10 @@ CoordExp-Swift note:
 
 Use these only when exact stable contract semantics matter:
 
-- [`coordexp-swift-infer-pipeline/spec.md`](../../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
-- [`coordexp-swift-infer-backend-trace/spec.md`](../../openspec/specs/coordexp-swift-infer-backend-trace/spec.md)
-- [`coordexp-swift-infer-scoring-artifacts/spec.md`](../../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
-- [`coordexp-swift-detection-evaluator/spec.md`](../../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
+- [`coordexp-infras-infer-pipeline/spec.md`](../../openspec/specs/coordexp-infras-infer-pipeline/spec.md)
+- [`coordexp-infras-infer-backend-trace/spec.md`](../../openspec/specs/coordexp-infras-infer-backend-trace/spec.md)
+- [`coordexp-infras-infer-scoring-artifacts/spec.md`](../../openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md)
+- [`coordexp-infras-detection-evaluator/spec.md`](../../openspec/specs/coordexp-infras-detection-evaluator/spec.md)
 
 ## Use This Router For
 
@@ -59,6 +59,6 @@ Use these only when exact stable contract semantics matter:
 - "What is the current production workflow?"
 - "How do I run a real COCO test-dev benchmark and upload it?"
 - "Which artifacts should exist after a valid infer/eval run?"
-- "Is val200 enough for the CoordExp-Swift V1 readiness gate?"
+- "Is val200 enough for the coordexp-infras V1 readiness gate?"
 - "How do I compare one baseline decode against repeated stochastic rollouts?"
 - "How do I run the unmatched-proposal verifier ablation on a small COCO subset?"

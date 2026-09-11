@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Render lightweight CoordExp-Swift detection visualizations."""
+"""Render lightweight coordexp-infras detection visualizations."""
 
 from __future__ import annotations
 

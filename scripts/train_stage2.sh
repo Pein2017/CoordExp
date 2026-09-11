@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LEGACY MS-SWIFT/MAINLINE STAGE-2 LAUNCHER (not a canonical main entrypoint).
-# Current main training uses the CoordExp-Swift src/train.py route.
+# Current main training uses the coordexp-infras src/train.py route.
 #
 # This script is intentionally thin:
 # - Selects the YAML config path.

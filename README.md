@@ -5,7 +5,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 ## Why
 - **Better geometry**: Softmax-on-coordinate-subvocab + expectation gives continuous boxes and smooth gradients (L1/GIoU) without extra detection heads.
 - **Order-invariant**: Hungarian/OT matching supervises object sets, not sequences, reducing wasted supervision.
-- **Canonical infrastructure**: CoordExp-Swift owns the active training,
+- **Canonical infrastructure**: coordexp-infras owns the active training,
   inference, evaluation, packing, loss, and artifact paths on repository
   `main`. The old MS-Swift-centered implementation is preserved on the
   `ms-swift` archive branch.
@@ -16,7 +16,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
   training, inference, evaluation, metrics, and visualization helpers.
 - `configs/` - YAML-first training, inference, evaluation, benchmark, and
   analysis configs. Current Swift training surfaces live under
-  `configs/coordexp_swift/`; older `configs/stage1/` and `configs/stage2/`
+  `configs/coordexp_infras/`; older `configs/stage1/` and `configs/stage2/`
   families are compatibility or historical routes.
 - `scripts/` - stable user-facing entrypoints plus maintained wrappers and
   utilities. See `scripts/README.md`.
@@ -54,10 +54,10 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 3) **Train (canonical Swift example)**:
    ```bash
    conda run -n ms python -m src.train \
-     --config configs/coordexp_swift/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml
+     --config configs/coordexp_infras/smoke/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml
    ```
-   - Use `configs/coordexp_swift/prod/` for production-style training and
-     `configs/coordexp_swift/infer/` with `src.infer` for inference.
+   - Use `configs/coordexp_infras/prod/` for production-style training and
+     `configs/coordexp_infras/infer/` with `src.infer` for inference.
    - The fixed val200 inference/eval run is the accepted V1 validation gate;
      tiny smokes are implementation evidence only.
 
@@ -80,7 +80,7 @@ CoordExp extends Qwen3-VL with coordinate-specialized tokens, expectation-based 
 - `custom.coord_tokens.*`: required (`enabled`, `skip_bbox_norm`) to consume pre-quantized coords without double normalization
 - `custom.json_format`: required (currently only `standard`; typo-guard for deterministic parsing)
 - `custom.object_field_order`: required (`desc_first|geometry_first`); keep train/infer parity with `infer.object_field_order`
-- `training.*`: CoordExp-Swift training settings; backend/runtime derivation is
+- `training.*`: coordexp-infras training settings; backend/runtime derivation is
   recorded in the resolved and effective runtime artifacts.
 
 The old MS-Swift launch commands and legacy config roots remain available on

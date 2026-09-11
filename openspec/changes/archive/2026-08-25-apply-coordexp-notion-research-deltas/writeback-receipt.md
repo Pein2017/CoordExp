@@ -6,7 +6,7 @@ Date: 2026-08-25 UTC
 
 - Reviewed content router: `../extract-research-knowledge-from-codex-sessions/notion-update-plan.md`.
 - Integrated evidence: `../extract-research-knowledge-from-codex-sessions/research-findings.md`, covering 6,278 session sources and 9,746 research-document paths.
-- Current repository authority remains `/data/CoordExp` main except where the user explicitly selected `/data/CoordExp/.worktrees/CoordExp-swift` as the template reference.
+- Current repository authority remains `/data/CoordExp` main except where the user explicitly selected `/data/CoordExp/.worktrees/coordexp-infras` as the template reference.
 - Raw transcripts, document mirrors, logs, images, checkpoints, and manifests stay local.
 
 ## Pre-write target inventory
@@ -28,7 +28,7 @@ All ten targets were fetched successfully on 2026-08-25 and retained their expec
 
 ## Terminal template adjudication
 
-- Selected worktree: `/data/CoordExp/.worktrees/CoordExp-swift`, branch `coordexp-swift`, HEAD `22f2fc9e0db0931444981d9ced01af41e5cc843a` before the authorized explanatory comment.
+- Selected worktree: `/data/CoordExp/.worktrees/coordexp-infras`, branch `coordexp-infras`, HEAD `22f2fc9e0db0931444981d9ced01af41e5cc843a` before the authorized explanatory comment.
 - Main fixed point: `/data/CoordExp`, branch `main`, HEAD `b274d596ba3ce98b4f5bb64b0247a773637f5d9c`.
 - Both render the canonical suffix as `<|im_end|>\n`.
 - Local tokenizer receipt: `<|im_end|>` → `[151645]`; newline → `[198]`; combined suffix → `[151645, 198]`; PAD is distinct at `151643`.
@@ -56,6 +56,6 @@ Post-write verification: 10/10 mutated pages refetched successfully; every disti
 
 - Notion operations were limited to exact `update_content` replacements on the ten existing page IDs above. No page/database create, duplicate, move, delete, archive, attachment, or `allow_deleting_content` operation was used.
 - No raw session, research-document mirror, log, image, checkpoint, or bulky artifact was imported. The local change directory is 28 KiB and contains only proposal/design/tasks/receipt metadata.
-- Production code behavior was not changed. The only source edit is the separately authorized explanatory comment beside `IM_END_SUFFIX` in `/data/CoordExp/.worktrees/CoordExp-swift/src/templates/renderer.py`.
-- `git diff --check` passed in both `/data/CoordExp` and the selected CoordExp-Swift worktree.
+- Production code behavior was not changed. The only source edit is the separately authorized explanatory comment beside `IM_END_SUFFIX` in `/data/CoordExp/.worktrees/coordexp-infras/src/templates/renderer.py`.
+- `git diff --check` passed in both `/data/CoordExp` and the selected coordexp-infras worktree.
 - `openspec validate apply-coordexp-notion-research-deltas --strict` passed with 10/11 tasks complete immediately before reconciling this literal validation task.

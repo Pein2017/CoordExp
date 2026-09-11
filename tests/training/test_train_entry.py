@@ -17,7 +17,7 @@ def test_train_entry_is_config_first_and_delegates_to_runner(capsys) -> None:
         resolved = load_train_config(config_path)
         calls.append((str(config_path), resolved.fingerprint))
         return {
-            "run_dir": "/tmp/coordexp-swift-smoke",
+            "run_dir": "/tmp/coordexp-infras-smoke",
             "resolved_config_fingerprint": resolved.fingerprint,
             "completed_steps": 5,
         }
@@ -28,6 +28,6 @@ def test_train_entry_is_config_first_and_delegates_to_runner(capsys) -> None:
     assert calls and calls[0][0] == str(FIXTURE_CONFIG)
     summary = json.loads(capsys.readouterr().out)
     assert summary["entry_config_path"] == str(FIXTURE_CONFIG)
-    assert summary["run_dir"] == "/tmp/coordexp-swift-smoke"
+    assert summary["run_dir"] == "/tmp/coordexp-infras-smoke"
     assert summary["completed_steps"] == 5
     assert summary["resolved_config_fingerprint"] == calls[0][1]

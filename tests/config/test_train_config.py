@@ -25,8 +25,8 @@ from src.training.schedule import resolve_planned_step_schedule
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
 ACTIVE_TRAIN_CONFIG_ROOTS = (
-    Path("configs/coordexp_swift/prod"),
-    Path("configs/coordexp_swift/smoke"),
+    Path("configs/coordexp_infras/prod"),
+    Path("configs/coordexp_infras/smoke"),
 )
 INFRASTRUCTURE_DELETION_ALLOWLIST = (
     "runtime.backend",
@@ -599,12 +599,12 @@ def test_trace_config_writes_resolved_artifacts(tmp_path: Path) -> None:
 
 def test_production_relaunch_configs_load_strictly() -> None:
     prod_path = Path(
-        "configs/coordexp_swift/prod/"
+        "configs/coordexp_infras/prod/"
         "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
         "accelerate8_ebs64_4epoch_warmup0p1.yaml"
     )
     smoke_path = Path(
-        "configs/coordexp_swift/smoke/"
+        "configs/coordexp_infras/smoke/"
         "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
         "accelerate8_ebs64_2step_warmup0p1_eval_patchproof.yaml"
     )
@@ -713,7 +713,7 @@ def test_removed_infrastructure_fields_are_rejected_strictly(
 
 def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
     smoke_path = Path(
-        "configs/coordexp_swift/smoke/"
+        "configs/coordexp_infras/smoke/"
         "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_"
         "accelerate8_ebs24_2step_warmup0p1_eval_patchproof.yaml"
     )
@@ -768,7 +768,7 @@ def test_coord_gaussian_rps_length12000_smoke_config_loads_strictly() -> None:
 
 def test_coord_gaussian_rps_prod_config_loads_strictly() -> None:
     prod_path = Path(
-        "configs/coordexp_swift/prod/"
+        "configs/coordexp_infras/prod/"
         "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_"
         "accelerate8_ebs24_8epoch_warmup0p1.yaml"
     )

@@ -120,7 +120,7 @@ and atomically updates the saved profile and launch documents. Use values
 approved for the selected model for the axis, total-pixel, acknowledgement,
 and deadline fields; they are profile semantics, not universal defaults.
 
-Production infer leaves must live below `configs/coordexp_swift/infer/`; an
+Production infer leaves must live below `configs/coordexp_infras/infer/`; an
 authored YAML under `outputs/` is intentionally rejected. The command below is
 the execution-verified local step-917 profile, not a global bound for other
 models.
@@ -129,7 +129,7 @@ models.
 export ROI_PROFILE_STORE="$RUNTIME_ROOT/label-studio/roi-profiles.json"
 export ROI_LAUNCH_CONFIG="$RUNTIME_ROOT/label-studio/roi-launch.json"
 export ROI_RECEIPT_STORE="$RUNTIME_ROOT/label-studio/roi-receipts.jsonl"
-export ROI_INFER_CONFIG="$REPO_ROOT/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_label_studio_roi.yaml"
+export ROI_INFER_CONFIG="$REPO_ROOT/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_label_studio_roi.yaml"
 
 cd "$REPO_ROOT"
 CUDA_VISIBLE_DEVICES=0 PYTHONPATH="$REPO_ROOT" "$MS_PY" \

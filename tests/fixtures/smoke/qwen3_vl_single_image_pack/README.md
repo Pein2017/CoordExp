@@ -1,6 +1,6 @@
 # Qwen3-VL Single-Image Pack Smoke Fixture
 
-This fixture is the permanent source anchor for the first CoordExp-swift vertical smoke. It is intentionally small, local, and boring: two real COCO-derived single-image examples, each with exactly two objects, canonical integer coordinate-bin boxes, and copied local image files.
+This fixture is the permanent source anchor for the first coordexp-infras vertical smoke. It is intentionally small, local, and boring: two real COCO-derived single-image examples, each with exactly two objects, canonical integer coordinate-bin boxes, and copied local image files.
 
 ## Files
 

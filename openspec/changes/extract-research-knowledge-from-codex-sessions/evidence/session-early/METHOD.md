@@ -38,7 +38,7 @@ Deep-read high/medium sample (raw JSONL plus final assistant result where presen
 - `019e9bc5-faaf-76f1-a7d7-54d44aea124e`: row-conditioned rollout review; committed valid rows must rebuild the next prefill.
 - `019f0f13-cbfd-71b1-af54-151be4850a4f`: coverage-ledger design; sidecar, same-forward capture, and pre/post-merge semantics.
 - `019f1198-e054-7282-8c5d-fd6d9d5f74d8`: coverage-ledger checkpoint provenance; resolved config and trainer metrics stronger than stale source-config paths.
-- `019f164c-d6e9-7c92-9c0e-712724a99162`: CoordExp-Swift runtime/artifact contract audit; tail policy and fixture-eval binding remained unresolved.
+- `019f164c-d6e9-7c92-9c0e-712724a99162`: coordexp-infras runtime/artifact contract audit; tail policy and fixture-eval binding remained unresolved.
 
 Skip sample (10 rows, all physically verified): `019e007a-4507-7881-8b73-d0ea97b17886`, `019e14e9-2b24-7420-a7ca-c711472368f8`, `019e1cea-f7f7-7e11-9edf-835efccf7a88`, `019e1f1a-60e3-7102-bcae-68cb28c4cdca`, `019e2003-c988-70e3-bba2-7f9cb08fd0ed`, `019e20a4-4ba7-7452-8530-daa1f15aa319`, `019e20ae-94f7-7e31-89a2-c4baae7d271d`, `019e20b6-edbe-75d0-8bef-9597946b8f3c`, `019e20bf-b6e7-77e3-97c0-3a5b3eaf526d`, `019e20c6-185a-74d0-9fa8-b8097ac0d54e`. These are generic sync, empty, or development-only rows; none is synthesized below.
 

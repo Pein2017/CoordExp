@@ -523,7 +523,7 @@ def create_backend(backend: BackendName | str, *, model: Any, tokenizer: Any) ->
         return HFGenerateBackend(model=model, tokenizer=tokenizer)
     if backend == "vllm":
         raise RuntimeContractError(
-            "vLLM backend is reserved but not implemented for CoordExp-swift V1",
+            "vLLM backend is reserved but not implemented for coordexp-infras V1",
             code="backend_trace.backend_not_implemented",
             context={"backend": backend},
         )

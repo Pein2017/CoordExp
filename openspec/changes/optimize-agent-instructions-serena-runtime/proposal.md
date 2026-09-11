@@ -29,4 +29,4 @@ This change targets those three concrete issues without weakening native filesys
 - CoordExp profile configuration: `/data/CoordExp/.dsh/profiles/web/cordis.patch.yml`; the inactive hook JSON remains available for explicit compatibility use.
 - Model-visible history becomes smaller when a global instruction file is reached again through its canonical nested alias; all native `read/write/edit` observation and refresh semantics remain intact.
 - Serena startup remains host-level and does not become per-Web-session; multi-workspace isolation and project-state basename collisions remain separate follow-up work.
-- No new runtime dependency is required and no existing CoordExp-Swift stable spec is changed.
+- No new runtime dependency is required and no existing coordexp-infras stable spec is changed.

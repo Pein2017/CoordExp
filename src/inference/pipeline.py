@@ -1,4 +1,4 @@
-"""CoordExp-swift offline inference pipeline orchestration."""
+"""coordexp-infras offline inference pipeline orchestration."""
 
 from __future__ import annotations
 
@@ -485,7 +485,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def _default_backend_factory(runtime: InferenceRuntime, config: InferConfig) -> HFGenerateBackend:
     if config.backend.type != "hf":
         raise ArtifactContractError(
-            "only HF backend is implemented for CoordExp-swift V1 pipeline",
+            "only HF backend is implemented for coordexp-infras V1 pipeline",
             code="pipeline.backend_not_implemented",
             context={"backend": config.backend.type},
         )

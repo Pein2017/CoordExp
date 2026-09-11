@@ -1274,7 +1274,7 @@ projects:
 - /data/CoordExp/.codex/memories
 - /data/CoordExp/.codex/plugins/data/codex-harnessdock
 - /data/CoordExp/.dsh/plugins-src/dsh-memory
-- /data/CoordExp/.worktrees/CoordExp-swift
+- /data/CoordExp/.worktrees/coordexp-infras
 - /data/CoordExp/.worktrees/c-anchored-owner-mechanism-audit
 - /data/CoordExp/.worktrees/coco-gt-correction-portfolio
 - /data/CoordExp/.worktrees/dora-prox-linear-n2

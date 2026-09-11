@@ -113,7 +113,7 @@ def _load_token_embeddings_adapter_delta(adapter: Any, spec: Any) -> None:
         from safetensors.torch import load_file
     except ImportError as exc:
         raise RuntimeError(
-            "Loading CoordExp-Swift special token embedding deltas requires "
+            "Loading coordexp-infras special token embedding deltas requires "
             "the 'safetensors' package in the active environment."
         ) from exc
     import torch
@@ -131,7 +131,7 @@ def _load_token_embeddings_adapter_delta(adapter: Any, spec: Any) -> None:
     if embed_offset is None:
         raise RuntimeError(
             "token_embeddings_adapter is missing embed_offset needed for "
-            "CoordExp-Swift special token embedding deltas."
+            "coordexp-infras special token embedding deltas."
         )
     if tuple(delta.shape) != tuple(embed_offset.shape):
         raise RuntimeError(

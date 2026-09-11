@@ -110,7 +110,7 @@ merge, replace, reorder, or change Commit semantics.
 The replacement SHALL NOT be declared complete until one accepted configured
 profile executes through the current model/prompt/parser runtime and one
 inserted ROI result is edited or retained, batch committed, materialized, and
-loaded by the current CoordExp-Swift data path.
+loaded by the current coordexp-infras data path.
 
 #### Scenario: End-to-end ROI acceptance succeeds
 - **WHEN** the operator completes the accepted real-profile smoke

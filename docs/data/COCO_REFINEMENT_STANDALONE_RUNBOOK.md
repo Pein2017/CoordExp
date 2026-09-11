@@ -168,7 +168,7 @@ file, and advances only after terminal Commit success.
 
 Standalone coord materialization is not yet an approved Gate A operator step:
 the active change still requires a representative terminal generation to be
-materialized and loaded through the current CoordExp-Swift data path. Do not
+materialized and loaded through the current coordexp-infras data path. Do not
 treat `working.norm.jsonl` as training coord JSONL, copy it over source data,
 or claim downstream materialization acceptance from this gate.
 

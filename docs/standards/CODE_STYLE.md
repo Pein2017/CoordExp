@@ -4,7 +4,7 @@ layer: docs
 doc_type: standard
 status: canonical
 domain: standards
-summary: Medium-weight code and architecture style guidance for the current CoordExp-Swift tree.
+summary: Medium-weight code and architecture style guidance for the current coordexp-infras tree.
 updated: 2026-07-11
 ---
 
@@ -111,7 +111,7 @@ Treat configs as first-class artifacts:
 
 The current config seam is `src/config/loader.py` and `src/config/models.py`.
 Do not copy an old schema from `configs/stage1/` or `configs/stage2/` into a
-current `configs/coordexp_swift/` document without checking the live models and
+current `configs/coordexp_infras/` document without checking the live models and
 stable specs.
 
 When adding a config key:

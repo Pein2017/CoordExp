@@ -2,7 +2,7 @@
 """Legacy MS-Swift/mainline inference runner.
 
 Canonical main inference is ``python -m src.infer --config ...`` using the
-``configs/coordexp_swift/infer/`` schema. This module remains only for explicit
+``configs/coordexp_infras/infer/`` schema. This module remains only for explicit
 historical compatibility reproduction.
 
 Historical usage:

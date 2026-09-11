@@ -592,7 +592,7 @@ def _total_loss(loss_bundle: LossBundle | Any) -> torch.Tensor:
 
 
 def _profile_sync_enabled() -> bool:
-    return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
+    return os.environ.get("coordexp_infras_PROFILE_SYNC_TIMINGS") == "1"
 
 
 def _sync_forward_result_if_requested(forward_result: Any) -> None:

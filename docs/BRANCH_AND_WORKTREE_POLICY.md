@@ -5,24 +5,24 @@ doc_type: workflow
 status: canonical
 domain: repo
 summary: Canonical branch, archive branch, worktree, and Codex-session routing for CoordExp.
-tags: [git, branches, worktrees, codex, coordexp-swift]
+tags: [git, branches, worktrees, codex, coordexp-infras]
 updated: 2026-07-10
 ---
 
 # Branch And Worktree Policy
 
-CoordExp-Swift is now the canonical implementation on repository `main`.
+coordexp-infras is now the canonical implementation on repository `main`.
 
 ## Canonical routing
 
-- `main` is the stable CoordExp-Swift branch. `/data/CoordExp` is its
+- `main` is the stable coordexp-infras branch. `/data/CoordExp` is its
   operational checkout for official training and evaluation.
-- `coordexp-swift` is the active development branch. It is checked out at
-  `/data/CoordExp/.worktrees/CoordExp-swift` for feature and experiment work.
+- `coordexp-infras` is the active development branch. It is checked out at
+  `/data/CoordExp/.worktrees/coordexp-infras` for feature and experiment work.
 - `ms-swift` is the preserved pre-promotion mainline, retained as a history
   archive and compatibility/reference branch. It has no active worktree and
   is not a target for new implementation or launches.
-- `origin/coordexp-swift` tracks the active development branch; promote
+- `origin/coordexp-infras` tracks the active development branch; promote
   validated work from it into `main` through an explicit merge.
 
 When a task asks for the current repository, current implementation, or default
@@ -30,7 +30,7 @@ branch, resolve it against `main` at `/data/CoordExp`. For feature work, use
 the Swift development checkout. Use `ms-swift` only for historical
 reconstruction, old-run reproduction, or explicit archive maintenance.
 
-The normal iteration is: develop and validate in `coordexp-swift`; merge the
+The normal iteration is: develop and validate in `coordexp-infras`; merge the
 accepted commits into `main`; launch official training/evaluation from the
 root `main` checkout; then update the development branch from the promoted
 `main` state before the next feature slice.
@@ -52,7 +52,7 @@ git rev-parse --show-toplevel
 
 The stable implementation checkout should report branch `main` and path
 `/data/CoordExp`; the active development checkout should report branch
-`coordexp-swift` and path `/data/CoordExp/.worktrees/CoordExp-swift`. A Codex
+`coordexp-infras` and path `/data/CoordExp/.worktrees/coordexp-infras`. A Codex
 task that still displays an older task branch is stale app-owned metadata;
 starting from or sending a new message in the intended live checkout should
 refresh that association. Historical session content remains unchanged by
@@ -66,5 +66,5 @@ dependency, compatibility, historical evidence, or archive material. They must
 not be presented as the current CoordExp entrypoint.
 
 The current Swift entrypoints are documented in
-[`COORDEXP_SWIFT.md`](COORDEXP_SWIFT.md) and use `src/train.py`, `src/infer.py`,
+[`coordexp_infras.md`](coordexp_infras.md) and use `src/train.py`, `src/infer.py`,
 `src/inference/`, and `src/eval/detection_consumer.py`.

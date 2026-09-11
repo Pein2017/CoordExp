@@ -35,10 +35,10 @@ stable spec disagree, record the conflict and resolve the contract separately.
 The current architecture is described by this canonical docs chain:
 
 1. [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md)
-2. [`../COORDEXP_SWIFT.md`](../COORDEXP_SWIFT.md)
+2. [`../coordexp_infras.md`](../coordexp_infras.md)
 3. [`../SYSTEM_OVERVIEW.md`](../SYSTEM_OVERVIEW.md)
 4. [`../IMPLEMENTATION_MAP.md`](../IMPLEMENTATION_MAP.md)
-5. the relevant `coordexp-swift-*` stable specs under
+5. the relevant `coordexp-infras-*` stable specs under
    [`../../openspec/specs/`](../../openspec/specs/)
 
 Those pages describe the live `src/train.py` / `src/infer.py` route, current

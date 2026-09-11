@@ -15,7 +15,7 @@ Source scope: the canonical Swift implementation on `main` plus the active
 
 ## Boundary
 
-CoordExp-Swift owns the training loop and should keep its Transformers,
+coordexp-infras owns the training loop and should keep its Transformers,
 Accelerate, PEFT, and model-boundary behavior explicit. MS-Swift notes below
 are upstream/reference evidence and do not define the canonical CoordExp
 runtime.

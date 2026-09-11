@@ -53,7 +53,7 @@ Own only CoordExp-specific behavior:
 
 Every linked worktree is a separate Git root, so its root `AGENTS.md` must
 contain the complete CoordExp project contract. This migration maintains only
-`CoordExp-swift`, `research-probe-infras`, and `research-probes`; all other
+`coordexp-infras`, `research-probe-infras`, and `research-probes`; all other
 worktrees are temporary and explicitly out of scope. Worktree-local additions
 are folded into the same root file when present.
 
@@ -94,7 +94,7 @@ Order is load-bearing:
 
 1. Create the global contract before removing any project instruction source.
 2. Slim `/data/CoordExp/AGENTS.md` to the CoordExp project contract.
-3. Apply that project contract only to `CoordExp-swift`,
+3. Apply that project contract only to `coordexp-infras`,
    `research-probe-infras`, and `research-probes`, folding any live local rules
    into the root file.
 4. Delete root `AGENTS.override.md` only after any folded local rules are

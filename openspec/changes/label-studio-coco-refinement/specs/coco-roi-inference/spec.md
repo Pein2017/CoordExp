@@ -24,7 +24,7 @@ at an unchanged path.
 
 ### Requirement: Resident current CoordExp inference path
 The inference service SHALL assemble and keep the selected backend resident,
-SHALL reuse the accepted current CoordExp-Swift prompt, parser, no-resize Qwen
+SHALL reuse the accepted current coordexp-infras prompt, parser, no-resize Qwen
 image path, and response grammar, and SHALL NOT call or alter the offline batch
 pipeline entrypoint/config/artifact behavior. The already-letterboxed canvas
 SHALL execute with `do_resize=False` and an asserted processor grid/canvas match.
