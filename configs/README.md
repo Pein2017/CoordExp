@@ -15,12 +15,12 @@ attempt.
 
 ## Training Surfaces
 
-- `configs/coordexp_swift/prod/`: canonical Swift production-style training
+- `configs/coordexp_infras/prod/`: canonical Swift production-style training
   configs.
-- `configs/coordexp_swift/smoke/`: canonical Swift implementation and
+- `configs/coordexp_infras/smoke/`: canonical Swift implementation and
   promotion smokes.
-- `configs/coordexp_swift/infer/`: canonical Swift inference configs.
-- `configs/coordexp_swift/deepspeed/`: Swift backend helper configuration;
+- `configs/coordexp_infras/infer/`: canonical Swift inference configs.
+- `configs/coordexp_infras/deepspeed/`: Swift backend helper configuration;
   production support remains governed by the Swift contracts.
 
 The former `configs/stage1/`, `configs/stage2/`, and related root-level
