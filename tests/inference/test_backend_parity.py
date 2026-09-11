@@ -271,7 +271,7 @@ def test_backend_parity_malformed_input_does_not_publish_or_replace_receipt(
 
 
 def test_backend_parity_cli_accepts_contract_flags(tmp_path: Path) -> None:
-    from scripts.probes.coordexp_swift.backend_parity import main
+    from scripts.probes.coordexp_infras.backend_parity import main
 
     hf, vllm = _matched_runs(tmp_path, raw=True)
     receipt_path = tmp_path / "cli-receipt.json"

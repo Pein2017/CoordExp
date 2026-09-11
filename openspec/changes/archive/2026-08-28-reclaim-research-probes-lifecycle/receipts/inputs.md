@@ -121,7 +121,7 @@ None. All branch tips match design.md exactly.
 ```
 /data/CoordExp 29e368144 [main]
 /data/CoordExp/.codex/worktrees/3f15/research-probes b36216f10 (detached HEAD)
-/data/CoordExp/.worktrees/CoordExp-swift 8d12eab28 [coordexp-swift]
+/data/CoordExp/.worktrees/coordexp-infras 8d12eab28 [coordexp-infras]
 /data/CoordExp/.worktrees/codex-rtk-correctness-first 38b30ebc1 [codex/rtk-correctness-first]
 /data/CoordExp/.worktrees/codex-wake-me-up-event-monitor 8dfb8102a [codex/wake-me-up-event-monitor]
 /data/CoordExp/.worktrees/coverage-ledger-mechanistic-probing 77acee47c [codex/coverage-ledger-mechanistic-probing]

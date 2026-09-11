@@ -75,7 +75,7 @@ Both arms start independently from:
 - tokenizer SHA-256:
   `ca7e80dee65c629af3b314e76a7587490db3f4e6412df4af9f3b690a9e9916f8`;
 - prompt/config authority:
-  `configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`.
+  `configs/coordexp_infras/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`.
 
 The only trainable tensors are the existing full rank-16 language-tower DoRA
 parameters (`A`, `B`, and magnitude vectors on all configured language linear

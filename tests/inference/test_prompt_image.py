@@ -219,7 +219,7 @@ def test_prompt_record_preserves_template_identity_and_training_fingerprint(
     assert record.row_index == 3
     assert record.example_id == example.example_id
     assert record.template_fingerprint == rendered.template_fingerprint
-    assert record.template_id == "coordexp-swift-template-v1"
+    assert record.template_id == "coordexp-infras-template-v1"
     assert record.object_ordering == "source_order"
     assert record.realized_object_order == [
         {"object_id": "object-1", "source_index": 0, "rendered_index": 0}

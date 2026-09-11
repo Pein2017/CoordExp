@@ -40,7 +40,7 @@ fit.
 
 ### New Capabilities
 
-- `coordexp-swift-research-probe-infra-base`: defines the minimal composable
+- `coordexp-infras-research-probe-infra-base`: defines the minimal composable
   profiles, their public owners, per-producer topology rule, mechanics-only
   evidence boundary, and the evidence threshold for adding another shared
   layer.

@@ -160,7 +160,7 @@ geometry-sorted, pure-cross-entropy, token-type-gated Weight-Decomposed
 Low-Rank Adaptation checkpoint at step `4,887`:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/
 qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_
 accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json
 ```
@@ -176,7 +176,7 @@ Use the existing inference configuration only as the model-loading and prompt
 authority:
 
 ```text
-/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/
+/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/
 qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_
 dora_step4887_same_covered_set_prefix_order.yaml
 ```

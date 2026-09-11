@@ -1,14 +1,14 @@
 ---
 type: investigation
 title: Docs vs MCP Authority Evidence
-description: Live evidence snapshot for the CoordExp-Swift docs and MCP boundary decision.
-tags: [docs, codegraph, serena, evidence, coordexp-swift]
+description: Live evidence snapshot for the coordexp-infras docs and MCP boundary decision.
+tags: [docs, codegraph, serena, evidence, coordexp-infras]
 updated: 2026-07-07
 ---
 
 # Docs vs MCP Authority Evidence
 
-Evidence scope: live inspection of `/data/CoordExp/.worktrees/CoordExp-swift`
+Evidence scope: live inspection of `/data/CoordExp/.worktrees/coordexp-infras`
 on 2026-07-07. This is synthesized interpretation, not raw provenance intake.
 
 ## Docs Surface
@@ -26,14 +26,14 @@ Key current-authority and routing files:
 - `docs/PROJECT_CONTEXT.md`: defines authority boundaries and read order.
 - `docs/AGENT_INDEX.md`: agent-facing route map.
 - `docs/catalog.yaml`: machine-readable curated inventory.
-- `docs/COORDEXP_SWIFT.md`: Swift worktree authority page.
+- `docs/coordexp_infras.md`: Swift worktree authority page.
 - `docs/SYSTEM_OVERVIEW.md`: system-level orientation.
 - `docs/IMPLEMENTATION_MAP.md`: task-to-file routing.
 - `docs/ARTIFACTS.md`: artifact and provenance handles.
 
 ## Swift Worktree Authority Role
 
-`docs/COORDEXP_SWIFT.md` is not redundant with code search. It records:
+`docs/coordexp_infras.md` is not redundant with code search. It records:
 
 - the current V1 verdict for the rebuilt Swift backbone;
 - active source topology and config routes;

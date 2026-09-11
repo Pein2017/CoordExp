@@ -4,13 +4,13 @@ layer: docs
 doc_type: artifacts-reference
 status: canonical
 domain: repo
-summary: Current CoordExp-Swift training, inference, evaluation, checkpoint, and provenance artifacts.
+summary: Current coordexp-infras training, inference, evaluation, checkpoint, and provenance artifacts.
 updated: 2026-07-11
 ---
 
 # Artifacts And Provenance
 
-This page inventories artifacts emitted by the current CoordExp-Swift source.
+This page inventories artifacts emitted by the current coordexp-infras source.
 It summarizes names and ownership; stable compatibility details belong to the
 linked OpenSpecs.
 
@@ -24,9 +24,9 @@ linked OpenSpecs.
 | Detection evaluation artifacts | `src/eval/detection_consumer.py` |
 
 Stable training artifact behavior is specified by
-[`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md);
+[`coordexp-infras-training-artifacts`](../openspec/specs/coordexp-infras-training-artifacts/spec.md);
 explicit inference composition is specified by
-[`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md).
+[`coordexp-infras-infer-config-runtime`](../openspec/specs/coordexp-infras-infer-config-runtime/spec.md).
 
 ## Training artifacts
 
@@ -117,10 +117,10 @@ provenance sidecar or source raw artifact is missing.
 
 ## Stable contract routes
 
-- [adapter and selected-token payloads](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md)
-- [inference scoring artifacts](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
-- [detection evaluator](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
-- [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
+- [adapter and selected-token payloads](../openspec/specs/coordexp-infras-adapters-embeddings-optim/spec.md)
+- [inference scoring artifacts](../openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md)
+- [detection evaluator](../openspec/specs/coordexp-infras-detection-evaluator/spec.md)
+- [inference pipeline](../openspec/specs/coordexp-infras-infer-pipeline/spec.md)
 
 ## Historical artifact material
 

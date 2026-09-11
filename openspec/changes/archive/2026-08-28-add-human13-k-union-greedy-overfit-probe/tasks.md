@@ -21,7 +21,7 @@
 
 ## 4. Arm Materialization, Launcher, and Analyzer
 
-- [x] 4.1 Add strict research configs under `configs/coordexp_swift/research/human13_k_union/` for Frozen Source, full-GT capacity, A0 shared no-H background, A1, A3, A4, A7, A8-prime, and conditional A6, with byte-identical Source, fresh AdamW state, and exact fail-closed trainable-surface/optimizer/scheduler/clipping/family-coefficient values per arm.
+- [x] 4.1 Add strict research configs under `configs/coordexp_infras/research/human13_k_union/` for Frozen Source, full-GT capacity, A0 shared no-H background, A1, A3, A4, A7, A8-prime, and conditional A6, with byte-identical Source, fresh AdamW state, and exact fail-closed trainable-surface/optimizer/scheduler/clipping/family-coefficient values per arm.
 - [x] 4.2 Add a dry-run materializer that emits isolated output roots and resolved arm plans without model load, forward, optimizer, checkpoint write, or GPU allocation, and test that A6 is omitted when no eligible `H_mid` donor exists.
 - [x] 4.3 Add `scripts/research/analyze_human13_k_union.py` and tests that apply chronological duplicate exclusion before the declared cardinality-first, maximum-total-IoU one-to-one matcher, award later duplicates no owner credit, and report K-hit gained, Source retained/lost, K-miss incidental gain, duplicate/unmatched/invalid/malformed/cap burden, and per-image, legacy-twelve, image-2299, and pooled views.
 - [x] 4.4 Add a bounded independent-arm launcher whose default is dry-run, whose explicit execute mode is separate from plan materialization, which assigns at most one world-size-one Accelerate process per GPU, and which never shares output roots or optimizer state; execution still requires documented user model/GPU authority outside the launcher.

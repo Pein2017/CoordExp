@@ -246,7 +246,7 @@ unobserved edge cases are deferred.
 
 - Worktree: `/data/CoordExp/.worktrees/research-probes`.
 - Primary inference configuration:
-  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml`
+  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml`
   with Secure Hash Algorithm 256-bit (`SHA-256`) digest
   `f3000588accbcf1d9ada3b2f3e0b3324d660b4810b75d8f5d050d9f184f9ca80`.
 - Primary checkpoint:
@@ -263,7 +263,7 @@ unobserved edge cases are deferred.
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/review/mask-reset-vs-full-bag-k-root-2026071301/manifest.json`.
 - Existing geometry-first unique-object review:
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-13-spatial-scope-history-disentanglement/review/mask-reset-vs-full-bag-k-root-2026071301/unique-object-coverage.json`.
-- Reuse current CoordExp-Swift model loading, sampled batch inference, parsing,
+- Reuse current coordexp-infras model loading, sampled batch inference, parsing,
   accepted reference ledger, and visualization surfaces.
 - Add only the missing trajectory analyzer and bounded one-row or forced-prefix
   execution seams. Do not freeze a reusable code interface before the first

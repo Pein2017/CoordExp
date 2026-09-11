@@ -52,6 +52,6 @@ owner annotation.
   `ed7f7eca42b423aa96868d3b9d93410074ad2664ba09e33c8e78b67787849c53`.
 
 Use
-`configs/coordexp_swift/infer/qwen3_vl_2b_coverage_graded_static_rloo_screen128.yaml`
+`configs/coordexp_infras/infer/qwen3_vl_2b_coverage_graded_static_rloo_screen128.yaml`
 through the repository-native eight-GPU controller-worker path.  Stop after
 the canonical read, comparison, and compact result record.

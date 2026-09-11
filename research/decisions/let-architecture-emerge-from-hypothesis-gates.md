@@ -19,7 +19,7 @@ relations:
 
 Do not select slots, a persistent ledger, a cursor renderer, or a final forward
 pass in advance. Promote only the smallest mechanism whose defining causal
-signature passes a bounded experiment on canonical CoordExp-Swift.
+signature passes a bounded experiment on canonical coordexp-infras.
 
 ## Evidence
 

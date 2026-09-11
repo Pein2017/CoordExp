@@ -42,7 +42,7 @@ repetition-penalty policies relevant to this project.
 
 ### New Capabilities
 
-- `coordexp-swift-human13-k-trajectory-rp-crossover-screen`: Experiment-local
+- `coordexp-infras-human13-k-trajectory-rp-crossover-screen`: Experiment-local
   contracts for RP-aware sampled-policy evidence, row-level trajectory credit,
   sparse greedy compilation, exact proposal preservation, dual-RP evaluation,
   exact rollback, and bounded Human-13 matrix execution.

@@ -8,7 +8,7 @@ promotion_status: not_promoted
 unit_id: 2026-07-08-pvci-step2-anticopy-snap-radius-results
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
-tags: [coordexp-swift, painted-gt, pvci, step2, anti-copy, snap-radius]
+tags: [coordexp-infras, painted-gt, pvci, step2, anti-copy, snap-radius]
 updated: 2026-07-08
 ---
 

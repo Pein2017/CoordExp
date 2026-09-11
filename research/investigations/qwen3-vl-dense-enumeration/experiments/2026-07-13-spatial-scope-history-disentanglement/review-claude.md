@@ -64,7 +64,7 @@ Model, data, and objective names:
   data (`docs/SYSTEM_OVERVIEW.md:49`).
 - **norm1000 coordinates**: bounding-box coordinates expressed as discrete
   tokens over one thousand bins normalized to the model's input canvas
-  (`docs/COORDEXP_SWIFT.md:96`). Consequence used repeatedly below: a tile
+  (`docs/coordexp_infras.md:96`). Consequence used repeatedly below: a tile
   input defines its own coordinate frame.
 - **HF `generate` — Hugging Face Transformers generation path**: the decoding
   backend recorded by the prior val200 artifact (`"backend": "hf"` in its
@@ -330,7 +330,7 @@ choice of frame is semantically coherent.** [scientific-design]
 
 - File/lines: `unit.md:62-64` (cumulative history definition),
   `unit.md:106-107` and `unit.md:316` (arm definition/matrix row);
-  frame fact: `docs/COORDEXP_SWIFT.md:96` (norm1000 coordinates are normalized
+  frame fact: `docs/coordexp_infras.md:96` (norm1000 coordinates are normalized
   to the input canvas, so each tile is its own frame).
 - Observed issue: accepted rows from earlier tiles were emitted in *those
   tiles'* norm1000 frames. Appending them verbatim to the next tile's prompt

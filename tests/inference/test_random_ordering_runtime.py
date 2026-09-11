@@ -12,7 +12,7 @@ from src.inference.data_parallel import plan_data_parallel_shards
 
 
 RANDOM_VAL200_CONFIG = Path(
-    "configs/coordexp_swift/infer/"
+    "configs/coordexp_infras/infer/"
     "qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_"
     "step4887_val200_hf_fp32.yaml"
 )
@@ -26,7 +26,7 @@ def test_random_val200_config_carries_training_order_seed() -> None:
 
 
 def test_random_inference_ordering_rejects_missing_seed(tmp_path: Path) -> None:
-    payload = yaml.safe_load(Path("configs/coordexp_swift/infer/base.yaml").read_text())
+    payload = yaml.safe_load(Path("configs/coordexp_infras/infer/base.yaml").read_text())
     payload["template"]["object_ordering"] = "random"
     config_path = tmp_path / "random-without-seed.yaml"
     config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")

@@ -31,7 +31,7 @@ a later valid owner improves greedy unique-object coverage.
 
 ### New Capabilities
 
-- `coordexp-swift-physical-owner-duplication-training`: Reviewed duplicate and
+- `coordexp-infras-physical-owner-duplication-training`: Reviewed duplicate and
   recovery provenance, pairwise complete-row treatment, counterfactual cleaned
   trajectory imitation, matched controls, normalization, and artifact
   requirements for the bounded training screen.

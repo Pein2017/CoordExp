@@ -99,7 +99,7 @@ relax them.
 ### Model and likelihood interface
 
 - Runtime config:
-  `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml`.
+  `configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml`.
   The inherited human-refined-12 config carries `repetition_penalty: 1.10`,
   which would stamp an `rp1.10` runtime identity onto every session receipt
   even though this census reads raw pre-penalty logits. The `rp1p0` override
@@ -108,7 +108,7 @@ relax them.
 - Base model:
   `/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`
 - Geometry-sorted adapter:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter`
 - Special-token embedding delta: the sibling `special_token_embeddings`
   directory of the same `step-4887` checkpoint.
 - Decision score: raw pre-penalty complete coordinate-sequence log likelihood
@@ -772,7 +772,7 @@ conda run -n ms python scripts/research/score_sorted_owner_accessibility_census_
 conda run -n ms python scripts/research/score_sorted_owner_accessibility_census_shard.py \
   --plan-dir <run-root>/plan --image-id 6040 \
   --output-dir <run-root>/shards/6040 --backend hf \
-  --infer-config configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml
+  --infer-config configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml
 
 # 5. Per-image GPU shards, largest estimated_work_units first (4134, then 14038, ...)
 conda run -n ms python scripts/research/score_sorted_owner_accessibility_census_shard.py \

@@ -1,1 +1,1 @@
-"""Train-time augmentation helpers for CoordExp-Swift."""
+"""Train-time augmentation helpers for coordexp-infras."""

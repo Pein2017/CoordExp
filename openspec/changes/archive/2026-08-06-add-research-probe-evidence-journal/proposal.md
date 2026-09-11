@@ -38,13 +38,13 @@ items.
 
 ### New Capabilities
 
-- `coordexp-swift-execution-evidence-journal`: Strict evidence-plan preflight,
+- `coordexp-infras-execution-evidence-journal`: Strict evidence-plan preflight,
   independently durable work-item records, terminal publication, validation,
   and exact-identity resume discovery without scientific interpretation.
 
 ### Modified Capabilities
 
-- `coordexp-swift-infer-scoring-artifacts`: Preserve optional opaque execution
+- `coordexp-infras-infer-scoring-artifacts`: Preserve optional opaque execution
   context and journal references across success, failure, shards, and merge;
   reject non-JSON evidence instead of silently stringifying it.
 

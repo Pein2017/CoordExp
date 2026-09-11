@@ -1,7 +1,7 @@
 ---
 type: investigation
 title: Docs vs MCP Authority Maintenance Guidance
-description: Practical maintenance rules for keeping CoordExp-Swift docs useful without duplicating MCP-powered code exploration.
+description: Practical maintenance rules for keeping coordexp-infras docs useful without duplicating MCP-powered code exploration.
 tags: [docs, mcp, maintenance, authority, codegraph, serena]
 updated: 2026-07-07
 ---
@@ -72,10 +72,10 @@ been synthesized into an OKF reading path.
 
 ## Agent Workflow
 
-For CoordExp-Swift work:
+For coordexp-infras work:
 
 1. Open `docs/PROJECT_CONTEXT.md`, `docs/AGENT_INDEX.md`, and
-   `docs/COORDEXP_SWIFT.md` to establish authority.
+   `docs/coordexp_infras.md` to establish authority.
 2. Use `docs/catalog.yaml` and `docs/IMPLEMENTATION_MAP.md` to narrow the
    relevant route.
 3. Check CodeGraph freshness before broad implementation mapping.

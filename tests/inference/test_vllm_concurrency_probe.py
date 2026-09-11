@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from scripts.probes.coordexp_swift import vllm_concurrency as probe
+from scripts.probes.coordexp_infras import vllm_concurrency as probe
 from src.common.errors import RuntimeContractError
 
 

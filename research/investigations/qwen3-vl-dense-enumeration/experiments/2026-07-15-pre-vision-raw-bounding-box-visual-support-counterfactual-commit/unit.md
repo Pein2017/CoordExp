@@ -117,7 +117,7 @@ raw cup box only.
 - Donor image: Common Objects in Context image `17436`, the same dimensions
   and color mode.
 - Inference configuration:
-  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml`.
+  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml`.
 - Checkpoint step: `4,887`.
 - Recipient prompt-token hash:
   `11f6c79dcd2b570cf5794238994aa319f1bb23f8a580ffef850dafb6bc59b864`.

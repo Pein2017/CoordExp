@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-RECEIPT_VERSION = "coordexp-swift-backend-parity-v1"
+RECEIPT_VERSION = "coordexp-infras-backend-parity-v1"
 POLICY_MEDIAN_THRESHOLD = 0.002
 POLICY_P99_THRESHOLD = 0.02
 POLICY_MAX_THRESHOLD = 0.05

@@ -1,6 +1,6 @@
 schema_version: 1
 run:
-  name: coordexp-swift-infer-base
+  name: coordexp-infras-infer-base
   artifact_root: ../../../outputs/coordexp_swift/infer
   collision_policy: fail
 model:

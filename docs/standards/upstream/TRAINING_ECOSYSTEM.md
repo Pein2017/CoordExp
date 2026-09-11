@@ -15,7 +15,7 @@ Source scope: the canonical Swift implementation on `main` plus the active
 
 ## Boundary
 
-CoordExp-Swift owns the training loop and should keep its Transformers,
+coordexp-infras owns the training loop and should keep its Transformers,
 Accelerate, PEFT, and model-boundary behavior explicit. MS-Swift notes below
 are upstream/reference evidence and do not define the canonical CoordExp
 runtime.
@@ -85,7 +85,7 @@ lorap_lr_ratio
   state; inspect wrapper status before re-wrapping.
 - DoRA has extra overhead and should be merged for inference when applicable.
 
-## CoordExp-Swift HF And vLLM Inference
+## coordexp-infras HF And vLLM Inference
 
 - Dynamic HF remains a first-class inference backend and directly loads the
   base model, DoRA adapter, and selected-token embedding delta.

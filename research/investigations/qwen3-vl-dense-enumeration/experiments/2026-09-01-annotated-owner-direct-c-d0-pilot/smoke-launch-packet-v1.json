@@ -24,11 +24,11 @@
   },
   "configs": {
     "C": {
-      "path": "configs/coordexp_swift/research/qwen3_vl_2b_annotated_owner_direct_c_smoke_1_step_ebs64_seed19.yaml",
+      "path": "configs/coordexp_infras/research/qwen3_vl_2b_annotated_owner_direct_c_smoke_1_step_ebs64_seed19.yaml",
       "sha256": "ad2f2e168115ff227511fc347ec39410516f010ddea2bd76c5276015dacf8cc3"
     },
     "D0": {
-      "path": "configs/coordexp_swift/research/qwen3_vl_2b_annotated_owner_direct_d0_smoke_1_step_ebs64_seed19.yaml",
+      "path": "configs/coordexp_infras/research/qwen3_vl_2b_annotated_owner_direct_d0_smoke_1_step_ebs64_seed19.yaml",
       "sha256": "6dd53b755a9ba1bace380936b9ff9c1f79eb92d1bdd711ffedb346699c49efcd"
     }
   },

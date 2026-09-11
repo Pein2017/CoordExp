@@ -190,12 +190,12 @@ advice mutate files or grant execution authority.
 - Create: `tests/research/test_train_human13_k_trajectory_rp_crossover.py`
 - Create: `tests/research/test_launch_human13_k_trajectory_rp_crossover.py`
 - Create: `tests/research/test_analyze_human13_k_trajectory_rp_crossover.py`
-- Create: `configs/coordexp_swift/research/human13_k_trajectory_rp_crossover/01_rp100_trajectory.yaml`
-- Create: `configs/coordexp_swift/research/human13_k_trajectory_rp_crossover/02_rp100_trajectory_compiler.yaml`
-- Create: `configs/coordexp_swift/research/human13_k_trajectory_rp_crossover/03_rp100_trajectory_compiler_preservation.yaml`
-- Create: `configs/coordexp_swift/research/human13_k_trajectory_rp_crossover/04_rp110_trajectory.yaml`
-- Create: `configs/coordexp_swift/research/human13_k_trajectory_rp_crossover/05_rp110_trajectory_compiler.yaml`
-- Create: `configs/coordexp_swift/research/human13_k_trajectory_rp_crossover/06_rp110_trajectory_compiler_preservation.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_trajectory_rp_crossover/01_rp100_trajectory.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_trajectory_rp_crossover/02_rp100_trajectory_compiler.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_trajectory_rp_crossover/03_rp100_trajectory_compiler_preservation.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_trajectory_rp_crossover/04_rp110_trajectory.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_trajectory_rp_crossover/05_rp110_trajectory_compiler.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_trajectory_rp_crossover/06_rp110_trajectory_compiler_preservation.yaml`
 
 1. Add RED tests for the exact six config templates, three seed groups, eighteen
    proposals, shared acquisition only within one RP/seed group, independent

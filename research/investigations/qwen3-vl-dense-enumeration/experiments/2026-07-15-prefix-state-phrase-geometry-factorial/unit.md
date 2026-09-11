@@ -141,9 +141,9 @@ controls.
 - Worktree: `/data/CoordExp/.worktrees/research-probes`.
 - Image: Common Objects in Context validation image `12576` only.
 - Inference configuration:
-  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml`.
+  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml`.
 - Source data:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`.
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`.
 - Checkpoint: step `4,887` from the configuration above.
 - Recipient state: exact `P56` prompt and generated-prefix token identifiers,
   not decoded-text equivalence alone.

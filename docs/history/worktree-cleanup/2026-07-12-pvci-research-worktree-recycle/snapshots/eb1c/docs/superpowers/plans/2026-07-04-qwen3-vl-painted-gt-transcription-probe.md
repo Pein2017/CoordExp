@@ -12,9 +12,9 @@
 
 **Goal:** Build the branch-local painted-GT transcription probe end to end, from strict warm-start expansion and painted materialization through free raw decode, debug metrics, tiny gates, and either a blocked report or a larger two-epoch launch. The mechanistic variable under test is current-pointer identity: whether an obvious visual mark can supply stable "this object now" information strongly enough to overcome language-prior drift during Qwen3-VL autoregressive row generation.
 
-**Architecture:** Keep the original pretrained Qwen base plus adapter philosophy. Add narrow branch-local probe infrastructure around CoordExp-Swift instead of replacing the existing training, inference, and evaluator backbone. The riskiest seams are separated into receipts and gates: all-tower DoRA warm-start, repaired special-token embedding load, geometry-accurate painting, free raw decoding, denominator-bearing debug F1, and tiny overfit eligibility.
+**Architecture:** Keep the original pretrained Qwen base plus adapter philosophy. Add narrow branch-local probe infrastructure around coordexp-infras instead of replacing the existing training, inference, and evaluator backbone. The riskiest seams are separated into receipts and gates: all-tower DoRA warm-start, repaired special-token embedding load, geometry-accurate painting, free raw decoding, denominator-bearing debug F1, and tiny overfit eligibility.
 
-**Tech Stack:** Python 3.12, PyTorch, Transformers Qwen3-VL, PEFT DoRA, safetensors, PIL/Pillow, pytest, OpenSpec, CodeGraph, existing CoordExp-Swift config/training/inference/eval modules.
+**Tech Stack:** Python 3.12, PyTorch, Transformers Qwen3-VL, PEFT DoRA, safetensors, PIL/Pillow, pytest, OpenSpec, CodeGraph, existing coordexp-infras config/training/inference/eval modules.
 
 ---
 
@@ -33,9 +33,9 @@
 - Base model:
   `/data/CoordExp/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent`
 - Source LLM-only step-917 DoRA adapter:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter`
 - Repaired selected-token embedding payload:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917`
   - `special_token_embeddings.safetensors` SHA256:
     `db95b6e489a73c4314fa1f2562b51ad21b471d4fd683fe669cc0108fb8e4f474`
   - `special_token_embeddings.json` SHA256:
@@ -46,11 +46,11 @@
     `af18475fd419822681e23702b47f88a19b5d5d8023b3e3cc8a27ed5c544a1934`
   - tensor summary: shape `[1004, 2048]`, dtype `bfloat16`, nonzero count `2056192`, float32 abs sum approximately `2502.4614`
 - Accepted unpainted val200 metric:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json`
 - Accepted unpainted val200 run root:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z`
 - Accepted val200 input JSONL:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
   - SHA256:
     `9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4`
 - Accepted val200 row-binding identities:
@@ -65,7 +65,7 @@
   - first-32 row-id SHA256:
     `81cd5e3bf6218d47b9e3f895204522dede0bdc9ac8dd8bd11a432f6bcb6cbbb9`
 - Accepted unpainted val200 values:
-  `mAP=0.4111788135144427`, `row_count=200`, `metric_family=coordexp_swift_detection_coco_bbox_v1`
+  `mAP=0.4111788135144427`, `row_count=200`, `metric_family=coordexp_infras_detection_coco_bbox_v1`
 
 ## Fixed V1 Constants
 
@@ -121,7 +121,7 @@ Modify these existing owners narrowly:
 - `src/inference/backend.py`: expose effective generation kwargs and decode hash.
 - `src/inference/pipeline.py`: support painted-probe materialized input rows or delegate through `src/painted_gt/decode.py`.
 - `src/eval/detection_consumer.py`: keep official mAP/mRecall path stable; add only bridge hooks needed by painted reports.
-- `configs/coordexp_swift/painted_gt/`: add tiny and smoke configs.
+- `configs/coordexp_infras/painted_gt/`: add tiny and smoke configs.
 - `tests/painted_gt/`: add focused unit and integration tests.
 
 Do not edit upstream Transformers or HF model files. Do not merge step-917 into a new full base model. Do not make compact grammar or trie-constrained decoding part of primary evidence.
@@ -289,7 +289,7 @@ Create `scripts/probes/painted_gt/probe_val200_sanity_source.py` with a script t
 - verifies `gt_vs_pred.jsonl`, `gt_vs_pred_scored.jsonl.provenance.json`, `image_plan.jsonl`, and `configs/resolved.json` exist;
 - asserts `gt_vs_pred.jsonl` SHA256 is `065ac3dd3a3f8093de97570cfa20bcee3e449802066dec8b1fc19d0c0d64d9d5`;
 - asserts provenance `row_binding.row_ids_sha256` is `217d90415e9ba6f471b16803bc3ca066382949a8feceb00f34b733ae3a45e2e9`;
-- asserts resolved config `data.input_jsonl` is `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`;
+- asserts resolved config `data.input_jsonl` is `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`;
 - asserts the resolved input JSONL SHA256 is `9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4`;
 - asserts `image_plan.jsonl` SHA256 is `3b4bdb0be78f2cb21164970ae7e0d84e21252c4cbe9d4f5de961f4638fb41398`;
 - asserts the first `32` row ids have SHA256 `81cd5e3bf6218d47b9e3f895204522dede0bdc9ac8dd8bd11a432f6bcb6cbbb9`;
@@ -728,7 +728,7 @@ def test_stepwise_first_step_has_empty_prefix_and_one_target_row() -> None: ...
 
 - [ ] **Step 3: Implement materialization**
 
-Write materialized examples as JSONL or the documented equivalent already consumed by CoordExp-Swift training. The files must preserve:
+Write materialized examples as JSONL or the documented equivalent already consumed by coordexp-infras training. The files must preserve:
 
 - prompt bytes;
 - target text;
@@ -1010,10 +1010,10 @@ git commit -m "feat: add painted gt debug metrics and gates"
 ## Task 8: Configs, Dry Runs, And Minimal GPU Smoke
 
 **Files:**
-- Create: `configs/coordexp_swift/painted_gt/base.yaml`
-- Create: `configs/coordexp_swift/painted_gt/tiny_paint_all_warm_start_dora.yaml`
-- Create: `configs/coordexp_swift/painted_gt/tiny_stepwise_teacher_prefix_warm_start_dora.yaml`
-- Create: `configs/coordexp_swift/painted_gt/smoke_warm_start_dora_one_step.yaml`
+- Create: `configs/coordexp_infras/painted_gt/base.yaml`
+- Create: `configs/coordexp_infras/painted_gt/tiny_paint_all_warm_start_dora.yaml`
+- Create: `configs/coordexp_infras/painted_gt/tiny_stepwise_teacher_prefix_warm_start_dora.yaml`
+- Create: `configs/coordexp_infras/painted_gt/smoke_warm_start_dora_one_step.yaml`
 - Create: `tests/painted_gt/test_config_integration.py`
 - Modify: `openspec/changes/add-painted-gt-transcription-probe/tasks.md`
 
@@ -1051,8 +1051,8 @@ Set production-scale knobs only where needed. Keep `max_steps` available for smo
 Run:
 
 ```bash
-python -m src.painted_gt.cli materialize --config configs/coordexp_swift/painted_gt/smoke_warm_start_dora_one_step.yaml --limit-images 4
-python -m src.train --config configs/coordexp_swift/painted_gt/smoke_warm_start_dora_one_step.yaml --dry-run
+python -m src.painted_gt.cli materialize --config configs/coordexp_infras/painted_gt/smoke_warm_start_dora_one_step.yaml --limit-images 4
+python -m src.train --config configs/coordexp_infras/painted_gt/smoke_warm_start_dora_one_step.yaml --dry-run
 ```
 
 Expected:
@@ -1066,7 +1066,7 @@ Expected:
 Run on available GPUs without interrupting other jobs:
 
 ```bash
-python -m src.train --config configs/coordexp_swift/painted_gt/smoke_warm_start_dora_one_step.yaml
+python -m src.train --config configs/coordexp_infras/painted_gt/smoke_warm_start_dora_one_step.yaml
 ```
 
 Expected:
@@ -1085,8 +1085,8 @@ Check off only tasks backed by evidence. Then run:
 ```bash
 pytest tests/painted_gt/test_config_integration.py -q
 openspec validate add-painted-gt-transcription-probe --strict
-git diff --check -- configs/coordexp_swift/painted_gt tests/painted_gt openspec/changes/add-painted-gt-transcription-probe
-git add configs/coordexp_swift/painted_gt tests/painted_gt openspec/changes/add-painted-gt-transcription-probe
+git diff --check -- configs/coordexp_infras/painted_gt tests/painted_gt openspec/changes/add-painted-gt-transcription-probe
+git add configs/coordexp_infras/painted_gt tests/painted_gt openspec/changes/add-painted-gt-transcription-probe
 git commit -m "feat: add painted gt smoke configs"
 ```
 
@@ -1105,10 +1105,10 @@ Run a JSON check against the accepted metric file:
 python - <<'PY'
 import json
 from pathlib import Path
-path = Path("/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json")
+path = Path("/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json")
 data = json.loads(path.read_text())
 assert data["row_count"] == 200
-assert data["metric_family"] == "coordexp_swift_detection_coco_bbox_v1"
+assert data["metric_family"] == "coordexp_infras_detection_coco_bbox_v1"
 assert data["mAP"] >= 0.40
 print("accepted baseline ok", data["mAP"])
 PY
@@ -1120,7 +1120,7 @@ Also verify accepted artifact row binding:
 python - <<'PY'
 import hashlib, json
 from pathlib import Path
-root = Path("/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z")
+root = Path("/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z")
 raw = root / "gt_vs_pred.jsonl"
 prov = root / "gt_vs_pred_scored.jsonl.provenance.json"
 image_plan = root / "image_plan.jsonl"
@@ -1128,7 +1128,7 @@ resolved = root / "configs/resolved.json"
 assert hashlib.sha256(raw.read_bytes()).hexdigest() == "065ac3dd3a3f8093de97570cfa20bcee3e449802066dec8b1fc19d0c0d64d9d5"
 assert json.loads(prov.read_text())["row_binding"]["row_ids_sha256"] == "217d90415e9ba6f471b16803bc3ca066382949a8feceb00f34b733ae3a45e2e9"
 assert hashlib.sha256(image_plan.read_bytes()).hexdigest() == "3b4bdb0be78f2cb21164970ae7e0d84e21252c4cbe9d4f5de961f4638fb41398"
-assert json.loads(resolved.read_text())["config"]["data"]["input_jsonl"] == "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl"
+assert json.loads(resolved.read_text())["config"]["data"]["input_jsonl"] == "/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl"
 rows = [json.loads(line) for line in raw.open()]
 first_ids = [str(row.get("id") or row.get("row_id") or row.get("image_id") or row.get("source_id")) for row in rows[:32]]
 assert first_ids[0] == "coco2017_val_000000000139"

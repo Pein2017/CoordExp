@@ -66,7 +66,7 @@ a traversal-only explanation.
 - adapter family: description-first, geometry-sorted, pure cross-entropy plus
   token-type gate, Weight-Decomposed Low-Rank Adaptation;
 - checkpoint:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_acceler8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`;
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_acceler8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`;
 - full-model 32-bit floating point for conclusion-bearing logits and decoding;
 - Hugging Face backend with Scaled Dot Product Attention;
 - physical batch size `1` inside each independent GPU process;

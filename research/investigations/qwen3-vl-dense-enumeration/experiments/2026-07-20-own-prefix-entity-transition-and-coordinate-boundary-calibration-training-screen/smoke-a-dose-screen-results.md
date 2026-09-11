@@ -38,7 +38,7 @@ token-type-gate Qwen3-VL 2B Weight-Decomposed Low-Rank Adaptation checkpoint at
 step `4,887`:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/
 qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_
 accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/
 ```

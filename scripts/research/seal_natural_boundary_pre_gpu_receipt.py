@@ -114,7 +114,7 @@ DEFAULT_SUPPORT_PLAN = SUPPORT_PLAN_PATH
 DEFAULT_SUPPORT_PLAN_RECEIPT = SUPPORT_PLAN_RECEIPT_PATH
 
 AUTHORED_CONFIG_PATH = REPO_ROOT / (
-    "configs/coordexp_swift/infer/"
+    "configs/coordexp_infras/infer/"
     "qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml"
 )
 DEFAULT_H0_LEDGER_PATH = Path(

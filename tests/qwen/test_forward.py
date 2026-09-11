@@ -102,11 +102,11 @@ def test_forward_profile_sync_helper_is_exact_env_gated(monkeypatch: pytest.Monk
         lambda device: calls.append(str(device)),
     )
 
-    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    monkeypatch.delenv("coordexp_infras_PROFILE_SYNC_TIMINGS", raising=False)
     qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "true")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "true")
     qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "1")
     qwen_forward_module._sync_device_if_requested(torch.device("cuda:0"))
 
     assert calls == ["cuda:0"]

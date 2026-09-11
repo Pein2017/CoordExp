@@ -824,11 +824,11 @@ def test_trainer_profile_sync_helper_is_exact_env_gated(
         lambda device: calls.append(str(device)),
     )
 
-    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    monkeypatch.delenv("coordexp_infras_PROFILE_SYNC_TIMINGS", raising=False)
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "true")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "true")
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "1")
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
 
     assert calls == ["cuda:3"]

@@ -113,8 +113,8 @@
   },
   "fixture": {
     "config": {
-      "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
-      "repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
+      "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
+      "repo_relative_path": "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
       "sha256": "a75b532ac0c2c2900c96a3e008fae691d64bb08022fd20eca26f2cba22bd5391",
       "size_bytes": 121
     },
@@ -1150,7 +1150,7 @@
     ],
     "expected_prompt_token_count": 1027,
     "image": {
-      "path": "/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+      "path": "/data/CoordExp/.worktrees/coordexp-infras/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
       "sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
       "size_bytes": 83558
     },
@@ -1158,7 +1158,7 @@
     "image_width": 1248,
     "input_image_pad_count": 1,
     "input_jsonl": {
-      "path": "/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.single.jsonl",
+      "path": "/data/CoordExp/.worktrees/coordexp-infras/tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.single.jsonl",
       "sha256": "8827611a2b9ec8cea43d2d0921f0f9547f676025418e17ce5a32510e13440184",
       "size_bytes": 1158
     },
@@ -1188,7 +1188,7 @@
     "executed_media": {
       "height": 832,
       "mode": "RGB",
-      "path": "/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+      "path": "/data/CoordExp/.worktrees/coordexp-infras/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
       "rgb_pixel_sha256": "bd07c77deff1f6bff53d2e786a3c9bdd985b9d4cdcc9434f863fa404e25eb6de",
       "source_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
       "source_size_bytes": 83558,
@@ -12174,7 +12174,7 @@
       ],
       "fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
       "root": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
-      "version": "coordexp-swift-model-snapshot-v1"
+      "version": "coordexp-infras-model-snapshot-v1"
     }
   },
   "post_worker_exit": {
@@ -12185,9 +12185,9 @@
     "gpu_memory_returned_to_baseline": true,
     "gpu_memory_tolerance_mib": 64,
     "launcher_argv": [
-      "scripts/probes/coordexp_swift/vllm_qualification.py",
+      "scripts/probes/coordexp_infras/vllm_qualification.py",
       "--config",
-      "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
+      "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
       "--receipt",
       "/tmp/coordexp-vllm-0.14.1-fp32-qualification.json",
       "--max-new-tokens",
@@ -12196,10 +12196,10 @@
     "launcher_pid": 2579522,
     "worker_command": [
       "/root/miniconda3/envs/ms/bin/python",
-      "/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/vllm_qualification.py",
+      "/data/CoordExp/.worktrees/coordexp-infras/scripts/probes/coordexp_infras/vllm_qualification.py",
       "--worker",
       "--config",
-      "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
+      "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
       "--receipt",
       "/tmp/.coordexp-vllm-0.14.1-fp32-qualification-worker-xrdflvas.json",
       "--gpu-memory-utilization",
@@ -12221,10 +12221,10 @@
   },
   "probe": {
     "argv": [
-      "/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/vllm_qualification.py",
+      "/data/CoordExp/.worktrees/coordexp-infras/scripts/probes/coordexp_infras/vllm_qualification.py",
       "--worker",
       "--config",
-      "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
+      "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_base_fp32_vllm_qualification.yaml",
       "--receipt",
       "/tmp/.coordexp-vllm-0.14.1-fp32-qualification-worker-xrdflvas.json",
       "--gpu-memory-utilization",
@@ -12240,8 +12240,8 @@
       "--engine-process-mode",
       "uniprocess"
     ],
-    "path": "/data/CoordExp/.worktrees/CoordExp-swift/scripts/probes/coordexp_swift/vllm_qualification.py",
-    "repo_relative_path": "scripts/probes/coordexp_swift/vllm_qualification.py",
+    "path": "/data/CoordExp/.worktrees/coordexp-infras/scripts/probes/coordexp_infras/vllm_qualification.py",
+    "repo_relative_path": "scripts/probes/coordexp_infras/vllm_qualification.py",
     "sha256": "e6fa2cabeb0d69fcec14538aa7d39c69d79dbac9a5a2b65dfcf4de9d8c0beb7f"
   },
   "process": {
@@ -12310,7 +12310,7 @@
     "executed_media": {
       "height": 832,
       "mode": "RGB",
-      "path": "/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
+      "path": "/data/CoordExp/.worktrees/coordexp-infras/tests/fixtures/smoke/qwen3_vl_single_image_pack/images/train2017/000000000030.jpg",
       "rgb_pixel_sha256": "bd07c77deff1f6bff53d2e786a3c9bdd985b9d4cdcc9434f863fa404e25eb6de",
       "source_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
       "source_size_bytes": 83558,

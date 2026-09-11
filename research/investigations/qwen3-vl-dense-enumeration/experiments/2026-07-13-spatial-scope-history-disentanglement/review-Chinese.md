@@ -116,7 +116,7 @@ updated: 2026-07-13
 | **prompt_ignore_length** | 已安装生成库中把提示前缀排除出重复惩罚统计的可选长度。 |
 | **do_resize** | 图像处理器是否进行几何缩放；本单元必须为 false 并有执行回执。 |
 | **iscrowd** | COCO 标注中表示 crowd 区域的字段；官方评估语义不同于普通单实例。 |
-| **coordexp_swift**、**prod**、**infer** | 分别是原生 CoordExp-Swift 栈、生产训练产物族和推理产物族的历史路径令牌。 |
+| **coordexp_infras**、**prod**、**infer** | 分别是原生 coordexp-infras 栈、生产训练产物族和推理产物族的历史路径令牌。 |
 | **qwen3_vl_2b**、**desc_first**、**geo_sorted** | 分别表示约 20 亿参数模型、描述优先行序列化和几何排序对象顺序。 |
 | **dora_r16a32** | DoRA 秩 16、低秩缩放参数 32。 |
 | **llm_12000**、**accelerate8**、**ebs24**、**8epoch**、**warmup0p1** | 分别表示 12,000 令牌全局打包上限、8 个 Accelerate 进程、有效批量 24、8 个训练周期和 0.1 预热比例。 |
@@ -174,7 +174,7 @@ updated: 2026-07-13
 - **类别：科学设计、术语与解释。**
 - **准确路径与行号：**
   - /data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md:60-71、122-128、163-164、183-186、202-211、315-320、341-350、416-426；
-  - /data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml:20-25；
+  - /data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml:20-25；
   - /root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/generation/logits_process.py:297-313、347-368、399-405。
 - **被审主张：** MASK_RESET 优于 MASK_CUMULATIVE，或 TILE_RESET 优于 TILE_CUMULATIVE，支持 HYPOTHESIS_HISTORY_HORIZON。
 - **观察到的问题：** 累计组同时改变前缀长度、语义内容、先前错误、结构与类别令牌、坐标令牌、遍历顺序、内生提示长度和重复惩罚暴露。更关键的是，旧对象行来自早先区域，而当前图像只显示新区域，产生跨视图前缀—图像不一致。
@@ -199,11 +199,11 @@ updated: 2026-07-13
 - **类别：实施就绪性、解码可比性与研究契约。**
 - **准确路径与行号：**
   - /data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md:64-71、244-257、329-347；
-  - /data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml:20-25；
+  - /data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml:20-25；
   - /data/CoordExp/.worktrees/research-probes/src/config/inference.py:95-100；
   - /data/CoordExp/.worktrees/research-probes/src/inference/backend.py:19-25、147-155；
   - /data/CoordExp/.worktrees/research-probes/src/inference/pipeline.py:759-769；
-  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-swift-infer-backend-trace/spec.md:59-76。
+  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-infras-infer-backend-trace/spec.md:59-76。
 - **被审主张：** FULL_BAG_K 是非零温度、按种子独立的 K 次全图随机生成；FULL_SINGLE 使用同一策略的第一个种子。
 - **观察到的问题：** 当前配置模式没有 do_sample 或逐请求种子字段，DecodeRequest 不携带 temperature、top_p 或种子，后端把 do_sample 固定为 false，稳定规范也把现有版本定义为贪心生成。同时，动机来源的现有全图基线是 temperature=0.0，而新 FULL_SINGLE 若共享装袋的非零温策略，就不再复现原始贪心现象。
 - **科学或契约影响：** 当前后端的 K 次调用只是确定性复现，不是装袋；若把 FULL_SINGLE 改为采样，LRR 条件分母也从原始贪心遗漏集变成一个任意采样种子的遗漏集。
@@ -230,8 +230,8 @@ updated: 2026-07-13
 - **类别：科研契约、目标级指标与实施就绪性。**
 - **准确路径与行号：**
   - /data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md:74-76、298-300、327-339、352-379、416-426、508-517；
-  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md:6-35、65-109、131-139；
-  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-swift-detection-evaluator/spec.md:25-35、61-71、147-170。
+  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md:6-35、65-109、131-139；
+  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-infras-detection-evaluator/spec.md:25-35、61-71、147-170。
 - **被审主张：** 所有 K 次调用实验组通过同一冻结合并策略生成 post-merge 预测，并可同时计算人工对象指标和官方 AP。
 - **观察到的问题：** 合并器没有定义类别规则、重叠谓词、抑制或融合、分数继承、顺序、所有权时机和跨调用来源。官方评估要求每个预测有可追溯的有限分数和对象级评分来源，而当前单元没有规定 K 次调用合并后怎样保留原始令牌追踪或融合置信度。合并还可能把两个未达 IoU 阈值的框融合成一个匹配，或丢掉一个原始匹配。
 - **科学或契约影响：** LRR、保留率、精确率、重复、持久遗漏和 AP 都可能由聚合算法而不是模型处理产生。没有评分桥时，官方 AP 不可执行。
@@ -323,7 +323,7 @@ updated: 2026-07-13
 - **类别：数据集与结论边界。**
 - **准确路径与行号：**
   - /data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md:193-208、263-274、337、359-376、418-420；
-  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-swift-detection-evaluator/spec.md:108-152。
+  - /data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-infras-detection-evaluator/spec.md:108-152。
 - **观察到的问题：** 把范围外可见对象称为“背景”会混淆真实开放世界识别和闭集违规。官方评估与人工账本对未知类别、crowd、group 和部分可见实例的资格也未完全对齐。
 - **影响：** 正确命名的范围外对象可能被写成幻觉；官方精确率与人工精确率可能因类别或 crowd 政策不同而不可比。
 - **最强竞争解释：** 模型识别了真实但本体范围外对象，或预测落在 crowd 区域而不是产生无支撑幻觉。

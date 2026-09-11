@@ -2,7 +2,7 @@ schema: spec-driven
 
 context: |
   CoordExp has two non-substitutable current routes. Repository main is the
-  accepted CoordExp-Swift production-training and evaluation route. The fixed
+  accepted coordexp-infras production-training and evaluation route. The fixed
   research authority is the research-probes worktree; use it for probe
   hypotheses, disposable experiment worktrees, research records, and reusable
   probe mechanics. shared mechanics are maintained in that research base. Read docs/PROJECT_CONTEXT.md and

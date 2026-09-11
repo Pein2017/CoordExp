@@ -1,1 +1,1 @@
-"""CoordExp-swift active source package."""
+"""coordexp-infras active source package."""

@@ -12,7 +12,7 @@ STABLE_JOURNAL_AND_INFERENCE_OWNERS = (
     REPOSITORY_ROOT / "src" / "artifacts",
     REPOSITORY_ROOT / "src" / "inference",
     REPOSITORY_ROOT / "src" / "config",
-    REPOSITORY_ROOT / "configs" / "coordexp_swift" / "infer",
+    REPOSITORY_ROOT / "configs" / "coordexp_infras" / "infer",
 )
 # Admission deliberately names a fixed claim boundary to deny scientific authority;
 # its typed contract tests own that research-specific schema.

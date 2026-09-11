@@ -1,7 +1,7 @@
 ## Context
 
 See [proposal.md](proposal.md) for motivation and the delta
-[specification](specs/coordexp-swift-human13-k-union-greedy-probe/spec.md)
+[specification](specs/coordexp-infras-human13-k-union-greedy-probe/spec.md)
 for required behavior. The current Swift path already owns multimodal encoding,
 no-padding packing, Qwen forward execution, planned-step accumulation, DoRA
 optimization, checkpoint publication, HF/vLLM inference, and detection

@@ -29,7 +29,7 @@ None.
 
 ### Modified Capabilities
 
-- `coordexp-swift-research-probe-admission`: CPU compatibility receipt
+- `coordexp-infras-research-probe-admission`: CPU compatibility receipt
   acceptance gains an explicit fixed execution-root selection rule while
   retaining exact path-and-byte binding and fail-closed behavior.
 

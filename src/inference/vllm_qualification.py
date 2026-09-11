@@ -47,7 +47,7 @@ _FORCED_REPLAY_QUALIFICATION_RECEIPTS = {
     ("fp32", 4): FP32_CONCURRENCY_QUALIFICATION_RECEIPT,
 }
 QUALIFICATION_PROBE_RELATIVE_PATH = Path(
-    "scripts/probes/coordexp_swift/vllm_qualification.py"
+    "scripts/probes/coordexp_infras/vllm_qualification.py"
 )
 QUALIFICATION_PROBE = _REPO_ROOT / QUALIFICATION_PROBE_RELATIVE_PATH
 QUALIFIED_MAX_NUM_SEQS = {1, 4}
@@ -456,7 +456,7 @@ def validate_vllm_forced_replay_qualification(
         _fail_raw_replay(
             "status", payload.get("status") if isinstance(payload, Mapping) else None
         )
-    if payload.get("version") != "coordexp-swift-vllm-concurrency-qualification-v1":
+    if payload.get("version") != "coordexp-infras-vllm-concurrency-qualification-v1":
         _fail_raw_replay("version", payload.get("version"))
     if payload.get("vllm_version") != "0.14.1":
         _fail_raw_replay("vllm_version", payload.get("vllm_version"))
@@ -503,7 +503,7 @@ def validate_vllm_forced_replay_qualification(
         Path(__file__).resolve().parents[2]
         / "scripts"
         / "probes"
-        / "coordexp_swift"
+        / "coordexp_infras"
         / "vllm_concurrency.py"
     )
     observed_probe_sha256 = _sha256_file(probe_path)
@@ -693,7 +693,7 @@ def _validate_concurrency_qualification(
         ) from exc
     if not isinstance(payload, Mapping) or payload.get("status") != "passed":
         _fail_concurrency("status", payload.get("status") if isinstance(payload, Mapping) else None)
-    if payload.get("version") != "coordexp-swift-vllm-concurrency-qualification-v1":
+    if payload.get("version") != "coordexp-infras-vllm-concurrency-qualification-v1":
         _fail_concurrency("version", payload.get("version"))
     if payload.get("vllm_version") != "0.14.1":
         _fail_concurrency("vllm_version", payload.get("vllm_version"))
@@ -770,7 +770,7 @@ def _validate_concurrency_qualification(
         Path(__file__).resolve().parents[2]
         / "scripts"
         / "probes"
-        / "coordexp_swift"
+        / "coordexp_infras"
         / "vllm_concurrency.py"
     )
     observed_probe_sha256 = _sha256_file(probe_path)
@@ -1075,7 +1075,7 @@ def _validate_application_sources(path: Path) -> dict[str, object]:
     if (
         not isinstance(payload, Mapping)
         or payload.get("status") != "passed"
-        or payload.get("version") != "coordexp-swift-vllm-application-sources-v1"
+        or payload.get("version") != "coordexp-infras-vllm-application-sources-v1"
     ):
         raise RuntimeContractError(
             "CoordExp vLLM application-source qualification is invalid",

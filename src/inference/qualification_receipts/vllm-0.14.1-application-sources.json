@@ -35,5 +35,5 @@
     "src/qwen/tokens.py": "073ba9146f6b7ba6e8e2ab4cb7d5cc4ef4ed8cfcb2e82406a2b0b00a1ab6fc58"
   },
   "status": "passed",
-  "version": "coordexp-swift-vllm-application-sources-v1"
+  "version": "coordexp-infras-vllm-application-sources-v1"
 }

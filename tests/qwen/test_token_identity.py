@@ -20,7 +20,7 @@ from src.qwen.tokens import (
 
 FIXTURE_CONFIG = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/config.yaml")
 PROD_CONFIG = Path(
-    "configs/coordexp_swift/prod/"
+    "configs/coordexp_infras/prod/"
     "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml"
 )
 

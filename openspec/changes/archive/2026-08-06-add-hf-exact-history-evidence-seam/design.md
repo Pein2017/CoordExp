@@ -218,9 +218,9 @@ baselines:
 Both consumer shapes are checked for Source and transition step 36 with:
 
 - Source config
-  `configs/coordexp_swift/infer/research/qwen3_vl_2b_row_local_long_promotion_64_max3084_b4_v2/row-local-long-source-64-max3084-b4-hf.yaml`;
+  `configs/coordexp_infras/infer/research/qwen3_vl_2b_row_local_long_promotion_64_max3084_b4_v2/row-local-long-source-64-max3084-b4-hf.yaml`;
 - transition config
-  `configs/coordexp_swift/infer/research/qwen3_vl_2b_row_local_long_promotion_64_max3084_b4_v2/row-local-long-transition-lr1e5-step-36-64-hf.yaml`;
+  `configs/coordexp_infras/infer/research/qwen3_vl_2b_row_local_long_promotion_64_max3084_b4_v2/row-local-long-transition-lr1e5-step-36-64-hf.yaml`;
 - manifest
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-25-continuation-locality-and-exact-prefix-owner-compositionality/panel-v1/manifest.json`;
 - source JSONL

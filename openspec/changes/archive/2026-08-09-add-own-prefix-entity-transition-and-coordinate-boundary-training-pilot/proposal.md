@@ -100,14 +100,14 @@ loss while keeping sampled-route and greedy-Source event families distinct.
 
 ### New Capabilities
 
-- `coordexp-swift-own-prefix-calibration-training`: Defines frozen exact-prefix
+- `coordexp-infras-own-prefix-calibration-training`: Defines frozen exact-prefix
   state-bank replay, entity-transition and first-wrong-coordinate objectives,
   rollout-site token-type gating, research-arm configuration, diagnostics, and
   smoke evidence.
 
 ### Modified Capabilities
 
-- `coordexp-swift-supervision-losses`: Allows one explicit rollout-calibration
+- `coordexp-infras-supervision-losses`: Allows one explicit rollout-calibration
   research profile to omit full-row base cross-entropy while requiring a
   positive-weight token-type gate on every selected site with an intended
   token type; ordinary supervised-training behavior is unchanged.

@@ -24,7 +24,7 @@ from src.training.schedule import ResolvedStepSchedule
 from src.training.supervised_trainer import SupervisedMicroStep
 
 
-PACKING_CACHE_VERSION = "coordexp-swift-pack-cache-v2"
+PACKING_CACHE_VERSION = "coordexp-infras-pack-cache-v2"
 PACKING_CACHE_MANIFEST = "manifest.json"
 PACKING_CACHE_CHUNK_DIR = "chunks"
 DEFAULT_PACK_CACHE_MATERIALIZATION_WORKERS = 16

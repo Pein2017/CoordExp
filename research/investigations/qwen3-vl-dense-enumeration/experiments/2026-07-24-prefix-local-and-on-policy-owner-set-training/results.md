@@ -275,7 +275,7 @@ The receipt-bound configs, complete run artifacts, and authoritative paired
 ledgers are:
 
 ```text
-configs/coordexp_swift/infer/research/
+configs/coordexp_infras/infer/research/
 qwen3_vl_2b_transition_step36_transfer_max3084_matched_b4_v1/
 
 /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/

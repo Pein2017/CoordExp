@@ -205,7 +205,7 @@ REQUIRED_ROW_BINDING_FIELDS: tuple[str, ...] = (
 #: fails closed on anything else.
 DEFAULT_INFER_CONFIG = (
     REPO_ROOT
-    / "configs/coordexp_swift/infer"
+    / "configs/coordexp_infras/infer"
     / "qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml"
 )
 

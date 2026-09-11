@@ -1,1 +1,1 @@
-"""CoordExp-swift inference implementation package."""
+"""coordexp-infras inference implementation package."""

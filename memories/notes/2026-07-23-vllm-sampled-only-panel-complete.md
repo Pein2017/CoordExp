@@ -39,7 +39,7 @@ route as the missing matched baseline without an explicit research decision.
 
 ## Infrastructure provenance
 
-- upstream `CoordExp-swift`: `f263beaa0` adds configurable positive
+- upstream `coordexp-infras`: `f263beaa0` adds configurable positive
   `backend.vllm.max_model_len` with default 2,048;
 - research synchronization: `6fa61cf4d`;
 - research configuration: `c8259aedf` selects 4,096;

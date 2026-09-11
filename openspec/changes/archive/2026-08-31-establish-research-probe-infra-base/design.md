@@ -1,7 +1,7 @@
 ## Context
 
 See [proposal.md](proposal.md) for motivation and
-[the infra-base delta spec](specs/coordexp-swift-research-probe-infra-base/spec.md)
+[the infra-base delta spec](specs/coordexp-infras-research-probe-infra-base/spec.md)
 for the observable contract.
 
 The current shared mechanics are already deep, independently useful modules:

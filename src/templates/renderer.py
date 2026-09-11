@@ -541,7 +541,7 @@ def _template_fingerprint(template_config: TemplateConfig, prompt_text: str) -> 
         "object_field_order": template_config.object_field_order,
         "object_ordering": template_config.object_ordering,
         "prompt_text": prompt_text,
-        "renderer": "coordexp-swift-template-v1",
+        "renderer": "coordexp-infras-template-v1",
     }
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

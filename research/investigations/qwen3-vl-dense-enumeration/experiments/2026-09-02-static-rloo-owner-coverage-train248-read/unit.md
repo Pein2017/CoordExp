@@ -63,7 +63,7 @@ that policy gradient or DoRA is generally ineffective.
   SHA-256
   `86d34cc2efbce9814847dd12fc12cab2f46d04168ce39905bfd62a93ced783fd`;
 - inference config:
-  `configs/coordexp_swift/infer/qwen3_vl_2b_static_rloo_owner_coverage_train248.yaml`,
+  `configs/coordexp_infras/infer/qwen3_vl_2b_static_rloo_owner_coverage_train248.yaml`,
   SHA-256
   `7e5f50ddca46a043a45460e35022ecf65d2ef8625590296dcfd312936e7b9660`.
 

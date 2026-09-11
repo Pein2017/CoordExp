@@ -144,7 +144,7 @@ native model fails a properly set-aligned training test.
 Primary checkpoint:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/
 qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/
 checkpoints/step-4887/checkpoint.json
 ```
@@ -152,7 +152,7 @@ checkpoints/step-4887/checkpoint.json
 Random-order ablation checkpoint:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/
 qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/
 checkpoints/step-4887/
 ```

@@ -73,40 +73,40 @@
     "mm_processor_kwargs": {
       "do_resize": false
     },
-    "model": "/data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a/snapshot",
+    "model": "/data/Qwen3-VL/model_cache/coordexp_infras/vllm_materialized/39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a/snapshot",
     "seed": 0,
     "tensor_parallel_size": 1,
-    "tokenizer": "/data/Qwen3-VL/model_cache/coordexp_swift/vllm_materialized/39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a/snapshot",
+    "tokenizer": "/data/Qwen3-VL/model_cache/coordexp_infras/vllm_materialized/39df6dd7a41edb1b2d94db8772b487a21781998dd84d637bd16c81986cb1743a/snapshot",
     "trust_remote_code": true
   },
   "config": {
-    "entry_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
-    "entry_repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
+    "entry_path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
+    "entry_repo_relative_path": "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
     "fingerprint": "6e8b48f2d16f2e984d10f39e292d4f756d3c3b26f85d02b484fe20907179e93f",
     "sources": [
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/base.yaml",
-        "repo_relative_path": "configs/coordexp_swift/infer/base.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/base.yaml",
+        "repo_relative_path": "configs/coordexp_infras/infer/base.yaml",
         "sha256": "eae71758eff67e59411519d2f75e467706fa3ee039f78bc9311af8ea1d598de2"
       },
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
-        "repo_relative_path": "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "repo_relative_path": "configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
         "sha256": "c7dc34e37b53b9aeac76b959f5791a677a810d9dc30d0f11f42e4fdae51a8c06"
       },
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
-        "repo_relative_path": "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
+        "repo_relative_path": "configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_vllm.yaml",
         "sha256": "d91ffbcb64e6ea209ffd785f01cd943119c3cedd9f41b28b9d37a653f733da5e"
       },
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
-        "repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
+        "repo_relative_path": "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_vllm_parity.yaml",
         "sha256": "061bf61aa977e6bbc1dcb0b4e3a6891c17fb99f344b9ef0377421f6898d04b8a"
       },
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
-        "repo_relative_path": "configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
+        "repo_relative_path": "configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_vllm_fp32_parity.yaml",
         "sha256": "23a24099f07c6aad77e07521a5e067df771dd89b124d4f8cf29a1f662a5651c2"
       }
     ]
@@ -119,7 +119,7 @@
     "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb"
   },
   "input_source": {
-    "path": "/data/CoordExp/.worktrees/CoordExp-swift/tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl",
+    "path": "/data/CoordExp/.worktrees/coordexp-infras/tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl",
     "row_count": 2,
     "selected_prefix_row_count": 1,
     "sha256": "f1a13e7470f4636f2c89e11c23074c69a1318ba60fc3292ae0aa72bfbd495ace"
@@ -179,7 +179,7 @@
         "module": "src.inference.vllm_forced_replay",
         "qualname": "CoordExpForcedSequenceLogitsProcessor",
         "repo_relative_path": "src/inference/vllm_forced_replay.py",
-        "source_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/vllm_forced_replay.py",
+        "source_path": "/data/CoordExp/.worktrees/coordexp-infras/src/inference/vllm_forced_replay.py",
         "source_sha256": "8c833e66759d3059b11e2c3d9d3f5f837710d1a39eb5eb3e2e209d423a2ff692"
       },
       "gpu_memory_utilization": 0.2,
@@ -252,7 +252,7 @@
   "runtime_qualification": {
     "baseline": {
       "application_qualification": {
-        "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
+        "receipt_path": "/data/CoordExp/.worktrees/coordexp-infras/src/inference/qualification_receipts/vllm-0.14.1-application-sources.json",
         "receipt_sha256": "af2ed1be6b0e42baf68814f611bc0da56b712d1bbc3e385fd29170355c6cadfd",
         "source_count": 24,
         "status": "passed"
@@ -260,7 +260,7 @@
       "candidate_version": "0.14.1",
       "max_num_seqs": 1,
       "model_dtype": "fp32",
-      "receipt_path": "/data/CoordExp/.worktrees/CoordExp-swift/src/inference/qualification_receipts/vllm-0.14.1-fp32-qualification.json",
+      "receipt_path": "/data/CoordExp/.worktrees/coordexp-infras/src/inference/qualification_receipts/vllm-0.14.1-fp32-qualification.json",
       "receipt_sha256": "0be9514061d4b25149ca353a5cf70eb6ef2e9cfd8febefe0b71bfbbd310d6373",
       "source_base_snapshot_fingerprint": "e43d3a07b5fe47db7abcc07a9b6a318dd32d9a2fa12f620c2e734573bf9fe5eb",
       "status": "passed"
@@ -273,6 +273,6 @@
   },
   "schema_version": 1,
   "status": "passed",
-  "version": "coordexp-swift-vllm-concurrency-qualification-v1",
+  "version": "coordexp-infras-vllm-concurrency-qualification-v1",
   "vllm_version": "0.14.1"
 }

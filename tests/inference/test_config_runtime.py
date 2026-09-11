@@ -22,9 +22,9 @@ from src.qwen.tokens import (
 def test_valid_production_infer_config_loads() -> None:
     from src.config.inference import InferConfig, load_infer_config
 
-    resolved = load_infer_config("configs/coordexp_swift/infer/base.yaml")
+    resolved = load_infer_config("configs/coordexp_infras/infer/base.yaml")
     repo_root = Path.cwd().resolve()
-    config_dir = (repo_root / "configs" / "coordexp_swift" / "infer").resolve()
+    config_dir = (repo_root / "configs" / "coordexp_infras" / "infer").resolve()
     expected_base_model = (
         repo_root
         / "model_cache"
@@ -35,7 +35,7 @@ def test_valid_production_infer_config_loads() -> None:
     expected_input = (
         repo_root / "tests" / "fixtures" / "smoke" / "qwen3_vl_single_image_pack" / "examples.jsonl"
     ).resolve()
-    expected_artifact_root = (repo_root / "outputs" / "coordexp_swift" / "infer").resolve()
+    expected_artifact_root = (repo_root / "outputs" / "coordexp_infras" / "infer").resolve()
 
     assert isinstance(resolved.config, InferConfig)
     assert resolved.config.backend.type == "hf"
@@ -67,7 +67,7 @@ def test_valid_production_infer_config_loads() -> None:
 
 @pytest.mark.parametrize(
     "config_path",
-    sorted(Path("configs/coordexp_swift/infer").glob("*.yaml")),
+    sorted(Path("configs/coordexp_infras/infer").glob("*.yaml")),
     ids=lambda path: path.name,
 )
 def test_all_canonical_infer_configs_use_strict_backend_projection(
@@ -105,9 +105,9 @@ def test_all_canonical_infer_configs_use_strict_backend_projection(
 @pytest.mark.parametrize(
     "config_path",
     [
-        "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml",
-        "configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml",
-        "configs/coordexp_swift/infer/wave7_real_production_adapter_smoke.yaml",
+        "configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml",
+        "configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml",
+        "configs/coordexp_infras/infer/wave7_real_production_adapter_smoke.yaml",
     ],
 )
 def test_production_aligned_infer_configs_keep_training_system_prompt(
@@ -117,7 +117,7 @@ def test_production_aligned_infer_configs_keep_training_system_prompt(
 
     training_config = yaml.safe_load(
         Path(
-            "configs/coordexp_swift/prod/"
+            "configs/coordexp_infras/prod/"
             "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_"
             "accelerate8_ebs64_4epoch_warmup0p1.yaml"
         ).read_text(encoding="utf-8")
@@ -133,11 +133,11 @@ def test_step917_val200_and_benchmark_configs_use_same_checkpoint_payloads() -> 
     from src.config.inference import load_infer_config
 
     val200 = load_infer_config(
-        "configs/coordexp_swift/infer/"
+        "configs/coordexp_infras/infer/"
         "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_step917_val200.yaml"
     )
     benchmark = load_infer_config(
-        "configs/coordexp_swift/infer/"
+        "configs/coordexp_infras/infer/"
         "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml"
     )
 
@@ -546,7 +546,7 @@ def test_research_profile_preserves_values_without_debug_or_namespace_bypass(
     from src.config.inference import load_infer_config, load_research_infer_config
 
     monkeypatch.chdir(tmp_path)
-    canonical = _write_config(tmp_path / "configs/coordexp_swift/infer/source.yaml")
+    canonical = _write_config(tmp_path / "configs/coordexp_infras/infer/source.yaml")
     profile = tmp_path / "probes/example/configs/source.yaml"
     profile.parent.mkdir(parents=True)
     profile.write_bytes(canonical.read_bytes())

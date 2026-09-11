@@ -431,7 +431,7 @@ def _qualification_case(tmp_path: Path) -> tuple[Any, dict[str, object], Path, s
         json.dumps(
             {
                 "status": "passed",
-                "version": "coordexp-swift-vllm-application-sources-v1",
+                "version": "coordexp-infras-vllm-application-sources-v1",
                 "source_sha256": {
                     path: source_sha256
                     for path in vllm_qualification.APPLICATION_EXECUTION_SOURCE_PATHS
@@ -818,7 +818,7 @@ def test_validate_vllm_runtime_qualification_accepts_executed_concurrency_receip
     engine_kwargs["max_num_seqs"] = 4
     concurrency_receipt = {
         "status": "passed",
-        "version": "coordexp-swift-vllm-concurrency-qualification-v1",
+        "version": "coordexp-infras-vllm-concurrency-qualification-v1",
         "vllm_version": "0.14.1",
         "max_num_seqs": 4,
         "request_count": 4,
@@ -948,7 +948,7 @@ def test_validate_vllm_forced_replay_qualification_binds_processor_and_base(
     }
     payload = {
         "status": "passed",
-        "version": "coordexp-swift-vllm-concurrency-qualification-v1",
+        "version": "coordexp-infras-vllm-concurrency-qualification-v1",
         "vllm_version": "0.14.1",
         "max_num_seqs": 1,
         "request_count": 1,

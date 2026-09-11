@@ -9,7 +9,7 @@ unit_id: 2026-07-10-pvci-endogenous-boundary-state-synthesis
 topic: qwen3-vl-painted-gt-transcription-probe
 status: completed
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - causal-patching
@@ -133,7 +133,7 @@ This unit is complete when:
 - Predecessor unit:
   `../2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md`.
 - Config:
-  `configs/coordexp_swift/infer/research/pvci_sequential_control_e1_debug4.yaml`.
+  `configs/coordexp_infras/infer/research/pvci_sequential_control_e1_debug4.yaml`.
 - Checkpoint: E1 anti-copy step 484 through the research-only byte-identical
   replay surface recorded by the predecessor unit.
 - Source feature store:

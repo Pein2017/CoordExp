@@ -139,7 +139,7 @@ def test_owner_commit_source_gate_uses_explicit_root_and_1005_profile(
 
 def test_a3_leaf_binds_owner_source_gate_root() -> None:
     resolved = load_infer_config(
-        "configs/coordexp_swift/infer/"
+        "configs/coordexp_infras/infer/"
         "qwen3_vl_2b_static_dynamic_owner_interface_a3_step2445_h0.yaml"
     )
     assert resolved.config.embedding_delta is not None

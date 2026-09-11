@@ -64,7 +64,7 @@ Public native continuation must preserve exact prefix/action IDs, request associ
 
 Sampled decode follows after the exact-history contract is stable. DORA's `run_current_seeded_sampled_rollouts.py` differs from the base copy: raw-softmax generation, `top_k=0`, fresh generation config and performance records. Preserve the resolved caller policy, including processor effects and raw versus policy probabilities. Fixed seed and fixed batching is the initial reproducibility scope; stronger invariance across batch sizes/order is deferred, not silently assumed.
 
-Relevant existing contracts remain intact: `coordexp-swift-infer-backend-trace` keeps HF evidence models/native tensors private and full logits unavailable; `coordexp-swift-infer-config-runtime` requires deterministic scored inference. New native research operations coexist below those adapters rather than relaxing them. CPU helper tests do not prove real-model token equivalence.
+Relevant existing contracts remain intact: `coordexp-infras-infer-backend-trace` keeps HF evidence models/native tensors private and full logits unavailable; `coordexp-infras-infer-config-runtime` requires deterministic scored inference. New native research operations coexist below those adapters rather than relaxing them. CPU helper tests do not prove real-model token equivalence.
 
 ### 3. Learning foundations share computation, not objectives
 

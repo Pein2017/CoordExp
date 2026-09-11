@@ -49,7 +49,7 @@ architecture or a broader optimization loop.
 
 ### New Capabilities
 
-- `coordexp-swift-human13-row-contrast-successor`: Experiment-local contracts
+- `coordexp-infras-human13-row-contrast-successor`: Experiment-local contracts
   for hierarchical duplicate-row contrast, rectangle-valid greedy gates,
   frozen `G`-coordinate gradient preservation, bounded R1/R2 execution, and
   exact same-panel outcome projection.

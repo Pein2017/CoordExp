@@ -4,14 +4,14 @@ layer: docs
 doc_type: implementation-map
 status: canonical
 domain: repo
-summary: Small source and test routing map for the current CoordExp-Swift implementation.
+summary: Small source and test routing map for the current coordexp-infras implementation.
 updated: 2026-07-11
 ---
 
 # Implementation Map
 
 Use this page to locate the current owner before opening a broad source area.
-It describes `main`'s CoordExp-Swift route; stable contract details belong to
+It describes `main`'s coordexp-infras route; stable contract details belong to
 the linked OpenSpecs. Historical paths are listed only to prevent accidental
 reuse.
 
@@ -38,18 +38,18 @@ reuse.
 | Forward-only eval | `src/eval/forward.py` | `tests/eval/test_forward_eval.py` |
 | Detection eval | `src/eval/detection_consumer.py` | `tests/eval/test_detection_consumer.py` |
 
-Normative routes: [`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
+Normative routes: [`coordexp-infras-training-artifacts`](../openspec/specs/coordexp-infras-training-artifacts/spec.md)
 for run/checkpoint publication and
-[`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md)
+[`coordexp-infras-infer-config-runtime`](../openspec/specs/coordexp-infras-infer-config-runtime/spec.md)
 for explicit inference payload composition.
 
 ## Current config route
 
 Open these roots first:
 
-- `configs/coordexp_swift/prod/`
-- `configs/coordexp_swift/smoke/`
-- `configs/coordexp_swift/infer/`
+- `configs/coordexp_infras/prod/`
+- `configs/coordexp_infras/smoke/`
+- `configs/coordexp_infras/infer/`
 
 The loader requires strict typed config resolution. Do not infer a current
 schema from an archived YAML file or an old plan.
@@ -90,16 +90,16 @@ schema from an archived YAML file or an old plan.
 
 Use the exact relevant spec, not a proposal copy:
 
-- `openspec/specs/coordexp-swift-config-runtime/spec.md`
-- `openspec/specs/coordexp-swift-data-template-encoding/spec.md`
-- `openspec/specs/coordexp-swift-packing-forward/spec.md`
-- `openspec/specs/coordexp-swift-supervision-losses/spec.md`
-- `openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md`
-- `openspec/specs/coordexp-swift-infer-pipeline/spec.md`
-- `openspec/specs/coordexp-swift-infer-backend-trace/spec.md`
-- `openspec/specs/coordexp-swift-infer-execution-model/spec.md`
-- `openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md`
-- `openspec/specs/coordexp-swift-detection-evaluator/spec.md`
+- `openspec/specs/coordexp-infras-config-runtime/spec.md`
+- `openspec/specs/coordexp-infras-data-template-encoding/spec.md`
+- `openspec/specs/coordexp-infras-packing-forward/spec.md`
+- `openspec/specs/coordexp-infras-supervision-losses/spec.md`
+- `openspec/specs/coordexp-infras-adapters-embeddings-optim/spec.md`
+- `openspec/specs/coordexp-infras-infer-pipeline/spec.md`
+- `openspec/specs/coordexp-infras-infer-backend-trace/spec.md`
+- `openspec/specs/coordexp-infras-infer-execution-model/spec.md`
+- `openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md`
+- `openspec/specs/coordexp-infras-detection-evaluator/spec.md`
 
 ## Historical route quarantine
 

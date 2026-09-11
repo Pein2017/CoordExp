@@ -3,11 +3,11 @@
   "unit_id": "2026-07-15-fixed-encoding-persistent-hard-routing-geometry-donor-eligibility-screen",
   "frozen_before_new_hard_routing_output_inspection": true,
   "config": {
-    "path": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml",
+    "path": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml",
     "sha256": "f3000588accbcf1d9ada3b2f3e0b3324d660b4810b75d8f5d050d9f184f9ca80"
   },
   "source_jsonl": {
-    "path": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl",
+    "path": "/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl",
     "sha256": "9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4"
   },
   "audit_ledger": {

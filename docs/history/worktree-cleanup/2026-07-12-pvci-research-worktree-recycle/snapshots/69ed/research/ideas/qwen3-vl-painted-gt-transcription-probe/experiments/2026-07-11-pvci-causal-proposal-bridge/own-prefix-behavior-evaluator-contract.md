@@ -119,7 +119,7 @@ reported under `safety.by_baseline`; missing required evidence cannot pass.
 ## CLI
 
 ```bash
-python scripts/probes/coordexp_swift/evaluate_pvci_own_prefix.py \
+python scripts/probes/coordexp_infras/evaluate_pvci_own_prefix.py \
   --panel-json /abs/own_prefix_panel.json \
   --output-dir /abs/own_prefix_behavior_gate
 ```

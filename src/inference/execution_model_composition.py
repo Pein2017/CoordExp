@@ -11,10 +11,10 @@ from typing import Any
 from src.common.errors import RuntimeContractError
 
 
-EXECUTION_MODEL_COMPOSITION_VERSION = "coordexp-swift-execution-model-composition-v1"
+EXECUTION_MODEL_COMPOSITION_VERSION = "coordexp-infras-execution-model-composition-v1"
 EXECUTION_MODEL_COMPOSITION_NAME = "coordexp_composition_fidelity.json"
 COMPOSITION_PROBE_RELATIVE_PATH = Path(
-    "scripts/probes/coordexp_swift/execution_model_composition.py"
+    "scripts/probes/coordexp_infras/execution_model_composition.py"
 )
 FULL_LOGIT_RTOL = 1e-4
 FULL_LOGIT_ATOL = 5e-3

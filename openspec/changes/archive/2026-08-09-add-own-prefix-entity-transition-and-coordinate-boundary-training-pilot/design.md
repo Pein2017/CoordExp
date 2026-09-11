@@ -1,6 +1,6 @@
 ## Context
 
-The current CoordExp-Swift training path is optimized for rendered supervised
+The current coordexp-infras training path is optimized for rendered supervised
 examples, canonical `TokenSequence` supervision, no-padding segment-isolated
 packing, protected token losses, Accelerate runtime, and standard
 Weight-Decomposed Low-Rank Adaptation checkpoints for the Qwen3
@@ -154,7 +154,7 @@ The metadata complements `TokenSequence`; it does not redefine ordinary
 
 **Alternative rejected:** one padded candidate batch in a new research-only
 trainer. That would duplicate position, visual replacement, runtime, and
-checkpoint behavior already owned by CoordExp-Swift.
+checkpoint behavior already owned by coordexp-infras.
 
 ### 4. Separate branch selection from coherent-row continuation
 

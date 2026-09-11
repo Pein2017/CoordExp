@@ -264,7 +264,7 @@ def test_strict_merge_restores_original_order_and_regenerates_bound_provenance(t
         artifact_dir=tmp_path,
         output_dir=tmp_path / "eval",
     )
-    assert evaluate_result.metrics["metric_family"] == "coordexp_swift_detection_coco_bbox_v1"
+    assert evaluate_result.metrics["metric_family"] == "coordexp_infras_detection_coco_bbox_v1"
 
 
 def test_strict_merge_preserves_raw_likelihood_while_scores_remain_policy_owned(

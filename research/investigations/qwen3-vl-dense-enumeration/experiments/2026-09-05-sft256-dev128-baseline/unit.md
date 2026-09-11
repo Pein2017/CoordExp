@@ -104,7 +104,7 @@ gates before the full course. No seed sweep or post-outcome schedule extension.
   manifest SHA-256 `4697ee57d8ea1ca04fdf2b0aafc7ff1ecbe3e064c372a6f1ec8e6af78a0fca86`.
   All 384 image headers and native-loader annotations were checked; counts and
   density strata above are unchanged, including all eight former exclusions.
-- Config: `configs/coordexp_swift/research/qwen3_vl_2b_sft256_dev128_full_dora_ce_seed19.yaml`.
+- Config: `configs/coordexp_infras/research/qwen3_vl_2b_sft256_dev128_full_dora_ce_seed19.yaml`.
   Full language DoRA A/B/magnitude, rank 16/alpha 32/dropout 0, Source warm start;
   selected embedding/readout delta explicitly frozen, not merely learning-rate 0.
   Its installation/frozen-surface metadata remains present while optimizer
@@ -198,7 +198,7 @@ The frozen selected-delta payload remains byte-identical to Source, SHA-256
 `a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2`.
 
 Its first cold config was rejected before GPU use because native production
-inference requires the canonical `configs/coordexp_swift/infer` namespace and
+inference requires the canonical `configs/coordexp_infras/infer` namespace and
 explicit leaf-authored generation/scoring settings. The corrected canonical
 leaf declares the same numerical settings; `qualification-cold-launch-v1.json`
 owns that one cold-only invocation. Do not repeat the successful training to

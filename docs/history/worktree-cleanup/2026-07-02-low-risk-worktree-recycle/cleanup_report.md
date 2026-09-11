@@ -8,7 +8,7 @@ Cleanup principle: propose in a worktree, train/eval/infer when useful, record f
 
 ## Scope
 
-The cleanup scope is the user-approved low-risk set plus `segment-aware-packing-infra`. Active/dirty lanes such as CoordExp-Swift, coverage-ledger mechanistic probing, ledger auxiliary loss, prefix denoising, and Gaussian-RPS mechanistic round are intentionally excluded.
+The cleanup scope is the user-approved low-risk set plus `segment-aware-packing-infra`. Active/dirty lanes such as coordexp-infras, coverage-ledger mechanistic probing, ledger auxiliary loss, prefix denoising, and Gaussian-RPS mechanistic round are intentionally excluded.
 
 ## Summary Table
 

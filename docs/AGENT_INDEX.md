@@ -57,7 +57,7 @@ For a research hypothesis, probe, experiment-local implementation, result, or
 research-mechanics reuse, start at the fixed
 `/data/CoordExp/.worktrees/research-probes` checkout and verify its live ref,
 commit, and Git worktree lock. Do not start on root `main` or the
-`coordexp-swift` development worktree merely because their source route is
+`coordexp-infras` development worktree merely because their source route is
 documented here.
 
 - Probe lifecycle and fixed-worktree rules:
@@ -87,9 +87,9 @@ Current training and inference entrypoints are:
 
 Current config roots are:
 
-- `configs/coordexp_swift/prod/`
-- `configs/coordexp_swift/smoke/`
-- `configs/coordexp_swift/infer/`
+- `configs/coordexp_infras/prod/`
+- `configs/coordexp_infras/smoke/`
+- `configs/coordexp_infras/infer/`
 
 Training is Accelerate-only replicated DDP. Route training artifacts through
 `src/artifacts/run_writer.py` and `src/artifacts/checkpoints.py`; removed
@@ -103,19 +103,19 @@ remain in historical docs, archived configs, tests, and old-run evidence.
 
 Use the smallest relevant spec family:
 
-- Config and data: [`coordexp-swift-config-runtime`](../openspec/specs/coordexp-swift-config-runtime/spec.md), [`coordexp-swift-data-template-encoding`](../openspec/specs/coordexp-swift-data-template-encoding/spec.md)
-- Packing, forward, and losses: [`coordexp-swift-packing-forward`](../openspec/specs/coordexp-swift-packing-forward/spec.md), [`coordexp-swift-supervision-losses`](../openspec/specs/coordexp-swift-supervision-losses/spec.md), [`coordexp-swift-pack-cache-semantic-identity`](../openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md)
-- Trainable payloads and training artifacts: [`coordexp-swift-adapters-embeddings-optim`](../openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md), [`coordexp-swift-training-artifacts`](../openspec/specs/coordexp-swift-training-artifacts/spec.md)
-- Inference and evaluation: [`coordexp-swift-infer-config-runtime`](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md), [`coordexp-swift-infer-pipeline`](../openspec/specs/coordexp-swift-infer-pipeline/spec.md), [`coordexp-swift-infer-backend-trace`](../openspec/specs/coordexp-swift-infer-backend-trace/spec.md), [`coordexp-swift-infer-scoring-artifacts`](../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md), [`coordexp-swift-detection-evaluator`](../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
+- Config and data: [`coordexp-infras-config-runtime`](../openspec/specs/coordexp-infras-config-runtime/spec.md), [`coordexp-infras-data-template-encoding`](../openspec/specs/coordexp-infras-data-template-encoding/spec.md)
+- Packing, forward, and losses: [`coordexp-infras-packing-forward`](../openspec/specs/coordexp-infras-packing-forward/spec.md), [`coordexp-infras-supervision-losses`](../openspec/specs/coordexp-infras-supervision-losses/spec.md), [`coordexp-infras-pack-cache-semantic-identity`](../openspec/specs/coordexp-infras-pack-cache-semantic-identity/spec.md)
+- Trainable payloads and training artifacts: [`coordexp-infras-adapters-embeddings-optim`](../openspec/specs/coordexp-infras-adapters-embeddings-optim/spec.md), [`coordexp-infras-training-artifacts`](../openspec/specs/coordexp-infras-training-artifacts/spec.md)
+- Inference and evaluation: [`coordexp-infras-infer-config-runtime`](../openspec/specs/coordexp-infras-infer-config-runtime/spec.md), [`coordexp-infras-infer-pipeline`](../openspec/specs/coordexp-infras-infer-pipeline/spec.md), [`coordexp-infras-infer-backend-trace`](../openspec/specs/coordexp-infras-infer-backend-trace/spec.md), [`coordexp-infras-infer-scoring-artifacts`](../openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md), [`coordexp-infras-detection-evaluator`](../openspec/specs/coordexp-infras-detection-evaluator/spec.md)
 
-The remaining `coordexp-swift-*` specs are reachable from the
+The remaining `coordexp-infras-*` specs are reachable from the
 [`openspec/specs/`](../openspec/specs/) directory. Do not invent a missing
 pre-promotion spec path to make a link look normative.
 
 ## Query routing
 
 - Current research probe or result: [BRANCH_AND_WORKTREE_POLICY.md](BRANCH_AND_WORKTREE_POLICY.md), [research/index.md](../research/index.md), then the named bound worktree/artifact record
-- Current production architecture or source ownership: [COORDEXP_SWIFT.md](COORDEXP_SWIFT.md), [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md), [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
+- Current production architecture or source ownership: [coordexp_infras.md](coordexp_infras.md), [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md), [IMPLEMENTATION_MAP.md](IMPLEMENTATION_MAP.md)
 - Qwen3-VL internals, processor/grid, MRoPE, DeepStack, native replay, or packed forward: [Qwen-VL manual](standards/upstream/QWEN_VL.md), especially [local execution boundaries](standards/upstream/QWEN_VL.md#local-execution-boundaries); follow its exact source and contract links for the selected path
 - Data and preprocessing: [docs/data/README.md](data/README.md), [docs/data/CONTRACT.md](data/CONTRACT.md), [docs/data/PREPARATION.md](data/PREPARATION.md), [docs/data/PACKING.md](data/PACKING.md)
 - Current inference/evaluation: [docs/eval/README.md](eval/README.md), [docs/eval/WORKFLOW.md](eval/WORKFLOW.md), [ARTIFACTS.md](ARTIFACTS.md)
@@ -135,7 +135,7 @@ workflow or turn a proposal into a runtime framework.
 ## High-signal searches
 
 ```bash
-rg -n "src/train.py|src/infer.py|src/inference|detection_consumer|coordexp_swift" docs openspec configs src tests
+rg -n "src/train.py|src/infer.py|src/inference|detection_consumer|coordexp_infras" docs openspec configs src tests
 rg -n "checkpoint_handoff|resume_state|resolved_config|gt_vs_pred_scored|evaluation_receipt" docs openspec src tests
 rg -n "src/sft.py|src/trainers|src/datasets|src/detection|src/infer/|configs/stage1|configs/stage2" docs openspec configs src tests
 ```

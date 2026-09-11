@@ -39,7 +39,7 @@ immutable; unrelated dirty work remains untouched.
   patch-embed linearization enabled, T0/top-p1/RP1/max_new_tokens3084, one
   completion per image and per-device batch2.
 - New authored config:
-  `configs/coordexp_swift/infer/source256-rloo-round1-train256-realization-v1.yaml`.
+  `configs/coordexp_infras/infer/source256-rloo-round1-train256-realization-v1.yaml`.
   Only adapter path and run name/root differ from the maintained Source profile.
 - Output root:
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-09-round1-greedy-realization`.

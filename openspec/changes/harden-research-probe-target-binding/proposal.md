@@ -37,7 +37,7 @@ None.
 
 ### Modified Capabilities
 
-- `coordexp-swift-research-probe-admission`: admission now binds and
+- `coordexp-infras-research-probe-admission`: admission now binds and
   revalidates a clean target research tree before any model-launch boundary,
   rather than detecting a target mismatch only while recording later evidence.
 

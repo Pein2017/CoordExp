@@ -1,0 +1,116 @@
+{
+  "entries": [
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_1e-5/checkpoints/step-9/adapter",
+      "adapter_sha256": "636073b0868ea4b31370cf2484bb6eb8cc0d09fd4ebadaa9c8a02dac770a6189",
+      "arm": "pairwise-lr1e5",
+      "config_fingerprint": "40be3127dcb9ef9c1377879c9321a6073fb3fa28d21a4e4a0ecacdb25ba38a77",
+      "config_name": "row-local-long-pairwise-lr1e5-step-09-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_1e-5/checkpoints/step-9/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-pairwise-lr1e5-step-09-64-hf",
+      "step": 9
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_1e-5/checkpoints/step-90/adapter",
+      "adapter_sha256": "febfdc48923f162560d82517cf4386a541210ac50ed1d4e155af37304a6d418f",
+      "arm": "pairwise-lr1e5",
+      "config_fingerprint": "acbaf54c96965f4d5fcc2d88bc6f97d5966a604d158cb1c723b727ef0d7f65a9",
+      "config_name": "row-local-long-pairwise-lr1e5-step-90-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_1e-5/checkpoints/step-90/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-pairwise-lr1e5-step-90-64-hf",
+      "step": 90
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-27/adapter",
+      "adapter_sha256": "ea8fc6341a4c042cc131e6ff99b0a40e27789606e05b8c3c315e4a6f3ed07122",
+      "arm": "pairwise-lr3e6",
+      "config_fingerprint": "e10cbb3411949551ca70db1728083a8ae2f6a98b21076ed2dc726054dc719a7e",
+      "config_name": "row-local-long-pairwise-lr3e6-step-27-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-27/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-pairwise-lr3e6-step-27-64-hf",
+      "step": 27
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-54/adapter",
+      "adapter_sha256": "f8494b8073c8c36e02e5f0640fb43cc06b4b1907493da20cacd8e9ae529077a2",
+      "arm": "pairwise-lr3e6",
+      "config_fingerprint": "0fe6fd063df5f8fb74e1d378500af824eea56274d7083ab46b6937b113a812d4",
+      "config_name": "row-local-long-pairwise-lr3e6-step-54-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-54/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-pairwise-lr3e6-step-54-64-hf",
+      "step": 54
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-90/adapter",
+      "adapter_sha256": "7309133927c91b27d6d6362635f0d88d336ebbd82e75285ad25f085d3a4b21e5",
+      "arm": "pairwise-lr3e6",
+      "config_fingerprint": "0d9a29e8fe56b8e4120c0b7e1dd232663b6858837a596b374b39f985a23524e9",
+      "config_name": "row-local-long-pairwise-lr3e6-step-90-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-pairwise-1440-long-learning-rate-3e-6-v1/runs/qwen3_vl_2b_row_local_complete_action_pairwise_1440_event_long_learning_rate_3e-6/checkpoints/step-90/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-pairwise-lr3e6-step-90-64-hf",
+      "step": 90
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36/adapter",
+      "adapter_sha256": "7e49e8c31aa4d8dc72a309c5ba238dc50a517e51ce09acaa499386ba3362f61d",
+      "arm": "transition-lr1e5",
+      "config_fingerprint": "2377c54dad772ecf708d73307325eb2743c4ec777074b9d069296882639a35dc",
+      "config_name": "row-local-long-transition-lr1e5-step-36-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-transition-lr1e5-step-36-64-hf",
+      "step": 36
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-90/adapter",
+      "adapter_sha256": "e6bc1ec9fac59144db1ffc6be4e254f0752f4aff741527cb6671e7de95195abf",
+      "arm": "transition-lr1e5",
+      "config_fingerprint": "ae67f3e8cfb4d7a719c54f1aa3b3febea860fca18ae856e634a51bfb9479e5ff",
+      "config_name": "row-local-long-transition-lr1e5-step-90-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-90/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-transition-lr1e5-step-90-64-hf",
+      "step": 90
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-owner-conditioned-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_owner_conditioned_candidate_1440_event_long_learning_rate_1e-5/checkpoints/step-9/adapter",
+      "adapter_sha256": "6c8c993e374ca13b19399a7650f752bf8401d14bbf60e5a57e77da9bae626ec8",
+      "arm": "owner-conditioned-lr1e5",
+      "config_fingerprint": "4260dc84ca56e7d91cd0882c9ec9f562ba18e95588339dceb40e097c8b8e02b8",
+      "config_name": "row-local-long-owner-conditioned-lr1e5-step-09-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-owner-conditioned-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_owner_conditioned_candidate_1440_event_long_learning_rate_1e-5/checkpoints/step-9/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-owner-conditioned-lr1e5-step-09-64-hf",
+      "step": 9
+    },
+    {
+      "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-owner-conditioned-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_owner_conditioned_candidate_1440_event_long_learning_rate_1e-5/checkpoints/step-90/adapter",
+      "adapter_sha256": "334ff72f62cdcd6b6c80e72392d67a70adc9f7e7e139518a03281fd034bd3d8e",
+      "arm": "owner-conditioned-lr1e5",
+      "config_fingerprint": "7520eb89534cfac038c842ab86b21fd9a2568ce3c73e044901474be46e1a1f3c",
+      "config_name": "row-local-long-owner-conditioned-lr1e5-step-90-64-hf.yaml",
+      "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-owner-conditioned-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_owner_conditioned_candidate_1440_event_long_learning_rate_1e-5/checkpoints/step-90/special_token_embeddings",
+      "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+      "run_name": "qwen3-vl-2b-row-local-long-owner-conditioned-lr1e5-step-90-64-hf",
+      "step": 90
+    }
+  ],
+  "entry_count": 9,
+  "generation": {
+    "batch_size": 4,
+    "max_new_tokens": 3084,
+    "repetition_penalty": 1.0,
+    "temperature": 0.0,
+    "top_p": 1.0
+  },
+  "inference_artifact_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/clean-rollouts-64-long-promotion-max3084-b4-v2",
+  "input_jsonl": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/inference-panel-pairwise-64-v2/panel.coord.jsonl",
+  "input_jsonl_sha256": "8264b8fc31f5425f75de2b89d3e17e749306c4327df589941c6b2f7503a58da5",
+  "schema_version": "row_local_long_milestone_infer_matrix.v1",
+  "source_template": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/research/qwen3_vl_2b_row_local_64_source_hf.yaml"
+}

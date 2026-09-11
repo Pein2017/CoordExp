@@ -79,7 +79,7 @@ Embedding delta:
   checkpoints/step-2444/special_token_embeddings
 
 Inference config:
-configs/coordexp_swift/infer/
+configs/coordexp_infras/infer/
   qwen3_vl_2b_c_anchored_owner_audit_c_train248.yaml
 sha256: cd04a09be4dbf24498250f788433a5beae9dff42ad3a7c64613992d281d7baad
 

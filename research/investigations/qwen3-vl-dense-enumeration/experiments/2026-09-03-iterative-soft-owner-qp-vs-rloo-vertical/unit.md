@@ -58,7 +58,7 @@ repeatability, or production claim.
   source; transcript sorting is a training preference, never a natural-decode
   admission invariant.
 - **Inference leaf:**
-  `configs/coordexp_swift/infer/qwen3_vl_2b_broad_support_coverage_graded_static_rloo_train248.yaml`,
+  `configs/coordexp_infras/infer/qwen3_vl_2b_broad_support_coverage_graded_static_rloo_train248.yaml`,
   SHA-256
   `54d1d63f90c6fb2da336c1f3dfba1dd9f035e468e6b778221d91a61ca45c25b6`.
 - **Output root:**

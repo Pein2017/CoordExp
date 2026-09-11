@@ -18,7 +18,7 @@ from src.common.errors import RuntimeContractError
 
 
 DEFAULT_ADAPTER_NAME = "default"
-DORA_ADAPTER_PAYLOAD_IDENTITY_VERSION = "coordexp-swift-dora-adapter-v1"
+DORA_ADAPTER_PAYLOAD_IDENTITY_VERSION = "coordexp-infras-dora-adapter-v1"
 
 
 @dataclass(frozen=True)

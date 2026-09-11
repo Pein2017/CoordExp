@@ -44,7 +44,7 @@ local scientific configuration, not a global runtime class or registry.
 Native research operations do not need to manufacture packed sequences or a
 strict HF evidence session. Their maintained package examples document exact
 history, scoring, continuation and capture usage. The stable research behavior
-is owned by the [infra-base contract](../openspec/specs/coordexp-swift-research-probe-infra-base/spec.md).
+is owned by the [infra-base contract](../openspec/specs/coordexp-infras-research-probe-infra-base/spec.md).
 
 For one immutable result, use the leaf directly:
 
@@ -72,10 +72,10 @@ does not weaken collision checks, exact recovery identity, finite values,
 geometry/token alignment, gradient scaling or persisted compatibility. The
 artifact facade remains lazy so JSON-only callers do not initialize models.
 
-See the [journal contract](../openspec/specs/coordexp-swift-execution-evidence-journal/spec.md),
-[admission contract](../openspec/specs/coordexp-swift-research-probe-admission/spec.md),
-[inference runtime](../openspec/specs/coordexp-swift-infer-config-runtime/spec.md)
-and [inference pipeline](../openspec/specs/coordexp-swift-infer-pipeline/spec.md)
+See the [journal contract](../openspec/specs/coordexp-infras-execution-evidence-journal/spec.md),
+[admission contract](../openspec/specs/coordexp-infras-research-probe-admission/spec.md),
+[inference runtime](../openspec/specs/coordexp-infras-infer-config-runtime/spec.md)
+and [inference pipeline](../openspec/specs/coordexp-infras-infer-pipeline/spec.md)
 for the selected API and failure behavior. Do not copy the full typed admission
 surface into a producer that only needs to save one result.
 

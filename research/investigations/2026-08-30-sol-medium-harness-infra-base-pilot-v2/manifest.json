@@ -31,7 +31,7 @@
   "frozen_openspec_sha256": {
     "proposal.md": "7fa58e9667d7b9e5efc6b0f28a63eabc040cff292f274070d863bdf3761cdf66",
     "design.md": "85aefd695e77f3e19c5f1ed043cddb64e7a944e4c8407149a87106085a3715af",
-    "specs/coordexp-swift-research-probe-infra-base/spec.md": "5fd19d39aa86e8ce4b643f4db88e9a9c1773540123484a508d2da35b064efac1",
+    "specs/coordexp-infras-research-probe-infra-base/spec.md": "5fd19d39aa86e8ce4b643f4db88e9a9c1773540123484a508d2da35b064efac1",
     "tasks.md": "8fcb4ab3691eef1d7dd0f2c4ca350763273c7927fa023caf73e6f7279bbd6121"
   },
   "harnessdock_version": "0.25.2+codex.20260830084057",

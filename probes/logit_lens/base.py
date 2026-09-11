@@ -42,7 +42,7 @@ SOURCE_CHECKPOINT = Path(
 SOURCE_ADAPTER = SOURCE_CHECKPOINT / "adapter"
 SOURCE_DELTA = SOURCE_CHECKPOINT / "special_token_embeddings"
 SOURCE_GATE_STUDY = Path(
-    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/"
+    "docs/history/architecture/proposals/2026-06-27-coordexp-infras/"
     "source-studies/special-token-embeddings.md"
 )
 SOURCE_GATE_STUDY_SHA256 = "e024f8f9754475cfa6ed81136eae6c72becd2aca53b7b03b9fa3047e8da7d193"

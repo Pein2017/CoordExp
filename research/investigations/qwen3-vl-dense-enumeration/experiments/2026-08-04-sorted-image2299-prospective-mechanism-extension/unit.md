@@ -48,8 +48,8 @@ mechanism rule.
 | Panel SHA-256 | `01086b139fa23983697492fdb535b5154429277803e8f12b243f9a031d1451f8` |
 | Image-2299 authority-row SHA-256 | `ce19853c74a595f22cc183ce450e561f2da3216e54a1e499cfbca1be7e1c425b` |
 | Image bytes SHA-256 | `cd7199a37188c9ac6481520175866cbd78fa6fba35f4290bb0b60c78afcb2df3` |
-| Prospective native reference config | `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined13_hf_fp32_rp1p0.yaml`; this owns the prospective-13 input/run identity used by the native reference contract |
-| S1 scorer runtime leaf | `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml`; the S1 receipt binds this legacy leaf while its plan separately seals the admitted 13-image panel and exact image-2299 authority row. A literal diff shows that model/runtime/generation fields are identical; only comments, `run.name`, and `data.input_jsonl` differ. |
+| Prospective native reference config | `configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined13_hf_fp32_rp1p0.yaml`; this owns the prospective-13 input/run identity used by the native reference contract |
+| S1 scorer runtime leaf | `configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32_rp1p0.yaml`; the S1 receipt binds this legacy leaf while its plan separately seals the admitted 13-image panel and exact image-2299 authority row. A literal diff shows that model/runtime/generation fields are identical; only comments, `run.name`, and `data.input_jsonl` differ. |
 | Legacy census run | `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-03-sorted-owner-accessibility-phenotype-census/20260803T065743Z/` |
 | Frozen support calibration content digest | `9dd6d7646fc55db6155124dc4bbfa46642b32b006d39758bd2e24d1ca97058c5` |
 | Frozen support calibration file SHA-256 | `bbe0ccb5141e659c20b8df984d7fbf50e9c8ab96f0b1b860a1664b29a2dd12ba` |

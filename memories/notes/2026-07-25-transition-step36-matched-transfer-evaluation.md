@@ -57,7 +57,7 @@ architecture before that discussion.
 ## Evidence roots
 
 - configs and receipt:
-  `configs/coordexp_swift/infer/research/qwen3_vl_2b_transition_step36_transfer_max3084_matched_b4_v1/`;
+  `configs/coordexp_infras/infer/research/qwen3_vl_2b_transition_step36_transfer_max3084_matched_b4_v1/`;
 - run artifacts:
   `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/clean-rollouts-transition-step36-transfer-max3084-matched-b4-v1/`;
 - paired owner ledgers:

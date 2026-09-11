@@ -126,8 +126,8 @@ the scientific contract.
 
 **Files:**
 
-- Create: `configs/coordexp_swift/research/human13_on_policy_successor/01_o_full_safe.yaml`
-- Create: `configs/coordexp_swift/research/human13_on_policy_successor/02_o_first_safe.yaml`
+- Create: `configs/coordexp_infras/research/human13_on_policy_successor/01_o_full_safe.yaml`
+- Create: `configs/coordexp_infras/research/human13_on_policy_successor/02_o_first_safe.yaml`
 - Modify: `research/investigations/qwen3-vl-dense-enumeration/experiments/index.md`
 - Update: `.superpowers/sdd/2026-08-13-human13-on-policy-first-bottleneck-successor/progress.md`
 

@@ -10,7 +10,7 @@ updated: 2026-07-17
 # Legacy Training and Inference Design Lineage
 
 This lineage explains how old names and design proposals relate to the current
-CoordExp-Swift surfaces. It is a map for interpreting historical artifacts, not
+coordexp-infras surfaces. It is a map for interpreting historical artifacts, not
 permission to resurrect removed paths. Planning documents describe intent;
 executed units and receipts are required before a claim becomes evidence.
 

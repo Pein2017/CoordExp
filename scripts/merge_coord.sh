@@ -60,13 +60,13 @@ if [[ ! -f "$ADAPTERS/adapter_config.json" ]]; then
 fi
 
 # Prefer conda run for swift, but allow overrides.
-COORDEXP_SWIFT=()
+coordexp_infras=()
 if [[ -n "${swift_bin:-${SWIFT_BIN:-}}" ]]; then
-  COORDEXP_SWIFT=("${swift_bin:-${SWIFT_BIN:-}}")
+  coordexp_infras=("${swift_bin:-${SWIFT_BIN:-}}")
 elif command -v conda >/dev/null 2>&1; then
-  COORDEXP_SWIFT=(conda run -n "${conda_env:-${CONDA_ENV:-ms}}" swift)
+  coordexp_infras=(conda run -n "${conda_env:-${CONDA_ENV:-ms}}" swift)
 else
-  COORDEXP_SWIFT=(swift)
+  coordexp_infras=(swift)
 fi
 
 # Extract base model path from adapter_config.json
@@ -95,7 +95,7 @@ if [[ -e "$OUTPUT_DIR" ]]; then
 fi
 
 # 1) Merge LoRA with swift export
-CUDA_VISIBLE_DEVICES=$GPU_DEVICES "${COORDEXP_SWIFT[@]}" export \
+CUDA_VISIBLE_DEVICES=$GPU_DEVICES "${coordexp_infras[@]}" export \
   --model "$BASE_MODEL" \
   --adapters "$ADAPTERS" \
   --merge_lora true \
@@ -151,4 +151,4 @@ fi
 
 echo "Merged model (with token embeddings offsets) saved to: $OUTPUT_DIR"
 echo "Test inference:"
-echo "CUDA_VISIBLE_DEVICES=${GPU_DEVICES%%,*} ${COORDEXP_SWIFT[*]} infer --model $OUTPUT_DIR --stream true"
+echo "CUDA_VISIBLE_DEVICES=${GPU_DEVICES%%,*} ${coordexp_infras[*]} infer --model $OUTPUT_DIR --stream true"

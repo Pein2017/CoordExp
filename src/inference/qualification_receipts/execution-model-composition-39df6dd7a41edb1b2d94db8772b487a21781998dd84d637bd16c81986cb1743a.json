@@ -1,5 +1,5 @@
 {
-  "algorithm_version": "coordexp-swift-dora-delta-fold-v4",
+  "algorithm_version": "coordexp-infras-dora-delta-fold-v4",
   "comparison": {
     "behavior_checks": {
       "full_vocab_within_reference_tolerance": true,
@@ -143,23 +143,23 @@
     "transformers": "4.57.1"
   },
   "probe_identity": {
-    "path": "scripts/probes/coordexp_swift/execution_model_composition.py",
+    "path": "scripts/probes/coordexp_infras/execution_model_composition.py",
     "sha256": "7b78355174fb233ac82a9117ce7ff87a3c1d8a56f396a7eee301d563444a2cc2"
   },
   "resolved_config_identity": {
-    "entry_config_path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",
+    "entry_config_path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",
     "fingerprint": "7d47996f36a762f7a622ee7087ff73a0bb1d9fb9cca7458e20560572614c6b1c",
     "sources": [
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/base.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/base.yaml",
         "sha256": "eae71758eff67e59411519d2f75e467706fa3ee039f78bc9311af8ea1d598de2"
       },
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200.yaml",
         "sha256": "c7dc34e37b53b9aeac76b959f5791a677a810d9dc30d0f11f42e4fdae51a8c06"
       },
       {
-        "path": "/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",
+        "path": "/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/infer/smoke/qwen3_vl_2b_step4887_dynamic_hf_fp32_composition.yaml",
         "sha256": "d960353c89a2e9985d4164711e9e28e52e9a07e352d71618326199975f9fc815"
       }
     ]
@@ -182,5 +182,5 @@
       "rtol": 0.0001
     }
   },
-  "version": "coordexp-swift-execution-model-composition-v1"
+  "version": "coordexp-infras-execution-model-composition-v1"
 }

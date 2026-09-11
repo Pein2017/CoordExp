@@ -20,7 +20,7 @@ not authorize deleting artifacts, changing scientific meaning or moving worktree
 | --- | --- |
 | Reusable executable behavior | The existing `src/` concept owner; use the [implementation map](../IMPLEMENTATION_MAP.md) when it is unknown |
 | Maintained research implementation | `probes/<direction>/` in the research base, with explicit profiles and dependencies; see [research mechanics](../RESEARCH_PROBE_INFRA_BASE.md) |
-| Current production configuration | The selected `configs/coordexp_swift/` family and its schema; direction-owned profiles remain with their package |
+| Current production configuration | The selected `configs/coordexp_infras/` family and its schema; direction-owned profiles remain with their package |
 | CLI entry or operational utility | An existing maintained script/package entry, without duplicating its underlying library behavior |
 | Behavioral invariants | Tests at the relevant caller or contract owner |
 | Current usage and explanation | `docs/`; stable compatibility requirements are in `openspec/specs/` |

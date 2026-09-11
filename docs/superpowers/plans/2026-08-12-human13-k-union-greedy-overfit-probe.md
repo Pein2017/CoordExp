@@ -27,7 +27,7 @@ This execution plan is subordinate to:
 
 - [research unit](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-12-human13-k-union-to-greedy-overfit-screen/unit.md), which owns scientific meaning;
 - [OpenSpec proposal](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/proposal.md);
-- [OpenSpec specification](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/specs/coordexp-swift-human13-k-union-greedy-probe/spec.md);
+- [OpenSpec specification](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/specs/coordexp-infras-human13-k-union-greedy-probe/spec.md);
 - [OpenSpec design](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/design.md); and
 - [OpenSpec tasks](../../../openspec/changes/archive/2026-08-28-add-human13-k-union-greedy-overfit-probe/tasks.md).
 
@@ -267,7 +267,7 @@ admission.
 
 **Files:**
 
-- Create: `configs/coordexp_swift/research/human13_k_union/*.yaml`
+- Create: `configs/coordexp_infras/research/human13_k_union/*.yaml`
 - Create: `scripts/research/materialize_human13_k_union_configs.py`
 - Create: `scripts/research/analyze_human13_k_union.py`
 - Create: `scripts/research/launch_human13_k_union_matrix.py`

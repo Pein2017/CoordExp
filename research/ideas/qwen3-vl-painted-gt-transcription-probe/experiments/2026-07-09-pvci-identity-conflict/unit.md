@@ -9,7 +9,7 @@ unit_id: 2026-07-09-pvci-identity-conflict
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - painted-gt
   - pvci
@@ -37,7 +37,7 @@ identity-conflict control uses rows where the assistant target remains object
 - Commit or diff scope: uncommitted local additions for the identity-conflict
   analyzer and two inference configs.
 - Baseline checkpoint: production step917 adapter,
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917`.
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917`.
 - E1 anti-copy checkpoint:
   `/data/CoordExp/outputs/painted_gt/pvci_step2/train_snap_radius/painted_gt_pvci_step2_snap_radius_train256_anti_copy_mix_step484_warm_start_dora_all_towers_accelerate8_ebs8_16epoch-pvci-step2-anticopy-retry3-20260708T1726Z/checkpoints/step-484`.
 - Wrong-object materialized input:
@@ -69,7 +69,7 @@ identity-conflict control uses rows where the assistant target remains object
 2. Launch E1 anti-copy checkpoint on the same wrong-object val100 input.
 3. Analyze E1 with the same identity-conflict metric.
 4. Run E1 on standard unpainted val200 with the baseline one-shot prompt and
-   evaluate it with the CoordExp-Swift detection consumer.
+   evaluate it with the coordexp-infras detection consumer.
 5. Compare E1 standard one-shot behavior against the already-existing step917
    baseline val200 artifact.
 
@@ -92,7 +92,7 @@ python scripts/probes/painted_gt/analyze_identity_conflict.py \
   --condition-name pvci_step0_heldout_val100_tight_wrong_object_mark_step484
 
 CUDA_VISIBLE_DEVICES=4 python -m src.infer \
-  --config configs/coordexp_swift/infer/painted_gt/pvci_identity_conflict/e1_wrong_object_val100_tight_step484_rp110_bs2.yaml
+  --config configs/coordexp_infras/infer/painted_gt/pvci_identity_conflict/e1_wrong_object_val100_tight_step484_rp110_bs2.yaml
 
 python scripts/probes/painted_gt/analyze_identity_conflict.py \
   --input /data/CoordExp/outputs/painted_gt/pvci_identity_conflict/inference/e1_wrong_object_val100_tight/step484_anticopy_rp110_bs2/gt_vs_pred.jsonl \
@@ -100,7 +100,7 @@ python scripts/probes/painted_gt/analyze_identity_conflict.py \
   --condition-name pvci_identity_conflict_e1_wrong_object_val100_tight_step484
 
 CUDA_VISIBLE_DEVICES=4,5 python -m src.infer \
-  --config configs/coordexp_swift/infer/painted_gt/pvci_identity_conflict/e1_standard_unpainted_val200_step484_rp110_bs2.yaml
+  --config configs/coordexp_infras/infer/painted_gt/pvci_identity_conflict/e1_standard_unpainted_val200_step484_rp110_bs2.yaml
 
 python scripts/evaluate_detection.py \
   --artifact-dir /data/CoordExp/outputs/painted_gt/pvci_identity_conflict/inference/e1_standard_unpainted_val200/step484_anticopy_rp110_bs2 \

@@ -48,7 +48,7 @@ two concrete consumers of the same mechanics.
 
 ### New Capabilities
 
-- `coordexp-swift-research-probe-admission`: Typed execution-input binding and
+- `coordexp-infras-research-probe-admission`: Typed execution-input binding and
   journal-backed CPU-plus-vertical mechanics admission for production-shaped
   research-probe launches.
 

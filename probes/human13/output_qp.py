@@ -47,7 +47,7 @@ BASE_MODEL = Path(
 SOURCE_CONFIG = Path(__file__).with_name("configs") / "qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml"
 SOURCE_GATE_ROOT = Path("/data/CoordExp/.worktrees/research-probes")
 SOURCE_GATE_STUDY = SOURCE_GATE_ROOT / (
-    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/"
+    "docs/history/architecture/proposals/2026-06-27-coordexp-infras/"
     "source-studies/special-token-embeddings.md"
 )
 SOURCE_GATE_RECEIPT = SOURCE_GATE_ROOT / (

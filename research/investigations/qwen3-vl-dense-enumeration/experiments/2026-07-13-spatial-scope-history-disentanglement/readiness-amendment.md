@@ -128,7 +128,7 @@ retain the complete declarations in [the research unit](unit.md).
 ### Model-facing validation source
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
 SHA-256: 9b524a8c20f03758e2e3939703ff35a1e35a1108fb095ac6e7af5a1539c8cfc4
 row count: 200
 ```
@@ -174,7 +174,7 @@ not crowd-aware official evidence for this unit.
 ### Primary checkpoint
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json
 SHA-256: 613e5d97f4a7a53d6325b5c1909813d6bb82e72622942b225df9724b5556a536
 ```
 
@@ -212,7 +212,7 @@ authorized-preflight-derived values, not unspecified scientific choices.
 The primary config lineage is:
 
 ```text
-configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml
+configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml
 SHA-256: f3000588accbcf1d9ada3b2f3e0b3324d660b4810b75d8f5d050d9f184f9ca80
 ```
 

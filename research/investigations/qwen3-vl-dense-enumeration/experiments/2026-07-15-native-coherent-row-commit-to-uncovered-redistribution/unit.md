@@ -236,7 +236,7 @@ successful commit-to-uncovered result.
 The fixed inference configuration is:
 
 ```text
-/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/
+/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/
   qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml
 ```
 
@@ -246,7 +246,7 @@ coordinate supervision; it is not the name of this experiment.
 The source data is:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/
   val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
 ```
 

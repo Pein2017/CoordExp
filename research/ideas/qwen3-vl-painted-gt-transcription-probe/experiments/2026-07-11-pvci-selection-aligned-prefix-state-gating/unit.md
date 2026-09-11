@@ -9,7 +9,7 @@ unit_id: 2026-07-11-pvci-selection-aligned-prefix-state-gating
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - native-commit

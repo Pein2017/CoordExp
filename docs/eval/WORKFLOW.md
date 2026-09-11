@@ -4,7 +4,7 @@ layer: docs
 doc_type: runbook
 status: canonical
 domain: eval
-summary: Current CoordExp-Swift inference, selected-token scoring, evaluation, and visualization.
+summary: Current coordexp-infras inference, selected-token scoring, evaluation, and visualization.
 tags: [eval, infer, runbook]
 updated: 2026-09-09
 ---
@@ -18,14 +18,14 @@ use [CONTRACT.md](CONTRACT.md) for artifact compatibility and
 ## Run inference and scoring
 
 ```bash
-python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml
+python -m src.infer --config configs/coordexp_infras/infer/<config>.yaml
 ```
 
 The config selects the data, model composition, output directory and backend.
 HF loads the base, adapters and selected-token embedding delta dynamically;
 vLLM uses the immutable execution-model composition. Backend/source ownership
 is in the [implementation map](../IMPLEMENTATION_MAP.md), with exact support
-in the [backend/trace contract](../../openspec/specs/coordexp-swift-infer-backend-trace/spec.md).
+in the [backend/trace contract](../../openspec/specs/coordexp-infras-infer-backend-trace/spec.md).
 A backend or raw-score channel requires its own current support evidence.
 
 ```text

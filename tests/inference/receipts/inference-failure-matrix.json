@@ -93,7 +93,7 @@
   "digest": "9ed8bf12a802e8412e4dbffe3d96f68d56e7e4c2b6a0fa06a79f864ba69876a6",
   "pytest_command": "conda run -n ms pytest tests/inference/test_pipeline.py tests/inference/test_worker_runtime.py tests/inference/test_data_parallel_merge.py -q",
   "pytest_result": "99 passed in 16.61s",
-  "receipt_version": "coordexp-swift-inference-failure-matrix-v2",
+  "receipt_version": "coordexp-infras-inference-failure-matrix-v2",
   "schema_version": 2,
   "source_sha256": {
     "src/inference/merge.py": "cbf7faf6a08e9c44e7d4dbd8f1d05c67ce29007fd17227bfcdd87be05925d1e7",

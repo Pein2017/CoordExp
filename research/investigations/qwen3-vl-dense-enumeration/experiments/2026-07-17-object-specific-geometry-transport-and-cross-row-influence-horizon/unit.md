@@ -745,7 +745,7 @@ prefix from the same image and still call it the same case.
 The canonical source-data file is:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/
 val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl
 ```
 

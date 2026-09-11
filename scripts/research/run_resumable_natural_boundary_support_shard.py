@@ -65,7 +65,7 @@ EXPECTED_BASE_MODEL_FILES = {
 }
 EXPECTED_SOURCE_GATE_ROOT = Path("/data/CoordExp")
 EXPECTED_SOURCE_GATE_FILES = {
-    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/special-token-embeddings.md": "e024f8f9754475cfa6ed81136eae6c72becd2aca53b7b03b9fa3047e8da7d193",
+    "docs/history/architecture/proposals/2026-06-27-coordexp-infras/source-studies/special-token-embeddings.md": "e024f8f9754475cfa6ed81136eae6c72becd2aca53b7b03b9fa3047e8da7d193",
     "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json": "4bd4b18464d2d2b29bcff534a8e40381c42da760b4ed0f4ff1e11d1327fbb348",
 }
 

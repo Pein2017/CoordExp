@@ -148,7 +148,7 @@ scripts/research/human13_hf_shared_surface_live.py  2229f580e103cd102ef780780c58
 scripts/research/human13_live_model.py               ce36d163dedb9e832fba1b6b1759ebe9f310c227b6ed119d9670fb30c0307fa3
 tests/research/test_human13_hf_shared_surface_live.py e80a6a9bec76d885da7037ac6568910b5a3db729d97fc9ef5d7d95ec62b59f89
 tests/research/test_human13_live_model.py             0cd029f43ceb5528ae9b5707ced1b339c642921b95db50f14db22cfaba5bf20f
-configs/coordexp_swift/research/human13_all_hf_shared_surface_vertical/01_image1584.yaml f93010394efb2d7cf7fcbe5061f6f8c89037087b5a1b6b590fabb0e9823aa01b
+configs/coordexp_infras/research/human13_all_hf_shared_surface_vertical/01_image1584.yaml f93010394efb2d7cf7fcbe5061f6f8c89037087b5a1b6b590fabb0e9823aa01b
 human13-k-union-manifest.json                         a8f88716c1227054ab29dc698f89462c9369c47c8d6415de3783c0937f60a6fb
 ```
 

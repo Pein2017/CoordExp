@@ -1,4 +1,4 @@
-"""Strict YAML config loading for CoordExp-swift."""
+"""Strict YAML config loading for coordexp-infras."""
 
 from __future__ import annotations
 

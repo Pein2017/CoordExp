@@ -932,7 +932,7 @@ deletion once its test module is split.
 ## Configs and fixtures
 
 The batch-1 and batch-2 scripts reference only two `configs/` *directories*
-(`configs/coordexp_swift/infer/`, `configs/coordexp_swift/infer/research/`) as generation targets, never a
+(`configs/coordexp_infras/infer/`, `configs/coordexp_infras/infer/research/`) as generation targets, never a
 tracked config file. No tracked `configs/**` entry is cited by a deleted script alone, so **no config is
 removed** by this change.
 
@@ -1073,7 +1073,7 @@ deleted counts are lower than the HOLD lists:
 | `summarize_same_covered_set_prefix_order_probe` | `tests/research/test_summarize_same_covered_set_prefix_order_probe.py` |
 | `verify_likelihood_mining_contracts` | - |
 
-Config removed: `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_random_permutation_bundle_step4887_human_refined12_hf_fp32.yaml`
+Config removed: `configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_random_permutation_bundle_step4887_human_refined12_hf_fp32.yaml`
 (referenced only by `run_span_likelihood_replay` and `verify_likelihood_mining_contracts`).
 
 ### Batch 2 - HOLD-C (commit `20be41cfa`)

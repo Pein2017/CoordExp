@@ -6,7 +6,7 @@
 - 53 immutable source snapshots recorded in `manifest.tsv`:
   - 46 source records promoted into the live research reading path;
   - 7 planning/design records retained as raw history only.
-- The CoordExp-Swift physical-length `summary.md` missing from the target.
+- The coordexp-infras physical-length `summary.md` missing from the target.
 - Six lightweight JSON artifact snapshots plus the manifest entry for one
   byte-identical 4.1 MB safetensors payload already present in Swift outputs.
 - Four previously absent proposal-bridge request/result JSON files copied into
@@ -29,7 +29,7 @@ Other cited roots remain provenance handles and are not claimed as retained by
 this bundle.
 
 The temporary branches remain useful only as Git history. Their implementation
-must not be treated as compatible with current CoordExp-Swift infrastructure.
+must not be treated as compatible with current coordexp-infras infrastructure.
 Future experiments should reimplement the smallest required mechanism on the
 canonical branch and cite the corresponding research unit.
 

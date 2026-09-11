@@ -289,7 +289,7 @@ review, apply one correction bundle, and commit only owned files.
 ### Task 4: Dual-GPU live entry, audit, analyzer, and continuation gate
 
 **Files:**
-- Create: `configs/coordexp_swift/research/human13_all_hf_shared_surface_vertical/01_image1584.yaml`
+- Create: `configs/coordexp_infras/research/human13_all_hf_shared_surface_vertical/01_image1584.yaml`
 - Create: `scripts/research/run_human13_all_hf_shared_surface_vertical.py`
 - Create: `tests/research/test_run_human13_all_hf_shared_surface_vertical.py`
 - Create: `scripts/research/analyze_human13_all_hf_shared_surface_vertical.py`

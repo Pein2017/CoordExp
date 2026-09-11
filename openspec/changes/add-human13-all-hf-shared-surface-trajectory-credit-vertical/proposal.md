@@ -54,7 +54,7 @@ surface and reach a real one-update behavioral result.
 
 ### New Capabilities
 
-- `coordexp-swift-human13-all-hf-shared-surface-trajectory-credit-vertical`:
+- `coordexp-infras-human13-all-hf-shared-surface-trajectory-credit-vertical`:
   Experiment-local contracts for same-surface HF K16 sampling and replay,
   one complete private update with trajectory credit/compiler/preservation,
   dual-RP greedy audit, exact rollback, and conditional 13-image continuation.

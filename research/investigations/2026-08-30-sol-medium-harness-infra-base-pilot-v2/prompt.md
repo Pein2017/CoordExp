@@ -12,7 +12,7 @@ OpenSpec is the sole authority. Read, in order:
 1. the repository `AGENTS.md` instructions;
 2. `openspec/changes/establish-research-probe-infra-base/proposal.md`;
 3. `openspec/changes/establish-research-probe-infra-base/design.md`;
-4. `openspec/changes/establish-research-probe-infra-base/specs/coordexp-swift-research-probe-infra-base/spec.md`;
+4. `openspec/changes/establish-research-probe-infra-base/specs/coordexp-infras-research-probe-infra-base/spec.md`;
 5. `openspec/changes/establish-research-probe-infra-base/tasks.md`.
 
 ## Frozen route and scope

@@ -9,7 +9,7 @@
 
 - `git diff --stat research-base-v2..research-base-v3 -- scripts tests configs | tail -1`: 134 files changed, 72807 deletions(-)
 - `scripts/research/*.py`: 315 → 229; `tests/research` modules: 230 → 185
-- Lifecycle docs rewritten (`docs/BRANCH_AND_WORKTREE_POLICY.md`, `docs/AGENT_INDEX.md`, `docs/PROJECT_CONTEXT.md`, `openspec/config.yaml`); five completed changes archived; one requirement synced into `coordexp-swift-research-probe-admission`.
+- Lifecycle docs rewritten (`docs/BRANCH_AND_WORKTREE_POLICY.md`, `docs/AGENT_INDEX.md`, `docs/PROJECT_CONTEXT.md`, `openspec/config.yaml`); five completed changes archived; one requirement synced into `coordexp-infras-research-probe-admission`.
 - Research records: N/K factorial unit returned; four idle investigations under `research/archive/`; five root orphans under `docs/history/root-orphans/`.
 - CPU baseline at close (from wave-5 batch 2): 85 failed / 4815 passed / 2 skipped, zero new failures vs the 88-failure pre-change baseline (3 failures disappeared with a deleted test module).
 
@@ -17,7 +17,7 @@
 
 ```
 /data/CoordExp                                                     29e368144 [main]
-/data/CoordExp/.worktrees/CoordExp-swift                           8d12eab28 [coordexp-swift]
+/data/CoordExp/.worktrees/coordexp-infras                           8d12eab28 [coordexp-infras]
 /data/CoordExp/.worktrees/codex-rtk-correctness-first              38b30ebc1 [codex/rtk-correctness-first]
 /data/CoordExp/.worktrees/codex-wake-me-up-event-monitor           8dfb8102a [codex/wake-me-up-event-monitor]
 /data/CoordExp/.worktrees/image2299-mechanism-microscope           60a0b25a1 [codex/image2299-mechanism-microscope]

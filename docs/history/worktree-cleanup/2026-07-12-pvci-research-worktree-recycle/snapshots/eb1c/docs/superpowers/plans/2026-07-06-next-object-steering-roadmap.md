@@ -6,7 +6,7 @@
 
 **Architecture:** Reuse the existing painted-GT substrate and add the narrow next-object surfaces around materialization, label masking, prompt identity, config dispatch, rollout control, and gate reports. Keep ordinary one-shot inference and the historical paint-all / teacher-prefix routes stable unless a shared helper must be extended backward-compatibly.
 
-**Tech Stack:** Python 3.12, PyTorch, Transformers Qwen3-VL, PEFT DoRA, Pillow, pytest, OpenSpec, existing CoordExp-Swift `src/painted_gt`, `src/templates`, `src/inference`, `src/packing`, `src/training`, `src/eval`, and `configs/coordexp_swift`.
+**Tech Stack:** Python 3.12, PyTorch, Transformers Qwen3-VL, PEFT DoRA, Pillow, pytest, OpenSpec, existing coordexp-infras `src/painted_gt`, `src/templates`, `src/inference`, `src/packing`, `src/training`, `src/eval`, and `configs/coordexp_infras`.
 
 ## Global Constraints
 
@@ -31,9 +31,9 @@
 
 Read these before implementing and treat them in this order:
 
-1. `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-swift-painted-gt-materialization/spec.md`
-2. `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-swift-painted-gt-decode-eval/spec.md`
-3. `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-swift-painted-gt-launch-gates/spec.md`
+1. `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-infras-painted-gt-materialization/spec.md`
+2. `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-infras-painted-gt-decode-eval/spec.md`
+3. `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-infras-painted-gt-launch-gates/spec.md`
 4. `docs/superpowers/specs/2026-07-06-next-object-steering-design.md`
 5. This roadmap.
 6. `docs/superpowers/plans/2026-07-06-next-object-steering-plan.md`
@@ -602,7 +602,7 @@ without disturbing one-shot inference.
 - Modify: `src/config/inference.py`
 - Modify: `src/inference/pipeline.py`
 - Modify if needed: `src/inference/artifacts.py`
-- Add configs under: `configs/coordexp_swift/infer/painted_gt/next_object_steering/`
+- Add configs under: `configs/coordexp_infras/infer/painted_gt/next_object_steering/`
 - Test: `tests/inference/test_pipeline.py`
 - Test: `tests/inference/test_data_parallel_runtime.py` if dispatch affects data parallel paths.
 - Test: `tests/painted_gt/test_decode_controllers.py`
@@ -802,10 +802,10 @@ semantics, compatibility gates, and launch-readiness reporting.
 **Purpose:** Prove materialization and packing are ready before GPU work.
 
 **Files:**
-- Add: `configs/coordexp_swift/painted_gt/next_object_steering/text_image_geo_sorted_gate256_*.yaml`
-- Add: `configs/coordexp_swift/painted_gt/next_object_steering/image_only_geo_sorted_gate256_*.yaml`
-- Add: `configs/coordexp_swift/infer/painted_gt/next_object_steering/text_image_geo_sorted_gate256_*.yaml`
-- Add: `configs/coordexp_swift/infer/painted_gt/next_object_steering/image_only_geo_sorted_gate256_*.yaml`
+- Add: `configs/coordexp_infras/painted_gt/next_object_steering/text_image_geo_sorted_gate256_*.yaml`
+- Add: `configs/coordexp_infras/painted_gt/next_object_steering/image_only_geo_sorted_gate256_*.yaml`
+- Add: `configs/coordexp_infras/infer/painted_gt/next_object_steering/text_image_geo_sorted_gate256_*.yaml`
+- Add: `configs/coordexp_infras/infer/painted_gt/next_object_steering/image_only_geo_sorted_gate256_*.yaml`
 - Modify research notes only after artifacts exist.
 
 **Steps:**
@@ -879,9 +879,9 @@ contract gates pass.
 
 **Files:**
 - Add or modify final launch configs under:
-  `configs/coordexp_swift/painted_gt/next_object_steering/`
+  `configs/coordexp_infras/painted_gt/next_object_steering/`
 - Add or modify final inference configs under:
-  `configs/coordexp_swift/infer/painted_gt/next_object_steering/`
+  `configs/coordexp_infras/infer/painted_gt/next_object_steering/`
 - Write results under:
   `research/ideas/qwen3-vl-painted-gt-transcription-probe/`
 

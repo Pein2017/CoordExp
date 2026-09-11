@@ -54,7 +54,7 @@ None.
 
 ### Modified Capabilities
 
-- `coordexp-swift-infer-backend-trace`: Add a narrow HF-session contract for
+- `coordexp-infras-infer-backend-trace`: Add a narrow HF-session contract for
   opaque exact-history construction and caller-selected teacher-forced token
   evidence, plus observed-runtime receipt fields, without changing ordinary
   decode or vLLM semantics.

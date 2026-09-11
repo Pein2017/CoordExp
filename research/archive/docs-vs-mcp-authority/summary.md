@@ -1,8 +1,8 @@
 ---
 type: investigation
 title: Docs vs MCP Authority Boundary
-description: Establishes how CoordExp-Swift should use current docs, OKF research notes, and code exploration MCPs without making them compete for authority.
-tags: [docs, mcp, codegraph, serena, authority, okf, coordexp-swift]
+description: Establishes how coordexp-infras should use current docs, OKF research notes, and code exploration MCPs without making them compete for authority.
+tags: [docs, mcp, codegraph, serena, authority, okf, coordexp-infras]
 state: active
 updated: 2026-07-07
 ---
@@ -19,7 +19,7 @@ historical/current boundaries, or operator policy by themselves.
 
 ## Scope
 
-This investigation is scoped to `/data/CoordExp/.worktrees/CoordExp-swift` and
+This investigation is scoped to `/data/CoordExp/.worktrees/coordexp-infras` and
 to the question of how agents should balance:
 
 - current-behavior docs and routing pages;
@@ -35,7 +35,7 @@ claim that the current docs tree is already optimally pruned.
 The near-term policy is preservation plus sharpening:
 
 - preserve the Swift worktree docs spine: `docs/PROJECT_CONTEXT.md`,
-  `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/COORDEXP_SWIFT.md`,
+  `docs/AGENT_INDEX.md`, `docs/catalog.yaml`, `docs/coordexp_infras.md`,
   `docs/SYSTEM_OVERVIEW.md`, `docs/IMPLEMENTATION_MAP.md`, and relevant
   domain contracts;
 - use CodeGraph first for broad current-code maps when its local index is fresh
@@ -52,7 +52,7 @@ Docs answer what is current, what is canonical, what evidence is accepted, and
 what must not be silently reinterpreted. MCPs answer where the live code is and
 how it connects right now.
 
-That distinction matters most in a worktree like CoordExp-Swift, where old
+That distinction matters most in a worktree like coordexp-infras, where old
 mainline routes, active rebuilt Swift routes, archived OpenSpec material, and
 local research artifacts coexist. Code exploration can find all of those
 surfaces, but it cannot decide which one is normative without a written

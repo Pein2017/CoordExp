@@ -5,7 +5,7 @@ Evidence date: 2026-07-13.
 This note records provenance only. It does not promote a historical result into
 the current inference or evaluation contract. The bounded evidence set is the
 two step-4887 validation-200 artifact roots and their launch logs, one current
-CoordExp-Swift contract smoke artifact, the two exact checkpoint manifests,
+coordexp-infras contract smoke artifact, the two exact checkpoint manifests,
 `docs/eval/WORKFLOW.md`, and the stable inference-scoring and detection-evaluator
 specifications.
 
@@ -19,7 +19,7 @@ specifications.
   score provenance is row-level and each prediction lacks the current
   structured, replayable `pred_score_source`. Their legacy metric files are
   therefore not eligible for current benchmark claims.
-- The current `max_new_tokens=512` CoordExp-Swift smoke artifact is a separate,
+- The current `max_new_tokens=512` coordexp-infras smoke artifact is a separate,
   explicitly benchmark-ineligible reference. It must not be mixed into the
   paired legacy comparison: it uses a different inference implementation,
   artifact schema, score policy, decode horizon, and prompt-policy identity.
@@ -36,8 +36,8 @@ checkpoint provenance handle.
 
 | Condition | Exact checkpoint manifest | Secure Hash Algorithm 256-bit (SHA-256) | Adapter fingerprint | Special-token embedding fingerprint |
 |---|---|---|---|---|
-| Gaussian coordinate objective | `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json` | `613e5d97f4a7a53d6325b5c1909813d6bb82e72622942b225df9724b5556a536` | `ba25619faf51ef7d1eb732e514f250efd37bce3d7f54d1db9eb5e83d8cc2a6c6` | `c8df057b9e3be1479c24e2272338ba627c19a663d19333a024e558488e64ebeb` |
-| Pure cross-entropy objective with type gate | `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json` | `c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1` | `35fd88b1586b946943b936f24531ee95d4a4c57c8efc358bc81a06af9ecbb6c3` | `b5bef0f097c4ddf8f8879e71183795ab877f55c5702c2fb48979d9c555f2c9c9` |
+| Gaussian coordinate objective | `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json` | `613e5d97f4a7a53d6325b5c1909813d6bb82e72622942b225df9724b5556a536` | `ba25619faf51ef7d1eb732e514f250efd37bce3d7f54d1db9eb5e83d8cc2a6c6` | `c8df057b9e3be1479c24e2272338ba627c19a663d19333a024e558488e64ebeb` |
+| Pure cross-entropy objective with type gate | `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json` | `c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1` | `35fd88b1586b946943b936f24531ee95d4a4c57c8efc358bc81a06af9ecbb6c3` | `b5bef0f097c4ddf8f8879e71183795ab877f55c5702c2fb48979d9c555f2c9c9` |
 
 ## Paired legacy validation-200 evidence
 
@@ -101,7 +101,7 @@ configuration files must not be presented as current configuration authority.
 ## Separate current-contract smoke reference
 
 Exact root:
-`/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-gaussian-rps-dora-r16a32-step4887-val200`.
+`/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-gaussian-rps-dora-r16a32-step4887-val200`.
 
 | Artifact | SHA-256 | Rows |
 |---|---|---:|
@@ -131,8 +131,8 @@ and score-policy evidence, with trace replay and raw/scored row binding.
 ## Current reusable entry points
 
 Current behavior is owned by `docs/eval/WORKFLOW.md` and the stable
-`openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md` and
-`openspec/specs/coordexp-swift-detection-evaluator/spec.md` contracts.
+`openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md` and
+`openspec/specs/coordexp-infras-detection-evaluator/spec.md` contracts.
 
 - Inference command: `conda run -n ms python -m src.infer --config <config>`.
 - Compact parser: `src.inference.parsing.parse_compact_object_box_closed`.

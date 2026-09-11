@@ -27,10 +27,10 @@ evergreen router.
 | Task class | Current authority | Do not substitute |
 | --- | --- | --- |
 | Official production training, evaluation, or accepted Swift implementation | `/data/CoordExp` on `main` | A research-probe or feature worktree does not alter production `main` authority. |
-| Research hypothesis, probe, experiment-local code, result, or research-mechanics reuse | `/data/CoordExp/.worktrees/research-probes` on its currently resolved research ref | Root `main` and `coordexp-swift` are not default research entrypoints. |
+| Research hypothesis, probe, experiment-local code, result, or research-mechanics reuse | `/data/CoordExp/.worktrees/research-probes` on its currently resolved research ref | Root `main` and `coordexp-infras` are not default research entrypoints. |
 
-`coordexp-swift` remains the active production-development branch at
-`/data/CoordExp/.worktrees/CoordExp-swift`; it is not a second research base.
+`coordexp-infras` remains the active production-development branch at
+`/data/CoordExp/.worktrees/coordexp-infras`; it is not a second research base.
 `research-probes` is the sole permanent research base; shared research code
 can be changed there. The former `research-probe-infras` lane retires after its
 content and evidence are preserved. The fixed research base remains Git-locked;
@@ -60,14 +60,14 @@ direction is useful, but it must not silently become a contract.
 The live Swift route is:
 
 ```text
-configs/coordexp_swift/
+configs/coordexp_infras/
   -> src/train.py -> src/training/pipeline.py
   -> src/training/supervised_trainer.py
   -> src/data -> src/templates -> src/qwen -> src/packing
   -> src/supervision -> src/losses -> Accelerate replicated DDP
   -> src/runtime -> src/artifacts/run_writer.py + src/artifacts/checkpoints.py
 
-configs/coordexp_swift/infer/
+configs/coordexp_infras/infer/
   -> src/infer.py -> src/inference/
   -> scored inference artifacts -> src/eval/detection_consumer.py
 ```

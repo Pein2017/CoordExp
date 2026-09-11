@@ -22,19 +22,19 @@ The exact commands were:
 ```text
 CUDA_VISIBLE_DEVICES=0 python scripts/research/run_earliest_shared_prefix_branch_pilot.py \
   --manifest research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/cases.json \
-  --infer-config configs/coordexp_swift/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml \
+  --infer-config configs/coordexp_infras/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml \
   --output /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-earliest-shared-prefix-branch-pilot/person-5001.json \
   --device cuda:0 --case-id person-5001-first-sampled-only --force
 
 CUDA_VISIBLE_DEVICES=1 python scripts/research/run_earliest_shared_prefix_branch_pilot.py \
   --manifest research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/cases.json \
-  --infer-config configs/coordexp_swift/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml \
+  --infer-config configs/coordexp_infras/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml \
   --output /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-earliest-shared-prefix-branch-pilot/person-7511.json \
   --device cuda:0 --case-id person-7511-first-sampled-only --force
 
 CUDA_VISIBLE_DEVICES=2 python scripts/research/run_earliest_shared_prefix_branch_pilot.py \
   --manifest research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/cases.json \
-  --infer-config configs/coordexp_swift/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml \
+  --infer-config configs/coordexp_infras/infer/qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml \
   --output /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-21-earliest-shared-prefix-branch-pilot/wine-glass-2685.json \
   --device cuda:0 --case-id wine-glass-2685-first-sampled-only --force
 ```

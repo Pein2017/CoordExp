@@ -276,7 +276,7 @@
     "base_model": "/data/Qwen3-VL/model_cache/models/Qwen/Qwen3-VL-2B-Instruct-coordexp-natural-adjacent",
     "checkpoint": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
     "embedding_delta_sha256": "a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2",
-    "infer_config": "configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml",
+    "infer_config": "configs/coordexp_infras/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml",
     "infer_config_sha256": "d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b",
     "peft_version": "0.17.1",
     "target_count": 196,

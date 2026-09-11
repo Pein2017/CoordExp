@@ -55,7 +55,7 @@ profile loader preserves their full effective config, including `debug.smoke=Fal
 without applying the production-directory rule. Two required source-gate
 evidence files are copied into `configs/` and retain the original SHA checks when
 staged into a fresh output root. Their original paths are
-`docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/special-token-embeddings.md`
+`docs/history/architecture/proposals/2026-06-27-coordexp-infras/source-studies/special-token-embeddings.md`
 and `docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/local-artifacts/69ed/outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json`.
 
 The one-off `recover_attempt1` repair command is historical-only. Restore its

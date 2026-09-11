@@ -12,18 +12,18 @@
   `abe39a84025bc08e0a6249fe5415f5688d6a25e982dad58082bbbfddc028ded8`.
 - [x] 1.2 Inventory the smallest current router/configuration documents and
   OpenSpec context that still direct research work to root `main` or
-  `coordexp-swift`; distinguish current authority, the independent production
+  `coordexp-infras`; distinguish current authority, the independent production
   infrastructure line, and historical documentation before proposing edits.
   The current router set is `openspec/config.yaml`,
   `docs/PROJECT_CONTEXT.md`, `docs/BRANCH_AND_WORKTREE_POLICY.md`,
-  `docs/README.md`, `docs/AGENT_INDEX.md`, and `docs/COORDEXP_SWIFT.md`;
+  `docs/README.md`, `docs/AGENT_INDEX.md`, and `docs/coordexp_infras.md`;
   `docs/IMPLEMENTATION_MAP.md` is a retained production source map, not a
   general research router.
 - [x] 1.3 Freeze a disposition table for every active/complete Human13 change
   and relevant closeout path against that post-infra target: retain active,
   retired-but-open, archive-eligible, superseded, or otherwise held. Do not
   mark an incomplete task complete to simplify the table. Record
-  `coordexp-swift` as independently retained production infrastructure, not as
+  `coordexp-infras` as independently retained production infrastructure, not as
   a research-probe authority or a retirement candidate. The frozen table is in
   `design.md` under "Existing Human13 changes receive an explicit disposition
   table".
@@ -37,11 +37,11 @@
 
 - [x] 2.1 Update only the accepted current routing/configuration surfaces so
   `research-probes` is the canonical research baseline, root `main` remains a
-  distinct production route, and `coordexp-swift` remains independent
+  distinct production route, and `coordexp-infras` remains independent
   production infrastructure rather than a research entrypoint; preserve both
   fixed worktree directory names. Updated `openspec/config.yaml`,
   `docs/PROJECT_CONTEXT.md`, `docs/BRANCH_AND_WORKTREE_POLICY.md`,
-  `docs/README.md`, `docs/AGENT_INDEX.md`, and `docs/COORDEXP_SWIFT.md` only.
+  `docs/README.md`, `docs/AGENT_INDEX.md`, and `docs/coordexp_infras.md` only.
 - [x] 2.2 Add concise lifecycle guidance for `probe/<ticket>` worktrees:
   tagged-base creation, source identity, document/result/manifest return,
   second-consumer code promotion, external raw artifacts, and evidence-safe

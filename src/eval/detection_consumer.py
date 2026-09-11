@@ -1,4 +1,4 @@
-"""Minimal CoordExp-swift detection consumer for scored inference artifacts."""
+"""Minimal coordexp-infras detection consumer for scored inference artifacts."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ SCORED_NAME = "gt_vs_pred_scored.jsonl"
 PROVENANCE_NAME = "gt_vs_pred_scored.jsonl.provenance.json"
 METRICS_NAME = "metrics.json"
 RECEIPT_NAME = "evaluation_receipt.json"
-METRIC_FAMILY = "coordexp_swift_detection_coco_bbox_v1"
+METRIC_FAMILY = "coordexp_infras_detection_coco_bbox_v1"
 COCO_GT_NAME = "coco_gt.json"
 COCO_PREDICTIONS_NAME = "coco_predictions.json"
 RUN_MANIFEST_NAME = "run_manifest.json"

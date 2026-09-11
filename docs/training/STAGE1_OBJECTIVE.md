@@ -11,7 +11,7 @@ updated: 2026-07-11
 # Coord Objective & Adapter
 
 > Historical MS-Swift/mainline objective reference. Current Swift training is
-> routed through `src/train.py`, `src/training/`, and `configs/coordexp_swift/`.
+> routed through `src/train.py`, `src/training/`, and `configs/coordexp_infras/`.
 
 This document details the specialized training objectives and architectural adapters used for coordinate tokens in CoordExp.
 

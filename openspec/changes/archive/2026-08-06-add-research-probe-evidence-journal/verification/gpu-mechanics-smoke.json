@@ -10,7 +10,7 @@
   "execution_identity": {
     "audited_implementation_aggregate_sha256": "e60e93a5e3923d350946018cbef6f376336035a2722f9c11dba76d55c0d99afb",
     "config_file_sha256": "0ca0002b1d71834d0f6914947571ec4d07e157716b0e7276c88dad67c4ac964d",
-    "config_path": "/data/CoordExp/.worktrees/research-probe-infras/configs/coordexp_swift/infer/wave7_real_base_single_smoke.yaml",
+    "config_path": "/data/CoordExp/.worktrees/research-probe-infras/configs/coordexp_infras/infer/wave7_real_base_single_smoke.yaml",
     "final_pre_runtime_tree_aggregate_sha256": "b5fabd5b6da3cf7f9a86da9b9129e320a959cc4db210e4a73cc3dba14c3e23cb",
     "input_jsonl": {
       "file_sha256": "8827611a2b9ec8cea43d2d0921f0f9547f676025418e17ce5a32510e13440184",

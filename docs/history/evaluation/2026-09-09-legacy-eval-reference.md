@@ -29,7 +29,7 @@ Official test-dev history remains in
 
 The commands in this section are retained for historical reproduction only.
 They are not the canonical `main` inference/evaluation route. Use
-`python -m src.infer --config configs/coordexp_swift/infer/<config>.yaml`
+`python -m src.infer --config configs/coordexp_infras/infer/<config>.yaml`
 above for current Swift work.
 
 Run inference:
@@ -52,7 +52,7 @@ Non-canonical bbox note:
   `infer.bbox_format: cxcywh`
 - legacy/mainline pipelines may materialize `gt_vs_pred_scored.jsonl` directly
   from canonical standardized predictions with deterministic constant-score
-  provenance when COCO/LVIS metrics are requested; the direct CoordExp-Swift
+  provenance when COCO/LVIS metrics are requested; the direct coordexp-infras
   evaluator in this worktree does not consume that constant-score family in V1
 - only use this infer path with checkpoints that were actually trained against
   the matching non-canonical serialization contract

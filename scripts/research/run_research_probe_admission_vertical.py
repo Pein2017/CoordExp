@@ -41,7 +41,7 @@ DEFAULT_OUTPUT_ROOT = Path(
 )
 DEFAULT_CONTEXT_ID = "ctx:0a055737dcb38ca92bb8bce5"
 INFER_CONFIG = consumers.ACTIVE_RESEARCH_PROBES_ROOT / (
-    "configs/coordexp_swift/infer/"
+    "configs/coordexp_infras/infer/"
     "qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml"
 )
 ADAPTER_TENSOR = Path(

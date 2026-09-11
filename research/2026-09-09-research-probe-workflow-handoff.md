@@ -36,9 +36,9 @@ summary: 已完成改造的历史实施交接；原始等待条件和计划保�
 3. 日常小型 infra 修改直接在 research-probes 完成；较大改造或并行冲突时使用临时改造 worktree，验收合回后退休。不要让这个临时位置再次成为永久分支。
 4. 实验专属代码放在 `probes/<direction_name>/`，使用普通 Python 包和显式导入。一个持续方向可包含多个研究单元和运行，不按每个 run 创建一个包或 worktree。
 5. 实验依赖现有 `src` 公共 owner；禁止公共模块反向依赖实验，禁止通过另一个临时 worktree 的路径导入代码。数据、checkpoint 和执行产物可使用明确且身份可核对的共享路径。
-6. 文档知识回流与公共代码提升分别处理。实验分支不因贡献一个 helper 而整支合并。研究主线的 `src` 改动不自动等于对 CoordExp-Swift 的生产提升。
+6. 文档知识回流与公共代码提升分别处理。实验分支不因贡献一个 helper 而整支合并。研究主线的 `src` 改动不自动等于对 coordexp-infras 的生产提升。
 7. 原始实验代码可保存版本后退出当前工作树；只迁移未来仍有用途的代码，不把全部历史脚本重新包装一遍。
-8. `permanent-owner-bridge-cache-validation` 由用户独立退休，完全排除在本次改造、检查及清理范围外。保留 CoordExp-swift 和固定 research-probes；不改根仓库 main 的无关工作、共享 agent/runtime 配置、凭据和远端 refs。
+8. `permanent-owner-bridge-cache-validation` 由用户独立退休，完全排除在本次改造、检查及清理范围外。保留 coordexp-infras 和固定 research-probes；不改根仓库 main 的无关工作、共享 agent/runtime 配置、凭据和远端 refs。
 
 用户实施意图原文：
 

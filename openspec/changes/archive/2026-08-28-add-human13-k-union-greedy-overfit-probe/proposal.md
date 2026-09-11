@@ -55,7 +55,7 @@ and production contracts.
 
 ### New Capabilities
 
-- `coordexp-swift-human13-k-union-greedy-probe`: Experiment-local contracts for
+- `coordexp-infras-human13-k-union-greedy-probe`: Experiment-local contracts for
   explicit batched K sampling, frozen owner/prefix ledgers, minimal approved
   loss arms, no-padding panel-step packing, compact receipts, and clean-greedy
   outcome projection while preserving the default blind-cohort and production
@@ -70,7 +70,7 @@ weakened or duplicated.
 ## Impact
 
 - New experiment-local research scripts, typed records, configs, pure loss
-  helpers, and focused tests under the current CoordExp-Swift source tree.
+  helpers, and focused tests under the current coordexp-infras source tree.
 - Reuse of `src/packing`, `src/qwen`, `src/training`, `src/inference`, and the
   existing one-to-one detection matching semantics without changing their
   public production contracts.

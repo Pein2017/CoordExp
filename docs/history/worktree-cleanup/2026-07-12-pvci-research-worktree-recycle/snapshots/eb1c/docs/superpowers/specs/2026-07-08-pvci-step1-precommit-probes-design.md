@@ -43,7 +43,7 @@ isolates the mark actuator rather than checkpoint or generation variance.
 - Special-token embedding delta:
   `/data/CoordExp/outputs/painted_gt/train_overfit_gate/painted_gt_stepwise_teacher_prefix_geo_gate256_overfit16_warm_start_dora_all_towers_accelerate8_ebs8/checkpoints/step-484/special_token_embeddings`
 - Held-out JSONL source:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
 - Decode:
   HF backend, `temperature=0.0`, `top_p=1.0`,
   `repetition_penalty=1.10`, `max_new_tokens=96`.

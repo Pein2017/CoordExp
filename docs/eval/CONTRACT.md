@@ -12,8 +12,8 @@ updated: 2026-09-09
 # Evaluation Artifact Reference
 
 This page explains current Swift artifacts. Normative compatibility is owned
-by the [scoring/artifact spec](../../openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md)
-and [detection-evaluator spec](../../openspec/specs/coordexp-swift-detection-evaluator/spec.md).
+by the [scoring/artifact spec](../../openspec/specs/coordexp-infras-infer-scoring-artifacts/spec.md)
+and [detection-evaluator spec](../../openspec/specs/coordexp-infras-detection-evaluator/spec.md).
 The executable owners are [`src/inference/artifacts.py`](../../src/inference/artifacts.py)
 and [`src/eval/detection_consumer.py`](../../src/eval/detection_consumer.py).
 

@@ -2,7 +2,7 @@
 type: idea
 title: Qwen3-VL Painted-GT Transcription Probe Experiment Plan
 description: Defines the review-gated evidence contract for painted-GT training, decoding, metrics, and launch gates.
-tags: [coordexp-swift, qwen3-vl, painted-gt, experiment-plan, launch-gate]
+tags: [coordexp-infras, qwen3-vl, painted-gt, experiment-plan, launch-gate]
 state: draft
 updated: 2026-07-04
 ---
@@ -45,17 +45,17 @@ inference-time detector design.
 
 ## Source Baseline
 
-Start from the CoordExp-Swift pure-CE four-epoch baseline adapter:
+Start from the coordexp-infras pure-CE four-epoch baseline adapter:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter
 ```
 
-The normal unpainted detector reference remains the accepted CoordExp-Swift
+The normal unpainted detector reference remains the accepted coordexp-infras
 val200 run:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z
 ```
 
 This baseline adapter is a read-only external source artifact for this branch.
@@ -74,7 +74,7 @@ Canonical base model path:
 Canonical source special-token embedding payload:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917
 ```
 
 Use the repaired payload rather than the raw checkpoint payload because the
@@ -140,12 +140,12 @@ training until the warm-start path is repaired.
 The authoritative unpainted val200 baseline metric is:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-pure-ce-dora-r16a32-step917-val200-20260703T035007Z/eval_coco_fixed_gt_scale/metrics.json
 ```
 
 The key is `mAP`, with accepted value `0.4111788135144427`. The launch gate is
 strict: the reproduced or verified unpainted val200 metric must have
-`row_count == 200`, `metric_family == coordexp_swift_detection_coco_bbox_v1`,
+`row_count == 200`, `metric_family == coordexp_infras_detection_coco_bbox_v1`,
 and `mAP >= 0.40` under the same adapter/decode/eval identity. If the branch
 gets `mAP < 0.40`, stop as an infrastructure or artifact-identity failure
 unless the user explicitly accepts a new baseline.
@@ -155,7 +155,7 @@ the accepted reference is the fixed-GT-scale metric above.
 
 ## Dataset Slice
 
-Use a fixed deterministic 256-image training slice from the same CoordExp-Swift
+Use a fixed deterministic 256-image training slice from the same coordexp-infras
 training data family as the four-epoch pure-CE baseline.
 
 The slice must be built by a coverage-aware deterministic builder unless a
@@ -537,7 +537,7 @@ Use per-step metrics as the diagnostic source of truth for stepwise behavior.
 Use reconstructed image-level metrics to connect the controller procedure back
 to detection usefulness.
 
-The current CoordExp-Swift V1 evaluator should not be assumed to already expose
+The current coordexp-infras V1 evaluator should not be assumed to already expose
 all debug surfaces listed here. The branch-local OpenSpec must define any new
 metric, artifact, parser, and report contracts needed for painted-probe
 evaluation. Keep official detection metrics separate from debug F1, per-step,
@@ -782,7 +782,7 @@ scope, verdict, accepted P0/P1/P2 findings, rejected findings with reason, and
 the exact next gate.
 
 The next OpenSpec must introduce branch-local owner surfaces without mutating
-the normal CoordExp-Swift full-response inference path by accident. It should
+the normal coordexp-infras full-response inference path by accident. It should
 define owners for:
 
 - painted slice, painting, counterfactual, and schedule materialization;

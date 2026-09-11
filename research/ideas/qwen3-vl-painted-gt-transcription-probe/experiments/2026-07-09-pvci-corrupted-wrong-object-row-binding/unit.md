@@ -9,7 +9,7 @@ unit_id: 2026-07-09-pvci-corrupted-wrong-object-row-binding
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - painted-gt
   - pvci
@@ -42,9 +42,9 @@ identity from rendered tight-box copying because `negative_bbox == mark_bbox`.
   unit only.
 - Config:
   - E0:
-    `configs/coordexp_swift/infer/painted_gt/pvci_row_binding/e0_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml`;
+    `configs/coordexp_infras/infer/painted_gt/pvci_row_binding/e0_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml`;
   - E1:
-    `configs/coordexp_swift/infer/painted_gt/pvci_row_binding/e1_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml`.
+    `configs/coordexp_infras/infer/painted_gt/pvci_row_binding/e1_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml`.
 - Checkpoints:
   - E0 row-level reference: the same stepwise painted checkpoint/surface used
     by the prior PVCI Step 0 wrong-object controls.
@@ -60,7 +60,7 @@ identity from rendered tight-box copying because `negative_bbox == mark_bbox`.
 
 ```bash
 python scripts/probes/painted_gt/materialize_counterfactual_conditions.py \
-  --input-jsonl /data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl \
+  --input-jsonl /data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl \
   --output-root /data/CoordExp/outputs/painted_gt/pvci_row_binding/materialized/heldout_val100_jitter_medium_wrong_object \
   --schedule-kind geo_sorted \
   --size 100 \
@@ -72,10 +72,10 @@ python scripts/probes/painted_gt/materialize_counterfactual_conditions.py \
   --force
 
 CUDA_VISIBLE_DEVICES=4 python -m src.infer \
-  --config configs/coordexp_swift/infer/painted_gt/pvci_row_binding/e0_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml
+  --config configs/coordexp_infras/infer/painted_gt/pvci_row_binding/e0_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml
 
 CUDA_VISIBLE_DEVICES=5 python -m src.infer \
-  --config configs/coordexp_swift/infer/painted_gt/pvci_row_binding/e1_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml
+  --config configs/coordexp_infras/infer/painted_gt/pvci_row_binding/e1_wrong_object_val100_jitter_medium_step484_rp110_bs2.yaml
 
 python scripts/probes/painted_gt/analyze_identity_conflict.py \
   --input /data/CoordExp/outputs/painted_gt/pvci_row_binding/inference/e0_wrong_object_val100_jitter_medium/step484_rp110_bs2/gt_vs_pred.jsonl \

@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.skip(
     reason=(
         "quarantined retired MS-Swift/progress documentation contract; "
-        "current CoordExp-Swift docs are covered by pytest.ini testpaths"
+        "current coordexp-infras docs are covered by pytest.ini testpaths"
     )
 )
 
@@ -75,7 +75,7 @@ def test_stage2_rollout_correction_spec_rejects_removed_scheduler_and_channel_ke
     )
     if not spec.exists():
         pytest.skip(
-            "legacy Stage-2 rollout-correction spec is not active in CoordExp-Swift"
+            "legacy Stage-2 rollout-correction spec is not active in coordexp-infras"
         )
     spec_text = spec.read_text(encoding="utf-8")
 

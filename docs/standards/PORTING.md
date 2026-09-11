@@ -37,7 +37,7 @@ loss/logit availability checks.
 Current CoordExp supervision is owned by
 [`src/supervision/`](../../src/supervision/) and loss assembly by
 [`src/losses/runner.py`](../../src/losses/runner.py). Use the
-[supervision/loss contract](../../openspec/specs/coordexp-swift-supervision-losses/spec.md)
+[supervision/loss contract](../../openspec/specs/coordexp-infras-supervision-losses/spec.md)
 for token types, causal alignment, reductions, and emitted metrics, and the
 [implementation map](../IMPLEMENTATION_MAP.md) for verification owners.
 Porting a model family does not replace those local semantics with an upstream

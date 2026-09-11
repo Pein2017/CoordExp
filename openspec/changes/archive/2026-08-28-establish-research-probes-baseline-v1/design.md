@@ -11,9 +11,9 @@ the target-binding contract, with identity fingerprint
 Later planning records do not change that frozen source anchor; a later clean
 candidate that descends from it is the tag target. The root
 repository documentation and OpenSpec context still describe `main` or
-`coordexp-swift` as the accepted implementation, while the user has selected
+`coordexp-infras` as the accepted implementation, while the user has selected
 `research-probes` as the canonical research line and has explicitly kept both
-production lines separate. `coordexp-swift` is a wholly independent production
+production lines separate. `coordexp-infras` is a wholly independent production
 infrastructure line, not a shadow research authority or a source that must be
 reconciled before this baseline. The target-binding infra change is a
 prerequisite for the final baseline tag, not for this planning change.
@@ -33,7 +33,7 @@ prerequisite for the final baseline tag, not for this planning change.
 
 - Replacing or merging into production `main`.
 - Reconciling, merging, renaming, or retiring the independent
-  `coordexp-swift` production-infrastructure line.
+  `coordexp-infras` production-infrastructure line.
 - Moving, deleting, or recreating `.worktrees/research-probes` or
   `.worktrees/research-probe-infras`; branch names remain operationally free.
 - Bulk code deletion, archive of incomplete OpenSpec changes, raw-artifact Git
@@ -59,19 +59,19 @@ making `research-probe-infras` a parallel permanent authority is rejected: it
 is an integration lane that must merge accepted mechanics into the research
 baseline.
 
-### `coordexp-swift` remains independent production infrastructure
+### `coordexp-infras` remains independent production infrastructure
 
-`coordexp-swift` does not become a second research base, an upstream merge
+`coordexp-infras` does not become a second research base, an upstream merge
 prerequisite, or a cleanup target. Router guidance will name it as an
 independent production-infrastructure line and state that new research probes
 start only from the newest immutable `research-base-vN` tag. A future request
-to adopt behavior from `coordexp-swift` must be an explicit compatibility
+to adopt behavior from `coordexp-infras` must be an explicit compatibility
 change with its own evidence and approval; this cutover does not silently
 choose or discard any of its commits.
 
-The `coordexp-swift-*` prefix in stable OpenSpec capability names identifies
+The `coordexp-infras-*` prefix in stable OpenSpec capability names identifies
 the retained production codebase contracts; it does not make the
-`coordexp-swift` branch a research entrypoint.
+`coordexp-infras` branch a research entrypoint.
 
 ### Baseline promotion has two explicit gates and a later tag action
 
@@ -179,7 +179,7 @@ silently omit integration changes.
 | `add-human13-all-hf-shared-surface-trajectory-credit-vertical` | retired-but-open / superseded | 24/29 tasks; no private update or model-quality result can be inferred. |
 | `harden-research-probe-target-binding` | retain active / GPU HOLD | CPU contract integration is complete; task 4.2 is a separately authorized, unexecuted GPU mechanics smoke. |
 | `establish-research-probes-baseline-v1` | retain active | This change remains the current cutover owner until its final tag gate. |
-| `coordexp-swift` | retain independent production infrastructure | It is neither research authority nor a retirement candidate. |
+| `coordexp-infras` | retain independent production infrastructure | It is neither research authority nor a retirement candidate. |
 | `research-probe-infras` @ `62274a97...` | superseded HOLD | Its relevant agent-contract sync is upstream, but it differs materially from the target and has no deletion authorization. |
 
 ### Current entropy ledger has no admitted deletion

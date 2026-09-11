@@ -1,4 +1,4 @@
-"""Explicit optimizer parameter grouping for CoordExp-swift."""
+"""Explicit optimizer parameter grouping for coordexp-infras."""
 
 from __future__ import annotations
 

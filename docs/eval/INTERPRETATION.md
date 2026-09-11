@@ -12,7 +12,7 @@ updated: 2026-09-09
 # Detection metric interpretation
 
 Use this page when interpreting or changing a detection metric. The
-[stable evaluator contract](../../openspec/specs/coordexp-swift-detection-evaluator/spec.md)
+[stable evaluator contract](../../openspec/specs/coordexp-infras-detection-evaluator/spec.md)
 owns supported pipeline behavior; the research unit owns any different scientific
 metric. This page explains distinctions without choosing a universal matcher.
 

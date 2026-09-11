@@ -162,7 +162,7 @@ def launch_worker_subprocess(
     base_env: Mapping[str, str] | None = None,
 ) -> subprocess.Popen[Any]:
     runtime_cache_root = Path(
-        tempfile.mkdtemp(prefix=f"coordexp-swift-infer-rank-{rank}-")
+        tempfile.mkdtemp(prefix=f"coordexp-infras-infer-rank-{rank}-")
     )
     env = build_worker_environment(
         base_env=base_env,

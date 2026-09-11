@@ -1,4 +1,4 @@
-"""CoordExp-swift offline inference pipeline orchestration."""
+"""coordexp-infras offline inference pipeline orchestration."""
 
 from __future__ import annotations
 

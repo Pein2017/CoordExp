@@ -103,7 +103,7 @@ EMBEDDING_DELTA_SHA256 = {
 CHECKPOINTS: dict[str, dict[str, Any]] = {
     "S": {
         "config": Path(
-            "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/"
+            "/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/"
             "qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml"
         ),
         "wrapper": "object_box_closed",
@@ -111,7 +111,7 @@ CHECKPOINTS: dict[str, dict[str, Any]] = {
     },
     "A": {
         "config": Path(
-            "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/"
+            "/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/"
             "qwen3_vl_2b_static_dynamic_owner_interface_a3_step2445_h0.yaml"
         ),
         "wrapper": "object_box_commit",

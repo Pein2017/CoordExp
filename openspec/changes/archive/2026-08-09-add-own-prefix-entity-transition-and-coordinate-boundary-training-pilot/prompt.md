@@ -19,13 +19,13 @@ Read these files completely before editing:
 2. `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/unit.md`
 3. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/proposal.md`
 4. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/design.md`
-5. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/specs/coordexp-swift-own-prefix-calibration-training/spec.md`
-6. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/specs/coordexp-swift-supervision-losses/spec.md`
+5. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/specs/coordexp-infras-own-prefix-calibration-training/spec.md`
+6. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/specs/coordexp-infras-supervision-losses/spec.md`
 7. `openspec/changes/add-own-prefix-entity-transition-and-coordinate-boundary-training-pilot/tasks.md`
 
 Then inspect the canonical current owners through `docs/AGENT_INDEX.md`,
 `docs/catalog.yaml`, and the narrow training modules referenced by those
-routers. Reuse the existing CoordExp-Swift trainer, model composition, packing,
+routers. Reuse the existing coordexp-infras trainer, model composition, packing,
 optimizer, checkpoint writer, inference, and artifact surfaces.
 
 ## Fixed Scientific Contract

@@ -4,7 +4,7 @@
 
 **Goal:** Implement the approved `next_object_steering` revision for the painted-GT research branch, with matched `text_image` and `image_only` training/inference policies and an exact two-form supervised target grammar.
 
-**Architecture:** Reuse the existing CoordExp-Swift painted-GT substrate and patch the narrow seams that define materialization, label masking, prompt identity, painter parity, rollout control, and reports. The implementation must make target grammar validation fail-fast before packing/GPU launch and must keep the old ordinary one-shot detector path unchanged.
+**Architecture:** Reuse the existing coordexp-infras painted-GT substrate and patch the narrow seams that define materialization, label masking, prompt identity, painter parity, rollout control, and reports. The implementation must make target grammar validation fail-fast before packing/GPU launch and must keep the old ordinary one-shot detector path unchanged.
 
 **Tech Stack:** Python 3.12, PyTorch, Transformers Qwen3-VL, PEFT DoRA, Pillow, pytest, OpenSpec, existing `src/painted_gt`, `src/templates`, `src/inference`, `src/packing`, `src/training`, `src/eval`.
 
@@ -41,7 +41,7 @@ the handoff-grade execution guide.
 - Modify `src/painted_gt/materialization.py` as the current painter owner, or deliberately extract `src/painted_gt/painting.py`: expose shared `outline_center_flat_v1` for both training and inference and record painter provenance and overlap diagnostics.
 - Modify `src/painted_gt/decode.py`: add next-object steering rollout controller for `text_image` and `image_only`.
 - Modify `src/painted_gt/metrics.py` and `src/painted_gt/reports.py`: add steering diagnostics and overlap-conditioned summaries.
-- Add configs under `configs/coordexp_swift/painted_gt/next_object_steering/`.
+- Add configs under `configs/coordexp_infras/painted_gt/next_object_steering/`.
 - Add tests under `tests/painted_gt/` and targeted template/supervision tests if existing boundaries require it.
 
 ## Task 1: Target Grammar And Label-Mask Contract
@@ -311,8 +311,8 @@ pytest tests/painted_gt/test_decode_controllers.py tests/inference/test_artifact
 ## Task 5: Configs, Preflight, Materialization Identity, And Reports
 
 **Files:**
-- Add: `configs/coordexp_swift/painted_gt/next_object_steering/text_image_geo_sorted_gate256_*.yaml`
-- Add: `configs/coordexp_swift/painted_gt/next_object_steering/image_only_geo_sorted_gate256_*.yaml`
+- Add: `configs/coordexp_infras/painted_gt/next_object_steering/text_image_geo_sorted_gate256_*.yaml`
+- Add: `configs/coordexp_infras/painted_gt/next_object_steering/image_only_geo_sorted_gate256_*.yaml`
 - Modify: `src/painted_gt/materialization.py`
 - Modify if needed: `src/training/pack_cache.py`
 - Modify: `src/painted_gt/reports.py`
@@ -446,7 +446,7 @@ Target-span truncation blocks training.
 ## Task 6: Tiny Matched Training And Rollout Gate
 
 **Files:**
-- Add or modify: final tiny configs under `configs/coordexp_swift/painted_gt/next_object_steering/`
+- Add or modify: final tiny configs under `configs/coordexp_infras/painted_gt/next_object_steering/`
 - Modify: research notes after metrics exist
 
 **Interfaces:**

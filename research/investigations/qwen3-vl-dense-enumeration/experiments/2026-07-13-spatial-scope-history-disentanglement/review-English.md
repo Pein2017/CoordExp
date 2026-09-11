@@ -235,7 +235,7 @@ mean the review accepts the causal interpretation implied by that name.
   Its canonical plain-language research name is **Gaussian Soft-Target
   Coordinate Cross-Entropy with Ordered Cumulative-Distribution Penalty**.
   This review does not promote `gaussian_rps` into a canonical term.
-- **`coordexp_swift`**: provenance token naming the native CoordExp-Swift
+- **`coordexp_infras`**: provenance token naming the native coordexp-infras
   training and inference stack.
 - **`prod`** and **`infer`**: provenance tokens for production-training and
   inference artifact families.
@@ -396,7 +396,7 @@ own readiness gates.
   controlled decode factor, with its causal study deferred.
 - **Exact handles:**
   `/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md:209-211`;
-  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml:20-25`;
+  `/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml:20-25`;
   `/data/CoordExp/.worktrees/research-probes/src/inference/backend.py:147-155`;
   and
   `/root/miniconda3/envs/ms/lib/python3.12/site-packages/transformers/generation/logits_process.py:297-313`
@@ -490,7 +490,7 @@ own readiness gates.
   `:298-300`, `:327-339`, and `:352-376`;
   `/data/CoordExp/.worktrees/research-probes/src/inference/merge.py:83-101`;
   and
-  `/data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-swift-detection-evaluator/spec.md:125-132`
+  `/data/CoordExp/.worktrees/research-probes/openspec/specs/coordexp-infras-detection-evaluator/spec.md:125-132`
   and `:164-171`.
 - **Observed issue:** no object-level merge is defined. The live
   `src/inference/merge.py` merges distributed artifact shards, not overlapping
@@ -576,7 +576,7 @@ own readiness gates.
   `/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/unit.md:263-274`
   and `:416-420`;
   `/data/CoordExp/.worktrees/research-probes/src/eval/detection_consumer.py:478-495`;
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl:1`;
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl:1`;
   and
   `/data/CoordExp/public_data/coco/raw/annotations/instances_val2017.json:1`.
 - **Observed issue:** a read-only join found 1,444 non-crowd instances and 16

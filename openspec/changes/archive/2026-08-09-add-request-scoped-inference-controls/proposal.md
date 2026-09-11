@@ -50,10 +50,10 @@ None.
 
 ### Modified Capabilities
 
-- `coordexp-swift-infer-backend-trace`: Add request-scoped greedy or sampled
+- `coordexp-infras-infer-backend-trace`: Add request-scoped greedy or sampled
   generation policy, request-owned sampling seeds, schedule-invariance
   requirements, and result-bound decode execution receipts.
-- `coordexp-swift-infer-prompt-parsing`: Add a generic open-assistant
+- `coordexp-infras-infer-prompt-parsing`: Add a generic open-assistant
   continuation contract with full-prompt retokenization, exact continuation
   evidence, forbidden-boundary validation, and no-continuation compatibility.
 

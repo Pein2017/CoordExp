@@ -36,7 +36,7 @@ owner set.
 
 ### New Capabilities
 
-- `coordexp-swift-human13-on-policy-bottleneck-successor`: Experiment-local
+- `coordexp-infras-human13-on-policy-bottleneck-successor`: Experiment-local
   contracts for HF-surface dynamic frontier selection, full-row versus
   first-bottleneck training, transactional clean-greedy acceptance/rollback,
   and bounded same-panel execution evidence.

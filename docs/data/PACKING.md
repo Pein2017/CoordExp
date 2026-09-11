@@ -4,7 +4,7 @@ layer: docs
 doc_type: reference
 status: canonical
 domain: data
-summary: Current CoordExp-Swift packing and pack-cache routing guide.
+summary: Current coordexp-infras packing and pack-cache routing guide.
 updated: 2026-07-11
 ---
 
@@ -13,9 +13,9 @@ updated: 2026-07-11
 For current `main` behavior, packing is owned by `src/packing/` and the
 training pack-cache seam in `src/training/pack_cache.py`. Exact compatibility
 semantics are defined by
-[`coordexp-swift-packing-forward`](../../openspec/specs/coordexp-swift-packing-forward/spec.md)
+[`coordexp-infras-packing-forward`](../../openspec/specs/coordexp-infras-packing-forward/spec.md)
 and
-[`coordexp-swift-pack-cache-semantic-identity`](../../openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md).
+[`coordexp-infras-pack-cache-semantic-identity`](../../openspec/specs/coordexp-infras-pack-cache-semantic-identity/spec.md).
 
 ## Current policy
 

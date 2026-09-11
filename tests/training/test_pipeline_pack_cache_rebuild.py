@@ -91,7 +91,7 @@ class _SharedCollective:
 def _install_resolver_identity(
     monkeypatch: pytest.MonkeyPatch, cache_root: Path
 ) -> None:
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(cache_root))
     monkeypatch.setattr(
         pipeline, "build_packing_cache_fingerprint", lambda *args, **kwargs: FINGERPRINT
     )
@@ -141,7 +141,7 @@ def test_rank_zero_rebuilds_invalid_cache_and_subsequent_all_read_succeeds(
     manifest_path = cache_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if damage == "old_version":
-        manifest["version"] = "coordexp-swift-pack-cache-v1"
+        manifest["version"] = "coordexp-infras-pack-cache-v1"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     else:
         chunk_path = cache_dir / manifest["chunks"][0]["path"]
@@ -382,7 +382,7 @@ def test_same_dataset_train_and_eval_resolve_distinct_role_materializations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cache_root = tmp_path / "cache-root"
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(cache_root))
     fingerprints: dict[str, str] = {}
 
     def determinants(*args: object, split: str, **kwargs: object) -> dict[str, object]:

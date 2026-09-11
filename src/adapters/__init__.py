@@ -1,4 +1,4 @@
-"""Adapter setup contracts for CoordExp-swift."""
+"""Adapter setup contracts for coordexp-infras."""
 
 from src.adapters.dora import (
     DEFAULT_ADAPTER_NAME,

@@ -28,7 +28,7 @@
 **Files:**
 - Modify: `openspec/changes/add-human13-k-union-greedy-overfit-probe/proposal.md`
 - Modify: `openspec/changes/add-human13-k-union-greedy-overfit-probe/design.md`
-- Modify: `openspec/changes/add-human13-k-union-greedy-overfit-probe/specs/coordexp-swift-human13-k-union-greedy-probe/spec.md`
+- Modify: `openspec/changes/add-human13-k-union-greedy-overfit-probe/specs/coordexp-infras-human13-k-union-greedy-probe/spec.md`
 - Modify: `openspec/changes/add-human13-k-union-greedy-overfit-probe/tasks.md`
 - Create: `docs/superpowers/plans/2026-08-13-human13-missing-arms-recovery.md`
 

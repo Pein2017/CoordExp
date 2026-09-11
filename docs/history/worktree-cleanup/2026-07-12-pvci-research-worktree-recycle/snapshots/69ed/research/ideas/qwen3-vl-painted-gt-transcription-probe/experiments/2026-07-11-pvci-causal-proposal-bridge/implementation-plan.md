@@ -31,7 +31,7 @@ not code donors.
 
 ## Phase 0 - Real Runtime Attestation
 
-Add one bounded probe under `scripts/probes/coordexp_swift/` that loads the
+Add one bounded probe under `scripts/probes/coordexp_infras/` that loads the
 local Qwen3-VL-2B runtime and a real fixture before modifying training.
 
 It must record and assert:

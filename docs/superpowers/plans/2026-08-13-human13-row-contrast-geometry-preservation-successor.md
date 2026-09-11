@@ -90,8 +90,8 @@
 ### Task 5: Resolved configs and bounded launcher
 
 **Files:**
-- Create: `configs/coordexp_swift/research/human13_row_contrast_successor/01_r1.yaml`
-- Create: `configs/coordexp_swift/research/human13_row_contrast_successor/02_r2.yaml`
+- Create: `configs/coordexp_infras/research/human13_row_contrast_successor/01_r1.yaml`
+- Create: `configs/coordexp_infras/research/human13_row_contrast_successor/02_r2.yaml`
 - Modify: `scripts/research/materialize_human13_k_union_configs.py`
 - Modify: `scripts/research/launch_human13_k_union_matrix.py`
 - Test: `tests/research/test_materialize_human13_k_union_configs.py`

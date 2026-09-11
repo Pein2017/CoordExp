@@ -14,7 +14,7 @@ updated: 2026-08-24
 Use this page as the human starting point for current CoordExp behavior. Agents
 start from the user-named evidence; when its owner is unclear, use
 [AGENT_INDEX.md](AGENT_INDEX.md) or [catalog.yaml](catalog.yaml) to select one
-narrow route. Production implementation questions start with CoordExp-Swift on
+narrow route. Production implementation questions start with coordexp-infras on
 `main`; research-probe questions start from the fixed `research-probes`
 worktree and its research records. Neither route is a substitute for the other.
 
@@ -27,7 +27,7 @@ worktree and its research records. Neither route is a substitute for the other.
 | What do the research results mean? | [Research knowledge](../research/index.md) |
 | How does the production stack fit together? | [System Overview](SYSTEM_OVERVIEW.md) |
 | Where is a source/test owner? | [Implementation Map](IMPLEMENTATION_MAP.md) |
-| How do I use the current production route? | [CoordExp-Swift](COORDEXP_SWIFT.md) |
+| How do I use the current production route? | [coordexp-infras](coordexp_infras.md) |
 
 ## Domain routers
 

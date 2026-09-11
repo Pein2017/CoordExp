@@ -9,7 +9,7 @@ unit_id: 2026-07-09-pvci-same-object-aug-delta-bridge
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - painted-gt
   - pvci
@@ -84,7 +84,7 @@ The bridge uses deterministic photometric perturbations only:
 - decode still runs on the original clean image; only the stored source delta
   comes from the transformed clean/painted pair.
 
-The existing CoordExp-Swift augmentation stack was not copied for this first
+The existing coordexp-infras augmentation stack was not copied for this first
 bridge because geometry-changing transforms would require a separate box/mask
 alignment contract. This probe intentionally stays photometric and local.
 

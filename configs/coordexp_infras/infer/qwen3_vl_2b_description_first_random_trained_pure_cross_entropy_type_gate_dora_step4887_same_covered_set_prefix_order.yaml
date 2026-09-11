@@ -1,0 +1,22 @@
+extends: qwen3_vl_2b_description_first_geometry_sorted_pure_cross_entropy_type_gate_dora_step4887_same_covered_set_prefix_order.yaml
+run:
+  name: qwen3-vl-2b-description-first-random-trained-pure-cross-entropy-type-gate-dora-step4887-same-covered-set-prefix-order
+  artifact_root: /data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-19-common-object-prefix-permutation-short-horizon
+  collision_policy: fail
+data:
+  input_jsonl: /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl
+generation:
+  batch_size: 4
+  max_new_tokens: 32
+  temperature: 0.0
+  top_p: 1.0
+  n: 1
+  repetition_penalty: 1.0
+scoring:
+  enabled: true
+adapter:
+  type: dora
+  path: /data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/checkpoints/step-4887/adapter
+  name: default
+embedding_delta:
+  path: /data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_random_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1-20260719T070043Z/checkpoints/step-4887/special_token_embeddings

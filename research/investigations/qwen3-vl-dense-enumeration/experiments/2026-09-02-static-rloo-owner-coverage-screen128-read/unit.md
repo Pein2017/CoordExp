@@ -66,7 +66,7 @@ not the cause of the negative owner-count result.
 - train-248 analysis-v2 SHA-256:
   `1f519f55d9dbcc93fc63f2e5faffec1c8fec043c731c98ab4478553191c04219`;
 - inference config:
-  `configs/coordexp_swift/infer/qwen3_vl_2b_static_rloo_owner_coverage_screen128.yaml`,
+  `configs/coordexp_infras/infer/qwen3_vl_2b_static_rloo_owner_coverage_screen128.yaml`,
   SHA-256
   `5b5d754d63dae7f201115f69b842ff3304685506af20e651496811f89ce8d6e6`.
 

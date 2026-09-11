@@ -197,7 +197,7 @@ net: -19 src lines, -1 export, -~40 test lines
 evidence: class 8 (support-only residue). A `python -m src.trace_config` CLI. Zero importers.
   Only consumer is `tests/config/test_train_config.py::test_trace_config_writes_resolved_artifacts`,
   which invokes it as a subprocess. No `docs/` (current), `configs/`, `research/`, `memories/`, or
-  fork reference; the only mentions are `docs/history/architecture/proposals/2026-06-27-coordexp-swift/`
+  fork reference; the only mentions are `docs/history/architecture/proposals/2026-06-27-coordexp-infras/`
   (historical design notes proposing it).
 cut: 1 entrypoint + 1 test; the "dry config tracing" concept
 tradeoff: loses a hand CLI for dumping a resolved train config. `write_resolved_config_artifacts`
@@ -272,13 +272,13 @@ Module-level importer is only `src/losses/__init__.py`, which made pass 1 flag i
 load-bearing: `src/training/rollout_calibration.py` consumes `grouped_entity_transition_preference`,
 `owner_conditioned_candidate_loss`, `first_wrong_coordinate_preference`,
 `positive_path_imitation_loss`, `field_balanced_duplicate_rejection_loss`,
-`rollout_site_token_type_gate`, and 12 `configs/coordexp_swift/smoke/*rollout_calibration*.yaml`
+`rollout_site_token_type_gate`, and 12 `configs/coordexp_infras/smoke/*rollout_calibration*.yaml`
 select it by config key. **KEEP.** Recorded here so a future pass does not re-open it.
 ```
 
 ```text
 [report-only: silent-corruption surface] src/inference/backend_parity.py — 1,122 lines
-Consumers: `scripts/probes/coordexp_swift/backend_parity.py` + `tests/inference/test_backend_parity.py`.
+Consumers: `scripts/probes/coordexp_infras/backend_parity.py` + `tests/inference/test_backend_parity.py`.
 A single-probe consumer is thin, but parity is named as a silent-corruption surface by D7 and the
 project contract. No candidate raised. 43 of its 61 top-level symbols are private helpers with
 internal-only use, which is normal for a validator, not entropy.
@@ -382,8 +382,8 @@ No missing symbol involved.
 | `src/adapters/dora.py` | 1,658 | real consumer | 11 importers incl. `src/training/pipeline.py`, `src/inference/{execution_model,execution_model_composition,hf_backend}.py`, `src/optim/*` |
 | `src/artifacts/evidence_journal.py` | 1,061 | real consumer | `src/artifacts/research_probe_admission.py` + 2 kept scripts + 3 tests |
 | `src/inference/vllm_forced_replay.py` | 85 | real consumer | `src/inference/vllm_backend.py`, referenced by 5 qualification receipts |
-| `src/inference/vllm_qualification.py` | 1,248 | real consumer + compatibility | `src/inference/vllm_backend.py`, `scripts/probes/coordexp_swift/vllm_concurrency.py`, `docs/IMPLEMENTATION_MAP.md`; binds all 7 vLLM receipts |
-| `src/inference/execution_model_composition.py` | 783 | real consumer | `src/inference/execution_model.py`, `scripts/probes/coordexp_swift/execution_model_composition.py` |
+| `src/inference/vllm_qualification.py` | 1,248 | real consumer + compatibility | `src/inference/vllm_backend.py`, `scripts/probes/coordexp_infras/vllm_concurrency.py`, `docs/IMPLEMENTATION_MAP.md`; binds all 7 vLLM receipts |
+| `src/inference/execution_model_composition.py` | 783 | real consumer | `src/inference/execution_model.py`, `scripts/probes/coordexp_infras/execution_model_composition.py` |
 | `src/qwen/special_token_embeddings.py` | 1,600 | real consumer | 12 importers incl. `src/training/pipeline.py`, `src/artifacts/checkpoints.py`, `src/optim/*`; 4 fork-only scripts |
 | `src/vis/rendering.py` | 372 | real consumer | `src/vis/api.py` -> `src/vis/__init__.py` -> `scripts/visualize_detection.py` (a real entrypoint); 3 fork-only scripts |
 | `src/inference/qualification_receipts/*.json` | 8 files, 954 KB | compatibility obligation | bound as module constants in `src/inference/vllm_qualification.py:18-33` (`QUALIFICATION_RECEIPT`, `APPLICATION_QUALIFICATION_RECEIPT`, FP32 variants, forced-replay, concurrency) and as `DURABLE_COMPOSITION_RECEIPT_ROOT` in `src/inference/execution_model.py:30`. The two 446 KB files are the vLLM 0.14.1 source-qualification evidence — not entropy. |
@@ -473,7 +473,7 @@ pass below is vacuous — the subject of the assertion is absent.
 | `…::test_dead_rollout_matching_manifest_family_branch_is_absent` | PASS | `manifest_family == "rollout_matching"` needle | delete — only self-hit, which the test excludes |
 | `test_chat_template_regression::…[desc_first]` | SKIP (missing local processor) | imports `src.coord_tokens.codec`, `src.datasets.builders`, `src.utils.coordjson_transpiler` | delete — all three absent |
 | `test_chat_template_regression::…[geometry_first]` | SKIP (same) | same | delete |
-| `test_detection_training_config_contract` (module-level) | SKIP "legacy MS-Swift config contract is not active in CoordExp-Swift" | self-declared legacy | delete |
+| `test_detection_training_config_contract` (module-level) | SKIP "legacy MS-Swift config contract is not active in coordexp-infras" | self-declared legacy | delete |
 | `test_stage2_ab_vllm_server_mode_smoke::test_vllm_server_prompt_tokenization_parity_smoke` | SKIP (env gate) | `src.trainers.stage2_rollout_runtime` | delete — absent |
 | `test_stage2_ab_vllm_server_mode_smoke::test_stage2_rollout_correction_vllm_server_mode_smoke` | SKIP (env gate, 4-GPU) | same | delete |
 
@@ -499,8 +499,8 @@ Post-cut AST rescan of `scripts/analysis`: **0 broken `src.*` targets remain**.
 
 **Kept (import cleanly, all self-contained on stdlib/numpy/torch or live `src.*`)**: `__init__.py`,
 `analyze_repetitive_long_samples.py`, `analyze_token_lengths.py`, `compare_detection_runs.py`,
-`coordexp_swift_fa2_length_precision_probe.py` (imports live `src.config`/`src.qwen`/`src.packing`),
-`coordexp_swift_length_isolation.py`, `dump_instability_samples.py`, `report_rollout_stability.py`,
+`coordexp_infras_fa2_length_precision_probe.py` (imports live `src.config`/`src.qwen`/`src.packing`),
+`coordexp_infras_length_isolation.py`, `dump_instability_samples.py`, `report_rollout_stability.py`,
 `visualize_packing_results.py`, `run_ckpt_pair_confidence_eval.sh` (targets live `scripts/`), and the
 three JSON-only post-hoc analyzers that live inside the tomography directories:
 `candidate_field_cardinality_tomography/{phase_a2_dual_checkpoint_analysis,unmatched_peak_review_gallery}.py`

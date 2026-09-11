@@ -7,12 +7,12 @@ import yaml
 
 
 SMOKE_CONFIGS = {
-    "single": Path("configs/coordexp_swift/infer/wave7_real_base_single_smoke.yaml"),
-    "batched": Path("configs/coordexp_swift/infer/wave7_real_base_batched_smoke.yaml"),
-    "adapter": Path("configs/coordexp_swift/infer/wave7_real_adapter_smoke.yaml"),
+    "single": Path("configs/coordexp_infras/infer/wave7_real_base_single_smoke.yaml"),
+    "batched": Path("configs/coordexp_infras/infer/wave7_real_base_batched_smoke.yaml"),
+    "adapter": Path("configs/coordexp_infras/infer/wave7_real_adapter_smoke.yaml"),
 }
 BENCHMARK_CONFIG = Path(
-    "configs/coordexp_swift/infer/"
+    "configs/coordexp_infras/infer/"
     "qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_benchmark.yaml"
 )
 SINGLE_FIXTURE = Path("tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.single.jsonl")

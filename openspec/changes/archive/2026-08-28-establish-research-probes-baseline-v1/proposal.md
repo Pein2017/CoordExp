@@ -22,11 +22,11 @@ or prematurely deleting reproducibility-critical producers.
   final, user-approved lifecycle task; that task creates an annotated tag at
   the reviewed final candidate and records the tag object and peeled commit in
   a follow-up lifecycle receipt.
-- Declare `coordexp-swift` a wholly separate production-infrastructure line:
+- Declare `coordexp-infras` a wholly separate production-infrastructure line:
   it is neither a research authority nor a prerequisite source for this
   baseline, and this change does not reconcile, merge, or retire it.
 - Update the smallest current router/configuration guidance that still names
-  repository `main` or `coordexp-swift` as the default research implementation,
+  repository `main` or `coordexp-infras` as the default research implementation,
   while keeping the separate production lines distinct and preserving the fixed
   directory names `.worktrees/research-probes` and
   `.worktrees/research-probe-infras`. Both fixed worktrees are locally protected
@@ -66,7 +66,7 @@ does not change a supported runtime/API/schema behavior.
   later evidence ledger for cleanup candidates.
 - This planning revision takes no tag/ref action. It does not itself delete
   code, move either fixed worktree directory, merge infra, reconcile
-  `coordexp-swift`, archive incomplete changes, install TensorFlow, launch
+  `coordexp-infras`, archive incomplete changes, install TensorFlow, launch
   model/GPU work, push, or publish results. Task 4.4 is the separately explicit,
   post-approval future tag-creation action; off-host replication, generic-ref
   movement/deletion, tag deletion, Git garbage collection, and artifact

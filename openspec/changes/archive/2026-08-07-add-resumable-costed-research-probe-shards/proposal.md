@@ -50,14 +50,14 @@ legacy receipt partitions consumed by the merger.
 
 ### New Capabilities
 
-- `coordexp-swift-natural-boundary-support-shards`: Consumer-specific logical
+- `coordexp-infras-natural-boundary-support-shards`: Consumer-specific logical
   planning, deterministic cost-aware physical scheduling, per-context durable
   execution, legacy shard-receipt materialization, and interruption mechanics
   for the natural-boundary support-completion runner.
 
 ### Modified Capabilities
 
-- `coordexp-swift-execution-evidence-journal`: Add a validated read-only view of
+- `coordexp-infras-execution-evidence-journal`: Add a validated read-only view of
   accepted record payloads, attempt state, and last durable record for caller
   diagnostics without changing the journal's on-disk schema or scientific
   authority.

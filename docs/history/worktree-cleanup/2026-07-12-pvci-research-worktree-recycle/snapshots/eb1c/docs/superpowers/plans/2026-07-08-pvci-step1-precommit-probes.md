@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the first executable wave offline and artifact-backed. Extend the existing painted-GT counterfactual materializer with boundary-ablation variants, add a pure leakage analyzer over existing `gt_vs_pred.jsonl` rows, generate matched inference configs, run the compact `val32` matrix first, selectively promote informative variants to `val100`, and write a final research note. Feature-space outline transplant and hidden-state cursor probes remain designed Phase-2 candidates and are not implemented by this plan.
 
-**Tech Stack:** Python 3.12, existing CoordExp-Swift inference artifacts, Pillow painted-image materialization, existing `src.painted_gt` counterfactual materializer, existing HF `src.infer`, pytest, YAML.
+**Tech Stack:** Python 3.12, existing coordexp-infras inference artifacts, Pillow painted-image materialization, existing `src.painted_gt` counterfactual materializer, existing HF `src.infer`, pytest, YAML.
 
 ## Global Constraints
 
@@ -15,7 +15,7 @@
 - Design source: `docs/superpowers/specs/2026-07-08-pvci-step1-precommit-probes-design.md`
 - Stepwise painted-GT adapter: `/data/CoordExp/outputs/painted_gt/train_overfit_gate/painted_gt_stepwise_teacher_prefix_geo_gate256_overfit16_warm_start_dora_all_towers_accelerate8_ebs8/checkpoints/step-484/adapter`
 - Special-token embedding delta: `/data/CoordExp/outputs/painted_gt/train_overfit_gate/painted_gt_stepwise_teacher_prefix_geo_gate256_overfit16_warm_start_dora_all_towers_accelerate8_ebs8/checkpoints/step-484/special_token_embeddings`
-- Held-out JSONL source: `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
+- Held-out JSONL source: `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
 - First executable scope: `val32` boundary-ablation matrix, with selective `val100` promotion only after the `val32` report.
 - Frozen decode surface: HF backend, `temperature=0.0`, `top_p=1.0`, `repetition_penalty=1.10`, `max_new_tokens=96`.
 - Primary leakage prediction: first valid parsed row from `gt_vs_pred.jsonl` field `pred[0]`.
@@ -42,7 +42,7 @@
 - Modify or extend `tests/painted_gt/test_counterfactual_controls.py`: tests for new mark variants, metadata, and representative pixels.
 - Create `tests/painted_gt/test_pvci_step1_config_builder.py`: tests for generated YAML paths, decode settings, and config parseability.
 - Create final research note after runs: `research/ideas/qwen3-vl-painted-gt-transcription-probe/pvci-step1-precommit-probes-2026-07-08.md`.
-- Create first-wave config family: `configs/coordexp_swift/infer/painted_gt/pvci_step1/`.
+- Create first-wave config family: `configs/coordexp_infras/infer/painted_gt/pvci_step1/`.
 - Use artifact root: `/data/CoordExp/outputs/painted_gt/pvci_step1`.
 
 ## Task 1: Mark Geometry Leakage Analyzer
@@ -637,7 +637,7 @@ git commit -m "feat: add PVCI boundary ablation marks"
 **Files:**
 - Create: `scripts/probes/painted_gt/build_pvci_step1_infer_configs.py`
 - Test: `tests/painted_gt/test_pvci_step1_config_builder.py`
-- Output when executed: `configs/coordexp_swift/infer/painted_gt/pvci_step1/*.yaml`
+- Output when executed: `configs/coordexp_infras/infer/painted_gt/pvci_step1/*.yaml`
 
 **Interfaces:**
 - Consumes a materialized root containing `conditions/stepwise__painted_correct/stepwise.painted_correct.examples.jsonl`.
@@ -941,7 +941,7 @@ git commit -m "tool: add PVCI step1 route report"
 
 **Files:**
 - Output: `/data/CoordExp/outputs/painted_gt/pvci_step1/materialized/boundary_val32/`
-- Output: `configs/coordexp_swift/infer/painted_gt/pvci_step1/`
+- Output: `configs/coordexp_infras/infer/painted_gt/pvci_step1/`
 
 **Interfaces:**
 - Uses existing materializer script:
@@ -976,7 +976,7 @@ VARIANTS=(
 )
 for variant in "${VARIANTS[@]}"; do
   python scripts/probes/painted_gt/materialize_counterfactual_conditions.py \
-    --input-jsonl /data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl \
+    --input-jsonl /data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl \
     --output-root /data/CoordExp/outputs/painted_gt/pvci_step1/materialized/boundary_val32/"${variant}" \
     --schedule-kind geo_sorted \
     --size 32 \
@@ -1024,14 +1024,14 @@ Run:
 ```bash
 python scripts/probes/painted_gt/build_pvci_step1_infer_configs.py \
   --materialized-root /data/CoordExp/outputs/painted_gt/pvci_step1/materialized/boundary_val32 \
-  --config-root configs/coordexp_swift/infer/painted_gt/pvci_step1 \
+  --config-root configs/coordexp_infras/infer/painted_gt/pvci_step1 \
   --inference-artifact-root /data/CoordExp/outputs/painted_gt/pvci_step1/inference/boundary_val32 \
   --scope boundary_val32
 ```
 
 Expected:
 
-- one YAML per variant under `configs/coordexp_swift/infer/painted_gt/pvci_step1/`;
+- one YAML per variant under `configs/coordexp_infras/infer/painted_gt/pvci_step1/`;
 - each YAML extends `../stepwise_counterfactual_painted_correct_overfit16_step484_rp110_gate256.yaml`;
 - each YAML points to the matching materialized `stepwise.painted_correct.examples.jsonl`.
 
@@ -1043,7 +1043,7 @@ Run:
 python - <<'PY'
 from pathlib import Path
 import yaml
-root = Path('configs/coordexp_swift/infer/painted_gt/pvci_step1')
+root = Path('configs/coordexp_infras/infer/painted_gt/pvci_step1')
 paths = sorted(root.glob('boundary_val32_*_step484_rp110_bs2.yaml'))
 for path in paths:
     payload = yaml.safe_load(path.read_text())
@@ -1061,7 +1061,7 @@ Expected: `yaml_ok 19`.
 Run:
 
 ```bash
-git add configs/coordexp_swift/infer/painted_gt/pvci_step1
+git add configs/coordexp_infras/infer/painted_gt/pvci_step1
 git diff --cached --check
 git commit -m "config: add PVCI step1 val32 inference matrix"
 ```
@@ -1084,7 +1084,7 @@ git commit -m "config: add PVCI step1 val32 inference matrix"
 Run sequentially unless GPU memory permits parallel tmux lanes:
 
 ```bash
-for config in configs/coordexp_swift/infer/painted_gt/pvci_step1/boundary_val32_*_step484_rp110_bs2.yaml; do
+for config in configs/coordexp_infras/infer/painted_gt/pvci_step1/boundary_val32_*_step484_rp110_bs2.yaml; do
   CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
     python -m src.infer --config "$config"
 done
@@ -1181,7 +1181,7 @@ For each selected variant:
 
 ```bash
 python scripts/probes/painted_gt/materialize_counterfactual_conditions.py \
-  --input-jsonl /data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl \
+  --input-jsonl /data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl \
   --output-root /data/CoordExp/outputs/painted_gt/pvci_step1/materialized/boundary_val100/"${variant}" \
   --schedule-kind geo_sorted \
   --size 100 \
@@ -1199,7 +1199,7 @@ Run:
 ```bash
 python scripts/probes/painted_gt/build_pvci_step1_infer_configs.py \
   --materialized-root /data/CoordExp/outputs/painted_gt/pvci_step1/materialized/boundary_val100 \
-  --config-root configs/coordexp_swift/infer/painted_gt/pvci_step1 \
+  --config-root configs/coordexp_infras/infer/painted_gt/pvci_step1 \
   --inference-artifact-root /data/CoordExp/outputs/painted_gt/pvci_step1/inference/boundary_val100 \
   --scope boundary_val100 \
   --variants "${selected_variants_csv}"
@@ -1272,7 +1272,7 @@ Modify `research/ideas/qwen3-vl-painted-gt-transcription-probe/index.md` and `ov
 Run:
 
 ```bash
-git add configs/coordexp_swift/infer/painted_gt/pvci_step1 \
+git add configs/coordexp_infras/infer/painted_gt/pvci_step1 \
   research/ideas/qwen3-vl-painted-gt-transcription-probe/pvci-step1-precommit-probes-2026-07-08.md \
   research/ideas/qwen3-vl-painted-gt-transcription-probe/index.md \
   research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md
@@ -1324,7 +1324,7 @@ Run:
 python - <<'PY'
 from pathlib import Path
 import yaml
-paths = sorted(Path('configs/coordexp_swift/infer/painted_gt/pvci_step1').glob('*.yaml'))
+paths = sorted(Path('configs/coordexp_infras/infer/painted_gt/pvci_step1').glob('*.yaml'))
 for path in paths:
     with path.open() as handle:
         yaml.safe_load(handle)

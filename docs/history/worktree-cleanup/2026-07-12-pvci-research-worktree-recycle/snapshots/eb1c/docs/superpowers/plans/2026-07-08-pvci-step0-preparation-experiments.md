@@ -4,9 +4,9 @@
 
 **Goal:** Run Step 0 causal-preparation experiments for the PVCI/PICD/VCI direction: wrong-mark attribution, held-out GT-mark generalization, and mark-coarseness tolerance.
 
-**Architecture:** Reuse the existing CoordExp-Swift painted-GT materialization, HF inference, parser, and debug metric/report surfaces. Add only the missing branch-local coarseness materialization and report glue required to test whether visible paint generalizes and how precise future internal cursors must be. Do not implement hidden cursors, feature-space marks, selector heads, coverage depletion, or null-instance STOP in this step.
+**Architecture:** Reuse the existing coordexp-infras painted-GT materialization, HF inference, parser, and debug metric/report surfaces. Add only the missing branch-local coarseness materialization and report glue required to test whether visible paint generalizes and how precise future internal cursors must be. Do not implement hidden cursors, feature-space marks, selector heads, coverage depletion, or null-instance STOP in this step.
 
-**Tech Stack:** Python 3.12, PyTorch/Transformers Qwen3-VL via existing `src.infer`, Pillow painted-image materialization, CoordExp-Swift JSONL/config/artifact contracts, pytest.
+**Tech Stack:** Python 3.12, PyTorch/Transformers Qwen3-VL via existing `src.infer`, Pillow painted-image materialization, coordexp-infras JSONL/config/artifact contracts, pytest.
 
 ## Global Constraints
 
@@ -14,10 +14,10 @@
 - Branch: `codex/qwen3-vl-painted-gt-transcription-probe`
 - Source overfit stepwise adapter: `/data/CoordExp/outputs/painted_gt/train_overfit_gate/painted_gt_stepwise_teacher_prefix_geo_gate256_overfit16_warm_start_dora_all_towers_accelerate8_ebs8/checkpoints/step-484/adapter`
 - Source special-token embedding payload: `/data/CoordExp/outputs/painted_gt/train_overfit_gate/painted_gt_stepwise_teacher_prefix_geo_gate256_overfit16_warm_start_dora_all_towers_accelerate8_ebs8/checkpoints/step-484/special_token_embeddings`
-- Held-out val200 JSONL: `/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
+- Held-out val200 JSONL: `/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl`
 - Primary output root: `/data/CoordExp/outputs/painted_gt/pvci_step0`
 - Decode: HF backend, `temperature: 0.0`, `top_p: 1.0`, `repetition_penalty: 1.10`, free raw generation.
-- GPU coexistence: use all visible GPUs only through CoordExp-Swift data-parallel inference with `generation.batch_size: 1` per device; if memory becomes tight, restrict to a subset of GPUs instead of raising batch size.
+- GPU coexistence: use all visible GPUs only through coordexp-infras data-parallel inference with `generation.batch_size: 1` per device; if memory becomes tight, restrict to a subset of GPUs instead of raising batch size.
 - Step 0 must remain a measurement suite. Architecture implementation begins only after the Step 0 report.
 
 ---
@@ -96,7 +96,7 @@
 ### Task 5: Generate And Run Inference Configs
 
 **Files:**
-- Create: `configs/coordexp_swift/infer/painted_gt/pvci_step0/*.yaml`
+- Create: `configs/coordexp_infras/infer/painted_gt/pvci_step0/*.yaml`
 - Output: `/data/CoordExp/outputs/painted_gt/pvci_step0/inference/`
 
 **Interfaces:**
@@ -133,7 +133,7 @@ Run targeted checks:
 ```bash
 pytest tests/painted_gt/test_materialization.py tests/painted_gt/test_counterfactual_controls.py -q
 python -m py_compile src/painted_gt/painting.py src/painted_gt/materialization.py src/painted_gt/counterfactuals.py scripts/probes/painted_gt/materialize_counterfactual_conditions.py scripts/probes/painted_gt/materialize_stepwise_teacher_prefix_condition.py
-git diff --check -- src/painted_gt scripts/probes/painted_gt tests/painted_gt configs/coordexp_swift/infer/painted_gt/pvci_step0 research/ideas/qwen3-vl-painted-gt-transcription-probe docs/superpowers/plans
+git diff --check -- src/painted_gt scripts/probes/painted_gt tests/painted_gt configs/coordexp_infras/infer/painted_gt/pvci_step0 research/ideas/qwen3-vl-painted-gt-transcription-probe docs/superpowers/plans
 ```
 
 After GPU runs, verify:

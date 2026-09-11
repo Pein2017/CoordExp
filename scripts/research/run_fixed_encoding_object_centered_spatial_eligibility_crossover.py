@@ -41,11 +41,11 @@ COORDINATE_TOKEN_START = 151670
 COORDINATE_TOKEN_END_EXCLUSIVE = 152670
 
 DEFAULT_CONFIG = Path(
-    "/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/"
+    "/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/"
     "qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml"
 )
 DEFAULT_SOURCE_JSONL = Path(
-    "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/"
+    "/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/"
     "val200_inputs/coco_val200_len12000.rebased_images.coord.jsonl"
 )
 DEFAULT_LEDGER = Path(

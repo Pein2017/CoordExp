@@ -1,0 +1,71 @@
+{
+  "adapter_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36/adapter",
+  "adapter_sha256": "7e49e8c31aa4d8dc72a309c5ba238dc50a517e51ce09acaa499386ba3362f61d",
+  "embedding_delta_path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36/special_token_embeddings",
+  "embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+  "entries": [
+    {
+      "config_fingerprint": "d10569fc67c4973fd08c366956193a23e2c14c8c06d5d8670ef0e78969d66a43",
+      "config_name": "transition-step36-transfer-development-source-hf.yaml",
+      "expected_row_count": 256,
+      "role": "source",
+      "run_name": "qwen3-vl-2b-transition-step36-transfer-development-source-max3084-b4-hf",
+      "split": "development"
+    },
+    {
+      "config_fingerprint": "9258fe60b62d12c86e55bf2b41dfaa2e707bb7b88c31a7de5d94d4f1cee35d7c",
+      "config_name": "transition-step36-transfer-development-transition-step36-hf.yaml",
+      "expected_row_count": 256,
+      "role": "transition-step36",
+      "run_name": "qwen3-vl-2b-transition-step36-transfer-development-transition-step36-max3084-b4-hf",
+      "split": "development"
+    },
+    {
+      "config_fingerprint": "d6285b1fb47cf36e9aa65443f1a9516f87146a5453e4c5d5930ab1f6949a0c0c",
+      "config_name": "transition-step36-transfer-heldout-source-hf.yaml",
+      "expected_row_count": 128,
+      "role": "source",
+      "run_name": "qwen3-vl-2b-transition-step36-transfer-heldout-source-max3084-b4-hf",
+      "split": "heldout"
+    },
+    {
+      "config_fingerprint": "dbd2ba1911507bd44dcecd7cd881b7fdb903c11fcaf6618600e3358d282378f5",
+      "config_name": "transition-step36-transfer-heldout-transition-step36-hf.yaml",
+      "expected_row_count": 128,
+      "role": "transition-step36",
+      "run_name": "qwen3-vl-2b-transition-step36-transfer-heldout-transition-step36-max3084-b4-hf",
+      "split": "heldout"
+    }
+  ],
+  "entry_count": 4,
+  "generation": {
+    "batch_size": 4,
+    "max_new_tokens": 3084,
+    "repetition_penalty": 1.0,
+    "temperature": 0.0,
+    "top_p": 1.0
+  },
+  "inference_artifact_root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/clean-rollouts-transition-step36-transfer-max3084-matched-b4-v1",
+  "schema_version": "transition_step36_transfer_infer_matrix.v1",
+  "scoring_enabled": true,
+  "source_adapter_path": "/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/adapter",
+  "source_adapter_sha256": "7f6ee67a71f4d948f0e89729ad50f3856a7a215b5ba433fdd3f3dd5b329e5a81",
+  "source_embedding_delta_path": "/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/special_token_embeddings",
+  "source_embedding_delta_sha256": "33d65d575df398375e72994e2a197aaff0a257e26c088717e3b7689b3f494c3b",
+  "source_template": "/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/research/qwen3_vl_2b_row_local_64_source_hf.yaml",
+  "source_template_sha256": "95d78ec1b984be47a5f181083c7a5d40bc85bf09fcc0d554bbd678da33d77644",
+  "split_example_id_overlap_count": 0,
+  "splits": {
+    "development": {
+      "input_jsonl": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/development.jsonl",
+      "input_jsonl_sha256": "e4600b1998ad1269e351373e1c03caa39ff0a97b0474eb6852268b3c1736d0e4",
+      "row_count": 256
+    },
+    "heldout": {
+      "input_jsonl": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-22-constant-dose-image-breadth-treatment-screen/candidate-pool-v1/heldout.jsonl",
+      "input_jsonl_sha256": "8378af4429cc3cf2084da50a34fdf9b163e8d210291b3a787cdc05c1bdbd266e",
+      "row_count": 128
+    }
+  },
+  "transition_checkpoint": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-07-24-prefix-local-and-on-policy-owner-set-training/train-first-divergence-1440-long-learning-rate-1e-5-v1/runs/qwen3_vl_2b_first_divergence_transition_1440_event_long_learning_rate_1e-5/checkpoints/step-36"
+}

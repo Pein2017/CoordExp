@@ -52,7 +52,7 @@ general covered-set computation. Image2299 belongs to the overfit training panel
   This is the 140-step Human13 magnitude-only cross-entropy replay, not output-QP.
 - Both use Source `special_token_embeddings`; delta SHA256
   `a41cbb2fd05e3f6b7ad43f28f9fc5ce973477812435acf8d79d9b2b61f19e2f2`.
-- Reuse config `configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`;
+- Reuse config `configs/coordexp_infras/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`;
   override repetition penalty (RP) to 1.0 and generation cap to 768 for both.
   RP1.0 matches the overfit acceptance surface and removes repetition processing
   as an explanation of next-token preference. No RP sweep.

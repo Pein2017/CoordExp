@@ -62,7 +62,7 @@ No training algorithm or final architecture is selected by this unit.
   token-type gate, Weight-Decomposed Low-Rank Adaptation rank 16, checkpoint
   step 4,887;
 - checkpoint:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`;
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`;
 - full-model 32-bit floating point Hugging Face inference;
 - repetition penalty `1.0`.
 

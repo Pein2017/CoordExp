@@ -67,7 +67,7 @@ embedding delta change from sorted step-4887 to random step-4887.
 | Panel SHA-256 | `01086b139fa23983697492fdb535b5154429277803e8f12b243f9a031d1451f8` |
 | Image-2299 authority row SHA-256 | `ce19853c74a595f22cc183ce450e561f2da3216e54a1e499cfbca1be7e1c425b` |
 | Image bytes SHA-256 | `cd7199a37188c9ac6481520175866cbd78fa6fba35f4290bb0b60c78afcb2df3` |
-| Random config | `configs/coordexp_swift/infer/qwen3_vl_2b_desc_first_random_step4887_human_refined13_hf_fp32_rp1p0.yaml` |
+| Random config | `configs/coordexp_infras/infer/qwen3_vl_2b_desc_first_random_step4887_human_refined13_hf_fp32_rp1p0.yaml` |
 | Policy | HF fp32, greedy, temperature `0`, top-p `1`, repetition penalty `1.0`, seed `0` |
 | Horizon | `max_new_tokens=3084`; native run must stop with `im_end` before the horizon |
 | Sorted reference | `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-04-sorted-image2299-prospective-mechanism-extension/20260804T105647Z/` |

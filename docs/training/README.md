@@ -17,10 +17,10 @@ route on `main`.
 
 For current implementation work, start with the named config or source owner.
 Use [`../IMPLEMENTATION_MAP.md`](../IMPLEMENTATION_MAP.md) only to locate an
-unknown owner, then the relevant `openspec/specs/coordexp-swift-*` contract.
+unknown owner, then the relevant `openspec/specs/coordexp-infras-*` contract.
 For Qwen execution semantics, use the
 [Qwen manual](../standards/upstream/QWEN_VL.md); current launch code is under
-`configs/coordexp_swift/` and `src/train.py`. The research base also maintains
+`configs/coordexp_infras/` and `src/train.py`. The research base also maintains
 [direction packages](../RESEARCH_PROBE_INFRA_BASE.md#maintained-direction-entries)
 with their own objectives. Do not read all architecture pages before a local edit.
 
@@ -43,7 +43,7 @@ comparator results. They are not current Swift config or source ownership.
 
 Do not copy a historical Stage-1/Stage-2 requirement into a current doc or
 config without checking the live `src/config/` models, current source, tests,
-and stable `coordexp-swift-*` specs. If a historical behavior must become a
+and stable `coordexp-infras-*` specs. If a historical behavior must become a
 supported contract, use a separate OpenSpec change and update current docs only
 after the behavior is implemented and verified.
 

@@ -128,7 +128,7 @@ unchanged after this lane, see Gate).
 
 ```
 /data/CoordExp 29e368144 [main]
-/data/CoordExp/.worktrees/CoordExp-swift 8d12eab28 [coordexp-swift]
+/data/CoordExp/.worktrees/coordexp-infras 8d12eab28 [coordexp-infras]
 /data/CoordExp/.worktrees/codex-rtk-correctness-first 38b30ebc1 [codex/rtk-correctness-first]
 /data/CoordExp/.worktrees/codex-wake-me-up-event-monitor 8dfb8102a [codex/wake-me-up-event-monitor]
 /data/CoordExp/.worktrees/image2299-mechanism-microscope 60a0b25a1 [codex/image2299-mechanism-microscope]
@@ -138,7 +138,7 @@ unchanged after this lane, see Gate).
 ```
 
 This is only 8 rows, short of the task-3.G target list of 9
-(`main`, `CoordExp-swift`, `research-probes`, `research-probe-infras`,
+(`main`, `coordexp-infras`, `research-probes`, `research-probe-infras`,
 `image2299-mechanism-microscope`, `permanent-owner-bridge-cache-validation`,
 `codex-wake-me-up-event-monitor`, `codex-rtk-correctness-first`,
 `codex-start-if-idle-turn-guard`): `codex-start-if-idle-turn-guard` was not

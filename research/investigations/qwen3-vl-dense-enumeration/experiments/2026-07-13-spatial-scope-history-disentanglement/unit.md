@@ -11,7 +11,7 @@ topic: qwen3-vl-dense-enumeration
 status: complete
 evidence_status: verified
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - dense-enumeration
@@ -376,7 +376,7 @@ gating, slots, a detector proposal head, or an architecture intervention.
 Primary checkpoint:
 
 The immutable artifact path below contains legacy compressed tokens. In
-particular, `coordexp_swift` is the current native CoordExp training and
+particular, `coordexp_infras` is the current native CoordExp training and
 inference stack namespace; `prod` is the production-training artifact family;
 `infer` is the inference-artifact family; `qwen3_vl_2b` means the approximately
 two-billion-parameter Qwen3
@@ -397,13 +397,13 @@ inference path have the same meanings. These strings remain only because
 renaming an existing artifact path would break provenance.
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json
 ```
 
 Existing val200 rollout used for cohort planning and baseline sanity only:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-gaussian-rps-dora-r16a32-step4887-val200/
+/data/CoordExp/.worktrees/coordexp-infras/outputs/coordexp_swift/infer/val200/qwen3-vl-2b-desc-first-geo-sorted-gaussian-rps-dora-r16a32-step4887-val200/
 ```
 
 The new runner must execute a fresh `FULL_SINGLE` under the frozen unit config.

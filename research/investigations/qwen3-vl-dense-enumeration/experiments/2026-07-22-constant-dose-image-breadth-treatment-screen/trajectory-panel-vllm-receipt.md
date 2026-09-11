@@ -66,7 +66,7 @@ over greedy decoding.
 ## Infrastructure Changes
 
 The reusable model-length option was implemented in the upstream
-`CoordExp-swift` infrastructure worktree and then synchronized as one bounded
+`coordexp-infras` infrastructure worktree and then synchronized as one bounded
 commit into `research-probes`.
 
 - upstream commit `f263beaa0`: configurable positive

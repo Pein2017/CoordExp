@@ -9,7 +9,7 @@ unit_id: 2026-07-10-pvci-row-trajectory-causal-persistence
 topic: qwen3-vl-painted-gt-transcription-probe
 status: completed
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - painted-gt
   - pvci

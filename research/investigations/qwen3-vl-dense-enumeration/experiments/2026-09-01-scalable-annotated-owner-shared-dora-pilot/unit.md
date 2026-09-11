@@ -73,7 +73,7 @@ this is a new unit, not a continuation of the closed Human13 estimand.
 - tokenizer SHA-256:
   `ca7e80dee65c629af3b314e76a7587490db3f4e6412df4af9f3b690a9e9916f8`
 - prompt/config authority:
-  `configs/coordexp_swift/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`
+  `configs/coordexp_infras/infer/qwen3_vl_2b_static_dynamic_owner_interface_s_step2444_h0.yaml`
 - prompt-config SHA-256:
   `d2217208bc3e419bc9d8c621b4842da262d216780eb1dfc88eade0edf1358f6b`
 - geometry/order: four-coordinate `XYXY`, `geo_sorted_xy=(x1,y1)`;

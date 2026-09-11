@@ -1437,7 +1437,7 @@ def test_repetition_penalty_stratum_gate_fails_closed_on_rp1p10():
 def test_inherited_rp1p10_config_is_still_present_and_untouched():
     legacy = (
         REPO_ROOT
-        / "configs/coordexp_swift/infer"
+        / "configs/coordexp_infras/infer"
         / "qwen3_vl_2b_desc_first_geo_sorted_step4887_human_refined12_hf_fp32.yaml"
     )
     assert legacy.is_file()

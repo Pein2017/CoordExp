@@ -9,7 +9,7 @@ unit_id: 2026-07-10-pvci-sequential-control-variable-causal-schedule
 topic: qwen3-vl-painted-gt-transcription-probe
 status: completed
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - causal-patching
@@ -126,7 +126,7 @@ This unit is complete when:
 - Checkout or branch:
   `/data/CoordExp/.codex/worktrees/69ed/CoordExp`,
   `codex/continue-handoff-session`.
-- Baseline commit: `e07c6b73` (`Merge CoordExp-Swift infrastructure`).
+- Baseline commit: `e07c6b73` (`Merge coordexp-infras infrastructure`).
 - Integration constraint: reuse current `src/inference/` and artifact
   contracts; do not merge the divergent painted-GT branch wholesale or import
   another worktree at runtime.

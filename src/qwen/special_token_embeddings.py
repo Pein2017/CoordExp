@@ -39,10 +39,10 @@ SPECIAL_TOKEN_EMBEDDINGS_JSON = "special_token_embeddings.json"
 DEFAULT_EMBED_DELTA_TENSOR_KEY = "shared_embed_delta"
 SPECIAL_TOKEN_EMBEDDING_SEMANTICS = "additive_delta"
 SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
-    "coordexp-swift-special-token-embedding-delta-v1"
+    "coordexp-infras-special-token-embedding-delta-v1"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_SOURCE_STUDY_PATH = Path(
-    "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/"
+    "docs/history/architecture/proposals/2026-06-27-coordexp-infras/source-studies/"
     "special-token-embeddings.md"
 )
 DEFAULT_SPECIAL_TOKEN_EMBEDDING_PROBE_RECEIPT_PATH = Path(

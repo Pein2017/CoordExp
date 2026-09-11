@@ -195,14 +195,14 @@ def _run_dir_for_checkpoint_metadata(path: Path) -> Path:
 
 def _resolve_run_relative(run_dir: Path, raw: Any, *, field: str) -> Path:
     if not isinstance(raw, str) or not raw.strip():
-        raise ValueError(f"CoordExp-Swift checkpoint metadata missing {field}.")
+        raise ValueError(f"coordexp-infras checkpoint metadata missing {field}.")
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
         candidate = run_dir / candidate
     return candidate
 
 
-def _maybe_load_coordexp_swift_checkpoint_info(
+def _maybe_load_coordexp_infras_checkpoint_info(
     checkpoint_json: Path,
 ) -> AdapterCheckpointInfo | None:
     payload = _read_json_object(checkpoint_json)
@@ -231,7 +231,7 @@ def _maybe_load_coordexp_swift_checkpoint_info(
     )
     if not adapter_dir.is_dir() or not (adapter_dir / "adapter_config.json").is_file():
         raise ValueError(
-            "CoordExp-Swift checkpoint metadata resolves to an invalid adapter "
+            "coordexp-infras checkpoint metadata resolves to an invalid adapter "
             f"directory: {adapter_dir}"
         )
 
@@ -251,7 +251,7 @@ def _maybe_load_coordexp_swift_checkpoint_info(
         base_raw = receipt_base or metadata_base
     if not isinstance(base_raw, str) or not base_raw.strip():
         raise ValueError(
-            "CoordExp-Swift checkpoint metadata must define a base model path "
+            "coordexp-infras checkpoint metadata must define a base model path "
             "in adapter_config.json, adapter.receipt.base_model_identity.path, "
             "or special_token_embeddings.metadata.base_model_path."
         )
@@ -263,7 +263,7 @@ def _maybe_load_coordexp_swift_checkpoint_info(
     token_ids_raw = special_metadata.get("token_ids")
     if not isinstance(token_ids_raw, list) or not token_ids_raw:
         raise ValueError(
-            "CoordExp-Swift special_token_embeddings metadata must include "
+            "coordexp-infras special_token_embeddings metadata must include "
             "a non-empty token_ids list."
         )
     token_ids = tuple(int(token_id) for token_id in token_ids_raw)
@@ -275,7 +275,7 @@ def _maybe_load_coordexp_swift_checkpoint_info(
         or int(tensor_shape_raw[0]) != len(token_ids)
     ):
         raise ValueError(
-            "CoordExp-Swift special_token_embeddings tensor_shape must be "
+            "coordexp-infras special_token_embeddings tensor_shape must be "
             "[len(token_ids), embed_dim]."
         )
     tensor_path = _resolve_run_relative(
@@ -285,13 +285,13 @@ def _maybe_load_coordexp_swift_checkpoint_info(
     )
     if not tensor_path.is_file():
         raise ValueError(
-            "CoordExp-Swift special token embedding tensor does not exist: "
+            "coordexp-infras special token embedding tensor does not exist: "
             f"{tensor_path}"
         )
     tensor_key = special.get("tensor_key") or special_metadata.get("tensor_key")
     if not isinstance(tensor_key, str) or not tensor_key.strip():
         raise ValueError(
-            "CoordExp-Swift special_token_embeddings must define tensor_key."
+            "coordexp-infras special_token_embeddings must define tensor_key."
         )
 
     return AdapterCheckpointInfo(
@@ -347,12 +347,12 @@ def resolve_inference_checkpoint(
 
     checkpoint_json = Path(requested_model_checkpoint).expanduser()
     if checkpoint_json.is_file() and checkpoint_json.suffix == ".json":
-        adapter_info = _maybe_load_coordexp_swift_checkpoint_info(checkpoint_json)
+        adapter_info = _maybe_load_coordexp_infras_checkpoint_info(checkpoint_json)
         if adapter_info is not None:
             base_model = str(adapter_info.base_model_name_or_path or "").strip()
             if not base_model:
                 raise ValueError(
-                    "CoordExp-Swift checkpoint requires a resolved base model path."
+                    "coordexp-infras checkpoint requires a resolved base model path."
                 )
             return ResolvedInferenceCheckpoint(
                 checkpoint_mode="base_plus_adapter",

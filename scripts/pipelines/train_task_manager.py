@@ -214,7 +214,7 @@ class TaskSpec:
         config_raw = str(raw.get("config", "") or "")
         launcher = str(raw.get("launcher", "") or "scripts/train.sh")
         if (
-            config_raw.startswith("configs/coordexp_swift/")
+            config_raw.startswith("configs/coordexp_infras/")
             and not command
             and "launcher" not in raw
         ):

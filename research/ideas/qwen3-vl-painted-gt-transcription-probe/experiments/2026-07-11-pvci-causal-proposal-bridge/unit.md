@@ -9,7 +9,7 @@ unit_id: 2026-07-11-pvci-causal-proposal-bridge
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - visual-binding
@@ -736,7 +736,7 @@ C's metric-bearing inference claim.
 - Checkout: `/data/CoordExp/.codex/worktrees/69ed/CoordExp`.
 - Current branch: `codex/continue-handoff-session`.
 - Initialization checkpoint:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`.
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`.
 - Historical primary baseline rollout:
   `/data/CoordExp/outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_bsz4_temp0_rp1p10_max3084_8gpu/`.
 - Historical baseline context, not a new comparison result: `AP=0.41555`,

@@ -56,7 +56,7 @@ C adapter:
 
 Inference config:
 /data/CoordExp/.worktrees/c-anchored-owner-mechanism-audit/configs/
-  coordexp_swift/infer/
+  coordexp_infras/infer/
   qwen3_vl_2b_c_anchored_owner_audit_c_train248.yaml
 
 Executed 248-image input:

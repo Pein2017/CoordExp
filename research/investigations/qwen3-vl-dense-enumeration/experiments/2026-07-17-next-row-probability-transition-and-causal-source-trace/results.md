@@ -48,7 +48,7 @@ All exact-row scores used the geometry-sorted Qwen3 Vision-Language
 2-billion-parameter adapter at checkpoint step `4887`:
 
 ```text
-/data/CoordExp/.worktrees/research-probes/configs/coordexp_swift/infer/
+/data/CoordExp/.worktrees/research-probes/configs/coordexp_infras/infer/
   qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_step4887_val200.yaml
 ```
 

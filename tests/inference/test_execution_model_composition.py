@@ -241,7 +241,7 @@ def _fixture() -> dict[str, object]:
 
 
 def _probe_identity() -> dict[str, object]:
-    path = Path("scripts/probes/coordexp_swift/execution_model_composition.py")
+    path = Path("scripts/probes/coordexp_infras/execution_model_composition.py")
     return {
         "path": path.as_posix(),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),

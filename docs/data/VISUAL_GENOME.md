@@ -12,7 +12,7 @@ updated: 2026-07-11
 
 > Historical dataset-specific preparation note. The JSONL contract remains
 > current, but training/inference routing and config examples below must be
-> checked against the current Swift source and `configs/coordexp_swift/`.
+> checked against the current Swift source and `configs/coordexp_infras/`.
 
 This repo consumes detection/grounding data via a single JSONL contract (`CONTRACT.md`).
 Visual Genome is supported via a downloader + converter script that follows the HuggingFace dataset loader:

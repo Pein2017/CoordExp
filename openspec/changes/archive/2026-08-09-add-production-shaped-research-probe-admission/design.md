@@ -1,7 +1,7 @@
 ## Context
 
 See `proposal.md` for motivation and
-`specs/coordexp-swift-research-probe-admission/spec.md` for the observable
+`specs/coordexp-infras-research-probe-admission/spec.md` for the observable
 contract.  The stable `ExecutionEvidenceJournal` already owns strict durable
 plan, attempt, record, continuation, and terminal mechanics.  The current
 support adapter adds consumer-specific model/source bindings and a supervised
