@@ -735,7 +735,7 @@ def _build_denominator_from_token_sequences(
     # DELIBERATELY NO ZERO-ELIGIBLE RAISE HERE. This runs on every rank
     # BEFORE `_resolve_streaming_denominators` reaches the cross-rank gather,
     # so raising here would abort one rank while its peers are already inside
-    # the collective (spec `coordexp-swift-supervision-losses`, scenario "Zero
+    # the collective (spec `coordexp-infras-supervision-losses`, scenario "Zero
     # eligible protected atoms on one rank": the rank-local eligible count
     # MUST enter the all-rank decision before any rank raises, without
     # deadlock). A zero count is therefore a legal carrier value here and

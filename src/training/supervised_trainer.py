@@ -778,7 +778,7 @@ def set_profile_sync_timing_policy(enabled: bool | None) -> None:
 def _profile_sync_enabled() -> bool:
     if _PROFILE_SYNC_TIMING_POLICY is not None:
         return _PROFILE_SYNC_TIMING_POLICY
-    return os.environ.get("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS") == "1"
+    return os.environ.get("coordexp_infras_PROFILE_SYNC_TIMINGS") == "1"
 
 
 def _physical_token_count(micro_step: Any) -> int | None:

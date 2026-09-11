@@ -11,7 +11,7 @@ from src.augmentation.geometry import (
 
 
 def test_affine_matrices_are_explicit_over_coord_bin_plane() -> None:
-    assert GEOMETRY_FLIP_POLICY_VERSION == "coordexp-swift-geometry-flips-v1"
+    assert GEOMETRY_FLIP_POLICY_VERSION == "coordexp-infras-geometry-flips-v1"
     assert COORD_AFFINE_MATRICES["identity"] == (
         (1, 0, 0),
         (0, 1, 0),

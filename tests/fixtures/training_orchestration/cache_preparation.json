@@ -21,7 +21,7 @@
       "build_status": "built",
       "cache_dir": "<root>/eval-cache",
       "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "format_version": "coordexp-swift-pack-cache-v3",
+      "format_version": "coordexp-infras-pack-cache-v3",
       "manifest_path": "<root>/eval-cache/manifest.json",
       "manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "micro_step_count": 3,
@@ -93,7 +93,7 @@
         "eval_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "root": {
           "resolved_root": "<root>/cache-root",
-          "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+          "source": "coordexp_infras_PACK_CACHE_ROOT"
         },
         "schema_version": 1,
         "train_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -103,7 +103,7 @@
         "global_max_length": 8,
         "intra_image_object_order": "geo_sorted",
         "planner": {
-          "algorithm_version": "coordexp-swift-source-order-next-fit-v2",
+          "algorithm_version": "coordexp-infras-source-order-next-fit-v2",
           "cursor_byte_budget": 65536,
           "fragment_byte_budget": 4194304,
           "fragment_item_budget": 1024,
@@ -195,7 +195,7 @@
       "build_status": "built",
       "cache_dir": "<root>/train-cache",
       "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "format_version": "coordexp-swift-pack-cache-v3",
+      "format_version": "coordexp-infras-pack-cache-v3",
       "manifest_path": "<root>/train-cache/manifest.json",
       "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "micro_step_count": 11,

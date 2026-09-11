@@ -98,8 +98,8 @@ EXPECTED_DETERMINANT_OWNERS = {
 UNIQUE_OWNER_PATHS = tuple(sorted(set(EXPECTED_DETERMINANT_OWNERS.values())))
 
 RETIRED_CACHE_VERSIONS = (
-    "coordexp-swift-pack-cache-v1",
-    "coordexp-swift-pack-cache-v2",
+    "coordexp-infras-pack-cache-v1",
+    "coordexp-infras-pack-cache-v2",
 )
 
 DISABLED_AUGMENTATION = {
@@ -519,12 +519,12 @@ def test_pack_plan_policy_identity_is_bound_to_determinants_and_manifest(
 ) -> None:
     determinants = _determinants(cache_inputs)
     expected_packing_identity = {
-        "schema": "coordexp-swift-pack-plan",
+        "schema": "coordexp-infras-pack-plan",
         "schema_version": 5,
         "global_max_length": 12_000,
         "policy_identity": {
             "policy": "source_order_next_fit",
-            "algorithm_version": "coordexp-swift-source-order-next-fit-v2",
+            "algorithm_version": "coordexp-infras-source-order-next-fit-v2",
             "window_size": None,
             "lookahead": None,
             "tie_breaker": "source_ordinal_v1",

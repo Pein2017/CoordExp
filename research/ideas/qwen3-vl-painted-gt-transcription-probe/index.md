@@ -18,7 +18,7 @@
 This idea remains open and does not yet have a final `conclusion.md`. The
 temporary implementation branches have been retired as implementation bases;
 their durable evidence is preserved here so future probes can be reimplemented
-against canonical CoordExp-Swift infrastructure.
+against canonical coordexp-infras infrastructure.
 
 The July 5-10 records establish the painted-mark, anti-copy, feature-delta, and
 residual-control evidence chain. The July 10-12 records then test native commit

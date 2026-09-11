@@ -380,7 +380,7 @@ def _checkpoint_committed_progress(
     completed_steps = value["completed_steps"]
     consumed_packs = value["consumed_packs"]
     if (
-        value["schema"] != "coordexp-swift-checkpoint-committed-progress"
+        value["schema"] != "coordexp-infras-checkpoint-committed-progress"
         or value["schema_version"] != 1
         or isinstance(completed_steps, bool)
         or not isinstance(completed_steps, int)
@@ -407,7 +407,7 @@ def _checkpoint_committed_progress(
                 context={"field": field},
             )
     return {
-        "schema": "coordexp-swift-checkpoint-committed-progress",
+        "schema": "coordexp-infras-checkpoint-committed-progress",
         "schema_version": 1,
         "completed_steps": completed_steps,
         "consumed_packs": consumed_packs,

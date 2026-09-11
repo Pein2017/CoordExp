@@ -9,7 +9,7 @@ from src.data.geometry import validate_bbox_bins
 
 GeometryTransformId = Literal["identity", "hflip", "vflip", "hvflip"]
 
-GEOMETRY_FLIP_POLICY_VERSION = "coordexp-swift-geometry-flips-v1"
+GEOMETRY_FLIP_POLICY_VERSION = "coordexp-infras-geometry-flips-v1"
 
 COORD_AFFINE_MATRICES: dict[str, tuple[tuple[int, int, int], ...]] = {
     "identity": (

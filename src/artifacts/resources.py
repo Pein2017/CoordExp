@@ -63,7 +63,7 @@ def collect_cuda_allocator_sample(*, cuda_api: object = _AUTO_CUDA) -> dict[str,
     This is deliberately a SEPARATE reader from ``collect_resource_snapshot``:
     that snapshot's exact schema is embedded verbatim in durable phase
     receipts, so the per-step observability fields added by
-    ``add-coordexp-swift-training-observability`` (Wave 3, task 3.6) arrive
+    ``add-coordexp-infras-training-observability`` (Wave 3, task 3.6) arrive
     beside it instead of retyping it.
 
     It reports:

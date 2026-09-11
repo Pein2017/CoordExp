@@ -1,6 +1,6 @@
 """Model-bearing training session lifetime for the V1 supervised smoke.
 
-Design decision 8 of ``decompose-coordexp-swift-training-orchestration``: this
+Design decision 8 of ``decompose-coordexp-infras-training-orchestration``: this
 module owns the mutable, model-bearing lifetime that begins once the control
 plane has admitted the model-free inputs -- the lifecycle counters, the
 Accelerator/model/adapter/embedding/loss/optimizer/runtime assembly, cache
@@ -626,7 +626,7 @@ def _resolve_converged_profile_sync_timing_selector(
         not isinstance(observed, Mapping)
         or not isinstance(observed.get("enabled"), bool)
         or observed.get("source")
-        not in {"default", "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS"}
+        not in {"default", "coordexp_infras_PROFILE_SYNC_TIMINGS"}
     ):
         raise RuntimeContractError(
             "profile synchronization timing selector receipt is invalid",
@@ -2591,7 +2591,7 @@ def _checkpoint_handler(
                     checkpoint_identity=checkpoint_identity,
                     inference_payload_identity=inference_payload_identity,
                     committed_progress={
-                        "schema": "coordexp-swift-checkpoint-committed-progress",
+                        "schema": "coordexp-infras-checkpoint-committed-progress",
                         "schema_version": 1,
                         "completed_steps": step,
                         "consumed_packs": int(lifecycle.get("consumed_packs", 0)),
@@ -2693,7 +2693,7 @@ def _build_pipeline_exact_resume_identities(
 ) -> Mapping[str, str]:
     base_weights = base_model_weight_identity(base_model_path)
     cache_identity = {
-        "schema": "coordexp-swift-exact-resume-cache-identity-v1",
+        "schema": "coordexp-infras-exact-resume-cache-identity-v1",
         "train": _exact_resume_cache_binding(train_cache),
         "eval": (
             None if eval_cache is None else _exact_resume_cache_binding(eval_cache)
@@ -2720,7 +2720,7 @@ def _exact_resume_dependency_identity(
             context={"mismatches": list(pinned_runtime_baseline.get("mismatches", []))},
         )
     projection = {
-        "schema": "coordexp-swift-exact-resume-dependencies-v1",
+        "schema": "coordexp-infras-exact-resume-dependencies-v1",
         "attention_backend": str(pinned_runtime_baseline["attention_backend"]),
         "baseline_sha256": str(pinned_runtime_baseline["baseline_sha256"]),
         "baseline_schema_version": int(pinned_runtime_baseline["schema_version"]),
@@ -2895,7 +2895,7 @@ def _exact_resume_policy_payload(
 
     del resume
     return {
-        "schema": "coordexp-swift-exact-resume-policy-v1",
+        "schema": "coordexp-infras-exact-resume-policy-v1",
         "attention": dict(attention),
         "eval_reduction": dict(eval_reduction),
         "input_provider": dict(input_provider),
@@ -3240,12 +3240,12 @@ def _exact_resume_cursor_from_counters(
     }
     return {
         "data": {
-            "schema": "coordexp-swift-rank-data-cursor-v1",
+            "schema": "coordexp-infras-rank-data-cursor-v1",
             **common,
             "runtime_counters": dict(counters),
         },
         "pack": {
-            "schema": "coordexp-swift-rank-pack-cursor-v1",
+            "schema": "coordexp-infras-rank-pack-cursor-v1",
             **common,
             "cache": cache_identity,
             "next_pack": next_pack,
@@ -3501,7 +3501,7 @@ def _build_accelerator(training_precision: str) -> Any:
             code="runtime.accelerate_unavailable",
         )
     kwargs: dict[str, Any] = {
-        # CoordExp-Swift owns planned-step loss normalization and optimizer
+        # coordexp-infras owns planned-step loss normalization and optimizer
         # cadence. Accelerate's accumulation counter would additionally divide
         # loss inside accelerator.backward(), so keep it neutral and use
         # TrainRuntime.no_sync for intermediate microsteps.

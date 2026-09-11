@@ -597,7 +597,7 @@ def test_move_to_device_covers_every_tensor_field_used_by_to_model_kwargs() -> N
 def test_resolve_forward_input_provider_mode_defaults_and_validates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_FORWARD_INPUT_PROVIDER_MODE", raising=False)
     resolved = forward_input_provider_module.resolve_forward_input_provider_mode(
         "synchronous"
     )
@@ -654,7 +654,7 @@ def test_environment_cannot_replace_strict_provider_mode(
 ) -> None:
     """The retired override is ignored: strict config is the only selector."""
 
-    monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", environment_value)
+    monkeypatch.setenv("coordexp_infras_FORWARD_INPUT_PROVIDER_MODE", environment_value)
 
     resolved = forward_input_provider_module.resolve_forward_input_provider_mode(
         configured_mode  # type: ignore[arg-type]
@@ -1591,7 +1591,7 @@ def test_provider_forward_inputs_keep_exactly_the_token_sequence_positions() -> 
 
 
 # ---------------------------------------------------------------------------
-# add-coordexp-swift-training-observability Wave 3 (task 3.5): accurately
+# add-coordexp-infras-training-observability Wave 3 (task 3.5): accurately
 # completed host-to-device measurement, or an honest unavailability.
 # ---------------------------------------------------------------------------
 

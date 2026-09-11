@@ -1,6 +1,6 @@
 """Wave-5 contract for ``src/training/session.py`` and the reduced facade.
 
-Design decision 8 of ``decompose-coordexp-swift-training-orchestration``:
+Design decision 8 of ``decompose-coordexp-infras-training-orchestration``:
 ``TrainingSession`` owns the mutable, model-bearing lifetime that begins once
 the control plane has admitted the model-free inputs.  These nodes pin the
 fixed phase order, the owned lifecycle and resource-close behavior, the
@@ -258,7 +258,7 @@ class _ScriptedEntry:
 @pytest.fixture
 def scripted_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> _ScriptedEntry:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
     for name in ("RANK", "LOCAL_RANK", "WORLD_SIZE"):
         monkeypatch.delenv(name, raising=False)
     return _ScriptedEntry(tmp_path, monkeypatch)
@@ -378,7 +378,7 @@ def test_pipeline_pre_session_failure_publishes_without_constructing_a_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
     for name in ("RANK", "LOCAL_RANK", "WORLD_SIZE"):
         monkeypatch.delenv(name, raising=False)
     entry = _ScriptedEntry(tmp_path, monkeypatch)
@@ -778,7 +778,7 @@ def test_session_owns_cache_hydration_and_the_facade_does_not() -> None:
 
 # ---------------------------------------------------------------------------
 # Behavioral terminal optimizer-boundary seam (Wave-3 carried obligation W3-3,
-# discharged by add-coordexp-swift-training-observability task 4.1)
+# discharged by add-coordexp-infras-training-observability task 4.1)
 #
 # The Wave-3 receipts proved the reporting seam behaviorally and the SESSION
 # seam only by source inspection.  These nodes drive the real

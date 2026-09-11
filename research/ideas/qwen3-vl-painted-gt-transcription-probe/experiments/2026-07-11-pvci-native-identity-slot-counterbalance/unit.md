@@ -9,7 +9,7 @@ unit_id: 2026-07-11-pvci-native-identity-slot-counterbalance
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - autoregressive-commit
@@ -244,7 +244,7 @@ across different committed identities and geometries.
 - Checkpoint: pure-CE/type-gated long-trained step-4887, live manifest SHA256
   `c8ad1ab01550fc640c67457fec9ad1f8b3bd1b8cef351cb90d41666233b80da1`.
 - Config:
-  `configs/coordexp_swift/infer/research/pvci_native_commit_pure_ce_step4887_probe.yaml`.
+  `configs/coordexp_infras/infer/research/pvci_native_commit_pure_ce_step4887_probe.yaml`.
 - Frozen cohort: five score-blind events from the completed spatial-commit
   unit; no result-selected replacement.
 - Runtime gate: `/data/CoordExp/outputs/painted_gt/pvci_native_identity_slot_counterbalance/gate2_v1/`.

@@ -108,7 +108,7 @@
     "index": null,
     "mode": "standalone_safetensors",
     "root": "/models/characterized-base",
-    "schema": "coordexp-swift-base-model-weights-v1",
+    "schema": "coordexp-infras-base-model-weights-v1",
     "shard_count": 1,
     "shards": [
       {

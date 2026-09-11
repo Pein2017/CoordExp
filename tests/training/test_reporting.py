@@ -39,7 +39,7 @@ class _Accelerator:
 
 
 class _Runtime:
-    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, task
+    """DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, task
     2.3): the reporter hands the runtime a typed `MetricBatch`, so this double
     runs the real world-size-one reduction instead of echoing a mapping."""
 
@@ -99,7 +99,7 @@ def _observation(step: int, **overrides: object) -> CompletedStepObservation:
 
 
 def test_reporter_is_keyword_only_constructed_and_callable(tmp_path: Path) -> None:
-    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 3, task
+    """DECLARED FLIP (add-coordexp-infras-training-observability, Wave 3, task
     3.6).
 
     Old assertion: the constructor took exactly
@@ -112,7 +112,7 @@ def test_reporter_is_keyword_only_constructed_and_callable(tmp_path: Path) -> No
     surface stays keyword-only, default-``None``, and adds no sink, cadence,
     ETA, TensorBoard, or metric-registry parameter.
 
-    DECLARED FLIP (add-coordexp-swift-training-observability, Wave 4, task
+    DECLARED FLIP (add-coordexp-infras-training-observability, Wave 4, task
     4.2): it also takes the optional ``publisher``. That is the JSONL-first
     publication OWNER (``src/artifacts/observation_publisher.py``), injected
     by ``src/training/session.py``, which is where cadence, console, and
@@ -363,7 +363,7 @@ def test_reporter_rejects_accuracy_keys_without_global_accuracy_stats(
 def test_normal_train_row_carries_no_per_rank_measurement_trace(
     tmp_path: Path,
 ) -> None:
-    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    """DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, tasks
     2.3/2.6).
 
     Old assertions: `reporting._per_rank_measurement(...)` projected selected
@@ -428,7 +428,7 @@ def test_reporter_train_row_key_set_matches_the_frozen_fixture(tmp_path: Path) -
 
 
 def test_append_logging_row_shared_broadcasts_rank_zero_failure() -> None:
-    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 4).
+    """DECLARED FLIP (add-coordexp-infras-training-observability, Wave 4).
 
     Old assertion: ``reporting`` owned the rank-zero append and its all-rank
     status handshake.
@@ -590,7 +590,7 @@ def test_reporter_does_not_touch_phase_lifecycle_when_no_phase_is_active(
 
 
 # ===========================================================================
-# add-coordexp-swift-training-observability Wave 3 (tasks 3.3-3.7)
+# add-coordexp-infras-training-observability Wave 3 (tasks 3.3-3.7)
 #
 # The reporter CONSUMES completed loss telemetry, the runtime-owned update
 # receipt, exact work counts, honest timing scopes, and allocator samples. It

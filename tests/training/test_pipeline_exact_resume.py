@@ -59,18 +59,18 @@ def _decoded_rank(
         "data": {
             "next_rank_local_micro_step": 4,
             "owner": "data",
-            "schema": "coordexp-swift-data-cursor",
+            "schema": "coordexp-infras-data-cursor",
             "schema_version": 1,
             "state": cursor["data"],
         },
         "pack": {
             "next_rank_local_micro_step": 4,
             "owner": "pack",
-            "schema": "coordexp-swift-pack-cursor",
+            "schema": "coordexp-infras-pack-cursor",
             "schema_version": 1,
             "state": cursor["pack"],
         },
-        "schema": "coordexp-swift-exact-rank-cursor",
+        "schema": "coordexp-infras-exact-rank-cursor",
         "schema_version": 1,
     }
     if next_rank_local_micro_step is not _MISSING:
@@ -112,7 +112,7 @@ def _record_exact_publication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> dict[str, Any]:
     payload_identity = {
-        "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+        "schema": "coordexp-infras-inference-checkpoint-payload-publication",
         "schema_version": 2,
         "manifest_relative_path": "inference_payload_manifest.json",
         "manifest_file_sha256": "c" * 64,
@@ -141,7 +141,7 @@ def _record_exact_publication(
         },
         inference_payload_identity=payload_identity,
         committed_progress={
-            "schema": "coordexp-swift-checkpoint-committed-progress",
+            "schema": "coordexp-infras-checkpoint-committed-progress",
             "schema_version": 1,
             "completed_steps": checkpoint_step,
             "consumed_packs": checkpoint_step * 2,
@@ -202,7 +202,7 @@ def test_train_logging_persists_validated_global_integer_accuracy_stats(
         accelerator = SimpleNamespace(is_main_process=True, num_processes=1)
 
         def gather_metrics(self, batch: Any) -> dict[str, Any]:
-            # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2,
+            # DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2,
             # task 2.3): the rank-local exact integer statistics now travel as
             # a typed batch field instead of a `gather_metrics` kwarg.
             assert {
@@ -270,7 +270,7 @@ def test_checkpoint_handler_persists_step3_and_final_exact_publication_events(
     aggregate_by_step = {3: "3" * 64, 5: "5" * 64}
     payload_identity_by_step = {
         step: {
-            "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+            "schema": "coordexp-infras-inference-checkpoint-payload-publication",
             "schema_version": 2,
             "manifest_relative_path": "inference_payload_manifest.json",
             "manifest_file_sha256": str(step) * 64,
@@ -373,11 +373,11 @@ def test_checkpoint_handler_persists_step3_and_final_exact_publication_events(
         assert event["checkpoint_path"] == f"checkpoints/step-{step}"
         assert event["exact_training_state_enabled"] is True
         assert event["failure_code"] is None
-        assert event["schema"] == "coordexp-swift-checkpoint-publication-event"
+        assert event["schema"] == "coordexp-infras-checkpoint-publication-event"
         assert event["schema_version"] == 2
         assert event["inference_payload_identity"] == payload_identity_by_step[step]
         assert event["committed_progress"] == {
-            "schema": "coordexp-swift-checkpoint-committed-progress",
+            "schema": "coordexp-infras-checkpoint-committed-progress",
             "schema_version": 1,
             "completed_steps": step,
             "consumed_packs": 9 if step == 3 else 15,
@@ -770,7 +770,7 @@ def test_pipeline_identities_bind_physical_topology_but_project_resume_metadata(
     cache = {
         "determinants_sha256": "2" * 64,
         "fingerprint": "3" * 64,
-        "format_version": "coordexp-swift-pack-cache-v3",
+        "format_version": "coordexp-infras-pack-cache-v3",
         "manifest_sha256": "4" * 64,
     }
     parent = {
@@ -873,7 +873,7 @@ def test_wrong_cursor_is_rejected_by_read_only_admission_before_state_mutation(
                 "scheduler_step_count": 2,
                 "zero_grad_count": 2,
             },
-            "schema": "coordexp-swift-rank-data-cursor-v1",
+            "schema": "coordexp-infras-rank-data-cursor-v1",
             "total_rank_local_micro_steps": 8,
             "world_size": 1,
         },
@@ -889,7 +889,7 @@ def test_wrong_cursor_is_rejected_by_read_only_admission_before_state_mutation(
             "rank": 0,
             "resolved_grad_accum_steps": 2,
             "resolved_max_steps": 4,
-            "schema": "coordexp-swift-rank-pack-cursor-v1",
+            "schema": "coordexp-infras-rank-pack-cursor-v1",
             "total_rank_local_micro_steps": 8,
             "world_size": 1,
         },

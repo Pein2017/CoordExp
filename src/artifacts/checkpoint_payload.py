@@ -19,10 +19,10 @@ from src.qwen.special_token_embeddings import (
 
 INFERENCE_PAYLOAD_MANIFEST_NAME = "inference_payload_manifest.json"
 INFERENCE_PAYLOAD_MANIFEST_SCHEMA = (
-    "coordexp-swift-inference-checkpoint-payload-manifest"
+    "coordexp-infras-inference-checkpoint-payload-manifest"
 )
 INFERENCE_PAYLOAD_PUBLICATION_SCHEMA = (
-    "coordexp-swift-inference-checkpoint-payload-publication"
+    "coordexp-infras-inference-checkpoint-payload-publication"
 )
 _MANIFEST_FIELDS = frozenset(
     {

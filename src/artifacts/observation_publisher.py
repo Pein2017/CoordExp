@@ -1,6 +1,6 @@
 """JSONL-first publication of a canonical observation and its derived sinks.
 
-``add-coordexp-swift-training-observability`` (requirement *Rank-Zero
+``add-coordexp-infras-training-observability`` (requirement *Rank-Zero
 Presentation Sinks*) gives this module one job: take the strict canonical row
 that ``src/training/reporting.py`` built, publish it to ``logging.jsonl``
 through the existing all-rank :class:`~src.artifacts.run_writer.RunWriter`
@@ -75,7 +75,7 @@ def _append_logging_row_shared(
     """Append on rank zero and make its bounded outcome common to every rank.
 
     Moved verbatim from ``src.training.reporting`` by
-    ``add-coordexp-swift-training-observability`` Wave 4: JSONL publication and
+    ``add-coordexp-infras-training-observability`` Wave 4: JSONL publication and
     its distributed success handshake are owned here, so ``reporting`` can stay
     the pure canonical row builder. Behavior, including both bounded error
     codes, is unchanged.
@@ -490,7 +490,7 @@ class ObservationPublisher:
         try:
             # Bounded: the exception TYPE only, never arbitrary error text.
             sys.stderr.write(
-                "coordexp-swift: derived tensorboard sink disabled after a "
+                "coordexp-infras: derived tensorboard sink disabled after a "
                 f"{stage} failure ({type(exc).__name__}); the canonical "
                 "logging.jsonl stream is unaffected\n"
             )

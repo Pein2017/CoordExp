@@ -11,7 +11,7 @@ from src.config.writer import write_resolved_config_artifacts
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Resolve a CoordExp-swift config.")
+    parser = argparse.ArgumentParser(description="Resolve a coordexp-infras config.")
     parser.add_argument("--config", required=True, help="Path to runnable YAML config.")
     parser.add_argument(
         "--run-dir",

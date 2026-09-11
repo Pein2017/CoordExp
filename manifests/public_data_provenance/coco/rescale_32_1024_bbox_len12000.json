@@ -106,7 +106,7 @@
     "selected_generation_policy": "max_succeeded_terminal",
     "historical_training_config": {
       "identity_mode": "recorded_receipt_only",
-      "recorded_path": "/data/CoordExp/configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml",
+      "recorded_path": "/data/CoordExp/configs/coordexp_infras/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml",
       "sha256": "b2749ac74d303aa432d751b9370de96b679df151ef0b36bc5835e227b5412012"
     },
     "tokenizer": {

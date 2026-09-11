@@ -1,6 +1,6 @@
 """Contract for the bounded ``RankControlPlane`` rank convergence owner.
 
-Wave 2 of ``decompose-coordexp-swift-training-orchestration`` (tasks 3.3-3.4,
+Wave 2 of ``decompose-coordexp-infras-training-orchestration`` (tasks 3.3-3.4,
 design decision 3).  ``src/training/control_plane.py`` owns the fixed-frame CPU
 rank-report transport, report validation/normalization, phase convergence,
 resource convergence, and gatherer cleanup that ``src/training/pipeline.py``

@@ -38,7 +38,7 @@ from src.training.micro_steps import (
 from src.training.schedule import ResolvedStepSchedule
 
 
-PACKING_CACHE_VERSION = "coordexp-swift-pack-cache-v3"
+PACKING_CACHE_VERSION = "coordexp-infras-pack-cache-v3"
 PACKING_CACHE_MANIFEST = "manifest.json"
 PACKING_CACHE_CHUNK_DIR = "chunks"
 PACKING_CACHE_DETERMINANT_REGISTRY_VERSION = 1

@@ -15,8 +15,8 @@ from src.artifacts.identity import (
 from src.training.cache_workflow import prepare_training_pack_caches
 
 
-_RECEIPT_SCHEMA = "coordexp-swift-pack-cache-preparation-receipt-v1"
-_VERIFICATION_RECEIPT_SCHEMA = "coordexp-swift-pack-cache-verification-receipt-v1"
+_RECEIPT_SCHEMA = "coordexp-infras-pack-cache-preparation-receipt-v1"
+_VERIFICATION_RECEIPT_SCHEMA = "coordexp-infras-pack-cache-verification-receipt-v1"
 
 
 def _receipt_payload(

@@ -140,7 +140,7 @@ def test_adapter_plus_compact_selected_token_delta(tmp_path: Path) -> None:
     manifest = json.loads(
         (result.checkpoint_dir / "inference_payload_manifest.json").read_text()
     )
-    assert manifest["schema"] == "coordexp-swift-inference-checkpoint-payload-manifest"
+    assert manifest["schema"] == "coordexp-infras-inference-checkpoint-payload-manifest"
     assert manifest["schema_version"] == 1
     assert manifest["adapter"]["status"] == "present"
     assert manifest["special_token_embedding_delta"]["status"] == "present"
@@ -408,7 +408,7 @@ def test_final_and_best_are_rank_zero_owned_and_safe(tmp_path: Path) -> None:
 def test_disabled_exact_state_publishes_only_the_inference_payload_and_aliases(
     tmp_path: Path,
 ) -> None:
-    """`coordexp-swift-training-artifacts`/`coordexp-swift-training-resume`
+    """`coordexp-infras-training-artifacts`/`coordexp-infras-training-resume`
     -> Scenario: Exact state is disabled."""
 
     writer = _run_writer(tmp_path)

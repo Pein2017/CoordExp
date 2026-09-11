@@ -36,7 +36,7 @@ def _patch_shared_cache_import(
 ) -> None:
     """Replace one shared import on every module that now reads it.
 
-    Wave 3 of ``decompose-coordexp-swift-training-orchestration`` moved the
+    Wave 3 of ``decompose-coordexp-infras-training-orchestration`` moved the
     cache preparation/admission/hydration orchestration into
     ``src/training/cache_workflow.py``.  Names both owners import must be
     replaced on both, or a seam that used to be a single patch point would
@@ -55,7 +55,7 @@ class _Accelerator:
 
 
 class _Runtime:
-    """DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    """DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, tasks
     2.3/2.4): every producer now hands the runtime a typed `MetricBatch`, so
     this double runs the real world-size-one reduction."""
 
@@ -459,7 +459,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
     monkeypatch.setattr(session.time, "monotonic", lambda: next(monotonic_values))
     monkeypatch.setattr(session, "ForwardEvalRunner", FakeEvalRunner)
     payload_identity = {
-        "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+        "schema": "coordexp-infras-inference-checkpoint-payload-publication",
         "schema_version": 2,
         "manifest_relative_path": "inference_payload_manifest.json",
         "manifest_file_sha256": "a" * 64,
@@ -593,7 +593,7 @@ def test_five_step_lifecycle_sums_only_steps_three_to_five_and_eval_events(
     assert {row["resource_observation_scope"] for row in eval_rows} == {
         "process_lifetime_high_water_observed_after_evaluation"
     }
-    # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    # DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, tasks
     # 2.3/2.6): old assertion `all("per_rank_measurement" in row ...)`. Normal
     # eval rows now carry aggregated values only; per-rank scalars stay
     # ephemeral inside the reduction result.
@@ -813,7 +813,7 @@ def test_train_logging_uses_all_rank_reduced_scalars_and_preserves_nonfinite(
     row = json.loads(writer.logging_path.read_text())
     # _observation() does not measure timing (production-dead batch-path
     # shape): the timing fields must be entirely absent, not fabricated 0.0.
-    # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, task
+    # DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, task
     # 2.3): the producer used to hand the runtime an untyped value mapping
     # (asserted here as `{"lr/group_0": 1e-5, "loss/total": 1.0,
     # "acc_top1": 0.5, "acc_top5": 1.0}`). It now hands over typed samples
@@ -947,7 +947,7 @@ def test_train_row_records_resources_without_rewriting_run_high_water_per_step(
     row = json.loads(writer.logging_path.read_text())
     assert row["resource/cpu_max_rss_bytes"] == 1024.0
     assert row["resource/gpu_max_memory_reserved_bytes"] == 16384.0
-    # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 2, tasks
+    # DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, tasks
     # 2.3/2.6): the old assertions read
     # `row["per_rank_measurement"]["0"][...]`. A normal row no longer
     # serializes a per-rank trace; the aggregated scalars above are the
@@ -963,14 +963,14 @@ def test_train_row_records_resources_without_rewriting_run_high_water_per_step(
     [
         ({}, False, "default"),
         (
-            {"COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS": "1"},
+            {"coordexp_infras_PROFILE_SYNC_TIMINGS": "1"},
             True,
-            "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+            "coordexp_infras_PROFILE_SYNC_TIMINGS",
         ),
         (
-            {"COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS": "not-enabled"},
+            {"coordexp_infras_PROFILE_SYNC_TIMINGS": "not-enabled"},
             False,
-            "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+            "coordexp_infras_PROFILE_SYNC_TIMINGS",
         ),
     ],
 )
@@ -980,7 +980,7 @@ def test_profile_sync_selector_records_only_resolved_boolean_and_source(
     expected_enabled: bool,
     expected_source: str,
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    monkeypatch.delenv("coordexp_infras_PROFILE_SYNC_TIMINGS", raising=False)
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
 
@@ -993,14 +993,14 @@ def test_profile_sync_selector_records_only_resolved_boolean_and_source(
 def test_profile_sync_selector_requires_one_exact_receipt_across_ranks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    monkeypatch.delenv("coordexp_infras_PROFILE_SYNC_TIMINGS", raising=False)
 
     def gather(report: object) -> tuple[object, object]:
         peer = {**dict(report), "rank": 1}  # type: ignore[arg-type]
         peer_details = dict(peer["rank_details"])
         peer_details["resolution"] = {
             "enabled": True,
-            "source": "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+            "source": "coordexp_infras_PROFILE_SYNC_TIMINGS",
         }
         peer["rank_details"] = peer_details
         return report, peer
@@ -1018,7 +1018,7 @@ def test_profile_sync_selector_requires_one_exact_receipt_across_ranks(
 def test_profile_sync_selector_accepts_one_exact_environment_receipt_across_ranks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "1")
 
     def gather(report: object) -> tuple[object, object]:
         return report, {**dict(report), "rank": 1}  # type: ignore[arg-type]
@@ -1029,24 +1029,24 @@ def test_profile_sync_selector_accepts_one_exact_environment_receipt_across_rank
         rank_report_gatherer=gather,
     ) == {
         "enabled": True,
-        "source": "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+        "source": "coordexp_infras_PROFILE_SYNC_TIMINGS",
     }
 
 
 def test_pack_cache_root_selector_records_resolved_root_and_allowlisted_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", raising=False)
+    monkeypatch.delenv("coordexp_infras_PACK_CACHE_ROOT", raising=False)
     root, receipt = cache_workflow._resolve_pack_cache_root(tmp_path)
-    assert root == tmp_path / ".cache" / "coordexp_swift" / "packing"
+    assert root == tmp_path / ".cache" / "coordexp_infras" / "packing"
     assert receipt == {"resolved_root": str(root.resolve()), "source": "default"}
 
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", "relative-cache")
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", "relative-cache")
     root, receipt = cache_workflow._resolve_pack_cache_root(tmp_path)
     assert root == Path("relative-cache")
     assert receipt == {
         "resolved_root": str(Path("relative-cache").resolve()),
-        "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT",
+        "source": "coordexp_infras_PACK_CACHE_ROOT",
     }
 
 
@@ -1138,8 +1138,8 @@ def test_production_pack_plan_policies_preserve_every_atomic_example_once(
 @pytest.mark.parametrize(
     "name",
     [
-        "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
-        "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS",
+        "coordexp_infras_EVAL_REDUCTION_MODE",
+        "coordexp_infras_PROFILE_SYNC_TIMINGS",
     ],
 )
 def test_policy_selector_source_records_only_default_or_allowlisted_name(
@@ -1158,7 +1158,7 @@ def test_policy_selector_source_records_only_default_or_allowlisted_name(
     # strict config is the only selector, so no receipt may name it.
     with pytest.raises(RuntimeContractError) as exc_info:
         cache_workflow._environment_selector_source(
-            "COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE"
+            "coordexp_infras_FORWARD_INPUT_PROVIDER_MODE"
         )
     assert exc_info.value.code == "runtime.environment_selector_unsupported"
 
@@ -1198,7 +1198,7 @@ def test_rank_zero_logging_failure_is_broadcast_as_shared_named_error(
     )
     for runtime, writer in ((main_runtime, failing_writer), (peer_runtime, None)):
         with pytest.raises(RuntimeContractError) as exc_info:
-            # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 4):
+            # DECLARED FLIP (add-coordexp-infras-training-observability, Wave 4):
             # the rank-zero append plus its all-rank status handshake is owned
             # by `src/artifacts/observation_publisher.py`; the historical
             # behavior and both bounded codes are unchanged.
@@ -1535,7 +1535,7 @@ def test_prepare_training_pack_caches_is_model_free_and_covers_train_and_eval(
     assert result["train"]["micro_step_count"] == 11
     assert result["policy_identities"]["cache"]["root"] == {
         "resolved_root": str(
-            (Path.cwd() / ".cache" / "coordexp_swift" / "packing").resolve()
+            (Path.cwd() / ".cache" / "coordexp_infras" / "packing").resolve()
         ),
         "source": "default",
     }
@@ -1690,7 +1690,7 @@ def test_cache_phase_aggregate_marks_partial_hit_as_completed_mixed() -> None:
 def test_eval_hydration_fewer_packs_uses_exact_replicated_ordinals(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_EVAL_REDUCTION_MODE", raising=False)
     step = SimpleNamespace()
     selective_loads: list[dict[str, object]] = []
     receipts: list[dict[str, object]] = []
@@ -1765,7 +1765,7 @@ def test_eval_hydration_fewer_packs_uses_exact_replicated_ordinals(
 def test_eval_hydration_reuses_the_model_free_reduction_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", "replicated")
+    monkeypatch.setenv("coordexp_infras_EVAL_REDUCTION_MODE", "replicated")
     selective_loads: list[tuple[int, int]] = []
     monkeypatch.setattr(
         cache_workflow,
@@ -1810,7 +1810,7 @@ def test_eval_hydration_reuses_the_model_free_reduction_receipt(
 def test_eval_hydration_rejects_noncanonical_selective_ordinals(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_EVAL_REDUCTION_MODE", raising=False)
     monkeypatch.setattr(
         cache_workflow,
         "load_rank_eval_micro_steps_from_cache",
@@ -1840,7 +1840,7 @@ def test_eval_hydration_rejects_noncanonical_selective_ordinals(
 def test_eval_hydration_selective_failure_has_no_full_loader_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_EVAL_REDUCTION_MODE", raising=False)
     full_loads: list[object] = []
 
     def fail_selective(*args: object, **kwargs: object) -> object:
@@ -2030,7 +2030,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
     monkeypatch: pytest.MonkeyPatch,
     provider_mode: str,
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_EVAL_REDUCTION_MODE", raising=False)
     resolved_provider = session.resolve_forward_input_provider_mode(provider_mode)
     monkeypatch.setattr(
         session,
@@ -2068,7 +2068,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
             train_order="source_order",
         ),
         checkpoint=SimpleNamespace(save_final=False),
-        # DECLARED FLIP (add-coordexp-swift-training-observability, Wave 1/4):
+        # DECLARED FLIP (add-coordexp-infras-training-observability, Wave 1/4):
         # `observability.steps` is a REQUIRED presentation cadence and the
         # session composes the rank-zero publisher from it, so a session-level
         # fixture must now make that presentation decision explicitly.
@@ -2278,7 +2278,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
         rank: int,
         world_size: int,
     ) -> object:
-        assert cache_root == tmp_path / ".cache" / "coordexp_swift" / "packing"
+        assert cache_root == tmp_path / ".cache" / "coordexp_infras" / "packing"
         selective_loads.append(
             {
                 "path": path,
@@ -2370,7 +2370,7 @@ def test_same_dataset_eval_resolves_rank_selective_cache_and_binding(
     identities = dict(policy_identities)
     assert identities["cache"]["root"] == {
         "resolved_root": str(
-            (tmp_path / ".cache" / "coordexp_swift" / "packing").resolve()
+            (tmp_path / ".cache" / "coordexp_infras" / "packing").resolve()
         ),
         "source": "default",
     }
@@ -2661,7 +2661,7 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
     other key appears, disappears, or is renamed, and `accuracy_stats`
     remains the same strict nested structure in both rows.
 
-    DECLARED FLIP (add-coordexp-swift-training-observability, Wave 3, task
+    DECLARED FLIP (add-coordexp-infras-training-observability, Wave 3, task
     3.4).
 
     Old assertion: measuring the step added EXACTLY the three timing keys.
@@ -2747,7 +2747,7 @@ def test_train_row_key_set_gains_exactly_the_three_timing_keys_and_keeps_accurac
 
 # ---------------------------------------------------------------------------
 # Wave-0 pre-move characterization for
-# `decompose-coordexp-swift-training-orchestration`.
+# `decompose-coordexp-infras-training-orchestration`.
 #
 # `src/training/pipeline.py` is the facade Waves 2-5 reduce.  These additions
 # freeze its public contract and record which private helpers it still owns at
@@ -2797,7 +2797,7 @@ WAVE0_TRAIN_ROW_KEYS = (
 #: name (both the train and eval callbacks call it, so it survives as a
 #: shared module-level function).
 #:
-#: DECLARED FLIP (``add-coordexp-swift-training-observability``, ITS Wave 4 -
+#: DECLARED FLIP (``add-coordexp-infras-training-observability``, ITS Wave 4 -
 #: the wave numbers in this table are the DECOMPOSE change's): the successor
 #: change moved ``_append_logging_row_shared`` on to
 #: ``src/artifacts/observation_publisher.py``, which owns JSONL-first

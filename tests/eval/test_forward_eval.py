@@ -998,7 +998,7 @@ def test_disjoint_shard_globally_zero_selected_term_matches_replicated_zero_weig
     sharded reduction must reproduce -- resolves a zero-total-weight average
     to `0.0`, never an error.
 
-    Wave-2 restatement (`add-coordexp-swift-training-observability`, task
+    Wave-2 restatement (`add-coordexp-infras-training-observability`, task
     2.4): the companion `__weight__` metric key that used to carry the
     denominator through the collective is gone; a `token_weighted_diag`
     family is now one typed `RatioSample` whose declared `empty_value`
@@ -1270,7 +1270,7 @@ def test_replicated_fallback_when_pack_count_below_world_size_keeps_pre_change_s
 def test_resolve_active_eval_reduction_mode_defaults_to_auto_sharding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_EVAL_REDUCTION_MODE", raising=False)
     assert (
         resolve_active_eval_reduction_mode(pack_count=10, world_size=4)
         == EVAL_REDUCTION_DISJOINT_SHARD
@@ -1286,7 +1286,7 @@ def test_resolve_active_eval_reduction_mode_defaults_to_auto_sharding(
 def test_resolve_active_eval_reduction_mode_auto_control_activates_sharding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", "auto")
+    monkeypatch.setenv("coordexp_infras_EVAL_REDUCTION_MODE", "auto")
     assert (
         resolve_active_eval_reduction_mode(pack_count=8, world_size=4)
         == EVAL_REDUCTION_DISJOINT_SHARD
@@ -1306,7 +1306,7 @@ def test_resolve_active_eval_reduction_mode_auto_control_activates_sharding(
 def test_resolve_active_eval_reduction_mode_rejects_invalid_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", "sharded")
+    monkeypatch.setenv("coordexp_infras_EVAL_REDUCTION_MODE", "sharded")
     with pytest.raises(RuntimeContractError) as exc_info:
         resolve_active_eval_reduction_mode(pack_count=8, world_size=4)
     assert exc_info.value.code == "eval_forward.reduction_control_invalid"

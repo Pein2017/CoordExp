@@ -1,6 +1,6 @@
 """Cache preparation, admission, hydration, and the fail-before-build gate.
 
-Wave 3 of ``decompose-coordexp-swift-training-orchestration`` moves the
+Wave 3 of ``decompose-coordexp-infras-training-orchestration`` moves the
 higher-level cache operations out of the training assembly facade.  These tests
 own the moved surface directly: one-process preparation and its receipt, worker
 resolution, split aggregation, absent-target publication, model-free
@@ -220,7 +220,7 @@ def _install_identity(
     fingerprint: str = TRAIN_FINGERPRINT,
     determinants: dict[str, Any] | None = None,
 ) -> None:
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(cache_root))
     monkeypatch.setattr(
         cache_workflow,
         "build_packing_cache_fingerprint",
@@ -385,7 +385,7 @@ def test_occupied_invalid_target_fails_closed_without_recovery(
     )
     manifest_file = cache_dir / "manifest.json"
     manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-    manifest["version"] = "coordexp-swift-pack-cache-v1"
+    manifest["version"] = "coordexp-infras-pack-cache-v1"
     manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(RuntimeContractError) as caught:
@@ -587,7 +587,7 @@ def _install_preparation_stubs(
     monkeypatch.setattr(
         cache_workflow, "_resolve_eval_pack_cache", lambda *a, **k: eval_cache
     )
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
 
 
 def _split_cache(root: Path, name: str, *, built: bool) -> dict[str, Any]:
@@ -713,7 +713,7 @@ def _install_verification_identity(
         train_cache=_split_cache(cache_root, "train", built=True),
         eval_cache=_split_cache(cache_root, "eval", built=True) if with_eval else None,
     )
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(cache_root))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(cache_root))
     monkeypatch.setattr(
         cache_workflow,
         "build_packing_cache_fingerprint",
@@ -909,7 +909,7 @@ def test_cli_forwards_require_all_hit_and_names_a_verification_receipt(
 
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert calls == [True]
-    assert payload["schema"] == "coordexp-swift-pack-cache-verification-receipt-v1"
+    assert payload["schema"] == "coordexp-infras-pack-cache-verification-receipt-v1"
     assert payload["terminal_status"] == "completed"
     assert payload["result"]["cache_materialization_authorized"] is False
 
@@ -935,7 +935,7 @@ def test_cli_default_route_remains_the_only_build_capable_route(
 
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert calls == [False]
-    assert payload["schema"] == "coordexp-swift-pack-cache-preparation-receipt-v1"
+    assert payload["schema"] == "coordexp-infras-pack-cache-preparation-receipt-v1"
 
 
 def test_cli_publishes_a_bounded_failed_verification_receipt(
@@ -962,7 +962,7 @@ def test_cli_publishes_a_bounded_failed_verification_receipt(
         )
 
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
-    assert payload["schema"] == "coordexp-swift-pack-cache-verification-receipt-v1"
+    assert payload["schema"] == "coordexp-infras-pack-cache-verification-receipt-v1"
     assert payload["terminal_status"] == "failed"
     assert payload["result"] is None
     assert payload["failure"]["error_code"] == "training.pack_cache_not_prepared"

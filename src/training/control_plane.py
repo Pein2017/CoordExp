@@ -1,6 +1,6 @@
 """Bounded rank control plane for training phase convergence.
 
-Design decision 3 of ``decompose-coordexp-swift-training-orchestration``: this
+Design decision 3 of ``decompose-coordexp-infras-training-orchestration``: this
 module owns the fixed-frame CPU rank-report transport, rank-report validation
 and normalization, phase convergence, resource convergence, and gatherer
 cleanup.  The helper bodies below are moved verbatim from

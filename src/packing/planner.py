@@ -15,20 +15,20 @@ import torch
 from src.common.errors import PackingContractError
 
 
-PACK_PLAN_SCHEMA = "coordexp-swift-pack-plan"
+PACK_PLAN_SCHEMA = "coordexp-infras-pack-plan"
 PACK_PLAN_SCHEMA_VERSION = 5
-PACK_PLAN_CURSOR_SCHEMA = "coordexp-swift-pack-plan-cursor"
+PACK_PLAN_CURSOR_SCHEMA = "coordexp-infras-pack-plan-cursor"
 PACK_PLAN_CURSOR_SCHEMA_VERSION = 3
-PACK_PLAN_AUTHENTICATION_SCHEMA = "coordexp-swift-pack-plan-authentication-v1"
+PACK_PLAN_AUTHENTICATION_SCHEMA = "coordexp-infras-pack-plan-authentication-v1"
 PACK_PLAN_CURSOR_AUTHENTICATION_SCHEMA = (
-    "coordexp-swift-pack-plan-cursor-authentication-v1"
+    "coordexp-infras-pack-plan-cursor-authentication-v1"
 )
 PACK_PLAN_CANONICALIZATION = "json-sort-keys-ascii-no-nan-compact-v1"
-PACK_PLAN_PREFIX_DIGEST_SCHEMA = "coordexp-swift-pack-plan-prefix-chain-v1"
-PACK_PLAN_STREAM_RECEIPT_SCHEMA = "coordexp-swift-pack-plan-stream-receipt"
+PACK_PLAN_PREFIX_DIGEST_SCHEMA = "coordexp-infras-pack-plan-prefix-chain-v1"
+PACK_PLAN_STREAM_RECEIPT_SCHEMA = "coordexp-infras-pack-plan-stream-receipt"
 PACK_PLAN_STREAM_RECEIPT_SCHEMA_VERSION = 2
 PACK_PLAN_STREAM_AUTHENTICATION_SCHEMA = (
-    "coordexp-swift-pack-plan-stream-authentication-v1"
+    "coordexp-infras-pack-plan-stream-authentication-v1"
 )
 DEFAULT_PACK_PLAN_CURSOR_BYTE_BUDGET = 65_536
 DEFAULT_PACK_PLAN_FRAGMENT_ITEM_BUDGET = 1_024
@@ -41,9 +41,9 @@ WINDOW_BINPACK = "window_binpack"
 ONLINE_WINDOW_BINPACK = "online_window_binpack"
 
 _ALGORITHM_VERSIONS = {
-    SOURCE_ORDER_NEXT_FIT: "coordexp-swift-source-order-next-fit-v2",
-    WINDOW_BINPACK: "coordexp-swift-window-binpack-v2",
-    ONLINE_WINDOW_BINPACK: "coordexp-swift-online-window-binpack-v3",
+    SOURCE_ORDER_NEXT_FIT: "coordexp-infras-source-order-next-fit-v2",
+    WINDOW_BINPACK: "coordexp-infras-window-binpack-v2",
+    ONLINE_WINDOW_BINPACK: "coordexp-infras-online-window-binpack-v3",
 }
 _TIE_BREAKERS = {
     SOURCE_ORDER_NEXT_FIT: "source_ordinal_v1",

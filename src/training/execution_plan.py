@@ -1,6 +1,6 @@
 """Immutable model-free execution plan for one training entry.
 
-Design decision 2 of ``decompose-coordexp-swift-training-orchestration``: the
+Design decision 2 of ``decompose-coordexp-infras-training-orchestration``: the
 plan is the frozen value the facade resolves before any live runtime exists.
 Construction loads and freezes strict config, resolves the repository root and
 the model-free launcher identity, copies the bounded measurement context, and

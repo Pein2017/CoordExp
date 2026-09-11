@@ -1,6 +1,6 @@
 """Public training facade for the V1 supervised smoke.
 
-Design decision 1 of ``decompose-coordexp-swift-training-orchestration``: this
+Design decision 1 of ``decompose-coordexp-infras-training-orchestration``: this
 module is the compatibility facade and nothing else.  It builds the immutable
 model-free plan, opens and binds the bounded rank control plane, initializes
 the current run owner, admits the cache workflow, constructs exactly one

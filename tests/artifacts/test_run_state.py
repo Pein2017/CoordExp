@@ -67,7 +67,7 @@ def _completed_event(
         "status": "completed",
         "step": step,
         "committed_progress": {
-            "schema": "coordexp-swift-checkpoint-committed-progress",
+            "schema": "coordexp-infras-checkpoint-committed-progress",
             "schema_version": 1,
             "completed_steps": completed_steps,
             "consumed_packs": consumed_packs,
@@ -167,7 +167,7 @@ def _admitted_state(
         "training_state_aggregate_digest": aggregate_digest,
     }
     committed_progress = {
-        "schema": "coordexp-swift-checkpoint-committed-progress",
+        "schema": "coordexp-infras-checkpoint-committed-progress",
         "schema_version": 1,
         "completed_steps": checkpoint_step,
         "consumed_packs": checkpoint_step * 2,
@@ -175,7 +175,7 @@ def _admitted_state(
         "finite_status": "finite",
     }
     event = {
-        "schema": "coordexp-swift-checkpoint-publication-event",
+        "schema": "coordexp-infras-checkpoint-publication-event",
         "schema_version": 2,
         "step": checkpoint_step,
         "status": "completed",

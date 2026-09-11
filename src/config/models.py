@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-CONFIG_LOADER_VERSION = "coordexp-swift-config-v1"
+CONFIG_LOADER_VERSION = "coordexp-infras-config-v1"
 
 ForwardInputProviderMode = Literal["synchronous", "overlapped"]
 PackingPolicy = Literal[

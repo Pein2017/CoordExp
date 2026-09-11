@@ -1497,11 +1497,11 @@ def test_trainer_profile_sync_helper_is_exact_env_gated(
         lambda device: calls.append(str(device)),
     )
 
-    monkeypatch.delenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", raising=False)
+    monkeypatch.delenv("coordexp_infras_PROFILE_SYNC_TIMINGS", raising=False)
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "true")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "true")
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "1")
     trainer_module._sync_device_if_requested(torch.device("cuda:3"))
 
     assert calls == ["cuda:3"]
@@ -1517,12 +1517,12 @@ def test_trainer_profile_sync_policy_is_frozen_against_environment_mutation(
         "synchronize",
         lambda device: calls.append(str(device)),
     )
-    monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "1")
+    monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "1")
 
     trainer_module.set_profile_sync_timing_policy(False)
     try:
         trainer_module._sync_device_if_requested(torch.device("cuda:2"))
-        monkeypatch.setenv("COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS", "0")
+        monkeypatch.setenv("coordexp_infras_PROFILE_SYNC_TIMINGS", "0")
         trainer_module.set_profile_sync_timing_policy(True)
         trainer_module._sync_device_if_requested(torch.device("cuda:3"))
     finally:
@@ -2274,7 +2274,7 @@ def test_total_loss_keeps_the_narrow_duck_typed_total_only_fallback() -> None:
 
 
 # ---------------------------------------------------------------------------
-# add-coordexp-swift-training-observability Wave 3 (tasks 3.4/3.5):
+# add-coordexp-infras-training-observability Wave 3 (tasks 3.4/3.5):
 # exact work counts captured before release, honest input timing scopes, and
 # no CUDA synchronization performed solely to make a timer readable.
 # ---------------------------------------------------------------------------

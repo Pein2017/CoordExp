@@ -1,4 +1,4 @@
-# Handoff: standardize-coordexp-swift-supervised-losses (start of build)
+# Handoff: standardize-coordexp-infras-supervised-losses (start of build)
 
 Written 2026-08-20 by the Claude Fable lead session that completed and
 archived the decompose change. Start a fresh task from this file plus the
@@ -12,17 +12,17 @@ losses (this change, 0/31)** → observability (0/40).
 
 ## Authority and inputs
 
-- Owning change: `openspec/changes/standardize-coordexp-swift-supervised-losses/`
+- Owning change: `openspec/changes/standardize-coordexp-infras-supervised-losses/`
   (proposal/design/tasks are the sole scope authority).
-- SDD plan: `docs/superpowers/plans/2026-08-12-standardize-coordexp-swift-supervised-losses.md`
+- SDD plan: `docs/superpowers/plans/2026-08-12-standardize-coordexp-infras-supervised-losses.md`
   (execution notes only; the OpenSpec change owns scope).
 - Current owners after decompose: see `docs/IMPLEMENTATION_MAP.md` — losses
   live in `src/losses/` (runner owns configured loss assembly and
   normalization), supervision records in `src/supervision/tokens.py`,
   facade `src/training/pipeline.py`, model-bearing lifetime
   `src/training/session.py`, trainer `src/training/supervised_trainer.py`.
-- Worktree: `/data/CoordExp/.worktrees/CoordExp-swift`, branch
-  `coordexp-swift`, HEAD at handoff `68191f7ea`, tree clean,
+- Worktree: `/data/CoordExp/.worktrees/coordexp-infras`, branch
+  `coordexp-infras`, HEAD at handoff `68191f7ea`, tree clean,
   `openspec validate --all` 21/21.
 
 ## Authorization scope
@@ -35,7 +35,7 @@ packet with its own authorization basis — ask the user.
 
 ## Live production facts a loss change must not silently break
 
-- Pack cache v3 root `.cache/coordexp_swift/packing` holds exactly two
+- Pack cache v3 root `.cache/coordexp_infras/packing` holds exactly two
   immutable targets (train `8f11237f…`, eval `3b30c157…`) for the smoke
   config; loss-semantics changes that alter cache determinants (owner set in
   `src/training/pack_cache.py`, 31 entries incl. `supervision_tokens`,
@@ -48,7 +48,7 @@ packet with its own authorization basis — ask the user.
   `finite/*`, segment counts, token_weighted_diag) — completed-step row
   schema is a protected compatibility surface (see
   `archive/2026-08-20-decompose…/receipts/wave-8-compatibility-comparison.json`).
-  [Correction, entry-audit F-8: SUPERSEDED — `standardize-coordexp-swift-supervised-losses`
+  [Correction, entry-audit F-8: SUPERSEDED — `standardize-coordexp-infras-supervised-losses`
   deliberately replaced the bare per-term keys with `loss/<term>/raw` + `/weighted`
   + `/selected_count` and dual-writes no alias; the frozen fixtures stay byte-frozen
   because they carry only `loss/total`.]

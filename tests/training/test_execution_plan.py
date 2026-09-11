@@ -1,6 +1,6 @@
 """Contract for the frozen model-free ``TrainingExecutionPlan``.
 
-Wave 2 of ``decompose-coordexp-swift-training-orchestration`` (tasks 3.1-3.2,
+Wave 2 of ``decompose-coordexp-infras-training-orchestration`` (tasks 3.1-3.2,
 design decision 2).  The plan is the immutable *value* the facade resolves
 before any live runtime exists: strict config, repository root, model-free
 launcher identity, a copied bounded measurement context, and entry evidence.

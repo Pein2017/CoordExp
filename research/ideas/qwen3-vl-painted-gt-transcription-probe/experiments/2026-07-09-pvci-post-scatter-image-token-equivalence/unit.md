@@ -9,7 +9,7 @@ unit_id: 2026-07-09-pvci-post-scatter-image-token-equivalence
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - pvci
   - qwen3-vl

@@ -109,7 +109,7 @@ def _resolved_config() -> dict[str, Any]:
         "resolution": {
             "entry_config_path": "/configs/parent.yaml",
             "fingerprint": "parent",
-            "loader_version": "coordexp-swift-config-v1",
+            "loader_version": "coordexp-infras-config-v1",
             "path_origins": {},
             "schema_version": 1,
             "sources": [],
@@ -171,7 +171,7 @@ def test_resume_compatibility_excludes_the_presentation_only_observability_block
 ) -> None:
     """`observability` is rank-zero presentation, never training semantics.
 
-    add-coordexp-swift-training-observability task 5.1: changing only
+    add-coordexp-infras-training-observability task 5.1: changing only
     `observability.steps` between an admitted parent and its continuation MUST
     NOT make otherwise identical training state incompatible, while every
     training-semantic field stays strict.

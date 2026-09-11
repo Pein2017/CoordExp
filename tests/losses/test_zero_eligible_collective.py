@@ -1,6 +1,6 @@
 """Zero-eligible-segment failure must be a collective, post-gather decision.
 
-Spec (`coordexp-swift-supervision-losses`, scenario "Zero eligible protected
+Spec (`coordexp-infras-supervision-losses`, scenario "Zero eligible protected
 atoms on one rank"): the rank-local eligible count MUST enter the same
 planned-step all-rank denominator decision before any rank raises, without
 distributed deadlock. Which runs fail does NOT change: a rank observing zero

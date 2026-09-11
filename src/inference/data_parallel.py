@@ -171,7 +171,7 @@ def plan_data_parallel_shards(
         per_device_batch_size=per_device_batch_size,
     )
     fingerprint_payload = {
-        "version": "coordexp-swift-infer-data-parallel-plan-v1",
+        "version": "coordexp-infras-infer-data-parallel-plan-v1",
         "visible_cuda_tokens": list(visible_tokens),
         "active_ranks": active_ranks,
         "per_device_batch_size": per_device_batch_size,

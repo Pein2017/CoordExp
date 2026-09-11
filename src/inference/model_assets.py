@@ -10,7 +10,7 @@ from typing import Any
 from src.common.errors import RuntimeContractError
 
 
-SNAPSHOT_MANIFEST_VERSION = "coordexp-swift-model-snapshot-v1"
+SNAPSHOT_MANIFEST_VERSION = "coordexp-infras-model-snapshot-v1"
 
 
 def build_model_snapshot_manifest(root: str | Path) -> dict[str, Any]:

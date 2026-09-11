@@ -359,7 +359,7 @@ def test_cache_dir_for_fingerprint_uses_v3_namespace(tmp_path: Path) -> None:
     fingerprint = "a" * 64
 
     assert pack_cache.cache_dir_for_fingerprint(cache_root, fingerprint) == (
-        cache_root.resolve() / "coordexp-swift-pack-cache-v3" / fingerprint
+        cache_root.resolve() / "coordexp-infras-pack-cache-v3" / fingerprint
     )
 
 
@@ -395,7 +395,7 @@ def test_cache_writer_rejects_noncanonical_target_before_creating_directories(
     if path_kind == "arbitrary":
         cache_dir = cache_root / UNIT_FINGERPRINT
     elif path_kind == "wrong-version":
-        cache_dir = cache_root / "coordexp-swift-pack-cache-v2" / UNIT_FINGERPRINT
+        cache_dir = cache_root / "coordexp-infras-pack-cache-v2" / UNIT_FINGERPRINT
     else:
         cache_dir = cache_root / pack_cache.PACKING_CACHE_VERSION / ("f" * 64)
         if path_kind == "traversal":

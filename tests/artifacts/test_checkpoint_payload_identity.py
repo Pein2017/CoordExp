@@ -59,7 +59,7 @@ def test_inference_checkpoint_payload_identity_is_complete_and_path_independent(
         "aggregate_digest",
     }
     assert (
-        identity["schema"] == "coordexp-swift-inference-checkpoint-payload-publication"
+        identity["schema"] == "coordexp-infras-inference-checkpoint-payload-publication"
     )
     assert identity["schema_version"] == 2
     assert identity["manifest_relative_path"] == "inference_payload_manifest.json"
@@ -159,7 +159,7 @@ def test_completed_publication_event_atomically_binds_payload_and_progress(
     write_inference_checkpoint_payload_manifest(checkpoint)
     payload_identity = build_inference_checkpoint_payload_identity(checkpoint)
     committed_progress = {
-        "schema": "coordexp-swift-checkpoint-committed-progress",
+        "schema": "coordexp-infras-checkpoint-committed-progress",
         "schema_version": 1,
         "completed_steps": 3,
         "consumed_packs": 9,
@@ -183,7 +183,7 @@ def test_completed_publication_event_atomically_binds_payload_and_progress(
 
     state = writer.read_run()
     event = state["measurement"]["checkpoint_publication_events"][0]
-    assert event["schema"] == "coordexp-swift-checkpoint-publication-event"
+    assert event["schema"] == "coordexp-infras-checkpoint-publication-event"
     assert event["schema_version"] == 2
     assert event["inference_payload_identity"] == payload_identity
     assert event["committed_progress"] == committed_progress
@@ -219,7 +219,7 @@ def test_completed_publication_rechecks_live_payload_before_event(
             checkpoint_identity=None,
             inference_payload_identity=payload_identity,
             committed_progress={
-                "schema": "coordexp-swift-checkpoint-committed-progress",
+                "schema": "coordexp-infras-checkpoint-committed-progress",
                 "schema_version": 1,
                 "completed_steps": 3,
                 "consumed_packs": 9,
@@ -267,8 +267,8 @@ def test_failed_publication_has_null_identities_and_does_not_advance_progress(
 def test_payload_reading_ignores_exact_sibling_and_extra_historical_metadata(
     tmp_path: Path,
 ) -> None:
-    """`coordexp-swift-training-artifacts` -> Scenario: Existing checkpoint is used;
-    `coordexp-swift-training-resume` -> Scenario: Inference reads a checkpoint with
+    """`coordexp-infras-training-artifacts` -> Scenario: Existing checkpoint is used;
+    `coordexp-infras-training-resume` -> Scenario: Inference reads a checkpoint with
     exact state."""
 
     checkpoint = _write_checkpoint_payload(tmp_path / "checkpoint")
@@ -420,7 +420,7 @@ def _real_training_state_resolved_config() -> dict[str, Any]:
         "resolution": {
             "entry_config_path": "/configs/parent.yaml",
             "fingerprint": "parent-fingerprint",
-            "loader_version": "coordexp-swift-config-v1",
+            "loader_version": "coordexp-infras-config-v1",
             "path_origins": {},
             "schema_version": 1,
             "sources": [{"path": "/configs/parent.yaml", "sha256": "a" * 64}],
@@ -509,8 +509,8 @@ def _real_training_state_expectations(
 def test_historical_payload_without_a_current_manifest_stays_inference_loadable(
     tmp_path: Path,
 ) -> None:
-    """`coordexp-swift-training-artifacts` -> Scenario: Existing checkpoint is used;
-    `coordexp-swift-training-resume` -> Scenario: Historical artifacts contain extra
+    """`coordexp-infras-training-artifacts` -> Scenario: Existing checkpoint is used;
+    `coordexp-infras-training-resume` -> Scenario: Historical artifacts contain extra
     metadata."""
 
     checkpoint = _write_checkpoint_payload(tmp_path / "historical")

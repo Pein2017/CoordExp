@@ -1,6 +1,6 @@
 """Domain-neutral content-identity owner for production artifacts.
 
-Design decision 7 of ``decompose-coordexp-swift-training-orchestration`` moves
+Design decision 7 of ``decompose-coordexp-infras-training-orchestration`` moves
 the generic identity machinery here so production owners
 (``src/prepare_train_cache.py``, ``src/training/input_attestation.py``, and the
 training assembly) no longer depend on the historical packed-parity module.
@@ -31,9 +31,9 @@ from typing import Any
 from src.common.errors import RuntimeContractError
 
 
-MODEL_WEIGHT_IDENTITY_SCHEMA = "coordexp-swift-base-model-weights-v1"
+MODEL_WEIGHT_IDENTITY_SCHEMA = "coordexp-infras-base-model-weights-v1"
 MODEL_WEIGHT_HASH_EXECUTION_POLICY_SCHEMA = (
-    "coordexp-swift-base-model-weight-hash-execution-policy-v1"
+    "coordexp-infras-base-model-weight-hash-execution-policy-v1"
 )
 
 MAX_WEIGHT_INDEX_BYTES = 16 * 1024 * 1024

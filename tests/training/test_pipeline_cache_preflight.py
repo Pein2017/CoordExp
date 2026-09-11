@@ -38,7 +38,7 @@ def _patch_shared_cache_import(
 ) -> None:
     """Replace one shared import on every module that now reads it.
 
-    Wave 3 of ``decompose-coordexp-swift-training-orchestration`` moved the
+    Wave 3 of ``decompose-coordexp-infras-training-orchestration`` moved the
     cache preparation/admission/hydration orchestration into
     ``src/training/cache_workflow.py``.  Names both owners import must be
     replaced on both, or a seam that used to be a single patch point would
@@ -361,7 +361,7 @@ def _install_pipeline_fakes(
     )
     token_identity = SimpleNamespace(tokenizer_vocab_size=32)
     components = SimpleNamespace(token_identity=token_identity, tokenizer=object())
-    monkeypatch.setenv("COORDEXP_SWIFT_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
+    monkeypatch.setenv("coordexp_infras_PACK_CACHE_ROOT", str(tmp_path / "cache-root"))
     monkeypatch.setattr(execution_plan, "load_train_config", lambda path: resolved)
     _patch_shared_cache_import(
         monkeypatch,
@@ -709,7 +709,7 @@ def test_provider_resolution_ignores_the_retired_environment_override(
 ) -> None:
     # The override is set on purpose: strict config must remain the resolved
     # policy on every launcher rank, with no environment source in the receipt.
-    monkeypatch.setenv("COORDEXP_SWIFT_FORWARD_INPUT_PROVIDER_MODE", "overlapped")
+    monkeypatch.setenv("coordexp_infras_FORWARD_INPUT_PROVIDER_MODE", "overlapped")
     captured: list[dict[str, object]] = []
 
     def gather(report: object) -> tuple[object, object]:
@@ -733,7 +733,7 @@ def test_provider_resolution_ignores_the_retired_environment_override(
 def test_eval_reduction_rejects_default_vs_explicit_same_effective_receipt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", raising=False)
+    monkeypatch.delenv("coordexp_infras_EVAL_REDUCTION_MODE", raising=False)
 
     def gather(report: object) -> tuple[object, object]:
         peer = {**dict(report), "rank": 1}  # type: ignore[arg-type]
@@ -741,7 +741,7 @@ def test_eval_reduction_rejects_default_vs_explicit_same_effective_receipt(
         peer_details["resolution"] = {
             "control": "replicated",
             "effective_mode": "replicated",
-            "source": "COORDEXP_SWIFT_EVAL_REDUCTION_MODE",
+            "source": "coordexp_infras_EVAL_REDUCTION_MODE",
             "pack_count": 1,
             "world_size": 2,
         }
@@ -973,13 +973,13 @@ def _damage_expected_target(tmp_path: Path, damage: str) -> Path:
         return cache_dir
     if damage == "stale":
         retired_dir = (
-            tmp_path / "cache-root" / "coordexp-swift-pack-cache-v2" / FINGERPRINT
+            tmp_path / "cache-root" / "coordexp-infras-pack-cache-v2" / FINGERPRINT
         )
         retired_dir.mkdir(parents=True)
         (retired_dir / "manifest.json").write_text(
             json.dumps(
                 {
-                    "version": "coordexp-swift-pack-cache-v2",
+                    "version": "coordexp-infras-pack-cache-v2",
                     "status": "complete",
                     "fingerprint": FINGERPRINT,
                 }
@@ -1323,7 +1323,7 @@ def _distributed_preflight_failure_worker(
                 "RANK": str(rank),
                 "LOCAL_RANK": str(rank),
                 "WORLD_SIZE": str(_WORLD_SIZE),
-                "COORDEXP_SWIFT_PACK_CACHE_ROOT": str(task_root / "cache-root"),
+                "coordexp_infras_PACK_CACHE_ROOT": str(task_root / "cache-root"),
             }
         )
         try:
@@ -1389,7 +1389,7 @@ def _distributed_provider_resolution_mismatch_worker(
                 "RANK": str(rank),
                 "LOCAL_RANK": str(rank),
                 "WORLD_SIZE": str(_WORLD_SIZE),
-                "COORDEXP_SWIFT_PACK_CACHE_ROOT": str(task_root / "cache-root"),
+                "coordexp_infras_PACK_CACHE_ROOT": str(task_root / "cache-root"),
             }
         )
         if rank == 1:
@@ -1518,7 +1518,7 @@ def _distributed_preflight_success_worker(
                 "RANK": str(rank),
                 "LOCAL_RANK": str(rank),
                 "WORLD_SIZE": str(_WORLD_SIZE),
-                "COORDEXP_SWIFT_PACK_CACHE_ROOT": str(task_root / "cache-root"),
+                "coordexp_infras_PACK_CACHE_ROOT": str(task_root / "cache-root"),
             }
         )
         result = pipeline.run_training_pipeline(config_path)
@@ -1642,7 +1642,7 @@ def _distributed_accelerator_identity_mismatch_worker(
                 "RANK": str(rank),
                 "LOCAL_RANK": str(rank),
                 "WORLD_SIZE": str(_WORLD_SIZE),
-                "COORDEXP_SWIFT_PACK_CACHE_ROOT": str(task_root / "cache-root"),
+                "coordexp_infras_PACK_CACHE_ROOT": str(task_root / "cache-root"),
             }
         )
         try:

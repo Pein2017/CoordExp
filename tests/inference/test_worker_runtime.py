@@ -174,7 +174,7 @@ def test_worker_launch_uses_private_fresh_interpreter_subprocess(
     assert launched["kwargs"]["env"]["TORCHINDUCTOR_CACHE_DIR"] == str(
         runtime_cache_root / "torchinductor"
     )
-    assert launched["cache_prefix"] == "coordexp-swift-infer-rank-1-"
+    assert launched["cache_prefix"] == "coordexp-infras-infer-rank-1-"
     assert process._coordexp_runtime_cache_root == str(runtime_cache_root)
     assert launched["kwargs"]["start_new_session"] is True
     assert "shell" not in launched["kwargs"]

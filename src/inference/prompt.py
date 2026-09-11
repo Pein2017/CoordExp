@@ -12,7 +12,7 @@ from src.data import RawExample
 from src.templates import render_example
 
 
-TEMPLATE_ID = "coordexp-swift-template-v1"
+TEMPLATE_ID = "coordexp-infras-template-v1"
 IMAGE_PAD_TOKEN = "<|image_pad|>"
 
 

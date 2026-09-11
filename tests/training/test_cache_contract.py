@@ -1,6 +1,6 @@
 """Narrow cached micro-step determinant owners.
 
-Wave 3 of ``decompose-coordexp-swift-training-orchestration`` gives the cached
+Wave 3 of ``decompose-coordexp-infras-training-orchestration`` gives the cached
 micro-step runtime projection its own leaf owner and rebinds the two evidenced
 overbroad determinant owners:
 

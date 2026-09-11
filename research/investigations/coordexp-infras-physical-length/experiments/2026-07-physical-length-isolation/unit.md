@@ -4,15 +4,15 @@ role: research-unit
 authority: non_normative_research
 promotion_status: not_promoted
 unit_id: 2026-07-physical-length-isolation
-topic: coordexp-swift-physical-length
+topic: coordexp-infras-physical-length
 status: complete
-title: CoordExp-Swift Physical-Length Isolation
+title: coordexp-infras Physical-Length Isolation
 description: Tiered smoke evidence showing the initial physical-length pair is count-confounded and should not be interpreted as a clean length-isolation result.
-tags: [coordexp-swift, physical-length, packing, smoke, negative-result]
+tags: [coordexp-infras, physical-length, packing, smoke, negative-result]
 updated: 2026-07-09
 ---
 
-# CoordExp-Swift Physical-Length Isolation Summary
+# coordexp-infras Physical-Length Isolation Summary
 
 Evidence scope: `tiered smoke`.
 
@@ -20,7 +20,7 @@ Evidence scope: `tiered smoke`.
 
 Does changing physical packed-row length while preserving runtime and boundary
 health isolate a precision-sensitive training/eval effect in the current
-CoordExp-Swift smoke pair?
+coordexp-infras smoke pair?
 
 ## Runs
 
@@ -56,11 +56,11 @@ Verdict: `unresolved_count_confounded`.
 ## Handles
 
 - `physical_length_12k_ebs64_1step_limit1024`
-  - config: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/length_isolation/physical_length_12k_ebs64_1step.yaml`
-  - run: `/data/CoordExp/.worktrees/CoordExp-swift/outputs/research/coordexp_swift/length_isolation/physical_length_12k_ebs64_1step_limit1024`
+  - config: `/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/smoke/length_isolation/physical_length_12k_ebs64_1step.yaml`
+  - run: `/data/CoordExp/.worktrees/coordexp-infras/outputs/research/coordexp_swift/length_isolation/physical_length_12k_ebs64_1step_limit1024`
 - `physical_length_6k_ebs64_1step_limit1024`
-  - config: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/length_isolation/physical_length_6k_ebs64_1step.yaml`
-  - run: `/data/CoordExp/.worktrees/CoordExp-swift/outputs/research/coordexp_swift/length_isolation/physical_length_6k_ebs64_1step_limit1024`
+  - config: `/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/smoke/length_isolation/physical_length_6k_ebs64_1step.yaml`
+  - run: `/data/CoordExp/.worktrees/coordexp-infras/outputs/research/coordexp_swift/length_isolation/physical_length_6k_ebs64_1step_limit1024`
 
 ## Interpretation
 

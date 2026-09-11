@@ -1230,7 +1230,7 @@ def test_failed_finalize_preserves_matching_committed_checkpoint_progress(
 def test_inference_only_publication_event_cannot_carry_exact_state_identity(
     tmp_path: Path,
 ) -> None:
-    """`coordexp-swift-training-resume` -> Scenario: Exact training state is disabled."""
+    """`coordexp-infras-training-resume` -> Scenario: Exact training state is disabled."""
 
     writer = _writer(tmp_path)
     checkpoint_dir = tmp_path / "run-a" / "checkpoints" / "step-3"
@@ -1251,14 +1251,14 @@ def test_inference_only_publication_event_cannot_carry_exact_state_identity(
                 "training_state_aggregate_digest": "b" * 64,
             },
             inference_payload_identity={
-                "schema": "coordexp-swift-inference-checkpoint-payload-publication",
+                "schema": "coordexp-infras-inference-checkpoint-payload-publication",
                 "schema_version": 2,
                 "manifest_relative_path": "inference_payload_manifest.json",
                 "manifest_file_sha256": "c" * 64,
                 "aggregate_digest": "d" * 64,
             },
             committed_progress={
-                "schema": "coordexp-swift-checkpoint-committed-progress",
+                "schema": "coordexp-infras-checkpoint-committed-progress",
                 "schema_version": 1,
                 "completed_steps": 3,
                 "consumed_packs": 9,
@@ -1296,7 +1296,7 @@ def _record_committed_checkpoint_event(
         checkpoint_identity=None,
         inference_payload_identity=payload_identity,
         committed_progress={
-            "schema": "coordexp-swift-checkpoint-committed-progress",
+            "schema": "coordexp-infras-checkpoint-committed-progress",
             "schema_version": 1,
             "completed_steps": 3,
             "consumed_packs": 9,
@@ -1324,7 +1324,7 @@ def _writer(tmp_path: Path) -> RunWriter:
 
 # ---------------------------------------------------------------------------
 # Wave-0 pre-move characterization for
-# `decompose-coordexp-swift-training-orchestration`.
+# `decompose-coordexp-infras-training-orchestration`.
 #
 # `tests/training/test_orchestration_compatibility.py` derives the frozen byte
 # tree below from one representative RunWriter lifetime.  These additions bind

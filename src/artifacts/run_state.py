@@ -204,7 +204,7 @@ def select_and_validate_checkpoint_publication_event(
     if set(event) != _CHECKPOINT_PUBLICATION_EVENT_FIELDS:
         raise ValueError("checkpoint publication event has an invalid field set")
     if (
-        event.get("schema") != "coordexp-swift-checkpoint-publication-event"
+        event.get("schema") != "coordexp-infras-checkpoint-publication-event"
         or event.get("schema_version") != 2
         or event.get("step") != checkpoint_step
         or event.get("checkpoint_path") != expected_checkpoint_path

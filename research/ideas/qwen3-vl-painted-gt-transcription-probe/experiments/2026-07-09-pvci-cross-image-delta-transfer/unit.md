@@ -9,7 +9,7 @@ unit_id: 2026-07-09-pvci-cross-image-delta-transfer
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - painted-gt
   - pvci
@@ -91,7 +91,7 @@ Cross-image sources are selected inside the stored feature-store panel:
   same feature signature group.
 
 This intentionally keeps the first probe conservative. The existing
-CoordExp-Swift geometry-flip augmentation pipeline may become useful for a
+coordexp-infras geometry-flip augmentation pipeline may become useful for a
 later same-object-transformed-image bridge probe, but it is not part of this
 cross-image transfer unit.
 

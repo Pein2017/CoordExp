@@ -2,7 +2,7 @@
 type: idea
 title: Qwen3-VL Painted-GT Transcription Probe
 description: Tests whether Qwen3-VL can translate explicit painted GT object annotations into compact detection rows strongly enough to overcome language-prior and prefix-prior failures.
-tags: [coordexp-swift, qwen3-vl, painted-gt, visual-annotation, transcription-probe, language-prior]
+tags: [coordexp-infras, qwen3-vl, painted-gt, visual-annotation, transcription-probe, language-prior]
 state: migrated
 updated: 2026-07-12
 ---
@@ -14,7 +14,7 @@ updated: 2026-07-12
 This is a diagnostic research lineage, not a final detector architecture. Its
 temporary painted-GT and proposal-bridge branches are historical evidence
 sources, not current implementation bases. New experiments should be rebuilt
-against canonical CoordExp-Swift infrastructure and cite the relevant unit
+against canonical coordexp-infras infrastructure and cite the relevant unit
 rather than importing the temporary code wholesale.
 
 The source-truth experiment contract is [Experiment Plan](experiment-plan.md).
@@ -369,12 +369,12 @@ target row.
 
 ## Training Posture
 
-The starting point is the CoordExp-Swift pure-CE four-epoch baseline adapter.
+The starting point is the coordexp-infras pure-CE four-epoch baseline adapter.
 
 Baseline adapter handle:
 
 ```text
-/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter
+/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1-prod8-r16a32-ebs64-warmup0p1-20260702T170007Z/checkpoints/step-917/adapter
 ```
 
 This baseline is an external read-only source artifact for this branch. New
@@ -668,8 +668,8 @@ evidence is still not enough to overcome the decoding/interface bottleneck.
 ## Sources
 
 - User discussion in this branch on 2026-07-04.
-- CoordExp-Swift authority:
-  `docs/COORDEXP_SWIFT.md`
+- coordexp-infras authority:
+  `docs/coordexp_infras.md`
 - Prior autoregressive rollout anatomy note:
   `docs/history/superpowers/specs/2026-06-01-autoregressive-object-rollout-anatomy-design.md`
 - Prior instance-binding mechanism note:

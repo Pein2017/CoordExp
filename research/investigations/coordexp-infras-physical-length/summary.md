@@ -1,4 +1,4 @@
-# CoordExp-Swift Physical-Length Isolation Summary
+# coordexp-infras Physical-Length Isolation Summary
 
 Evidence scope: `tiered smoke`.
 
@@ -36,11 +36,11 @@ Verdict: `unresolved_count_confounded`.
 ## Handles
 
 - `physical_length_12k_ebs64_1step_limit1024`
-  - config: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/length_isolation/physical_length_12k_ebs64_1step.yaml`
-  - run: `/data/CoordExp/.worktrees/CoordExp-swift/outputs/research/coordexp_swift/length_isolation/physical_length_12k_ebs64_1step_limit1024`
+  - config: `/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/smoke/length_isolation/physical_length_12k_ebs64_1step.yaml`
+  - run: `/data/CoordExp/.worktrees/coordexp-infras/outputs/research/coordexp_swift/length_isolation/physical_length_12k_ebs64_1step_limit1024`
 - `physical_length_6k_ebs64_1step_limit1024`
-  - config: `/data/CoordExp/.worktrees/CoordExp-swift/configs/coordexp_swift/smoke/length_isolation/physical_length_6k_ebs64_1step.yaml`
-  - run: `/data/CoordExp/.worktrees/CoordExp-swift/outputs/research/coordexp_swift/length_isolation/physical_length_6k_ebs64_1step_limit1024`
+  - config: `/data/CoordExp/.worktrees/coordexp-infras/configs/coordexp_infras/smoke/length_isolation/physical_length_6k_ebs64_1step.yaml`
+  - run: `/data/CoordExp/.worktrees/coordexp-infras/outputs/research/coordexp_swift/length_isolation/physical_length_6k_ebs64_1step_limit1024`
 
 ## Interpretation
 

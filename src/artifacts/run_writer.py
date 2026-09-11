@@ -933,7 +933,7 @@ class RunWriter:
             )
         events.append(
             {
-                "schema": "coordexp-swift-checkpoint-publication-event",
+                "schema": "coordexp-infras-checkpoint-publication-event",
                 "schema_version": 2,
                 "step": step,
                 "status": status,

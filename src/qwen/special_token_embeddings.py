@@ -29,7 +29,7 @@ SPECIAL_TOKEN_EMBEDDINGS_JSON = "special_token_embeddings.json"
 DEFAULT_EMBED_DELTA_TENSOR_KEY = "shared_embed_delta"
 SPECIAL_TOKEN_EMBEDDING_SEMANTICS = "additive_delta"
 SPECIAL_TOKEN_EMBEDDING_PAYLOAD_IDENTITY_VERSION = (
-    "coordexp-swift-special-token-embedding-delta-v1"
+    "coordexp-infras-special-token-embedding-delta-v1"
 )
 
 

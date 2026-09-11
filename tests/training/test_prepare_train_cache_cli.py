@@ -55,7 +55,7 @@ def test_prepare_cli_publishes_one_durable_completed_receipt(
 
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
     _assert_receipt_hash(payload)
-    assert payload["schema"] == "coordexp-swift-pack-cache-preparation-receipt-v1"
+    assert payload["schema"] == "coordexp-infras-pack-cache-preparation-receipt-v1"
     assert payload["terminal_status"] == "completed"
     assert payload["result"] == result
     assert payload["failure"] is None

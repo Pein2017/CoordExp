@@ -2,7 +2,7 @@
 type: investigation
 title: Qwen3-VL Painted-GT Transcription Probe Review Log
 description: Records review-convergence findings and resolutions for the painted-GT transcription probe.
-tags: [coordexp-swift, painted-gt, review-convergence]
+tags: [coordexp-infras, painted-gt, review-convergence]
 state: active
 updated: 2026-07-04
 ---
@@ -212,9 +212,9 @@ this review loop.
 Reviewed artifacts:
 
 - `docs/superpowers/plans/2026-07-04-qwen3-vl-painted-gt-transcription-probe.md`
-- `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-swift-painted-gt-decode-eval/spec.md`
-- `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-swift-painted-gt-launch-gates/spec.md`
-- `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-swift-painted-gt-materialization/spec.md`
+- `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-infras-painted-gt-decode-eval/spec.md`
+- `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-infras-painted-gt-launch-gates/spec.md`
+- `openspec/changes/add-painted-gt-transcription-probe/specs/coordexp-infras-painted-gt-materialization/spec.md`
 - `openspec/changes/add-painted-gt-transcription-probe/tasks.md`
 - `research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md`
 

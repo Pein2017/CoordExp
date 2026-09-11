@@ -163,7 +163,7 @@ def test_public_policy_identity_exactly_matches_plan_parameters() -> None:
 
     assert identity == {
         "policy": "online_window_binpack",
-        "algorithm_version": "coordexp-swift-online-window-binpack-v3",
+        "algorithm_version": "coordexp-infras-online-window-binpack-v3",
         "window_size": None,
         "lookahead": 7,
         "tie_breaker": "source_anchor_best_fit_seeded_identity_then_ordinal_v1",

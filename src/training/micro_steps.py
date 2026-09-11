@@ -1,6 +1,6 @@
 """Canonical owner of the cached supervised micro-step record.
 
-Design decision 4 of ``decompose-coordexp-swift-training-orchestration`` gives
+Design decision 4 of ``decompose-coordexp-infras-training-orchestration`` gives
 ``SupervisedMicroStep`` and its schema identity one narrow owner.  The record's
 fields, order, annotations, defaults, and frozen status are a protected cache
 contract: they are hashed into the packing-cache ``micro_step_schema``

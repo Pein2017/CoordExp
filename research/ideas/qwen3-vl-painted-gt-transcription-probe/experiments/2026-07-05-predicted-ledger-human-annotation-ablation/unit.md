@@ -8,7 +8,7 @@ promotion_status: not_promoted
 unit_id: 2026-07-05-predicted-ledger-human-annotation-ablation
 topic: qwen3-vl-painted-gt-transcription-probe
 status: complete
-tags: [coordexp-swift, painted-gt, predicted-ledger, self-prefix, coverage, corrected-rerun]
+tags: [coordexp-infras, painted-gt, predicted-ledger, self-prefix, coverage, corrected-rerun]
 updated: 2026-07-06
 ---
 

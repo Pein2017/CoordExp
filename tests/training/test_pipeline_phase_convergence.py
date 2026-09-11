@@ -152,7 +152,7 @@ def _eval_hydration_failure_worker(
     loader_identity: tuple[int, int] | None = None
     metric_started = False
     try:
-        os.environ.pop("COORDEXP_SWIFT_EVAL_REDUCTION_MODE", None)
+        os.environ.pop("coordexp_infras_EVAL_REDUCTION_MODE", None)
         dist.init_process_group(
             backend="gloo",
             init_method=f"tcp://127.0.0.1:{port}",
@@ -372,7 +372,7 @@ def test_direct_phase_rejects_unbounded_rank_details_without_exposing_value() ->
 
 # ---------------------------------------------------------------------------
 # Wave-0 pre-move characterization for
-# `decompose-coordexp-swift-training-orchestration`.
+# `decompose-coordexp-infras-training-orchestration`.
 #
 # These additions freeze the single-rank companion to the two-rank ordered trace
 # owned by `tests/training/test_orchestration_compatibility.py`.  They use the

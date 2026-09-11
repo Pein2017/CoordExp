@@ -3,7 +3,7 @@
     "0": {
       "cache_root_receipt": {
         "resolved_root": "<root>/cache-root",
-        "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+        "source": "coordexp_infras_PACK_CACHE_ROOT"
       },
       "eval_cache": null,
       "eval_reduction": {
@@ -78,7 +78,7 @@
         "build_status": "hit",
         "chunk_count": 2,
         "chunk_size": 1,
-        "format_version": "coordexp-swift-pack-cache-v3",
+        "format_version": "coordexp-infras-pack-cache-v3",
         "key_set": [
           "augmentation",
           "build_status",
@@ -121,7 +121,7 @@
     "1": {
       "cache_root_receipt": {
         "resolved_root": "<root>/cache-root",
-        "source": "COORDEXP_SWIFT_PACK_CACHE_ROOT"
+        "source": "coordexp_infras_PACK_CACHE_ROOT"
       },
       "eval_cache": null,
       "eval_reduction": {
@@ -196,7 +196,7 @@
         "build_status": "hit",
         "chunk_count": 2,
         "chunk_size": 1,
-        "format_version": "coordexp-swift-pack-cache-v3",
+        "format_version": "coordexp-infras-pack-cache-v3",
         "key_set": [
           "augmentation",
           "build_status",

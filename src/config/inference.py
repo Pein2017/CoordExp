@@ -16,7 +16,7 @@ from src.config.models import ConfigSource, PathOrigin, RunDirectory, StrictConf
 from src.config.paths import get_nested, set_nested
 
 
-INFER_CONFIG_LOADER_VERSION = "coordexp-swift-infer-config-v1"
+INFER_CONFIG_LOADER_VERSION = "coordexp-infras-infer-config-v1"
 KNOWN_WORKING_VLLM_VERSIONS = ("0.14.1",)
 INFER_PATH_FIELDS = (
     "run.artifact_root",

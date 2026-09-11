@@ -104,9 +104,9 @@ from src.training.schedule import resolve_planned_step_schedule
 TRAIN_SPLIT = "train"
 EVAL_SPLIT = "eval.forward"
 _PACK_CACHE_WORKER_CONTEXT: dict[str, Any] | None = None
-_PACK_CACHE_ROOT_ENV = "COORDEXP_SWIFT_PACK_CACHE_ROOT"
-_EVAL_REDUCTION_MODE_ENV = "COORDEXP_SWIFT_EVAL_REDUCTION_MODE"
-_PROFILE_SYNC_TIMINGS_ENV = "COORDEXP_SWIFT_PROFILE_SYNC_TIMINGS"
+_PACK_CACHE_ROOT_ENV = "coordexp_infras_PACK_CACHE_ROOT"
+_EVAL_REDUCTION_MODE_ENV = "coordexp_infras_EVAL_REDUCTION_MODE"
+_PROFILE_SYNC_TIMINGS_ENV = "coordexp_infras_PROFILE_SYNC_TIMINGS"
 _RECEIPT_ENVIRONMENT_SELECTORS = frozenset(
     {
         _PACK_CACHE_ROOT_ENV,
@@ -159,7 +159,7 @@ def _resolve_pack_cache_root(repo_root: Path) -> tuple[Path, dict[str, str]]:
 
     raw = os.environ.get(_PACK_CACHE_ROOT_ENV)
     root = (
-        repo_root / ".cache" / "coordexp_swift" / "packing"
+        repo_root / ".cache" / "coordexp_infras" / "packing"
         if raw is None
         else Path(raw)
     )

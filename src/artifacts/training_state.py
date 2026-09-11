@@ -27,32 +27,32 @@ from src.common.errors import ArtifactContractError
 
 TRAINING_STATE_DIRECTORY = "training_state"
 TRAINING_STATE_MANIFEST = "manifest.json"
-TRAINING_STATE_SCHEMA = "coordexp-swift-exact-training-state"
+TRAINING_STATE_SCHEMA = "coordexp-infras-exact-training-state"
 TRAINING_STATE_SCHEMA_VERSION = 2
 TRAINING_STATE_ARTIFACT_TYPE = "exact_training_state"
 TRAINING_STATE_COMMIT_STATUS = "committed"
 TRAINING_STATE_SAVE_BOUNDARY = "optimizer_step"
-TRAINING_STATE_CURSOR_SCHEMA = "coordexp-swift-exact-rank-cursor"
+TRAINING_STATE_CURSOR_SCHEMA = "coordexp-infras-exact-rank-cursor"
 TRAINING_STATE_CURSOR_SCHEMA_VERSION = 1
-TRAINING_STATE_DATA_CURSOR_SCHEMA = "coordexp-swift-data-cursor"
-TRAINING_STATE_PACK_CURSOR_SCHEMA = "coordexp-swift-pack-cursor"
+TRAINING_STATE_DATA_CURSOR_SCHEMA = "coordexp-infras-data-cursor"
+TRAINING_STATE_PACK_CURSOR_SCHEMA = "coordexp-infras-pack-cursor"
 TRAINING_STATE_RESOLVED_CONFIG = "resolved_config.json"
 TRAINING_STATE_RESUME_COMPATIBILITY = "resume_compatibility.json"
-TRAINING_STATE_RESUME_COMPATIBILITY_SCHEMA = "coordexp-swift-exact-resume-compatibility"
+TRAINING_STATE_RESUME_COMPATIBILITY_SCHEMA = "coordexp-infras-exact-resume-compatibility"
 TRAINING_STATE_RESUME_COMPATIBILITY_SCHEMA_VERSION = 1
 TRAINING_STATE_CONTRIBUTION_PLAN = "contribution-plan.json"
 TRAINING_STATE_RANK_CONTRIBUTION = "contribution.json"
 TRAINING_STATE_TERMINAL_FORENSIC = "terminal-forensic.json"
-TRAINING_STATE_CONTRIBUTION_SCHEMA = "coordexp-swift-training-state-contributions"
+TRAINING_STATE_CONTRIBUTION_SCHEMA = "coordexp-infras-training-state-contributions"
 TRAINING_STATE_CONTRIBUTION_SCHEMA_VERSION = 1
-TRAINING_STATE_TRAINABLE_MODEL_SCHEMA = "coordexp-swift-trainable-model-state"
-TRAINING_STATE_OPTIMIZER_SCHEMA = "coordexp-swift-optimizer-state"
-TRAINING_STATE_SCHEDULER_SCHEMA = "coordexp-swift-scheduler-state"
-TRAINING_STATE_SCALER_SCHEMA = "coordexp-swift-scaler-state"
-TRAINING_STATE_PYTHON_RNG_SCHEMA = "coordexp-swift-python-rng-state"
-TRAINING_STATE_NUMPY_RNG_SCHEMA = "coordexp-swift-numpy-rng-state"
-TRAINING_STATE_TORCH_CPU_RNG_SCHEMA = "coordexp-swift-torch-cpu-rng-state"
-TRAINING_STATE_TORCH_CUDA_RNG_SCHEMA = "coordexp-swift-torch-cuda-rng-state"
+TRAINING_STATE_TRAINABLE_MODEL_SCHEMA = "coordexp-infras-trainable-model-state"
+TRAINING_STATE_OPTIMIZER_SCHEMA = "coordexp-infras-optimizer-state"
+TRAINING_STATE_SCHEDULER_SCHEMA = "coordexp-infras-scheduler-state"
+TRAINING_STATE_SCALER_SCHEMA = "coordexp-infras-scaler-state"
+TRAINING_STATE_PYTHON_RNG_SCHEMA = "coordexp-infras-python-rng-state"
+TRAINING_STATE_NUMPY_RNG_SCHEMA = "coordexp-infras-numpy-rng-state"
+TRAINING_STATE_TORCH_CPU_RNG_SCHEMA = "coordexp-infras-torch-cpu-rng-state"
+TRAINING_STATE_TORCH_CUDA_RNG_SCHEMA = "coordexp-infras-torch-cuda-rng-state"
 TRAINING_STATE_TORCH_CUDA_RNG_SCHEMA_VERSION = 2
 TRAINING_STATE_RUNTIME_COMPONENT_VERSION = 1
 REQUIRED_IDENTITY_KINDS = (
@@ -134,7 +134,7 @@ _T = TypeVar("_T")
 #:
 #: * `run` and `resume` are continuation identity: a child necessarily differs.
 #: * `observability` is rank-zero PRESENTATION only (console/TensorBoard
-#:   cadence).  DECLARED FLIP (add-coordexp-swift-training-observability, task
+#:   cadence).  DECLARED FLIP (add-coordexp-infras-training-observability, task
 #:   5.1): changing only `observability.steps` between an admitted parent and
 #:   its continuation must not make otherwise identical training state
 #:   incompatible.  This WIDENS admission, so no schema-version fence is

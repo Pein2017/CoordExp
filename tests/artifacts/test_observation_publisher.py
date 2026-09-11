@@ -1,6 +1,6 @@
 """Wave-4 contract for ``src/artifacts/observation_publisher.py``.
 
-``add-coordexp-swift-training-observability`` (Rank-Zero Presentation Sinks)
+``add-coordexp-infras-training-observability`` (Rank-Zero Presentation Sinks)
 makes console and TensorBoard DERIVED rank-zero presentations of the canonical
 ``logging.jsonl`` observation, never independent metric authorities:
 

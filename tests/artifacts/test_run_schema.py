@@ -346,7 +346,7 @@ def test_checkpoint_publication_identity_rejects_step_mismatch(
 
 def test_checkpoint_committed_progress_admits_a_well_formed_payload() -> None:
     value = {
-        "schema": "coordexp-swift-checkpoint-committed-progress",
+        "schema": "coordexp-infras-checkpoint-committed-progress",
         "schema_version": 1,
         "completed_steps": 5,
         "consumed_packs": 10,
@@ -359,7 +359,7 @@ def test_checkpoint_committed_progress_admits_a_well_formed_payload() -> None:
 
 def test_checkpoint_committed_progress_rejects_step_disagreement() -> None:
     value = {
-        "schema": "coordexp-swift-checkpoint-committed-progress",
+        "schema": "coordexp-infras-checkpoint-committed-progress",
         "schema_version": 1,
         "completed_steps": 4,
         "consumed_packs": 10,

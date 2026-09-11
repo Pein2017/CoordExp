@@ -9,7 +9,7 @@ unit_id: 2026-07-10-pvci-native-commit-to-uncovered-redistribution
 topic: qwen3-vl-painted-gt-transcription-probe
 status: active
 tags:
-  - coordexp-swift
+  - coordexp-infras
   - research-unit
   - qwen3-vl
   - autoregressive-commit
@@ -168,7 +168,7 @@ This unit is complete when:
   `codex/continue-handoff-session`.
 - Baseline commit: `e07c6b73` plus the current uncommitted research tooling.
 - Primary checkpoint manifest:
-  `/data/CoordExp/.worktrees/CoordExp-swift/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`.
+  `/data/CoordExp/.worktrees/coordexp-infras/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1/checkpoints/step-4887/checkpoint.json`.
 - Primary checkpoint identity: `step-4887`, resolved training-config
   fingerprint
   `e86e2d98447c8235f2c390b2ed674fc9a312f64952aff35b917f74fd64ae7e06`.
@@ -182,7 +182,7 @@ This unit is complete when:
 - Primary resolved config:
   `/data/CoordExp/outputs/infer/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_step4887_val200_bsz4_temp0_rp1p10_max3084_8gpu/resolved_config.json`.
 - Current-runtime scorer config:
-  `configs/coordexp_swift/infer/research/pvci_native_commit_pure_ce_step4887_probe.yaml`.
+  `configs/coordexp_infras/infer/research/pvci_native_commit_pure_ce_step4887_probe.yaml`.
   This smoke-only config loads the same immutable checkpoint/prompt surface; it
   does not replace or regenerate the completed val200 rollout.
 - Planned artifact root:

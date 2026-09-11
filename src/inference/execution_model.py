@@ -21,8 +21,8 @@ from src.inference.model_assets import (
 )
 
 
-EXECUTION_MODEL_RECEIPT_VERSION = "coordexp-swift-execution-model-v1"
-MATERIALIZATION_ALGORITHM_VERSION = "coordexp-swift-dora-delta-fold-v4"
+EXECUTION_MODEL_RECEIPT_VERSION = "coordexp-infras-execution-model-v1"
+MATERIALIZATION_ALGORITHM_VERSION = "coordexp-infras-dora-delta-fold-v4"
 MATERIALIZATION_RECEIPT_NAME = "coordexp_materialization.json"
 EXECUTION_MODEL_CACHE_ROOT_ENV = "COORDEXP_EXECUTION_MODEL_CACHE_ROOT"
 DURABLE_COMPOSITION_RECEIPT_ROOT = Path(__file__).resolve().with_name(

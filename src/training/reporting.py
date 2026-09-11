@@ -6,7 +6,7 @@ resource scalar extraction, runtime gather, accuracy-stat validation, rank-resou
 projection, current row keys, rank-zero append and outcome broadcast,
 warmup-qualified measurement accumulation, and first-step phase completion. This
 owner exposes no configurable sinks, cadence, ETA, TensorBoard integration, or
-metric registry -- ``add-coordexp-swift-training-observability`` may extend this
+metric registry -- ``add-coordexp-infras-training-observability`` may extend this
 seam later, but this change does not pre-build that feature or change an artifact
 byte.
 
@@ -15,7 +15,7 @@ byte.
 wave 5), which imports this module rather than the facade forwarding it under
 its historical name.
 
-Wave 4 of ``add-coordexp-swift-training-observability`` moved the rank-zero
+Wave 4 of ``add-coordexp-infras-training-observability`` moved the rank-zero
 append plus its all-rank status handshake OUT of this module:
 ``_append_logging_row_shared`` now lives in
 ``src/artifacts/observation_publisher.py``, which owns JSONL-first publication
@@ -24,7 +24,7 @@ here - this owner builds canonical rows and hands them to the injected
 publisher (or, for the frozen single-owner fixtures, to the publication-only
 handshake directly).
 
-Wave 2 of ``add-coordexp-swift-training-observability`` made this owner declare
+Wave 2 of ``add-coordexp-infras-training-observability`` made this owner declare
 each observation scalar's reducer through ``src/runtime/metrics.py`` and stopped
 serializing a per-rank measurement trace into the canonical row; per-rank
 scalars remain available inside the reduction result for bounded lifecycle
