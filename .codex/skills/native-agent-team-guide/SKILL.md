@@ -87,21 +87,6 @@ lower lead effort preserves quality until real acceptance evidence supports it;
 escalate proactively at ambiguous semantic or high-consequence boundaries.
 Writing a preferred effort in a brief does not change the running lead setting.
 
-## Name tasks with their actual model and effort
-
-Set `spawn_agent.task_name` to `<model>_<effort>_<task_slug>`, using lowercase
-letters, digits, and underscores. Use the model shorthand (`astra`, `luna`,
-`sol`, or `terra`) and the actual callable effort, followed by a concise task
-description: `astra_low_server_lifecycle`, `luna_max_remove_serena_reminder`,
-or `luna_medium_wake_schema_audit`. Use a `sol_*` name only for an explicitly
-user-authorized comparison or fallback.
-
-Match the prefix to the effective spawn settings, including inherited settings
-for a full-history fork; never label a planned model or effort as the actual one.
-Use `low`, not the informal `light`. The name is a display aid, not a routing
-parameter: configure model and effort separately where the tool permits it.
-System-assigned nicknames do not replace this task-name convention.
-
 ## Scout and collector outputs
 
 When a Luna scout or collector is used, return a compact handoff containing:
