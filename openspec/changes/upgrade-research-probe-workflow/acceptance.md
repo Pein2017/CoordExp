@@ -1,6 +1,6 @@
 # Upgrade acceptance
 
-Date: 2026-09-12. Implementation owner: this task; independent frozen-design reviewer: Astra high. User authorized implementation after the review, one GPU at a time and 60 cumulative GPU minutes. Canonical integration remains conditional on the active research task releasing affected executable dependencies.
+Date: 2026-09-12. Implementation owner: this task; independent frozen-design reviewer: Astra high. User authorized implementation after the review, one GPU at a time and 60 cumulative GPU minutes. Canonical integration was completed after verifying that the active research task released affected executable dependencies.
 
 Evidence root: `/data/CoordExp/outputs/research/upgrade-research-probe-workflow/20260912`. All relative evidence paths below resolve there. Code base: `ef6d44d1196a7043deeef90cefc90136bce9859f`; candidate checkout: `/data/CoordExp/.worktrees/research-probes-upgrade-20260912`.
 
@@ -61,7 +61,7 @@ The complete executed selection → planning → exact replay → profile-owned 
 
 ```bash
 CUDA_VISIBLE_DEVICES='' python /data/CoordExp/outputs/research/upgrade-research-probe-workflow/20260912/runtime-acceptance/verify_saved_consumers.py \
-  --source /data/CoordExp/.worktrees/research-probes-upgrade-20260912 \
+  --source /data/CoordExp/.worktrees/research-probes \
   --baseline /data/CoordExp/outputs/research/upgrade-research-probe-workflow/20260912/input-baseline \
   --run /data/CoordExp/outputs/research/upgrade-research-probe-workflow/20260912/runtime-acceptance/run-02 \
   --check-only
@@ -73,6 +73,13 @@ Design: **lead-accepted** after one independent audit (`review.md`). CPU impleme
 
 Implementation commits: `a66ec668c` (shared input planning and six-profile binding) and `bd8dcee` (cohort inspection). Their staged patches and validation records are retained as `commit-01.patch`, `commit-02.patch` and the receipts above. The documentation/OpenSpec batch records this acceptance.
 
-No canonical merge has occurred. The locked `research-probes` checkout and its excluded dirty research files are not this task's write surface. The active task is `01a06f6d-2336-7670-a929-8c4d56ed54ba` on `remote-ssh-discovered:pein-train`. A task becoming idle is only a notification witness; merge still requires actual release evidence, latest-target reconciliation and preservation of unrelated dirt. Completion is tracked by `tasks.md`; pending integration is not an implementation failure or a scientific null.
+Canonical integration: **completed by fast-forward at 2026-09-12T09:32:32Z**, from `ef6d44d1196a7043deeef90cefc90136bce9859f` to `5904e8ec244932a62b14e3d93c53ebdcf83bb9f1`. The candidate still contained the latest target without divergence; its 25 Python hashes remained equal to the accepted implementation. All **47** current excluded dirty files retained exact bytes and status, and the canonical worktree lock remained intact. See `canonical-pre-merge.json`, `canonical-merge.log`, and `canonical-merge-receipt.json`.
 
 At the pre-integration check, canonical HEAD remained `ef6d44d1196a7043deeef90cefc90136bce9859f`, the canonical lock remained present, and the candidate changed paths did not overlap any initial excluded dirty file. Of the 34 initial dirty files, 26 were byte-identical and eight had continued live changes in the active task. They were neither staged nor restored here; see `pre-integration-isolation.json`. The three protected producer hashes remained exact. The App list still reported the research task active; no release evidence was available.
+
+
+The release witness was the original task's completed turn `01a09430-b272-7ee3-87c6-3cddcbb3b6f8` at 09:25:54.327Z, followed by independent read-only inspection of its final worker settlement, experiment closeout and live processes. Its acceptance file reports `driver_complete=true`, all eight GPUs released and `no_more_model_work=true`; the closeout prohibits further fit/decode. The lead checked both exact file digests and the original final message, with no newer task turn before merge. Monitor `9c22c918-b543-4b0f-b7fa-1fe6dc6319d2` supplied a lifecycle wake only; the release judgment used those concrete artifacts. Evidence: `merge-wake-decision.json`, `release-worktree-inventory.json`, and the source acceptance/closeout bindings in `canonical-pre-merge.json`.
+
+Post-merge validation in canonical: **35 passed**, exit 0, including real input parity, inspection CLI, strict Source256 preflight, binding and source-identity checks (`canonical-entry-tests.log`). The saved-result CPU consumer also passed from canonical (`runtime-acceptance/canonical-cold-consumer.log`), checking all 89 current relative source paths against their recorded hashes and retained staged bytes. Its task-local reader now supports the explicit `--source` relocation; the original executed scripts and receipts remain unchanged. No additional GPU work was performed.
+
+Temporary worktree retirement: **completed at 2026-09-12T09:37:35.521629+00:00** after navigator contexts released the directory, clean/merged checks passed, and all 89 staged execution sources were verified. The local candidate branch remains as a replay anchor. External acceptance artifacts, original executed scripts, raw logs and receipts are preserved. The documented cold-reader command now uses canonical and validates explicit relative source relocation; supplying the archived pre-upgrade source fails closed because required executed files are absent. See `worktree-retirement.json` and `runtime-acceptance/canonical-cold-consumer-wrong-source.log`.

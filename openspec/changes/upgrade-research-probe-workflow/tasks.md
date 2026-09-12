@@ -27,5 +27,5 @@
 ## 5. Commit and safe integration
 
 - [x] 5.1 Commit only the authorized logical batches with exact staged diff inspection and verification receipts; confirm excluded canonical dirty files and frozen producers have not been changed by this task.
-- [ ] 5.2 Reconcile the latest research-probes committed target in an isolated integration candidate and replay affected acceptance; verify the active task has released affected executable dependencies before writing the canonical worktree.
-- [ ] 5.3 Merge the accepted candidate into research-probes while preserving unrelated dirt and its lock, verify the resulting commit and current entry, and retire the temporary worktree only after actual merge, clean status and evidence-preservation checks.
+- [x] 5.2 Reconcile the latest research-probes committed target in an isolated integration candidate and replay affected acceptance; verify the active task has released affected executable dependencies before writing the canonical worktree.
+- [x] 5.3 Merge the accepted candidate into research-probes while preserving unrelated dirt and its lock, verify the resulting commit and current entry, and retire the temporary worktree only after actual merge, clean status and evidence-preservation checks.
