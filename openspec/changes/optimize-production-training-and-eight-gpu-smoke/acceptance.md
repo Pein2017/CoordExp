@@ -2,8 +2,9 @@
 
 Status: eight-rank training, fresh exact resume, old/new HF consumption and
 direct HF evaluation verified. The user has accepted the one-grid BF16
-composition contract; full acceptance still requires its current qualified
-vLLM consumer witness. See [tasks](tasks.md)
+composition contract, but the final checkpoint exceeds it in a later generated
+coordinate. Full acceptance requires resolution of that observed larger drift
+and a current qualified vLLM consumer witness. See [tasks](tasks.md)
 for the current completion boundary and [review](review.md) for the independent
 proposal review. No full training or model-quality claim is made.
 
@@ -112,6 +113,14 @@ the consumer path and exact output preservation, not detection quality.
    composition contract has passed one independent numerical-boundary review;
    implementation and fresh qualification use the final strict-DDP checkpoint.
    [User decision and reviewed plan](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/vllm-bounded-composition/contract-decision.json).
+   Implementation passes 164 affected CPU tests and 31 lead-replayed bounded
+   cases. Fresh final-checkpoint qualification correctly rejects its observed
+   free-generation result: positions 5/7 differ by one grid unit, while position
+   12 changes `coord_733` to `coord_858` (125 units). Length, non-coordinate
+   tokens, EOS and structural weight checks match. [Current rejection](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/vllm-bounded-composition/final-grid1-rejection.json).
+   The user has been asked whether the merged model should instead have an
+   independent inference contract with explicit generation-drift diagnostics;
+   no broader allowance has been applied pending that answer.
 7. The first fixed-DDP parent failed in Gloo control-group creation, before
    model loading or any update. DDP flags had not yet been consumed; model-free
    cache identity access also explains the preceding dtype warnings. The
