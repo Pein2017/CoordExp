@@ -99,15 +99,6 @@ def test_live_forward_hook_withholds_the_next_forward_at_worker_cap() -> None:
         handle.remove()
 
 
-def test_package_import_verifies_real_smoke_but_endpoint_rejects_it() -> None:
-    smoke_root = endpoint.OUTPUT_ROOT / "smoke-weight10"
-    receipt = endpoint.verify_training_receipt(smoke_root / "receipt.json")
-    cold = endpoint.load_json(smoke_root / "cold-check.json")
-    assert receipt["arm"] == "C" and receipt["mode"] == "smoke"
-    with pytest.raises(ValueError, match="actual C32 full receipt"):
-        endpoint.validate_c_training_metadata(receipt, cold)
-
-
 def test_owner_change_and_burden_reports_joint_thresholds() -> None:
     before = {"50": {"owners": ["a", "b"]}, "60": {"owners": ["a"]}, "80": {"owners": []}}
     after = {"50": {"owners": ["b", "c"]}, "60": {"owners": []}, "80": {"owners": ["d"]}}

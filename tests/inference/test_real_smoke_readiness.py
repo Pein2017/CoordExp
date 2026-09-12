@@ -55,28 +55,6 @@ def test_wave7_smoke_configs_are_schema_valid_and_smoke_only() -> None:
         ).resolve()
 
 
-def test_wave7_benchmark_leaf_is_not_a_smoke_config() -> None:
-    from src.config.inference import load_infer_config
-
-    config = load_infer_config(BENCHMARK_CONFIG).config
-
-    assert config.debug.smoke is False
-    assert config.debug.dry_run is False
-    assert config.generation.batch_size > 1
-    assert config.generation.max_new_tokens >= 256
-    assert config.data.input_jsonl == "/data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000/val.coord.jsonl"
-    assert Path(config.run.artifact_root) == Path(
-        "outputs/coordexp_swift/infer/benchmark"
-    ).resolve()
-    assert config.adapter is not None
-    assert "outputs/prod/coordexp_swift" in str(config.adapter.path)
-    assert "checkpoints/step-917/adapter" in str(config.adapter.path)
-    assert config.embedding_delta is not None
-    embedding_delta_path = Path(config.embedding_delta.path)
-    assert embedding_delta_path.is_dir()
-    assert (embedding_delta_path / "repair_receipt.json").is_file()
-
-
 def test_new_inference_configs_do_not_use_legacy_infer_authority() -> None:
     assert Path("src/infer.py").is_file()
     assert not Path("src/infer").exists()

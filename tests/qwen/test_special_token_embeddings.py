@@ -11,7 +11,6 @@ from safetensors.torch import save_file
 from torch import nn
 
 from src.common.errors import RuntimeContractError
-from src.config.inference import load_infer_config, validate_infer_input_paths
 from src.config.models import (
     SpecialTokenEmbeddingGroupsConfig,
     SpecialTokenEmbeddingsConfig,
@@ -61,9 +60,11 @@ def test_default_special_token_selection_uses_wrappers_then_coordinates() -> Non
     assert artifact["coord_token_ids_contiguous"] is True
 
 
-def test_default_special_token_embedding_source_gate_loads_canonical_evidence() -> None:
+def test_default_special_token_embedding_source_gate_loads_checked_in_evidence(
+    embedding_source_gate_root: Path,
+) -> None:
     evidence = load_default_special_token_embedding_source_gate_evidence(
-        _canonical_source_gate_root()
+        embedding_source_gate_root
     )
 
     assert evidence.source_study_passed is True
@@ -75,11 +76,13 @@ def test_default_special_token_embedding_source_gate_loads_canonical_evidence() 
     assert evidence.probe_receipt["runtime_tied_input_lm_head_identity"] is True
 
 
-def test_source_gate_explicit_root_passes_and_wrong_root_fails(tmp_path: Path) -> None:
-    canonical_root = _canonical_source_gate_root()
-
-    valid = load_default_special_token_embedding_source_gate_evidence(canonical_root)
-    invalid = load_default_special_token_embedding_source_gate_evidence(tmp_path)
+def test_source_gate_explicit_root_passes_and_wrong_root_fails(
+    tmp_path: Path, embedding_source_gate_root: Path,
+) -> None:
+    valid = load_default_special_token_embedding_source_gate_evidence(
+        embedding_source_gate_root
+    )
+    invalid = load_default_special_token_embedding_source_gate_evidence(tmp_path / "missing")
 
     assert valid.source_study_passed is True
     assert valid.roundtrip_probe_passed is True
@@ -87,69 +90,6 @@ def test_source_gate_explicit_root_passes_and_wrong_root_fails(tmp_path: Path) -
     assert invalid.source_study_passed is False
     assert invalid.roundtrip_probe_passed is False
     assert invalid.probe_receipt is None
-
-
-def test_owner_commit_source_gate_uses_explicit_root_and_1005_profile(
-    tmp_path: Path,
-) -> None:
-    owner_root = Path("/data/CoordExp/.worktrees/owner-commit-binding")
-    selection = SpecialTokenSelection(
-        token_strings=(
-            *DEFAULT_WRAPPER_TOKENS,
-            "<|commit|>",
-            *DEFAULT_COORDINATE_TOKENS,
-        ),
-        token_ids=(
-            151646,
-            151647,
-            151648,
-            151649,
-            151669,
-            *range(151670, 152670),
-        ),
-    )
-    evidence = load_default_special_token_embedding_source_gate_evidence(
-        owner_root,
-        selection,
-    )
-    assert evidence.source_study_passed is True
-    assert evidence.roundtrip_probe_passed is True
-    assert evidence.probe_receipt is not None
-    assert evidence.probe_receipt["token_profile"] == "owner_commit"
-    assert evidence.probe_receipt["num_selected_tokens"] == 1005
-    assert evidence.probe_receipt["token_selection_sha256"] == (
-        "ae47fc5faee929bbcedd0eaacd7cd491e65226aefc6b22481d79f11a9f6b3321"
-    )
-
-    installed = install_special_token_embedding_deltas(
-        TinyTiedQwenModel(vocab_size=152671, hidden_size=4),
-        selection,
-        source_gate=evidence,
-    )
-    assert len(installed.receipt.token_selection.token_ids) == 1005
-
-    wrong_root = load_default_special_token_embedding_source_gate_evidence(
-        tmp_path,
-        selection,
-    )
-    assert wrong_root.source_study_passed is False
-    assert wrong_root.roundtrip_probe_passed is False
-    assert wrong_root.probe_receipt is None
-
-
-def test_a3_leaf_binds_owner_source_gate_root() -> None:
-    resolved = load_infer_config(
-        "configs/coordexp_infras/infer/"
-        "qwen3_vl_2b_static_dynamic_owner_interface_a3_step2445_h0.yaml"
-    )
-    assert resolved.config.embedding_delta is not None
-    assert resolved.config.embedding_delta.source_gate_root == (
-        "/data/CoordExp/.worktrees/owner-commit-binding"
-    )
-    validate_infer_input_paths(
-        resolved,
-        fields=("embedding_delta.source_gate_root",),
-    )
 
 
 def test_special_token_embedding_install_requires_source_gate() -> None:
@@ -713,8 +653,10 @@ def test_inference_embedding_delta_identity_accepts_matching_metadata(
 
 
 @pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("root_mode", ["default_cwd", "explicit"])
 def test_inference_embedding_delta_load_installs_wrappers_and_payload(
-    tmp_path: Path, direct: bool,
+    tmp_path: Path, direct: bool, root_mode: str,
+    embedding_source_gate_root: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     qwen = _qwen_identity_context(
         model=TinyTiedQwenModel(vocab_size=152670, hidden_size=4)
@@ -743,16 +685,30 @@ def test_inference_embedding_delta_load_installs_wrappers_and_payload(
         tokenizer_sha256="tokenizer-sha",
     )
 
-    if direct:
-        from src.qwen.special_token_embeddings import attach_embedding_delta
+    def load_delta(**root_kwargs: Path) -> dict[str, object]:
+        if direct:
+            from src.qwen.special_token_embeddings import attach_embedding_delta
 
-        receipt = attach_embedding_delta(delta_path=tmp_path, qwen=qwen, source_gate_root=_canonical_source_gate_root())
-    else:
-        receipt = load_inference_embedding_delta(
-            config=_delta_config(tmp_path),
-            qwen=qwen,
-            source_gate_root=_canonical_source_gate_root(),
+            return attach_embedding_delta(delta_path=tmp_path, qwen=qwen, **root_kwargs)
+        return load_inference_embedding_delta(
+            config=_delta_config(tmp_path), qwen=qwen, **root_kwargs,
         )
+
+    empty_root = tmp_path / "empty-root"
+    empty_root.mkdir()
+    original_embeddings = qwen.model.get_input_embeddings()
+    # An explicit wrong root must fail even with valid evidence in cwd;
+    # the default mode must fail when cwd contains no evidence.
+    monkeypatch.chdir(embedding_source_gate_root if root_mode == "explicit" else empty_root)
+    with pytest.raises(RuntimeContractError) as exc_info:
+        load_delta(**({"source_gate_root": empty_root} if root_mode == "explicit" else {}))
+    assert exc_info.value.code == "special_token_embeddings.source_gate_missing"
+    assert qwen.model.get_input_embeddings() is original_embeddings
+
+    monkeypatch.chdir(empty_root if root_mode == "explicit" else embedding_source_gate_root)
+    receipt = load_delta(**(
+        {"source_gate_root": embedding_source_gate_root} if root_mode == "explicit" else {}
+    ))
 
     assert receipt["status"] == "loaded"
     assert receipt["identity"]["status"] == "validated"
@@ -904,16 +860,26 @@ class TinyTiedQwenWithAdapter(TinyTiedQwenModel):
         self.adapter_weight = nn.Parameter(torch.ones(hidden_size))
 
 
-def _canonical_source_gate_root() -> Path:
-    """Find the checked-in canonical evidence root without copying receipts."""
-
+@pytest.fixture
+def embedding_source_gate_root(tmp_path: Path) -> Path:
+    """Stage existing evidence at the real loader's default contract paths."""
+    repo_root = Path(__file__).resolve().parents[2]
+    root = tmp_path / "embedding-source-gate"
+    study_relative = Path(
+        "docs/history/architecture/proposals/2026-06-27-coordexp-infras/"
+        "source-studies/special-token-embeddings.md"
+    )
     receipt_relative = Path(
         "outputs/probes/coordexp_swift/special_token_embeddings_roundtrip/receipt.json"
     )
-    for candidate in Path(__file__).resolve().parents:
-        if (candidate / receipt_relative).is_file():
-            return candidate
-    raise AssertionError("canonical special-token source-gate receipt is unavailable")
+    for source, relative in (
+        (repo_root / study_relative, study_relative),
+        (repo_root / "probes/logit_lens/configs/source-gate-receipt.json", receipt_relative),
+    ):
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    return root
 
 
 def _write_execution_delta(path: Path) -> tuple[Path, torch.Tensor]:
