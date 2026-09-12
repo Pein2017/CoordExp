@@ -14,10 +14,18 @@ absolute, durable external path. It is required unless the embedding caller
 passes an explicit absolute `cache_root=`; a worktree-relative cache is not
 accepted.
 
-Dynamic HF execution of the adapter plus embedding delta is the authoritative
-inference semantics. A dense BF16 materialization that changes those semantics
-must fail composition qualification and cannot be admitted; its failure receipt
-is diagnostic evidence, not permission to relax parity thresholds.
+Dynamic HF retains its adapter-plus-embedding-delta execution semantics.
+Composed BF16 inference executes an authenticated derived model. Its fixed
+composition fixture must retain exact prompt IDs, generated sequence length,
+non-coordinate tokens (including EOS and structural tokens), tied rows and
+merged target weights. Coordinate tokens may differ by at most one grid unit
+under the validated canonical coordinate mapping. Larger coordinate errors,
+lexical/structural changes and invalid policy evidence reject qualification.
+
+Receipts retain exact-greedy and logit-comparison diagnostics even when they
+fail the former exact-parity thresholds; the bounded coordinate contract is
+explicitly identified and validated. vLLM probabilities belong to the merged
+execution model and are not claimed to equal dynamic-HF probabilities.
 
 Run normal vLLM inference with that root explicitly supplied:
 
@@ -52,6 +60,10 @@ in addition to the owned-child and process-group cleanup checks.
 
 Separate children execute runtime `max_num_seqs=1`, concurrency
 `max_num_seqs=4`, forced replay at `max_num_seqs=1`, and composition fidelity.
+Runtime/concurrency checks establish operational completion and finite policy
+logprobs, not HF-versus-vLLM token/logit parity. Forced replay remains exact
+against vLLM's own generated request, prompt, continuation and stop evidence;
+the one-grid composition allowance never applies to replay alignment.
 Receipts contain hashes, counters, numeric summaries, and cleanup/resource
 evidence; detailed artifacts stay under the external root and are hash-checked
 at admission. Admission installs exactly these files into
