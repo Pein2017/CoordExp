@@ -120,7 +120,7 @@ Current execution identities include changed shared dependencies; historical
 receipts retain their original effective sources. Measured CPU preparation
 improvements do not imply faster model forwards or better research outcomes.
 
-The [upgrade acceptance example](../openspec/changes/upgrade-research-probe-workflow/acceptance.md#real-model-acceptance)
+The [upgrade acceptance example](../openspec/changes/archive/2026-09-12-upgrade-research-probe-workflow/acceptance.md#real-model-acceptance)
 preserves an executed selection, exact replay, profile-owned update and paired
 diagnostics, plus a repeatable CPU command for reading its saved results.
 

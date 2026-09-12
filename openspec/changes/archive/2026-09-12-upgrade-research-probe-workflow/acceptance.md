@@ -4,6 +4,8 @@ Date: 2026-09-12. Implementation owner: this task; independent frozen-design rev
 
 Evidence root: `/data/CoordExp/outputs/research/upgrade-research-probe-workflow/20260912`. All relative evidence paths below resolve there. Code base: `ef6d44d1196a7043deeef90cefc90136bce9859f`; candidate checkout: `/data/CoordExp/.worktrees/research-probes-upgrade-20260912`.
 
+The later user-authorized baseline-failure cleanup and archive are recorded in [failure-closeout.md](failure-closeout.md). The original acceptance and its 14-failure baseline below remain a historical record.
+
 ## Implemented scope and critical judgment
 
 The upstream comparison justified a shared input composition owner and fixed Source256 parameter binding. It did not justify a new trainer, profile registry, trajectory schema, dtype change or universal diagnostic reducer. Four config-conversion consumers now share one implementation; DORA, Logit Lens and Human13 reuse the input planner. Six admitted selective-preservation profiles share their fixed DoRA binding. Cohorts, request policy, targets, objectives, reduction, DDP placement and model lifetime remain profile-owned.
