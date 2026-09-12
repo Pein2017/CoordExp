@@ -1171,6 +1171,57 @@ ls_specific_settings:
 # This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
 # giving it a high priority of 3, while the default Python language server is fully excluded from
 # auto-detection with priority 0.
+
+# mapping from language server keys to integer priority values (higher = more preferred), which determine
+# language server selection during automatic project creation and are used to break ties when multiple
+# language servers match an equal number of source files.
+# The priority values override Serena's default priorities:
+#   * 0 = experimental or secondary language servers, which are never auto-detected
+#         (e.g. `python_*` and `php_*` are "secondary"; also applies to non-programming languages like `json`)
+#   * 1 = supersets of other languages, which shall be preferred only if they match more files
+#         (e.g. `vue` and `svelte`, which are supersets of `typescript`)
+#   * 2 = default priority
+# Example:
+#   ls_priorities:
+#     python: 0
+#     python_basedpyright: 3
+# This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
+# giving it a high priority of 3, while the default Python language server is fully excluded from
+# auto-detection with priority 0.
+
+# mapping from language server keys to integer priority values (higher = more preferred), which determine
+# language server selection during automatic project creation and are used to break ties when multiple
+# language servers match an equal number of source files.
+# The priority values override Serena's default priorities:
+#   * 0 = experimental or secondary language servers, which are never auto-detected
+#         (e.g. `python_*` and `php_*` are "secondary"; also applies to non-programming languages like `json`)
+#   * 1 = supersets of other languages, which shall be preferred only if they match more files
+#         (e.g. `vue` and `svelte`, which are supersets of `typescript`)
+#   * 2 = default priority
+# Example:
+#   ls_priorities:
+#     python: 0
+#     python_basedpyright: 3
+# This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
+# giving it a high priority of 3, while the default Python language server is fully excluded from
+# auto-detection with priority 0.
+
+# mapping from language server keys to integer priority values (higher = more preferred), which determine
+# language server selection during automatic project creation and are used to break ties when multiple
+# language servers match an equal number of source files.
+# The priority values override Serena's default priorities:
+#   * 0 = experimental or secondary language servers, which are never auto-detected
+#         (e.g. `python_*` and `php_*` are "secondary"; also applies to non-programming languages like `json`)
+#   * 1 = supersets of other languages, which shall be preferred only if they match more files
+#         (e.g. `vue` and `svelte`, which are supersets of `typescript`)
+#   * 2 = default priority
+# Example:
+#   ls_priorities:
+#     python: 0
+#     python_basedpyright: 3
+# This example would achieve that `python_basedpyright` becomes the preferred language server for Python,
+# giving it a high priority of 3, while the default Python language server is fully excluded from
+# auto-detection with priority 0.
 ls_priorities:
 
 # list of paths to ignore across all projects.
@@ -1275,26 +1326,17 @@ projects:
 - /data/CoordExp/.codex/plugins/data/codex-harnessdock
 - /data/CoordExp/.dsh/plugins-src/dsh-memory
 - /data/CoordExp/.worktrees/coordexp-infras
-- /data/CoordExp/.worktrees/c-anchored-owner-mechanism-audit
-- /data/CoordExp/.worktrees/coco-gt-correction-portfolio
-- /data/CoordExp/.worktrees/dora-prox-linear-n2
-- /data/CoordExp/.worktrees/human13-output-qp-identity-generalization
-- /data/CoordExp/.worktrees/image2299-logit-lens
-- /data/CoordExp/.worktrees/n256-shared-output-qp-norm-scaling
 - /data/CoordExp/.worktrees/permanent-owner-bridge-cache-validation
-- /data/CoordExp/.worktrees/research-probe-infras
 - /data/CoordExp/.worktrees/research-probes
-- /data/CoordExp/.worktrees/self-rollout-behavior
+- /data/CoordExp/.worktrees/research-probes-upgrade-20260912
 - /data/CoordExp/codex-harnessdock
 - /data/CoordExp/codex-harnessdock-dev
 - /data/CoordExp/codex-usage-ledger
 - /data/CoordExp/codex-wake-me-up
-- /data/CoordExp/codex-web
 - /data/CoordExp/external/agent-orchestrator
 - /data/CoordExp/external/codex-host
 - /data/CoordExp/external/harness
 - /data/CoordExp/external/harness/codex
-- /data/CoordExp/external/harness/codex-mcp-idle-lifecycle-0.153.4
 - /data/CoordExp/external/harness/deepseek-harness
 - /data/CoordExp/external/harness/opencode
 - /data/CoordExp/external/harness/pi
