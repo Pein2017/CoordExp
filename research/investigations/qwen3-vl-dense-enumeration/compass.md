@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -19,6 +19,135 @@ technical execution. It does not promote an architecture or a production
 checkpoint.
 
 ## Current questions and evidence
+
+### Completed Stable50 continuation and current recommendation
+
+**Latest closeout:** the [positive-progress-matched control](experiments/2026-09-11-positive-progress-matched-control/results.md)
+is complete. A17's positive NLL differs from C32 by0.75%, with identical three
+token-hit counts; all17 recreated states and cold scores match exactly. On384
+natural images C beats D by27TP50 and reduces repeats469→153/drops438→28/caps2→0.
+But TP50 decomposes into+31 on reference56 and-4 outside328; D also recovers
+more owners on two positive cases. Removing the two D caps posthoc still gives
+C+7TP50, but reverses the parser-drop advantage. The scalar-dose alternative
+is weakened and reference protection is supported; unique margin geometry and
+uniform transfer are not established. C32/D17 do not equalize optimizer/KL
+exposure. Next proposal: a fresh unselected evaluation of retained models before
+more training or promotion. All current grants are consumed; no GPU job/sweep
+is pending.
+
+**Current closeout:** the selected overnight portfolio is complete; no GPU job
+or sweep remains authorized. The final margin-preserved C restores reference56
+TP50 count389→416 (two losses/two gains versus Stable50), raises union384 TP50
+to1923 versus1899 Stable50, and reduces strict repeats582→153, parser drops
+792→28 and caps4→0. Nevertheless,417044 and477415 each lose one A-matched
+owner;351017's fixed-history total drops worsen21→27, and exposed dev128
+TP50/F1 stay below Stable50. The joint per-case/conditional gate fails: promising
+preservation tradeoff, not a promoted checkpoint or generalization result.
+The [final results](experiments/2026-09-11-margin-preserved-positive-branch/results.md)
+own the complete paired ledger, root visual checks and stop. Its recommended
+positive-learning-dose-matched control has now been completed as summarized
+above, without a coefficient sweep. A fresh evaluation is still needed before
+promotion. No new launch is pending.
+
+The following paragraphs retain the evidence sequence that led to that decision.
+
+The fixed24-image exact-two-FN admission probe is complete on eight GPUs:
+21 two-row oracle closures,2 first-row-only closures,1 old-owner-loss failure.
+Only11 successful trajectories freely generate an old owner after the second
+forced row. No training occurred. Twelve bounded visual checks expose
+annotation-extent, class-conflict, grouping, reflection and tiny-background
+ambiguities; an IoU50-missing annotation is not automatically a missing
+instance. The lead did not promote those reviewed pairs as pure two-new-owner
+learning labels. This is a limitation of the candidate-selection semantics,
+not a negative result for recursive trainability.
+
+The recommended GT-free, actual-student later-row `IoU>0.95` negative-learning
+pilot is now complete:32 updates on8images plus56 preservation references,
+followed by the exact exposed384 natural read. Repeats582→487 and F1 rises,
+but TP50 loses3 and geometry-invalid rows increase100. Raw row starts
+4213→4219 and the same4cap images persist. In351017,80fewer strict repeats
+co-occur with79more invalid boxes and unchanged309starts;274509is a genuine
+local row-count reduction with old annotated owners retained. The candidate
+fails its fixed joint criteria and is not promoted; no dose/weight extension
+is pending. Future dedup work must address invalid-box alternatives and
+row-level credit rather than treat this surrogate metric as sufficient.
+
+The subsequent eight-case image/history diagnostic is also complete:74 panel
+cells plus5 smoke cells, no training. With the same donor image, early bottle
+and knife prefixes allow new-image detections, while later natural histories
+sustain51 bottle/56 knife rows to the512-token horizon. The original image is
+not necessary for those later conditional chains. Last-row translation can
+release different donuts or a cake on the original image, but late invalid
+chair rows return to the same boundary, and the clean control can acquire a
+person-repeat chain under the combined donor/translation intervention. Some
+first boxes have real physical support. Thus neither all-first-box hallucination
+nor a universal image-independent loop or safe coordinate-shift repair is
+established. Spatial traversal versus owner coverage, small-object specificity,
+training origin and KV circuits remain unresolved. Keep the closed coordinate
+UL coefficient/dose unchanged; the next learning design must address row-level
+credit and invalid-geometry alternatives, then verify fresh natural outputs.
+
+The subsequent native-history witness panel is now complete: all4 natural and
+all4 h-only full actions reproduce the saved cap failures exactly;7 complete-row
+interventions yield6 locally useful nonempty releases across3/4images. Four
+nonempty suffixes have zero registered strict-repeat/invalid/malformed burden,
+but visual review still finds lower-IoU reboxing and overextended/group boxes.
+The cake candidate produces EOS only. Thus useful positive directions exist,
+without evidence of learned natural repair or globally clean owner coverage.
+The independent two-case synthetic-history panel moves exact A/B scores opposite
+to the registered positive-count prediction, and never freely selects A/B.
+It does not identify a copying circuit or pure multiplicity mechanism.
+
+The Pro-informed complete-row positive versus positive-plus-repeat-event phase
+is closed:32updates per arm/cold reload and one explicitly amended shared-weight
+384+6read. B supplies0/768 strict events, so A/B weights match at every update;
+initial same-h greedy repeats immediately on3/3 despite no hits in its first24
+raw-softmax draws. A CPU spatial census weakens simple near-.95 jitter as the
+explanation, but does not label sampled physical owners.
+
+The shared checkpoint learns the three complete positive rows but loses25TP50
+on384images despite F1+0.00609 and repeats582->432. All4old caps resolve, but
+39654 newly caps and351017 still repeats. Excluding catastrophe cases posthoc
+does not eliminate diffuse loss; even the56 explicitly KL-protected references
+lose33/gain6 owners. This is not merely an insufficient-reference-coverage story.
+The completed16-cell checkpoint/history cross separates two effects:39654's
+cap and owner loss follow the supplied first-divergent-row history under both
+models;417044/477415's improvement follows the checkpoint under eitherhistory.
+351017 admits both escape routes but retains later damage. A can therefore
+shift entry into an old bad-history basin while improving conditional
+continuation elsewhere. Literal suffix inequality is not evidence against
+this outcome-level history effect. The completed56-reference microscope finds
+586protected argmax flips despite mean image KL0.005833. All55 actual first
+divergences replay at the shared prefix;53are coordinates and only2are numerical
+near-ties. Most no-owner-loss images also flip, so margin flips alone are not
+owner-error labels. The final selected learning contrast added one worst-token
+margin floor to unchanged positive32 learning and tested complete natural
+preservation jointly with the three repairs. Eligible flips fell576→143/6030;
+the aggregate improves, but the no-weakening condition fails as recorded above.
+This contrast is closed without a coefficient sweep.
+No negative-learning efficacy, universal KV mechanism or checkpoint promotion
+is inferred; the old32step contrast is not extended.
+
+- [Final portfolio closeout: margin preservation improves the aggregate, not every repair](experiments/2026-09-11-margin-preserved-positive-branch/results.md)
+- [Full32 checkpoint: positive routes learned, negative signal absent](experiments/2026-09-11-positive-branch-vs-repeat-event/results.md)
+- [Checkpoint versus first-divergent-row history](experiments/2026-09-11-checkpoint-history-cross/unit.md)
+- [KL-protected reference greedy-margin microscope](experiments/2026-09-11-greedy-preservation-microscope/unit.md)
+- [Sol/Luna delegation evidence at the discussion checkpoint](experiments/2026-09-11-positive-branch-vs-repeat-event/delegation-evidence.md)
+- [Parallel evidence closeout and Pro-informed next decision](experiments/2026-09-11-repeat-recovery-parallel/results.md)
+- [Native escape witness](experiments/2026-09-11-native-escape-witness/results.md)
+- [Counterbalanced history reweighting](experiments/2026-09-11-repeat-multiplicity/results.md)
+
+Full-witness joint learning versus recursive assistance removal remains a
+separate unlaunched contrast on an explicitly admitted owner panel; KV/ledger
+surgery has not been authorized by these findings. Sol/Luna were retried;
+Luna-max's focused tests passed lead
+replay, whereas a Luna-high geometry statistic and parts of Sol's semantic
+draft were not accepted unchanged.
+
+- [Bounded acquisition, interpretation and next contrast](experiments/2026-09-11-recursive-owner-composition/results.md)
+- [Task-specific Sol/Luna quality evidence](experiments/2026-09-11-recursive-owner-composition/worker-trial.md)
+- [Stable50 dedup32: result, invalid-box alternative and stop](experiments/2026-09-11-stable50-geometric-dedup/results.md)
+- [Small-owner repeat origin: image/history intervention and counterexamples](experiments/2026-09-11-small-owner-repeat-origin/results.md)
 
 ### Are better natural complete outputs absent, or not realized by greedy/learning?
 
@@ -57,6 +186,47 @@ the updated checkpoint. Occlusion/projected overlap limits and one incompatible
 sample-history residual workload remain explicit.
 
 - [Conditional row realization and continuation](experiments/2026-09-10-owner-row-continuation-robustness/results.md)
+
+The subsequent two-case update bridge now tests those same useful entrances.
+Their specific x1 probabilities increase under round1, but ranks remain128
+and679; B stays top1. All four round1 partial/full-A continuations exactly
+reproduce Source's conditional action sequences, preserving A, free B recovery
+and old owners. The one-bin difference in368's preceding natural history does
+not change its covered set or the low-ranked-entry conclusion. These cases
+show insufficient natural selection without observed update-induced successor
+damage, not a unique optimizer cause, an owner-existence probability or a
+general state/transfer guarantee.
+
+- [Verified-branch update bridge](experiments/2026-09-10-verified-branch-update-bridge/results.md)
+
+The subsequent Source-started two-entrance CE probe is complete. After23
+updates both fixed-prefix margins exceed0.1, and cold natural generation
+recovers both target owners at IoU50 through changed histories. Yet train2
+FP rises2→34, strict repeats0→21 and F1 falls.864865→.527778; the frozen
+guard16 gains4/loses5 owners with lower F1. Boat-image repeats are person
+clusters, mostly another added GT owner, not repeated trained A/B; x1=291
+appears in27 valid rows while the accurately recovered boat uses298.
+This shows successful local learning and natural target realization without
+selective outcome preservation. The checkpoint is not promoted; it does not
+identify a missing ledger or authorize more unconstrained training.
+
+- [Native entrance CE feasibility and collateral effects](experiments/2026-09-10-native-entrance-ce-feasibility/results.md)
+
+The subsequent autonomous selective-learning search is closed after six
+completed candidates. Its final Source-started7-entrance/50-reference/81-step
+candidate recovers all7 trained targets, eliminates the3 newly introduced
+capped cases without cap migration, and improves the full384 IoU50 result:
+TP1873→1899,FP1553→1522,F1.597258→.606032. The outside-support327 subset
+also improves(TP1466→1479,F1.589465→.595411); the unchanged previous outside330
+panel remains positive. This is a bounded development candidate, not a
+held-out or deployment promotion. Full384 has59 gained/33 lost owners,
+repeats579→582 andTP80 decreases5; remainingtrain199 F1 still decreases.
+Earlier dev-only positives failed expanded reads, and the final3 reference
+additions were selected adaptively from exposed train failures. No confirmation
+axis, new architecture or general state-memory mechanism is claimed.
+
+- [Selective owner learning: final result and debts](experiments/2026-09-10-selective-owner-learning-autonomous/results.md)
+- [Closed search handoff and reopening boundary](experiments/2026-09-10-selective-owner-learning-autonomous/handoff.md)
 
 The FP follow-up separates484 automatic strict repeats from610 non-repeat FP.
 A fixed54-case visual audit finds14 visible instances without current GT
