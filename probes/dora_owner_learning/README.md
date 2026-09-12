@@ -41,6 +41,14 @@ worktree import is used.
 
 ## CPU entry and checks
 
+For a new small probe, `python -m probes.dora_owner_learning.inspect` accepts
+`--config`, an optional explicit `--input`, and either ordered `--ids` or
+`--count` with `--seed`. Add `--target-max-length` to inspect annotated targets
+alongside generation prefixes. It loads no model weights and emits input
+evidence rather than a Source256 plan. The [shared input workflow](../../docs/RESEARCH_PROBE_INFRA_BASE.md#small-input-inspection-and-sharedprofile-boundaries)
+shows a real two-image command and native replay composition. The original
+`preflight` below retains its frozen cohort and source gates.
+
 From an independent checkout with the documented shared input/model paths:
 
 ```bash

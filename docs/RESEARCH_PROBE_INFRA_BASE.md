@@ -31,6 +31,7 @@ local scientific configuration, not a global runtime class or registry.
 | Need | Existing owner | Caller keeps explicit |
 | --- | --- | --- |
 | Direction-local V1 inference profile | `src.config.inference.load_research_infer_config` | Scientific values and actual native generation policy; this loader does not enable debug or relax value validation |
+| Selected prompt and annotated-target planning | `src.inference.inputs.plan_examples` | Ordered rows, resolved profile, target length; pixel materialization remains explicit |
 | Qwen processor/tokenizer/model loading | `src.qwen.runtime_loading.QwenLoadOptions`, `load_qwen_components_from_options` | Device, model lifetime, train/eval mode and selected checkpoint |
 | Deterministic scored inference | `src.inference.runtime` and `src.inference.backend` | Input/policy, output interpretation and claims |
 | Exact multimodal history/replay | `src.qwen.native.prepare_native_inputs`, `prepare_replay` | Literal token IDs, images, model mode/device; invalid shapes and token histories fail |
@@ -45,6 +46,83 @@ Native research operations do not need to manufacture packed sequences or a
 strict HF evidence session. Their maintained package examples document exact
 history, scoring, continuation and capture usage. The stable research behavior
 is owned by the [infra-base contract](../openspec/specs/coordexp-infras-research-probe-infra-base/spec.md).
+
+## Small input inspection and shared/profile boundaries
+
+Inspect arbitrary selected rows using an existing profile without adopting the
+Source256 population or loading model weights:
+
+```bash
+python -m probes.dora_owner_learning.inspect \
+  --input tests/fixtures/smoke/qwen3_vl_single_image_pack/examples.jsonl \
+  --count 2 --seed 7 --target-max-length 12000 \
+  --output /tmp/probe-input-inspection.json
+```
+
+The output path must be new. `--ids ID1 ID2` preserves the requested order;
+`--count N --seed S` samples without replacement. Unknown/duplicate IDs,
+oversampling and malformed sources fail. `--config` selects an existing valid
+profile; `--input` explicitly identifies the inspected data without editing that
+saved profile. The result records both the configured source and actual selected
+source. Omit `--target-max-length` for generation-only inspection.
+
+Generation prompt IDs and annotated targets are separate views. Target positions
+refer to the full encoded sequence, including image expansion; EOS and ignored
+post-EOS tokens retain their existing span types. Changing target order may leave
+generation prompt IDs unchanged. The existing strict `preflight` entries retain
+their original source, cohort and predecessor-evidence gates.
+
+For direct Python composition, load one processor-only frontend and select the
+rows once. `plan_examples(rows, config=config, components=frontend.qwen,
+target_max_length=12000)` returns ordinary values with `rendered`, `image`,
+`prompt`, `request` and `target` fields. Request-only consumers do not allocate
+pixel tensors. Use the existing `prepare_native_inputs` explicitly to materialize
+the request(s); reuse that result for subsequent replay. Batch-one replay uses a
+batch-one native input mapping, rather than slicing a multi-image pixel payload
+as if its first dimension were the example dimension.
+
+```python
+from src.qwen.native import prepare_native_inputs, prepare_replay
+from src.losses import aligned_token_logprobs
+
+# `plan` is one selected annotated plan; `model` and its lifetime belong to the profile.
+native = prepare_native_inputs(frontend.qwen.processor, (plan.request,),
+                               device="cpu", record_media_identity=True)
+action_ids = tuple(token for span in plan.target.supervised_token_spans
+                   for token in span.token_ids)
+replay = prepare_replay(model, native.inputs,
+                       prompt_token_ids=native.prompt_token_ids[0],
+                       continuation_token_ids=action_ids)
+logits = replay.aligned_logits(model(**replay.inputs).logits)
+token_logprobs = aligned_token_logprobs(logits, replay.target_ids)
+```
+
+The compact Source256 profile validates that those supervised spans are
+contiguous. A profile with a different supervision layout must retain its own
+mask/history logic. Token scoring deliberately selects no reduction or optimizer.
+Use the existing Source256 `TrajectoryScorer`, owner-outcome scorer or a
+direction-owned objective according to the question. The fixed Source256
+language-DoRA binding is shared within its DORA runtime; its 588 tensors and
+18,006,016 scalars are a profile contract. Other small surfaces remain explicit
+selections through the public adapter API or existing Human13 magnitude surface.
+
+| Shared mechanics | Profile-owned meaning |
+| --- | --- |
+| Render/image-plan reuse, prompt construction, exact encoding and native replay | Cohort, ordering choice, target length, intervention and generation policy |
+| Existing parameter objects and a fixed profile's repeated binding | Trainable surface choice, optimizer, loss/mask/reduction, DDP synchronization |
+| Existing `owner_change` / `aggregate_scores` and branch read functions | Comparator arms, natural versus forced interpretation, denominators and claims |
+
+Read saved branches with `probes.dora_owner_learning.branch_bridge.reduction`
+or the applicable existing selective-preservation reducer. These already retain
+owner gains/losses and natural/conditional distinctions; missing sampler traces
+remain missing. Input inspection is not a new trajectory format or trainer.
+Current execution identities include changed shared dependencies; historical
+receipts retain their original effective sources. Measured CPU preparation
+improvements do not imply faster model forwards or better research outcomes.
+
+The [upgrade acceptance example](../openspec/changes/upgrade-research-probe-workflow/acceptance.md#real-model-acceptance)
+preserves an executed selection, exact replay, profile-owned update and paired
+diagnostics, plus a repeatable CPU command for reading its saved results.
 
 For one immutable result, use the leaf directly:
 
