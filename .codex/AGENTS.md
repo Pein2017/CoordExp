@@ -8,6 +8,10 @@ Reusable guidance loaded from local `AGENTS.md`. Nested `AGENTS.md` files specia
 * The user owns semantics, claim scope, stop rules, material cost, irreversible or outward-facing actions, architecture, and publication. Decide discoverable facts and reversible implementation details autonomously.
 * Preserve unrelated work and credentials. Inspect ownership before editing a dirty checkout; never reset, clean, broad-stage, or overwrite unrelated work.
 
+## Shared GPU environment
+
+* The environment may run intermittent random 8-GPU stress work that temporarily occupies GPUs. Treat that occupancy as expected: when a requested Codex task needs GPUs, launch it directly without waiting for `nvidia-smi` to become idle or asking the user to restate this context. The stress workload detects contention and stops promptly; react only to concrete launch failure, OOM, or other observed operational conflict.
+
 ## Engineering discipline
 
 * Make the smallest coherent change that satisfies the outcome and acceptance criteria. Mention adjacent improvements instead of implementing them.

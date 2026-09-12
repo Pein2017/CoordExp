@@ -42,50 +42,38 @@ the lead will repeat its entire investigation anyway.
 
 ## Model and effort routing
 
-Prefer Astra `low/medium` for complex or consequential work. Prefer Luna
-`medium/high` for routine scouts, collectors, evidence extraction, summaries,
-and bounded dirty or mechanical work; use Luna `xhigh/max` for bounded,
-verifiable implementation with clear invariants. These are routing priors, not
-authority or automatic quality gates. Check actual callable models/efforts and
-select directly rather than forcing an escalation ladder. Effort buys search
-depth, not authority or automatic quality. In the current native tool, the
-user's "light" maps to callable `low`; do not pass an unsupported `light`
-effort.
-
-`gpt-5.6-sol` is temporarily retired from default routing. Use it only after
-explicit user opt-in for a comparison or fallback; never reactivate it as an
-automatic fallback or escalation tier.
+Prefer Luna `max` and Sol for subagents; keep Astra primarily in the main
+thread for framing, integration, and final acceptance. This is the user's
+cost-conscious routing preference, not a measured claim of equal quality.
+Choose directly by task difficulty and verifier strength, not a mandatory
+escalation ladder. Check actual callable models, efforts, and fork inheritance
+constraints before dispatch. Effort buys search depth, not authority.
 
 | Model | Working range and roles |
 |---|---|
-| `gpt-5.6-luna` | `medium/high` for cheap scouting, mechanical work, evidence extraction, and summaries; `xhigh/max` for simple or moderate implementation with clear invariants and a strong verifier. Not scout-only. |
-| `gpt-6-astra` | `low` (user's light) for complex implementation; consider `medium` when uncertainty warrants more depth. `high` or above for consequential review/audit; `xhigh/max` for decisive reasoning, brainstorming, or a focused adviser. Advice does not transfer user-owned decisions. |
-| `gpt-5.6-sol` | Explicit-opt-in comparison or fallback only; never part of default routing. |
+| `gpt-5.6-luna` | Prefer `max` for bounded implementation or analysis with clear invariants and a strong verifier; `medium/high` remains sufficient for simple extraction, inventory, or mechanical work. Own a complete package, not only scouting. |
+| `gpt-5.6-sol` | Default for work needing more semantic judgment or complex implementation: `high` as a starting prior, `medium` for clear bounded tasks, `xhigh/max` for difficult reasoning or debugging. Select the needed effort directly. |
+| `gpt-6-astra` | Primarily the main-thread lead. Use a subagent only for a concrete capability gap or consequential uncertainty that Luna/Sol cannot resolve economically; do not add an automatic Astra reviewer. |
 
-Two provisional operating patterns:
+For clear, readily verifiable work, let Luna `max` own the package. For more
+complex work, prefer Sol as owner, with independent Luna work only when it
+reduces total effort. If briefing Luna requires the lead to solve the task,
+choose Sol rather than expanding the prompt. Task length alone does not require
+Astra. Terra remains outside the default rotation, not unavailable.
 
-- For clear, readily verifiable work that can tolerate latency, consider Luna
-  `xhigh/max` owning the whole package rather than duplicating its work in Astra.
-- For complex or time-sensitive work, consider Astra `low/medium` as owner,
-  with Luna handling independent evidence or mechanical work in parallel.
-  Useful owner work need not wait for unrelated scouts to finish.
+Allow the same owner to correct a concrete failed verifier or counterexample
+when the scope remains valid. Include retries and additional lead review in the
+cost comparison; cheaper attempts can still produce a cheaper accepted outcome.
+Do not cycle through every effort or persist when corrections expose a semantic
+or capability gap. Bring decision-bearing ambiguity to the lead, which can
+resolve it or assign a focused stronger adviser. Advice does not transfer
+user-owned decisions.
 
-Treat Luna's source token price as a low-weight concern, not its waiting,
-integration, or rework cost. Cheap calls favor useful delegation, not
-redundant reports.
-Route summaries by semantic risk, not the label "summary" alone.
-
-Astra is a normal worker/adviser choice in this routing, not exceptional.
-Task length alone does not require it, and a model preference does not create
-a review gate. Terra remains outside the default rotation, not unavailable.
-
-If making Luna reliable requires the lead to solve the task in an over-detailed
-prompt, prefer Astra `low/medium` rather than solving the task for Luna. A
-concise invariant plus a real counterexample/consumer
-check is more useful than a longer list of instructions. Do not claim that
-lower lead effort preserves quality until real acceptance evidence supports it;
-escalate proactively at ambiguous semantic or high-consequence boundaries.
-Writing a preferred effort in a brief does not change the running lead setting.
+Avoid duplicating the worker's investigation in the lead. Use concise invariants
+and real consumer checks, not over-detailed briefs or routine second reviews.
+Route summaries by semantic risk, not their label. Model preferences do not
+create review gates or change the running lead setting. Preserve acceptance
+standards; do not infer success rates from completed workers or mixed task costs.
 
 ## Scout and collector outputs
 
@@ -105,6 +93,53 @@ owned read/write paths; permissions and frozen invariants;
 real acceptance command/evidence; deliverable and stop rule;
 delegation allowed or forbidden (plus bounds if allowed).
 ```
+
+### Implementation briefs for Luna and Sol
+
+Improve first-pass acceptance by removing execution-changing ambiguity, not by
+asking the worker to "get it right in one shot." One pass means one assignment
+through implementation and its own correction/check loop, not one edit without
+tests. Treat model-specific adjustments below as working priors to validate on
+real tasks, not proven capability limits.
+
+For implementation, specialize the brief above with only the missing facts:
+
+- Observable before/after behavior and a concrete acceptance example; distinguish
+  settled semantics from implementation choices the worker owns.
+- Known entrypoint/caller and the closest existing pattern, with exact paths or
+  symbols when already discovered. Mark suspected locations as hypotheses;
+  let the worker locate unknown ones rather than inventing APIs or defaults.
+- Relevant preserved behavior, failure behavior, and write boundaries. Include
+  a discriminating edge case when it changes correctness, not an exhaustive
+  speculative checklist.
+- The nearest real acceptance command and expected outcome, or the required
+  consumer behavior if the command is not yet known. Reuse the project's test
+  policy; bugs need a reproducer, not tests that merely mirror the patch.
+
+For **Luna max**, prefer a settled interface and a small coherent implementation
+surface, a concrete example, and the relevant existing pattern. Resolve
+user-owned ambiguity before dispatch; leave local implementation to the worker.
+If this requires the lead to design every step, give the package to Sol instead.
+For **Sol**, state the overall intent and constraints while leaving room to
+trace dependencies and choose the implementation. Name already-settled design
+choices so it can finish the implementation without reopening them; ask it to
+surface evidence that invalidates those choices rather than silently redesign.
+Neither model needs a long persona, repeated rules, or a compulsory plan report.
+
+Ask the worker to inspect relevant code, implement, run the required verifier,
+and repair failures within its scope before returning. Missing semantic input,
+an invalid frozen contract, or an out-of-scope change goes to the lead with the
+exact conflict; ordinary discoverable details do not. Return a candidate with
+changed paths, observed check results, and remaining limitations. Stop when the
+acceptance behavior is verified; do not broaden review to improve confidence
+without a concrete unresolved risk.
+
+Evaluate these briefs on naturally occurring implementation tasks: record whether
+the first submission passed lead acceptance, the reason for substantive rework,
+and worker plus attributable lead usage in existing task evidence. Separate brief
+gaps, implementation errors, and environment failures. Do not claim improved
+one-shot rates from a dry run, mix unlike tasks, or add mandatory duplicate runs
+or a new accounting system. Shorten or adjust the brief from observed failures.
 
 Distinguish the assignment, not another topology: a **research-question owner**
 gets the frozen question, claim/resource boundaries, decision-bearing evidence,
@@ -223,8 +258,8 @@ evaluation defect. For research work, use the retained-evidence recovery rule in
 repeat; a failed reducer alone is not a reason to repeat valid model work.
 
 Optimize the whole accepted outcome: worker usage, lead intervention, rework,
-integration/verification, and runtime wait. Luna's token price is low-weight;
-waiting, integration, and rework are not free. Cached tokens are not unique
+integration/verification, and runtime wait. Prefer lower total cost at the
+required acceptance standard; waiting, integration, and rework are not free. Cached tokens are not unique
 text or a complete cost measure; completed workers are not accepted-task
 evidence. When cost bears on a routing decision, separate cached input,
 uncached input, and output using dated applicable rates; missing usage or

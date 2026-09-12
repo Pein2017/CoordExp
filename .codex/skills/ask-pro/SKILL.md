@@ -25,6 +25,14 @@ Pro. Do not manufacture complexity or turn an ordinary lookup into a grand
 research question. The consultation may challenge the current framing rather
 than merely select between the options Codex already prefers.
 
+Treat the user's message as both a request and a source of candidate ideas.
+Abstract, tentative, or highly uncertain ideas that point toward a larger
+direction should be carried into the consultation as explicitly labeled
+hypotheses, mechanisms, or decision branches. Take them seriously without
+upgrading them to facts, and adapt the framing to the state of the question:
+ask a focused decision question when the decision is mature; ask Pro to help
+restate the problem and map the key branches when it is still exploratory.
+
 ## Make the prompt independent of the local environment
 
 - State the actual objective, decision to be made, current bottleneck, and
@@ -37,6 +45,10 @@ than merely select between the options Codex already prefers.
   Preserve quantities such as units, denominators, dose, conditioning and
   evaluation scope when they affect interpretation. Include important negative
   results and limitations, not just evidence favoring the current view.
+- Keep two input streams visibly separate: the user's original ideas, intuitions,
+  and larger-direction suggestions, and Codex's evidence-backed synthesis.
+  Preserve the user's uncertainty and intent while translating abstract ideas
+  into candidate hypotheses, mechanisms, or branches that Pro can examine.
 - Separate observations, hypotheses, interpretations, and unknowns. Explain
   what has actually been tested versus merely proposed or mechanically checked.
   Include Codex's current judgment and its strongest alternative without asking
@@ -66,6 +78,14 @@ mathematical and complex-reasoning strength through the substance of the
 problem, not flattery, role assignments, or instructions such as "you are a
 world-class expert."
 
+Use an open-ended, collegial voice: invite Pro to reinterpret the framing,
+disagree with both the user and Codex, and say when the evidence cannot decide.
+Always consider whether formalization through mathematics, statistics, causal
+identification, optimization, or LLM neural-network dynamics could sharpen the
+question. Invite a derivation, counterexample, or predictive consequence when
+that lens has decision value; do not force formalism or invent equations when it
+does not.
+
 Useful question shapes include:
 
 - Are the competing mechanisms identifiable from this evidence? Give a
@@ -76,6 +96,9 @@ Useful question shapes include:
 - Which hidden assumption would reverse this decision? Compare the strongest
   alternatives and recommend the next discriminating test, with its expected
   outcomes and the conclusion each would support.
+- If the user's direction is still abstract, what is the most useful precise
+  formulation of it? What competing interpretations should be kept alive, and
+  what is the cheapest evidence that would distinguish them?
 
 These are examples, not a mandatory checklist. Ask for checkable conclusions,
 derivations, counterexamples or a prioritized decision as appropriate, rather
@@ -85,15 +108,18 @@ would then be useful. Do not force formalism where it adds no insight.
 
 ## Deliver and return
 
-Deliver the ready-to-copy prompt itself, usually as one clearly delimited
-copyable block in the user's language. Keep any preface outside it brief. Use
-headings or tables if they clarify the evidence; impose no arbitrary word limit
-that would remove load-bearing context. Do not add a persona or redundant
-background. Before delivery, mentally remove every local path and unsupplied
-attachment: the prompt and any required, verified Notion reading must still
-provide enough context to address the question. Distinguish required reading
-from optional background, and ask Pro to flag inaccessible evidence rather
-than infer its contents from filenames or memory.
+Deliver one ready-to-copy prompt in the user's language, usually as one clearly
+delimited copyable block. Keep any preface outside it brief. A useful prompt
+order is objective and decision state, the user's ideas and larger direction,
+verified facts and negative results, Codex's current synthesis and strongest
+alternative, unknowns, and the open questions for Pro; adapt this order when
+the problem calls for it. Use headings or tables if they clarify the evidence;
+impose no arbitrary word limit that would remove load-bearing context. Do not
+add a persona or redundant background. Before delivery, mentally remove every
+local path and unsupplied attachment: the prompt and any required, verified
+Notion reading must still provide enough context to address the question.
+Distinguish required reading from optional background, and ask Pro to flag
+inaccessible evidence rather than infer its contents from filenames or memory.
 
 Stop at the consultation handoff: do not call a model API, automate the web
 submission, impersonate Pro's answer, or silently start a new experiment.
