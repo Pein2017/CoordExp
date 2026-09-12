@@ -30,10 +30,11 @@ import torch
 
 try:
     from accelerate import Accelerator
-    from accelerate.utils import broadcast_object_list
+    from accelerate.utils import DistributedDataParallelKwargs, broadcast_object_list
 except ImportError:  # pragma: no cover - exercised only in stripped environments.
     Accelerator = None  # type: ignore[assignment]
     broadcast_object_list = None  # type: ignore[assignment]
+    DistributedDataParallelKwargs = None  # type: ignore[assignment]
 
 from src.adapters import (
     build_adapter_setup_plan,
@@ -100,6 +101,7 @@ from src.runtime import (
 )
 from src.runtime.metrics import REDUCER_MAX, MetricBatch, ScalarSample
 from src.runtime.optimizer_boundary import OptimizerBoundaryTerminal
+from src.runtime.seeding import resolve_ddp_replay_policy
 from src.training.schedule import ResolvedStepSchedule, resolve_planned_step_schedule
 from src.training.pack_cache import (
     load_rank_micro_steps_from_cache,
@@ -1484,7 +1486,11 @@ def open_admitted_accelerator(
     """
 
     _begin_run_phase(writer, lifecycle, "cache_admission")
-    return _build_accelerator(plan.resolved_config.config.training.precision)
+    config = plan.resolved_config.config
+    return _build_accelerator(
+        config.training.precision,
+        determinism_mode=config.runtime.determinism.mode,
+    )
 
 
 def admit_accelerator_runtime(
@@ -2127,6 +2133,9 @@ def _run_initialized_training(
                 **eval_reduction_receipt,
             },
             resume=resume_config.model_dump(mode="json"),
+            distributed_gradient_reduction=resolve_ddp_replay_policy(
+                config.runtime.determinism.mode
+            ),
         )
         exact_identities = control_plane._run_rank_converged_phase(
             "exact_resume_identity_resolution",
@@ -2889,6 +2898,7 @@ def _exact_resume_policy_payload(
     attention: Mapping[str, Any],
     profile_sync: Mapping[str, Any],
     eval_reduction: Mapping[str, Any],
+    distributed_gradient_reduction: Mapping[str, Any],
     resume: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return semantic policy identity shared by parent and continuation runs."""
@@ -2901,6 +2911,7 @@ def _exact_resume_policy_payload(
         "input_provider": dict(input_provider),
         "packing": dict(packing),
         "profile_sync": dict(profile_sync),
+        "distributed_gradient_reduction": dict(distributed_gradient_reduction),
     }
 
 
@@ -3494,7 +3505,9 @@ def _disable_use_cache(model: Any) -> list[str]:
     return disabled
 
 
-def _build_accelerator(training_precision: str) -> Any:
+def _build_accelerator(
+    training_precision: str, *, determinism_mode: str = "legacy"
+) -> Any:
     if Accelerator is None:
         raise RuntimeContractError(
             "training requires the accelerate package",
@@ -3508,6 +3521,11 @@ def _build_accelerator(training_precision: str) -> Any:
         "gradient_accumulation_steps": 1,
         "mixed_precision": str(training_precision),
     }
+    ddp_policy = resolve_ddp_replay_policy(determinism_mode)
+    if ddp_policy is not None:
+        kwargs["kwargs_handlers"] = [
+            DistributedDataParallelKwargs(**ddp_policy["ddp_kwargs"])
+        ]
     return Accelerator(**kwargs)
 
 

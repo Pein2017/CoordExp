@@ -38,6 +38,32 @@ class _Accelerator:
     num_processes = 1
 
 
+def test_completed_row_records_only_actual_native_ddp_bucket_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class NativeDDP:
+        def _get_ddp_logging_data(self):
+            return {
+                "bucket_sizes": "80, 256",
+                "find_unused_parameters": 1,
+                "has_rebuilt_buckets": 0,
+                "unrelated_timing": 123,
+            }
+
+    monkeypatch.setattr(reporting, "DistributedDataParallel", NativeDDP, raising=False)
+    runtime = _Runtime()
+    runtime.model = NativeDDP()
+    writer = _writer(tmp_path)
+    reporting.CompletedStepReporter(writer=writer, lifecycle={}, runtime=runtime)(
+        _observation(1)
+    )
+    assert _row(writer)["ddp_bucket_metadata_rank0"] == {
+        "bucket_sizes": "80, 256",
+        "find_unused_parameters": 1,
+        "has_rebuilt_buckets": 0,
+    }
+
+
 class _Runtime:
     """DECLARED FLIP (add-coordexp-infras-training-observability, Wave 2, task
     2.3): the reporter hands the runtime a typed `MetricBatch`, so this double

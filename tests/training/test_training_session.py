@@ -186,7 +186,7 @@ class _ScriptedEntry:
         monkeypatch.setattr(
             session,
             "_build_accelerator",
-            lambda precision: SimpleNamespace(
+            lambda precision, *, determinism_mode="legacy": SimpleNamespace(
                 process_index=0, num_processes=1, is_main_process=True
             ),
         )

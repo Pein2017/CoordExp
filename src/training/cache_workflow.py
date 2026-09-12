@@ -1832,13 +1832,25 @@ def _encode_examples_with_fork_process_pool(
             max_workers=workers,
             mp_context=mp_context,
         ) as executor:
-            futures = [
+            window_size = min(len(raw_examples), 2 * workers)
+            pending = {
                 executor.submit(_encode_example_worker, index)
-                for index in range(len(raw_examples))
-            ]
-            indexed_results = [
-                future.result() for future in concurrent.futures.as_completed(futures)
-            ]
+                for index in range(window_size)
+            }
+            # Keep the source cursor past the initial window. Results remain
+            # fully materialized; only outstanding executor work is bounded.
+            indices = iter(range(window_size, len(raw_examples)))
+            indexed_results = []
+            while pending:
+                completed, pending = concurrent.futures.wait(
+                    pending, return_when=concurrent.futures.FIRST_COMPLETED
+                )
+                indexed_results.extend(future.result() for future in completed)
+                for _ in completed:
+                    index = next(indices, None)
+                    if index is None:
+                        break
+                    pending.add(executor.submit(_encode_example_worker, index))
     finally:
         _PACK_CACHE_WORKER_CONTEXT = None
     return _restore_encoded_example_order(

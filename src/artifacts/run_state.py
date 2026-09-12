@@ -187,20 +187,8 @@ def select_and_validate_checkpoint_publication_event(
         )
     ]
     if len(candidates) != 1:
-        raise ValueError(
-            "parent run must contain exactly one matching completed event"
-        )
+        raise ValueError("parent run must contain exactly one matching completed event")
     event_index, event = candidates[0]
-    completed_event_indices = [
-        index
-        for index, inventory_event in enumerate(events)
-        if isinstance(inventory_event, Mapping)
-        and inventory_event.get("status") == "completed"
-    ]
-    if not completed_event_indices or completed_event_indices[-1] != event_index:
-        raise ValueError(
-            "requested checkpoint is not the latest completed publication event"
-        )
     if set(event) != _CHECKPOINT_PUBLICATION_EVENT_FIELDS:
         raise ValueError("checkpoint publication event has an invalid field set")
     if (
@@ -223,9 +211,7 @@ def select_and_validate_checkpoint_publication_event(
     expected_checkpoint_identity = {
         "checkpoint_step": checkpoint_step,
         "resolved_path": str(resolved_checkpoint_dir),
-        "training_state_manifest_file_sha256": (
-            training_state_manifest_file_sha256
-        ),
+        "training_state_manifest_file_sha256": (training_state_manifest_file_sha256),
         "training_state_aggregate_digest": training_state_aggregate_digest,
     }
     admitted_checkpoint_identity = _checkpoint_publication_identity(
@@ -265,18 +251,55 @@ def admit_exact_resume_checkpoint_publication_from_state(
         event["committed_progress"],
         step=checkpoint_step,
     )
+    # A continuation may branch from an earlier committed checkpoint. Its
+    # restore identity/progress belong to that selected event; the unchanged
+    # parent's top-level progress must still belong to its latest completion.
+    events = state["measurement"]["checkpoint_publication_events"]
+    latest_index, latest_event = next(
+        (index, item)
+        for index, item in reversed(list(enumerate(events)))
+        if isinstance(item, Mapping) and item.get("status") == "completed"
+    )
+    latest_step = latest_event["step"]
+    if latest_index != event_index:
+        latest_identity = latest_event["checkpoint_identity"]
+        select_and_validate_checkpoint_publication_event(
+            state,
+            checkpoint_step=latest_step,
+            resolved_checkpoint_dir=(
+                Path(state["run_dir"]) / "checkpoints" / f"step-{latest_step}"
+            ),
+            resolved_run_dir=state["run_dir"],
+            parent_run_id=state["run_id"],
+            parent_segment_id=state["continuation"]["segment_id"],
+            training_state_manifest_file_sha256=(
+                latest_identity["training_state_manifest_file_sha256"]
+            ),
+            training_state_aggregate_digest=(
+                latest_identity["training_state_aggregate_digest"]
+            ),
+        )
+    latest_committed_progress = _checkpoint_committed_progress(
+        latest_event["committed_progress"], step=latest_step
+    )
+    if latest_index != event_index and (
+        latest_step <= checkpoint_step
+        or latest_committed_progress["consumed_packs"] < progress["consumed_packs"]
+    ):
+        raise ValueError("completed checkpoint publication progress regressed")
     latest_progress = {
-        "completed_steps": progress["completed_steps"],
-        "consumed_packs": progress["consumed_packs"],
-        "checkpoint_event_count": event_index + 1,
-        "final_optimizer_update_status": progress["optimizer_update_status"],
-        "final_finite_status": progress["finite_status"],
+        "completed_steps": latest_committed_progress["completed_steps"],
+        "consumed_packs": latest_committed_progress["consumed_packs"],
+        "checkpoint_event_count": latest_index + 1,
+        "final_optimizer_update_status": latest_committed_progress[
+            "optimizer_update_status"
+        ],
+        "final_finite_status": latest_committed_progress["finite_status"],
     }
     mismatched_top_level = sorted(
         field
         for field, expected in latest_progress.items()
-        if type(state.get(field)) is not type(expected)
-        or state.get(field) != expected
+        if type(state.get(field)) is not type(expected) or state.get(field) != expected
     )
     if mismatched_top_level:
         raise ValueError("parent top-level progress is not checkpoint-bound")

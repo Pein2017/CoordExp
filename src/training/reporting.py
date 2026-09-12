@@ -61,6 +61,8 @@ from typing import Any
 
 from dataclasses import dataclass
 
+from torch.nn.parallel import DistributedDataParallel
+
 from src.artifacts import observation_publisher
 from src.artifacts.observation_publisher import ObservationPublisher
 from src.artifacts.resources import (
@@ -663,6 +665,22 @@ class CompletedStepReporter:
         if receipt is not None:
             row.update(_boundary_truth_fields(receipt))
         row.update(_counter_fields(runtime))
+        model = getattr(runtime, "model", None)
+        if runtime.is_main_process and isinstance(model, DistributedDataParallel):
+            # Rank-zero native reducer evidence only; no additional collective.
+            # Missing fields stay missing, including pre-first-sample rebuild status.
+            ddp_data = model._get_ddp_logging_data()
+            row["ddp_bucket_metadata_rank0"] = {
+                name: ddp_data[name]
+                for name in (
+                    "bucket_sizes",
+                    "rebuilt_bucket_sizes",
+                    "find_unused_parameters",
+                    "static_graph",
+                    "has_rebuilt_buckets",
+                )
+                if name in ddp_data
+            }
         if isinstance(reduced_accuracy_stats, Mapping):
             row["accuracy_stats"] = dict(reduced_accuracy_stats)
         if unavailable:

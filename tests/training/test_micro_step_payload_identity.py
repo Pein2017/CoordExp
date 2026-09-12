@@ -37,10 +37,12 @@ import torch
 
 #: sha256 and byte length of the canonically serialized micro-step tuple
 #: assembled from the fixture below.
+#: Includes the coordexp-infras planner identity introduced by 70e576f96,
+#: which renamed the algorithm identity and changed the derived plan hashes.
 GOLDEN_PAYLOAD_SHA256 = (
-    "45c07ba45eaf902c61a86fc82c74b0468d0f3845488b5ed9b17e1b34a24286cd"
+    "19e6a2cd9e1d01fdd0ae52fbd4933fd7b7fcacf36fb7576fab20195115198f6a"
 )
-GOLDEN_PAYLOAD_BYTE_LENGTH = 2924
+GOLDEN_PAYLOAD_BYTE_LENGTH = 2925
 
 IMAGE_PAD_TOKEN_ID = 151655
 

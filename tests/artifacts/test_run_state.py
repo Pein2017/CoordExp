@@ -323,26 +323,27 @@ def test_admission_rejects_when_no_event_matches_the_requested_step(
         )
 
 
-def test_admission_rejects_a_non_latest_completed_event(tmp_path: Path) -> None:
+def test_admission_selects_an_earlier_completed_event(tmp_path: Path) -> None:
     state, resolved_checkpoint_dir, manifest_sha, aggregate_digest = _admitted_state(
         tmp_path, checkpoint_step=3
     )
-    later_event = dict(state["measurement"]["checkpoint_publication_events"][0])
-    later_event["step"] = 4
-    later_event["checkpoint_path"] = "checkpoints/step-4"
+    later_state, _, _, _ = _admitted_state(tmp_path, checkpoint_step=4)
+    later_event = later_state["measurement"]["checkpoint_publication_events"][0]
     state["measurement"]["checkpoint_publication_events"].append(later_event)
     run_dir = resolved_checkpoint_dir.parent.parent
-    with pytest.raises(ValueError, match="not the latest completed publication event"):
-        run_state.select_and_validate_checkpoint_publication_event(
-            state,
-            checkpoint_step=3,
-            resolved_checkpoint_dir=resolved_checkpoint_dir,
-            resolved_run_dir=str(run_dir),
-            parent_run_id="parent-run",
-            parent_segment_id="parent-segment",
-            training_state_manifest_file_sha256=manifest_sha,
-            training_state_aggregate_digest=aggregate_digest,
-        )
+    index, event, identity = run_state.select_and_validate_checkpoint_publication_event(
+        state,
+        checkpoint_step=3,
+        resolved_checkpoint_dir=resolved_checkpoint_dir,
+        resolved_run_dir=str(run_dir),
+        parent_run_id="parent-run",
+        parent_segment_id="parent-segment",
+        training_state_manifest_file_sha256=manifest_sha,
+        training_state_aggregate_digest=aggregate_digest,
+    )
+    assert index == 0
+    assert event["step"] == 3
+    assert identity["checkpoint_step"] == 3
 
 
 def test_admission_rejects_checkpoint_identity_digest_mismatch(
@@ -389,7 +390,10 @@ def test_admission_rejects_payload_identity_disagreement(tmp_path: Path) -> None
             event_index=event_index,
             event=event,
             admitted_checkpoint_identity=admitted_checkpoint_identity,
-            admitted_payload_identity={"schema_version": 1, "files": {"different": True}},
+            admitted_payload_identity={
+                "schema_version": 1,
+                "files": {"different": True},
+            },
         )
 
 

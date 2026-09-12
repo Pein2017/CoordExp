@@ -405,7 +405,9 @@ def _install_pipeline_fakes(
         ),
     )
 
-    def build_accelerator(precision: str) -> object:
+    def build_accelerator(
+        precision: str, *, determinism_mode: str = "legacy"
+    ) -> object:
         accelerator_calls.append(precision)
         raise AssertionError("Accelerator must not be constructed before admission")
 
@@ -1308,7 +1310,9 @@ def _distributed_preflight_failure_worker(
         ),
     )
 
-    def build_accelerator(precision: str) -> object:
+    def build_accelerator(
+        precision: str, *, determinism_mode: str = "legacy"
+    ) -> object:
         accelerator_calls.append(precision)
         raise AssertionError("Accelerator must not be constructed before admission")
 
@@ -1374,7 +1378,7 @@ def _distributed_provider_resolution_mismatch_worker(
             AssertionError("cache admission must not run after provider mismatch")
         )
     )
-    session._build_accelerator = lambda precision: (
+    session._build_accelerator = lambda precision, *, determinism_mode="legacy": (
         (_ for _ in ()).throw(
             AssertionError("Accelerator must not run after provider mismatch")
         )
@@ -1472,7 +1476,9 @@ def _distributed_preflight_success_worker(
         ),
     )
 
-    def build_accelerator(precision: str) -> object:
+    def build_accelerator(
+        precision: str, *, determinism_mode: str = "legacy"
+    ) -> object:
         observations["group_initialized_at_accelerator"] = dist.is_initialized()
         dist.init_process_group(
             backend="gloo",
@@ -1609,7 +1615,9 @@ def _distributed_accelerator_identity_mismatch_worker(
 
     control_plane._build_rank_report_gatherer = build_rank_report_gatherer
 
-    def build_accelerator(precision: str) -> object:
+    def build_accelerator(
+        precision: str, *, determinism_mode: str = "legacy"
+    ) -> object:
         if dist.is_initialized():
             raise AssertionError("temporary preflight group survived Accelerator setup")
         dist.init_process_group(

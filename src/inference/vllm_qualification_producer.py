@@ -23,8 +23,8 @@ from src.common.errors import RuntimeContractError
 
 QualificationKind = Literal["composition", "runtime", "concurrency", "forced_replay"]
 
-SCHEMA_VERSION = 3
-CONTRACT_VERSION = "coordexp-vllm-bf16-qualification-v3"
+SCHEMA_VERSION = 4
+CONTRACT_VERSION = "coordexp-vllm-bf16-qualification-v4"
 EXPECTED_RECEIPT_FILENAMES: dict[QualificationKind, str] = {
     "composition": "vllm-bf16-composition.json",
     "runtime": "vllm-bf16-runtime-seq1.json",
@@ -140,6 +140,7 @@ def produce(
             kind=kind,
             max_num_seqs=max_num_seqs,
             value=execution.evidence,
+            expected_snapshot_fingerprint=identity["model"]["snapshot_fingerprint"],
         )
         artifacts = _artifact_manifest(spec.evidence_dir, root=root)
         receipt = _build_receipt(
@@ -772,6 +773,7 @@ def _validate_receipt(
         kind=kind,
         max_num_seqs=max_num_seqs,
         value=payload.get("evidence"),
+        expected_snapshot_fingerprint=cast(Mapping[str, object], identity["model"])["snapshot_fingerprint"],
     )
     _validate_process_mapping(payload.get("process"), kind=kind)
     artifacts = payload.get("artifacts")
@@ -791,6 +793,7 @@ def _validate_mode_evidence(
     kind: QualificationKind,
     max_num_seqs: int,
     value: object,
+    expected_snapshot_fingerprint: object,
 ) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         _receipt_failure(kind, "evidence", type(value).__name__)
@@ -803,6 +806,7 @@ def _validate_mode_evidence(
             "prompt_ids_equal",
             "selected_rows_equal",
             "greedy_ids_equal",
+            "bounded_generation",
             "full_vocab",
             "selected_vocab",
         },
@@ -840,9 +844,35 @@ def _validate_mode_evidence(
     _validate_cleanup(evidence.get("cleanup"), kind=kind)
     if kind == "composition":
         _require_sha256(evidence.get("composition_digest"), kind, "composition_digest")
-        for field in ("prompt_ids_equal", "selected_rows_equal", "greedy_ids_equal"):
+        for field in ("prompt_ids_equal", "selected_rows_equal"):
             if evidence.get(field) is not True:
                 _receipt_failure(kind, field, evidence.get(field))
+        from src.inference.execution_model_composition import (
+            validate_bounded_generation_evidence,
+        )
+
+        bounded = evidence.get("bounded_generation")
+        if not isinstance(bounded, Mapping):
+            _receipt_failure(kind, "bounded_generation", "mapping_required")
+        _require_sha256(
+            expected_snapshot_fingerprint,
+            kind,
+            "bounded_generation.snapshot_fingerprint",
+        )
+        checked = validate_bounded_generation_evidence(
+            bounded,
+            expected_snapshot_fingerprint=cast(str, expected_snapshot_fingerprint),
+        )
+        if checked["accepted"] is not True:
+            _receipt_failure(kind, "bounded_generation.accepted", False)
+        greedy_equal = (
+            checked["dynamic_generated_ids"] == checked["materialized_generated_ids"]
+        )
+        if (
+            not isinstance(evidence.get("greedy_ids_equal"), bool)
+            or evidence["greedy_ids_equal"] != greedy_equal
+        ):
+            _receipt_failure(kind, "greedy_ids_equal", "bounded_evidence_mismatch")
         _validate_numeric_summary(evidence.get("full_vocab"), kind, "full_vocab")
         _validate_numeric_summary(evidence.get("selected_vocab"), kind, "selected_vocab")
         return evidence
@@ -1078,12 +1108,14 @@ def _validate_numeric_summary(value: object, kind: str, field: str) -> None:
     }:
         _receipt_failure(kind, field, value)
     if (
-        value.get("allclose") is not True
+        not isinstance(value.get("allclose"), bool)
         or not _finite_number(value.get("max_abs_diff"))
         or not _finite_number(value.get("max_rel_diff"))
         or not _positive_int(value.get("compared_value_count"))
     ):
         _receipt_failure(kind, field, value)
+    if value["max_abs_diff"] < 0 or value["max_rel_diff"] < 0:
+        _receipt_failure(kind, field, "negative_difference")
 
 
 def _validate_artifact_entry(value: object, *, kind: str) -> None:

@@ -431,6 +431,7 @@ def _run_production_composition(
             "greedy_ids_equal": comparison["behavior_checks"][
                 "greedy_generated_ids_match"
             ],
+            "bounded_generation": composition["bounded_generation"],
             "full_vocab": _bounded_numeric_summary(
                 comparison["full_vocab"], comparison["full_vocab_shape"]
             ),

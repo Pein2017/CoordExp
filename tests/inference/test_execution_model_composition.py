@@ -38,7 +38,26 @@ def _write_snapshot(root: Path) -> Path:
         ),
         encoding="utf-8",
     )
-    (root / "tokenizer.json").write_text("{}", encoding="utf-8")
+    from tokenizers import AddedToken, Tokenizer
+    from tokenizers.models import WordLevel
+    from src.qwen.tokens import DEFAULT_COORDINATE_TOKENS, DEFAULT_WRAPPER_TOKENS
+
+    # Numerical neighbors deliberately are not neighboring token IDs.
+    tokens = [
+        "[UNK]",
+        "<|im_end|>",
+        "\n",
+        *DEFAULT_WRAPPER_TOKENS,
+        *DEFAULT_COORDINATE_TOKENS[::2],
+        *DEFAULT_COORDINATE_TOKENS[1::2],
+    ]
+    tokenizer = Tokenizer(
+        WordLevel({token: i for i, token in enumerate(tokens)}, unk_token="[UNK]")
+    )
+    tokenizer.add_special_tokens(
+        [AddedToken(token, normalized=False, special=True) for token in tokens[1:]]
+    )
+    tokenizer.save(str(root / "tokenizer.json"))
     (root / "preprocessor_config.json").write_text("{}", encoding="utf-8")
     save_file(
         {
@@ -342,6 +361,7 @@ def test_composition_receipt_accepts_fp32_execution_evidence(
     )
 
     assert composition["target_dtype"] == "fp32"
+    assert "bounded_generation" not in composition
     assert composition["comparison"]["dtypes"]["comparison_logits"] == (
         "torch.float32"
     )
@@ -502,3 +522,166 @@ def test_composition_comparison_rejects_independent_processor_prompt_drift() -> 
         exc_info.value.code
         == "inference.execution_model_composition_prompt_mismatch"
     )
+
+
+def _bounded_receipt(tmp_path: Path, *, before: int = 0, after: int = 1):
+    from transformers import PreTrainedTokenizerFast
+    from src.qwen.tokens import validate_qwen_token_identity
+
+    model = _materialized_execution_model(tmp_path)
+    tokenizer = PreTrainedTokenizerFast(
+        tokenizer_file=str(Path(model["model_path"]) / "tokenizer.json")
+    )
+    identity = validate_qwen_token_identity(tokenizer)
+    comparison = _comparison()
+    wrapper = next(iter(identity.wrapper_token_ids.values()))
+    comparison["dynamic_generated_ids"] = [
+        wrapper,
+        identity.coordinate_token_ids[before],
+        identity.im_end_token_ids[0],
+    ]
+    comparison["materialized_generated_ids"] = [
+        wrapper,
+        identity.coordinate_token_ids[after],
+        identity.im_end_token_ids[0],
+    ]
+    comparison["behavior_checks"]["greedy_generated_ids_match"] = before == after
+    receipt = build_execution_model_composition_receipt(
+        execution_model=model,
+        fixture_identity=_fixture(),
+        composition_source_identity=_composition_source_identity(),
+        resolved_config_identity=_config_identity(),
+        comparison=comparison,
+    )
+    return model, receipt, identity
+
+
+@pytest.mark.parametrize(
+    ("before", "after"), [(0, 0), (0, 1), (1, 0), (998, 999), (999, 998)]
+)
+def test_bounded_composition_uses_tokenizer_coordinate_values(
+    tmp_path: Path, before: int, after: int
+) -> None:
+    model, receipt, identity = _bounded_receipt(tmp_path, before=before, after=after)
+    evidence = receipt["bounded_generation"]
+    assert evidence["policy"] == "coordexp-merged-bf16-coordinate-grid1-v1"
+    assert evidence["execution_reference"] == "materialized_bf16"
+    assert evidence["coordinate_max_abs_delta"] == 1
+    assert evidence["accepted"] is True
+    assert evidence["max_coordinate_value_delta"] == abs(before - after)
+    assert evidence["snapshot_manifest"] == model["snapshot_manifest"]
+    assert receipt["comparison"]["full_vocab"]["allclose"] is False
+    assert receipt["comparison"]["selected_vocab"]["allclose"] is False
+    if before != after:
+        assert (
+            abs(
+                identity.coordinate_token_ids[before]
+                - identity.coordinate_token_ids[after]
+            )
+            > 1
+        )
+        assert (
+            receipt["comparison"]["behavior_checks"]["greedy_generated_ids_match"]
+            is False
+        )
+    validate_execution_model_composition_receipt(receipt, execution_model=model)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "two_grids",
+        "wraparound",
+        "non_coordinate",
+        "coordinate_kind",
+        "length",
+        "eos",
+        "bool_id",
+    ],
+)
+def test_bounded_composition_does_not_accept_other_generation_drift(
+    tmp_path: Path, mutation: str
+) -> None:
+    model, receipt, identity = _bounded_receipt(tmp_path)
+    comparison = copy.deepcopy(receipt["comparison"])
+    generated = comparison["materialized_generated_ids"]
+    if mutation == "two_grids":
+        generated[1] = identity.coordinate_token_ids[2]
+    elif mutation == "wraparound":
+        generated[1] = identity.coordinate_token_ids[999]
+    elif mutation == "non_coordinate":
+        generated[0] = list(identity.wrapper_token_ids.values())[1]
+    elif mutation == "coordinate_kind":
+        generated[1] = generated[0]
+    elif mutation == "length":
+        generated.append(generated[-1])
+    elif mutation == "eos":
+        generated[-1] = generated[0]
+    else:
+        generated[0] = True
+    args = dict(
+        execution_model=model,
+        fixture_identity=_fixture(),
+        composition_source_identity=_composition_source_identity(),
+        resolved_config_identity=_config_identity(),
+        comparison=comparison,
+    )
+    if mutation == "bool_id":
+        with pytest.raises(RuntimeContractError):
+            build_execution_model_composition_receipt(**args)
+    else:
+        rejected = build_execution_model_composition_receipt(**args)
+        assert rejected["bounded_generation"]["accepted"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "invented_mapping",
+        "forged_acceptance",
+        "missing_policy",
+        "wrong_policy",
+        "wrong_version",
+        "changed_tokenizer",
+    ],
+)
+def test_bounded_composition_revalidates_resealed_policy_evidence(
+    tmp_path: Path, mutation: str
+) -> None:
+    model, receipt, identity = _bounded_receipt(tmp_path, after=2)
+    # The whole receipt is resealed: these tests must reach semantic validation.
+    bounded = receipt["bounded_generation"]
+    if mutation == "invented_mapping":
+        ids = list(identity.coordinate_token_ids)
+        ids[1], ids[2] = ids[2], ids[1]
+        bounded["coordinate_token_ids"] = ids
+    elif mutation == "forged_acceptance":
+        bounded["accepted"] = True
+        bounded["max_coordinate_value_delta"] = 1
+    elif mutation == "missing_policy":
+        del bounded["policy"]
+    elif mutation == "wrong_policy":
+        bounded["policy"] = "coordinate-grid2"
+    elif mutation == "wrong_version":
+        receipt["version"] = "coordexp-infras-execution-model-composition-v2"
+    else:
+        tokenizer_path = Path(model["model_path"]) / "tokenizer.json"
+        tokenizer = json.loads(tokenizer_path.read_text())
+        # Merely reordering the live tokenizer's coordinate assignment is not a
+        # valid way to redefine neighboring values under the frozen snapshot.
+        vocab = tokenizer["model"]["vocab"]
+        vocab["<|coord_1|>"], vocab["<|coord_2|>"] = (
+            vocab["<|coord_2|>"],
+            vocab["<|coord_1|>"],
+        )
+        tokenizer_path.write_text(json.dumps(tokenizer))
+    receipt["digest"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in receipt.items() if key != "digest"},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode()
+    ).hexdigest()
+    with pytest.raises(RuntimeContractError):
+        validate_execution_model_composition_receipt(receipt, execution_model=model)

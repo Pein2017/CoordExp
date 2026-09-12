@@ -1,0 +1,37 @@
+# Production-shaped four-update smoke. Launch with eight processes and the
+# strict replay environment documented in docs/contracts/operations.md.
+schema_version: 1
+extends: ../train/production.yaml
+
+run:
+  name: qwen3-vl-2b-coco-eight-gpu-smoke
+  output_dir: eight-gpu-smoke
+
+model:
+  fa2_branch_proof: every_forward
+
+data:
+  train:
+    sample_limit: 1024
+  eval:
+    sample_limit: 128
+
+training:
+  max_steps: 4
+
+eval:
+  forward:
+    steps: [2, 4]
+
+checkpoint:
+  steps: [2, 4]
+  save_final: true
+
+observability:
+  steps: 1
+
+# Enable training-state publication on the uninterrupted parent. A fresh
+# continuation supplies its step-2 checkpoint through a separate overlay.
+resume:
+  mode: exact_same_world_size
+  checkpoint_dir: null

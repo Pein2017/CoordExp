@@ -84,7 +84,9 @@ def _identity(tmp_path: Path, *, suffix: str = "") -> dict[str, Any]:
         "model": {
             "mode": "materialized",
             "composition_key": hashlib.sha256(f"composition{suffix}".encode()).hexdigest(),
-            "snapshot_fingerprint": hashlib.sha256(f"snapshot{suffix}".encode()).hexdigest(),
+            "snapshot_fingerprint": _bounded_child_evidence(tmp_path)[
+                "bounded_generation"
+            ]["snapshot_manifest"]["fingerprint"],
             "receipt_fingerprint": hashlib.sha256(f"receipt{suffix}".encode()).hexdigest(),
             "source_fingerprints": {
                 "base": hashlib.sha256(f"base{suffix}".encode()).hexdigest(),
@@ -213,7 +215,11 @@ def _dependencies(tmp_path: Path, *, identity: dict[str, Any] | None = None) -> 
         )
         return ChildExecution(
             returncode=0,
-            evidence=_child_evidence(spec.kind, spec.max_num_seqs),
+            evidence=(
+                _bounded_child_evidence(tmp_path)
+                if spec.kind == "composition"
+                else _child_evidence(spec.kind, spec.max_num_seqs)
+            ),
             process={
                 "worker_pid": 1234,
                 "worker_returncode": 0,
@@ -247,6 +253,211 @@ def _produce(tmp_path: Path, *, dependencies: Any | None = None) -> Path:
         dependencies=dependencies or _dependencies(tmp_path),
     )
     return root
+
+
+def _bounded_child_evidence(tmp_path: Path) -> dict[str, Any]:
+    from tokenizers import AddedToken, Tokenizer
+    from tokenizers.models import WordLevel
+    from src.inference.model_assets import build_model_snapshot_manifest
+    from src.qwen.tokens import DEFAULT_COORDINATE_TOKENS, DEFAULT_WRAPPER_TOKENS
+
+    snapshot = tmp_path / "model"
+    snapshot.mkdir(exist_ok=True)
+    tokens = [
+        "[UNK]",
+        "<|im_end|>",
+        "\n",
+        *DEFAULT_WRAPPER_TOKENS,
+        *DEFAULT_COORDINATE_TOKENS[::2],
+        *DEFAULT_COORDINATE_TOKENS[1::2],
+    ]
+    tokenizer = Tokenizer(
+        WordLevel({token: i for i, token in enumerate(tokens)}, unk_token="[UNK]")
+    )
+    tokenizer.add_special_tokens(
+        [AddedToken(token, normalized=False, special=True) for token in tokens[1:]]
+    )
+    tokenizer.save(str(snapshot / "tokenizer.json"))
+    dynamic = [
+        tokenizer.token_to_id(DEFAULT_WRAPPER_TOKENS[0]),
+        tokenizer.token_to_id("<|coord_0|>"),
+        tokenizer.token_to_id("<|im_end|>"),
+    ]
+    materialized = [dynamic[0], tokenizer.token_to_id("<|coord_1|>"), dynamic[-1]]
+    evidence = _child_evidence("composition", 1)
+    evidence["greedy_ids_equal"] = False
+    for field in ("full_vocab", "selected_vocab"):
+        evidence[field]["allclose"] = False
+        evidence[field]["max_abs_diff"] = 1.875
+    evidence["bounded_generation"] = {
+        "policy": "coordexp-merged-bf16-coordinate-grid1-v1",
+        "execution_reference": "materialized_bf16",
+        "coordinate_max_abs_delta": 1,
+        "snapshot_manifest": build_model_snapshot_manifest(snapshot),
+        "dynamic_generated_ids": dynamic,
+        "materialized_generated_ids": materialized,
+        "token_count_equal": True,
+        "coordinate_positions_equal": True,
+        "non_coordinate_tokens_equal": True,
+        "eos_positions_equal": True,
+        "coordinate_count": 1,
+        "coordinate_change_count": 1,
+        "max_coordinate_value_delta": 1,
+        "accepted": True,
+    }
+    return evidence
+
+
+def test_bounded_composition_producer_accepts_grid1_with_honest_numeric_drift(
+    tmp_path: Path,
+) -> None:
+    evidence = _bounded_child_evidence(tmp_path)
+    identity = _identity(tmp_path)
+    identity["model"]["snapshot_fingerprint"] = evidence["bounded_generation"][
+        "snapshot_manifest"
+    ]["fingerprint"]
+    deps = _dependencies(tmp_path, identity=identity)
+    original = deps.run_child
+
+    def run_child(spec):
+        execution = original(spec)
+        return (
+            replace(execution, evidence=evidence)
+            if spec.kind == "composition"
+            else execution
+        )
+
+    root = _produce(tmp_path, dependencies=replace(deps, run_child=run_child))
+    receipt = json.loads((root / "vllm-bf16-composition.json").read_text())
+    assert receipt["evidence"]["bounded_generation"]["accepted"] is True
+    assert receipt["evidence"]["greedy_ids_equal"] is False
+    assert receipt["evidence"]["full_vocab"]["allclose"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_policy",
+        "wrong_policy",
+        "two_grids_forged",
+        "bool_id",
+        "non_coordinate",
+        "length",
+        "eos",
+        "invented_mapping",
+    ],
+)
+def test_bounded_composition_producer_recomputes_acceptance(
+    tmp_path: Path, mutation: str
+) -> None:
+    from src.inference.vllm_qualification_producer import _validate_mode_evidence
+
+    evidence = _bounded_child_evidence(tmp_path)
+    bounded = evidence["bounded_generation"]
+    if mutation == "missing_policy":
+        del bounded["policy"]
+    elif mutation == "wrong_policy":
+        bounded["coordinate_max_abs_delta"] = 2
+    elif mutation == "two_grids_forged":
+        # IDs 7 and 8 are neighboring IDs but coordinate VALUES 0 and 2.
+        bounded["materialized_generated_ids"][1] = (
+            bounded["dynamic_generated_ids"][1] + 1
+        )
+    elif mutation == "bool_id":
+        bounded["materialized_generated_ids"][0] = True
+    elif mutation == "non_coordinate":
+        bounded["materialized_generated_ids"][0] += 1
+    elif mutation == "length":
+        bounded["materialized_generated_ids"].append(1)
+    elif mutation == "eos":
+        bounded["materialized_generated_ids"][-1] = 0
+    else:
+        bounded["coordinate_token_ids"] = [7, 8]
+    with pytest.raises(RuntimeContractError):
+        _validate_mode_evidence(
+            kind="composition",
+            max_num_seqs=1,
+            value=evidence,
+            expected_snapshot_fingerprint=bounded["snapshot_manifest"]["fingerprint"],
+        )
+
+
+@pytest.mark.parametrize("binding", [None, "f" * 64])
+def test_bounded_composition_rejects_unbound_or_swapped_snapshot(
+    tmp_path: Path, binding: str | None
+) -> None:
+    from src.inference.vllm_qualification_producer import _validate_mode_evidence
+
+    evidence = _bounded_child_evidence(tmp_path)
+    with pytest.raises(RuntimeContractError):
+        _validate_mode_evidence(
+            kind="composition",
+            max_num_seqs=1,
+            value=evidence,
+            expected_snapshot_fingerprint=binding,
+        )
+
+
+def test_bounded_composition_rejects_resealed_tokenizer_swap(tmp_path: Path) -> None:
+    from src.inference.execution_model_composition import (
+        build_bounded_generation_evidence,
+    )
+    from src.inference.model_assets import build_model_snapshot_manifest
+    from src.inference.vllm_qualification_producer import _validate_mode_evidence
+
+    evidence = _bounded_child_evidence(tmp_path)
+    original = evidence["bounded_generation"]
+    admitted_fingerprint = original["snapshot_manifest"]["fingerprint"]
+    tokenizer_path = tmp_path / "model" / "tokenizer.json"
+    tokenizer = json.loads(tokenizer_path.read_text())
+    # Swap complete canonical token assignments and reseal a valid snapshot.
+    # An internally valid replacement map must not inherit the admitted model.
+    vocab = tokenizer["model"]["vocab"]
+    left, right = "<|coord_1|>", "<|coord_2|>"
+    vocab[left], vocab[right] = vocab[right], vocab[left]
+    for added in tokenizer["added_tokens"]:
+        if added["content"] in {left, right}:
+            added["id"] = vocab[added["content"]]
+    tokenizer_path.write_text(json.dumps(tokenizer))
+    swapped = build_model_snapshot_manifest(tokenizer_path.parent)
+    evidence["bounded_generation"] = build_bounded_generation_evidence(
+        dynamic_generated_ids=original["dynamic_generated_ids"],
+        materialized_generated_ids=[
+            original["materialized_generated_ids"][0],
+            vocab[left],
+            original["materialized_generated_ids"][-1],
+        ],
+        snapshot_manifest=swapped,
+        expected_snapshot_fingerprint=swapped["fingerprint"],
+    )
+    assert evidence["bounded_generation"]["accepted"] is True
+    with pytest.raises(RuntimeContractError):
+        _validate_mode_evidence(
+            kind="composition",
+            max_num_seqs=1,
+            value=evidence,
+            expected_snapshot_fingerprint=admitted_fingerprint,
+        )
+
+
+def test_bounded_composition_requires_new_policy_evidence_and_contract_version() -> (
+    None
+):
+    from src.inference.vllm_qualification_producer import (
+        CONTRACT_VERSION,
+        SCHEMA_VERSION,
+        _validate_mode_evidence,
+    )
+
+    with pytest.raises(RuntimeContractError):
+        _validate_mode_evidence(
+            kind="composition",
+            max_num_seqs=1,
+            value=_child_evidence("composition", 1),
+            expected_snapshot_fingerprint=SHA,
+        )
+    assert CONTRACT_VERSION != "coordexp-vllm-bf16-qualification-v3"
+    assert SCHEMA_VERSION >= 4
 
 
 def test_producer_requires_absent_output_root_and_bf16_vllm_identity(
@@ -287,7 +498,6 @@ def test_producer_orchestrates_exact_isolated_modes_and_bounded_receipts(
 ) -> None:
     from src.inference.vllm_qualification_producer import (
         EXPECTED_RECEIPT_FILENAMES,
-        QualificationDependencies,
         produce,
     )
 
@@ -340,7 +550,11 @@ def test_child_failure_or_partial_or_unbounded_evidence_cannot_pass(
     def run_child(spec: Any) -> ChildExecution:
         spec.evidence_dir.mkdir(parents=True, exist_ok=False)
         (spec.evidence_dir / "evidence.json").write_text("{}", encoding="utf-8")
-        evidence = _child_evidence(spec.kind, spec.max_num_seqs)
+        evidence = (
+            _bounded_child_evidence(tmp_path)
+            if spec.kind == "composition"
+            else _child_evidence(spec.kind, spec.max_num_seqs)
+        )
         returncode = 0
         if spec.kind == "runtime":
             if failure == "nonzero":
@@ -817,7 +1031,7 @@ def test_runtime_child_routes_exact_mode_and_preserves_production_evidence(
     def composition(config: Path, evidence_dir: Path) -> dict[str, Any]:
         calls.append(("composition", config, evidence_dir))
         (evidence_dir / "composition.json").write_text("{}", encoding="utf-8")
-        return _child_evidence("composition", 1)
+        return _bounded_child_evidence(tmp_path)
 
     def inference(
         kind: str,

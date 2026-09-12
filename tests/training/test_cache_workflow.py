@@ -13,6 +13,7 @@ No production cache root is read or written.
 
 from __future__ import annotations
 
+import concurrent.futures
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -174,6 +175,143 @@ def test_worker_resolution_rejects_non_positive_or_non_integer_workers(
         cache_workflow._resolve_pack_cache_materialization_workers(workers)
 
     assert caught.value.code == "training.pack_cache_workers_invalid"
+
+
+class _GatedEncodingPool:
+    """Workers finish only at collection, exposing eager over-submission."""
+
+    def __init__(self, *, max_workers: int, mp_context: Any) -> None:
+        assert mp_context.get_start_method() == "fork"
+        self.limit = 2 * max_workers
+        self.jobs: dict[concurrent.futures.Future, tuple[Any, int]] = {}
+        self.completion_order: list[int] = []
+        self.peak_unfinished = 0
+
+    def __enter__(self) -> _GatedEncodingPool:
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        pass
+
+    def submit(self, fn: Any, index: int) -> concurrent.futures.Future:
+        unfinished = sum(not future.done() for future in self.jobs)
+        assert unfinished < self.limit, (
+            f"unfinished submissions exceed window: {unfinished + 1} > {self.limit}"
+        )
+        future = concurrent.futures.Future()
+        self.jobs[future] = (fn, index)
+        self.peak_unfinished = max(self.peak_unfinished, unfinished + 1)
+        return future
+
+    def complete(self, future: concurrent.futures.Future) -> None:
+        fn, index = self.jobs[future]
+        self.completion_order.append(index)
+        try:
+            future.set_result(fn(index))
+        except Exception as exc:
+            future.set_exception(exc)
+
+    def wait(self, futures: Any, *, return_when: str) -> tuple[set, set]:
+        assert return_when == concurrent.futures.FIRST_COMPLETED
+        pending = set(futures)
+        # Finish the newest job first: source-index restoration must own order.
+        future = max(pending, key=lambda item: self.jobs[item][1])
+        self.complete(future)
+        return {future}, pending - {future}
+
+    def as_completed(self, futures: Any) -> Any:
+        for future in sorted(futures, key=lambda item: self.jobs[item][1], reverse=True):
+            self.complete(future)
+            yield future
+
+
+@pytest.fixture
+def gated_encoding_pool(monkeypatch: pytest.MonkeyPatch) -> list[_GatedEncodingPool]:
+    pools: list[_GatedEncodingPool] = []
+
+    def create_pool(**kwargs: Any) -> _GatedEncodingPool:
+        pool = _GatedEncodingPool(**kwargs)
+        pools.append(pool)
+        return pool
+
+    monkeypatch.setattr(concurrent.futures, "ProcessPoolExecutor", create_pool)
+    monkeypatch.setattr(
+        concurrent.futures, "wait", lambda *args, **kwargs: pools[-1].wait(*args, **kwargs)
+    )
+    monkeypatch.setattr(
+        concurrent.futures, "as_completed", lambda futures: pools[-1].as_completed(futures)
+    )
+    return pools
+
+
+@pytest.mark.parametrize("example_count", [0, 1, 7, 9, 37])
+def test_parallel_encoding_bounds_submissions_and_restores_canonical_results(
+    monkeypatch: pytest.MonkeyPatch,
+    gated_encoding_pool: list[_GatedEncodingPool],
+    example_count: int,
+) -> None:
+    config, components = object(), object()
+    raw_examples = tuple(range(example_count))
+
+    def encode(example: int, **kwargs: Any) -> dict[str, Any]:
+        assert kwargs == {"config": config, "components": components}
+        return {"example_id": f"example-{example}", "input_ids": [example, 10, 20]}
+
+    monkeypatch.setattr(cache_workflow, "_render_and_encode_example", encode)
+    expected = cache_workflow._build_encoded_examples_for_dataset(
+        config, components, raw_examples, materialization_workers=1
+    )
+    observed = cache_workflow._build_encoded_examples_for_dataset(
+        config, components, raw_examples, materialization_workers=4
+    )
+
+    assert observed == expected
+    pool = gated_encoding_pool[0]
+    assert pool.peak_unfinished == min(example_count, 8)
+    assert sorted(pool.completion_order) == list(raw_examples)
+    if example_count > 1:
+        assert pool.completion_order != list(raw_examples)
+    assert cache_workflow._PACK_CACHE_WORKER_CONTEXT is None
+
+
+def test_parallel_encoding_worker_failure_prevents_cache_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    gated_encoding_pool: list[_GatedEncodingPool],
+) -> None:
+    cache_root = tmp_path / "cache-root"
+    _install_identity(monkeypatch, cache_root)
+    failure = ValueError("controlled encoding failure")
+
+    def encode(example: int, **_kwargs: Any) -> int:
+        if example == 3:
+            raise failure
+        return example
+
+    def build_micro_steps(workers: int) -> tuple[SupervisedMicroStep, ...]:
+        cache_workflow._build_encoded_examples_for_dataset(
+            object(), object(), tuple(range(4)), materialization_workers=workers
+        )
+        return (_micro_step(0),)
+
+    def unexpected_publication(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("worker failure must prevent cache publication")
+
+    monkeypatch.setattr(cache_workflow, "_render_and_encode_example", encode)
+    monkeypatch.setattr(cache_workflow, "write_micro_step_cache", unexpected_publication)
+    with pytest.raises(RuntimeContractError) as caught:
+        cache_workflow._resolve_or_build_pack_cache(
+            SimpleNamespace(), SimpleNamespace(), SimpleNamespace(),
+            repo_root=tmp_path, dataset=SimpleNamespace(), split="train",
+            accelerator=_SingleAccelerator(), rank=0,
+            build_micro_steps=build_micro_steps, materialization_workers=2,
+            verification_level="payloads",
+        )
+    assert caught.value.code == "training.pack_cache_resolution_failed"
+    assert caught.value.__cause__ is failure
+    assert gated_encoding_pool[0].peak_unfinished == 4
+    assert cache_workflow._PACK_CACHE_WORKER_CONTEXT is None
+    assert not cache_dir_for_fingerprint(cache_root, TRAIN_FINGERPRINT).exists()
 
 
 # ---------------------------------------------------------------------------

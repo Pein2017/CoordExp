@@ -160,6 +160,7 @@ def test_exact_resume_policy_identity_excludes_resume_selection() -> None:
         "attention": {"implementation": "flash_attention_2"},
         "profile_sync": {"enabled": False},
         "eval_reduction": {"mode": "disjoint_shard"},
+        "distributed_gradient_reduction": {"bucket_policy": "fixed_initial"},
     }
 
     disabled = _exact_resume_policy_payload(
@@ -1101,6 +1102,82 @@ def test_read_only_admission_rejects_uncommitted_parent_run_state_before_mutatio
         for name, value in model_before.items()
     )
     assert optimizer.state_dict() == optimizer_before
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        None,
+        "parent_rollback",
+        "latest_progress",
+        "selected_digest",
+        "duplicate_selected",
+    ],
+)
+def test_recorded_completed_parent_admits_earlier_checkpoint_without_rollback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mutation: str | None
+) -> None:
+    fixture = (
+        Path(__file__).parents[1]
+        / "fixtures/training_orchestration/completed_parent_publications.json"
+    )
+    run_dir = tmp_path / "parent-run"
+    checkpoint_dir = run_dir / "checkpoints/step-2"
+    checkpoint_dir.mkdir(parents=True)
+    state = json.loads(
+        fixture.read_text().replace("/recorded/parent-run", str(run_dir))
+    )
+    events = state["measurement"]["checkpoint_publication_events"]
+    selected_identity = dict(events[0]["checkpoint_identity"])
+    payload_identity = dict(events[0]["inference_payload_identity"])
+    if mutation == "parent_rollback":
+        state.update(completed_steps=2, consumed_packs=12, checkpoint_event_count=1)
+    elif mutation == "latest_progress":
+        events[-1]["committed_progress"]["completed_steps"] = 2
+    elif mutation == "selected_digest":
+        events[0]["checkpoint_identity"]["training_state_aggregate_digest"] = "0" * 64
+    elif mutation == "duplicate_selected":
+        events.insert(1, dict(events[0]))
+    run_path = run_dir / "run.json"
+    run_path.write_text(json.dumps(state))
+    before = run_path.read_bytes()
+    seen = []
+
+    def admit_payload(path: Path, expected: dict[str, Any]) -> dict[str, Any]:
+        seen.append((path, expected))
+        return payload_identity
+
+    monkeypatch.setattr(
+        run_writer_module, "admit_inference_checkpoint_payload_identity", admit_payload
+    )
+
+    def admit() -> dict[str, Any]:
+        return run_writer_module.admit_exact_resume_checkpoint_publication(
+            checkpoint_dir,
+            checkpoint_step=2,
+            training_state_manifest_file_sha256=selected_identity[
+                "training_state_manifest_file_sha256"
+            ],
+            training_state_aggregate_digest=selected_identity[
+                "training_state_aggregate_digest"
+            ],
+            parent_run_id=state["run_id"],
+            parent_segment_id=state["continuation"]["segment_id"],
+        )
+
+    if mutation is None:
+        result = admit()
+        assert result["event_index"] == 0
+        assert result["committed_progress"]["completed_steps"] == 2
+        assert result["committed_progress"]["consumed_packs"] == 12
+        assert result["checkpoint_identity"] == selected_identity
+        assert seen == [(checkpoint_dir, payload_identity)]
+        assert state["completed_steps"] == 4
+    else:
+        with pytest.raises(Exception) as error:
+            admit()
+        assert error.value.code == "run_writer.exact_resume_publication_invalid"
+    assert run_path.read_bytes() == before
 
 
 def test_parent_run_cannot_roll_back_to_an_older_completed_checkpoint(

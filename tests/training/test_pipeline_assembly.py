@@ -1297,7 +1297,11 @@ def test_pretrainer_failure_finalizes_truthful_terminal_phase(
             "reference_only": {},
         },
     )
-    monkeypatch.setattr(session, "_build_accelerator", lambda precision: accelerator)
+    monkeypatch.setattr(
+        session,
+        "_build_accelerator",
+        lambda precision, *, determinism_mode="legacy": accelerator,
+    )
     monkeypatch.setattr(
         session, "validate_accelerator_runtime", lambda *args, **kwargs: None
     )

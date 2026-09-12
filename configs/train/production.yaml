@@ -1,7 +1,7 @@
-# Canonical single-node training template.  The launcher chooses 1, 2, 3, or
-# 4 processes; effective_batch_size=48 divides evenly across each supported
-# world size.  Exact resume is intentionally opt-in and requires an explicit
-# checkpoint path plus strict CUDA replay.
+# Canonical single-node training template. The launcher chooses the topology;
+# effective_batch_size=48 supports the maintained 1-4 process interface and
+# the explicit eight-process smoke. Exact state publication is opt-in; a new
+# parent uses a null checkpoint path, and a continuation selects a checkpoint.
 schema_version: 1
 
 run:

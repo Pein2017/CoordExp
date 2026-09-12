@@ -19,6 +19,24 @@ _STRICT_ENVIRONMENT = {
 _STRICT_INITIAL_PHASES = frozenset({"pack_cache_preparation", "pipeline_entry"})
 
 
+def resolve_ddp_replay_policy(determinism_mode: str) -> dict[str, Any] | None:
+    if determinism_mode == "legacy":
+        return None
+    if determinism_mode != "strict_cuda_replay_v1":
+        raise RuntimeContractError(
+            "runtime determinism mode is unsupported",
+            code="runtime.determinism_mode_unsupported",
+            context={"mode": determinism_mode},
+        )
+    # Native DDP otherwise rebuilds buckets after the first backward. A fresh
+    # continuation would reduce the same gradients with a different layout.
+    return {
+        "schema_version": 1,
+        "bucket_policy": "fixed_initial",
+        "ddp_kwargs": {"find_unused_parameters": True, "static_graph": False},
+    }
+
+
 @dataclass(frozen=True)
 class TrainingSeedReceipt:
     seed: int
@@ -28,7 +46,7 @@ class TrainingSeedReceipt:
 
     def to_policy_identity_dict(self) -> dict[str, Any]:
         strict = self.determinism_mode == "strict_cuda_replay_v1"
-        return {
+        policy = {
             "schema_version": 1,
             "mode": self.determinism_mode,
             "seed": self.seed,
@@ -44,6 +62,10 @@ class TrainingSeedReceipt:
             },
             "environment": dict(_STRICT_ENVIRONMENT) if strict else {},
         }
+        ddp_policy = resolve_ddp_replay_policy(self.determinism_mode)
+        if ddp_policy is not None:
+            policy["distributed_gradient_reduction"] = ddp_policy
+        return policy
 
     def to_artifact_dict(self) -> dict[str, Any]:
         policy = self.to_policy_identity_dict()
@@ -192,4 +214,4 @@ def _applied_before(phase: str) -> list[str]:
     return []
 
 
-__all__ = ["TrainingSeedReceipt", "seed_training_runtime"]
+__all__ = ["TrainingSeedReceipt", "resolve_ddp_replay_policy", "seed_training_runtime"]

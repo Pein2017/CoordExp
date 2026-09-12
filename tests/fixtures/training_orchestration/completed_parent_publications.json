@@ -1,0 +1,86 @@
+{
+  "checkpoint_event_count": 2,
+  "completed_steps": 4,
+  "consumed_packs": 24,
+  "continuation": {
+    "segment_id": "segment-2fa8034840e2f10ccd3db6bb9f00b1c8"
+  },
+  "final_finite_status": "finite",
+  "final_optimizer_update_status": "applied",
+  "measurement": {
+    "checkpoint_publication_events": [
+      {
+        "checkpoint_identity": {
+          "checkpoint_step": 2,
+          "resolved_path": "/recorded/parent-run/checkpoints/step-2",
+          "training_state_aggregate_digest": "266665ddf1d95f5261091be8c1098806cd9a8ce71e7fd3eac2229870af85ba78",
+          "training_state_manifest_file_sha256": "95acfca20fbee7108a198d1446ab2f6906e22d38d7e73a17ee3b2caa885fa147"
+        },
+        "checkpoint_path": "checkpoints/step-2",
+        "committed_progress": {
+          "completed_steps": 2,
+          "consumed_packs": 12,
+          "finite_status": "finite",
+          "optimizer_update_status": "applied",
+          "schema": "coordexp-infras-checkpoint-committed-progress",
+          "schema_version": 1
+        },
+        "completed_at": "2026-09-12T08:09:43.275106+00:00",
+        "duration_clock": "monotonic",
+        "duration_seconds": 10.577640935778618,
+        "exact_training_state_enabled": true,
+        "failure_code": null,
+        "inference_payload_identity": {
+          "aggregate_digest": "2f77768e2a017d3185994322255d2e1af7bb1b2daa0a0f28024a8a9c2de4f471",
+          "manifest_file_sha256": "08ad66c0047e68fe7436caf2f83fb4462e6e9cf952f3e647208c39f25ae5df9a",
+          "manifest_relative_path": "inference_payload_manifest.json",
+          "schema": "coordexp-infras-inference-checkpoint-payload-publication",
+          "schema_version": 2
+        },
+        "is_final": false,
+        "schema": "coordexp-infras-checkpoint-publication-event",
+        "schema_version": 2,
+        "started_at": "2026-09-12T08:09:32.697441+00:00",
+        "status": "completed",
+        "step": 2
+      },
+      {
+        "checkpoint_identity": {
+          "checkpoint_step": 4,
+          "resolved_path": "/recorded/parent-run/checkpoints/step-4",
+          "training_state_aggregate_digest": "4082815de78539aa21f0b26dc91a0d21fbaf062f111b52c9dc097e5eff9c9403",
+          "training_state_manifest_file_sha256": "d17b861c2c31ed3916ab558ea9bafd50429ad11254d9d5d4cc83aa2aba55852f"
+        },
+        "checkpoint_path": "checkpoints/step-4",
+        "committed_progress": {
+          "completed_steps": 4,
+          "consumed_packs": 24,
+          "finite_status": "finite",
+          "optimizer_update_status": "applied",
+          "schema": "coordexp-infras-checkpoint-committed-progress",
+          "schema_version": 1
+        },
+        "completed_at": "2026-09-12T08:10:47.287797+00:00",
+        "duration_clock": "monotonic",
+        "duration_seconds": 10.019875586032867,
+        "exact_training_state_enabled": true,
+        "failure_code": null,
+        "inference_payload_identity": {
+          "aggregate_digest": "5504bf87ec54ee290e8f724ee1c8d3a32a4a6ad9c1331766057f7e324e48556a",
+          "manifest_file_sha256": "f6bae51111ac5ad7dfcad1a4c0198377e820c9c4ab9f930af404d4b70cd1c31a",
+          "manifest_relative_path": "inference_payload_manifest.json",
+          "schema": "coordexp-infras-inference-checkpoint-payload-publication",
+          "schema_version": 2
+        },
+        "is_final": true,
+        "schema": "coordexp-infras-checkpoint-publication-event",
+        "schema_version": 2,
+        "started_at": "2026-09-12T08:10:37.267898+00:00",
+        "status": "completed",
+        "step": 4
+      }
+    ]
+  },
+  "run_dir": "/recorded/parent-run",
+  "run_id": "production-eight-gpu-candidate-2756cdebaabc"
+}

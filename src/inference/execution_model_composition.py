@@ -11,7 +11,8 @@ from typing import Any
 from src.common.errors import RuntimeContractError
 
 
-EXECUTION_MODEL_COMPOSITION_VERSION = "coordexp-infras-execution-model-composition-v2"
+EXECUTION_MODEL_COMPOSITION_VERSION = "coordexp-infras-execution-model-composition-v3"
+BOUNDED_GENERATION_POLICY = "coordexp-merged-bf16-coordinate-grid1-v1"
 EXECUTION_MODEL_COMPOSITION_NAME = "coordexp_composition_fidelity.json"
 COMPOSITION_SOURCE_RELATIVE_PATH = Path("src/inference/execution_model_composition.py")
 FULL_LOGIT_RTOL = 1e-4
@@ -243,6 +244,13 @@ def build_execution_model_composition_receipt(
         receipt["comparison"],
         materialization_identity=materialization_identity,
     )
+    if receipt["target_dtype"] == "bf16":
+        receipt["bounded_generation"] = build_bounded_generation_evidence(
+            dynamic_generated_ids=comparison.get("dynamic_generated_ids"),
+            materialized_generated_ids=comparison.get("materialized_generated_ids"),
+            snapshot_manifest=_require_mapping(execution_model, "snapshot_manifest"),
+            expected_snapshot_fingerprint=receipt["snapshot_fingerprint"],
+        )
     receipt["digest"] = _digest(receipt)
     return receipt
 
@@ -287,6 +295,17 @@ def validate_execution_model_composition_receipt(
     _validate_resolved_config_identity(
         _require_mapping(payload, "resolved_config_identity")
     )
+    if payload["target_dtype"] == "bf16":
+        bounded = validate_bounded_generation_evidence(
+            _require_mapping(payload, "bounded_generation"),
+            expected_snapshot_fingerprint=_require_sha256(
+                payload, "snapshot_fingerprint"
+            ),
+        )
+        comparison = _require_mapping(payload, "comparison")
+        for field in ("dynamic_generated_ids", "materialized_generated_ids"):
+            if bounded[field] != comparison.get(field):
+                _fail(f"bounded_generation.{field}", "comparison_mismatch")
     if execution_model is not None:
         expected = build_execution_model_composition_linkage(execution_model)
         observed = {
@@ -308,6 +327,185 @@ def validate_execution_model_composition_receipt(
                 context={"expected": expected, "observed": observed},
             )
     return payload
+
+
+def _snapshot_token_identity(
+    snapshot: Mapping[str, object],
+    *,
+    expected_fingerprint: str,
+) -> Any:
+    """Read canonical token values from bytes bound to the existing snapshot.
+
+    The execution-model owner authenticates the complete model. Here we check
+    its manifest fingerprint and only re-read the tokenizer, avoiding repeated
+    full-weight scans when checking bounded generation receipts.
+    """
+    from src.inference.model_assets import SNAPSHOT_MANIFEST_VERSION
+    from src.qwen.tokens import validate_qwen_token_identity
+    from tokenizers import Tokenizer
+    from transformers import PreTrainedTokenizerFast
+
+    if set(snapshot) != {"version", "root", "files", "file_count", "fingerprint"}:
+        _fail("bounded_generation.snapshot_manifest", "fields")
+    files = snapshot.get("files")
+    if (
+        snapshot.get("version") != SNAPSHOT_MANIFEST_VERSION
+        or not isinstance(files, list)
+        or not files
+    ):
+        _fail("bounded_generation.snapshot_manifest", "version/files")
+    if type(snapshot.get("file_count")) is not int or snapshot["file_count"] != len(
+        files
+    ):
+        _fail(
+            "bounded_generation.snapshot_manifest.file_count",
+            snapshot.get("file_count"),
+        )
+    names = []
+    tokenizer_file = None
+    for entry in files:
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "relative_path",
+            "size_bytes",
+            "sha256",
+        }:
+            _fail("bounded_generation.snapshot_manifest.files", "entry_fields")
+        name = _require_string(entry, "relative_path")
+        if Path(name).is_absolute() or ".." in Path(name).parts:
+            _fail("bounded_generation.snapshot_manifest.files", "relative_path")
+        if type(entry["size_bytes"]) is not int or entry["size_bytes"] < 0:
+            _fail("bounded_generation.snapshot_manifest.files", "size_bytes")
+        _require_sha256(entry, "sha256")
+        names.append(name)
+        if name == "tokenizer.json":
+            tokenizer_file = entry
+    if names != sorted(set(names)) or tokenizer_file is None:
+        _fail("bounded_generation.snapshot_manifest.files", "tokenizer_or_order")
+    fingerprint = _digest({"version": snapshot["version"], "files": files})
+    if (
+        fingerprint != snapshot.get("fingerprint")
+        or fingerprint != expected_fingerprint
+    ):
+        _fail(
+            "bounded_generation.snapshot_manifest.fingerprint",
+            "execution_model_mismatch",
+        )
+    root = Path(_require_string(snapshot, "root"))
+    if not root.is_absolute():
+        _fail("bounded_generation.snapshot_manifest.root", "absolute_path_required")
+    try:
+        encoded = (root / "tokenizer.json").read_bytes()
+    except OSError as exc:
+        _fail("bounded_generation.tokenizer", type(exc).__name__)
+    if (
+        len(encoded) != tokenizer_file["size_bytes"]
+        or hashlib.sha256(encoded).hexdigest() != tokenizer_file["sha256"]
+    ):
+        _fail("bounded_generation.tokenizer", "snapshot_bytes_mismatch")
+    try:
+        tokenizer = PreTrainedTokenizerFast(
+            tokenizer_object=Tokenizer.from_str(encoded.decode("utf-8"))
+        )
+        return validate_qwen_token_identity(tokenizer)
+    except Exception as exc:
+        _fail("bounded_generation.tokenizer_identity", type(exc).__name__)
+
+
+def build_bounded_generation_evidence(
+    *,
+    dynamic_generated_ids: object,
+    materialized_generated_ids: object,
+    snapshot_manifest: Mapping[str, object],
+    expected_snapshot_fingerprint: str,
+) -> dict[str, Any]:
+    """Record the approved BF16 composition bound, including honest failures."""
+    identity = _snapshot_token_identity(
+        snapshot_manifest, expected_fingerprint=expected_snapshot_fingerprint
+    )
+    sequences = []
+    for field, value in (
+        ("dynamic_generated_ids", dynamic_generated_ids),
+        ("materialized_generated_ids", materialized_generated_ids),
+    ):
+        if (
+            not isinstance(value, list)
+            or not value
+            or any(
+                type(token) is not int
+                or token < 0
+                or token >= identity.tokenizer_vocab_size
+                for token in value
+            )
+        ):
+            _fail(f"bounded_generation.{field}", "nonempty_integer_token_ids_required")
+        sequences.append(list(value))
+    dynamic, materialized = sequences
+    # The identity orders IDs by canonical coord_0..999 text, never by a
+    # receipt-supplied ordering or arithmetic on tokenizer IDs.
+    coordinates = {
+        token: value for value, token in enumerate(identity.coordinate_token_ids)
+    }
+    dynamic_positions = [i for i, token in enumerate(dynamic) if token in coordinates]
+    materialized_positions = [
+        i for i, token in enumerate(materialized) if token in coordinates
+    ]
+    deltas = [
+        abs(coordinates[a] - coordinates[b])
+        for a, b in zip(dynamic, materialized)
+        if a in coordinates and b in coordinates
+    ]
+    same_length = len(dynamic) == len(materialized)
+    same_coordinate_positions = dynamic_positions == materialized_positions
+    same_noncoordinates = all(
+        (a in coordinates and b in coordinates)
+        or (a == b and a not in coordinates and b not in coordinates)
+        for a, b in zip(dynamic, materialized)
+    )
+    eos = identity.im_end_token_ids[0]
+    same_eos = [i for i, token in enumerate(dynamic) if token == eos] == [
+        i for i, token in enumerate(materialized) if token == eos
+    ]
+    maximum = max(deltas, default=0)
+    return {
+        "policy": BOUNDED_GENERATION_POLICY,
+        "execution_reference": "materialized_bf16",
+        "coordinate_max_abs_delta": 1,
+        "snapshot_manifest": dict(snapshot_manifest),
+        "dynamic_generated_ids": dynamic,
+        "materialized_generated_ids": materialized,
+        "token_count_equal": same_length,
+        "coordinate_positions_equal": same_coordinate_positions,
+        "non_coordinate_tokens_equal": same_noncoordinates,
+        "eos_positions_equal": same_eos,
+        "coordinate_count": len(dynamic_positions),
+        "coordinate_change_count": sum(delta != 0 for delta in deltas),
+        "max_coordinate_value_delta": maximum,
+        "accepted": same_length
+        and same_coordinate_positions
+        and same_noncoordinates
+        and same_eos
+        and maximum <= 1,
+    }
+
+
+def validate_bounded_generation_evidence(
+    value: Mapping[str, object],
+    *,
+    expected_snapshot_fingerprint: str,
+) -> dict[str, Any]:
+    """Recompute the bound; neither a forged map nor a summary can grant it."""
+    expected = build_bounded_generation_evidence(
+        dynamic_generated_ids=value.get("dynamic_generated_ids"),
+        materialized_generated_ids=value.get("materialized_generated_ids"),
+        snapshot_manifest=_require_mapping(value, "snapshot_manifest"),
+        expected_snapshot_fingerprint=expected_snapshot_fingerprint,
+    )
+    if set(value) != set(expected) or any(
+        type(value[key]) is not type(expected[key]) or value[key] != expected[key]
+        for key in expected
+    ):
+        _fail("bounded_generation", "policy_or_recomputed_evidence_mismatch")
+    return expected
 
 
 def _validate_fixture_identity(value: Mapping[str, object]) -> None:
