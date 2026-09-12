@@ -2,56 +2,44 @@
 
 from pathlib import Path
 
-from src.adapters.dora import attach_dora_adapter
-from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
-from src.inference.image_plan import plan_image_batch
-from src.inference.prompt import build_prompt_record
-from src.qwen.native import NativeRequest, prepare_native_inputs
+from src.adapters.dora import attach_dora_adapter, select_dora_parameters
+from src.inference.inputs import plan_examples
+from src.qwen.native import prepare_native_inputs
 from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_options
 from src.qwen.special_token_embeddings import attach_embedding_delta
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "configs/source256.yaml"
 
 
-def processor_config(config):
-    return ProcessorConfig(
-        do_resize=config.model.processor.do_resize,
-        max_raw_pixels=1_000_000_000,
-        max_merged_visual_tokens=1_000_000,
-    )
-
-
-def template_config(config):
-    return TemplateConfig(
-        object_field_order=config.template.object_field_order,
-        object_ordering=config.template.object_ordering,
-        assistant_format=config.template.assistant_format,
-        prompt=TemplatePromptConfig(
-            system=config.template.prompt.system, user=config.template.prompt.user
-        ),
-    )
+def bind_source256_language_dora(
+    model, *, expected_tensor_count, expected_scalar_count, adapter_name="default",
+):
+    """Bind the fixed Source256 surface and return its frozen complement."""
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    named = select_dora_parameters(model, towers=("language",), adapter_name=adapter_name)
+    if not (
+        len(named) == expected_tensor_count == 588
+        and sum(parameter.numel() for _, parameter in named) == expected_scalar_count == 18_006_016
+        and all(
+            "language_model" in name
+            and not any(part in name for part in ("visual", "merger", "embed_tokens", "lm_head"))
+            for name, _ in named
+        )
+    ):
+        raise ValueError("Source256 language DoRA training surface changed")
+    for _, parameter in named:
+        parameter.requires_grad_(True)
+    selected = {id(parameter) for _, parameter in named}
+    frozen = tuple((name, parameter) for name, parameter in model.named_parameters() if id(parameter) not in selected)
+    return named, frozen
 
 
 def build_request(raw, *, config, qwen, row_index=0):
-    image = plan_image_batch(
-        [raw], components=qwen, processor_config=processor_config(config),
-        row_indices=[row_index],
-    ).rows[0]
-    prompt = build_prompt_record(
-        raw, template_config(config), processor=qwen.processor, row_index=row_index,
-        merged_visual_tokens=image.merged_visual_tokens,
-        object_order_seed=config.template.object_order_seed,
+    planned, = plan_examples(
+        [raw], config=config, components=qwen, row_indices=[row_index],
     )
-    request = NativeRequest(
-        request_id=str(raw.example_id), chat_text=prompt.chat_text,
-        image=image.image_path,
-        expected_token_ids=tuple(prompt.expected_executed_prompt_token_ids),
-        expected_image_grid=tuple(image.expected_image_grid_thw),
-        expected_image_size=(image.decoded_width, image.decoded_height),
-        image_sha256=image.image_content_sha256,
-        logical_transform=image.logical_transform_id,
-    )
-    return request, image, prompt
+    return planned.request, planned.image, planned.prompt
 
 
 def materialize(qwen, request):

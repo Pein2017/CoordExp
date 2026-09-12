@@ -130,25 +130,14 @@ def request_and_inputs_for_image(
 
     from src.data import load_raw_examples
     from src.inference.backend import DecodeRequest, GenerationPolicy
-    from src.inference.image_plan import plan_image_batch
-    from probes.logit_lens.runtime import _processor_config, _template_config
-    from src.inference.prompt import build_prompt_record
+    from src.inference.inputs import plan_examples
 
     suffix = f"{int(image_id):012d}"
     matches = [item for item in load_raw_examples(parent.PANEL) if str(item.example_id).endswith(suffix)]
     require(len(matches) == 1, f"expected one Human13 row for image {image_id}, found {len(matches)}")
     raw = matches[0]
-    image = plan_image_batch(
-        [raw], components=frontend.qwen, processor_config=_processor_config(config), row_indices=[0]
-    ).rows[0]
-    prompt = build_prompt_record(
-        raw,
-        _template_config(config),
-        processor=frontend.qwen.processor,
-        row_index=0,
-        merged_visual_tokens=image.merged_visual_tokens,
-        object_order_seed=config.template.object_order_seed,
-    )
+    planned = plan_examples([raw], config=config, components=frontend.qwen)[0]
+    image, prompt = planned.image, planned.prompt
     request = DecodeRequest(
         request_id=request_id,
         chat_text=prompt.chat_text,
@@ -1285,11 +1274,14 @@ def _stage_b_image(
 
 
 def run_stage_b(output: Path) -> int:
+    from probes.logit_lens.runtime import input_source_hashes
+
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     started_unix = time.time()
     started_mono = time.perf_counter()
     runner_hash = parent.sha256_file(Path(__file__))
+    executed_input_sources = input_source_hashes()
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
     progress: dict[str, Any] = {
@@ -1301,6 +1293,7 @@ def run_stage_b(output: Path) -> int:
         "intended_image_ids": list(STAGE_B_IMAGE_IDS),
         "excluded_anchor_image_id": 2299,
         "runner_sha256_at_launch": runner_hash,
+        "executed_input_sources": executed_input_sources,
         "contract": {
             "blocks_1based": list(STAGE_B_BLOCKS),
             "nonfinal_blocks_1based": list(STAGE_B_NONFINAL_BLOCKS),
@@ -1378,6 +1371,7 @@ def run_stage_b(output: Path) -> int:
             "identity": {
                 "runner_path": str(Path(__file__).resolve()),
                 "runner_sha256_at_launch": runner_hash,
+                "executed_input_sources": executed_input_sources,
                 "runner_sha256_at_completion": parent.sha256_file(Path(__file__)),
                 "helper_binding_scope": "maintained_package_sources_at_launch",
                 "parent_helper_path": str(PARENT_HELPER),
@@ -1496,6 +1490,8 @@ def run_stage_b(output: Path) -> int:
 
 
 def main() -> int:
+    from probes.logit_lens.runtime import input_source_hashes
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--stage-b-output-root", type=Path)
@@ -1505,6 +1501,7 @@ def main() -> int:
     output = args.output_root.resolve()
     output.mkdir(parents=True, exist_ok=False)
     runner_sha256_at_launch = parent.sha256_file(Path(__file__))
+    executed_input_sources = input_source_hashes()
     started_unix = time.time()
     started_mono = time.perf_counter()
     if torch.cuda.is_available():
@@ -1518,6 +1515,7 @@ def main() -> int:
         "launch_identity": {
             "runner_path": str(Path(__file__).resolve()),
             "runner_sha256_at_launch": runner_sha256_at_launch,
+            "executed_input_sources": executed_input_sources,
             "helper_binding_scope": "maintained_package_sources_at_launch",
                 "parent_helper_path": str(PARENT_HELPER),
             "parent_helper_sha256": PARENT_HELPER_SHA256,
@@ -1796,6 +1794,7 @@ def main() -> int:
             "identity": {
                 "runner_path": str(Path(__file__).resolve()),
                 "runner_sha256_at_launch": runner_sha256_at_launch,
+                "executed_input_sources": executed_input_sources,
                 "runner_sha256_at_completion": parent.sha256_file(Path(__file__)),
                 "helper_binding_scope": "maintained_package_sources_at_launch",
                 "parent_helper_path": str(PARENT_HELPER),

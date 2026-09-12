@@ -1,0 +1,112 @@
+{
+  "source_git_head": "ef6d44d1196a7043deeef90cefc90136bce9859f",
+  "source_receipt_sha256": "6ccf997b51240038893dfcabfae1e180c59c658400eea3a70151c59751164511",
+  "profiles": [
+    "source256",
+    "logit_lens"
+  ],
+  "rows": [
+    {
+      "example_id": "coco2017_train_000000000030__smoke2obj",
+      "prompt_token_ids_sha256": "dc21acac635d4fddfeca65c2572e453ce5624dab403351da6973b434623b5ca1",
+      "full_target_token_ids_sha256": "90900e66397a2cf9c989fe0c3d94e5f8b3a8fef30a383f614b0d722b264e7969",
+      "supervised_spans_sha256": "be68fbd929508b2719a2a6ec34d7ac30796f1e40cfac73754de78806e210d9e0",
+      "ignored_spans_sha256": "039e7c621e665217c7cc965e33baeaf51c1b458505632be1cc4d625f6ad0a5fd",
+      "realized_object_order_sha256": "c7d82b9700f1bca69a93ee1c4794866be7a9a576e30c03f9c5a060e561272862",
+      "grid": [
+        1,
+        52,
+        78
+      ],
+      "executed_rgb_sha256": "717ea08635737ef030944d9b316646c3d85d432056952d8632c4ceaf9764fd79",
+      "image_file_sha256": "b5888357f78716bb99985638fe0788160c538612d7e67654ee44ceb2ab66de6d",
+      "terminal_eos_id": 151645,
+      "generation_prefix_length": 1362,
+      "native_tensors": {
+        "input_ids": {
+          "shape": [
+            1,
+            1362
+          ],
+          "dtype": "torch.int64",
+          "sha256": "d5e1d7895df9822c4b9abd51cc4733893abfdc61cbcec0910ca778c69e83f984"
+        },
+        "attention_mask": {
+          "shape": [
+            1,
+            1362
+          ],
+          "dtype": "torch.int64",
+          "sha256": "78216d9598c2de0868c5b13a39b0bbd8c75a43047d0435322bdc99ca721a8adf"
+        },
+        "pixel_values": {
+          "shape": [
+            4056,
+            1536
+          ],
+          "dtype": "torch.float32",
+          "sha256": "b2b427361ccb89017970a0d541f38d3dc68d27379f0e8936ddbf822983c7f659"
+        },
+        "image_grid_thw": {
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "torch.int64",
+          "sha256": "0081bb8eae4487da2b9691b8484453420e8b8696696fc4b596998c558fda6540"
+        }
+      }
+    },
+    {
+      "example_id": "coco2017_train_000000000036__smoke2obj",
+      "prompt_token_ids_sha256": "3fba18e878f1f98599328b0f65b1960b96e1ed64d33085cbb9f5859c23153fa7",
+      "full_target_token_ids_sha256": "691de85e47f5891387e9d1eee00932d21552ad5187793b7d273adef3501592dd",
+      "supervised_spans_sha256": "047108522baf085a9bc091b9aa52ce072c1ee5a08ac472719d161e135206d459",
+      "ignored_spans_sha256": "9cbe5d691973b11ed067a866e44c571b62bf78cfad2f09fd43dc89606bd3b211",
+      "realized_object_order_sha256": "ea75236c91aad59fff0a2701cf84809d721387c2ff90770707dc70e56efc5493",
+      "grid": [
+        1,
+        72,
+        54
+      ],
+      "executed_rgb_sha256": "de14fa3d3710b713a44ea441eb30ef8119e4e56807d5458d5f5adf18ddb9b48a",
+      "image_file_sha256": "b39e4b3daefd9c7fc9a05e7e24327f27a945db4b2c5a18991aafef98e60fe799",
+      "terminal_eos_id": 151645,
+      "generation_prefix_length": 1320,
+      "native_tensors": {
+        "input_ids": {
+          "shape": [
+            1,
+            1320
+          ],
+          "dtype": "torch.int64",
+          "sha256": "f287cc99797937e5aa3e354c8e00cf0215bc61af186e698c3aefc8d96a634c11"
+        },
+        "attention_mask": {
+          "shape": [
+            1,
+            1320
+          ],
+          "dtype": "torch.int64",
+          "sha256": "400cd3b7e7ffdbedbc92eaa263df8fd9ef7a27fbbbff37cb5fff7462948ed7c6"
+        },
+        "pixel_values": {
+          "shape": [
+            3888,
+            1536
+          ],
+          "dtype": "torch.float32",
+          "sha256": "9ef4331c50df4240b21291335eab1f72af855c14c3783ebfc19c20ddf4a23546"
+        },
+        "image_grid_thw": {
+          "shape": [
+            1,
+            3
+          ],
+          "dtype": "torch.int64",
+          "sha256": "0e70e3a1f7aefc70234aa8837b449a7eb938ced241048355f660f9b259352e97"
+        }
+      }
+    }
+  ]
+}

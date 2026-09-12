@@ -9,7 +9,7 @@ from typing import Any
 from src.common.errors import EncodingContractError
 from src.config.models import TemplateConfig
 from src.data import RawExample
-from src.templates import render_example
+from src.templates import RenderedExample, render_example
 
 
 TEMPLATE_ID = "coordexp-infras-template-v1"
@@ -79,27 +79,42 @@ def build_prompt_record(
         template_config,
         object_order_seed=object_order_seed,
     )
+    return _prompt_from_rendered(
+        rendered, template_config, processor=processor, row_index=row_index,
+        merged_visual_tokens=merged_visual_tokens,
+    )
+
+
+def _prompt_from_rendered(
+    rendered: RenderedExample,
+    template_config: TemplateConfig,
+    *,
+    processor: Any,
+    row_index: int,
+    merged_visual_tokens: int,
+) -> PromptRecord:
+    """Project a row rendered by the input owner into its generation prefix."""
     messages = tuple(message for message in rendered.messages if message.get("role") != "assistant")
     chat_text = _apply_generation_chat_template(
         processor,
         messages=messages,
-        example_id=raw_example.example_id,
+        example_id=rendered.example_id,
     )
     input_prompt_token_ids = _tokenize_prompt(
         processor,
         chat_text=chat_text,
-        example_id=raw_example.example_id,
+        example_id=rendered.example_id,
     )
     expected_executed_prompt_token_ids = _expand_image_placeholder(
         tokenizer=processor.tokenizer,
         input_prompt_token_ids=input_prompt_token_ids,
         merged_visual_tokens=merged_visual_tokens,
-        example_id=raw_example.example_id,
+        example_id=rendered.example_id,
     )
     return PromptRecord(
-        row_id=raw_example.example_id,
+        row_id=rendered.example_id,
         row_index=row_index,
-        example_id=raw_example.example_id,
+        example_id=rendered.example_id,
         messages=messages,
         prompt_text=rendered.prompt_text,
         chat_text=chat_text,

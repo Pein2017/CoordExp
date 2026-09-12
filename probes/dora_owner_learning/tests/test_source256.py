@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 import pytest
 import torch
@@ -334,6 +335,62 @@ def test_native_ce_target_is_exact_prompt_suffix_through_eos() -> None:
     assert action["action_token_ids"][-1] == prepare.EOS_TOKEN_ID
     assert action["native_ignored_post_eos_token_count"] == 1
     assert prepare.json_sha256(group["prompt_token_ids"]) == group["prompt_token_ids_sha256"]
+
+
+def test_reused_native_ce_plan_rejects_identity_eos_and_span_corruption() -> None:
+    from src.config.fingerprint import sha256_json
+    from src.inference.runtime import assemble_frontend
+    from src.inference.inputs import plan_examples
+
+    config = load_research_infer_config(prepare.SOURCE_INFER_CONFIG).config
+    frontend = assemble_frontend(config, generation_config_fingerprint=sha256_json(config.generation.model_dump(mode="json")))
+    raw = _first_raw()
+    planned, = plan_examples([raw], config=config, components=frontend.qwen, target_max_length=12000)
+    target = planned.target
+    assert target is not None
+    group = prepare._native_ce_group_from_plan(raw, index=0, planned=planned)
+    assert group == prepare._native_ce_group(raw, index=0, config=config, frontend=frontend)
+    bad_eos = list(target.input_ids)
+    bad_eos[target.supervised_token_spans[-1].physical_token_end - 1] = 7
+    wrong_prefix = list(target.input_ids)
+    wrong_prefix[0] += 1
+    bad_spans = (replace(target.supervised_token_spans[0], physical_token_end=target.supervised_token_spans[0].physical_token_end - 1),
+                 *target.supervised_token_spans[1:])
+    for changed, message in (
+        (replace(planned, target=None), "missing its annotated target"),
+        (replace(planned, prompt=replace(planned.prompt, row_index=1)), "planned row identity"),
+        (replace(planned, target=replace(target, input_ids=tuple(bad_eos))), "does not end"),
+        (replace(planned, target=replace(target, input_ids=tuple(wrong_prefix))), "prefix differs"),
+        (replace(planned, target=replace(target, supervised_token_spans=bad_spans)), "not contiguous"),
+        (replace(planned, target=replace(target, ignored_token_spans=(replace(target.ignored_token_spans[0], physical_token_start=0),))), "post-EOS"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            prepare._native_ce_group_from_plan(raw, index=0, planned=changed)
+
+
+def test_strict_preflight_reuses_plans_and_keeps_source_gate(monkeypatch):
+    from probes.dora_owner_learning import preflight
+    from src.inference import inputs
+
+    counts = {"render": 0, "image_plan": 0, "materialize": 0}
+
+    def count(key, operation):
+        def call(*args, **kwargs):
+            counts[key] += 1
+            return operation(*args, **kwargs)
+        return call
+
+    monkeypatch.setattr(inputs, "render_example", count("render", inputs.render_example))
+    monkeypatch.setattr(inputs, "plan_qwen_image", count("image_plan", inputs.plan_qwen_image))
+    monkeypatch.setattr(preflight, "prepare_native_inputs", count("materialize", preflight.prepare_native_inputs))
+    result = preflight.preflight(rows=2)
+    assert counts == {"render": 2, "image_plan": 2, "materialize": 2}
+    assert result["model_weights_loaded"] is False and result["population_count"] == 256
+    assert all(row["ends_at_eos"] for row in result["rows"])
+    monkeypatch.setattr(preflight, "TRAIN256_SHA256", "wrong source")
+    with pytest.raises(ValueError, match="input identity"):
+        preflight.preflight(rows=2)
+    assert counts == {"render": 2, "image_plan": 2, "materialize": 2}
 
 
 def test_ddp_objective_scaling_matches_global_ce_and_rloo_formulas() -> None:

@@ -15,7 +15,10 @@ from src.coordinate_targets import (
     coordinate_target_to_artifact,
 )
 from src.data import RawExample
-from src.qwen.images import QwenImageEncoding, encode_qwen_image, plan_qwen_image
+from src.qwen.images import (
+    QwenImageEncoding, _logical_transform_from_example, encode_qwen_image,
+    plan_qwen_image,
+)
 from src.qwen.tokens import IM_END_SUFFIX
 from src.templates import RenderedExample, RenderedSpan, validate_rendered_spans
 
@@ -136,6 +139,7 @@ def encode_rendered_example(
     processor_config: ProcessorConfig,
     global_max_length: int,
     materialize_image_pixels: bool = True,
+    _image_encoding: QwenImageEncoding | None = None,
 ) -> EncodedExample:
     if raw_example.example_id != rendered.example_id:
         raise EncodingContractError(
@@ -154,7 +158,26 @@ def encode_rendered_example(
         )
     validate_rendered_spans(rendered.supervised_response_text, rendered.spans)
 
-    image_encoding = (
+    if _image_encoding is not None:
+        plan = _image_encoding.plan
+        vision = components.processor_identity
+        transform_id, transform_matrix = _logical_transform_from_example(raw_example)
+        if materialize_image_pixels or (
+            plan.example_id != raw_example.example_id
+            or plan.image_path != raw_example.image.path
+            or (plan.width, plan.height) != (raw_example.image.width, raw_example.image.height)
+            or (plan.logical_transform_id, plan.logical_transform_matrix) != (transform_id, transform_matrix)
+            or (plan.patch_size, plan.merge_size, plan.temporal_patch_size)
+            != (vision.patch_size, vision.merge_size, vision.temporal_patch_size)
+            or (plan.max_raw_pixels, plan.max_merged_visual_tokens)
+            != (processor_config.max_raw_pixels, processor_config.max_merged_visual_tokens)
+        ):
+            raise EncodingContractError(
+                "reused image plan differs from the target row or processor",
+                code="qwen.reused_image_plan_mismatch",
+                context={"example_id": raw_example.example_id},
+            )
+    image_encoding = _image_encoding if _image_encoding is not None else (
         encode_qwen_image(
             raw_example,
             components=components,

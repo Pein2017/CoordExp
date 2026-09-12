@@ -1,0 +1,34 @@
+{
+  "ce": 11.529399871826172,
+  "frozen_names": [
+    "frozen"
+  ],
+  "gradients": {
+    "model.language_model.layers.0.q_proj.lora_A.default.weight": [
+      4.0183454075304326e-06
+    ],
+    "model.language_model.layers.0.q_proj.lora_B.default.weight": [
+      4.440954398887698e-06
+    ],
+    "model.language_model.layers.0.q_proj.lora_magnitude_vector.default.weight": [
+      -0.49999508261680603
+    ]
+  },
+  "kl": 0.0,
+  "loss": 5.764699935913086,
+  "ordered_names_sha256": "3d095a771d2f86133c1a458de52dc63da9d4083de2ae31cf9e9473039dd6f3a5",
+  "selected_count": 588,
+  "selected_scalars": 18006016,
+  "trainable_names_match": true,
+  "updated": {
+    "model.language_model.layers.0.q_proj.lora_A.default.weight": [
+      0.19990025460720062
+    ],
+    "model.language_model.layers.0.q_proj.lora_B.default.weight": [
+      0.29990023374557495
+    ],
+    "model.language_model.layers.0.q_proj.lora_magnitude_vector.default.weight": [
+      0.4000999927520752
+    ]
+  }
+}

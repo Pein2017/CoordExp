@@ -1,4 +1,7 @@
 import copy
+import importlib
+import json
+from pathlib import Path
 
 import pytest
 import torch
@@ -8,6 +11,39 @@ from probes.dora_owner_learning.selective_preservation import (
 )
 
 EOS = 151645
+
+
+@pytest.mark.parametrize("suffix", ["", "_wide", "_dense", "_strong", "_seven", "_stable"])
+def test_fresh_profile_preparation_captures_shared_input_sources(tmp_path, suffix):
+    profile = importlib.import_module(f"probes.dora_owner_learning.selective_preservation{suffix}")
+    output = tmp_path / "prepared"
+    profile.prepare(output)
+    identity = json.loads((output / "code_identity.json").read_text())
+    files = {Path(row["path"]).resolve(): row for row in identity["files"]}
+    for source in (Path(profile.__file__).with_name("runtime.py"), Path("src/inference/inputs.py"),
+                   Path("src/inference/prompt.py"), Path("src/inference/image_plan.py"),
+                   Path("src/qwen/encoding.py"), Path("src/qwen/images.py")):
+        record = files[source.resolve()]
+        assert file_hash(source) == record["sha256"] == file_hash(Path(record["staged"]))
+
+
+def test_fresh_source_snapshot_changes_with_shared_helper_bytes(tmp_path, monkeypatch):
+    from probes.dora_owner_learning import selective_preservation as profile
+
+    output = tmp_path / "prepared"
+    source = Path("src/inference/inputs.py").resolve()
+    changed_source = tmp_path / "changed-inputs.py"
+    changed_source.write_bytes(source.read_bytes() + b"\n# changed producer fixture\n")
+    copyfile = profile.shutil.copyfile
+
+    def copy_changed_helper(src, dst, **kwargs):
+        return copyfile(changed_source if Path(src).resolve() == source else src, dst, **kwargs)
+
+    monkeypatch.setattr(profile.shutil, "copyfile", copy_changed_helper)
+    profile.prepare(output)
+    identity = json.loads((output / "code_identity.json").read_text())
+    record = next(row for row in identity["files"] if Path(row["path"]) == source)
+    assert record["sha256"] == file_hash(changed_source) != file_hash(source)
 
 
 def fixture(length=4):

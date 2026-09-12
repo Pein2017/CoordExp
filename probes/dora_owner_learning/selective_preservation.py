@@ -105,6 +105,7 @@ def prepare(output):
              Path(__file__).with_name('train.py'), Path(__file__).with_name('runtime.py'),
              Path(__file__).with_name('entrance_ce.py'), Path(__file__).with_name('branch_bridge.py')]
     files += list(Path('src/qwen').glob('*.py')) + [Path('src/losses/token_scores.py'), Path('src/adapters/dora.py')]
+    files += [Path('src/inference/inputs.py'), Path('src/inference/prompt.py'), Path('src/inference/image_plan.py')]
     records = []
     for path in files:
         target = output / 'effective_code' / str(path.resolve()).lstrip('/')
@@ -125,8 +126,7 @@ def execute(output):
     from src.data import load_raw_examples
     from src.inference.runtime import assemble_frontend
     from src.qwen.native import prepare_replay
-    from src.adapters.dora import select_dora_parameters
-    from .runtime import load_policy
+    from .runtime import bind_source256_language_dora, load_policy
     from .train import (EXPECTED_TRAINABLE_TENSORS, EXPECTED_TRAINABLE_SCALARS,
                         _materialize_group, _parameter_layout, _tensor_state_hash, _save_adapter_only)
     require(os.environ.get('CUDA_VISIBLE_DEVICES') == '0', 'GPU0 only')
@@ -170,15 +170,10 @@ def execute(output):
             counters['actual_model_forwards'] += 1
             require(counters['actual_model_forwards'] <= 96, 'actual model forward cap')
         model.register_forward_pre_hook(count_forward)
-        for p in model.parameters():
-            p.requires_grad_(False)
-        named = select_dora_parameters(model, towers=('language',), adapter_name='default')
-        require(len(named) == EXPECTED_TRAINABLE_TENSORS == 588 and sum(p.numel() for _, p in named) == EXPECTED_TRAINABLE_SCALARS == 18006016 and
-                all('language_model' in n and not any(x in n for x in ('visual', 'merger', 'embed_tokens', 'lm_head')) for n, _ in named), 'training surface')
-        for _, p in named:
-            p.requires_grad_(True)
-        selected = {id(p) for _, p in named}
-        frozen = [(n, p) for n, p in model.named_parameters() if id(p) not in selected]
+        named, frozen = bind_source256_language_dora(
+            model, expected_tensor_count=EXPECTED_TRAINABLE_TENSORS,
+            expected_scalar_count=EXPECTED_TRAINABLE_SCALARS,
+        )
         frozen_versions = [(p, p._version) for _, p in frozen]
         frozen_hash = _tensor_state_hash(frozen)
         source_hash = _tensor_state_hash(named)

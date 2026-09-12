@@ -5,6 +5,21 @@ from dataclasses import is_dataclass, replace
 from types import SimpleNamespace
 from typing import Any, cast
 
+
+def input_source_hashes():
+    """Bind fresh input execution without rewriting historical producer fields."""
+    from pathlib import Path
+    from src.config.fingerprint import sha256_file
+
+    root = Path(__file__).resolve().parents[2]
+    return {path: sha256_file(root / path) for path in (
+        "probes/human13/runtime.py", "src/inference/inputs.py",
+        "src/inference/prompt.py", "src/inference/image_plan.py",
+        "src/qwen/encoding.py", "src/qwen/images.py", "src/qwen/native.py",
+        "src/templates/renderer.py",
+    )}
+
+
 def derive_hf_fp32_sdpa_batch_one_launch(launch: Any) -> Any:
     """Derive batch-one census execution without changing content identities."""
 
@@ -63,6 +78,7 @@ def validate_hf_fp32_sdpa_batch_one(launch: Any, receipt: Any) -> dict[str, obje
         "model_identity": dict(receipt.model_identity),
         "tokenizer_identity": dict(receipt.tokenizer_identity),
         "processor_identity": dict(receipt.processor_identity),
+        "executed_input_sources": input_source_hashes(),
     }
     return identity
 
@@ -82,57 +98,17 @@ def physical_image_id(example: Any) -> int | str:
     return str(example.example_id)
 
 
-def _processor_config(config: Any) -> Any:
-    from src.config.models import ProcessorConfig
-
-    return ProcessorConfig(
-        do_resize=config.model.processor.do_resize,
-        max_raw_pixels=1_000_000_000,
-        max_merged_visual_tokens=1_000_000,
-    )
-
-
-def _template_config(config: Any) -> Any:
-    from src.config.models import TemplateConfig, TemplatePromptConfig
-
-    return TemplateConfig(
-        object_field_order=config.template.object_field_order,
-        object_ordering=config.template.object_ordering,
-        assistant_format=config.template.assistant_format,
-        prompt=TemplatePromptConfig(
-            system=config.template.prompt.system,
-            user=config.template.prompt.user,
-        ),
-    )
-
-
 def _build_requests(config: Any, frontend: Any, raw_examples: Sequence[Any]) -> list[Any]:
-    from src.inference.image_plan import plan_image_batch
-    from src.inference.prompt import build_prompt_record
+    from src.inference.inputs import plan_examples
+    from src.inference.backend import DecodeRequest, GenerationPolicy
 
-    plans = plan_image_batch(
-        list(raw_examples),
-        components=frontend.qwen,
-        processor_config=_processor_config(config),
-        row_indices=list(range(len(raw_examples))),
-    )
-    by_id = {row.row_id: row for row in plans.rows}
+    plans = plan_examples(raw_examples, config=config, components=frontend.qwen)
     requests: list[Any] = []
-    for index, example in enumerate(raw_examples):
-        row = by_id[example.example_id]
-        record = build_prompt_record(
-            example,
-            _template_config(config),
-            processor=frontend.qwen.processor,
-            row_index=index,
-            merged_visual_tokens=row.merged_visual_tokens,
-            object_order_seed=config.template.object_order_seed,
-        )
-        from src.inference.backend import DecodeRequest, GenerationPolicy
-
+    for planned in plans:
+        row, record = planned.image, planned.prompt
         requests.append(
             DecodeRequest(
-                request_id=str(example.example_id),
+                request_id=planned.request.request_id,
                 chat_text=record.chat_text,
                 input_prompt_token_ids=tuple(record.input_prompt_token_ids),
                 expected_executed_prompt_token_ids=tuple(record.expected_executed_prompt_token_ids),

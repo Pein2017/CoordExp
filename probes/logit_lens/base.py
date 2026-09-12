@@ -351,24 +351,13 @@ def _request_and_inputs(
 ) -> tuple[Any, dict[str, Any], list[int], dict[str, Any]]:
     from src.data import load_raw_examples
     from src.inference.backend import DecodeRequest, GenerationPolicy
-    from src.inference.image_plan import plan_image_batch
-    from probes.logit_lens.runtime import _processor_config, _template_config
-    from src.inference.prompt import build_prompt_record
+    from src.inference.inputs import plan_examples
 
     raw = next(item for item in load_raw_examples(PANEL) if str(item.example_id).endswith("000000002299"))
     require(len(raw.objects) == 46, "Image2299 annotated-owner count changed")
     require(sum(obj.description == "person" for obj in raw.objects) == 38, "Image2299 person count changed")
-    image = plan_image_batch(
-        [raw], components=frontend.qwen, processor_config=_processor_config(config), row_indices=[0]
-    ).rows[0]
-    prompt = build_prompt_record(
-        raw,
-        _template_config(config),
-        processor=frontend.qwen.processor,
-        row_index=0,
-        merged_visual_tokens=image.merged_visual_tokens,
-        object_order_seed=config.template.object_order_seed,
-    )
+    planned = plan_examples([raw], config=config, components=frontend.qwen)[0]
+    image, prompt = planned.image, planned.prompt
     request = DecodeRequest(
         request_id=request_id,
         chat_text=prompt.chat_text,
@@ -676,6 +665,8 @@ def _runtime_identity() -> dict[str, Any]:
 
 
 def _identity_receipt(resolved: Any, *, source_gate: Mapping[str, Any]) -> dict[str, Any]:
+    from probes.logit_lens.runtime import input_source_hashes
+
     root = Path(__file__).resolve().parents[2]
     source_adapter_file = SOURCE_ADAPTER / "adapter_model.safetensors"
     overfit_adapter_file = OVERFIT_ADAPTER / "adapter_model.safetensors"
@@ -689,6 +680,7 @@ def _identity_receipt(resolved: Any, *, source_gate: Mapping[str, Any]) -> dict[
         ).stdout.strip(),
         "runner_path": str(Path(__file__).resolve()),
         "runner_sha256_at_launch": sha256_file(Path(__file__)),
+        "executed_input_sources": input_source_hashes(),
         "config": resolved.to_artifact_dict(),
         "config_entry_sha256": sha256_file(CONFIG),
         "source_training_resolved_config_path": str(SOURCE_TRAIN_CONFIG),

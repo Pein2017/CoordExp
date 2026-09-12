@@ -26,9 +26,9 @@ from src.config.inference import (
     resolve_infer_run_directory,
     validate_infer_input_paths,
 )
-from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 from src.config.writer import write_resolved_config_artifacts
 from src.data import RawExample, load_raw_examples
+from src.inference.inputs import processor_config, template_config
 from src.inference.artifacts import (
     benchmark_scope_eligible,
     stringify_mapping_keys,
@@ -587,7 +587,7 @@ def _execute_indexed_rows(
     image_plan_batch = plan_image_batch(
         raw_examples,
         components=qwen,
-        processor_config=_processor_config(resolved.config),
+        processor_config=processor_config(resolved.config),
         row_indices=[row_index for row_index, _ in indexed_raw_examples],
     )
     image_plan_by_row_id = {
@@ -596,7 +596,7 @@ def _execute_indexed_rows(
     prompt_records = [
         build_prompt_record(
             raw_example,
-            _template_config(resolved.config),
+            template_config(resolved.config),
             processor=qwen.processor,
             row_index=row_index,
             merged_visual_tokens=image_plan_by_row_id[
@@ -1111,26 +1111,6 @@ def _model_config(qwen: Any) -> Any:
     if model is not None and hasattr(model, "config"):
         return model.config
     return qwen
-
-
-def _processor_config(config: InferConfig) -> ProcessorConfig:
-    return ProcessorConfig(
-        do_resize=config.model.processor.do_resize,
-        max_raw_pixels=1_000_000_000,
-        max_merged_visual_tokens=1_000_000,
-    )
-
-
-def _template_config(config: InferConfig) -> TemplateConfig:
-    return TemplateConfig(
-        object_field_order=config.template.object_field_order,
-        object_ordering=config.template.object_ordering,
-        assistant_format=config.template.assistant_format,
-        prompt=TemplatePromptConfig(
-            system=config.template.prompt.system,
-            user=config.template.prompt.user,
-        ),
-    )
 
 
 def _generation_policy(config: InferConfig) -> dict[str, Any]:

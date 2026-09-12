@@ -118,6 +118,7 @@ def prepare(output):
            Path(__file__).with_name('selective_preservation_dense.py'),Path(__file__).with_name('selective_preservation.py'),
            Path(__file__).with_name('train.py'),Path(__file__).with_name('runtime.py'),Path(__file__).with_name('entrance_ce.py')]
     files+=list(Path('src/qwen').glob('*.py'))+[Path('src/losses/token_scores.py'),Path('src/adapters/dora.py')]
+    files += [Path('src/inference/inputs.py'), Path('src/inference/prompt.py'), Path('src/inference/image_plan.py')]
     records=[]
     for path in files:
         target=output/'effective_code'/str(path.resolve()).lstrip('/');target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(path,target)
@@ -136,8 +137,7 @@ def execute_rank(output):
     from src.data import load_raw_examples
     from src.inference.runtime import assemble_frontend
     from src.qwen.native import prepare_replay
-    from src.adapters.dora import select_dora_parameters
-    from .runtime import load_policy
+    from .runtime import bind_source256_language_dora, load_policy
     from .train import (_materialize_group,_parameter_layout,_tensor_state_hash,_save_adapter_only,
                         _dist_values,_all_true,EXPECTED_TRAINABLE_TENSORS,EXPECTED_TRAINABLE_SCALARS)
     rank,local,world=[int(os.environ.get(k,'-1')) for k in ('RANK','LOCAL_RANK','WORLD_SIZE')]
@@ -191,13 +191,10 @@ def execute_rank(output):
         visual=[m for n,m in model.named_modules() if n.endswith('visual')]
         require(len(visual)==1,'vision counter identity')
         visual[0].register_forward_pre_hook(count_image)
-        for p in model.parameters():p.requires_grad_(False)
-        named=select_dora_parameters(model,towers=('language',),adapter_name='default')
-        require(len(named)==EXPECTED_TRAINABLE_TENSORS==588 and sum(p.numel() for _,p in named)==EXPECTED_TRAINABLE_SCALARS==18006016 and
-                all('language_model' in n and not any(x in n for x in ('visual','merger','embed_tokens','lm_head')) for n,_ in named),'DoRA training surface')
-        for _,p in named:p.requires_grad_(True)
-        selected={id(p) for _,p in named}
-        frozen=[(n,p) for n,p in model.named_parameters() if id(p) not in selected]
+        named, frozen = bind_source256_language_dora(
+            model, expected_tensor_count=EXPECTED_TRAINABLE_TENSORS,
+            expected_scalar_count=EXPECTED_TRAINABLE_SCALARS,
+        )
         initial_adapter=_tensor_state_hash(named)
         initial_frozen=_tensor_state_hash(frozen)
         require(len(set(gather((initial_adapter,initial_frozen))))==1,'initial rank tensors differ')

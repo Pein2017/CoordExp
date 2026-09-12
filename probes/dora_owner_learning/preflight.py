@@ -8,10 +8,11 @@ from src.config.inference import load_research_infer_config
 from src.config.fingerprint import sha256_json
 from src.data import load_raw_examples
 from src.inference.runtime import assemble_frontend
+from src.inference.inputs import plan_examples
 from src.qwen.native import prepare_native_inputs
 
-from .prepare import EOS_TOKEN_ID, TRAIN256_SHA256, _native_ce_group, file_sha256, validate_plan
-from .runtime import DEFAULT_CONFIG, build_request
+from .prepare import EOS_TOKEN_ID, TRAIN256_SHA256, _native_ce_group_from_plan, file_sha256, validate_plan
+from .runtime import DEFAULT_CONFIG
 
 
 def preflight(config_path=DEFAULT_CONFIG, *, rows=1, plan=None):
@@ -30,12 +31,12 @@ def preflight(config_path=DEFAULT_CONFIG, *, rows=1, plan=None):
     )
     if frontend.qwen.model is not None:
         raise ValueError("CPU encoding preflight unexpectedly loaded model weights")
-    encoded = [_native_ce_group(raw, index=index, config=config, frontend=frontend)
-               for index, raw in enumerate(examples[:rows])]
+    planned = plan_examples(examples[:rows], config=config, components=frontend.qwen, target_max_length=12000)
+    encoded = [_native_ce_group_from_plan(raw, index=index, planned=item)
+               for index, (raw, item) in enumerate(zip(examples[:rows], planned, strict=True))]
     media = []
-    for index, (raw, group) in enumerate(zip(examples[:rows], encoded, strict=True)):
-        request, _, _ = build_request(raw, config=config, qwen=frontend.qwen, row_index=index)
-        batch = prepare_native_inputs(frontend.qwen.processor, (request,), device="cpu", record_media_identity=True)
+    for item, group in zip(planned, encoded, strict=True):
+        batch = prepare_native_inputs(frontend.qwen.processor, (item.request,), device="cpu", record_media_identity=True)
         if (list(batch.prompt_token_ids[0]) != group["prompt_token_ids"]
                 or list(batch.image_grids[0]) != group["expected_image_grid_thw"]):
             raise ValueError("native CPU inputs differ from planned CE encoding")

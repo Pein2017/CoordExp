@@ -15,7 +15,8 @@ from typing import Any, Mapping, Sequence
 from src.config.inference import load_research_infer_config
 from src.eval.assignment import global_matches as _global_matches
 from .reward_rows import _gt_objects, _pred_objects
-from .runtime import DEFAULT_CONFIG, processor_config, template_config
+from .runtime import DEFAULT_CONFIG
+from src.inference.inputs import PlannedExample, plan_examples
 from .sample import (  # noqa: E402
     SCHEMA_VERSION as ROLLOUT_SCHEMA,
     validate_artifact_payload,
@@ -266,27 +267,20 @@ def _validate_previous_round(
 
 
 def _native_ce_group(raw: Any, *, index: int, config: Any, frontend: Any) -> dict[str, Any]:
-    from src.inference.prompt import build_prompt_record
-    from src.qwen.encoding import encode_rendered_example
-    from src.templates import render_example
-
-    template = template_config(config)
-    rendered = render_example(raw, template, object_order_seed=config.template.object_order_seed)
-    encoded = encode_rendered_example(
-        raw,
-        rendered,
-        components=frontend.qwen,
-        processor_config=processor_config(config),
-        global_max_length=12000,
-        materialize_image_pixels=False,
+    planned, = plan_examples(
+        [raw], config=config, components=frontend.qwen, row_indices=[index], target_max_length=12000,
     )
-    prompt = build_prompt_record(
-        raw,
-        template,
-        processor=frontend.qwen.processor,
-        row_index=index,
-        merged_visual_tokens=encoded.image_encoding.merged_visual_tokens,
-        object_order_seed=config.template.object_order_seed,
+    return _native_ce_group_from_plan(raw, index=index, planned=planned)
+
+
+def _native_ce_group_from_plan(raw: Any, *, index: int, planned: PlannedExample) -> dict[str, Any]:
+    encoded, prompt = planned.target, planned.prompt
+    require(encoded is not None, "native CE plan is missing its annotated target")
+    require(
+        encoded.example_id == prompt.example_id == str(raw.example_id)
+        and prompt.row_index == index
+        and Path(planned.image.image_path).resolve() == raw.image.path.resolve(),
+        "native CE planned row identity changed",
     )
     spans = encoded.supervised_token_spans
     ignored = encoded.ignored_token_spans

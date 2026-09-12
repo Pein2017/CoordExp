@@ -1,26 +1,21 @@
 """Concrete Source/overfit model attachment and native request preparation."""
 from __future__ import annotations
 from types import SimpleNamespace
-from src.config.inference import InferConfig
-from src.config.models import ProcessorConfig, TemplateConfig, TemplatePromptConfig
 
-def _processor_config(config: InferConfig) -> ProcessorConfig:
-    return ProcessorConfig(
-        do_resize=config.model.processor.do_resize,
-        max_raw_pixels=1_000_000_000,
-        max_merged_visual_tokens=1_000_000,
-    )
 
-def _template_config(config: InferConfig) -> TemplateConfig:
-    return TemplateConfig(
-        object_field_order=config.template.object_field_order,
-        object_ordering=config.template.object_ordering,
-        assistant_format=config.template.assistant_format,
-        prompt=TemplatePromptConfig(
-            system=config.template.prompt.system,
-            user=config.template.prompt.user,
-        ),
-    )
+def input_source_hashes():
+    """Fresh execution dependencies; historical receipts remain unchanged."""
+    from pathlib import Path
+    from src.config.fingerprint import sha256_file
+
+    root = Path(__file__).resolve().parents[2]
+    return {path: sha256_file(root / path) for path in (
+        "probes/logit_lens/runtime.py", "probes/logit_lens/base.py",
+        "probes/logit_lens/causal.py", "src/inference/inputs.py",
+        "src/inference/prompt.py", "src/inference/image_plan.py",
+        "src/qwen/encoding.py", "src/qwen/images.py", "src/qwen/native.py",
+        "src/templates/renderer.py",
+    )}
 
 
 def load_source_components(launch):
