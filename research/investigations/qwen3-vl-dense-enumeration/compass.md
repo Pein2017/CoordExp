@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-09-11
+updated: 2026-09-12
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -20,7 +20,49 @@ checkpoint.
 
 ## Current questions and evidence
 
-### Completed Stable50 continuation and current recommendation
+### Completed parallel owner-enumeration portfolio
+
+The user authorized [five independent research lanes](experiments/2026-09-12-parallel-owner-research/portfolio.md)
+on2026-09-12, with Astra-first ownership, eight GPUs and no total spend ceiling.
+All five initial lanes are now lead-accepted and closed:
+
+- [Fresh256 transfer](experiments/2026-09-12-parallel-owner-research/transfer/results.md):
+  C-Stable TP50/60/80=+2/-2/0, with lower burden concentrated in two images;
+  no robust broad owner gain or C-over-D advantage.
+- [History learning](experiments/2026-09-12-parallel-owner-research/history/results.md):
+  fixedP already repairs both targets naturally and under untrainedQ. Mixture
+  adds no target benefit and increases off-target burden; neither arm improves
+  aggregate384 owner coverage over Stable50.
+- [Composition](experiments/2026-09-12-parallel-owner-research/composition/residual-results.md):
+  the original B abilities already follow A; both fixed residual trials lose
+  existing A-path owners. No composition training was admitted.
+- [Greedy dynamics](experiments/2026-09-12-parallel-owner-research/dynamics/results.md):
+  full-suffix escape depends on history and chosen branch; short nonrepeat
+  does not establish escape from recurrence.
+- [Instance-state controls](experiments/2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md):
+  same-image coordinate-carrier intervention yields useful417044 enumeration,
+  but magnitude-matched wrong-region B also escapes. Key-only A is locally
+  sufficient; no abstract owner-ledger identification is established.
+
+The user highlighted valid unlabeled owners in the417044 output. A subsequent
+[screened-data pilot](experiments/2026-09-12-parallel-owner-research/data-flywheel/unit.md)
+also completed: one32-update fit of25reviewed literal rows (11GT-matched,
+14unlabeled candidates), followed by natural no-KV generation and exposed384
+retention on8GPUs. Natural reviewed-owner coverage remains3/25, with24fewer
+legacyTP50,107more repeats and277more parserdrops. Candidate acquisition is
+useful, but this fixed learning recipe did not close the flywheel. Its teacher
+histories still have12non-argmax tokens, so pixel-equivalent free-history
+drift is not an established cause. This is finite-image learning evidence,
+not unseen-image flywheel generalization or automatic ground-truth creation.
+The [full portfolio is closed](experiments/2026-09-12-parallel-owner-research/results.md);
+no checkpoint is promoted and no further model work remains granted.
+
+Historical single-control grants and recommendations below remain archived
+evidence, not current launch authority. Their request for fresh evaluation is
+now answered by the fresh256 lane above; do not repeat it or treat its panel
+as available training/candidate-selection data.
+
+### Historical Stable50 continuation and preceding recommendation
 
 **Latest closeout:** the [positive-progress-matched control](experiments/2026-09-11-positive-progress-matched-control/results.md)
 is complete. A17's positive NLL differs from C32 by0.75%, with identical three
