@@ -1,6 +1,6 @@
 ---
 name: native-agent-team-guidance
-description: Choose native agent-team topology, package ownership, model and effort, and concise message flow when delegation can reduce time or lead context; choose direct, flat, or bounded nested delegation by package shape and authorization.
+description: Choose native agent-team topology, package ownership, model and effort, and concise message flow when delegation can reduce time or lead context; choose direct, flat, or bounded nested delegation by package shape and authorization, and learn cost-aware routes from lead-accepted task evidence.
 ---
 
 # Native Agent Team Guide
@@ -42,32 +42,65 @@ the lead will repeat its entire investigation anyway.
 
 ## Model and effort routing
 
-Prefer Luna `max` and Sol for subagents; keep Astra primarily in the main
-thread for framing, integration, and final acceptance. This is the user's
-cost-conscious routing preference, not a measured claim of equal quality.
-Choose directly by task difficulty and verifier strength, not a mandatory
-escalation ladder. Check actual callable models, efforts, and fork inheritance
-constraints before dispatch. Effort buys search depth, not authority.
+The main lead dynamically chooses and revises subagent routes to minimize
+expected monetary cost through acceptance, including worker usage, correction,
+lead intervention and handoff. Required quality is the acceptance floor; speed
+is not a reason to pay more unless the user supplies a deadline or waiting
+incurs a concrete resource cost. Choose a task-fitting starting route from
+Luna, Terra, Sol and Astra; do not impose a family ladder or a mandatory retry
+sequence. Start at any appropriate route, skip levels, or move down when the
+remaining work permits. Check actual callable models, efforts and fork
+inheritance before dispatch.
 
-| Model | Working range and roles |
+| Route | Starting fit |
 |---|---|
-| `gpt-5.6-luna` | Prefer `max` for bounded implementation or analysis with clear invariants and a strong verifier; `medium/high` remains sufficient for simple extraction, inventory, or mechanical work. Own a complete package, not only scouting. |
-| `gpt-5.6-sol` | Default for work needing more semantic judgment or complex implementation: `high` as a starting prior, `medium` for clear bounded tasks, `xhigh/max` for difficult reasoning or debugging. Select the needed effort directly. |
-| `gpt-6-astra` | Primarily the main-thread lead. Use a subagent only for a concrete capability gap or consequential uncertainty that Luna/Sol cannot resolve economically; do not add an automatic Astra reviewer. |
+| Luna `high` / `xhigh` / `max` | Cost-sensitive, bounded work with clear semantic boundaries and a strong verifier. High is a tentative starting option, not a minimum-quality guarantee; increase effort when comparable evidence or a concrete depth need supports it. Internal interfaces can be discovered by the worker. |
+| Terra `medium` / `high` / `xhigh` / `max` | An alternative code diagnosis/implementation owner when comparable accepted-task evidence favors it. No default max or assumed domain specialty. |
+| Sol `medium` / `high` / `xhigh` / `max` | Integration, implementation or analysis where observed fit justifies the route. Deeper effort may reduce exploration and correction costs; Sol is not a mandatory intermediate family. |
+| Astra `low` / `medium` / `high` / `xhigh` | Difficult coupled work or expensive semantic mistakes. Choose higher effort directly if it is expected to reduce total accepted cost; no prior cheaper-model failure is required. |
 
-For clear, readily verifiable work, let Luna `max` own the package. For more
-complex work, prefer Sol as owner, with independent Luna work only when it
-reduces total effort. If briefing Luna requires the lead to solve the task,
-choose Sol rather than expanding the prompt. Task length alone does not require
-Astra. Terra remains outside the default rotation, not unavailable.
+Use supported efforts and actual runtime availability. Other supported efforts
+remain options when justified. Neither token price nor effort orders total cost.
+Effort tradeoffs are non-monotonic: xhigh can sometimes be cheaper and faster
+than high by reducing exploration and rework. Compare across effort levels at
+equal acceptance quality; do not assume lower effort saves money or require
+trying each level in order. Cost remains primary; speed alone does not justify
+paying more.
+Astra is useful as main lead and as a direct package owner; no family is reserved
+for advice. These are tentative starting fits, not a universal ranking. Evidence
+from a small exam cannot establish a domain specialty or a reliable success rate.
 
-Allow the same owner to correct a concrete failed verifier or counterexample
-when the scope remains valid. Include retries and additional lead review in the
-cost comparison; cheaper attempts can still produce a cheaper accepted outcome.
-Do not cycle through every effort or persist when corrections expose a semantic
-or capability gap. Bring decision-bearing ambiguity to the lead, which can
-resolve it or assign a focused stronger adviser. Advice does not transfer
-user-owned decisions.
+### Learn from task evidence
+
+Use the [evidence workflow](references/evidence-workflow.md) when comparable
+records could change a route or a completed delegation adds useful acceptance,
+repair or takeover evidence. It provides the JSONL receipt and a standard-library
+summarizer; no separate scheduler or global writable ledger is needed.
+
+Before dispatch, use a relevant summary if available; otherwise retain tentative
+fits. At decision-bearing closeout, record the full attempt chain in the task's
+owned output, with lead acceptance and incremental costs. Refresh a caller-owned
+summary only when useful. Production and benchmarks remain separate; unknown
+lead cost is unknown, not zero. Inspect task comparability and failure causes
+before updating a preference. Scripts update statistics, never ranks or this
+skill's authority/acceptance rules. A single success does not set a default.
+
+Distinguish a local implementation error, missing brief facts and environment
+failure from a reasoning or contract-understanding gap. Let the same owner
+repair a concrete verifier failure when that is economical. Raise effort for a
+specific depth deficit; switch family when repeated corrections miss the
+contract or the lead is effectively reimplementing the package. Do not spend
+through every Sol effort before choosing Astra. User-owned ambiguity still
+goes to the lead; model escalation does not resolve authority.
+
+Move down for simpler remaining work with stable interfaces and reliable
+checks when the savings exceed handoff and context-rebuilding cost. Do not
+interrupt a productive owner solely to use a cheaper route. Reconcile writes,
+artifacts and live jobs before transferring ownership. Change an existing
+worker's model or effort only if the tool supports it; otherwise make an
+explicit handoff to a new worker rather than implying a prompt changed its
+runtime route. Keep routing decisions brief in the ordinary assignment or
+handoff; no new benchmark or accounting ceremony is required.
 
 Avoid duplicating the worker's investigation in the lead. Use concise invariants
 and real consumer checks, not over-detailed briefs or routine second reviews.
@@ -94,7 +127,7 @@ real acceptance command/evidence; deliverable and stop rule;
 delegation allowed or forbidden (plus bounds if allowed).
 ```
 
-### Implementation briefs for Luna and Sol
+### Implementation briefs
 
 Improve first-pass acceptance by removing execution-changing ambiguity, not by
 asking the worker to "get it right in one shot." One pass means one assignment
@@ -116,15 +149,23 @@ For implementation, specialize the brief above with only the missing facts:
   consumer behavior if the command is not yet known. Reuse the project's test
   policy; bugs need a reproducer, not tests that merely mirror the patch.
 
-For **Luna max**, prefer a settled interface and a small coherent implementation
-surface, a concrete example, and the relevant existing pattern. Resolve
+For **Luna**, prefer clear semantic boundaries and a coherent implementation
+surface, a concrete example, and the relevant existing pattern when known. Resolve
 user-owned ambiguity before dispatch; leave local implementation to the worker.
-If this requires the lead to design every step, give the package to Sol instead.
+If this requires the lead to design every step, choose a better-fitting owner
+using the routing criteria above.
+For **Terra**, use the same outcome-based implementation brief; leave code
+structure and repair strategy to the worker. Do not invent a model-specific
+checklist or assume a domain specialty without accepted-task evidence.
 For **Sol**, state the overall intent and constraints while leaving room to
 trace dependencies and choose the implementation. Name already-settled design
 choices so it can finish the implementation without reopening them; ask it to
 surface evidence that invalidates those choices rather than silently redesign.
-Neither model needs a long persona, repeated rules, or a compulsory plan report.
+No model needs a long persona, repeated rules, or a compulsory plan report.
+Add detail only when it removes a material ambiguity or supplies missing evidence;
+longer briefs can increase work without improving acceptance. Derive expected
+results independently of the changed implementation where correctness depends
+on a numerical, identity or recovery invariant.
 
 Ask the worker to inspect relevant code, implement, run the required verifier,
 and repair failures within its scope before returning. Missing semantic input,
@@ -139,7 +180,8 @@ the first submission passed lead acceptance, the reason for substantive rework,
 and worker plus attributable lead usage in existing task evidence. Separate brief
 gaps, implementation errors, and environment failures. Do not claim improved
 one-shot rates from a dry run, mix unlike tasks, or add mandatory duplicate runs
-or a new accounting system. Shorten or adjust the brief from observed failures.
+or additional accounting beyond the task receipts above. Shorten or adjust the
+brief from observed failures.
 
 Distinguish the assignment, not another topology: a **research-question owner**
 gets the frozen question, claim/resource boundaries, decision-bearing evidence,
@@ -246,6 +288,11 @@ or carry delegation permission into a different goal or phase.
 ## Close the loop without duplicate work
 
 Inspect the exact candidate and replay the smallest decision-bearing verifier.
+A green suite is evidence, not the definition of the contract. A concrete
+counterexample to a declared invariant still blocks acceptance; verify that a
+repair addresses the cause beyond the supplied example. If the verifier imposed
+an unspecified private interface, correct that assumption and replay retained
+evidence rather than charging the worker for a grader defect.
 Test the real caller/consumer where leaf tests cannot establish acceptance.
 Use a specialist review only for a named risk; after correction, recheck that
 counterexample and the acceptance commands, not another broad review round.
@@ -257,14 +304,16 @@ evaluation defect. For research work, use the retained-evidence recovery rule in
 [research-flow](../research-flow/SKILL.md) before deciding whether execution must
 repeat; a failed reducer alone is not a reason to repeat valid model work.
 
-Optimize the whole accepted outcome: worker usage, lead intervention, rework,
-integration/verification, and runtime wait. Prefer lower total cost at the
-required acceptance standard; waiting, integration, and rework are not free. Cached tokens are not unique
+Optimize monetary cost for the whole accepted outcome: worker usage, lead
+intervention, rework, integration/verification, and any billed runtime wait.
+Prefer the cheaper route that meets the required quality; elapsed time alone
+is not a cost penalty. Do not pay for speed without a user-owned deadline or
+concrete resource cost. Cached tokens are not unique
 text or a complete cost measure; completed workers are not accepted-task
 evidence. When cost bears on a routing decision, separate cached input,
 uncached input, and output using dated applicable rates; missing usage or
 rates remain unknown, not zero. Compare like tasks at like acceptance, including
 failed attempts, substantive rework and attributable lead integration.
 Use naturally occurring acceptance evidence to revise routing, not a
-mandatory model alternation, duplicate runs, or new accounting infrastructure.
+mandatory model alternation, duplicate runs, or a background accounting service.
 Stop when acceptance is satisfied.

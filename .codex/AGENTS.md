@@ -51,21 +51,12 @@ Reusable guidance loaded from local `AGENTS.md`. Nested `AGENTS.md` files specia
 * Choose topology from dependencies, ownership, write surfaces, and acceptance. Parallelize only independent reads or disjoint writes; never run concurrent writers on one semantic surface. Default to depth 2; a third layer requires explicit authorization for cheap, bounded, independent work plus cost and result receipts.
 * Reuse or follow up with a worker while its context remains reliable and its responsibilities fit the next task. Reconcile changes to goals, ownership, write surfaces, constants, permissions, and acceptance before continuing; a prior task does not grant new authority. Choose a fresh worker when changed responsibilities, misleading context, or isolation needs outweigh continuity benefits. A phase change alone does not require replacement.
 * The lead dynamically selects `fork_turns` for each spawn (`none`, a positive integer string, or `all`) based on context needs, isolation, and total completion cost. No role has a mandatory fork mode or turn cap. Set `model` and `reasoning_effort` explicitly where the selected fork mode supports overrides; otherwise retain the required inherited settings.
-* Set `spawn_agent.task_name` to `<model>_<effort>_<task_slug>`, using only
-lowercase letters, digits, and underscores.
-
-Use the actual callable model shorthand:
+When choosing a subagent model, use the actual callable model shorthand:
 
 - OpenAI models: `astra`, `luna`, `sol`, or `terra`
 - DeepSeek models: `deepseek`
-Use the actual reasoning effort, followed by a concise, descriptive task slug.
-Examples:
-`astra_low_server_lifecycle`
-`luna_max_remove_serena_reminder`
-`luna_medium_wake_schema_audit`
-`deepseek_high_architecture_review`
-`deepseek_medium_memory_design`
-The task name should describe what the subagent is actually being spawned to do.
+Keep `spawn_agent.task_name` concise and descriptive of the subagent's actual
+task.
 * A brief states goal and non-goals, cwd and owned paths, permissions, acceptance commands, output contract, and stop rule; add constants, known failures, budget, or tier only when material.
 * Outcomes distinguish `candidate`, `NEEDS_CONTEXT`, `HOLD`, `BLOCKED`, and `SUPERSEDED`. Only the lead marks `lead-accepted`; user-owned decisions need separate `user-accepted` evidence.
 
