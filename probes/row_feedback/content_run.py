@@ -28,6 +28,15 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _json_sha256(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
 def _load(path: Path) -> Any:
     with path.open(encoding="utf-8") as stream:
         return json.load(stream)
@@ -165,6 +174,11 @@ def _run_case(
         "schema": "row_feedback.content_case_receipt.v1",
         "case_id": case["case_id"],
         "image_id": case["image"]["image_id"],
+        "materialized_input": {
+            "record_id": case["case_provenance"]["bank_v2_record_id"],
+            "prepared_inputs_sha256": materialized["prepared_inputs_sha256"],
+            "materialization": dict(materialized["materialization"]),
+        },
         "exposed_case": True,
         "non_gating": True,
         "future_completion_caveat": (
@@ -227,16 +241,36 @@ def run_diagnostic(
             adapter_path=adapter_path,
             device=device,
         )
+        phase = "materialize_bank_union"
+        materialized_bank = runtime_api.materialize_bank_records(qwen, frontend, config, bank)
+        bank_record_ids = {str(record["record_id"]) for record in bank["records"]}
+        require(set(materialized_bank) == bank_record_ids, "materialized bank record IDs changed")
         cases: list[dict[str, Any]] = []
         for index, case in enumerate(packet["cases"]):
-            phase = f"materialize:{case['case_id']}"
             record = _one(
                 bank["records"],
                 field="record_id",
                 value=case["case_provenance"]["bank_v2_record_id"],
             )
-            materialized = runtime_api.materialize_record(qwen, frontend, config, record)
-            require(materialized["prompt_ids"] == case["prompt_token_ids"], "materialized prompt differs from packet")
+            materialized = materialized_bank[str(record["record_id"])]
+            require(
+                materialized["prompt_ids"] == case["prompt_token_ids"]
+                and _json_sha256(materialized["prompt_ids"]) == case["prompt_token_ids_sha256"],
+                "materialized prompt differs from packet",
+            )
+            materialization = materialized["materialization"]
+            require(
+                materialization["example_id"] == record["example_id"]
+                and materialization["prompt_token_ids_sha256"] == case["prompt_token_ids_sha256"]
+                and materialization["image_sha256"] == record["image"]["image_sha256"]
+                and materialization["executed_media_sha256"]
+                == record["image"]["executed_media_sha256"]
+                and materialization["raw_source_packet"]
+                == bank["sources"]["native_n16_training_input"],
+                "materialized input source differs from bound bank source",
+            )
+            prepared_sha256 = materialized["prepared_inputs_sha256"]
+            require(_is_sha256(prepared_sha256), "prepared input identity is invalid")
             phase = f"execute:{case['case_id']}"
             receipt = _run_case(
                 runtime_api=runtime_api,
