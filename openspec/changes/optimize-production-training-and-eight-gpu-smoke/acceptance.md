@@ -168,3 +168,38 @@ an isolated preprocessing memory measurement.
 No new RL objective, FSDP2 topology, DoRA precision default, data mixture, or
 asynchronous checkpoint path has been introduced. These dispositions apply to
 the measured smoke, not to an unmeasured full-scale workload.
+
+## Mature geo_sorted_xy follow-up, 2026-09-12
+
+The user requested a mature-adapter sample comparison and clarified that a few
+coordinate bins can be acceptable, with IoU/mAP owning practical quality.
+Sol executed the archived four-coordinate-xy step-2444 DoRA and paired delta
+through dynamic HF and authenticated BF16 materialized HF; Luna analyzed the
+paired artifacts. No Astra subagents were started for this follow-up.
+
+The fixed cohort has 32 validation images and 296 GT objects, including the
+previous COCO139 anchor and 31 seeded random rows. Both arms retain the mature
+native full prompt, BF16/FA2, batch4, max512 and repetition penalty1.1. Native
+x1/y1-sorted rows are preserved through an explicit source_order transport
+setting; this checkout lacks the geo_sorted_xy enum. Actual prompt traces,
+image plans, ordered rows and GT agree. Both inference runs and fresh direct
+evaluators exited0. One shared image reached the512-token cap; all32 remain
+included. These are diagnostic AP values, below the existing200-row benchmark
+scope, and not a full-validation equivalence claim.
+
+Dynamic versus materialized AP is0.380992 versus0.364849 (-1.61 AP points),
+AP50 is0.485195 versus0.458658, and AP75 is0.412773 versus0.386936. Same-class
+prediction pairing at IoU>=0.5 yields242 pairs,51/62 unmatched predictions,
+median paired IoU0.9881, median per-box maximum drift1bin and193/242 pairs
+within5bins. Larger changes and object-set differences remain. The initial
+analysis incorrectly paired nonoverlapping same-class boxes; a lead-reproduced
+counterexample rejected that statistic, and the corrected matcher passed
+boundary/reordering checks and exact all32-row comparison with an independent
+lead calculation. Direct AP was unaffected by this derived-analysis fix.
+
+See the [complete report](../../../research/investigations/ms-swift-upstream-comparison-2026-09-12/mature-geo-sorted-xy-consistency.md)
+and [paired acceptance evidence](/data/CoordExp/outputs/infra_base/optimization-20260912/verification/mature-geo-sorted-xy-consistency/lead-verification/pair-matcher-green.json).
+The user has not specified an exact AP-loss tolerance; this observation does
+not establish production quality acceptance. Production qualification code,
+admission receipts and tasks5.4/5.5 remain unchanged. The earlier eight-GPU
+training and exact-resume evidence is unaffected; this change is not archived.
