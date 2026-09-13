@@ -1,6 +1,6 @@
 # Fixed-dose row-feedback pilot results
 
-Status: annotation endpoint and bounded physical review lead-accepted; exposed content diagnostic pending.
+Status: complete bounded pilot; paired fit, annotation endpoint, physical review and content diagnostic lead-accepted. No checkpoint promotion.
 
 ## Question and scope
 
@@ -51,13 +51,37 @@ Root acceptance: `evaluation/natural/physical-review-root-acceptance-v1.json` (S
 
 ## Exposed content diagnostic
 
-The three registered cup/spoon/donut cases use the trained F adapter, correct feedback, exact-self replay, and one-site replacement by a norm-matched physically different same-image owner source. That donor is captured after h+c+w and transplanted to the earlier C boundary: it is a future-completion diagnostic, not a deployable causal state-writing rule. Exact-self replay must match exactly before wrong-owner divergence is interpreted.
+The three registered cup/spoon/donut cases use the trained F adapter, correct feedback, exact-self replay, and one-site replacement by a norm-matched physically different same-image owner source. W is captured after h+c+w and transplanted to the earlier C boundary: this is a future-completion diagnostic, not a deployable causal state-writing rule.
 
-The first attempt failed before any replay/generation because the content consumer used the source256 materializer rather than the bank-bound train/dev union. Root accepted a consumer-only repair after reproducing the source miss and passing seven targeted tests. Shared runtime, packet, cases, histories and intervention remain unchanged. One explicitly authorized retry is running inside the original 3.75-GPU-hour content cap. The failed attempt is technical-invalid and carries no scientific outcome.
+The first attempt failed before any replay/generation because the content consumer searched source256 rather than the bank-bound train/dev union. Root accepted the consumer-only repair after reproducing the source miss and passing seven targeted tests. The sole authorized retry completed all three cases and nine generations. Root verified case/source bindings, exact prepared-input equality with the F fit, finite distinct source vectors, the registered replacement site, and token-exact self replay in all three cases. Shared runtime, packet, histories and intervention are unchanged. Both attempts and their costs remain preserved.
+
+| Exposed case | Correct F | Wrong-owner source | Bounded observation |
+|---|---|---|---|
+| Cup 210457 | 3,084 visible tokens; cap | 3,084; cap | First difference at zero-based token 790; one nonrecurring later box changes its lower coordinate. Both runs still degenerate. |
+| Spoon 219546 | 11 tokens; one row; EOS | Exactly identical | No visible effect at this intervention; inconclusive. |
+| Donut 417044 | 61 tokens; six rows; EOS | 41 tokens; four rows; EOS | W remains row 1. Three later geometries shift and two correct-only regions disappear; these include donut-hole groups. |
+
+**W remains the first generated row in both correct and wrong-source continuations for all three cases.** Substituting W's vector for C's vector therefore does not produce selective suppression of W in these tests. The two visible changes demonstrate sensitivity to added vector content, without establishing an owner-specific visited-object ledger, storage-versus-readout explanation, native-memory incapacity or sample efficiency.
+
+The cup's strict parser accepts 165 rows and drops 178 (177 geometry-invalid and one malformed) in each of the three generations. There are 65 distinct class/coordinate-bin rows and 100 additional exact serialized duplicates. Pixel rounding gives 64 distinct class/native-pixel boxes; neither duplicate count is the natural endpoint's any-class IoU > .95 metric. The sole changed accepted geometry lies over the right person's torso rather than either reviewed blue cup. This supplies no selective owner effect or escape from repetition.
+
+Root inspected the donut image and the bound decision crops. The correct-only third row spans the lower-right donut-hole group; the sixth covers a small right-edge group region. A reduction from six to four emitted rows is therefore **not** evidence that two independently identified physical donuts were erased or omitted. The common W donut remains present, and the other shared changes are geometric. [Decision crops](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-row-feedback-pilot/content/comparison-v1/donut-417044-1079494-decision-crops.png) make this distinction reviewable.
+
+Root content acceptance: `content/run-v2-root-acceptance-v1.json` (SHA256 `004e7bc386e4e781c5e311c8f2b436872578b842224984314b49db614844079f`). Complete literal continuations, source receipts and comparisons are retained under `content/run-v2/` and `content/comparison-v1/`.
 
 ## Cost and acceptance boundary
 
-Formal fit conservative paired allocation: 11.731481 GPU-hours. Frozen natural endpoint: 0.227980 GPU-hours. The through-endpoint receipt records at least 12.629817 GPU-hours across all disjoint stages, including the failed content attempt. Six early outer timing intervals are absent, so this is a known lower bound, not an exact total or verified remaining balance. The declared stage envelope is 40 GPU-hours inside the 48-GPU-hour round ceiling; planning ceilings are separate from measured spend. Retry cost and final scientific disposition remain pending.
+Formal fit conservative paired allocation: 11.731481 GPU-hours. Frozen natural endpoint: 0.227980 GPU-hours. Successful content retry: 0.228698 GPU-hours; both content attempts together: 0.232801 GPU-hours. Final accounting records a known allocation lower bound of 12.858515 GPU-hours across disjoint stages. Six early outer timing intervals are absent, so this is not an exact total or verified remaining balance. The declared stage envelope is 40 GPU-hours inside the 48-GPU-hour round ceiling; planning ceilings are separate from measured spend. The latest producer and wrapper have exited, and all model work in this round is settled.
+
+Content resource counters need one explicit scope distinction: 10,760 model forwards, nine image forwards, 1,174 internal slots and 9,448 visible generated tokens are sums of the nine **generation** receipts. Three donor replays are separately counted, but their detailed forward/slot totals were not persisted. Whole-run outer time includes donor work. This counter limitation does not change the self-parity, intervention or visible-output evidence.
+
+## Decision and stop rule
+
+The finite round is closed. The primary endpoint has a small positive difference at IoU .50, an opposite sign at IoU .80, and no reduction in reviewed same-owner recurrence. The added continuous route is mechanically usable and can affect continuations, but the exposed substitutions do not establish selective physical-owner memory. These observations support retaining the implementation as a mechanism probe; they do not justify promoting it as a memory/recurrence solution or expanding training on this evidence alone.
+
+One paired 64-update fit, the frozen 32-image endpoint, the preselected dense8 review and the fixed three-case diagnostic are complete. No dose, architecture, cohort, additional retry or checkpoint promotion is included. A future protocol would need to distinguish owner-specific content effects from general continuation/geometry changes under matched visible histories and computation; that is a new research question, not an authorized follow-on run.
+
+Round closeout: `round-closeout-v1.json` (SHA256 `e65906704109e3f5387af4853c3fd63a8a292199ffa408a19c145ba865f85fc8`).
 
 ## Evidence
 
@@ -69,4 +93,6 @@ Formal fit conservative paired allocation: 11.731481 GPU-hours. Frozen natural e
 - Original blind queue and sealed manifest: `evaluation/natural/blind-review-v1/`.
 - Accepted physical review and aggregate: `evaluation/natural/blind-review-lead-accepted-v1.json`, `evaluation/natural/physical-review-aggregate-v1.json`.
 - Content repair and retry authorization: `content/run-v1-consumer-materialization-repair-v1.json`, `content/retry-authorization-v1.json`.
-- Corrected cost accounting: `accounting/cost-through-endpoint-v2.json`.
+- Final cost accounting: `accounting/final-cost-v1.json`, building on the preserved `accounting/cost-through-endpoint-v2.json`.
+- Root content checks: `content/run-v2-root-mechanical-checks-v1.json`, `content/run-v2-root-parser-checks-v1.json`.
+- Complete round acceptance: `round-closeout-v1.json`.

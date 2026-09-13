@@ -5,15 +5,17 @@ type: idea
 role: research-unit
 authority: non_normative_research
 architecture_promotion_status: not_promoted
-implementation_status: authorized_within_goal
+implementation_status: validated_probe
 unit_id: 2026-09-13-fixed-dose-feedback
 topic: qwen3-vl-row-feedback
-status: launching_fixed_endpoint_and_content
-evidence_status: paired_fit_accepted_quality_pending
+status: closed_fixed_dose_pilot
+evidence_status: lead_accepted_bounded_results
 updated: 2026-09-13
 ---
 
 # Current contract
+
+This bounded round is complete. [Final results](results.md) and the hash-bound `round-closeout-v1.json` under the artifact root own its current disposition. The stage records below preserve earlier freezes, failures, launches and acceptance transitions; their former pending instructions are superseded by the final closeout section.
 
 The user explicitly authorized this research round after the two independent Astra xhigh assessments, delegated execution to the lead, and made the currently free eight GPUs available. The earlier grill-me launch pause is resolved by that instruction. The review remains historical advice, not an experiment result.
 
@@ -164,11 +166,15 @@ The content consumer-only repair passed the lead's exact diff review and seven f
 
 Corrected `accounting/cost-through-endpoint-v2.json` records 12.629816760 GPU-hours as a known lower bound. Six missing early outer timing intervals prevent an exact total or verified actual remaining balance; the declared 40-within-48 stage envelope is a planning fact only. Full interpretation and evidence links are in [results.md](results.md).
 
-### Current durable continuation: content only
+### Completed content continuation and round closeout
 
-Root inspected the exact persisted armed response at `content/run-v2-monitor-v1.json` (SHA256 `dfb004dc05d473b465b3da53142a7a2858d5804057cac0afe763e8b7dade8aee`). Monitor **8e0acda9-abd3-477e-a75c-610986c0385e** has `state=armed`, healthy supervision, and target root thread `01a099eb-db6b-7812-9006-73a363c9884a`. It observes success/failure markers after offset 1250 in `content/run-v2.log` or exact producer PID2191670 exit. Its worker origin is `01a099ef-1f3f-7aa3-8c82-8d8f7eefd44f`; delivery ID is `b376ebba-6c44-513b-8869-5796331ffd26`. Root has not called status for this new monitor. No duplicate monitor or invocation is needed.
+The exact armed monitor receipt `content/run-v2-monitor-v1.json` (SHA256 `dfb004dc05d473b465b3da53142a7a2858d5804057cac0afe763e8b7dade8aee`) targeted this root thread. Monitor **8e0acda9-abd3-477e-a75c-610986c0385e** delivered success-log/process-settlement evidence. Root called `wake_me_up_status(..., view=decision)` exactly once on that delivery and preserved `content/run-v2-monitor-decision-v1.json`. The pointer was not itself accepted as success. Both actual producer PID2191670 and wrapper PID2191533 have exited; the outer terminal records exit0, no timeout, three cases, three donor replays and nine generations.
 
-On actual delivery, call `wake_me_up_status` with this monitor and `view=decision` exactly once, preserve its response, and resume mechanism_options for terminal and case inspection. Verify actual zero exit, three original cases, all materialization identities against the accepted F fit, exact self-replay equality and one registered override per intervened generation, source norms/hashes and full visible IDs/counters. If outputs diverge, inspect bounded case-specific physical evidence before any owner-use claim; visible divergence alone establishes only route dependence. The W source remains a future-completion intervention. No further retry, new case, dose or architecture is authorized. Reconcile actual retry cost into a new accounting receipt without losing six missing early outer intervals, then close results and scoped Git records. The natural endpoint and dense8 review are already accepted; do not repeat them or reopen a new scientific arm.
+Root reverified all case/packet/source bindings, exact prepared-input equality with the F training receipt, finite distinct source vectors, one registered source substitution per intervened continuation, and exact self-replay token equality in all three cases. The native parser was replayed against all nine literal outputs. Root also inspected the original cup/donut images and decision crops. Content acceptance is `content/run-v2-root-acceptance-v1.json` (SHA256 `004e7bc386e4e781c5e311c8f2b436872578b842224984314b49db614844079f`). Cup and donut outputs depend on the substituted vector; spoon does not change. W remains the first generated row in every correct/wrong pair. Cup remains capped with repeated/invalid rows; donut changes six emitted rows to four, but the removed regions include donut-hole groups, so this does not establish loss or suppression of two distinct physical owners. The result supports route sensitivity only, with no clean owner-specific suppression, storage/readout isolation, sample-efficiency or native-incapacity claim.
+
+The successful retry used 823.312621 outer seconds (0.228698 GPU-hours); both content attempts total 0.232801 GPU-hours. Its 10,760 model forwards / nine image forwards / 1,174 internal slots / 9,448 visible tokens are generation-only sums; donor replays were counted separately but their detailed forward totals were not retained. Outer wall allocation includes donor work. Final accounting `accounting/final-cost-v1.json` (SHA256 `581ef5654374d53134183979bdad2b74d95787e06d444cead97fa27ffd36a71c`) records a 12.858515-GPU-hour known allocation lower bound and retains six missing early outer intervals. No actual-total cap claim is inferred from incomplete timing.
+
+`round-closeout-v1.json` (SHA256 `e65906704109e3f5387af4853c3fd63a8a292199ffa408a19c145ba865f85fc8`) marks this finite round **lead-accepted complete**. Scientific disposition: a small localization-sensitive annotation coverage difference, no reduction in reviewed same-owner recurrence, and content-route sensitivity without established physical-owner memory. The implementation remains a probe and is not promoted. No additional GPU work, retry, dose, architecture or cohort is part of this unit. Final observations, inference boundaries and all evidence links are in [results.md](results.md). The natural endpoint and dense8 review remain the previously accepted evidence; do not repeat them as continuation work.
 
 ## Initial package and GPU ownership
 
