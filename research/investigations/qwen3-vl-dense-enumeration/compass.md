@@ -20,6 +20,27 @@ checkpoint.
 
 ## Current questions and evidence
 
+### Latest completed: broader native owner learning with preservation debt
+
+[Native owner scale and state](experiments/2026-09-12-native-owner-scale-and-state/results.md)
+is lead-accepted and closed. One fixed-prefix fit,16 trusted packages over11
+images, produces natural donut/unlabeled-owner recovery and positive fresh256
+GT-proxy transfer. Full640 repetition and malformed-output burden drop sharply.
+This is stronger than isolated conditional learnability, but not clean adoption:
+old exposed/reference retention regresses, blind32 reviewed physical presence
+has balanced gains/losses, and a learned blue cup seeds a new drift loop.
+Target entry, future exclusion and incumbent preservation remain different
+obligations. GT-unmatched alone remains neutral.
+
+Independent repeat supply is real on deployed greedy histories, including
+physical repeats below0.95; efficacy of a new negative fit is not tested here.
+K-only release does not transfer owner gains beyond the known donut on the
+four-scene panel. No generic cache-ledger mechanism is promoted. The next
+proposal is a matched positive-only versus active later-repeat penalty contrast
+with real-owner preservation and new-loop incidence, not automatic larger-scale
+training or cache surgery. Real-prefix refresh remains a separate next factor.
+No next fit is launched; output cap3084 and finite scientific stops remain.
+
 ### Completed parallel owner-enumeration portfolio
 
 The user authorized [five independent research lanes](experiments/2026-09-12-parallel-owner-research/portfolio.md)
