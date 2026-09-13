@@ -8,8 +8,8 @@ architecture_promotion_status: not_promoted
 implementation_status: authorized_within_goal
 unit_id: 2026-09-13-fixed-dose-feedback
 topic: qwen3-vl-row-feedback
-status: ready_for_serial_paired_fit
-evidence_status: distributed_gate_failed_serial_recipe_retained
+status: serial_paired_fit_running
+evidence_status: fit_running_no_quality_result
 updated: 2026-09-13
 ---
 
@@ -125,6 +125,14 @@ The lead passed all 37 package tests and committed the bounded distributed imple
 Root's fixed comparison script and canonical adapter inspection produced `training/equivalence-dp2-S-v1.json` and `training/equivalence-dp2-F-v1.json`. S passed every gate; its complete update took 195.283 seconds versus 369.647 serial seconds. F passed loss/component means, gradient norm and global adapter L2 gates, but its maximum element difference was 2.47458228841424e-6, above the predeclared 2e-6 ceiling. The threshold is unchanged. The distributed implementation is not admitted, and no four-rank run or extra numerical variant will be launched. This technical result does not answer the scientific feedback question.
 
 The lead retains the verified serial route at the same frozen dose. An AST comparison against the accepted serial commit confirms unchanged existing loss, update, loading and materialization functions; existing `run_training` changes only the admitted-versus-materialized resource counter, and the CLI adds an optional distributed branch. The formal packet is `training/fit-packet-v1.json` (SHA256 `6591ae6fa8fc2dc1ef4c48c60ea884ce8c2885421e00018ad67a712d01fcab8a`), status `root_frozen_ready_for_fit`; root admission passed. It binds 64 schedule pairs, 16 packages with eight exposures each, original N16, current code and frozen teacher/data/endpoint artifacts. S uses GPU0 and F uses GPU1 concurrently, one serial process each, with a ten-hour wall ceiling per arm and a twenty-GPU-hour paired fit cap. Stop on first failure and preserve both states; no automatic retry or checkpoint promotion. Full rounded technical, teacher, fit and endpoint/content ceilings sum to 40 GPU-hours within the overall 48-hour ceiling.
+
+### Live fit and durable continuation
+
+The lead verified `training/fit-pair-launch-receipt-v1.json` (SHA256 `65725ea229ea30bff2ad1f47534ce2a5f034e677ef5cd97b9486b2647f69be58`), the ordinary task-local launcher source, and exact live processes/cwd/commands. Detached parent PID 1856417 owns S PID 1856419 on GPU0 and F PID 1856420 on GPU1, each in its own process group. The pair uses `training/fit-S-v1` and `training/fit-F-v1`; logs and the future `training/fit-pair-terminal-receipt-v1.json` preserve success/failure and timing. Launch is not fit acceptance or model-quality evidence.
+
+Durable monitor **ad6116ea-7eb1-4119-8eb6-1677efe8cb9e** is `armed`; exact receipt is `training/fit-monitor-v1.json`. It observes append-only `training/fit-pair.log` success/failure markers or both exact producer process exits. This log/process route succeeded after the earlier unsupported native-worker observation attempt. No periodic unchanged-status reports are requested. On delivery, call `wake_me_up_status` with this monitor ID and `view=decision` exactly once, inspect terminal/arm/update/adaptor evidence, and distinguish settlement from successful 64-update fitting. Do not relaunch, re-arm or treat expiry as failure automatically.
+
+After root accepts both actual 64-update fits, continue this same authorized round: bind canonical saved adapters plus exact fit receipts and execution packet for the existing endpoint consumer; run the frozen 32-image S/F natural endpoint and the separate three-case content diagnostic on the trained F adapter. Planned independent allocation is S four shards on GPUs0-3, F three shards on GPUs4-6, and content on GPU7, subject to actual completed-job ownership. Merge exact 32-image coverage per arm, score the frozen primary and diagnostics, render the preselected eight-image blind proposal queue, obtain one bounded source-blind physical review using Luna/Terra/Sol, then unblind only against the original sealed manifest with the accepted aggregate tool. Root owns scientific interpretation, limits, cost closeout and final acceptance. Do not expand the dose, architecture or cohort, and do not promote a checkpoint automatically.
 
 Automatic native-worker wake registration was attempted at this checkpoint but failed before arming because the current App rejected `thread/agent/observe` as unsupported. No monitor was established; the lead remained active and received the ordinary worker completion. Do not infer a durable handoff from that failed call.
 
