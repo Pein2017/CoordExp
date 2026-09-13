@@ -1,6 +1,7 @@
 """Consumer-level falsification of the literal-row shared execution contract."""
-from copy import deepcopy
 from contextlib import nullcontext
+import hashlib
+import json
 
 import pytest
 import torch
@@ -30,6 +31,36 @@ def packet():
         "runtime": {"world_sizes": [2, 8], **{k: 1000 for k in t.LIMITS}},
         "optimizer": dict(lr=1e-5, betas=[0.9, 0.999], eps=1e-8, weight_decay=0, foreach=False),
         "clip_gradient_norm": 1.0}
+
+
+def test_archived_anchor_code_keeps_staged_bytes_exact_without_requiring_live_source(tmp_path):
+    live = tmp_path / "live.py"
+    staged = tmp_path / "staged.py"
+    staged.write_text("historical execution")
+    expected = hashlib.sha256(staged.read_bytes()).hexdigest()
+    live.write_text("current execution")
+    identity = tmp_path / "code-identity.json"
+    identity.write_text(json.dumps({"files": [
+        {"path": str(live), "staged": str(staged), "sha256": expected},
+    ]}))
+    historical = {"code_identity": {"path": str(identity),
+                                     "sha256": hashlib.sha256(identity.read_bytes()).hexdigest()}}
+    with pytest.raises(ValueError, match="effective code changed"):
+        t.old._validate_code_identity(historical)
+    t.old._validate_code_identity(historical, require_current_code=False)
+    staged.write_text("corrupted historical execution")
+    with pytest.raises(ValueError, match="staged effective code changed"):
+        t.old._validate_code_identity(historical, require_current_code=False)
+
+
+def test_materialization_raw_union_rejects_duplicate_ids():
+    class Raw:
+        def __init__(self, example_id):
+            self.example_id = example_id
+
+    assert set(t._index_raw_groups([[Raw("train")], [Raw("dev")]])) == {"train", "dev"}
+    with pytest.raises(ValueError, match="duplicate materialization raw ID"):
+        t._index_raw_groups([[Raw("same")], [Raw("same")]])
 
 
 def test_explicit_packet_accepts_literal_empty_prefix():

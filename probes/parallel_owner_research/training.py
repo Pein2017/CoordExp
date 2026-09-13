@@ -50,10 +50,14 @@ def binding(path: str | Path) -> dict[str, str]:
 
 
 def _read_bound(reference: Mapping[str, Any]) -> Any:
+    _verify_bound_file(reference)
+    return old.load_json(reference["path"])
+
+
+def _verify_bound_file(reference: Mapping[str, Any]) -> None:
     require(Path(reference["path"]).is_absolute(), "binding path must be absolute")
     require(file_hash(reference["path"]) == reference["sha256"],
             f"bound source changed: {reference['path']}")
-    return old.load_json(reference["path"])
 
 
 def _number(value: Any, label: str, *, positive: bool = False) -> float:
@@ -96,6 +100,11 @@ def validate_contract(packet: Mapping[str, Any], *, verify_images: bool = True) 
     require(packet.get("schema") == SCHEMA, "training packet schema")
     require(packet.get("normal_mask_policy") == NORMAL_MASK, "normal mask policy")
     require(packet.get("margin_policy") == MARGIN_POLICY, "full-vocabulary margin policy")
+    raw_sources = packet.get("materialization_raw_sources", [])
+    require(isinstance(raw_sources, list)
+            and len({row.get("path") for row in raw_sources}) == len(raw_sources)
+            and all(set(row) == {"path", "sha256"} and Path(row["path"]).is_absolute()
+                    for row in raw_sources), "materialization raw-source bindings")
     require(packet.get("normal_keys") and len(set(packet["normal_keys"])) == len(packet["normal_keys"]),
             "normal keys empty or duplicated")
     records: dict[str, Mapping[str, Any]] = {}
@@ -157,7 +166,8 @@ def prepare_packet(output_path: str | Path, *, lane: str,
                    conditional_records: Sequence[Mapping[str, Any]], arms: Mapping[str, Any],
                    weights: Mapping[str, float], denominators: Mapping[str, float],
                    optimizer: Mapping[str, Any], clip_gradient_norm: float,
-                   runtime: Mapping[str, Any]) -> dict[str, Any]:
+                   runtime: Mapping[str, Any],
+                   materialization_raw_source_paths: Sequence[str | Path] = ()) -> dict[str, Any]:
     packet = {
         "schema": SCHEMA, "status": "prepared_no_model_execution", "lane": lane,
         "anchor_input": binding(anchor_input_path), "margin_input": binding(margin_input_path),
@@ -166,6 +176,7 @@ def prepare_packet(output_path: str | Path, *, lane: str,
         "weights": dict(weights), "denominators": dict(denominators),
         "optimizer": {**optimizer, "betas": list(optimizer["betas"])},
         "clip_gradient_norm": clip_gradient_norm, "runtime": dict(runtime),
+        "materialization_raw_sources": [binding(path) for path in materialization_raw_source_paths],
         "normal_mask_policy": NORMAL_MASK, "margin_policy": MARGIN_POLICY,
         "code_identity": [binding(path) for path in
                           dict.fromkeys([Path(__file__), Path(margin_engine.__file__), *old._code_paths()])],
@@ -179,13 +190,41 @@ def prepare_packet(output_path: str | Path, *, lane: str,
     return packet
 
 
+def _index_raw_groups(groups: Sequence[Sequence[Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for rows in groups:
+        for row in rows:
+            require(row.example_id not in result, f"duplicate materialization raw ID: {row.example_id}")
+            result[row.example_id] = row
+    return result
+
+
+def _load_materialization_raw(packet: Mapping[str, Any], *, config_input: str | Path) -> dict[str, Any]:
+    from src.data import load_raw_examples
+
+    references = packet.get("materialization_raw_sources", [])
+    if not references:
+        references = [binding(config_input)]
+    for reference in references:
+        _verify_bound_file(reference)
+    paths = [Path(reference["path"]).resolve() for reference in references]
+    require(Path(config_input).resolve() in paths, "configured raw source missing from materialization union")
+    return _index_raw_groups([load_raw_examples(path) for path in paths])
+
+
 def _load_dependencies(packet: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
     _read_bound(packet["anchor_input"])
-    anchor, manifest = old.validate_inputs(Path(packet["anchor_input"]["path"]), verify_sources=True)
+    anchor, manifest = old.validate_inputs(
+        Path(packet["anchor_input"]["path"]), verify_sources=True, require_current_code=False,
+    )
     margins = margin_engine._validated_margin_table(_read_bound(packet["margin_input"]), manifest=manifest)
     normal_by_key = {row["key"]: row for row in manifest["normals"]["cases"]}
     require(set(packet["normal_keys"]).issubset(normal_by_key), "normal key outside bound source bank")
     normals = [normal_by_key[key] for key in packet["normal_keys"]]
+    raw = _load_materialization_raw(packet, config_input=anchor["config"]["data"]["input_jsonl"])
+    literal_ids = {row["example_id"] for row in
+                   [*packet["positive_records"], *packet["conditional_records"]]}
+    require(literal_ids.issubset(raw), "literal record missing from bound materialization raw sources")
     active_images = {str(row["image"]["image_id"]) for row in
                      [*packet["positive_records"], *packet["conditional_records"]]}
     require(not active_images.intersection(str(row["image_id"]) for row in normals),
@@ -272,10 +311,9 @@ def _normal_record(case: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _load_model(anchor: Mapping[str, Any], *, adapter_path: str, device: torch.device,
-                evidence_dir: Path) -> tuple[Any, Any, Any, dict[str, Any]]:
+                evidence_dir: Path, packet: Mapping[str, Any]) -> tuple[Any, Any, Any, dict[str, Any]]:
     from src.config.fingerprint import sha256_json
     from src.config.inference import load_research_infer_config
-    from src.data import load_raw_examples
     from src.inference.runtime import assemble_frontend
     from src.qwen.special_token_embeddings import inspect_special_token_embedding_delta_payload
     from probes.dora_owner_learning.runtime import load_policy
@@ -303,7 +341,7 @@ def _load_model(anchor: Mapping[str, Any], *, adapter_path: str, device: torch.d
     require(composition["passed"], "loaded composition does not match explicit adapter")
     require(qwen.token_identity.im_end_token_ids == (old.EOS,) and qwen.tokenizer.pad_token_id == old.PAD,
             "native terminal token identity")
-    raw = {str(row.example_id): row for row in load_raw_examples(config.data.input_jsonl)}
+    raw = _load_materialization_raw(packet, config_input=config.data.input_jsonl)
     return qwen, frontend, config, raw
 
 
@@ -375,7 +413,7 @@ def execute_rank(*, input_path: Path, arm: str, world_size: int, output_root: Pa
         initialized = True
         require(len(set(_dist_values(file_hash(input_path)))) == 1, "rank packet bytes differ")
         qwen, frontend, config, raw = _load_model(anchor, adapter_path=anchor["stable50_adapter"]["root"],
-            device=device, evidence_dir=run)
+            device=device, evidence_dir=run, packet=packet)
         counters["model_loads"] = 1
         model = qwen.model
 
@@ -634,7 +672,7 @@ def cold_check(*, input_path: Path, output_root: Path) -> dict[str, Any]:
     torch.cuda.set_device(device)
     torch.cuda.reset_peak_memory_stats(device)
     qwen, frontend, config, raw = _load_model(anchor, adapter_path=receipt["saved_adapter"]["root"],
-        device=device, evidence_dir=run)
+        device=device, evidence_dir=run, packet=packet)
     entries = [_materialize(r, qwen=qwen, frontend=frontend, config=config, raw=raw)
                for r in packet["positive_records"]]
     observed = _score_records(qwen.model, entries)

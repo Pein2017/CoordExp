@@ -665,17 +665,23 @@ def prepare(manifest_path: Path, output: Path) -> dict[str, Any]:
     return packet
 
 
-def _validate_code_identity(packet: Mapping[str, Any]) -> None:
+def _validate_code_identity(
+    packet: Mapping[str, Any], *, require_current_code: bool = True,
+) -> None:
     reference = packet["code_identity"]
     require(file_hash(reference["path"]) == reference["sha256"], "code identity record changed")
     identity = load_json(reference["path"])
     for entry in identity["files"]:
-        require(file_hash(entry["path"]) == entry["sha256"] and
-                file_hash(entry["staged"]) == entry["sha256"],
-                f"effective code changed: {entry['path']}")
+        require(file_hash(entry["staged"]) == entry["sha256"],
+                f"staged effective code changed: {entry['staged']}")
+        if require_current_code:
+            require(file_hash(entry["path"]) == entry["sha256"],
+                    f"effective code changed: {entry['path']}")
 
 
-def validate_inputs(path: Path, *, verify_sources: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
+def validate_inputs(
+    path: Path, *, verify_sources: bool = True, require_current_code: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     packet = load_json(path)
     require(packet.get("schema") == SCHEMA and packet.get("status") == "prepared_no_model_execution",
             "trainer input packet status/schema")
@@ -691,7 +697,7 @@ def validate_inputs(path: Path, *, verify_sources: bool = True) -> tuple[dict[st
     require(file_hash(packet["protocol"]["path"]) == packet["protocol"]["sha256"] and
             load_json(packet["protocol"]["path"]) == _protocol(),
             "frozen task-local protocol changed")
-    _validate_code_identity(packet)
+    _validate_code_identity(packet, require_current_code=require_current_code)
     manifest = validate_manifest(
         load_json(packet["manifest"]["path"]), verify_sources=verify_sources,
     )
