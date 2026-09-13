@@ -8,8 +8,8 @@ architecture_promotion_status: not_promoted
 implementation_status: authorized_within_goal
 unit_id: 2026-09-13-fixed-dose-feedback
 topic: qwen3-vl-row-feedback
-status: validating_record_parallel_execution
-evidence_status: serial_complete_recipe_verified_no_fit_result
+status: ready_for_serial_paired_fit
+evidence_status: distributed_gate_failed_serial_recipe_retained
 updated: 2026-09-13
 ---
 
@@ -117,6 +117,14 @@ The measured serial path would take approximately 6.6 wall hours for 64 updates 
 Before observing distributed output, freeze the real complete-update equivalence gate for each arm against its serial saved adapter: exact global record/mask/input identity and counters; each component mean and total loss within absolute tolerance 1e-6 plus relative tolerance 1e-5; preclip global gradient norm relative error at most 1e-4; full adapter tensor L2 difference divided by serial update movement at most 1e-3; maximum absolute tensor difference at most 2e-6. All trainable tensors must be finite and all frozen base parameters unchanged. Do not loosen these thresholds after failure. Run two-rank equivalence before a four-rank cost slice, then select topology from actual cost and the existing 48 GPU-hour ceiling. All topology slices count in the initial two-GPU-hour technical ceiling.
 
 The lead freezes the scientific dose at **64 optimizer updates per arm**, with eight exposures of each admitted package to each CE component. This is the largest registered candidate affordable on the already verified serial path: 1.5 times the sum of measured S/F update times, multiplied by 64, plus measured setup/exit overhead is 19.640 GPU-hours. Even reserving the full two-GPU-hour technical ceiling, full two-GPU-hour teacher ceiling and 16-GPU-hour endpoint/content allowance gives 39.640 GPU-hours, below 48. This choice precedes any distributed result or trained endpoint. Parallel execution may be selected only if its measured projected total also fits the same ceiling; otherwise retain the verified serial route at this same dose. No additional fit or dose sweep is authorized.
+
+### Distributed gate outcome and final execution packet
+
+The lead passed all 37 package tests and committed the bounded distributed implementation as `2eb4d108`. Training source SHA256 is `5a1123a05c002ff4c7bd3390d3d39d958f62ecf184d18e2c40cdd8b0fdf95559`. The real two-rank packet was `training/cost-dp2-packet-v1.json` (SHA256 `1c289f9790cc5c2b3c55a85b8a4f7ba9a0ab2a156fda873a1619ae36283c043e`), with both independent original-N16 cost starts on GPUs 0/1. Both processes exited zero with exact global coverage and finite saved adapters; total outer allocation was 0.316298178 GPU-hours.
+
+Root's fixed comparison script and canonical adapter inspection produced `training/equivalence-dp2-S-v1.json` and `training/equivalence-dp2-F-v1.json`. S passed every gate; its complete update took 195.283 seconds versus 369.647 serial seconds. F passed loss/component means, gradient norm and global adapter L2 gates, but its maximum element difference was 2.47458228841424e-6, above the predeclared 2e-6 ceiling. The threshold is unchanged. The distributed implementation is not admitted, and no four-rank run or extra numerical variant will be launched. This technical result does not answer the scientific feedback question.
+
+The lead retains the verified serial route at the same frozen dose. An AST comparison against the accepted serial commit confirms unchanged existing loss, update, loading and materialization functions; existing `run_training` changes only the admitted-versus-materialized resource counter, and the CLI adds an optional distributed branch. The formal packet is `training/fit-packet-v1.json` (SHA256 `6591ae6fa8fc2dc1ef4c48c60ea884ce8c2885421e00018ad67a712d01fcab8a`), status `root_frozen_ready_for_fit`; root admission passed. It binds 64 schedule pairs, 16 packages with eight exposures each, original N16, current code and frozen teacher/data/endpoint artifacts. S uses GPU0 and F uses GPU1 concurrently, one serial process each, with a ten-hour wall ceiling per arm and a twenty-GPU-hour paired fit cap. Stop on first failure and preserve both states; no automatic retry or checkpoint promotion. Full rounded technical, teacher, fit and endpoint/content ceilings sum to 40 GPU-hours within the overall 48-hour ceiling.
 
 Automatic native-worker wake registration was attempted at this checkpoint but failed before arming because the current App rejected `thread/agent/observe` as unsupported. No monitor was established; the lead remained active and received the ordinary worker completion. Do not infer a durable handoff from that failed call.
 
