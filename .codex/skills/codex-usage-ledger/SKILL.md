@@ -48,7 +48,10 @@ reports requested by the caller, preferably under a temporary directory.
    `--outcomes-template-out PATH`, replace the `REPLACE_ME` values, remove
    attempts that remain unlabeled, and pass the result with `--outcomes`. Use
    one disposition (`accepted`, `rework`, `escalated`, or `failed`) per line;
-   duplicate identifiers fail closed.
+   duplicate identifiers fail closed. For decision-bearing labeled reports, add
+   `--require-outcomes`: it requires strict policy, an outcomes file and explicit
+   labels for every emitted record. Ordinary strict audits without outcomes
+   remain allowed, but unknown dispositions are not acceptance evidence.
 4. Read `summary.json` first. Check `scan.parse_errors`, the scan window,
    `totals.unpriced_segments`, `pricing_snapshot`, and the disposition
    definition before quoting a number. The default summary is compact. Pass
@@ -58,8 +61,11 @@ reports requested by the caller, preferably under a temporary directory.
 
 ## Interpret acceptance cost
 
-- Treat `attempts.cost_per_accepted_task` as authoritative only when
-  `attempts.policy == "strict"` and explicit outcomes exist.
+- `attempts.cost_per_accepted_task` is the mean cost of priced records labeled
+  accepted; it excludes separately labeled failed/rework records. Even with
+  strict outcomes, it is not the complete cost through task acceptance. Use
+  the delegation task chain for that denominator, retaining all attempts and
+  attributable lead costs. Missing pricing or lead costs stay unknown.
 - Label `completed` and `followup_aware` values as proxies in every report.
   `followup_aware` counts a completed child with no observed `followup_task` as
   an accepted proxy and a completed child with an observed `followup_task` as
@@ -73,6 +79,35 @@ reports requested by the caller, preferably under a temporary directory.
   includes waiting and orchestration delay; it is not compute time.
 - Report the formula, denominator, priced/unpriced counts, snapshot timestamp,
   and the strongest limitation alongside every headline cost.
+
+## Resumed workers and bounded input
+
+When exact physical rollout paths are already known, pass repeatable
+`--rollout PATH` to bypass session-tree discovery. Supply every relevant page;
+thread/subtree filters only see the supplied input set. Do not combine this
+with `--sessions` or `--max-files`. Prefer this route over copying an entire
+session tree or rescanning it once per worker. Keep root inclusion explicit.
+
+A resumed thread's unwindowed report is cumulative. Do not add the first-turn
+report to the resumed cumulative report. For a repair, use explicit timezone-
+aware `--receipt-since START --receipt-until END` boundaries: start inclusive,
+end exclusive. Do not mix them with calendar `--since/--until`. Boundaries must
+come from retained task/receipt evidence, not guessed wall time. One window is
+not automatic phase detection: metadata, attempt IDs and lifecycle wall time
+still describe the rollout. Supply outcomes specifically for the selected
+window; assign a distinct task-chain attempt ID when exporting it.
+
+Use the existing [delegation evidence workflow](../native-agent-team-guide/references/evidence-workflow.md)
+for incremental attempt costs and final task acceptance. Record the input pages,
+receipt window, outcomes and dated prices in cost evidence. Check reconciliation
+warnings and parse/pricing coverage before using numbers. Shared lead overhead
+must not be silently allocated to every child or counted again as takeover.
+
+The CLI recomputes reports; it has no persistent result cache. Reusing a filename
+is not proof of freshness. If inputs, scope, outcomes or prices change, rerun the
+bounded invocation. For decision-bearing work prefer immutable input snapshots
+and a task-owned report directory. Do not build a cache or background scanner
+just to avoid a small explicit-file scan.
 
 ## Return format
 

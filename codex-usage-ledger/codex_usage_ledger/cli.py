@@ -30,6 +30,34 @@ def _parse_date(value: str | None) -> date | None:
         raise argparse.ArgumentTypeError(f"invalid ISO date: {value}") from exc
 
 
+def _parse_receipt_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid timezone-aware ISO timestamp: {value}"
+        ) from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise argparse.ArgumentTypeError(
+            f"timestamp must include a timezone offset: {value}"
+        )
+    return parsed
+
+
+class _StoreSessionsPath(argparse.Action):
+    """Remember whether a sessions root was supplied instead of defaulted."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Path,
+        option_string: str | None = None,
+    ) -> None:
+        setattr(namespace, self.dest, values)
+        setattr(namespace, "sessions_explicit", True)
+
+
 def discover_files(
     root: Path, since: date | None, until: date | None, limit: int | None
 ) -> list[Path]:
@@ -42,6 +70,21 @@ def discover_files(
         paths.append(path)
     paths.sort()
     return paths[-limit:] if limit else paths
+
+
+def _resolve_rollouts(paths: Iterable[Path]) -> list[Path]:
+    """Resolve caller-selected physical pages once, preserving CLI order."""
+
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        candidate = path.expanduser().resolve()
+        if not candidate.is_file():
+            raise ValueError(f"rollout file does not exist: {candidate}")
+        if candidate not in seen:
+            seen.add(candidate)
+            resolved.append(candidate)
+    return resolved
 
 
 def _scan(
@@ -239,11 +282,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Build an offline token and approximate cost ledger from Codex rollout JSONL files."
     )
+    parser.set_defaults(sessions_explicit=False)
     parser.add_argument(
         "--sessions",
         type=Path,
         default=default_root,
+        action=_StoreSessionsPath,
         help="CODEX_HOME/sessions directory (defaults to $CODEX_HOME/sessions)",
+    )
+    parser.add_argument(
+        "--rollout",
+        type=Path,
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="repeatable physical rollout JSONL page; bypasses sessions discovery",
     )
     parser.add_argument(
         "--prices", type=Path, help="TOML file containing [[rates]] entries"
@@ -253,6 +306,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--until", type=_parse_date, help="inclusive rollout date, YYYY-MM-DD"
+    )
+    parser.add_argument(
+        "--receipt-since",
+        type=_parse_receipt_timestamp,
+        help="inclusive timezone-aware receipt timestamp",
+    )
+    parser.add_argument(
+        "--receipt-until",
+        type=_parse_receipt_timestamp,
+        help="exclusive timezone-aware receipt timestamp",
     )
     parser.add_argument(
         "--max-files", type=int, help="limit the newest matching rollout files"
@@ -303,6 +366,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="strict",
         help="acceptance labels: explicit only, completion proxy, or followup-aware proxy",
     )
+    parser.add_argument(
+        "--require-outcomes",
+        action="store_true",
+        help="require strict explicit dispositions for every selected rollout item",
+    )
     parser.add_argument("--format", choices=("jsonl", "json", "csv"), default="jsonl")
     parser.add_argument(
         "--pretty", action="store_true", help="pretty-print JSON output"
@@ -312,10 +380,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.sessions is None:
+    if args.rollout and args.sessions_explicit:
+        print("--rollout cannot be used with --sessions", file=sys.stderr)
+        return 2
+    if args.rollout and args.max_files is not None:
+        print("--rollout cannot be used with --max-files", file=sys.stderr)
+        return 2
+    if (args.receipt_since is not None or args.receipt_until is not None) and (
+        args.since is not None or args.until is not None
+    ):
+        print("--receipt-since/--receipt-until cannot be used with --since/--until", file=sys.stderr)
+        return 2
+    if args.require_outcomes and args.disposition_policy != "strict":
+        print("--require-outcomes requires --disposition-policy strict", file=sys.stderr)
+        return 2
+    if args.require_outcomes and args.outcomes is None:
+        print("--require-outcomes requires --outcomes", file=sys.stderr)
+        return 2
+    if not args.rollout and args.sessions is None:
         print("set CODEX_HOME or pass --sessions", file=sys.stderr)
         return 2
-    if not args.sessions.is_dir():
+    if not args.rollout and not args.sessions.is_dir():
         print(f"sessions directory does not exist: {args.sessions}", file=sys.stderr)
         return 2
     if args.max_files is not None and args.max_files <= 0:
@@ -326,13 +411,17 @@ def main(argv: list[str] | None = None) -> int:
         rates = load_rates(args.prices)
         pricing_snapshot = build_price_receipt(args.prices, rates)
         outcomes = load_outcomes(args.outcomes)
-        paths = discover_files(args.sessions, args.since, args.until, args.max_files)
-        receipt_since = (
+        paths = (
+            _resolve_rollouts(args.rollout)
+            if args.rollout
+            else discover_files(args.sessions, args.since, args.until, args.max_files)
+        )
+        receipt_since = args.receipt_since or (
             datetime.combine(args.since, time.min, tzinfo=timezone.utc)
             if args.since
             else None
         )
-        receipt_until = (
+        receipt_until = args.receipt_until or (
             datetime.combine(
                 args.until + timedelta(days=1), time.min, tzinfo=timezone.utc
             )
@@ -356,21 +445,33 @@ def main(argv: list[str] | None = None) -> int:
     items = annotate_attempts(
         items, all_records, outcomes=outcomes, policy=args.disposition_policy
     )
+    if args.require_outcomes:
+        if not items:
+            print("required outcomes failed: no selected rollout items", file=sys.stderr)
+            return 2
+        if any(item["attempt"]["disposition"] == "unknown" for item in items):
+            print("required outcomes failed: selected items have unknown dispositions", file=sys.stderr)
+            return 2
     summary = {
         "generated_at": datetime.now().astimezone().isoformat(),
-        "sessions_root": str(args.sessions),
+        "sessions_root": (
+            None if args.rollout else (str(args.sessions) if args.sessions else None)
+        ),
         "filters": {
             "since": args.since.isoformat() if args.since else None,
             "until": args.until.isoformat() if args.until else None,
             "receipt_since": receipt_since.isoformat() if receipt_since else None,
             "receipt_until": receipt_until.isoformat() if receipt_until else None,
             "max_files": args.max_files,
+            "rollout_files": [str(path) for path in paths] if args.rollout else None,
+            "rollout_selection": "explicit" if args.rollout else "discovered",
             "include_root": args.include_root,
             "thread_id": args.thread_id,
             "session_id": args.session_id,
             "root_thread_id": args.root_thread_id,
             "outcomes": str(args.outcomes) if args.outcomes else None,
             "disposition_policy": args.disposition_policy,
+            "require_outcomes": args.require_outcomes,
             "summary_mode": "full" if args.full_summary else "compact",
         },
         "totals": summarize_totals(items),

@@ -4,7 +4,7 @@ Use these fields when checking a ledger result.
 
 | Field | Meaning |
 | --- | --- |
-| `scan.files_seen` | Rollout files considered after the date/window filter. |
+| `scan.files_seen` | Physical rollout files parsed; receipt-window filtering happens afterward. |
 | `scan.scope_filter` | `all`, `thread`, `session`, or `root_thread_subtree`. |
 | `scan.scope_records` | Records matching the requested scope before root exclusion. |
 | `scan.records_emitted` | Subagent records emitted; root sessions are excluded by default. |
@@ -15,7 +15,7 @@ Use these fields when checking a ledger result.
 | `attempts.attempts` | One child invocation/lifecycle record. |
 | `attempts.accepted_attempts` | Records classified as accepted under the selected policy. |
 | `attempts.priced_accepted_attempts` | Accepted records with a complete price. This is the denominator for the cost metric. |
-| `attempts.cost_per_accepted_task` | `accepted_estimated_cost / priced_accepted_attempts`; only authoritative with explicit outcomes. |
+| `attempts.cost_per_accepted_task` | `accepted_estimated_cost / priced_accepted_attempts`; accepted-record mean, excluding separately labeled failures/rework. Not full task acceptance cost. |
 | `attempts.accepted_definition` | The exact strict or proxy definition used for the number. |
 | `pricing_snapshot` | Resolved price path, SHA-256, effective date, sources, currencies, and loaded rate keys; `unconfigured` when no price file was selected. |
 | `route_pairs` | Compact descriptive model × effort aggregates; do not treat mixed-task pairs as a benchmark. |
@@ -44,3 +44,17 @@ unchanged.
   thread-level fallback evidence.
 - `proxy_ambiguity_reasons`: structural warnings from persisted lifecycle and
   interaction receipts; never a semantic classifier of agent messages.
+
+## Explicit pages and phase windows
+
+- `filters.rollout_files`: resolved explicit input paths when `--rollout` is used;
+  these bound discovery. The caller must supply all relevant pages.
+- `filters.receipt_since` / `filters.receipt_until`: effective half-open receipt
+  window, also used by existing calendar date filters. It measures receipt
+  usage, not lifecycle elapsed time or automatic repair detection.
+- `filters.require_outcomes`: when true, the command required strict explicit
+  outcomes for every emitted record before writing any report. It does not
+  certify verifier truth, completeness of input pages, or complete pricing.
+
+Do not add overlapping windows or cumulative snapshots. For task-level routing,
+combine disjoint incremental attempts and keep unknown lead spend explicit.

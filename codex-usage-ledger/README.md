@@ -186,3 +186,31 @@ receipts are measurement evidence, not invoice-grade provider billing.
 This is a measurement and routing aid, not an invoice. Keep the provider,
 gateway, pricing source, currency, and effective date with any decision-bearing
 cost comparison.
+
+## Exact input pages and repair-phase accounting
+
+Use repeatable `--rollout /path/to/page.jsonl` to parse only known physical pages,
+without walking the sessions directory. Paths are resolved and deduplicated.
+Do not combine it with `--sessions` or `--max-files`. Scope filters still apply,
+but cannot discover descendants or missing pagination pages outside those inputs.
+
+For incremental cost on a resumed thread, pass timezone-aware
+`--receipt-since 2026-09-13T10:00:00Z` and
+`--receipt-until 2026-09-13T10:10:00Z`. These select a half-open receipt window,
+not lifecycle metadata or wall time, and cannot be combined with calendar date
+flags. Use task evidence to choose boundaries; phase detection is not automatic.
+An unwindowed resumed report is cumulative and must not be added to its earlier
+snapshot. Disjoint phase windows can have separate outcome files for the same
+thread; external task-chain attempt IDs must distinguish those phases.
+
+Add `--require-outcomes --disposition-policy strict --outcomes labels.jsonl` for
+reports that require complete explicit labeling. Missing labels, a missing file,
+non-strict policy or an empty selection fail before report writes. The flag does
+not certify pricing completeness or semantic acceptance. Existing strict audits
+without outcomes remain supported and explicitly unknown.
+
+`attempts.cost_per_accepted_task` retains its existing formula: mean cost of the
+priced accepted records, excluding separately labeled failed/rework records.
+Full task acceptance cost must combine all incremental attempts plus attributable
+lead costs. The CLI regenerates outputs; downstream helpers must not treat mere
+output-file existence as a valid cache after inputs, labels or prices change.
