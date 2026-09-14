@@ -1,0 +1,288 @@
+{
+  "acquisition": {
+    "conditional_nomination_jobs": 589,
+    "distinct_nominated_histories": 301,
+    "frozen_images": 4096,
+    "images_with_gt_backed_nomination": 198,
+    "images_without_gt_backed_nomination": 3898,
+    "no_nomination_no_recorded_filter_reason": 3896,
+    "no_nomination_with_recorded_gt_filter_hold": 2,
+    "nomination_count_per_image": {
+      "0": 3898,
+      "1": 6,
+      "2": 92,
+      "3": 1,
+      "4": 99
+    },
+    "recorded_gt_filter_hold_rows": {
+      "neutral_absence_or_budget_not_clear": 1928
+    }
+  },
+  "claim_boundary": [
+    "No-GT-backed nomination is an acquisition-path fact, not evidence of an unlabeled physical owner.",
+    "The prediction-conditioned ledger cannot count owners missed by every prediction and cannot support an original-image census.",
+    "The observed 25-image gap to the 64-image aim has no identified missing-label counterfactual in these artifacts.",
+    "The seven selected-package suffix candidates are machine-burden review cases, not missing-owner candidates or package rejections.",
+    "All physical HOLDs remain unknown-neutral; no negative label or positive owner is inferred here."
+  ],
+  "conditional_immediate_witness": {
+    "images_with_any_candidate_local_w": 186,
+    "job_status_counts": {
+      "candidate_local_w": 502,
+      "first_free_content_not_one_literal_complete_row": 3,
+      "no_valid_free_row": 68,
+      "strict_duplicate_local_w": 16
+    },
+    "nominated_images_without_candidate_local_w": 12
+  },
+  "later_continuation_machine_burden": {
+    "candidate_local_w_rows": {
+      "any_machine_burden": 138,
+      "cap_positive": 0,
+      "eos": 502,
+      "free_geometry_invalid_positive": 43,
+      "free_other_malformed_positive": 1,
+      "free_strict_repeats_including_history_positive": 132,
+      "no_machine_burden": 364
+    },
+    "definition": "Existing machine ledger only: a candidate-local-w continuation has a later strict repeat, geometry-invalid row, other malformed content, or cap. This is not semantic or physical bad-suffix adjudication.",
+    "packages_excluded_by_this_burden_under_frozen_admission_contract": 0,
+    "selected_package_review_candidates": [
+      {
+        "eos": 1,
+        "free_row_starts": 18,
+        "free_valid_rows": 18,
+        "image_id": 568202,
+        "machine_burden": {
+          "free_strict_repeats_including_history": 2
+        },
+        "package_id": "568202:h0:c0",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"568202:h0:c0\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/preserved-cards/568202-h0-c0.png",
+        "visual_group_id": "PAP-0063"
+      },
+      {
+        "eos": 1,
+        "free_row_starts": 23,
+        "free_valid_rows": 23,
+        "image_id": 444315,
+        "machine_burden": {
+          "free_strict_repeats_including_history": 1
+        },
+        "package_id": "444315:h1:c0",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"444315:h1:c0\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/cold-rank-5/cards/444315-h1-c0.png",
+        "visual_group_id": "PAR-0004"
+      },
+      {
+        "eos": 1,
+        "free_row_starts": 20,
+        "free_valid_rows": 19,
+        "image_id": 418115,
+        "machine_burden": {
+          "free_geometry_invalid": 1,
+          "free_strict_repeats_including_history": 6
+        },
+        "package_id": "418115:h0:c0",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"418115:h0:c0\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/cold-rank-0/cards/418115-h0-c0.png",
+        "visual_group_id": "PAR-0027"
+      },
+      {
+        "eos": 1,
+        "free_row_starts": 11,
+        "free_valid_rows": 11,
+        "image_id": 381458,
+        "machine_burden": {
+          "free_strict_repeats_including_history": 1
+        },
+        "package_id": "381458:h0:c0",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"381458:h0:c0\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/cold-rank-5/cards/381458-h0-c0.png",
+        "visual_group_id": "PAR-0041"
+      },
+      {
+        "eos": 1,
+        "free_row_starts": 15,
+        "free_valid_rows": 14,
+        "image_id": 429065,
+        "machine_burden": {
+          "free_geometry_invalid": 1
+        },
+        "package_id": "429065:h0:c0",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"429065:h0:c0\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/cold-rank-5/cards/429065-h0-c0.png",
+        "visual_group_id": "PAR-0065"
+      },
+      {
+        "eos": 1,
+        "free_row_starts": 14,
+        "free_valid_rows": 14,
+        "image_id": 381458,
+        "machine_burden": {
+          "free_strict_repeats_including_history": 1
+        },
+        "package_id": "381458:h0:c1",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"381458:h0:c1\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/cold-rank-5/cards/381458-h0-c1.png",
+        "visual_group_id": "PAR-0042"
+      },
+      {
+        "eos": 1,
+        "free_row_starts": 19,
+        "free_valid_rows": 19,
+        "image_id": 360767,
+        "machine_burden": {
+          "free_strict_repeats_including_history": 5
+        },
+        "package_id": "360767:h1:c1",
+        "raw_record": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+          "selector": ".rows[] | select(.job_id == \"360767:h1:c1\")"
+        },
+        "representative_card": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/cold-rank-6/cards/360767-h1-c1.png",
+        "visual_group_id": "PAR-0075"
+      }
+    ],
+    "selected_packages": {
+      "any_machine_burden": 7,
+      "cap_positive": 0,
+      "eos": 53,
+      "free_geometry_invalid_positive": 2,
+      "free_other_malformed_positive": 0,
+      "free_strict_repeats_including_history_positive": 6,
+      "no_machine_burden": 46
+    }
+  },
+  "physical_admission": {
+    "admitted_groups_excluded_by_max2_per_image_selection": [
+      "PAM-0101",
+      "PAM-0120",
+      "PAP-0016",
+      "PAR-0052",
+      "PAR-0053",
+      "PAR-0064"
+    ],
+    "aim_images": 64,
+    "candidate_local_w_rows": 502,
+    "candidate_w_images": 186,
+    "candidate_w_images_without_root_admitted_group": 147,
+    "exact_visual_groups": 429,
+    "final_images": 39,
+    "final_packages": 53,
+    "floor_images": 16,
+    "floor_packages": 32,
+    "observed_gap_to_aim_images": 25,
+    "root_admitted_groups": 59,
+    "root_admitted_images": 39,
+    "root_disposition_counts": {
+      "admit": 59,
+      "hold": 370
+    },
+    "root_reason_counts": [
+      {
+        "disposition": "admit",
+        "groups": 59,
+        "reason": "Root accepts bound individual-image c/w physical/class/visible-extent and exact-history evidence; earliest trusted exact history/candidate chosen within the frozen visual group."
+      },
+      {
+        "disposition": "hold",
+        "groups": 1,
+        "reason": "Literal person w is a sub-box of c same person, not a new handbag/person; targeted visual audit confirms no distinct successor. Unknown-neutral HOLD; no negative target."
+      },
+      {
+        "disposition": "hold",
+        "groups": 369,
+        "reason": "Unresolved physical c/w trust under the frozen review; neutral, not a negative target."
+      }
+    ]
+  },
+  "schema": "label_vs_compilation.supply_evidence_audit.v1",
+  "source_bindings": {
+    "completion": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/completion.json",
+      "sha256": "d2db76808104049317fda9d7f60de082a98ac2f562df2c4d149ac4f833f5014f",
+      "size_bytes": 295663
+    },
+    "image_records": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/image-records.json",
+      "sha256": "340871533b65efd80429f1edb49e66d89aafe43782ab2395b5e8a879ba46392d",
+      "size_bytes": 143943029
+    },
+    "ordered_jobs": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-jobs.json",
+      "sha256": "d91338bafad1feedef9df7ec0d97bba21facb5251353d3effa6c147d5791c864",
+      "size_bytes": 2073754
+    },
+    "ordered_results": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/ordered-results.json",
+      "sha256": "3d6474ed591b93db5b1a16e7c38549e5aef721a5ba732bfe6177a37c59b7f214",
+      "size_bytes": 34503725
+    },
+    "physical_bank": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/training/physical-bank.json",
+      "sha256": "93b17148731a315cafec6adbc59e336994e39503e6a2db0b367839fd055de4bd",
+      "size_bytes": 1928709
+    },
+    "prior_unit": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/unit.md",
+      "sha256": "4d0c920fa4681a55b5455c98fed8bbff79c030984008a11137b7095e375be233",
+      "size_bytes": 54056
+    },
+    "review_index": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-join/final-v2/consumer-review-index-v2.json",
+      "sha256": "7696236c72cd5f5e84dbd872069e2cfad98ccfa9a103a787ef8c00d8d5ea56c2",
+      "size_bytes": 6694660
+    },
+    "root_decisions": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/root-training-decisions-v2.json",
+      "sha256": "255c3ca9a432548db7a45d7fb6cf6d3a083874ccabdb7513c0ea0a95222a09c1",
+      "size_bytes": 113897
+    },
+    "supply_recovery_result": {
+      "path": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/supply-recovery/result.md",
+      "sha256": "753b87669e0b74df0f4d8a90d1d075671e5c8f1736699a88e5b9d067fdd27392",
+      "size_bytes": 3778
+    },
+    "transport_proof": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-join/final-v2/transport-correction-proof-v2.json",
+      "sha256": "11d129567881a0ee8a3a631a1b0cb39ddae33bbc0f80d092400c504d70e20f5c",
+      "size_bytes": 3170
+    },
+    "verification": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply-recovery/verification-and-cost.json",
+      "sha256": "2678b72f818eb21faa9be5573cfed305200d25f0d5eb7ae22fa47a4f33ec7c40",
+      "size_bytes": 6453
+    }
+  },
+  "status": "candidate_cpu_read_only_existing_evidence_accounting",
+  "technical_and_unknown": {
+    "current_packages_lost_to_technical_failure": 0,
+    "current_review_pending_groups": 0,
+    "current_review_pending_jobs": 0,
+    "interrupted_incomplete_image_attempts": 2,
+    "pending_conditional": 0,
+    "pending_natural": 0,
+    "root_hold_groups_are_unknown_neutral_not_negative_labels": 370,
+    "transport_repair_status": "passed_exact_alias_addition_only",
+    "uncommitted_forwards": 156
+  }
+}

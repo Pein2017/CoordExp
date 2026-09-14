@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-09-13
+updated: 2026-09-14
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -20,21 +20,41 @@ checkpoint.
 
 ## Current questions and evidence
 
-### Active: broader successor supply and equivalent replay throughput
+### Latest completed: physical measurement and post-entry localization
 
-[Owner successor scale and throughput](experiments/2026-09-13-owner-successor-scale-throughput/unit.md)
-is now authorized and running from the closed N16 snapshot. Freeze4096 train
-candidates, retain strict physical admission, and compare common successor
-learning with versus without an observed-repeat pairwise margin only if the
-trusted bank meets its declared floor. Separately test semantics-preserving
-microbatch replay and two-image matched-history diagnostics. A new256 panel
-is frozen before training selection; previous panels are regression evidence.
-The user also authorized collecting view-reviewed unlabeled owners in a
-positive-only provenance overlay, without replacing raw labels, admitting
-unreviewed negatives, or recycling evaluation images into training. No new
-scientific fit is launched yet; the unit owns subsequent gates and finite stops.
+[Label versus compilation](experiments/2026-09-14-label-vs-compilation/results.md)
+is lead-accepted and closed. Source-blind32 physical presence is N16/A/B
+187/167/170; caveat-free sensitivity preserves the N16 advantage. A's same-panel
+GT F1 increases despite20 fewer reviewed atomic owners. Most lost clusters'
+N16 predictions were GT50-unmatched, which is not proof that all were unlabeled.
+The frozen supply ledger does not identify the missing-label counterfactual.
 
-### Latest completed: broader native owner learning with preservation debt
+Eight common-h continuations on four separate old-training cases all realize
+exact c and immediate geometric w. Later free GT-owner sets are equal in two
+cases and lower/different in two; A repeats exact c at row4 in one case.
+This separates entry realization, continuation coverage and post-completion
+behavior. It does not identify a KV ledger or historical SFT label causality.
+
+The proposed next direction remains sampling for discovery, verified complete
+routes for training, and natural greedy for deployment. Target a verified
+harmful later branch rather than strengthening an already-realized c or treating
+every token divergence as damage. Use a separate physical evaluation overlay;
+never recycle confirmation32 into training or treat GT-unmatched as negative.
+No new training, census, KV intervention or automatic promotion is launched.
+
+### Completed: broader successor supply and equivalent replay throughput
+
+[Owner successor scale and throughput](experiments/2026-09-13-owner-successor-scale-throughput/results.md)
+completed qualified microbatch replay,53 new packages/39 images, paired
+256-update A/B fits,896 natural outputs per endpoint and the recovered blind32
+review. Repetition is sharply reduced, but confirmation256 GT50 TP falls
+62/79 versus N16 and physical coverage also regresses. The extra repeat margin
+does not establish a favorable confirmation tradeoff in the single trained
+pair. Neither endpoint is promoted.896 combines old640 with confirmation256,
+not896 independent held-out images. Completion records supersede immutable
+launch-time status fields and earlier preblind pending notes.
+
+### Earlier positive result: native owner learning with preservation debt
 
 [Native owner scale and state](experiments/2026-09-12-native-owner-scale-and-state/results.md)
 is lead-accepted and closed. One fixed-prefix fit,16 trusted packages over11
@@ -49,12 +69,12 @@ obligations. GT-unmatched alone remains neutral.
 Independent repeat supply is real on deployed greedy histories, including
 physical repeats below0.95; efficacy of a new negative fit is not tested here.
 K-only release does not transfer owner gains beyond the known donut on the
-four-scene panel. No generic cache-ledger mechanism is promoted. The next
-proposal is a matched positive-only versus active later-repeat penalty contrast
-with real-owner preservation and new-loop incidence, not automatic larger-scale
-training or cache surgery. Real-prefix refresh remains a separate next factor.
-The newly authorized continuation above supersedes the earlier proposal-only
-status; output cap3084 and finite scientific stops remain.
+four-scene panel. No generic cache-ledger mechanism is promoted. The proposal
+at that closeout was a matched positive-only versus active later-repeat penalty
+contrast with real-owner preservation and new-loop incidence. Its subsequent
+successor-scale execution and physical follow-up are now completed above; it
+is not an outstanding launch grant. Real-prefix refresh remains a separate
+factor, with output cap3084 and finite scientific stops.
 
 ### Completed parallel owner-enumeration portfolio
 

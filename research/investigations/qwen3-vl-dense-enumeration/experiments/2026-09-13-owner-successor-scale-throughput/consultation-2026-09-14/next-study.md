@@ -1,0 +1,111 @@
+# Next study: resolve the label-versus-algorithm decision, not the whole pipeline
+
+Status: **candidate independent advice**, 2026-09-14. No execution or promotion authorization. This note was formed before reading peers. The root's later factual messages and the user's newer label-priority question supersede the initial brief's ordering. I have not inspected images or run models.
+
+## Bottom line
+
+**Do not start either dataset-wide label completion or Pro's F/R training comparison yet. Complete the already frozen physical readout of the same N16/A/B outputs first, and distinguish label-supply restriction from conditional realization failure before choosing the next intervention.** Confidence: high in this ordering; the causal dominance of missing labels remains unidentified.
+
+Three different claims must not be collapsed into “missing labels are the problem”:
+
+1. **Measurement bias:** valid unlabeled outputs are penalized by annotation-relative scoring, possibly reversing checkpoint preference.
+2. **Candidate-supply restriction:** GT-led nomination omits useful training routes that could otherwise be discovered.
+3. **Learning/realization failure:** the learner does not turn available credible targets into a preserved, unpatched root-greedy result.
+
+Completing a physical ledger for frozen predictions directly tests (1), informs but does not identify (2), and does not establish that annotation completion would fix (3). Missing labels are real; their causal dominance is unproved. External completion should have a named deliverable and decision-changing deficit, not precede algorithm research by default.
+
+## Evidence-to-cause map
+
+All paths below are relative to `research/investigations/qwen3-vl-dense-enumeration/experiments/` in this worktree.
+
+| Observation and source | Supported implication | Not identified |
+|---|---|---|
+| Stable50 donut KV intervention changes the natural free suffix without changing weights, image, or labels; wrong-owner norm-matched full-KV can also escape. `2026-09-13-owner-successor-scale-throughput/ask-pro-2026-09-14-discovery-compilation.md`, with original state records linked there. | There exists an execution/state bottleneck independent of acquiring more labels. | A general owner ledger; dominance over all images; unrestricted trainability of the donor trajectory. |
+| Screened25 retains reviewed unlabeled owners, yet natural recovery remains 3/25; 12 teacher tokens remain nonargmax. `2026-09-12-parallel-owner-research/data-flywheel/results.md`. | More credible labels alone were insufficient under that recipe. Incomplete fitting remains an actual alternative to exposure bias. | That better labels never help, or that exposure bias caused this failure. |
+| N16 trains 16 packages over 11 images, gains fresh-panel TP and a reviewed unlabeled donut, but the cup starts a 39-repeat drift sequence; blind physical presence is 147→147, seven gained/seven lost. `2026-09-12-native-owner-scale-and-state/results.md`. | Local credible supervision can compile into unpatched greedy, but owner entry and later preservation are separable. | Uniform net physical coverage improvement; a label-only or a state-only explanation. |
+| With no parameter update, forcing residual B loses previously free owners on both studied scenes, including an owner exchange hidden by unchanged TP50. `2026-09-12-parallel-owner-research/composition/residual-results.md`. | A correct added row plus EOS can still produce an inferior completion. Full consequences matter before learning. | Parameter interference as the cause of those particular losses. |
+| The history cross has one history-dominated scene, one checkpoint-dominated scene, and one persistent recipient-specific difference. `2026-09-12-parallel-owner-research/transfer/results.md`, “Separate fixed12-cell history cross.” | History refresh is plausible, not a universal repair. | That the next failing cohort is predominantly history-limited. |
+| Cup/spoon matched histories modulate row likelihood; the learned cup still wins even when already supplied. `2026-09-13-owner-successor-scale-throughput/history/results.md`. | History information need not be absent for greedy exclusion to fail; preference strength can overwhelm it. | Explicit coverage-state representations or a prescribed new objective. |
+| A/B lose 62/79 annotated owners on new confirmation256, while strict repeats decrease; both cold mechanical checks pass. `2026-09-13-owner-successor-scale-throughput/evaluation/natural-results-preblind.md`. | A real annotation-relative tradeoff exists and is not explained merely by the earlier failed runtime attempts. | Every lost annotation is a lost physical object, every removed FP is hallucination, or EOS is the causal mechanism. |
+
+Root's additional **live projections, reported to this adviser rather than independently replayed here**, sharpen the ambiguity: old16 supplies 11 distinct old histories and both endpoints have one known literal greedy row at all 11; new53 supplies 45 histories with only 9/45 A and 8/45 B known literal greedy rows. Across all records there are 13 shared-history pairs with distinct target strings. B improves new-target NLL/token hits without improving complete literal hits. Bind these projections to an exact receipt before registering a follow-up. They do **not** justify demanding 69 simultaneous literal greedy rows, nor treating every unrecognized alternative as wrong. Old11 aggregate root TP falls, but that alone does not say the trained entry target itself was lost.
+
+## Preferred next contrast: same predictions, different truth coverage
+
+**Question:** On the already frozen confirmation blind32 outputs, does replacing the incomplete GT-relative readout with a source-blind finite physical-owner ledger change the N16→A/B decision, or does it confirm actual owner loss?
+
+This is a measurement contrast, not a model-training causal contrast. Keep the exact N16/A/B predictions, original images, source-blind queue, 32 IDs, total3084 decode, and source join unchanged. Finish only the prepared 32-image/607-proposal review; do not expand the panel to obtain a desired answer. Follow the existing `evaluation/blind-review-protocol.md`: Luna, original resolution, one sample per view, source hidden until all decisions are frozen. The protocol's prose predates queue completion; root reports current preparation complete and zero labels.
+
+### Denominators and readout
+
+- Require **32/32 image records and 607/607 proposal assignments**, exact source join, and no unassigned or multiply assigned proposal. An unresolved assignment is a valid neutral outcome, not a failed row to discard.
+- Report annotation-matched atomic owners, confirmed previously unlabeled atomic owners, class/extent caveats, and unresolved proposals separately. Distinct proposals are not distinct physical owners. Dense-group presence has a separate ledger and does not inflate atomic counts.
+- For N16→A and N16→B, report reviewed atomic owners retained/gained/lost per image, not merely total proposal counts. Also retain the original GT50/60/80 results and strict any-class native-pixel IoU>.95 later-row predicate.
+- This union-of-predictions ledger measures covered physical owners, **not exhaustive image recall**: an owner missed by all three systems need not appear in the queue. Do not present this review as completed ground truth for training.
+- Root verified that all32 come from latest confirmation256, have zero overlap with old640/train11/reference54, and were frozen before outputs. Thus these labels cannot adjudicate the old training-history examples, and the reviewed confirmation images do not become a training pool.
+- Report the sampling frame and panel sizes as they are. A 32-image confirmation subset does not automatically yield a precise estimate for all896; bootstrap cannot repair an unstated selection mechanism or measurement uncertainty.
+- Do not silently discard unresolved cases. Report how many *differential*, source-specific unresolved proposal groups could change each paired decision. If plausible unresolved adjudications reverse the sign, the branch is **inconclusive**, not a win for either explanation.
+
+### Decision rules and finite stop
+
+1. **Physical owner gains reverse the negative GT-relative preference, with preservation credible and not dependent on unresolved proposals:** prioritize bounded evaluation-label completion on the relevant density/occlusion stratum. This identifies a measurement problem on that panel; it still does not prove training would improve from more labels.
+2. **Reviewed physical owner losses persist, without compensating confirmed unlabeled gains:** missing evaluation labels no longer explain away that physical regression. This still does not reject missing training labels as an upstream cause. Check label/positive/protection availability for the selected decision-bearing tasks: adequate credible supply favors algorithm-stage localization; a demonstrated supply deficit calls for a bounded label-availability intervention, not an automatic full-dataset completion or algorithm verdict.
+3. **The sign is unresolved because a small named set of ambiguous proposals controls it:** external review is justified for that **fixed ambiguity set**, not automatic exhaustive labeling. If the whole32 remains visually unresolvable, close the physical comparison as insufficient; do not keep acquiring images until it agrees with a hypothesis.
+4. **Clear missing-label abundance but no checkpoint-preference reversal:** label incompleteness matters for measurement, yet does not explain this A/B failure. A supply-specific argument is required before funding broader completion.
+
+Cost: zero GPU generations and zero training updates; exactly the existing 32 originals and their at-most607 single-proposal overlays, with literal aliases reused only as already permitted. Human/external work, if subsequently requested, is capped to a frozen unresolved decision-changing list. Stop at the complete join and one bounded interpretation. No new independent-confirmation claim follows: confirmation256 has already been read.
+
+## Supporting diagnostic 1: locate the conditional-to-root failure, not “dose”
+
+First use retained cold scores, exact targets/history identities, natural outputs and available acquisition continuations. Deduplicate **image + exact history** conditions; score any already trusted complete route/owner, not each conflicting literal target as simultaneously required. Distinguish exact-literal miss from a geometrically different but valid owner realization. Frozen old/new banks remain separate strata.
+
+If measurement and credible label supply are sufficiently resolved for the selected tasks, and retained artifacts do not decide the algorithm stage, propose one small **no-update** follow-up, not immediate F/R training. Following the bounded peer challenge below, this supersedes my first draft's unnecessarily large16-state panel:
+
+- Freeze at most four existing decision-bearing cases by a deterministic rule within the named failure stratum, before new continuation outcomes. Old-entry and new-successor cases stay separate; this is not a prevalence estimate. Select the intervention row in existing admitted order, while counting other trusted routes as legitimate alternatives. Missing case support is an outcome, not permission to search until four are filled.
+- If conditional usefulness is unknown, at N16 and final A compare `h → free continuation` with `h+c → free continuation`, all the way to EOS or remaining3084 budget. If useful complete conditional behavior is already established but root fails, use the same finite budget for an actual-history crossover instead. Do not run both panels. Reuse exact matching archived continuations; do not infer missing ones. B remains an available retained readout, not a mandatory third model.
+- Upper bound: **16 complete continuations total**, including necessary self/diagonal controls; generated-token envelope49,344 before prefix deductions, with prefills separately counted. Root outputs are reused, not regenerated896 times. Whole-suffix incumbent preservation is an outcome, not a filter applied after results to retain only helpful routes.
+- Before any model call, require at least one provenance-valid, already trusted and pertinent case, and freeze the attained denominator; otherwise close as support/identity shortfall rather than train or backfill. Unknown physical identities remain unknown. Old-prefix cases need their own evidence, not the unrelated confirmation blind32 labels. No new physical labels or model calls are authorized by this note.
+- Actual next-row argmax and all relevant later owner gains/losses decide the result. Likelihood, pairwise margins and “not a strict repeat” are supporting readouts, not success.
+
+Interpretation: if free `h` fails while supplied `c` produces a genuinely useful preserved completion, conditional decision compilation is the next training axis; if free `h` already works but root does not reach/use the capability, student-history refresh becomes well motivated; if even supplied `c` loses prior free owners, better full-route witnesses/composition precede either. Changed target order or valid alternative boxes must not manufacture an access failure. This diagnosis is bounded to its exposed panel, not a general statement about all training.
+
+## Supporting diagnostic 2: distinguish label supply from merely many unknowns
+
+CPU-only, using the existing acquisition/review ledger: classify nomination exclusions, failed suffixes, confirmed c/w candidates, and physical HOLD reasons, maintaining the original acquisition denominator. The latest round already obtained 53 packages over39 images from a fixed4096-image population and589 conditional outcomes; old N16 obtained16 packages/11 images from156 nominations. These are different acquisition contracts, not comparative label-completion efficacy estimates.
+
+Ask a narrow question: **Are the missing training examples predominantly specific potentially useful owner rows whose only missing ingredient is trusted annotation, or do known credible rows already fail conditional/whole-route realization?** Exclusion because no GT-backed nomination exists is not the same as visual ambiguity, invalid geometry, absent successor, or suffix damage. Existing output candidates can identify a bounded set worth externally labeling; they cannot measure unseen missing owners or counterfactual training benefit. Do not relabel old HOLDs as positive from text descriptions alone.
+
+The diagnostic stops after this finite partition. External completion needs an explicit target population and use (evaluation truth versus new training rows); do not buy “more labels” without that distinction. If the user specifically needs attribution of **training-label availability**, not merely supply counts, the next causal treatment must vary that availability on a fixed candidate bank, holding history policy and algorithm fixed. A mask-off versus mask-on comparison estimates adding those verified labels and their gradient, not dose-independent information. Equal-supervision-budget new-label versus repeated-old-label allocation is a different estimand: choose one, not both by default. No fit or annotation expansion is authorized here, and a null with unlearned conditional targets cannot exonerate label supply.
+
+## Why not accept Pro's main F/R proposal unchanged?
+
+- **Unavailable dose states:** root inspected the actual outputs and save site: no A32/A128/B32/B128 or optimizer snapshots. Per-step journals are not checkpoints. Do not rerun256 steps for a retrospective dose plot; predeclare snapshots in a later authorized fit.
+- **192 is an attempt cap, not a supply argument:** 16 images×two boundaries×six samples yields up to192 completions, but historical trustworthy yield is low and the second boundary can depend on a first correction. Distinguish images, attempted boundaries, actions, unique routes, physically eligible witnesses and admitted rows. Temperature0.1 samples can be near duplicates. No promise of16 trainable tasks follows.
+- **Reuse before generation:** full continuations were collected in the previous acquisition. Audit the existing53 admitted candidates/retained suffixes before spending another192 calls. B's raw refresh journals may help, but a journal from a pre-update refresh is not a final-checkpoint endpoint; missing A full suffixes must not be invented.
+- **A full-suffix run is not quality certification:** freeze finite trusted incumbent obligations and inspect complete outcomes. Do not require exhaustive scene perfection. Conversely, “one good c+w” or EOS alone cannot certify preservation. During localization, let preservation failure be an outcome rather than filtering it away.
+- **Same-row refresh is support-conditioned:** the target can already be covered, a valid alternative row may be preferable, or its suffix can cease to pass after the student changes. Keeping failures on old histories makes R an intention-to-refresh **policy effect**, diluted by eligibility, not a clean universal exposure-bias effect. Freeze the eligible denominator, report all failures, and specify a meaningful refresh floor before training; zero or one changed state cannot test a broad claim.
+- **Old versus new histories do not exhaust the present problem:** old literal entries can be solved while incumbent coverage falls; new literal entries often are not solved, and some histories support competing targets. A single F/R aggregate would mix conditional optimization, visitation, changed successor support and preservation.
+- **Only after an actual local-to-root gap:** a later F/R pilot can share a common halfway model **and optimizer**, frozen loss mass/masks/reference conditions and positive exposures, with exactly one refresh and no new independent loss bank. If few rows refresh, stop that contrast as uninformative rather than widening the source. Fixed-history success should win over needless refresh.
+- **Cache-to-text handoff is useful but not first for this user decision:** retained-patched-cache versus identical-text clean re-prefill isolates dependence on nontext computation at that boundary. It does not distinguish missing-label causality, prove trainability, or identify an owner ledger. Current controlled escape already establishes a label-independent state effect. Defer new cache calls rather than make them a prerequisite to the physical or algorithm-stage decision.
+
+Eight GPUs are capacity, not an objective. For a later fit, measure throughput in the exact amended schedule; the accepted A/B used7335/7657 seconds on eight ranks (about16.30/17.02 allocated GPU-hours), but altered bank size, full-suffix checks and removal of periodic mining change cost. A 1.5× shared-half F/R estimate is valid only for matched training work, not a promise about total study cost. Long authorized work uses named tmux, detached logs and a finite step/call stop.
+
+## Strongest alternative that would reverse this ordering
+
+If an already reliable physical ledger showed substantial positive atomic gains for A/B despite negative GT, and a frozen candidate audit showed that otherwise executable useful routes were predominantly blocked only by absent annotations, bounded external completion could outrank algorithm modifications. Neither fact is currently established. Conversely, if retained semantic next-row/full-suffix evidence already cleanly separates a root-access gap, skip new diagnostic generations and go directly to a newly registered F/R pilot; do not ritualize the proposed diagnostic.
+
+## Questions for the other advisers
+
+1. What exact observed result would distinguish **measurement bias**, **candidate-supply restriction**, and **learning failure**, rather than treating all three as missing-label causality?
+2. On the new45 distinct histories, how many literal misses are actual wrong-owner/EOS decisions, versus valid alternative rows or later correct target recovery? Is retained evidence sufficient to decide?
+3. What minimum refresh eligibility and incumbent-preservation obligation makes F/R informative without selecting away the very composition failures we need to explain?
+
+## Bounded peer challenge and resulting convergence
+
+After submitting the independent note, I read `causal-map.md` and `compilation-objective.md`. **Agreement:** the pending blind32 is the shortest measurement discriminator; it cannot establish historical training-label causality. Neither known conditional failures nor physical regression alone proves that missing labels are secondary. Root's old/new conditional split argues against one undifferentiated exposure-bias explanation, while the old11 root TP drop is not evidence that the specific taught c entries disappeared.
+
+**Accepted correction:** my first16-state/64-completion conditional design was larger than needed for the immediate routing decision. The current recommendation is one at-most-four-case inventory and at-most16 completions total, choosing h-versus-h+c or a history crossover according to the retained evidence, never both automatically. No new cache diagnostic is on this critical path.
+
+**Remaining boundary:** a proposal-blind census of originals can discover owners missed by all three models, whereas the607-proposal ledger cannot. However, a separate census is justified only if that unseen-by-all supply gap can change the external-completion decision; it is not an automatic second review. Likewise, a label-availability training pair is the causal discriminator only when label attribution is still decision-bearing after the finite review and supply partition. A tiny selected study can establish a failure mechanism or rescue, not that it is the majority cause across the workload. “Main cause” needs a predeclared population and rescued-deficit threshold, not just a favorable example.
+
+Final recommendation remains **complete existing measurement evidence, branch on the demonstrated deficit, and authorize only one next bounded intervention**. The annotation, conditional, F/R, cache and label-treatment possibilities above are a decision tree, not a queue of approved jobs.

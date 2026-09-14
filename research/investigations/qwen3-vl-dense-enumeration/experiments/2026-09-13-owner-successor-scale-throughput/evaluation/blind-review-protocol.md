@@ -1,7 +1,10 @@
 # Frozen blind32 physical-owner review protocol
 
-Status: **CPU implementation tested; no paired endpoint queue exists yet, so
-no frozen32 rendering, image viewing, or label collection has started.**
+Current status,2026-09-14: **all32images/607proposals reviewed, validated and
+source-joined; root independently reproduced the physical accounting.**
+The [completed result](../../2026-09-14-label-vs-compilation/physical/result.md)
+owns outcomes and uncertainty. The original preparation remains immutable,
+including its historical0-label status before dispatch.
 
 ## Fixed population and source boundary
 
@@ -139,5 +142,5 @@ pytest -q research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09
 ```
 
 Synthetic fixtures exercise only transport invariants; they are not fabricated
-model endpoints or scientific outcomes. Actual rendering stops until the real
-paired N16/A/B consumer queue exists.
+model endpoints or scientific outcomes. The real paired queue and rendering
+now exist; do not rerender or repeat inference when collecting these decisions.

@@ -1,0 +1,110 @@
+{
+  "status": "retained_literal_score_projection_not_physical_owner_review",
+  "inputs": [
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/training/inputs-sealed-v1.json",
+      "sha256": "0c3659f2b8e3ac7c0172f72bce6abae74e2e7d0c9776eaa15f463deec4a2f548"
+    },
+    {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-12-native-owner-scale-and-state/scale/training/preparation/inputs-v2.json",
+      "sha256": "22c54f5a8f64b3743d91be19d967402c2215d7a0acf43f53518779970e742467"
+    }
+  ],
+  "records": 69,
+  "unique_image_prompt_prefix_conditions": 56,
+  "multiple_distinct_literal_target_conditions": 13,
+  "arms": {
+    "A": {
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/training/full-A-v2/receipt.json",
+        "sha256": "2fd85c8959525bd305f84f02925cf04bb7fff33893276e0728126f1d63542110"
+      },
+      "updates": 256,
+      "banks": {
+        "old": {
+          "records": 16,
+          "conditions": 11,
+          "literal_full_argmax_rows": 11,
+          "conditions_with_any_literal_full_argmax": 11,
+          "target_tokens": 153,
+          "argmax_target_tokens": 148,
+          "summed_nll": 42.179659724235535
+        },
+        "new": {
+          "records": 53,
+          "conditions": 45,
+          "literal_full_argmax_rows": 9,
+          "conditions_with_any_literal_full_argmax": 9,
+          "target_tokens": 492,
+          "argmax_target_tokens": 408,
+          "summed_nll": 376.31000447273254
+        },
+        "all": {
+          "records": 69,
+          "conditions": 56,
+          "literal_full_argmax_rows": 20,
+          "conditions_with_any_literal_full_argmax": 20,
+          "target_tokens": 645,
+          "argmax_target_tokens": 556,
+          "summed_nll": 418.4896641969681
+        }
+      }
+    },
+    "B": {
+      "receipt": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/training/full-B-v2/receipt.json",
+        "sha256": "03b5b2141364cf28b0c3e480aac50dc1b4b6196e5ad91fcda659cc2bbd48322a"
+      },
+      "updates": 256,
+      "banks": {
+        "old": {
+          "records": 16,
+          "conditions": 11,
+          "literal_full_argmax_rows": 11,
+          "conditions_with_any_literal_full_argmax": 11,
+          "target_tokens": 153,
+          "argmax_target_tokens": 148,
+          "summed_nll": 42.16817653179169
+        },
+        "new": {
+          "records": 53,
+          "conditions": 45,
+          "literal_full_argmax_rows": 8,
+          "conditions_with_any_literal_full_argmax": 8,
+          "target_tokens": 492,
+          "argmax_target_tokens": 411,
+          "summed_nll": 369.49350905418396
+        },
+        "all": {
+          "records": 69,
+          "conditions": 56,
+          "literal_full_argmax_rows": 19,
+          "conditions_with_any_literal_full_argmax": 19,
+          "target_tokens": 645,
+          "argmax_target_tokens": 559,
+          "summed_nll": 411.66168558597565
+        }
+      }
+    }
+  },
+  "limits": [
+    "Literal target argmax is not semantic owner recovery or root reachability.",
+    "Multiple targets at one history are alternatives, not proof of erroneous labels.",
+    "Distinct literal rows are not an independently re-reviewed physical identity join.",
+    "A/B terminal comparison is not a within-arm learning-dose trajectory."
+  ],
+  "saved_tensor_files_in_training_tree": [
+    {
+      "path": "full-A-v2/adapter/adapter_model.safetensors",
+      "bytes": 72111984
+    },
+    {
+      "path": "full-B-v2/adapter/adapter_model.safetensors",
+      "bytes": 72111984
+    },
+    {
+      "path": "integrated-smoke-B-v1/adapter/adapter_model.safetensors",
+      "bytes": 72111984
+    }
+  ]
+}
