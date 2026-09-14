@@ -108,8 +108,16 @@ would then be useful. Do not force formalism where it adds no insight.
 
 ## Deliver and return
 
-Deliver one ready-to-copy prompt in the user's language, usually as one clearly
-delimited copyable block. Keep any preface outside it brief. A useful prompt
+### Output boundary
+
+The normal ask-pro handoff is response-only. Output exactly one ready-to-copy
+Markdown chunk in the user's language, with no extra preface, commentary,
+duplicate rendering, or second format. Do not create, edit, or save a local
+prompt file, even when a repository path or temporary location is convenient.
+Only write a file when the caller explicitly requests a file artifact in
+addition to (or instead of) the Markdown chunk.
+
+Deliver the prompt as one ready-to-copy block. A useful prompt
 order is objective and decision state, the user's ideas and larger direction,
 verified facts and negative results, Codex's current synthesis and strongest
 alternative, unknowns, and the open questions for Pro; adapt this order when
