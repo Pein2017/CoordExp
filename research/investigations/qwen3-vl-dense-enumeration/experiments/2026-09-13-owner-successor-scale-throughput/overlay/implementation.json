@@ -1,0 +1,64 @@
+{
+  "acceptance": {
+    "command": "pytest -q probes/owner_successor_scale/tests/test_overlay.py",
+    "guards": [
+      "unknown/unreviewed remains neutral",
+      "worker-only proposals cannot become training targets",
+      "confirmation/eval roles fail closed for training export",
+      "same-image duplicate aliases fail closed",
+      "group extent is retained as separate non-atomic evidence",
+      "raw COCO/GT labels are not copied into overlay targets"
+    ],
+    "result": "7 passed"
+  },
+  "candidate_output": {
+    "candidate_count": 10,
+    "candidate_table": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/candidate-table.json",
+      "sha256": "52e732d31576a86e72209f6dba8b14811ff876624ce7780350f5a97cf5c7046c",
+      "size_bytes": 296885
+    },
+    "card_index": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/card-index.json",
+      "sha256": "de937718cedfa5ff8715f7cc02596cdd5cbb3e5477821d29c9326237f0068fae",
+      "size_bytes": 4959
+    },
+    "confirmation_selection_sha256": "d29b75adb90e7743ceeb0295d6589860bfecb4be396e826265186e198fe7bf0b",
+    "image_ids": [
+      158044,
+      417044
+    ],
+    "lead_admission_created": false,
+    "review_contract": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/review-contract.json",
+      "sha256": "7759e3f6d6f93e118d86d1b6d24902a62daa2e2d17e857a58d53aaefad0f523d",
+      "size_bytes": 1841
+    },
+    "review_events_created": 0,
+    "root": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay",
+    "training_export_created": false
+  },
+  "owned_code": {
+    "implementation": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/owner_successor_scale/overlay.py",
+      "sha256": "a396b9c1eebe99259f574377af61173c5aa25ad4d9e8ebfb5fcc66f3a9df11ed",
+      "size_bytes": 31034
+    },
+    "tests": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/owner_successor_scale/tests/test_overlay.py",
+      "sha256": "7326ed4b35adaabe44b49a5f2342a5f6cee448fffd103732c4ea40a2bcaa3ec6",
+      "size_bytes": 7893
+    }
+  },
+  "policy": {
+    "candidate_cards_hide_model_source_identity": true,
+    "excluded_ids_are_not_blanket_forbidden_for_exposed_train": true,
+    "root_owns_physical_labels_and_admission": true,
+    "selection_conditioned_supplemental_validation_is_separate": true,
+    "source_split_roles_are_explicit": true
+  },
+  "schema": "owner_successor_scale.overlay_implementation.v1",
+  "status": "candidate_review_pending_no_training_use",
+  "stop_rule": "Stop before any training use; root appends actual view_image review events and owns lead admission.",
+  "unit": "2026-09-13-owner-successor-scale-throughput"
+}

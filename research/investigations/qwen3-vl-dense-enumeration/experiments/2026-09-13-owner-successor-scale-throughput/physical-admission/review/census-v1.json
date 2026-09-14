@@ -1,0 +1,95 @@
+{
+  "accepted_jobs": [
+    "112899:h0:c0",
+    "165609:h0:c0",
+    "353321:h0:c1",
+    "388312:h0:c0",
+    "388312:h0:c1",
+    "388312:h1:c0",
+    "388312:h1:c1",
+    "520251:h0:c1",
+    "520251:h1:c1"
+  ],
+  "accepted_visual_groups": [
+    "PA-0018",
+    "PA-0019",
+    "PA-0020",
+    "PA-0024",
+    "PA-0035",
+    "PA-0038",
+    "PA-0045"
+  ],
+  "alias_clusters": [
+    {
+      "group_ids": [
+        "PA-0016",
+        "PA-0017"
+      ],
+      "job_ids": [
+        "39654:h0:c1",
+        "39654:h1:c1"
+      ],
+      "reason": "same image, same banana/apple visual proposal; w box differs by one pixel",
+      "visual_alias_cluster_id": "VA-0001"
+    },
+    {
+      "group_ids": [
+        "PA-0018",
+        "PA-0020"
+      ],
+      "job_ids": [
+        "388312:h0:c0",
+        "388312:h1:c0"
+      ],
+      "reason": "same image, same suitcase/cat visual proposal; cat box differs only by small extent drift",
+      "visual_alias_cluster_id": "VA-0002"
+    },
+    {
+      "group_ids": [
+        "PA-0029",
+        "PA-0030"
+      ],
+      "job_ids": [
+        "375654:h0:c1",
+        "375654:h1:c1"
+      ],
+      "reason": "same image, same tiny cup visual proposal; w box differs only by extent drift",
+      "visual_alias_cluster_id": "VA-0003"
+    }
+  ],
+  "candidate_rows": 58,
+  "contact_sheets_historical_only": true,
+  "crop_view_count": 48,
+  "individual_card_count": 50,
+  "individual_view_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/individual-view-receipt-v1.json",
+    "sha256": "c72a4a288e1f05f524dbf4dadf93f768f37cab045d704fbfc39e53d6a97c1d4c",
+    "size_bytes": 100382
+  },
+  "job_status_counts": {
+    "HOLD": 49,
+    "candidate_accept": 9
+  },
+  "lead_accepted_count": 0,
+  "negative_label_count": 0,
+  "note": "HOLD/group_extent/uncertain are neutral evidence, never training negatives; execution histories remain preserved; aliases are not separate training targets.",
+  "review": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/physical-review-v1.json",
+    "sha256": "23748d8f4894d257306d199f729554e55e6c26025ba0459b978fca3489142eb1",
+    "size_bytes": 681852
+  },
+  "schema": "owner_successor_scale.physical_admission_census.v1",
+  "side_status_counts": {
+    "c": {
+      "HOLD": 39,
+      "candidate_accept": 19
+    },
+    "w": {
+      "HOLD": 41,
+      "candidate_accept": 17
+    }
+  },
+  "status": "candidate_proposals_root_admission_pending",
+  "training_target_count": 0,
+  "visual_groups": 50
+}

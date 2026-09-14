@@ -1,0 +1,21 @@
+{
+  "schema": "owner_successor_scale.root_visual_decisions.v1",
+  "reviewer_id": "root_assistant",
+  "reviewer_type": "AI",
+  "review_method": "view_image of every exact OVR-C01 through OVR-C10 context-and-crop card",
+  "category_scope": "COCO-80 only; do not force a nearby allowed class onto an uncertain object",
+  "raw_labels_unchanged": true,
+  "exhaustive_scene_annotation": false,
+  "decisions": [
+    {"proposal_id":"OVR-C01","status":"lead_reviewed_positive","owner_id":"coco:417044:reviewed-donut:01","instance_entity":"resolved","geometry":"resolved","class":"resolved","owner_granularity":"singleton","scope":"singleton","note":"Distinct glazed donut at the lower left tray edge; accept visible extent, including image-edge truncation. Not the adjacent higher/right donuts."},
+    {"proposal_id":"OVR-C02","status":"lead_reviewed_positive","owner_id":"coco:417044:reviewed-donut:02","instance_entity":"resolved","geometry":"resolved","class":"resolved","owner_granularity":"singleton","scope":"singleton","note":"Distinct glazed donut above/right of C01; contextual tray layout separates it from C01 and C03."},
+    {"proposal_id":"OVR-C03","status":"lead_reviewed_positive","owner_id":"coco:417044:reviewed-donut:03","instance_entity":"resolved","geometry":"resolved","class":"resolved","owner_granularity":"singleton","scope":"singleton","note":"Distinct donut to the right of C02, visible coherent single-instance extent."},
+    {"proposal_id":"OVR-C04","status":"lead_reviewed_positive","owner_id":"coco:417044:reviewed-donut:04","instance_entity":"resolved","geometry":"resolved","class":"resolved","owner_granularity":"singleton","scope":"singleton","note":"Separate donut in the next higher tray row; reflection does not prevent binding the proposed box to one instance."},
+    {"proposal_id":"OVR-C05","status":"lead_reviewed_positive","owner_id":"coco:417044:reviewed-donut:05","instance_entity":"resolved","geometry":"resolved","class":"resolved","owner_granularity":"singleton","scope":"singleton","note":"Separate small donut farther up/right on the left tray; supported class and visible single-instance extent."},
+    {"proposal_id":"OVR-C06","status":"uncertain","owner_id":null,"instance_entity":"resolved","geometry":"uncertain","class":"resolved","owner_granularity":"singleton","scope":"singleton","note":"A real donut is present, but the proposed box appears to omit the left portion of its visible rim. Preserve positive existence evidence without admitting this exact full-row target."},
+    {"proposal_id":"OVR-C07","status":"uncertain","owner_id":null,"instance_entity":"resolved","geometry":"uncertain","class":"uncertain","owner_granularity":"singleton","scope":"singleton","note":"A single elongated chocolate pastry is visible. Donut versus other pastry subtype and the tight visible extent remain uncertain; do not force COCO donut."},
+    {"proposal_id":"OVR-C08","status":"uncertain","owner_id":null,"instance_entity":"resolved","geometry":"resolved","class":"uncertain","owner_granularity":"singleton","scope":"singleton","note":"A distinct white stuffed rabbit-like toy is clearly present in a plausible full-extent box. Do not automatically map every plush animal to COCO teddy bear."},
+    {"proposal_id":"OVR-C09","status":"uncertain","owner_id":null,"instance_entity":"uncertain","geometry":"uncertain","class":"resolved","owner_granularity":"unknown","scope":"unknown","note":"Dense horizontal book-like volumes at the upper image edge. Singleton versus multiple-volume binding and complete group extent are not reliable. Neutral dense-case downgrade, not hallucination."},
+    {"proposal_id":"OVR-C10","status":"uncertain","owner_id":null,"instance_entity":"uncertain","geometry":"uncertain","class":"resolved","owner_granularity":"unknown","scope":"unknown","note":"Dense vertical book spines are visible, but the narrow box cannot reliably be assigned to one full volume versus adjacent volumes. Neutral dense-case downgrade; do not invent a singleton or a complete cluster."}
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "owner_successor_scale.final_technical_summary.v3",
+  "status": "final_numerical_candidate_passed_capacity_stage_authorized",
+  "historical_failures_retained": {
+    "v1": "mixed-length all-vocabulary logit maximum exceeded its frozen 2e-5 gate",
+    "v2": "optimizer delta relative-L2 exceeded its frozen 1e-3 gate; v2 cosine did pass and the prior prose error was corrected"
+  },
+  "final_contract": "final-technical-contract-v3.json",
+  "final_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/throughput/final-warm-start-diagnostic.json",
+    "sha256": "d863f21a63205cae8859725627c62f4414596c5ab5e0f7ab5b9d34e03258e0ce",
+    "status": "passed"
+  },
+  "evidence": {
+    "B1": "bitwise serial/batched equality",
+    "duplicate_B2": "reproduced numerical drift without unequal-length padding or heterogeneous MRoPE",
+    "common_warm_start": "serial and batched update branches restored identical theta and AdamW state",
+    "nonzero_KL": "conditional KL was nonzero after warm start",
+    "active_real_margin": "coco2017_train_000000000368 had penalty 0.00654793 with two active positions",
+    "final_update_relative_l2": 0.00022006953588552295,
+    "final_update_cosine": 0.9999999757848691
+  },
+  "next_and_stop": "Run only frozen capacity 1/2/4/8/16 with checkpoint off/on using incremental backward, then one selected two-rank complete update/save/cold. No further tolerance change, scientific fit, or capacity choice without actual wall/token/forward evidence."
+}

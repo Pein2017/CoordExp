@@ -1,0 +1,21 @@
+{
+  "schema": "owner_successor_scale.throughput_diagnostic_contract.v2",
+  "status": "frozen_before_backward",
+  "purpose": "diagnose the already-recorded all-vocabulary logit HOLD after B1 exactness and same-length duplicate B2 controls; this is not acceptance of the original gate or a throughput claim",
+  "precondition_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/throughput/batch-origin-controls.json",
+  "work": "one local optimizer update from identical N16 anchor parameters for serial and batched exact replays, separately with decoder checkpointing disabled and enabled, on one positive CE, one conditional KL, and one normal KL plus margin record",
+  "invariants": [
+    "literal record, prompt, target, image, grid, FP32, SDPA, parameter surface, AdamW, clipping, loss masks, denominators, and schedule coefficients are unchanged",
+    "no DDP, save, cold-read, capacity sweep, scientific fitting, or throughput selection"
+  ],
+  "candidate_bounds": {
+    "max_logit_abs": 0.0005,
+    "each_component_loss_abs": 0.0001,
+    "gradient_global_relative_l2": 0.001,
+    "gradient_cosine_minimum": 0.99999,
+    "clip_factor_abs_difference": 0.001,
+    "optimizer_delta_relative_l2": 0.001,
+    "optimizer_delta_cosine_minimum": 0.99999
+  },
+  "decision_rule": "Only a fully recorded diagnostic pass supports requesting root inspection for a later capacity/multirank grant. It does not relabel the v1 all-vocabulary-logit failure."
+}

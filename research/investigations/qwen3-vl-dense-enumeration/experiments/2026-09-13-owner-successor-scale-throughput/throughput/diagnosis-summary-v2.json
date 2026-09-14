@@ -1,0 +1,37 @@
+{
+  "schema": "owner_successor_scale.throughput_diagnosis_summary.v2",
+  "status": "hold",
+  "original_gate": {
+    "status": "failed_retained",
+    "reason": "mixed-length B2 all-vocabulary maximum logit differences 1.596e-4 and 1.976e-4 exceeded the pre-frozen 2e-5 gate",
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/throughput/real2-v2-parity.json"
+  },
+  "cause_controls": {
+    "B1": "serial and batched outputs were bitwise equal for both real exact entries",
+    "same_length_duplicate_B2": "the two duplicate outputs were equal to one another, but differed from serial by 1.297e-4 and 1.678e-4; this reproduces the observed scale without unequal-length padding or heterogeneous MRoPE",
+    "inference": "consistent with batch-size FP32/SDPA numerical drift; it is not proof of a specific kernel mechanism",
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/throughput/batch-origin-controls.json"
+  },
+  "v2_diagnostic": {
+    "status": "candidate_failed",
+    "frozen_contract": "diagnostic-contract-v2.json",
+    "scope": "one positive CE, one conditional KL, and one normal KL-plus-margin replay; serial/batched, decoder checkpointing off/on; one local AdamW update each",
+    "passed": {
+      "maximum_logit_abs": "3.638e-4 <= 5e-4",
+      "each_component_loss_abs": "<= 2.385e-7 <= 1e-4",
+      "gradient_relative_l2": "<= 3.729e-5 <= 1e-3",
+      "gradient_cosine": ">= 0.9999999993 >= 0.99999",
+      "selected_nonzero_tensor_pattern": "588/588 equal",
+      "clip_factor_abs_difference": "<= 1.207e-7 <= 1e-3",
+      "checkpointing": "on/off serial results exactly matched; enabled runs recorded 28 layer invocations and 28 recomputations per three-item batch"
+    },
+    "failed": {
+      "optimizer_delta_relative_l2": "2.377e-3 off and 2.393e-3 on exceed 1e-3"
+    },
+    "passed_correction": "Optimizer-delta cosine 0.99999718 off and 0.99999714 on are greater than the v2 minimum 0.99999. The raw receipt was correct; only this summary comparison was erroneous.",
+    "interpretation": "A tiny gradient perturbation can be amplified by per-element AdamW normalization, but this is an inference rather than a proven mechanism. The frozen v2 relative-L2 update criterion failed.",
+    "qualification_note": "The conditional and normal KL functions were executed against the detached initial reference and both margin computation and reduction were executed, but those KL and margin values were zero for this fixed initial triplet. This evidence does not qualify active KL/margin behavior.",
+    "receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/throughput/diagnostic-v2-gradient-update.json"
+  },
+  "stop": "No capacity sweep, multi-rank run, save/cold-read, or scientific fit is authorized by this failed diagnostic candidate."
+}

@@ -1,0 +1,55 @@
+{
+  "acceptance": {
+    "command": "pytest -q probes/owner_successor_scale/tests/test_overlay.py",
+    "result": "11 passed"
+  },
+  "candidate_output": {
+    "candidate_count": 10,
+    "candidate_table": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/candidate-table.json",
+      "sha256": "52e732d31576a86e72209f6dba8b14811ff876624ce7780350f5a97cf5c7046c",
+      "size_bytes": 296885
+    },
+    "card_index": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/card-index.json",
+      "sha256": "de937718cedfa5ff8715f7cc02596cdd5cbb3e5477821d29c9326237f0068fae",
+      "size_bytes": 4959
+    },
+    "confirmation_selection_sha256": "d29b75adb90e7743ceeb0295d6589860bfecb4be396e826265186e198fe7bf0b",
+    "image_ids": [
+      158044,
+      417044
+    ],
+    "lead_admission_created": false,
+    "review_contract": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/review-contract.json",
+      "sha256": "125997b36f13a6445e7b102a2d4f9e8208a142961cfe19693ee00e4df1d94cbf",
+      "size_bytes": 2118
+    },
+    "review_events_created": 0,
+    "training_export_created": false
+  },
+  "change_since_v5": [
+    "Distinct explicit same-image aliases fail closed regardless of owner IDs.",
+    "Training export requires a schema/status/digest-validated frozen confirmation selection.",
+    "Resolved exported classes must belong to src.eval.detection_categories.COCO_80_CATEGORY_IDS; noncanonical proposals remain neutral/group evidence."
+  ],
+  "owned_code": {
+    "implementation": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/owner_successor_scale/overlay.py",
+      "sha256": "a1d4f5d96f452fc378de2274cb80a2e31f6335f9c5c82828d7d6e713ec8089b5",
+      "size_bytes": 32934
+    },
+    "tests": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/owner_successor_scale/tests/test_overlay.py",
+      "sha256": "389469bde280a3a55554f16babb00fb143e01c1d8d8b779c8559b4f02d2dfc08",
+      "size_bytes": 10166
+    }
+  },
+  "schema": "owner_successor_scale.overlay_implementation.v1",
+  "status": "candidate_review_pending_no_training_use",
+  "stop_rule": "Stop before any training use; root appends actual view_image review events and owns lead admission.",
+  "supersedes": "implementation-v5.json",
+  "unit": "2026-09-13-owner-successor-scale-throughput",
+  "version": 6
+}

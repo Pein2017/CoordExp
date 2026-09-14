@@ -1,0 +1,60 @@
+{
+  "schema": "owner_successor_scale.physical_admission_join_inputs.v1",
+  "pool": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/pool.json", "sha256": "3bff80d6a37761dd3c7ceac044272c41e8248baf8aa7e9bc1c63af4861a77d1f"},
+  "confirmation_selection": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/evaluation/confirmation-selection.json", "sha256": "d29b75adb90e7743ceeb0295d6589860bfecb4be396e826265186e198fe7bf0b"},
+  "root_review_overrides": {"path": "/data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/root-individual-review-v1.json", "sha256": "1d24bbce32fc8dad6a6fee3e586f928c913d930d05b307e0702a683bf36e77b9"},
+  "completed_partitions": [
+    {
+      "name": "original-shards-2-3",
+      "proposal_schema": "owner_successor_scale.physical_admission_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/review-index-v1.json", "sha256": "9639b52aaa8c6b8907763850351b3c29bffdc1c7ac6ac2a9c8a787abd06ebbf5"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/physical-review-v1.json", "sha256": "23748d8f4894d257306d199f729554e55e6c26025ba0459b978fca3489142eb1"}
+    },
+    {
+      "name": "original-shards-0-1-first80",
+      "proposal_schema": "owner_successor_scale.physical_admission_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-preserved/review-index-v1.json", "sha256": "c4ea24ac65daa03710ae034ae9fca7abce0568894aa68bedb97addde39036cd2"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-preserved/physical-review-v1.json", "sha256": "8b5bc5b874d452714c251c4ff0def9d11727619a5adafcb300ff9b09455de63a"}
+    },
+    {
+      "name": "remainder-batch-01",
+      "proposal_schema": "owner_successor_scale.physical_admission_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder-inventory/batch-01-review-index.json", "sha256": "15d8d4279c0c2f162b5b1156f54a18df3d01bca78d571a366a10c36b0a7589ee"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder/batch-01/physical-review-v1.json", "sha256": "1160dade4c08832554f722cae210f235a2c444072530c2327e883eae24d4fe57"}
+    },
+    {
+      "name": "remainder-batch-02",
+      "proposal_schema": "owner_successor_scale.physical_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder-inventory/batch-02-review-index.json", "sha256": "3cabfabdbe832768bb8706537662199b683e2a84f337436603e5664e173c67cd"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder/batch-02/physical-review-v1.json", "sha256": "5b20a21eecab9d78f60425d8aab18c8f44b5d10731ed9cfadafb247f623ec3f6"}
+    },
+    {
+      "name": "remainder-batch-03",
+      "proposal_schema": "owner_successor_scale.physical_admission_remainder_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder-inventory/batch-03-review-index.json", "sha256": "694bc33bc798143301e7929841e1801d9c9212132b614d9316bea88566c917d0"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder/batch-03/physical-review-v1.json", "sha256": "ab8911ad6daeda90c6f9de5536f09537192115ba25238a4a8db7da72104956b6"}
+    },
+    {
+      "name": "remainder-batch-04",
+      "proposal_schema": "owner_successor_scale.physical_admission_remainder_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder-inventory/batch-04-review-index.json", "sha256": "6019e535bc74ac3ef949a7541e31453e219e8048d6d492cac2f0295916d1bb8a"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder/batch-04/physical-review-v1.json", "sha256": "cf8812b897947bb4a3ebf5fe3434b2a49b742b652422567000ede145c57ddbb3"}
+    },
+    {
+      "name": "remainder-batch-05",
+      "proposal_schema": "owner_successor_scale.physical_admission_remainder_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder-inventory/batch-05-review-index.json", "sha256": "68903bf603e13a74ec46472fff09f65d036160955823916bc73819dd5ed94dbb"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder/batch-05/physical-review-v1.json", "sha256": "2556909be4adc7d18e05d2f073466ce04ad5a8a1de4c58eefc25b621ace3a531"}
+    },
+    {
+      "name": "remainder-batch-06",
+      "proposal_schema": "owner_successor_scale.physical_admission_review.v1",
+      "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder-inventory/batch-06-review-index.json", "sha256": "261549723bb26d87f2c1a636a76d36d66d19a3c83e81a9aab7fd25a1589ff288"},
+      "proposal": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-remainder/batch-06/physical-review-v1.json", "sha256": "249709abc593b9fbfd12e7211dc9ea9a125864e905b1c6b9c6a2e270b71f2955"}
+    }
+  ],
+  "recovery": {
+    "frozen_index": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-recovery/review-index-v1.json", "sha256": "59c402bc073a8fb3c2494be02a645bb178eb427bd410597c5373ac3a7d1f4cc8"},
+    "resume_manifest": {"path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission-recovery-resume/manifest-v1.json", "sha256": "00840ecdb51f54095b58272857319c2825bd2678fd7fe92a2e4b38c79fda4990"}
+  }
+}

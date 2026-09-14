@@ -1,0 +1,54 @@
+{
+  "acceptance": {
+    "command": "pytest -q probes/owner_successor_scale/tests/test_overlay.py",
+    "result": "10 passed"
+  },
+  "candidate_output": {
+    "candidate_count": 10,
+    "candidate_table": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/candidate-table.json",
+      "sha256": "52e732d31576a86e72209f6dba8b14811ff876624ce7780350f5a97cf5c7046c",
+      "size_bytes": 296885
+    },
+    "card_index": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/card-index.json",
+      "sha256": "de937718cedfa5ff8715f7cc02596cdd5cbb3e5477821d29c9326237f0068fae",
+      "size_bytes": 4959
+    },
+    "confirmation_selection_sha256": "d29b75adb90e7743ceeb0295d6589860bfecb4be396e826265186e198fe7bf0b",
+    "image_ids": [
+      158044,
+      417044
+    ],
+    "lead_admission_created": false,
+    "review_contract": {
+      "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/overlay/review-contract.json",
+      "sha256": "45bacb7af2c4d4efb13650c746cc73babc9ae2a3cce6a59060e015b779a1aba3",
+      "size_bytes": 1892
+    },
+    "review_events_created": 0,
+    "training_export_created": false
+  },
+  "change_since_v4": [
+    "Explicit same-image aliases fail closed before target export, even with distinct owner IDs.",
+    "Training export requires the frozen confirmation selection; reviewer identity wording permits actual human or AI route."
+  ],
+  "owned_code": {
+    "implementation": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/owner_successor_scale/overlay.py",
+      "sha256": "b76e09b62e80ff97fbd5012bf384d4430bf4c557690a513045a1eeaa8310727c",
+      "size_bytes": 31870
+    },
+    "tests": {
+      "path": "/data/CoordExp/.worktrees/research-probes/probes/owner_successor_scale/tests/test_overlay.py",
+      "sha256": "af7b15f2686ec74cbb1d964c78e9b4cab4be26ad0253363ae2299ef5249823b6",
+      "size_bytes": 9449
+    }
+  },
+  "schema": "owner_successor_scale.overlay_implementation.v1",
+  "status": "candidate_review_pending_no_training_use",
+  "stop_rule": "Stop before any training use; root appends actual view_image review events and owns lead admission.",
+  "supersedes": "implementation-v4.json",
+  "unit": "2026-09-13-owner-successor-scale-throughput",
+  "version": 5
+}

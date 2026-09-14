@@ -1,0 +1,133 @@
+{
+  "schema": "owner_successor_scale.root_individual_review.v1",
+  "status": "partial_root_review_not_training_bank",
+  "review_route": "Root actually viewed one sample per view_image call; original detail on the seven candidate-group cards and three separate crops; PA-0003 previously viewed as one individual card.",
+  "scope": "All seven candidate-accept groups from sealed shards2/3 plus PA-0003; other worker HOLD groups are not claimed root-viewed.",
+  "precision_boundary": "Entity existence, full visible extent, class and history novelty are separate. No amodal extent requirement and no new numeric IoU threshold. Contact sheets are not label evidence.",
+  "training_admission": false,
+  "negative_labels": 0,
+  "records": [
+    {
+      "group": "PA-0003",
+      "image": 274509,
+      "c": "HOLD",
+      "w": "candidate_supported",
+      "reason": "Right couch may alias the large already-covered continuous foreground sofa; c novelty/extent unresolved. Foreground man is real; no c/w admission.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0003-274509.png",
+          "sha256": "f990011771fac74f95cd0561a6174135871e275c0a4a716a0f6e91494a7e5528"
+        }
+      }
+    },
+    {
+      "group": "PA-0018",
+      "image": 388312,
+      "c": "HOLD",
+      "w": "candidate_supported",
+      "reason": "Suitcase exists, but its supplied c box excludes the raised lid; full visible extent is unresolved. Cat is a clear distinct occluded instance.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0018-388312.png",
+          "sha256": "ffa128c1b26833de26c46f8c7da37185c54d4626c52617603f939316820e2910"
+        }
+      }
+    },
+    {
+      "group": "PA-0019",
+      "image": 388312,
+      "c": "candidate_supported",
+      "w": "HOLD",
+      "reason": "Cat is clear; generated suitcase w omits a substantial left section and raised lid. Real entity does not validate this literal row's extent.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0019-388312.png",
+          "sha256": "971463caa495b5785e55255a7195ddd01957ec95b39027cc8afb1c45a4267904"
+        }
+      }
+    },
+    {
+      "group": "PA-0020",
+      "image": 388312,
+      "c": "HOLD",
+      "w": "candidate_supported",
+      "reason": "Same suitcase extent uncertainty as PA-0018 under a different exact history; cat remains a real distinct instance.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0020-388312.png",
+          "sha256": "626169d215f58ea3f6a24b228384c59cc5ecb77157e3c1f5ac1f788bee2e4197"
+        }
+      }
+    },
+    {
+      "group": "PA-0024",
+      "image": 112899,
+      "c": "candidate_supported",
+      "w": "HOLD",
+      "reason": "Couch is clear and unrepresented in shown history. Separately enlarged w looks like a cut-flower bouquet in a vase; potted-plant class is unresolved.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0024-112899.png",
+          "sha256": "81340432339c7360f67f776e0763c567398998ae921860b81b07fd79998f3aa1"
+        },
+        "root_viewed_crops": [
+          {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0024-w.png",
+            "sha256": "0d68291add2f07e50388d681b5784d2f1263b8854d99a25b5f336d1c1f2de1f5"
+          }
+        ]
+      }
+    },
+    {
+      "group": "PA-0035",
+      "image": 520251,
+      "c": "candidate_supported",
+      "w": "HOLD",
+      "reason": "Right recliner is clear and new. Separate crop leaves exact remote versus adjacent small-object extent/class uncertain; no automatic full-row trust.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0035-520251.png",
+          "sha256": "6dc52b7d0151d9aee566344d0573806e4b67f8e1bfb4cbda3151c1dbabd6c1a8"
+        },
+        "root_viewed_crops": [
+          {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0035-w.png",
+            "sha256": "6e4b8555d48e6976c3262c7664e2fe9fd322c4bbbe4c447fd7b6f0f393be1c99"
+          }
+        ]
+      }
+    },
+    {
+      "group": "PA-0038",
+      "image": 353321,
+      "c": "candidate_supported",
+      "w": "HOLD",
+      "reason": "Seated woman is a clear new instance. Bench w omits roughly its left third despite a visibly continuous bench; substantial partial extent, not trusted full-row geometry.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0038-353321.png",
+          "sha256": "6274940c4494f4270d62c58a3138b08f5b7c9976d46545175f37d130fc8b4124"
+        }
+      }
+    },
+    {
+      "group": "PA-0045",
+      "image": 165609,
+      "c": "candidate_supported",
+      "w": "candidate_supported",
+      "reason": "Pickup truck is clear and distinct from already-covered oncoming car. Separate crop supports a narrow, occluded left dog behind bars; visible-extent reading only, no invented amodal extent.",
+      "evidence": {
+        "card": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0045-165609.png",
+          "sha256": "64ed2ea2da5881bdb1298dae1888385d20e14140dd61cf8d105821cd67717ef5"
+        },
+        "root_viewed_crops": [
+          {
+            "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0045-w.png",
+            "sha256": "9f9350a1445772eb15b510de5e7e0f7a88a4376e526a8e0ac105759cd4f9e96d"
+          }
+        ]
+      }
+    }
+  ]
+}

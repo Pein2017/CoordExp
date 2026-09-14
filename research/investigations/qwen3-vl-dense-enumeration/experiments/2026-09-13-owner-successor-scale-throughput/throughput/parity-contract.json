@@ -1,0 +1,28 @@
+{
+  "schema": "owner_successor_scale.throughput_parity_contract.v1",
+  "status": "frozen_before_first_comparison",
+  "comparison": "serial exact replay versus length-aware padded batched exact replay",
+  "invariants": {
+    "record_order": "exact",
+    "literal_prompt_target_ids": "exact",
+    "image_and_observed_grid_identity": "exact",
+    "per_item_loss_masks_and_denominators": "unchanged_consumer_owned",
+    "precision": "fp32",
+    "attention": "sdpa",
+    "natural_output_budget": 3084
+  },
+  "numeric_tolerances": {
+    "logit_atol": 0.00002,
+    "logit_rtol": 0.0001,
+    "loss_component_atol": 0.00001,
+    "loss_component_rtol": 0.0001,
+    "gradient_norm_atol": 0.00001,
+    "gradient_norm_rtol": 0.0001,
+    "update_norm_atol": 0.0000001,
+    "update_norm_rtol": 0.001
+  },
+  "capacity_candidates": [1, 2, 4, 8, 16],
+  "maximum_microbatch": 16,
+  "per_card_allocated_byte_target": 69793218560,
+  "selection_rule": "choose the fastest passing capacity at or below the byte target; memory occupancy alone is not throughput evidence"
+}

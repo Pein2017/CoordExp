@@ -1,0 +1,44 @@
+{
+  "checks": {
+    "alias_execution_history_preserved": true,
+    "aliases_not_training_targets": true,
+    "all_resolved_classes_in_coco80": true,
+    "candidate_denominator_58": true,
+    "contact_sheets_historical_only": true,
+    "exact_rows_jobs_images_join": true,
+    "individual_cards_50": true,
+    "individual_crops_48": true,
+    "no_training_or_lead_acceptance": true,
+    "sealed_terminals_completed_exit0": true,
+    "shard3_absent_job_excluded": true,
+    "status_domain": true,
+    "visual_group_denominator_50": true
+  },
+  "command": "PYTHONPATH=/data/CoordExp/.worktrees/research-probes python3 /data/CoordExp/.worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/validate_receipt.py",
+  "index_sha256": "9639b52aaa8c6b8907763850351b3c29bffdc1c7ac6ac2a9c8a787abd06ebbf5",
+  "manifest_sha256": "5ac3b19da976a18eed7e9b2c88dce911b06cc9f388684217c503156bba79b965",
+  "note": "No worker labels, training export, GPU call, source edit, or confirmation-panel admission.",
+  "observed_counts": {
+    "candidate_accept_jobs": 9,
+    "candidate_accept_visual_groups": 7,
+    "candidate_rows": 58,
+    "canonical_candidate_pairs_after_alias_collapse": 6,
+    "hold_jobs": 49,
+    "visual_alias_clusters": 3,
+    "visual_groups": 50
+  },
+  "receipt_sha256": "c72a4a288e1f05f524dbf4dadf93f768f37cab045d704fbfc39e53d6a97c1d4c",
+  "review_sha256": "23748d8f4894d257306d199f729554e55e6c26025ba0459b978fca3489142eb1",
+  "schema": "owner_successor_scale.physical_admission_validation.v2",
+  "side_status_counts": {
+    "c": {
+      "HOLD": 39,
+      "candidate_accept": 19
+    },
+    "w": {
+      "HOLD": 41,
+      "candidate_accept": 17
+    }
+  },
+  "status": "passed"
+}

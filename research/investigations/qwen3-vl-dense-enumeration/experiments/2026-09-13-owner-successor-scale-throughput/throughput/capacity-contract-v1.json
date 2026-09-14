@@ -1,0 +1,13 @@
+{
+  "schema": "owner_successor_scale.capacity_contract.v1",
+  "status": "frozen_before_measurement",
+  "records": "fixed 16 real N16 materializations: 4 positive CE, 4 conditional KL, 8 normal KL-plus-margin; records are length-sorted within each microbatch and no labels, masks, denominators, or coefficient changes are permitted",
+  "candidates": [1, 2, 4, 8, 16],
+  "checkpointing": [false, true],
+  "execution": "one forward/backward per microbatch, immediately free graph, no optimizer/scheduler/update/save/cold/scientific fit",
+  "limits": {
+    "allocated_bytes_per_card": 69793218560
+  },
+  "selection": "fastest passing configuration by measured target tokens per wall second, then lower microbatch only for an exact throughput tie; memory occupancy alone is not a selection metric",
+  "required_receipt_fields": ["wall_seconds", "device_milliseconds", "target_tokens", "total_tokens", "forwards", "peak_allocated_bytes", "peak_reserved_bytes", "rss_bytes", "receipt_bytes"]
+}

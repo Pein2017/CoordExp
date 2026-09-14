@@ -1,0 +1,120 @@
+{
+  "coordinate_convention": "Native image pixels are xyxy; literal Qwen bins remain in candidate c_text/w_text and coordinate_bins_0_999_xyxy.",
+  "counts": {
+    "candidate_local_w_rows": 58,
+    "cards": 50,
+    "exact_visual_review_groups": 50
+  },
+  "created_utc": "2026-09-13",
+  "packet": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-packet-v1.json",
+    "sha256": "b1367429acfd2c59fa2ef545c1f00f96c612c24bd03a747314d8c5c382685232",
+    "size_bytes": 30404
+  },
+  "physical_review_boundary": "GT/IoU are context only. c and w entity, geometry, class, and physical coverage are independent fields; unknown stays neutral.",
+  "review_index": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/review-index-v1.json",
+  "schema": "owner_successor_scale.physical_admission_preflight.v1",
+  "scope": "Only sealed remainder-v1 shard-2 and shard-3 candidate_local_w rows; no candidate generation/model calls; root owns physical admission.",
+  "shards": {
+    "shard-2": {
+      "bindings": {
+        "images": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-2/images.jsonl",
+          "sha256": "900cede5e33e18f2b10f6c81484190f8ea745d56d7649d75624d55f579a9bd75",
+          "size_bytes": 21440858
+        },
+        "jobs": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-2/jobs.jsonl",
+          "sha256": "7142d7afe5619c8267ea418102336c54fb689dd3837949a64cb46fe77c54d159",
+          "size_bytes": 52079
+        },
+        "model": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-2/model.json",
+          "sha256": "2aaa6413e0bcb246e4ed4e81bbc356b9fab24f4b7156ac861392ddc78d7cec9a",
+          "size_bytes": 50093
+        },
+        "rows": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-2/rows.jsonl",
+          "sha256": "6f38be1531250004579de5f90e7c395d36348cdf3ce355e29aa29a58e9a14974",
+          "size_bytes": 565323
+        },
+        "source": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-2/source.json",
+          "sha256": "9449770a01aab577f6f7322360c34bbfc0a7c8cc57a4147cdbe64dc9a679e385",
+          "size_bytes": 237508
+        },
+        "terminal": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-2/terminal.json",
+          "sha256": "9646161ae1aec6d1c971bc8c7148ec9bd73308ff77196c9e88fafd7c3a9fef2a",
+          "size_bytes": 7566
+        }
+      },
+      "candidate_local_w_count": 19,
+      "excluded_job_ids_not_in_completed_rows": [],
+      "images_count": 1024,
+      "jobs_count": 23,
+      "joined_exact_job_image_ids": true,
+      "rows_count": 23,
+      "terminal": {
+        "conditional": 23,
+        "exit_code": 0,
+        "new_natural": 941,
+        "reused_natural": 83,
+        "shard": 2,
+        "status": "completed"
+      }
+    },
+    "shard-3": {
+      "bindings": {
+        "images": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-3/images.jsonl",
+          "sha256": "2f8d36b0d56d1f4e25af137fcc6c4533fe973f189b595a6e90ea07b352585b65",
+          "size_bytes": 29070173
+        },
+        "jobs": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-3/jobs.jsonl",
+          "sha256": "2971b648af433025172cb6b0d6ca59b2ccc326530ba53990fc860bf4f8353b1c",
+          "size_bytes": 146250
+        },
+        "model": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-3/model.json",
+          "sha256": "2aaa6413e0bcb246e4ed4e81bbc356b9fab24f4b7156ac861392ddc78d7cec9a",
+          "size_bytes": 50093
+        },
+        "rows": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-3/rows.jsonl",
+          "sha256": "a2fa000937ceaea32c9b7ad05490ad880a7917ea642a97b9160ae5d650c35572",
+          "size_bytes": 2014658
+        },
+        "source": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-3/source.json",
+          "sha256": "a251344278043dea198838366ac67fe42cfd9ee512828938a175ec97095e6a1a",
+          "size_bytes": 237512
+        },
+        "terminal": {
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/supply/remainder-v1/shard-3/terminal.json",
+          "sha256": "08a56a2b66e6fae4cca1ae5e8cc4ae5f79c6ec637a8b28e74988f9a3170b1414",
+          "size_bytes": 7571
+        }
+      },
+      "candidate_local_w_count": 39,
+      "excluded_job_ids_not_in_completed_rows": [
+        "39654:h0:c0"
+      ],
+      "images_count": 1024,
+      "jobs_count": 55,
+      "joined_exact_job_image_ids": true,
+      "rows_count": 54,
+      "terminal": {
+        "conditional": 54,
+        "exit_code": 0,
+        "new_natural": 941,
+        "reused_natural": 83,
+        "shard": 3,
+        "status": "completed"
+      }
+    }
+  },
+  "status": "sealed_remainder_join_verified_review_ready",
+  "stop_rule": "Stop after physical c/w review; no training export or lead-accepted labels are produced here."
+}

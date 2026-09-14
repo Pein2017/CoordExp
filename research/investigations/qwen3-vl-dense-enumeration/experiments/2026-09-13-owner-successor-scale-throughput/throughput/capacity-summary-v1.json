@@ -1,0 +1,37 @@
+{
+  "schema": "owner_successor_scale.capacity_summary.v1",
+  "status": "single_rank_numerical_capacity_candidate_validated",
+  "source_receipt": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/throughput/capacity-probe.json",
+    "status": "passed"
+  },
+  "selected": {
+    "microbatch_size": 2,
+    "activation_checkpointing": false,
+    "wall_seconds": 16.318860411643982,
+    "device_milliseconds": 16318.630859375,
+    "target_tokens": 868,
+    "total_tokens": 23175,
+    "forwards": 8,
+    "target_tokens_per_second": 53.18998864532579,
+    "total_tokens_per_second": 1420.1359295569416,
+    "peak_allocated_bytes": 41737486848,
+    "peak_reserved_bytes": 84427145216,
+    "rss_bytes": 12159987712
+  },
+  "comparisons": {
+    "serial_MB1_checkpoint_off_target_tokens_per_second": 49.60445633527882,
+    "selected_over_serial_MB1_checkpoint_off": 1.0722824636119825,
+    "MB2_checkpoint_on_target_tokens_per_second": 39.6971347013342,
+    "selected_over_MB2_checkpoint_on": 1.339894907919843,
+    "fastest_checkpoint_on_MB8_target_tokens_per_second": 41.148937214261906,
+    "selected_over_fastest_checkpoint_on": 1.2926212010863443
+  },
+  "capacity_boundary": {
+    "checkpoint_off_MB4": "over allocated: 74425386496 > 69793218560 byte target",
+    "checkpoint_off_MB8_MB16": "OOM",
+    "checkpoint_on_MB1_MB16": "all passed, but slower than selected MB2/off"
+  },
+  "scope_and_handoff": "Each measurement used the fixed 16-record common CE/KL/margin workload, incremental backward, immediate graph release, and zero optimizer updates. This validates a single-rank numerical/capacity candidate only. The sole two-rank one-update/save/cold acceptance remains pending the integrated training consumer's physical-bank and root-grant admission; no standalone DDP substitute is authorized.",
+  "historical_failures_retained": ["v1 all-vocabulary 2e-5 logit gate", "v2 optimizer relative-L2 1e-3 gate"]
+}

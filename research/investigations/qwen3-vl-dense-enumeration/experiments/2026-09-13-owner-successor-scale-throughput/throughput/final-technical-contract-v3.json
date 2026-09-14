@@ -1,0 +1,20 @@
+{
+  "schema": "owner_successor_scale.final_technical_contract.v3",
+  "status": "frozen_before_final_warm_start",
+  "history": {
+    "v1": "failed_retained: mixed-length all-vocabulary maximum-logit 2e-5 gate",
+    "v2": "failed_retained: optimizer delta relative-L2 1e-3 gate; cosine actually passed",
+    "revision": "final, technical only: retain v2 logit/loss/gradient/clip bounds and update cosine; revise only update relative-L2 to 0.005"
+  },
+  "bounds": {
+    "max_logit_abs": 0.0005,
+    "each_component_loss_abs": 0.0001,
+    "gradient_global_relative_l2": 0.001,
+    "gradient_cosine_minimum": 0.99999,
+    "clip_factor_abs_difference": 0.001,
+    "optimizer_delta_relative_l2": 0.005,
+    "optimizer_delta_cosine_minimum": 0.99999
+  },
+  "final_diagnostic": "Perform one common-anchor warm-start, capture theta and AdamW state, then execute exactly one serial and one batched update from those same captured states. Use the fixed source teacher to make KL nonzero after warm-start. Inspect up to 54 existing normals for a naturally active margin, without label or margin-table modification.",
+  "stop": "No additional tolerance revision. A final pass permits only the registered capacity/checkpoint comparison and one two-rank update/save/cold check; a final failure selects serial checkpoint-off fallback."
+}
