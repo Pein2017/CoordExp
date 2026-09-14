@@ -1,0 +1,2816 @@
+{
+  "contact_sheets_historical_only": true,
+  "crop_view_count": 48,
+  "decision_evidence_excludes_contact_sheets": true,
+  "detail": "original",
+  "execution_row_count": 58,
+  "individual_card_count": 50,
+  "one_sample_per_view_image_call": true,
+  "recorded_utc": "2026-09-13T09:10:23.227091+00:00",
+  "reviewer_identity": "owner_overlay subagent (Codex)",
+  "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+  "route": "Codex view_image",
+  "schema": "owner_successor_scale.physical_admission_individual_view_receipt.v1",
+  "source_review_index": {
+    "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/review-index-v1.json",
+    "sha256": "9639b52aaa8c6b8907763850351b3c29bffdc1c7ac6ac2a9c8a787abd06ebbf5",
+    "size_bytes": 418648
+  },
+  "status": "complete_all_visual_groups_individually_reviewed",
+  "views": [
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0001-158044.png",
+        "sha256": "c9a9d3c5cb6d798ed7c68e4bde3bc67d7cc3b5519d75c8556accae9e8ce7892e",
+        "size_bytes": 1602817
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            863,
+            265,
+            1152,
+            528
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            578,
+            526
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0001-w.png",
+          "route": "view_image",
+          "sha256": "867174e98097c8ad12047d284934b1d1651ed3d629822bc26e48d90802b1c4f7",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            991,
+            346,
+            1151,
+            447
+          ],
+          "source_image_id": 158044
+        }
+      ],
+      "execution_job_ids": [
+        "158044:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0001",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 158044,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000158044.jpg",
+        "sha256": "a13b4d93d4fc425628055c63b5d2dc1c66bd610302d567d62367fce0c5346405"
+      },
+      "visual_group_id": "PA-0001"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0002-158044.png",
+        "sha256": "ed04b80566ab91f687957d50fa78b2049392880666b821005a36abcbbdd6fdc4",
+        "size_bytes": 1593886
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            727,
+            18,
+            1152,
+            437
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            425,
+            419
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0002-c.png",
+          "route": "view_image",
+          "sha256": "fa5bddf922435ebc2ef53a25ee7a46d7db88618a3fa9ef7bfb3e436f00595a27",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            880,
+            147,
+            1071,
+            308
+          ],
+          "source_image_id": 158044
+        },
+        {
+          "crop_native_window_xyxy": [
+            828,
+            0,
+            1120,
+            113
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            584,
+            226
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0002-w.png",
+          "route": "view_image",
+          "sha256": "e8064643f5c3727e33a071b9ea9179bad813f41b5a5a8f6ff18cae4af4dc6f0d",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            918,
+            0,
+            1030,
+            63
+          ],
+          "source_image_id": 158044
+        }
+      ],
+      "execution_job_ids": [
+        "158044:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0002",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 158044,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000158044.jpg",
+        "sha256": "a13b4d93d4fc425628055c63b5d2dc1c66bd610302d567d62367fce0c5346405"
+      },
+      "visual_group_id": "PA-0002"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0003-274509.png",
+        "sha256": "f990011771fac74f95cd0561a6174135871e275c0a4a716a0f6e91494a7e5528",
+        "size_bytes": 1387329
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            821,
+            265,
+            1192,
+            768
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            371,
+            503
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0003-w.png",
+          "route": "view_image",
+          "sha256": "3e676dad54fbbdc4716a4860ea28d84afedbec08b3555ef8c9ba88f061e46938",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            935,
+            431,
+            1078,
+            639
+          ],
+          "source_image_id": 274509
+        }
+      ],
+      "execution_job_ids": [
+        "274509:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0003",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1344,
+          768
+        ],
+        "image_id": 274509,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000274509.jpg",
+        "sha256": "9c93ee5cc475435096634dd72b086400bf25491100874a4fce1d0b56863bb76a"
+      },
+      "visual_group_id": "PA-0003"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0004-274509.png",
+        "sha256": "c62df4febc4845febfe8e3973adfe57a38717afd7d2ec7fdaa5b9e4c91bbf5ab",
+        "size_bytes": 1658832
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "274509:h0:c1",
+        "274509:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0004",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1344,
+          768
+        ],
+        "image_id": 274509,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000274509.jpg",
+        "sha256": "9c93ee5cc475435096634dd72b086400bf25491100874a4fce1d0b56863bb76a"
+      },
+      "visual_group_id": "PA-0004"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0005-274509.png",
+        "sha256": "374d3c41a7b00949302caeb30b6f82ffa15949bb80304bba362f9a8e816e897e",
+        "size_bytes": 1591036
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            915,
+            161,
+            978,
+            310
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            315,
+            745
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0005-w.png",
+          "route": "view_image",
+          "sha256": "326eca5fdffe2c08b98cb3d0b4c11236cfdea65d29666f68daddefa5ad827dc1",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            935,
+            207,
+            958,
+            264
+          ],
+          "source_image_id": 274509
+        }
+      ],
+      "execution_job_ids": [
+        "274509:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0005",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1344,
+          768
+        ],
+        "image_id": 274509,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000274509.jpg",
+        "sha256": "9c93ee5cc475435096634dd72b086400bf25491100874a4fce1d0b56863bb76a"
+      },
+      "visual_group_id": "PA-0005"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0006-142497.png",
+        "sha256": "aa91d0a5e51309b2769760f9eed607b81da4927c8ba596126b88130507fccfbf",
+        "size_bytes": 1239415
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            0,
+            0,
+            670,
+            49
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            670,
+            49
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0006-c.png",
+          "route": "view_image",
+          "sha256": "d0503e86541a982ded30b35805d9b1e07b387ba62cb47d23b15a0805aa778cb2",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            0,
+            0,
+            372,
+            27
+          ],
+          "source_image_id": 142497
+        },
+        {
+          "crop_native_window_xyxy": [
+            80,
+            0,
+            1152,
+            212
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            1072,
+            212
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0006-w.png",
+          "route": "view_image",
+          "sha256": "3bebc5082aadffd272c60ae006c2b59c5f39fff6217ba0e53fe0e0e78f59dba6",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            556,
+            0,
+            1151,
+            118
+          ],
+          "source_image_id": 142497
+        }
+      ],
+      "execution_job_ids": [
+        "142497:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0006",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 142497,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000142497.jpg",
+        "sha256": "14f34eae6a394569aa0c0150816e3764295d48ccaa28b64bfa008a3ec280f40b"
+      },
+      "visual_group_id": "PA-0006"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0007-574094.png",
+        "sha256": "be25003c935c58460f3d50c3721f4ff6f3b68877c7e9088d2edfc4c2901cc0b6",
+        "size_bytes": 1084044
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            153,
+            725,
+            585,
+            832
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            432,
+            107
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0007-c.png",
+          "route": "view_image",
+          "sha256": "bd490d7ce763da3ee0e185ff73ad3121ff659dc7491c2189c3871a871753717c",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            286,
+            764,
+            452,
+            813
+          ],
+          "source_image_id": 574094
+        },
+        {
+          "crop_native_window_xyxy": [
+            1092,
+            574,
+            1248,
+            832
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            312,
+            516
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0007-w.png",
+          "route": "view_image",
+          "sha256": "cc522c6cb6e6ef40ba94eccb4086cc3992a88b4ea5dcbd7ee395460cb7364496",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            1161,
+            688,
+            1247,
+            831
+          ],
+          "source_image_id": 574094
+        }
+      ],
+      "execution_job_ids": [
+        "574094:h0:c0",
+        "574094:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0007",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 574094,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000574094.jpg",
+        "sha256": "a314831562e8babb97f7e09372188ff03abe25384a13856a8ed9191d46a6ad8c"
+      },
+      "visual_group_id": "PA-0007"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0008-81054.png",
+        "sha256": "e72abf7d072f0ee8c4c0224790ab6570851e16b95a60c8bc6367fdc23bb55904",
+        "size_bytes": 1228466
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            480,
+            339,
+            652,
+            609
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            344,
+            540
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0008-w.png",
+          "route": "view_image",
+          "sha256": "b64b27b576e4367ad1c690fb9f201882d4372bc8b71dee52dbd8f84d68eb6939",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            533,
+            422,
+            599,
+            526
+          ],
+          "source_image_id": 81054
+        }
+      ],
+      "execution_job_ids": [
+        "81054:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0008",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 81054,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000081054.jpg",
+        "sha256": "0c1f2d7247b8722cbaff4ba2aec0c2375bc3bb75b7ac736f28fa0e9268d7fbb9"
+      },
+      "visual_group_id": "PA-0008"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0009-81054.png",
+        "sha256": "fabfc62f3b17a872b9e136043a092574f53ed3fbafa01d7de096550057c0a7d2",
+        "size_bytes": 1223813
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            477,
+            346,
+            653,
+            606
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            352,
+            520
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0009-c.png",
+          "route": "view_image",
+          "sha256": "74b396c3e532612449557af1896a929f24373090e1d882cfc28b5639e3a6a107",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            531,
+            426,
+            599,
+            526
+          ],
+          "source_image_id": 81054
+        }
+      ],
+      "execution_job_ids": [
+        "81054:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0009",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 81054,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000081054.jpg",
+        "sha256": "0c1f2d7247b8722cbaff4ba2aec0c2375bc3bb75b7ac736f28fa0e9268d7fbb9"
+      },
+      "visual_group_id": "PA-0009"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0010-487003.png",
+        "sha256": "4ab9eec5da7ae50313800006061c01511505e00ad5734057903fbda11a000595",
+        "size_bytes": 1189106
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "487003:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0010",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 487003,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000487003.jpg",
+        "sha256": "ef1267a4423b01beaadd6a04c494e31dd063bb5acba990be974b1ea48b73d0bc"
+      },
+      "visual_group_id": "PA-0010"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0011-487003.png",
+        "sha256": "47d7737a8f65b8c6b112dc8a485c6f351c39f1a158e5c17058238582d912ef0b",
+        "size_bytes": 1288712
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "487003:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0011",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 487003,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000487003.jpg",
+        "sha256": "ef1267a4423b01beaadd6a04c494e31dd063bb5acba990be974b1ea48b73d0bc"
+      },
+      "visual_group_id": "PA-0011"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0012-454382.png",
+        "sha256": "82f20f5b528b29d1e886faf61b582f857fb4101cb2fdb55b4790def24969e956",
+        "size_bytes": 1646159
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            965,
+            473,
+            1101,
+            529
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            680,
+            280
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0012-w.png",
+          "route": "view_image",
+          "sha256": "03f84a63910575834e267062162592cd4c1d4b901bc4e7aae76738c845c74318",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            1007,
+            493,
+            1059,
+            509
+          ],
+          "source_image_id": 454382
+        }
+      ],
+      "execution_job_ids": [
+        "454382:h0:c0",
+        "454382:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0012",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 454382,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000454382.jpg",
+        "sha256": "ef0425780825cd08d9f4b60f0ee41a554bbe68f2c006c89225a1e5aa89426910"
+      },
+      "visual_group_id": "PA-0012"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0013-454382.png",
+        "sha256": "23f9cdfccd4f5e3ef72944c3a9cab6a23e22cf8e78f2999178d95343c9651efa",
+        "size_bytes": 1689423
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            15,
+            463,
+            295,
+            521
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            560,
+            116
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0013-c.png",
+          "route": "view_image",
+          "sha256": "790a86591a1321214eac47984f58d29a879c91e2bfa408e61ac098738bd934b3",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            101,
+            483,
+            209,
+            501
+          ],
+          "source_image_id": 454382
+        }
+      ],
+      "execution_job_ids": [
+        "454382:h0:c1",
+        "454382:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0013",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 454382,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000454382.jpg",
+        "sha256": "ef0425780825cd08d9f4b60f0ee41a554bbe68f2c006c89225a1e5aa89426910"
+      },
+      "visual_group_id": "PA-0013"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0014-221245.png",
+        "sha256": "c3d146faa50f3e5b557736ddaa2f4d83bf8c3c1934bc801a0ff741548694bc14",
+        "size_bytes": 1910659
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "221245:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0014",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 221245,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000221245.jpg",
+        "sha256": "3afe5cfe5cc6d3ce12ef8f58a3b63339c3c995eb8b0b178c45f43b5521caa1f4"
+      },
+      "visual_group_id": "PA-0014"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0015-221245.png",
+        "sha256": "ceb9fc8264126e95738d5c8cbe22f1be064b09375556679048f79a1b437acff0",
+        "size_bytes": 1549450
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "221245:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0015",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 221245,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000221245.jpg",
+        "sha256": "3afe5cfe5cc6d3ce12ef8f58a3b63339c3c995eb8b0b178c45f43b5521caa1f4"
+      },
+      "visual_group_id": "PA-0015"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0016-39654.png",
+        "sha256": "f7af3c28f89ce45d24c5fad6a50d5ddfa70b1e19c1ee9838ac5ea370c9cd6b7e",
+        "size_bytes": 2025807
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            866,
+            587,
+            1038,
+            707
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            688,
+            480
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0016-w.png",
+          "route": "view_image",
+          "sha256": "0082f93feb5796d075b57a2ed12659b530cdd3337bf409d0b9acf857a7facc56",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            919,
+            624,
+            985,
+            670
+          ],
+          "source_image_id": 39654
+        }
+      ],
+      "execution_job_ids": [
+        "39654:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0016",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 39654,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000039654.jpg",
+        "sha256": "db120ad85f42d4c8ca8365c9443a17ff7d096dee962669d1516ee8f41319d41e"
+      },
+      "visual_group_id": "PA-0016"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0017-39654.png",
+        "sha256": "db6dc567a41b7c9aff3715baad07da2ede352b12045fe4856bf588360f438e3c",
+        "size_bytes": 2025853
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "39654:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0017",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 39654,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000039654.jpg",
+        "sha256": "db120ad85f42d4c8ca8365c9443a17ff7d096dee962669d1516ee8f41319d41e"
+      },
+      "visual_group_id": "PA-0017"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0018-388312.png",
+        "sha256": "ffa128c1b26833de26c46f8c7da37185c54d4626c52617603f939316820e2910",
+        "size_bytes": 1565108
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "388312:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0018",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 388312,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000388312.jpg",
+        "sha256": "4594d147c588a619340776546b076df8a5513e243b7ab811a1e0d05e11b91c25"
+      },
+      "visual_group_id": "PA-0018"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0019-388312.png",
+        "sha256": "971463caa495b5785e55255a7195ddd01957ec95b39027cc8afb1c45a4267904",
+        "size_bytes": 1268296
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "388312:h0:c1",
+        "388312:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0019",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 388312,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000388312.jpg",
+        "sha256": "4594d147c588a619340776546b076df8a5513e243b7ab811a1e0d05e11b91c25"
+      },
+      "visual_group_id": "PA-0019"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0020-388312.png",
+        "sha256": "626169d215f58ea3f6a24b228384c59cc5ecb77157e3c1f5ac1f788bee2e4197",
+        "size_bytes": 1563154
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "388312:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0020",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 388312,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000388312.jpg",
+        "sha256": "4594d147c588a619340776546b076df8a5513e243b7ab811a1e0d05e11b91c25"
+      },
+      "visual_group_id": "PA-0020"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0021-16509.png",
+        "sha256": "fedceb85f59881733c0c82a416769b320be5b8575402239e4ef1c4428646a679",
+        "size_bytes": 1109269
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            145,
+            0,
+            490,
+            285
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            690,
+            570
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0021-w.png",
+          "route": "view_image",
+          "sha256": "00bb96715dcda05cfb7dc3246295a203cf32320b5b1dd7918c3ed839f0de4868",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            251,
+            49,
+            384,
+            180
+          ],
+          "source_image_id": 16509
+        }
+      ],
+      "execution_job_ids": [
+        "16509:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0021",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          832,
+          1248
+        ],
+        "image_id": 16509,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000016509.jpg",
+        "sha256": "27a6bdfbe194c233cea83a2b2ab25e3de1016f4a69fed4dfd0e7e8e7bb8dada6"
+      },
+      "visual_group_id": "PA-0021"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0022-16509.png",
+        "sha256": "991d8cb9918e029411d40f34d029a11d18c5f921ceb3336ba5cc785c5e9e4d8e",
+        "size_bytes": 1122125
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            202,
+            139,
+            566,
+            360
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            728,
+            442
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0022-c.png",
+          "route": "view_image",
+          "sha256": "bd0b578e49fd36b4da288d83b26a2f7d7ba52b13e76ab55e3fbe6403d24e85ff",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            314,
+            207,
+            454,
+            292
+          ],
+          "source_image_id": 16509
+        },
+        {
+          "crop_native_window_xyxy": [
+            211,
+            0,
+            468,
+            245
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            514,
+            490
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0022-w.png",
+          "route": "view_image",
+          "sha256": "81d66569b9c4f027284f93e7ef964f8a611dd3171932e67102b2aaab7e9ecb39",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            290,
+            49,
+            389,
+            158
+          ],
+          "source_image_id": 16509
+        }
+      ],
+      "execution_job_ids": [
+        "16509:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0022",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          832,
+          1248
+        ],
+        "image_id": 16509,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000016509.jpg",
+        "sha256": "27a6bdfbe194c233cea83a2b2ab25e3de1016f4a69fed4dfd0e7e8e7bb8dada6"
+      },
+      "visual_group_id": "PA-0022"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0023-23538.png",
+        "sha256": "aec42ddfda7f0f448d29e8bd84f366564aa03bb176cd000f30a86a35c43d9f39",
+        "size_bytes": 1597637
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            344,
+            0,
+            520,
+            229
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            528,
+            687
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0023-c.png",
+          "route": "view_image",
+          "sha256": "192f2cad0397bbb2503de52d94e3401f8ef156f080a13304f8a9e7679c7857ff",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            398,
+            0,
+            466,
+            127
+          ],
+          "source_image_id": 23538
+        },
+        {
+          "crop_native_window_xyxy": [
+            452,
+            454,
+            926,
+            733
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            474,
+            279
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0023-w.png",
+          "route": "view_image",
+          "sha256": "4fb16c3bd63633e5b32bcc3177d11276142d2482fb0b6a5c257dc57f8f965ce7",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            598,
+            540,
+            780,
+            647
+          ],
+          "source_image_id": 23538
+        }
+      ],
+      "execution_job_ids": [
+        "23538:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0023",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 23538,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000023538.jpg",
+        "sha256": "5a4bb2554fc43f80f90102f1109a3a66e542404ed00be4da4f810e4f1862ad52"
+      },
+      "visual_group_id": "PA-0023"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0024-112899.png",
+        "sha256": "81340432339c7360f67f776e0763c567398998ae921860b81b07fd79998f3aa1",
+        "size_bytes": 1324797
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            323,
+            350,
+            547,
+            649
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            448,
+            598
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0024-w.png",
+          "route": "view_image",
+          "sha256": "0d68291add2f07e50388d681b5784d2f1263b8854d99a25b5f336d1c1f2de1f5",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            392,
+            442,
+            478,
+            557
+          ],
+          "source_image_id": 112899
+        }
+      ],
+      "execution_job_ids": [
+        "112899:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0024",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 112899,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000112899.jpg",
+        "sha256": "2f734a0c7b54c4de4570599a087dc1fb136a1971c8ea3c19839dc3544b67e75c"
+      },
+      "visual_group_id": "PA-0024"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0025-112899.png",
+        "sha256": "2424b77ee1cc34be59b3d88b77a7a52e32221ba6fb74c007ea429dba0e9f7ff5",
+        "size_bytes": 1270599
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            384,
+            487,
+            485,
+            585
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            606,
+            588
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0025-c.png",
+          "route": "view_image",
+          "sha256": "40a103d3cd07dd22e6d92d56e8b7032b9ffa27dda82b0da0866a998a4a10b26b",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            415,
+            517,
+            454,
+            555
+          ],
+          "source_image_id": 112899
+        }
+      ],
+      "execution_job_ids": [
+        "112899:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0025",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 112899,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000112899.jpg",
+        "sha256": "2f734a0c7b54c4de4570599a087dc1fb136a1971c8ea3c19839dc3544b67e75c"
+      },
+      "visual_group_id": "PA-0025"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0026-534776.png",
+        "sha256": "48e1aed7ce2f2cd273b95436f1db3b1b778f4ca2bc20863f016fed7afbcff379",
+        "size_bytes": 1183201
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "534776:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0026",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 534776,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000534776.jpg",
+        "sha256": "dd8bf2c49c33e77b9797b119ae8c74f6a92dd8cd5e8aabcb5be42afd471d502b"
+      },
+      "visual_group_id": "PA-0026"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0027-534776.png",
+        "sha256": "5ce69370b7de8e7e74a3553c1b15dead4f5cefb0b1f27a30c3ee77c1ec1f19a9",
+        "size_bytes": 1179359
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "534776:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0027",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 534776,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000534776.jpg",
+        "sha256": "dd8bf2c49c33e77b9797b119ae8c74f6a92dd8cd5e8aabcb5be42afd471d502b"
+      },
+      "visual_group_id": "PA-0027"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0028-375654.png",
+        "sha256": "a41303f424352dcfdb451315f508228d805ab19a872e9264836b52941ed52480",
+        "size_bytes": 1040461
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            220,
+            910,
+            330,
+            975
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            660,
+            390
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0028-c.png",
+          "route": "view_image",
+          "sha256": "6b361c5fb63ba916ec7e863db2976599f810d9923f0b7b38b80bf232d5e78c87",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            254,
+            930,
+            296,
+            955
+          ],
+          "source_image_id": 375654
+        },
+        {
+          "crop_native_window_xyxy": [
+            247,
+            779,
+            315,
+            854
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            408,
+            450
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0028-w.png",
+          "route": "view_image",
+          "sha256": "6b422059f551f6dcc165910bcacde98d90adcced5950011932a6c70d9b9adbe7",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            268,
+            802,
+            294,
+            831
+          ],
+          "source_image_id": 375654
+        }
+      ],
+      "execution_job_ids": [
+        "375654:h0:c0",
+        "375654:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0028",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          864,
+          1152
+        ],
+        "image_id": 375654,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000375654.jpg",
+        "sha256": "366d288ac95447e547e50a695c7e079346539fc4b6f4906784982967a814daa6"
+      },
+      "visual_group_id": "PA-0028"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0029-375654.png",
+        "sha256": "017c7861dbbdd8aa2a01f89173d1709dab04ba9273433cb6c1aec502cdada9e8",
+        "size_bytes": 1113571
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            183,
+            819,
+            251,
+            916
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            408,
+            582
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0029-c.png",
+          "route": "view_image",
+          "sha256": "aee4eebcfbed661afbb77d505d114bdef6affb4b89860a44ee070e655787614c",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            204,
+            849,
+            230,
+            886
+          ],
+          "source_image_id": 375654
+        },
+        {
+          "crop_native_window_xyxy": [
+            201,
+            807,
+            264,
+            918
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            378,
+            666
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0029-w.png",
+          "route": "view_image",
+          "sha256": "ce81ce4a45e3a050b69dbe51bafe8e9a446b11294dd3e7ce035619f748ce98e8",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            221,
+            841,
+            244,
+            884
+          ],
+          "source_image_id": 375654
+        }
+      ],
+      "execution_job_ids": [
+        "375654:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0029",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          864,
+          1152
+        ],
+        "image_id": 375654,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000375654.jpg",
+        "sha256": "366d288ac95447e547e50a695c7e079346539fc4b6f4906784982967a814daa6"
+      },
+      "visual_group_id": "PA-0029"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0030-375654.png",
+        "sha256": "c043d566f3db79fb861ab0cbc8e149d17fdba5cecbb1b26e5928abc7c7e3aab9",
+        "size_bytes": 1095726
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "375654:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0030",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          864,
+          1152
+        ],
+        "image_id": 375654,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000375654.jpg",
+        "sha256": "366d288ac95447e547e50a695c7e079346539fc4b6f4906784982967a814daa6"
+      },
+      "visual_group_id": "PA-0030"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0031-577558.png",
+        "sha256": "c6ad31b897747884a3b9d72b65aec56826726627785f4494bcd1265e1848e2fa",
+        "size_bytes": 1422286
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            395,
+            597,
+            831,
+            864
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            436,
+            267
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0031-w.png",
+          "route": "view_image",
+          "sha256": "37e1e4dfd911ad22884751b1ebe74f7cd16c84cbc7a15f88cacab7a1bd48681e",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            529,
+            701,
+            697,
+            831
+          ],
+          "source_image_id": 577558
+        }
+      ],
+      "execution_job_ids": [
+        "577558:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0031",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 577558,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000577558.jpg",
+        "sha256": "78b4c9283bb9c60068555febbb23f8bbb8b8729d529f1eed47e5e7b92d8a0307"
+      },
+      "visual_group_id": "PA-0031"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0032-577558.png",
+        "sha256": "0405b66a652a232a1205a8861473766c7afd6c3911e90c0099b64dc6b594cd46",
+        "size_bytes": 1437430
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            358,
+            578,
+            871,
+            864
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            513,
+            286
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0032-c.png",
+          "route": "view_image",
+          "sha256": "d215c610c67d7cc76b331daad2a26a9171a110f5fc558e011a98959205b442f0",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            516,
+            689,
+            713,
+            828
+          ],
+          "source_image_id": 577558
+        }
+      ],
+      "execution_job_ids": [
+        "577558:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0032",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 577558,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000577558.jpg",
+        "sha256": "78b4c9283bb9c60068555febbb23f8bbb8b8729d529f1eed47e5e7b92d8a0307"
+      },
+      "visual_group_id": "PA-0032"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0033-577558.png",
+        "sha256": "b5cf39ffce17e69f0f7d63b5f42caf54a04fc6a5ae8de482d9dc18c46b325305",
+        "size_bytes": 1404994
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            358,
+            578,
+            871,
+            864
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            513,
+            286
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0033-c.png",
+          "route": "view_image",
+          "sha256": "d215c610c67d7cc76b331daad2a26a9171a110f5fc558e011a98959205b442f0",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            516,
+            689,
+            713,
+            828
+          ],
+          "source_image_id": 577558
+        },
+        {
+          "crop_native_window_xyxy": [
+            630,
+            444,
+            753,
+            623
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            492,
+            716
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0033-w.png",
+          "route": "view_image",
+          "sha256": "6224a2584306809c86627870b14102a92ee2ab84a838c02fe98fb992a807c7b2",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            668,
+            499,
+            715,
+            568
+          ],
+          "source_image_id": 577558
+        }
+      ],
+      "execution_job_ids": [
+        "577558:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0033",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 577558,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000577558.jpg",
+        "sha256": "78b4c9283bb9c60068555febbb23f8bbb8b8729d529f1eed47e5e7b92d8a0307"
+      },
+      "visual_group_id": "PA-0033"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0034-520251.png",
+        "sha256": "7f1c3a2f52939c5fe7dbd3a6451402f61babc3f7d9c333c91d9dfdd030470a89",
+        "size_bytes": 1104873
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "520251:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0034",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 520251,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000520251.jpg",
+        "sha256": "4222975ec21744092cfb104840f7b03a212e9143544bc2423fb25de0ab08f671"
+      },
+      "visual_group_id": "PA-0034"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0035-520251.png",
+        "sha256": "6dc52b7d0151d9aee566344d0573806e4b67f8e1bfb4cbda3151c1dbabd6c1a8",
+        "size_bytes": 1124494
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            518,
+            532,
+            664,
+            591
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            730,
+            295
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0035-w.png",
+          "route": "view_image",
+          "sha256": "6e4b8555d48e6976c3262c7664e2fe9fd322c4bbbe4c447fd7b6f0f393be1c99",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            563,
+            552,
+            619,
+            571
+          ],
+          "source_image_id": 520251
+        }
+      ],
+      "execution_job_ids": [
+        "520251:h0:c1",
+        "520251:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0035",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 520251,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000520251.jpg",
+        "sha256": "4222975ec21744092cfb104840f7b03a212e9143544bc2423fb25de0ab08f671"
+      },
+      "visual_group_id": "PA-0035"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0036-520251.png",
+        "sha256": "85b1deacdd8855edf7a5accf77d3088495acb13bcf862aba1c5ddb5b560e732c",
+        "size_bytes": 1124540
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "520251:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0036",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 520251,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000520251.jpg",
+        "sha256": "4222975ec21744092cfb104840f7b03a212e9143544bc2423fb25de0ab08f671"
+      },
+      "visual_group_id": "PA-0036"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0037-353321.png",
+        "sha256": "094d685d68dda6fac20d6f3c0fedd56f2d5322c73fe0d4a3ffffe248dcf74f42",
+        "size_bytes": 1945432
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            104,
+            0,
+            305,
+            230
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            603,
+            690
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0037-w.png",
+          "route": "view_image",
+          "sha256": "ec5e23b58d3404cbf2e04f0674caf44a9ff44dd99fce762dbd8f11f4ea9e4137",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            166,
+            0,
+            243,
+            128
+          ],
+          "source_image_id": 353321
+        }
+      ],
+      "execution_job_ids": [
+        "353321:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0037",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 353321,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000353321.jpg",
+        "sha256": "4c2e5c2ea5c82358baf1def040d9e71f872424fa8ef85f555f728049cd8d82a9"
+      },
+      "visual_group_id": "PA-0037"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0038-353321.png",
+        "sha256": "6274940c4494f4270d62c58a3138b08f5b7c9976d46545175f37d130fc8b4124",
+        "size_bytes": 1758586
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "353321:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0038",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 353321,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000353321.jpg",
+        "sha256": "4c2e5c2ea5c82358baf1def040d9e71f872424fa8ef85f555f728049cd8d82a9"
+      },
+      "visual_group_id": "PA-0038"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0039-31980.png",
+        "sha256": "a540092716e85d102eea7474c2824769b600ebf1018a86690a8f3d4885d90f2d",
+        "size_bytes": 1598284
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            846,
+            0,
+            1248,
+            321
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            402,
+            321
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0039-c.png",
+          "route": "view_image",
+          "sha256": "d41265fee0ae9df983bd0edfcea7bc9e1db93aaa8ba7c08105b733588e14a1a3",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            1020,
+            6,
+            1237,
+            181
+          ],
+          "source_image_id": 31980
+        },
+        {
+          "crop_native_window_xyxy": [
+            1060,
+            124,
+            1248,
+            527
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            188,
+            403
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0039-w.png",
+          "route": "view_image",
+          "sha256": "e65e06ceb17314fd604eccaa47e69ead5bc4aaa9fe0fe8b81f64063d39a30ab9",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            1143,
+            248,
+            1247,
+            403
+          ],
+          "source_image_id": 31980
+        }
+      ],
+      "execution_job_ids": [
+        "31980:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0039",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 31980,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000031980.jpg",
+        "sha256": "613119fc78cf5a3ed26b5c087b5c9202ec305369599e4ff8b0a2076a687b7c6c"
+      },
+      "visual_group_id": "PA-0039"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0040-31980.png",
+        "sha256": "a48cc16e9471da9e3bfb49bc014c20b8f604b91fa9e5f4ca16b130e67891568f",
+        "size_bytes": 1593583
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            896,
+            0,
+            1248,
+            301
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            704,
+            602
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0040-c.png",
+          "route": "view_image",
+          "sha256": "f69325d8aff5dca8f64d366a1a5807fe9d8dadb55fca7f20b70545850cb11264",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            1030,
+            0,
+            1198,
+            167
+          ],
+          "source_image_id": 31980
+        },
+        {
+          "crop_native_window_xyxy": [
+            1060,
+            124,
+            1248,
+            527
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            188,
+            403
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0040-w.png",
+          "route": "view_image",
+          "sha256": "e65e06ceb17314fd604eccaa47e69ead5bc4aaa9fe0fe8b81f64063d39a30ab9",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            1143,
+            248,
+            1247,
+            403
+          ],
+          "source_image_id": 31980
+        }
+      ],
+      "execution_job_ids": [
+        "31980:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0040",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 31980,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000031980.jpg",
+        "sha256": "613119fc78cf5a3ed26b5c087b5c9202ec305369599e4ff8b0a2076a687b7c6c"
+      },
+      "visual_group_id": "PA-0040"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0041-225299.png",
+        "sha256": "f8df4f6cd5e47fcc38b7b6bbfbdc8409a6c0ed31164a3ad19184e1f78dabc391",
+        "size_bytes": 1024206
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            430,
+            352,
+            486,
+            417
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            336,
+            390
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0041-c.png",
+          "route": "view_image",
+          "sha256": "f4d531d5eceb03eb3768f5a2449bb11b6a7651b69643abb1aefd5ee3562e0634",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            450,
+            372,
+            466,
+            397
+          ],
+          "source_image_id": 225299
+        },
+        {
+          "crop_native_window_xyxy": [
+            449,
+            352,
+            507,
+            404
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            348,
+            312
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0041-w.png",
+          "route": "view_image",
+          "sha256": "5930b4f771469d9cef5d8f321b12e9d74bd54f15376cba8e03d5b06df83ec69a",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            469,
+            372,
+            487,
+            384
+          ],
+          "source_image_id": 225299
+        }
+      ],
+      "execution_job_ids": [
+        "225299:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0041",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1088,
+          832
+        ],
+        "image_id": 225299,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000225299.jpg",
+        "sha256": "f339755f709728a79a687f8aea0ec87cc89b02831e3e143d5e90fa94e05938fe"
+      },
+      "visual_group_id": "PA-0041"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0042-225299.png",
+        "sha256": "60703609fc7dfbfe759502976f07239b400c8d8249319991b8dfc084445805c9",
+        "size_bytes": 1056717
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            856,
+            86,
+            963,
+            151
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            642,
+            390
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0042-c.png",
+          "route": "view_image",
+          "sha256": "9a50dce0cac416011d66d0dab0f95456e92e3789de2bb57ffed7bd0d81676afe",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            889,
+            106,
+            930,
+            131
+          ],
+          "source_image_id": 225299
+        },
+        {
+          "crop_native_window_xyxy": [
+            878,
+            64,
+            928,
+            149
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            300,
+            510
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0042-w.png",
+          "route": "view_image",
+          "sha256": "f25a8c328646ae252f7ceeba0dbde782e5099e861e37db0e93b8634acd2eec75",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            898,
+            90,
+            908,
+            123
+          ],
+          "source_image_id": 225299
+        }
+      ],
+      "execution_job_ids": [
+        "225299:h1:c0"
+      ],
+      "individual_view_id": "IV-PA0042",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1088,
+          832
+        ],
+        "image_id": 225299,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000225299.jpg",
+        "sha256": "f339755f709728a79a687f8aea0ec87cc89b02831e3e143d5e90fa94e05938fe"
+      },
+      "visual_group_id": "PA-0042"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0043-124067.png",
+        "sha256": "3f1deb1f9f963c0acdb2f5a004f29fbd8a6aece1b43997ffd22cbabf2e90f48b",
+        "size_bytes": 1092852
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "124067:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0043",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 124067,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000124067.jpg",
+        "sha256": "501ed02cf988f5a2fd44b984d32ce5744e8d9da664504a13a8b7c6612a02558f"
+      },
+      "visual_group_id": "PA-0043"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0044-461868.png",
+        "sha256": "20ad434db0de5037911eeaf06618a7048d84e25f8fca676882d3f751c7ec951f",
+        "size_bytes": 942753
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            358,
+            1022,
+            407,
+            1097
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            294,
+            450
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0044-c.png",
+          "route": "view_image",
+          "sha256": "3f4a74da5a3e5373d1d6f7acab959c4abe44650e19b63976f61bea623fa33243",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            378,
+            1045,
+            387,
+            1074
+          ],
+          "source_image_id": 461868
+        },
+        {
+          "crop_native_window_xyxy": [
+            401,
+            1021,
+            452,
+            1083
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            306,
+            372
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0044-w.png",
+          "route": "view_image",
+          "sha256": "adb5d5bee98b9788063b538ad5ca4642efdc911e26cbb3c50fa37c8a899c07d4",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            421,
+            1041,
+            432,
+            1063
+          ],
+          "source_image_id": 461868
+        }
+      ],
+      "execution_job_ids": [
+        "461868:h0:c1",
+        "461868:h1:c1"
+      ],
+      "individual_view_id": "IV-PA0044",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          864,
+          1152
+        ],
+        "image_id": 461868,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000461868.jpg",
+        "sha256": "f36a6095c0be0ffea40a3353f4bafd8341a1c920e9a94938eb357db62e523816"
+      },
+      "visual_group_id": "PA-0044"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0045-165609.png",
+        "sha256": "64ed2ea2da5881bdb1298dae1888385d20e14140dd61cf8d105821cd67717ef5",
+        "size_bytes": 1291369
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            611,
+            255,
+            735,
+            687
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            124,
+            432
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0045-w.png",
+          "route": "view_image",
+          "sha256": "9f9350a1445772eb15b510de5e7e0f7a88a4376e526a8e0ac105759cd4f9e96d",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            649,
+            388,
+            697,
+            554
+          ],
+          "source_image_id": 165609
+        }
+      ],
+      "execution_job_ids": [
+        "165609:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0045",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 165609,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000165609.jpg",
+        "sha256": "50e74b301bee4db37fc00a5257a6161813199a3f4cfaeca62664084316272fe6"
+      },
+      "visual_group_id": "PA-0045"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0046-24552.png",
+        "sha256": "a11c04cdd31614ab4fb8f00577843fe9310a0b243f9db8e965b34656a49b2c88",
+        "size_bytes": 1550546
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            946,
+            0,
+            1152,
+            398
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            206,
+            398
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0046-c.png",
+          "route": "view_image",
+          "sha256": "b34250bc40d86308ba653c1e1cd2351c7a173d41fdaa684101611e72d5f7194b",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            1037,
+            29,
+            1151,
+            234
+          ],
+          "source_image_id": 24552
+        },
+        {
+          "crop_native_window_xyxy": [
+            958,
+            291,
+            1152,
+            626
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            388,
+            670
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0046-w.png",
+          "route": "view_image",
+          "sha256": "d92a8e11273e9067d01e7e95e8edaaf400ce7eedb782d79f215bcb46c9f22a47",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            1044,
+            394,
+            1151,
+            523
+          ],
+          "source_image_id": 24552
+        }
+      ],
+      "execution_job_ids": [
+        "24552:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0046",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 24552,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000024552.jpg",
+        "sha256": "515bcb945d5196494a6cb77d7564415452686c1f45ac9491c18494627b434b19"
+      },
+      "visual_group_id": "PA-0046"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0047-493880.png",
+        "sha256": "53bda71859fb08f4f3555164de3a5456a651ab57b9dbca6fd39e0f1f67415b0a",
+        "size_bytes": 1503793
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            230,
+            0,
+            308,
+            50
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            468,
+            300
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0047-w.png",
+          "route": "view_image",
+          "sha256": "133a7393f64ddfbadb40aaa753af368e6def5429475d7997855ef0b8dda61659",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            254,
+            0,
+            284,
+            28
+          ],
+          "source_image_id": 493880
+        }
+      ],
+      "execution_job_ids": [
+        "493880:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0047",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          864,
+          1152
+        ],
+        "image_id": 493880,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000493880.jpg",
+        "sha256": "9262e7904bae2225539aae1b1901d7f1405e1620bfcde1d7cfee95ec0ed91c00"
+      },
+      "visual_group_id": "PA-0047"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0048-493880.png",
+        "sha256": "a81c0e81c9b7d89c5bce7a7f8c060828e0d7ea35f7ec8f166e126717f183db36",
+        "size_bytes": 1584077
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            184,
+            0,
+            425,
+            205
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            723,
+            615
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0048-c.png",
+          "route": "view_image",
+          "sha256": "c4b023e4cf75d1ed170e47b6511b1cb3f2972809f78b060e82660edee54c5376",
+          "side": "c",
+          "source_bbox_native_pixels_xyxy": [
+            258,
+            0,
+            351,
+            114
+          ],
+          "source_image_id": 493880
+        },
+        {
+          "crop_native_window_xyxy": [
+            249,
+            0,
+            379,
+            194
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            390,
+            582
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0048-w.png",
+          "route": "view_image",
+          "sha256": "70ce18b7caf5742f34e27db2cb6b34bc1bfe11c4c14aa4d23635631c1551ceb6",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            289,
+            0,
+            339,
+            108
+          ],
+          "source_image_id": 493880
+        }
+      ],
+      "execution_job_ids": [
+        "493880:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0048",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          864,
+          1152
+        ],
+        "image_id": 493880,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000493880.jpg",
+        "sha256": "9262e7904bae2225539aae1b1901d7f1405e1620bfcde1d7cfee95ec0ed91c00"
+      },
+      "visual_group_id": "PA-0048"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0049-77260.png",
+        "sha256": "1d530c81ac6eb402a6298ea282e3cd0680fc608298a8d0c4b1abb4cc4aeb89a3",
+        "size_bytes": 1227504
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [
+        {
+          "crop_native_window_xyxy": [
+            1037,
+            545,
+            1248,
+            675
+          ],
+          "detail": "original",
+          "display_dimensions_px": [
+            633,
+            390
+          ],
+          "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/crops/PA-0049-w.png",
+          "route": "view_image",
+          "sha256": "e117986ffc9bce45e32ebc4b07742a59fe2b5885fb96a795639100cd2dd0b0a9",
+          "side": "w",
+          "source_bbox_native_pixels_xyxy": [
+            1102,
+            585,
+            1183,
+            635
+          ],
+          "source_image_id": 77260
+        }
+      ],
+      "execution_job_ids": [
+        "77260:h0:c1"
+      ],
+      "individual_view_id": "IV-PA0049",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1248,
+          832
+        ],
+        "image_id": 77260,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000077260.jpg",
+        "sha256": "12bb3573b5e1e7e359005f7c2a9d9f68a4af975015efa8ac4129787788cba7f1"
+      },
+      "visual_group_id": "PA-0049"
+    },
+    {
+      "card_binding": {
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-13-owner-successor-scale-throughput/physical-admission/cards/PA-0050-394079.png",
+        "sha256": "b718547574236ab9dc9e5ade6482149fd72a7cbb8504593f7fa748510138c299",
+        "size_bytes": 1116546
+      },
+      "card_view": {
+        "contact_sheet_evidence": false,
+        "detail": "original",
+        "route": "view_image",
+        "sample_scope": "one candidate pair on one individual card",
+        "view_recorded_utc": "2026-09-13T09:10:23.227091+00:00"
+      },
+      "contact_sheet_decision_evidence_excluded": true,
+      "crop_views": [],
+      "execution_job_ids": [
+        "394079:h0:c0"
+      ],
+      "individual_view_id": "IV-PA0050",
+      "reviewer_identity": "owner_overlay subagent (Codex)",
+      "reviewer_type": "AI reviewer (Codex subagent), not human annotation",
+      "source_image_binding": {
+        "dimensions_native_pixels": [
+          1152,
+          864
+        ],
+        "image_id": 394079,
+        "path": "/data/CoordExp/public_data/coco/rescale_32_1024_bbox/images/train2017/000000394079.jpg",
+        "sha256": "e4e73eba668946c28c827d6a225a7118c9b01b92b8e38d21baecf5e0ebf1a9b9"
+      },
+      "visual_group_id": "PA-0050"
+    }
+  ],
+  "visual_group_count": 50
+}
