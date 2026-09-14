@@ -41,7 +41,6 @@
 !.cursorignore
 !.cursorindexingignore
 !pytest.ini
-!pyrightconfig.json
 !*.md
 !public_data/**/
 !public_data/**/*.py
