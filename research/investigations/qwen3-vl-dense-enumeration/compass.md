@@ -7,7 +7,7 @@ authority: non_normative_research
 architecture_promotion_status: not_promoted
 topic: qwen3-vl-dense-enumeration
 status: active
-updated: 2026-09-12
+updated: 2026-09-13
 ---
 
 # Qwen3 Vision-Language Autoregressive Detection Research Compass
@@ -19,6 +19,20 @@ technical execution. It does not promote an architecture or a production
 checkpoint.
 
 ## Current questions and evidence
+
+### Active: broader successor supply and equivalent replay throughput
+
+[Owner successor scale and throughput](experiments/2026-09-13-owner-successor-scale-throughput/unit.md)
+is now authorized and running from the closed N16 snapshot. Freeze4096 train
+candidates, retain strict physical admission, and compare common successor
+learning with versus without an observed-repeat pairwise margin only if the
+trusted bank meets its declared floor. Separately test semantics-preserving
+microbatch replay and two-image matched-history diagnostics. A new256 panel
+is frozen before training selection; previous panels are regression evidence.
+The user also authorized collecting view-reviewed unlabeled owners in a
+positive-only provenance overlay, without replacing raw labels, admitting
+unreviewed negatives, or recycling evaluation images into training. No new
+scientific fit is launched yet; the unit owns subsequent gates and finite stops.
 
 ### Latest completed: broader native owner learning with preservation debt
 
@@ -39,7 +53,8 @@ four-scene panel. No generic cache-ledger mechanism is promoted. The next
 proposal is a matched positive-only versus active later-repeat penalty contrast
 with real-owner preservation and new-loop incidence, not automatic larger-scale
 training or cache surgery. Real-prefix refresh remains a separate next factor.
-No next fit is launched; output cap3084 and finite scientific stops remain.
+The newly authorized continuation above supersedes the earlier proposal-only
+status; output cap3084 and finite scientific stops remain.
 
 ### Completed parallel owner-enumeration portfolio
 
