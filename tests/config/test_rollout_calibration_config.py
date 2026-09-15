@@ -71,6 +71,7 @@ def test_rollout_calibration_profiles_load_with_exact_weights_and_paths(
     assert config.losses.protected.base_ce.weight == 0.0
     assert config.losses.protected.token_type_gate.weight == 0.0
     assert config.losses.protected.coord_gaussian_rps.weight == 0.0
+    assert config.losses.protected.raw_axis_validity_hinge.weight == 0.0
     assert config.losses.protected.rollout_site_token_type_gate is not None
     assert config.losses.protected.rollout_site_token_type_gate.weight == pytest.approx(
         0.1

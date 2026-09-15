@@ -19,10 +19,12 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import torch
-import torch.nn.functional as F
 
 from src.adapters.dora import inspect_dora_adapter_payload, select_dora_parameters
-from src.losses import aligned_token_logprobs
+from src.losses import (
+    aligned_token_logprobs,
+    raw_axis_validity_hinge as _shared_raw_axis_validity_hinge,
+)
 from src.qwen.native import prepare_native_inputs, prepare_replay
 
 
@@ -196,17 +198,13 @@ def masked_ce_loss(logits: torch.Tensor, targets: torch.Tensor, weights: Sequenc
 
 
 def raw_axis_validity_hinge(logits: torch.Tensor, boxes: Sequence[Mapping[str, Any]], *, coordinate_token_ids: Sequence[int], coordinate_bin_values: Sequence[int], margin: float) -> torch.Tensor:
-    if not boxes:
-        return logits.new_zeros(())
-    columns = torch.tensor(coordinate_token_ids, dtype=torch.long, device=logits.device)
-    values = torch.tensor(coordinate_bin_values, dtype=logits.dtype, device=logits.device) / 999
-    probs = logits.float().index_select(1, columns).softmax(-1).to(logits.dtype)
-    expectation = probs @ values
-    penalties = []
-    for box in boxes:
-        x1, y1, x2, y2 = (int(box[key]) for key in ("x1_position", "y1_position", "x2_position", "y2_position"))
-        penalties.extend((F.relu(float(margin) - (expectation[x2] - expectation[x1])), F.relu(float(margin) - (expectation[y2] - expectation[y1]))))
-    return torch.stack(penalties).mean()
+    return _shared_raw_axis_validity_hinge(
+        logits,
+        boxes,
+        coordinate_token_ids=coordinate_token_ids,
+        coordinate_bin_values=coordinate_bin_values,
+        margin=margin,
+    )
 
 
 def route_objective(model: torch.nn.Module, native_inputs: Mapping[str, Any], route: Mapping[str, Any], hinge: Mapping[str, Any]) -> tuple[torch.Tensor, dict[str, Any]]:

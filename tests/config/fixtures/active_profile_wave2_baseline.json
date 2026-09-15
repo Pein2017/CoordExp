@@ -9,7 +9,7 @@
     "debug.dry_run_writes_artifacts"
   ],
   "profiles": {
-    "configs/coordexp_infras/prod/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1.yaml": "8220dba11779f5bc0a6aac103ff261e528ef60949ef11dc0692936c43559aa11",
+    "configs/coordexp_infras/prod/qwen3_vl_2b_desc_first_geo_sorted_gaussian_rps_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1.yaml": "6fb201cb22487abccecbd2d08814732c30b51a50d421041e95f172667d10e6de",
     "configs/coordexp_infras/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_llm_12000_accelerate8_ebs128_4epoch.yaml": "6989b3d9f3acda0c763199a5cb22bddb2ebea126dca9bb37d980ce649b533a3f",
     "configs/coordexp_infras/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_dora_r16a32_llm_12000_accelerate8_ebs64_4epoch_warmup0p1.yaml": "4fd48194236be33d65de08527b341bb23e9ac9648dd1ac55efc88198461386b3",
     "configs/coordexp_infras/prod/qwen3_vl_2b_desc_first_geo_sorted_pure_ce_typegate_dora_r16a32_llm_12000_accelerate8_ebs24_8epoch_warmup0p1.yaml": "1b0c31a266042d9522352db4c0215a603f2d90981707d6267af277e8858e948a",

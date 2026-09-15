@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -20,6 +20,10 @@ from src.losses.normalizers import (
     reduce_segment_balanced_planned_step,
     segment_balanced_contribution,
 )
+from src.losses.raw_axis_validity_hinge import (
+    RawAxisValidityHingeDenominator,
+    RawAxisValidityHingeLoss,
+)
 from src.losses.token_type_gate import TokenTypeGateLoss
 from src.losses.vocab import V1_TOKEN_TYPES
 from src.supervision import TokenSequence
@@ -32,7 +36,7 @@ class LossTermResult:
     weighted_loss: torch.Tensor
     weight: float
     segment_mean_numerator: torch.Tensor
-    denominator: SegmentBalancedDenominator
+    denominator: SegmentBalancedDenominator | RawAxisValidityHingeDenominator
     reducer_name: str
     selected_count: int
     skipped_count: int
@@ -89,7 +93,9 @@ class LossBundle:
 
 @dataclass(frozen=True)
 class PlannedStepLossPlan:
-    denominators: dict[str, SegmentBalancedDenominator]
+    denominators: dict[
+        str, SegmentBalancedDenominator | RawAxisValidityHingeDenominator
+    ]
     counts: dict[str, int]
     token_type_gate_groups: tuple[str, ...]
     denominator_scope: str = "planned_step"
@@ -103,12 +109,17 @@ class LossRunner:
     base_ce_weight: float
     token_type_gate_weight: float
     token_type_gate_groups: tuple[str, ...]
+    raw_axis_validity_hinge_weight: float = 0.01
+    raw_axis_validity_hinge: RawAxisValidityHingeLoss | None = field(
+        default_factory=RawAxisValidityHingeLoss
+    )
     coord_gaussian_rps_weight: float = 0.0
     coord_gaussian_rps: CoordGaussianRPSLoss | None = None
 
     def __post_init__(self) -> None:
         _validate_weight("base_ce", self.base_ce_weight)
         _validate_weight("token_type_gate", self.token_type_gate_weight)
+        _validate_weight("raw_axis_validity_hinge", self.raw_axis_validity_hinge_weight)
         _validate_weight("coord_gaussian_rps", self.coord_gaussian_rps_weight)
         _validate_token_type_groups(self.token_type_gate_groups)
         if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is None:
@@ -116,6 +127,15 @@ class LossRunner:
                 "coord_gaussian_rps weight requires a configured loss term",
                 code="loss.coord_gaussian_rps_missing_term",
                 context={"weight": self.coord_gaussian_rps_weight},
+            )
+        if (
+            self.raw_axis_validity_hinge_weight > 0.0
+            and self.raw_axis_validity_hinge is None
+        ):
+            raise LossContractError(
+                "raw_axis_validity_hinge weight requires a configured loss term",
+                code="loss.raw_axis_validity_hinge_missing_term",
+                context={"weight": self.raw_axis_validity_hinge_weight},
             )
 
     @classmethod
@@ -127,6 +147,7 @@ class LossRunner:
                 context={"normalizer": config.normalizer},
             )
         coord_cfg = config.protected.coord_gaussian_rps
+        raw_axis_cfg = config.protected.raw_axis_validity_hinge
         coord_term = (
             CoordGaussianRPSLoss(
                 gaussian_weight=coord_cfg.gaussian_weight,
@@ -144,6 +165,12 @@ class LossRunner:
             base_ce_weight=config.protected.base_ce.weight,
             token_type_gate_weight=config.protected.token_type_gate.weight,
             token_type_gate_groups=tuple(config.protected.token_type_gate.groups),
+            raw_axis_validity_hinge_weight=raw_axis_cfg.weight,
+            raw_axis_validity_hinge=(
+                RawAxisValidityHingeLoss(margin=raw_axis_cfg.margin)
+                if raw_axis_cfg.weight > 0.0
+                else None
+            ),
             coord_gaussian_rps_weight=coord_cfg.weight,
             coord_gaussian_rps=coord_term,
         )
@@ -165,6 +192,17 @@ class LossRunner:
             token_types=self.token_type_gate_groups,
         )
         terms_list = [base_result, gate_result]
+        if (
+            self.raw_axis_validity_hinge_weight > 0.0
+            and self.raw_axis_validity_hinge is not None
+        ):
+            terms_list.append(
+                _compute_raw_axis_validity_hinge_term(
+                    contexts=checked_contexts,
+                    weight=self.raw_axis_validity_hinge_weight,
+                    term=self.raw_axis_validity_hinge,
+                )
+            )
         if self.coord_gaussian_rps_weight > 0.0 and self.coord_gaussian_rps is not None:
             terms_list.append(
                 _compute_token_term(
@@ -243,11 +281,17 @@ class LossRunner:
             "base_ce": base_denominator,
             "token_type_gate": gate_denominator,
         }
+        if self.raw_axis_validity_hinge_weight > 0.0:
+            local_denominators["raw_axis_validity_hinge"] = (
+                _build_raw_axis_validity_hinge_denominator(token_sequences)
+            )
         if self.coord_gaussian_rps_weight > 0.0:
-            local_denominators["coord_gaussian_rps"] = _build_denominator_from_token_sequences(
-                "coord_gaussian_rps",
-                token_sequences,
-                token_types=("coordinate",),
+            local_denominators["coord_gaussian_rps"] = (
+                _build_denominator_from_token_sequences(
+                    "coord_gaussian_rps",
+                    token_sequences,
+                    token_types=("coordinate",),
+                )
             )
         denominators, denominator_scope, backend_gradient_scale = (
             _resolve_streaming_denominators(
@@ -304,6 +348,30 @@ class LossRunner:
             backend_gradient_scale=plan.backend_gradient_scale,
         )
         terms_list = [base_result, gate_result]
+        if (
+            self.raw_axis_validity_hinge_weight > 0.0
+            and self.raw_axis_validity_hinge is not None
+            and "raw_axis_validity_hinge" in plan.denominators
+        ):
+            raw_axis_denominator = plan.denominators["raw_axis_validity_hinge"]
+            if not isinstance(raw_axis_denominator, RawAxisValidityHingeDenominator):
+                raise LossContractError(
+                    "raw-axis validity hinge requires its declared denominator",
+                    code="loss.raw_axis_validity_hinge_denominator",
+                    context={
+                        "value_type": type(raw_axis_denominator).__name__,
+                    },
+                )
+            terms_list.append(
+                _compute_raw_axis_validity_hinge_contribution(
+                    context=context,
+                    weight=self.raw_axis_validity_hinge_weight,
+                    term=self.raw_axis_validity_hinge,
+                    denominator=raw_axis_denominator,
+                    local_micro_step_index=local_micro_step_index,
+                    backend_gradient_scale=plan.backend_gradient_scale,
+                )
+            )
         if (
             self.coord_gaussian_rps_weight > 0.0
             and self.coord_gaussian_rps is not None
@@ -390,12 +458,23 @@ class LossRunner:
             metrics[f"loss/{name}/segment_count"] = float(
                 denominator.get("eligible_segment_count", 0)
             )
+            if name == "raw_axis_validity_hinge":
+                for count_name in (
+                    "complete_box_count",
+                    "incomplete_box_count",
+                    "zero_box_segment_count",
+                ):
+                    metrics[f"loss/{name}/{count_name}"] = float(
+                        denominator.get(count_name, 0)
+                    )
         for name, value in plan.counts.items():
             metrics[name] = float(value)
         finite_status = {
             "total_loss": _finite_label_from_float(total_loss),
             "terms": {
-                str(term["name"]): _finite_label_from_float(float(term["weighted_loss"]))
+                str(term["name"]): _finite_label_from_float(
+                    float(term["weighted_loss"])
+                )
                 for term in terms
             },
         }
@@ -423,6 +502,100 @@ class LossRunner:
             },
             "finite_status": finite_status,
         }
+
+
+def _compute_raw_axis_validity_hinge_term(
+    *,
+    contexts: tuple[LossContext, ...],
+    weight: float,
+    term: RawAxisValidityHingeLoss,
+) -> LossTermResult:
+    results = tuple(term.per_segment_loss(context) for context in contexts)
+    denominator = RawAxisValidityHingeDenominator(
+        term_name=term.name,
+        denominator_scope="planned_step",
+        eligible_segment_count=sum(item.eligible_segment_count for item in results),
+        selected_atom_count=sum(item.coordinate_atom_count for item in results),
+        skipped_segment_count=sum(item.skipped_segment_count for item in results),
+        context_count=len(contexts),
+        complete_box_count=sum(item.complete_box_count for item in results),
+        incomplete_box_count=sum(item.incomplete_box_count for item in results),
+        zero_box_segment_count=sum(item.zero_box_segment_count for item in results),
+    )
+    if denominator.eligible_segment_count <= 0:
+        raise LossContractError(
+            "raw-axis validity hinge requires at least one supervised segment",
+            code="loss.raw_axis_validity_hinge_zero_eligible",
+            context={"context_count": len(contexts)},
+        )
+    numerator = sum(
+        (item.segment_losses.sum() for item in results),
+        contexts[0].logits.new_zeros((), dtype=torch.float32),
+    )
+    raw = numerator / float(denominator.eligible_segment_count)
+    weighted = raw * float(weight)
+    diagnostics = {
+        "denominator_scope": denominator.denominator_scope,
+        "context_count": denominator.context_count,
+        **_raw_axis_validity_hinge_diagnostics(denominator),
+    }
+    return LossTermResult(
+        name=term.name,
+        raw_loss=raw,
+        weighted_loss=weighted,
+        weight=float(weight),
+        segment_mean_numerator=numerator.detach(),
+        denominator=denominator,
+        reducer_name="segment_balanced_box_mean",
+        selected_count=denominator.complete_box_count,
+        skipped_count=denominator.incomplete_box_count,
+        math_dtype="float32",
+        token_weighted_diagnostic=raw.detach(),
+        diagnostics=diagnostics,
+    )
+
+
+def _compute_raw_axis_validity_hinge_contribution(
+    *,
+    context: LossContext,
+    weight: float,
+    term: RawAxisValidityHingeLoss,
+    denominator: RawAxisValidityHingeDenominator,
+    local_micro_step_index: int,
+    backend_gradient_scale: float,
+) -> LossTermResult:
+    result = term.per_segment_loss(context)
+    raw = result.segment_losses.sum() / float(denominator.eligible_segment_count)
+    raw = raw * float(backend_gradient_scale)
+    weighted = raw * float(weight)
+    diagnostics = {
+        "denominator_scope": denominator.denominator_scope,
+        "context_count": denominator.context_count,
+        "local_micro_step_index": int(local_micro_step_index),
+        "backend_gradient_scale": float(backend_gradient_scale),
+        "term_diagnostics": result.diagnostics(),
+        **result.diagnostics(),
+    }
+    return LossTermResult(
+        name=term.name,
+        raw_loss=raw,
+        weighted_loss=weighted,
+        weight=float(weight),
+        segment_mean_numerator=(
+            raw.detach() * float(denominator.eligible_segment_count)
+        ),
+        denominator=denominator,
+        reducer_name="segment_balanced_box_mean",
+        selected_count=result.complete_box_count,
+        skipped_count=result.incomplete_box_count,
+        math_dtype="float32",
+        token_weighted_diagnostic=(
+            result.segment_losses.detach().mean()
+            if result.segment_losses.numel() > 0
+            else raw.detach().new_zeros(())
+        ),
+        diagnostics=diagnostics,
+    )
 
 
 def _compute_token_term(
@@ -463,8 +636,8 @@ def _compute_token_term(
         )
     reduced = reduce_segment_balanced_planned_step(tuple(slices))
     weighted = reduced.loss * float(weight)
-    segment_mean_numerator = (
-        reduced.loss.detach() * float(reduced.denominator.eligible_segment_count)
+    segment_mean_numerator = reduced.loss.detach() * float(
+        reduced.denominator.eligible_segment_count
     )
     diagnostics = {
         "denominator_scope": reduced.denominator_scope,
@@ -663,8 +836,95 @@ def _build_denominator_from_token_sequences(
     )
 
 
+def _build_raw_axis_validity_hinge_denominator(
+    token_sequences: tuple[TokenSequence, ...],
+) -> RawAxisValidityHingeDenominator:
+    eligible_segment_count = 0
+    skipped_segment_count = 0
+    coordinate_atom_count = 0
+    complete_box_count = 0
+    incomplete_box_count = 0
+    zero_box_segment_count = 0
+    for token_sequence in token_sequences:
+        eligible_segments = {atom.segment_index for atom in token_sequence.atoms}
+        eligible_segment_count += len(eligible_segments)
+        skipped_segment_count += len(token_sequence.segments) - len(eligible_segments)
+        groups: dict[tuple[int, int, int, str, str], dict[str, Any]] = {}
+        for atom in token_sequence.atoms:
+            if atom.token_type != "coordinate":
+                continue
+            coordinate_atom_count += 1
+            target = atom.coordinate_target
+            if target is None:
+                raise LossContractError(
+                    "supervised coordinate atom is missing CoordinateLossTarget metadata",
+                    code="loss.raw_axis_validity_hinge_target_missing",
+                    context={"atom": atom.to_artifact_dict()},
+                )
+            if not isinstance(atom.object_id, str) or not atom.object_id:
+                raise LossContractError(
+                    "supervised coordinate atom is missing object identity",
+                    code="loss.raw_axis_validity_hinge_object_missing",
+                    context={"atom": atom.to_artifact_dict()},
+                )
+            key = (
+                int(atom.pack_index),
+                int(atom.segment_index),
+                int(atom.example_index),
+                str(atom.example_id),
+                atom.object_id,
+            )
+            group = groups.setdefault(
+                key,
+                {"bbox": target.bbox, "slots": set()},
+            )
+            if tuple(group["bbox"]) != tuple(target.bbox):
+                raise LossContractError(
+                    "coordinate slots for one object must declare one bbox",
+                    code="loss.raw_axis_validity_hinge_bbox_mismatch",
+                    context={"identity": list(key)},
+                )
+            slot = int(target.slot_index)
+            if slot in group["slots"]:
+                raise LossContractError(
+                    "coordinate slots for one object must be unique",
+                    code="loss.raw_axis_validity_hinge_duplicate_slot",
+                    context={"identity": list(key), "slot_index": slot},
+                )
+            group["slots"].add(slot)
+        complete_by_segment = {segment_index: 0 for segment_index in eligible_segments}
+        for key, group in groups.items():
+            if group["slots"] == {0, 1, 2, 3}:
+                complete_box_count += 1
+                complete_by_segment[int(key[1])] += 1
+            else:
+                incomplete_box_count += 1
+        zero_box_segment_count += sum(
+            count == 0 for count in complete_by_segment.values()
+        )
+    if eligible_segment_count <= 0:
+        raise LossContractError(
+            "raw-axis validity hinge requires at least one supervised segment",
+            code="loss.raw_axis_validity_hinge_zero_eligible",
+            context={"context_count": len(token_sequences)},
+        )
+    return RawAxisValidityHingeDenominator(
+        term_name="raw_axis_validity_hinge",
+        denominator_scope="planned_step",
+        eligible_segment_count=eligible_segment_count,
+        selected_atom_count=coordinate_atom_count,
+        skipped_segment_count=skipped_segment_count,
+        context_count=len(token_sequences),
+        complete_box_count=complete_box_count,
+        incomplete_box_count=incomplete_box_count,
+        zero_box_segment_count=zero_box_segment_count,
+    )
+
+
 def _resolve_streaming_denominators(
-    local_denominators: Mapping[str, SegmentBalancedDenominator],
+    local_denominators: Mapping[
+        str, SegmentBalancedDenominator | RawAxisValidityHingeDenominator
+    ],
     *,
     denominator_gatherer: Callable[
         [Mapping[str, Mapping[str, Any]]],
@@ -673,7 +933,11 @@ def _resolve_streaming_denominators(
     | None,
     world_size: int,
     rank: int,
-) -> tuple[dict[str, SegmentBalancedDenominator], str, float]:
+) -> tuple[
+    dict[str, SegmentBalancedDenominator | RawAxisValidityHingeDenominator],
+    str,
+    float,
+]:
     checked_world_size = _checked_world_size(world_size)
     checked_rank = _checked_rank(rank, world_size=checked_world_size)
     local = {str(name): denominator for name, denominator in local_denominators.items()}
@@ -707,15 +971,20 @@ def _resolve_streaming_denominators(
 
 
 def _merge_global_denominators(
-    local_denominators: Mapping[str, SegmentBalancedDenominator],
+    local_denominators: Mapping[
+        str, SegmentBalancedDenominator | RawAxisValidityHingeDenominator
+    ],
     gathered_payloads: tuple[Mapping[str, Mapping[str, Any]], ...],
-) -> dict[str, SegmentBalancedDenominator]:
-    merged: dict[str, SegmentBalancedDenominator] = {}
+) -> dict[str, SegmentBalancedDenominator | RawAxisValidityHingeDenominator]:
+    merged: dict[str, SegmentBalancedDenominator | RawAxisValidityHingeDenominator] = {}
     for term_name, local_denominator in local_denominators.items():
         eligible_segment_count = 0
         selected_atom_count = 0
         skipped_segment_count = 0
         context_count = 0
+        complete_box_count = 0
+        incomplete_box_count = 0
+        zero_box_segment_count = 0
         for rank_index, rank_payload in enumerate(gathered_payloads):
             if not isinstance(rank_payload, Mapping):
                 raise LossContractError(
@@ -783,6 +1052,25 @@ def _merge_global_denominators(
                 term=term_name,
                 rank_index=rank_index,
             )
+            if isinstance(local_denominator, RawAxisValidityHingeDenominator):
+                complete_box_count += _int_payload_field(
+                    term_payload,
+                    "complete_box_count",
+                    term=term_name,
+                    rank_index=rank_index,
+                )
+                incomplete_box_count += _int_payload_field(
+                    term_payload,
+                    "incomplete_box_count",
+                    term=term_name,
+                    rank_index=rank_index,
+                )
+                zero_box_segment_count += _int_payload_field(
+                    term_payload,
+                    "zero_box_segment_count",
+                    term=term_name,
+                    rank_index=rank_index,
+                )
         if eligible_segment_count <= 0:
             raise LossContractError(
                 "segment_balanced reducer requires at least one globally eligible segment",
@@ -794,14 +1082,23 @@ def _merge_global_denominators(
                     "context_count": context_count,
                 },
             )
-        merged[term_name] = SegmentBalancedDenominator(
-            term_name=term_name,
-            denominator_scope="planned_step_global",
-            eligible_segment_count=eligible_segment_count,
-            selected_atom_count=selected_atom_count,
-            skipped_segment_count=skipped_segment_count,
-            context_count=context_count,
-        )
+        denominator_fields = {
+            "term_name": term_name,
+            "denominator_scope": "planned_step_global",
+            "eligible_segment_count": eligible_segment_count,
+            "selected_atom_count": selected_atom_count,
+            "skipped_segment_count": skipped_segment_count,
+            "context_count": context_count,
+        }
+        if isinstance(local_denominator, RawAxisValidityHingeDenominator):
+            merged[term_name] = RawAxisValidityHingeDenominator(
+                **denominator_fields,
+                complete_box_count=complete_box_count,
+                incomplete_box_count=incomplete_box_count,
+                zero_box_segment_count=zero_box_segment_count,
+            )
+        else:
+            merged[term_name] = SegmentBalancedDenominator(**denominator_fields)
         if local_denominator.term_name != term_name:
             raise LossContractError(
                 "local denominator term name must match its key",
@@ -909,7 +1206,9 @@ def _build_micro_counts(
         "count/eligible_segments": _eligible_segment_count(context),
         "count/skipped_segments": _skipped_segment_count(context),
         "count/packs": 1,
-        "count/examples": len({segment.example_id for segment in context.token_sequence.segments}),
+        "count/examples": len(
+            {segment.example_id for segment in context.token_sequence.segments}
+        ),
     }
 
 
@@ -964,6 +1263,9 @@ def _merge_term_artifacts(
             term_items=tuple(term_items),
             denominator=denominator,
         )
+        is_raw_axis = name == "raw_axis_validity_hinge"
+        if is_raw_axis:
+            selected_count = int(denominator.get("complete_box_count", selected_count))
         merged.append(
             {
                 "name": name,
@@ -973,9 +1275,15 @@ def _merge_term_artifacts(
                 "segment_mean_numerator": raw_loss
                 * float(denominator["eligible_segment_count"]),
                 "denominator": denominator,
-                "reducer_name": "segment_balanced",
+                "reducer_name": (
+                    "segment_balanced_box_mean" if is_raw_axis else "segment_balanced"
+                ),
                 "selected_count": selected_count,
-                "skipped_count": int(denominator["skipped_segment_count"]),
+                "skipped_count": int(
+                    denominator.get("incomplete_box_count", 0)
+                    if is_raw_axis
+                    else denominator["skipped_segment_count"]
+                ),
                 "math_dtype": "float32",
                 "token_weighted_diagnostic": token_weighted,
                 "diagnostics": diagnostics,
@@ -994,6 +1302,20 @@ def _merge_term_diagnostics(
         "denominator_scope": denominator["denominator_scope"],
         "context_count": denominator["context_count"],
     }
+    if name == "raw_axis_validity_hinge":
+        diagnostics.update(
+            {
+                key: int(denominator.get(key, 0))
+                for key in (
+                    "eligible_segment_count",
+                    "skipped_segment_count",
+                    "complete_box_count",
+                    "incomplete_box_count",
+                    "zero_box_segment_count",
+                    "selected_atom_count",
+                )
+            }
+        )
     source_diagnostics = [
         dict(item.get("diagnostics", {}))
         for item in term_items
@@ -1176,6 +1498,16 @@ def _build_metrics(
         metrics[f"loss/{term.name}/segment_count"] = float(
             term.denominator.eligible_segment_count
         )
+        if isinstance(term.denominator, RawAxisValidityHingeDenominator):
+            metrics[f"loss/{term.name}/complete_box_count"] = float(
+                term.denominator.complete_box_count
+            )
+            metrics[f"loss/{term.name}/incomplete_box_count"] = float(
+                term.denominator.incomplete_box_count
+            )
+            metrics[f"loss/{term.name}/zero_box_segment_count"] = float(
+                term.denominator.zero_box_segment_count
+            )
     for name, value in counts.items():
         metrics[name] = float(value)
     return metrics
@@ -1217,15 +1549,14 @@ def _build_finite_status(
 ) -> dict[str, Any]:
     return {
         "total_loss": _finite_label(total_loss),
-        "terms": {
-            term.name: _finite_label(term.weighted_loss)
-            for term in terms
-        },
+        "terms": {term.name: _finite_label(term.weighted_loss) for term in terms},
     }
 
 
 def _finite_label(value: torch.Tensor) -> str:
-    return "finite" if bool(torch.isfinite(value.detach()).all().item()) else "non_finite"
+    return (
+        "finite" if bool(torch.isfinite(value.detach()).all().item()) else "non_finite"
+    )
 
 
 def _finite_metric(value: torch.Tensor) -> float:
@@ -1238,6 +1569,19 @@ def _finite_label_from_float(value: float) -> str:
 
 def _float_value(value: torch.Tensor) -> float:
     return float(value.detach().cpu())
+
+
+def _raw_axis_validity_hinge_diagnostics(
+    denominator: RawAxisValidityHingeDenominator,
+) -> dict[str, int]:
+    return {
+        "eligible_segment_count": denominator.eligible_segment_count,
+        "skipped_segment_count": denominator.skipped_segment_count,
+        "complete_box_count": denominator.complete_box_count,
+        "incomplete_box_count": denominator.incomplete_box_count,
+        "coordinate_atom_count": denominator.selected_atom_count,
+        "zero_box_segment_count": denominator.zero_box_segment_count,
+    }
 
 
 def _validate_weight(name: str, value: float) -> None:

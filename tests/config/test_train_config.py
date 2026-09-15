@@ -10,7 +10,12 @@ import yaml
 from src.common.errors import ConfigContractError
 from src.config.fingerprint import sha256_json
 from src.config.loader import load_train_config
-from src.config.models import CoordGaussianRPSLossConfig, OptimizerGroupConfig, TrainConfig
+from src.config.models import (
+    CoordGaussianRPSLossConfig,
+    OptimizerGroupConfig,
+    RawAxisValidityHingeLossConfig,
+    TrainConfig,
+)
 from src.config.paths import resolve_run_directory
 from src.config.resolve import (
     estimate_full_logits_bytes,
@@ -89,6 +94,8 @@ def test_coord_gaussian_rps_loss_config_rejects_tiny_temperature() -> None:
         ("losses.protected.coord_gaussian_rps.gaussian_weight", float("inf")),
         ("losses.protected.coord_gaussian_rps.rps_weight", float("inf")),
         ("losses.protected.coord_gaussian_rps.temperature", float("inf")),
+        ("losses.protected.raw_axis_validity_hinge.weight", float("inf")),
+        ("losses.protected.raw_axis_validity_hinge.margin", float("inf")),
         (
             "losses.protected.coord_gaussian_rps.gaussian_r95_axis_fraction",
             float("inf"),
@@ -380,6 +387,37 @@ def test_coord_gaussian_rps_loss_config_defaults_disabled_and_loads_plugin_param
     assert enabled_coord_loss.weight == pytest.approx(1.0)
     assert enabled_coord_loss.gaussian_weight == pytest.approx(0.5)
     assert enabled_coord_loss.rps_weight == pytest.approx(0.2)
+
+
+def test_raw_axis_validity_hinge_defaults_on_and_explicit_zero_disables(
+    tmp_path: Path,
+) -> None:
+    default_path = tmp_path / "default.yaml"
+    payload = _minimal_config()
+    _write_yaml(default_path, payload)
+
+    default_loss = load_train_config(
+        default_path
+    ).config.losses.protected.raw_axis_validity_hinge
+    assert default_loss.weight == pytest.approx(0.01)
+    assert default_loss.margin == pytest.approx(1.0 / 999.0)
+
+    disabled_path = tmp_path / "disabled.yaml"
+    payload["losses"]["protected"]["raw_axis_validity_hinge"] = {
+        "weight": 0.0,
+        "margin": 1.0 / 999.0,
+    }
+    _write_yaml(disabled_path, payload)
+
+    disabled_loss = load_train_config(
+        disabled_path
+    ).config.losses.protected.raw_axis_validity_hinge
+    assert disabled_loss.weight == 0.0
+
+
+def test_raw_axis_validity_hinge_config_rejects_negative_margin() -> None:
+    with pytest.raises(ValueError):
+        RawAxisValidityHingeLossConfig(margin=-1.0)
 
 
 def test_legacy_dlora_adapter_spelling_explains_v1_dora_name(tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from probes.training_set_completion import training as t
+from src.losses.raw_axis_validity_hinge import raw_axis_validity_hinge as shared_hinge
 
 
 def test_masked_ce_normalizes_only_active_targets_and_leaves_masked_input_gradient_path():
@@ -75,6 +76,36 @@ def test_raw_axis_hinge_is_differentiable_and_does_not_canonicalize_axes():
     assert loss.item() == pytest.approx(1 / 999)
     loss.backward()
     assert logits.grad is not None and torch.isfinite(logits.grad).all()
+
+
+def test_probe_raw_axis_hinge_is_exactly_the_shared_formula():
+    logits = torch.tensor(
+        [
+            [3.0, 1.0, -2.0, 0.0],
+            [0.0, 2.0, 1.0, -1.0],
+            [-2.0, 0.0, 1.0, 3.0],
+            [-1.0, 1.0, 2.0, 0.0],
+        ],
+        requires_grad=True,
+    )
+    boxes = (
+        {
+            "x1_position": 0,
+            "y1_position": 1,
+            "x2_position": 2,
+            "y2_position": 3,
+        },
+    )
+    kwargs = {
+        "coordinate_token_ids": (0, 1, 2, 3),
+        "coordinate_bin_values": (0, 1, 2, 3),
+        "margin": 1.0 / 999.0,
+    }
+
+    probe = t.raw_axis_validity_hinge(logits, boxes, **kwargs)
+    shared = shared_hinge(logits, boxes, **kwargs)
+
+    torch.testing.assert_close(probe, shared, rtol=0.0, atol=0.0)
 
 
 def test_manifest_rejects_duplicate_image_routes_and_insufficient_forward_budget():

@@ -13,7 +13,11 @@ import torch
 import src.training.supervised_trainer as trainer_module
 from src.common.errors import RuntimeContractError
 from src.config.models import RuntimeBatchResolution
+from src.coordinate_targets import CoordinateLossTarget
+from src.losses import LossRunner, TokenVocabularyGroups
+from src.packing.planner import PackedSegment
 from src.runtime import GateDecision
+from src.supervision import TokenAtom, TokenSequence
 from src.training.schedule import ResolvedStepSchedule, StepScheduleEvent
 from src.training.supervised_trainer import (
     CompletedStepObservation,
@@ -752,6 +756,83 @@ def test_streaming_multirank_loss_plan_uses_runtime_denominator_gatherer() -> No
     )
     assert "runtime.gather_denominators:1" in log
     assert "streaming.prepare_global:1:2:0:3" in log
+
+
+def test_real_loss_runner_geometry_term_crosses_streaming_trainer_and_global_gather() -> (
+    None
+):
+    coordinate_ids = tuple(range(5, 1005))
+    bbox = (100, 100, 900, 900)
+    atoms = tuple(
+        TokenAtom(
+            pack_index=0,
+            segment_index=0,
+            example_index=0,
+            example_id="geometry",
+            target_position=slot + 1,
+            token_id=coordinate_ids[value],
+            token_type="coordinate",
+            text=f"<|coord_{value}|>",
+            logical_target_position=slot + 1,
+            object_id="box-a",
+            field=f"bbox[{slot}]",
+            source="unit",
+            coordinate_target=CoordinateLossTarget(bbox=bbox, slot_index=slot),
+        )
+        for slot, value in enumerate(bbox)
+    )
+    sequence = TokenSequence(
+        pack_index=0,
+        input_ids=(0, 0, 0, 0, 0),
+        segments=(PackedSegment(0, 0, 0, "geometry", 0, 5),),
+        atoms=atoms,
+        spans=(),
+    )
+    groups = TokenVocabularyGroups(
+        vocab_size=1008,
+        desc_text=(1007,),
+        schema=(0, 1),
+        coordinate=coordinate_ids,
+        eos=(1006,),
+        blocked=(2, 3, 4, 1005),
+    )
+    logits = torch.zeros((1, 5, 1008), requires_grad=True)
+    with torch.no_grad():
+        for atom, predicted_bin in zip(atoms, (800, 800, 200, 200), strict=True):
+            logits[0, atom.causal_logits_position, coordinate_ids[predicted_bin]] = 8.0
+    micro_step = SupervisedMicroStep(
+        pack="pack-0",
+        encoded_examples=(object(),),
+        position_inputs=(),
+        token_sequence=sequence,
+        vocab_groups=groups,
+    )
+    log: list[str] = []
+    result = SupervisedTrainer(
+        model=object(),
+        schedule=_schedule(resolved_max_steps=1, grad_accum_steps=1, world_size=2),
+        pack_stream=iter((micro_step,)),
+        qwen_forward=lambda _model, _micro: SimpleNamespace(
+            logits=logits,
+            logits_position_ids=None,
+        ),
+        loss_runner=LossRunner(
+            base_ce_weight=1.0,
+            token_type_gate_weight=0.0,
+            token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
+        ),
+        runtime=FakeRuntime(log, rank=0, world_size=2),
+    ).run()
+
+    artifact = result.latest_observation.loss_bundle_artifact
+    geometry = next(
+        term for term in artifact["terms"] if term["name"] == "raw_axis_validity_hinge"
+    )
+    assert artifact["diagnostics"]["denominator_scope"] == "planned_step_global"
+    assert geometry["denominator"]["eligible_segment_count"] == 3
+    assert geometry["denominator"]["complete_box_count"] == 2
+    assert geometry["weighted_loss"] > 0.0
+    assert "runtime.gather_denominators:1" in log
 
 
 def test_streaming_completion_callback_does_not_expose_micro_or_gate_events() -> None:

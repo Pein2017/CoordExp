@@ -205,6 +205,8 @@ def test_loss_runner_global_streaming_denominator_scales_for_ddp_mean() -> None:
         base_ce_weight=1.0,
         token_type_gate_weight=0.0,
         token_type_gate_groups=("desc_text",),
+        raw_axis_validity_hinge_weight=0.0,
+        raw_axis_validity_hinge=None,
     )
     local_base_loss = BaseTokenCE().per_atom_loss(context).sum()
 
@@ -265,6 +267,8 @@ def test_loss_runner_streaming_finalization_preserves_coord_gaussian_rps_diagnos
         base_ce_weight=1.0,
         token_type_gate_weight=0.25,
         token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
+        raw_axis_validity_hinge_weight=0.0,
+        raw_axis_validity_hinge=None,
         coord_gaussian_rps_weight=1.0,
         coord_gaussian_rps=CoordGaussianRPSLoss(
             gaussian_weight=0.5,
@@ -327,6 +331,9 @@ def test_loss_runner_requires_explicit_configured_weights() -> None:
     assert runner.base_ce_weight == 1.7
     assert runner.token_type_gate_weight == 0.25
     assert runner.token_type_gate_groups == ("coordinate", "eos")
+    assert runner.raw_axis_validity_hinge_weight == pytest.approx(0.01)
+    assert runner.raw_axis_validity_hinge is not None
+    assert runner.raw_axis_validity_hinge.margin == pytest.approx(1.0 / 999.0)
     assert runner.coord_gaussian_rps_weight == 0.5
     assert runner.coord_gaussian_rps is not None
     with pytest.raises(TypeError):
@@ -400,6 +407,8 @@ def test_loss_runner_filters_token_type_gate_groups() -> None:
         base_ce_weight=1.0,
         token_type_gate_weight=0.1,
         token_type_gate_groups=("eos",),
+        raw_axis_validity_hinge_weight=0.0,
+        raw_axis_validity_hinge=None,
     )
 
     bundle = runner.compute((context,))
@@ -414,6 +423,8 @@ def test_loss_runner_filters_token_type_gate_groups() -> None:
         base_ce_weight=1.0,
         token_type_gate_weight=0.1,
         token_type_gate_groups=("coordinate",),
+        raw_axis_validity_hinge_weight=0.0,
+        raw_axis_validity_hinge=None,
     )
     with pytest.raises(LossContractError) as exc_info:
         no_coordinate.compute((context,))
@@ -504,6 +515,8 @@ def _runner(
         base_ce_weight=base_ce_weight,
         token_type_gate_weight=token_type_gate_weight,
         token_type_gate_groups=("desc_text", "schema", "coordinate", "eos"),
+        raw_axis_validity_hinge_weight=0.0,
+        raw_axis_validity_hinge=None,
     )
 
 

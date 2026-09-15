@@ -15,6 +15,14 @@ from src.losses.normalizers import (
     reduce_segment_balanced_planned_step,
     segment_balanced_contribution,
 )
+from src.losses.raw_axis_validity_hinge import (
+    DEFAULT_RAW_AXIS_MARGIN,
+    RawAxisValidityHingeDenominator,
+    RawAxisValidityHingeLoss,
+    RawAxisValidityHingeResult,
+    raw_axis_validity_hinge,
+    raw_axis_validity_hinge_per_box,
+)
 from src.losses.runner import LossBundle, LossRunner, LossTermResult
 from src.losses.rollout_calibration import (
     CandidatePath,
@@ -53,6 +61,7 @@ __all__ = [
     "CandidatePath",
     "CandidatePathScore",
     "CoordGaussianRPSLoss",
+    "DEFAULT_RAW_AXIS_MARGIN",
     "CoordinateBoundaryPreferenceResult",
     "EntityTransitionPreferenceResult",
     "EventGateResult",
@@ -67,6 +76,9 @@ __all__ = [
     "OwnerConditionedCandidateLossResult",
     "OwnerScore",
     "PositivePathImitationResult",
+    "RawAxisValidityHingeDenominator",
+    "RawAxisValidityHingeLoss",
+    "RawAxisValidityHingeResult",
     "PlannedStepLossSlice",
     "SegmentBalancedDenominator",
     "SegmentBalancedLossResult",
@@ -86,6 +98,8 @@ __all__ = [
     "positive_path_imitation",
     "positive_path_imitation_loss",
     "ranked_probability_score",
+    "raw_axis_validity_hinge",
+    "raw_axis_validity_hinge_per_box",
     "reduce_segment_balanced_planned_step",
     "rollout_site_token_type_gate",
     "segment_balanced_contribution",

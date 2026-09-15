@@ -282,6 +282,15 @@ class CoordGaussianRPSLossConfig(WeightedLossConfig):
         return self
 
 
+class RawAxisValidityHingeLossConfig(WeightedLossConfig):
+    weight: float = Field(default=0.01, ge=0.0, allow_inf_nan=False)
+    margin: float = Field(
+        default=1.0 / 999.0,
+        ge=0.0,
+        allow_inf_nan=False,
+    )
+
+
 class RolloutSiteTokenTypeGateLossConfig(WeightedLossConfig):
     """Token-type legality weight for rollout-selected causal sites only."""
 
@@ -292,6 +301,9 @@ class ProtectedLossesConfig(StrictConfigModel):
     coord_gaussian_rps: CoordGaussianRPSLossConfig = Field(
         default_factory=CoordGaussianRPSLossConfig
     )
+    raw_axis_validity_hinge: RawAxisValidityHingeLossConfig = Field(
+        default_factory=RawAxisValidityHingeLossConfig
+    )
     rollout_site_token_type_gate: RolloutSiteTokenTypeGateLossConfig | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
@@ -301,6 +313,25 @@ class ProtectedLossesConfig(StrictConfigModel):
 class LossesConfig(StrictConfigModel):
     normalizer: Literal["segment_balanced", "event_balanced"]
     protected: ProtectedLossesConfig
+
+    @model_validator(mode="after")
+    def _normalizer_specific_geometry_default(self) -> "LossesConfig":
+        if (
+            self.normalizer == "event_balanced"
+            and "raw_axis_validity_hinge" not in self.protected.model_fields_set
+        ):
+            object.__setattr__(
+                self,
+                "protected",
+                self.protected.model_copy(
+                    update={
+                        "raw_axis_validity_hinge": RawAxisValidityHingeLossConfig(
+                            weight=0.0
+                        )
+                    }
+                ),
+            )
+        return self
 
 
 class EntityTransitionObjectiveConfig(StrictConfigModel):
@@ -548,6 +579,11 @@ class TrainConfig(StrictConfigModel):
             raise ValueError(
                 "training.mode=rollout_calibration requires "
                 "losses.protected.coord_gaussian_rps.weight=0"
+            )
+        if protected.raw_axis_validity_hinge.weight != 0.0:
+            raise ValueError(
+                "training.mode=rollout_calibration requires "
+                "losses.protected.raw_axis_validity_hinge.weight=0"
             )
         if rollout_gate_weight <= 0.0:
             raise ValueError(
