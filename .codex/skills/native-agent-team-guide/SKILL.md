@@ -1,6 +1,6 @@
 ---
 name: native-agent-team-guidance
-description: Choose native agent-team topology, package ownership, model and effort, and concise message flow when delegation can reduce time or lead context; choose direct, flat, or bounded nested delegation by package shape and authorization, and learn cost-aware routes from lead-accepted task evidence.
+description: Organize authorized native agents around complete, verifiable outcomes with a few stable package owners, task-fitting models, concise evidence exchange, and bounded correction and review.
 ---
 
 # Native Agent Team Guide
@@ -17,20 +17,28 @@ complete, independently verifiable outcome when briefing, integration, and
 acceptance cost less than the work saved. A frozen command plus an event monitor
 often needs no agent. Scouting is optional, not a required first stage.
 
-Choose direct work, a flat `L0 lead -> L1 package owner(s)` shape, or bounded
-`L0 -> L1 -> L2` delegation inside an owned package. Do not default to flat or
-nested topology, and do not add a scout or nesting ceremony unless it reduces
-lead work while preserving genuine integration. These are responsibilities, not
-permanent posts or model ranks:
+When delegation helps, default to one lead and a few stable L1 owners, adding
+independent visual-review batches or other bounded workers only as needed.
+This is a starting shape, not a required roster or agent-count target. Small
+work stays direct; L2 needs explicit applicable authorization and a concrete
+integration benefit. These are responsibilities, not permanent departments:
 
-- **Lead:** user intent, scientific/spec meaning, cross-package interfaces,
-  resource allocation, integration, and final acceptance.
-- **Package owner:** own one independently assessable research or engineering
-  question, gather the required evidence, and deliver a coherent result within
-  the agreed scope. Implementation and real entry/consumer checks apply when
-  the task requires them.
-- **Optional specialist:** answer one evidence question, challenge one named
-  failure mode, or analyze one difficult idea. No automatic reviewer per task.
+- **Lead:** keep the agreed research question or product outcome central,
+  route user-owned decisions to the user, and own cross-package interfaces,
+  interpretation, next-step choice within scope, and final acceptance. Do not
+  duplicate worker implementation or audit every internal step.
+- **Execution owner:** deliver the complete implementation, real-entry checks,
+  authorized launch, and recovery of one training/runtime or engineering
+  package. A launch outside the brief's permission remains with the lead.
+- **Data/evaluation owner, when needed:** implement the agreed matching, masks,
+  metrics, and artifact/version export. Review workers consume this contract;
+  they do not each invent their own reducer or acceptance rule.
+- **Visual workers, when needed:** adjudicate the assigned unresolved samples
+  under the frozen review policy, inspect one sample at a time, and persist
+  reusable decisions. They do not redefine matching or annotation standards.
+- **Research adviser or specialist:** answer a named uncertainty or causal
+  question that could change the next decision. Consult on demand, not as a
+  standing second lead or an automatic reviewer for each iteration.
 
 Split by independently acceptable outcomes, not by files or process steps.
 If one lane's findings would repeatedly redefine another lane's task, settle
@@ -40,24 +48,37 @@ exists. Parallelize independent reads or disjoint writes, not competing fixes,
 shared-state debugging, or the same scarce runtime. Do not assign a scout if
 the lead will repeat its entire investigation anyway.
 
+Preserve the evidence-to-action loop with one owner when findings can change
+the solution. Delegate across a stable, verifiable boundary; choose context
+mode before model price.
+
+Keep a productive owner through its package's implementation and correction
+loop. Reassess context and task fit when responsibilities change: reusing a
+same-image reviewer is different from turning that reviewer into a runtime
+launcher author. Do not assign unrelated work merely because a worker is
+available. Before transfer, reconcile owned files, results and live jobs; give
+the new owner a compact accepted-state handoff, not the whole transcript.
+
+Before parallel fan-out, resolve any ambiguity that could make workers apply
+different success criteria. Reuse a settled contract; when needed, use one
+representative real example to distinguish automatic decisions from human or
+visual adjudication. This is not a mandatory pilot for every assignment.
+
 ## Model and effort routing
 
-Subject to explicit user routing preferences, the main lead dynamically chooses
-and revises subagent routes to minimize expected monetary cost through acceptance,
-including worker usage, correction,
-lead intervention and handoff. Required quality is the acceptance floor; speed
-is not a reason to pay more unless the user supplies a deadline or waiting
-incurs a concrete resource cost. Choose a task-fitting starting route from
-Luna, Terra, Sol and Astra; do not impose a family ladder or a mandatory retry
-sequence. Start at any appropriate route, skip levels, or move down when the
-remaining work permits. Check actual callable models, efforts and fork
-inheritance before dispatch.
+The lead chooses routes by expected total work through acceptance: worker
+usage, correction, lead intervention, integration, handoff and runtime. Follow
+the user's cost/time priorities and the agent contract; quality is the floor,
+not a variable to trade away. Choose a task-fitting starting route from Luna,
+Terra, Sol and Astra, without a mandatory family ladder or retry sequence.
+Check actual callable models, efforts and fork inheritance before dispatch.
 
-For **critical research-direction decisions**, prefer Astra `xhigh`
-for the subagent responsible for scientific judgment. This
+When adviser input could change a **critical research-direction decision**,
+prefer Astra `xhigh` for that bounded scientific assessment. This
 user preference covers choosing the research question or estimand, distinguishing
 competing mechanisms, and selecting consequential experimental or architecture
-directions. Start there without requiring a cheaper route to fail first. Bounded
+directions. Do not spawn an adviser merely because the task is research. Start
+there without requiring a cheaper route to fail first. Bounded
 evidence collection does not make the resulting scientific judgment routine;
 execution workers normally use Luna, Terra or Sol. Astra `low` may own difficult
 execution or recovery directly when expected worker, rework and lead intervention
@@ -87,11 +108,8 @@ remain evidence-driven exceptions, not prohibited choices. For example, use Sol
 max when comparable task evidence favors it over xhigh; no additional benchmark
 or duplicate run is required. Preserve exact model/effort in existing receipts.
 Neither token price nor effort orders total cost.
-Effort tradeoffs are non-monotonic: xhigh can sometimes be cheaper and faster
-than high by reducing exploration and rework. Compare across effort levels at
-equal acceptance quality; do not assume lower effort saves money or require
-trying each level in order. Cost remains primary; speed alone does not justify
-paying more.
+Higher effort can reduce rework; lower effort does not automatically save
+money. Compare at equal acceptance quality, without trying every level.
 Astra may serve as the main lead; this menu does not change the running lead's
 setting. These are task-fitting preferences, not a universal ranking. Evidence
 from a small exam cannot establish a domain specialty or a reliable success rate.
@@ -103,24 +121,25 @@ records could change a route or a completed delegation adds useful acceptance,
 repair or takeover evidence. It provides the JSONL receipt and a standard-library
 summarizer; no separate scheduler or global writable ledger is needed.
 
-Before dispatch, use a relevant summary if available; otherwise retain tentative
-fits. At decision-bearing closeout, record the full attempt chain in the task's
-owned output, with lead acceptance and incremental costs. Refresh a caller-owned
-summary only when useful. Production and benchmarks remain separate; unknown
-lead cost is unknown, not zero. Inspect task comparability and failure causes
-before updating a preference. Scripts update statistics, never ranks or this
-skill's authority/acceptance rules. A single success does not set a default.
+Use a relevant existing summary when available; otherwise keep routing fits
+tentative. When recording comparable evidence, retain the full attempt chain,
+lead acceptance and incremental costs in the task's owned output. Unknown lead
+cost is unknown, not zero. Inspect task comparability and failure causes before
+changing a preference; completed workers and mixed task costs are not success
+rates. Do not create a new accounting task merely to dispatch a worker.
 
 Distinguish a local implementation error, missing brief facts and environment
 failure from a reasoning or contract-understanding gap. Let the same owner
 repair a concrete verifier failure when that is economical. For oversized work
 or missing recoverable results, first adjust batch size and save completed natural
 units before continuing; do not treat delivery failures alone as a depth deficit.
-Raise effort for a
-specific depth deficit; switch family when repeated corrections miss the
-contract or the lead is effectively reimplementing the package. Do not spend
-through every Sol effort before choosing Astra. User-owned ambiguity still
-goes to the lead; model escalation does not resolve authority.
+After two corrections of the same contract misunderstanding, reassess the
+brief, package boundary and model instead of sending another near-identical
+follow-up. Escalate earlier when justified; two is not a mandatory retry quota.
+Ordinary fixes, changed user requirements and environment failures do not count
+as repeated misunderstanding. Raise effort for a depth gap; change family or
+reassign the package when task fit is wrong or the lead is reimplementing it.
+Model escalation does not resolve user-owned ambiguity.
 
 Move down for simpler remaining work with stable interfaces and reliable
 checks when the savings exceed handoff and context-rebuilding cost. Do not
@@ -131,18 +150,24 @@ explicit handoff to a new worker rather than implying a prompt changed its
 runtime route. Keep routing decisions brief in the ordinary assignment or
 handoff; no new benchmark or accounting ceremony is required.
 
-Avoid duplicating the worker's investigation in the lead. Use concise invariants
-and real consumer checks, not over-detailed briefs or routine second reviews.
-Route summaries by semantic risk, not their label. Model preferences do not
-create review gates or change the running lead setting. Preserve acceptance
-standards; do not infer success rates from completed workers or mixed task costs.
+## Evidence without context inflation
 
-## Scout and collector outputs
+Workers return a compact result: outcome, changed paths or evidence table,
+actual checks, and unresolved decisions. Keep raw logs and full row inventories
+in artifacts, not messages. The lead should integrate the evidence without
+repeating the collection or implementation.
 
-When a Luna scout or collector is used, return a compact handoff containing:
-the question and scope; a small evidence table with counts and exact artifact
-paths; and gaps or unknowns. Do not return raw logs. The lead should be able to
-integrate the evidence without repeating the inventory.
+Before returning tool data to model context, inspect the actual result type
+and select the needed fields, counts and examples. Do not assume every tool
+returns the same JSON wrapper, dump an entire thread/catalog, or truncate a
+serialized object instead of projecting it. Preserve errors, source identity
+and an expansion path; emit only one representation of a repeated payload.
+Reuse accepted evidence unless inputs, policy or an unresolved risk changed.
+
+Short inline queries are appropriate once. When the same nontrivial reducer,
+projection or verification recurs, its package owner should reuse an existing
+entrypoint or a small task-local script rather than have the lead regenerate
+it in messages. Do not build permanent infrastructure for a one-off query.
 
 ## Brief once; share changes, not whole histories
 
@@ -158,11 +183,11 @@ delegation allowed or forbidden (plus bounds if allowed).
 
 ### Implementation briefs
 
-Improve first-pass acceptance by removing execution-changing ambiguity, not by
-asking the worker to "get it right in one shot." One pass means one assignment
-through implementation and its own correction/check loop, not one edit without
-tests. Treat model-specific adjustments below as working priors to validate on
-real tasks, not proven capability limits.
+Assign the whole outcome, not a sequence of micro-actions. One assignment
+includes inspection, implementation, the required real checks and ordinary
+repairs before return; it does not mean one edit without testing. Escalate
+semantic conflicts or out-of-scope changes, not discoverable implementation
+details. The lead should not prescribe and approve every internal step.
 
 For implementation, specialize the brief above with only the missing facts:
 
@@ -178,39 +203,19 @@ For implementation, specialize the brief above with only the missing facts:
   consumer behavior if the command is not yet known. Reuse the project's test
   policy; bugs need a reproducer, not tests that merely mirror the patch.
 
-For **Luna**, prefer clear semantic boundaries and a coherent implementation
-surface, a concrete example, and the relevant existing pattern when known. Resolve
-user-owned ambiguity before dispatch; leave local implementation to the worker.
-If this requires the lead to design every step, choose a better-fitting owner
-using the routing criteria above.
-For **Terra**, use the same outcome-based implementation brief; leave code
-structure and repair strategy to the worker. Do not invent a model-specific
-checklist or assume a domain specialty without accepted-task evidence.
-For **Sol**, state the overall intent and constraints while leaving room to
-trace dependencies and choose the implementation. Name already-settled design
-choices so it can finish the implementation without reopening them; ask it to
-surface evidence that invalidates those choices rather than silently redesign.
-No model needs a long persona, repeated rules, or a compulsory plan report.
-Add detail only when it removes a material ambiguity or supplies missing evidence;
-longer briefs can increase work without improving acceptance. Derive expected
-results independently of the changed implementation where correctness depends
-on a numerical, identity or recovery invariant.
+For **Luna**, supply clear boundaries and a concrete example when useful; if
+the lead must design every step, choose a better-fitting owner. For **Terra**,
+leave code structure and repair strategy to the worker. For **Sol**, state the
+overall intent and settled decisions while allowing dependency tracing. These
+are tentative brief adjustments, not proven model specialties. No model needs
+a long persona, repeated rules or a compulsory plan report. Derive numerical,
+identity and recovery expectations independently of the changed implementation.
+Adjust briefs from actual acceptance and rework, not duplicate benchmark runs.
 
-Ask the worker to inspect relevant code, implement, run the required verifier,
-and repair failures within its scope before returning. Missing semantic input,
-an invalid frozen contract, or an out-of-scope change goes to the lead with the
-exact conflict; ordinary discoverable details do not. Return a candidate with
-changed paths, observed check results, and remaining limitations. Stop when the
-acceptance behavior is verified; do not broaden review to improve confidence
-without a concrete unresolved risk.
-
-Evaluate these briefs on naturally occurring implementation tasks: record whether
-the first submission passed lead acceptance, the reason for substantive rework,
-and worker plus attributable lead usage in existing task evidence. Separate brief
-gaps, implementation errors, and environment failures. Do not claim improved
-one-shot rates from a dry run, mix unlike tasks, or add mandatory duplicate runs
-or additional accounting beyond the task receipts above. Shorten or adjust the
-brief from observed failures.
+For long runtime packages, bind checkpoint and input identity, save completed
+natural units durably, and resume missing work rather than publishing only at
+whole-batch completion. Separate execution, evaluation and research acceptance;
+a failed readback does not by itself justify retraining accepted checkpoints.
 
 Distinguish the assignment, not another topology: a **research-question owner**
 gets the frozen question, claim/resource boundaries, decision-bearing evidence,
@@ -278,16 +283,13 @@ real consumer check on a changed artifact.
 
 ## Bounded L0 -> L1 -> L2 package delegation
 
-Under the user's standing authorization, an L1 package owner may dispatch
-bounded Luna scouts, collectors, or mechanical workers at L2 without a fresh
-permission request for each helper. Stay inside the owned package and its
-shared resource allowance; this does not authorize L3, extra material GPU use,
-or expansion of semantic scope. Name levels
-unambiguously: L0 is root, L1 its child, L2 its grandchild. Native capability
-does not grant permission beyond this standing bound; do not infer a hard v2
-depth guard from `agents.max_depth` (the inspected v2 implementation ignores
-it). Check current tool availability and limits before relying on them; do not
-change runtime configuration to satisfy this skill.
+L0 is root, L1 its child, L2 its grandchild. L2 is an exception to the default
+small L1 team, not standing authorization supplied by this skill. Use it only
+when the current user or governing contract explicitly permits that depth and
+the package brief grants bounded delegation. An existing applicable grant does
+not need reconfirmation per helper. Stay inside the shared package allowance;
+do not multiply it per worker, infer L3 permission, or change runtime settings
+to obtain more capacity. Check actual tool availability and limits.
 
 Nesting is useful when a package contains independent, disjoint subwork and L1
 can absorb its implementation detail, correction, and integration instead of
@@ -323,9 +325,11 @@ repair addresses the cause beyond the supplied example. If the verifier imposed
 an unspecified private interface, correct that assumption and replay retained
 evidence rather than charging the worker for a grader defect.
 Test the real caller/consumer where leaf tests cannot establish acceptance.
-Use a specialist review only for a named risk; after correction, recheck that
-counterexample and the acceptance commands, not another broad review round.
-Fresh contexts are appropriate when the contract or foundational assumptions
+Use a specialist review only for a named decision-changing risk that is cheaper
+to resolve that way than by a deterministic check or lead inspection. Bundle
+blocking corrections once. After repair, recheck the counterexample and affected
+acceptance boundary, not another broad review round. A renamed phase or report
+does not reopen a settled check. Reconcile context if the contract or foundations
 change; otherwise let the same owner finish its correction loop.
 
 Before an expensive rerun, distinguish failed execution from a derived-only
@@ -333,16 +337,11 @@ evaluation defect. For research work, use the retained-evidence recovery rule in
 [research-flow](../research-flow/SKILL.md) before deciding whether execution must
 repeat; a failed reducer alone is not a reason to repeat valid model work.
 
-Optimize monetary cost for the whole accepted outcome: worker usage, lead
-intervention, rework, integration/verification, and any billed runtime wait.
-Prefer the cheaper route that meets the required quality; elapsed time alone
-is not a cost penalty. Do not pay for speed without a user-owned deadline or
-concrete resource cost. Cached tokens are not unique
-text or a complete cost measure; completed workers are not accepted-task
-evidence. When cost bears on a routing decision, separate cached input,
-uncached input, and output using dated applicable rates; missing usage or
-rates remain unknown, not zero. Compare like tasks at like acceptance, including
-failed attempts, substantive rework and attributable lead integration.
-Use naturally occurring acceptance evidence to revise routing, not a
-mandatory model alternation, duplicate runs, or a background accounting service.
-Stop when acceptance is satisfied.
+Judge efficiency by accepted outcomes and decision-relevant information, not
+agents kept busy, messages sent, or receipts produced. The lead uses valid
+execution evidence to decide what was learned and what could change the next
+choice; additional bookkeeping is not research progress. If pricing matters,
+separate cached/uncached input and output using applicable dated rates, including
+rework and lead integration. Missing cost stays unknown. Use naturally occurring
+task evidence rather than a background accounting service. Stop when acceptance
+is satisfied; do not expand scope to keep workers occupied.
