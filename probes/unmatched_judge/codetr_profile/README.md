@@ -34,5 +34,5 @@ Unknown is not a negative, acceptance is not certified GT, and lower-IoU
 cross-prediction duplication is not evaluated. Strict IoU>.95 repeat handling
 remains separate. Do not automatically rewrite labels or create hard rewards.
 
-See the [research result](../../../research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-10-autonomous-unmatched-evaluator/results.md)
+See the [research result](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-10-autonomous-unmatched-evaluator/results.md)
 for original and adjudicated counts, uncertainty, latency and exact evidence.

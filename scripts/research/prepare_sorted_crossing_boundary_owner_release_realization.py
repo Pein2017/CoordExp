@@ -10,7 +10,7 @@ own receipt, the sorted owner accessibility phenotype *census* it was computed
 from -- re-verifies every declared digest, and emits the sealed CPU cohort
 registry, control registry, and request plan that a later GPU pass will
 execute unchanged.  See
-``research/investigations/qwen3-vl-dense-enumeration/experiments/
+``docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/
 2026-08-03-sorted-crossing-boundary-owner-release-realization/unit.md`` for the
 frozen question, the exact ``P``/``E``/``P+E`` state pair, and the branch
 truth table this planner prepares (but never evaluates).

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Read-only checks for the agent research map and its frozen source archive.
+"""Read-only research layout, catalog, source integrity and historical-link checks.
 
-This checks local structure and provenance, not scientific claims or external
-artifacts. Historical links use their original logical document coordinates.
+This validates local knowledge plumbing, not scientific truth or model artifacts.
+No model imports, filesystem writes, alias creation, or automatic repair.
 """
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import argparse
 import hashlib
 import io
 import json
-import os
 import posixpath
 import re
 import subprocess
@@ -19,13 +18,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-PROGRAM = Path("research/qwen3-vl-dense-enumeration")
-CAPTURE = Path("docs/history/research-records/2026-09-15")
-BASELINE = "78bc27d8e5e8639450e01990908fcd3b417bbfa2"
-LIFECYCLES = {"planned", "ready", "running", "blocked", "paused", "closed", "superseded"}
-EVIDENCE_STATES = {"none", "partial", "unreviewed", "accepted", "invalid"}
-LINK = re.compile(r"!?\[[^\]\n]*\]\(([^)\n]+)\)")
-FENCED = re.compile(r"(?ms)^\s*```[^\n]*\n.*?^\s*```[^\n]*$")
+CAPTURE = Path('docs/history/research-records/2026-09-15-root-collapse')
+RESEARCH = Path('research')
+CATALOG = RESEARCH / 'experiments/catalog.jsonl'
+ROOT_NAMES = {'index.md', 'CONVENTIONS.md', 'story.md', 'glossary.md',
+              'alternatives.md', 'questions', 'experiments'}
+LIFECYCLES = {'planned', 'ready', 'running', 'blocked', 'paused', 'closed', 'superseded'}
+EVIDENCE_STATES = {'none', 'partial', 'unreviewed', 'accepted', 'invalid'}
+LINK = re.compile(r'!?\[[^\]\n]*\]\(([^)\n]+)\)')
+FENCED = re.compile(r'(?ms)^\s*```[^\n]*\n.*?^\s*```[^\n]*$')
 
 
 def digest(data: bytes) -> str:
@@ -33,297 +34,358 @@ def digest(data: bytes) -> str:
 
 
 def local_path(root: Path, name: str) -> Path:
-    """Reject escaping paths before reading any bytes; legacy in-root aliases work."""
-    if not isinstance(name, str) or not name or any(c in name for c in "\x00\n\r"):
-        raise ValueError("invalid repository path")
+    if not isinstance(name, str) or not name or any(c in name for c in '\0\r\n'):
+        raise ValueError('invalid repository path')
     path = Path(name)
-    if path.is_absolute() or ".." in path.parts:
-        raise ValueError(f"not a repository-relative path: {name}")
-    result = root / path
-    if not result.resolve().is_relative_to(root.resolve()):
-        raise ValueError(f"path resolves outside repository: {name}")
-    return result
+    if path.is_absolute() or '..' in path.parts:
+        raise ValueError(f'non-local repository path: {name}')
+    resolved = (root / path).resolve()
+    if not resolved.is_relative_to(root.resolve()):
+        raise ValueError(f'path escapes checkout: {name}')
+    return root / path
 
 
-def logical_relative(root: Path, name: str, manifest: dict[str, Any]) -> str | None:
-    if name.startswith("/"):
-        for prefix in (str(root.resolve()), manifest.get("canonical_root", "")):
-            if prefix and (name == prefix or name.startswith(prefix.rstrip("/") + "/")):
-                name = name[len(prefix):].lstrip("/")
+def logical_relative(root: Path, name: str, bundle: dict) -> str | None:
+    if name.startswith('/'):
+        for prefix in (str(root.resolve()), bundle['canonical_root']):
+            if name == prefix or name.startswith(prefix + '/'):
+                name = name[len(prefix):].lstrip('/')
                 break
         else:
             return None
     value = posixpath.normpath(name)
-    return None if value == ".." or value.startswith("../") else value
+    return None if value == '..' or value.startswith('../') else value
 
 
-def resolve_reference(root: Path, manifest: dict[str, Any], document: str,
-                      target: str) -> dict[str, Any]:
-    """Resolve a local reference without probing files outside this checkout."""
-    parts = urlsplit(target.strip().strip("<>"))
+def load_bundle(root: Path) -> dict:
+    latest = json.loads(local_path(root, str(CAPTURE / 'manifest.json')).read_text())
+    previous_path = local_path(root, latest['previous_manifest'])
+    if digest(previous_path.read_bytes()) != latest['previous_manifest_sha256']:
+        raise ValueError('previous source manifest changed')
+    previous = json.loads(previous_path.read_text())
+    consumers = json.loads(local_path(root, str(CAPTURE / 'consumer-sources.json')).read_text())
+    return {'canonical_root': latest['canonical_root'],
+            'captures': [previous, latest, consumers],
+            'retirements': latest['preexisting_retirements'],
+            'exposure': latest['research_json_exposure']}
+
+
+def resolve_reference(root: Path, bundle: dict, document: str, target: str) -> dict:
+    """Use original document coordinates for frozen sources; never repair a live link."""
+    parts = urlsplit(target.strip().strip('<>'))
     if parts.scheme or parts.netloc:
-        return {"kind": "external", "target": target, "exists": None}
-    document_rel = logical_relative(root, document, manifest)
-    if document_rel is None:
-        raise ValueError("document is outside the registered checkout")
-    reverse = {e["archive"]: e["source"] for e in manifest["files"]}
-    prefix = manifest["source_prefix"]
-    historical = (document_rel in reverse or document_rel == prefix
-                  or document_rel.startswith(prefix + "/"))
-    source = reverse.get(document_rel, document_rel)
+        return {'kind': 'external', 'target': target, 'exists': None}
+    doc = logical_relative(root, document, bundle)
+    if doc is None:
+        raise ValueError('document outside checkout')
+    captures = bundle['captures']
+    source, owner = doc, None
+    for capture in captures:
+        match = next((e for e in capture['files'] if e['archive'] == doc), None)
+        if match:
+            source, owner = match['source'], capture
+            break
+    # Removed original paths can be used explicitly with the resolver.
+    if owner is None and not local_path(root, doc).exists():
+        for capture in reversed(captures):
+            if any(e['source'] == doc for e in capture['files']):
+                owner = capture
+                break
     link_path = unquote(parts.path)
-    candidate = (link_path if link_path.startswith("/") else
+    candidate = (link_path if link_path.startswith('/') else
                  posixpath.join(posixpath.dirname(source), link_path)) if link_path else source
-    logical = logical_relative(root, candidate, manifest)
+    logical = logical_relative(root, candidate, bundle)
     if logical is None:
-        kind = "external" if link_path.startswith("/") else "invalid"
-        return {"kind": kind, "target": target, "exists": None}
-    # A live backlink must not be hijacked by a before-edit router snapshot.
-    source_map = {e["source"]: e["archive"] for e in manifest["files"]
-                  if historical or e["action"] == "relocated_byte_exact"}
-    resolved = source_map.get(logical, logical)
-    if logical == prefix or logical.startswith(prefix + "/"):
-        resolved = manifest["archive_prefix"] + logical[len(prefix):]
+        return {'kind': 'external' if link_path.startswith('/') else 'invalid',
+                'target': target, 'exists': None}
+    resolved = logical
+    if owner is not None:
+        ordered = [owner] + [c for c in reversed(captures) if c is not owner]
+        for capture in ordered:
+            match = next((e for e in capture['files'] if e['source'] == logical), None)
+            if match:
+                resolved = match['archive']
+                break
+        else:
+            for capture in ordered:
+                prefix = capture.get('source_prefix')
+                if prefix and (logical == prefix or logical.startswith(prefix + '/')):
+                    proposed = capture['archive_prefix'] + logical[len(prefix):]
+                    if local_path(root, proposed).is_dir():
+                        resolved = proposed
+                        break
     try:
-        path = local_path(root, resolved)
+        exists = local_path(root, resolved).exists()
     except ValueError:
-        return {"kind": "invalid", "logical_path": logical, "target": target, "exists": None}
-    return {"kind": "local", "logical_path": logical, "path": resolved,
-            "fragment": parts.fragment, "exists": path.exists()}
+        return {'kind': 'invalid', 'logical_path': logical, 'exists': None}
+    retired = next((e for e in bundle.get('retirements', []) if e['path'] == resolved), None)
+    result = {'kind': 'local', 'logical_path': logical, 'path': resolved,
+              'fragment': parts.fragment, 'exists': exists}
+    if retired and not exists:
+        result['recovery_git_spec'] = retired['recovery_git_spec']
+        result['availability'] = 'git_recoverable_not_materialized'
+    return result
 
 
-def check_sources(root: Path, manifest: dict[str, Any]) -> list[str]:
+def check_sources(root: Path, bundle: dict) -> list[str]:
     errors: list[str] = []
-    seen_source: set[str] = set()
-    seen_archive: set[str] = set()
-    for entry in manifest["files"]:
-        source, archived = entry["source"], entry["archive"]
-        if source in seen_source or archived in seen_archive:
-            errors.append(f"duplicate manifest mapping: {source}")
-        seen_source.add(source)
-        seen_archive.add(archived)
-        try:
-            data = local_path(root, archived).read_bytes()
-            if digest(data) != entry["sha256"] or len(data) != entry["bytes"]:
-                errors.append(f"source bytes changed: {archived}")
-        except (OSError, ValueError) as exc:
-            errors.append(f"source unavailable: {archived}: {exc}")
+    seen_archives: set[str] = set()
+    retirements = {e['path']: e for e in bundle.get('retirements', [])}
+    if len(retirements) != len(bundle.get('retirements', [])):
+        errors.append('duplicate retirement')
+    used_retirements = set()
+    for capture in bundle['captures']:
+        seen_sources = set()
+        for entry in capture['files']:
+            source, archived = entry['source'], entry['archive']
+            if source in seen_sources or archived in seen_archives:
+                errors.append(f'duplicate source mapping: {source}')
+            seen_sources.add(source)
+            seen_archives.add(archived)
+            try:
+                path = local_path(root, archived)
+                if not path.is_file() and archived in retirements:
+                    retired = retirements[archived]
+                    if retired['sha256'] != entry['sha256'] or retired['source'] != source:
+                        errors.append(f'retirement identity mismatch: {source}')
+                    used_retirements.add(archived)
+                    continue
+                data = path.read_bytes()
+                if digest(data) != entry['sha256'] or len(data) != entry['bytes']:
+                    errors.append(f'source bytes changed: {archived}')
+            except (OSError, ValueError) as exc:
+                errors.append(f'source unavailable: {archived}: {exc}')
+    if used_retirements != set(retirements):
+        errors.append('retirement is not an exact missing captured source')
     return errors
 
 
-def check_git_sources(root: Path, manifest: dict[str, Any]) -> list[str]:
-    """Verify tracked originals against Git, not merely a self-consistent manifest."""
-    if manifest.get("baseline_head") != BASELINE:
-        return ["unexpected archive baseline identity"]
-    originals = [e for e in manifest["files"] if e["git_tracked_at_capture"]]
-    tree = subprocess.run(
-        ["git", "--no-replace-objects", "ls-tree", "-r", "--name-only", BASELINE,
-         "--", manifest["source_prefix"]], cwd=root, check=True,
-        capture_output=True, text=True, timeout=30).stdout.splitlines()
-    expected = {e["source"] for e in originals if e["action"] == "relocated_byte_exact"}
-    errors = [] if set(tree) == expected else ["manifest omits/adds original tracked source paths"]
-    request = "".join(f"{BASELINE}:{e['source']}\n" for e in originals).encode()
-    process = subprocess.run(["git", "--no-replace-objects", "cat-file", "--batch"],
-                             cwd=root, input=request, capture_output=True, check=True,
-                             timeout=30)
-    stream = io.BytesIO(process.stdout)
-    for entry in originals:
-        header = stream.readline().split()
-        if len(header) != 3 or header[1] != b"blob":
-            raise ValueError(f"missing original Git blob: {entry['source']}")
-        data = stream.read(int(header[2]))
-        if stream.read(1) != b"\n":
-            raise ValueError("invalid Git batch framing")
-        if digest(data) != entry["sha256"]:
-            errors.append(f"manifest differs from original Git bytes: {entry['source']}")
-    return errors
-
-
-def check_state(root: Path, state: dict[str, Any], unit_id: str) -> list[str]:
-    errors: list[str] = []
-    required = {"schema_version", "unit_id", "lifecycle", "evidence", "disposition",
-                "state_as_of", "protocol", "result", "state_source", "boundary",
-                "not_authorized", "next_action"}
-    if not required.issubset(state):
-        errors.append(f"{unit_id}: missing state fields {sorted(required - state.keys())}")
-    if state.get("schema_version") != 1 or state.get("unit_id") != unit_id:
-        errors.append(f"{unit_id}: state identity/schema mismatch")
-    if state.get("lifecycle") not in LIFECYCLES:
-        errors.append(f"{unit_id}: invalid lifecycle")
-    if state.get("evidence") not in EVIDENCE_STATES:
-        errors.append(f"{unit_id}: invalid evidence axis")
-    for key in ("disposition", "state_as_of", "boundary", "next_action"):
-        if not isinstance(state.get(key), str) or not state[key].strip():
-            errors.append(f"{unit_id}: empty {key}")
-    if not isinstance(state.get("not_authorized"), list):
-        errors.append(f"{unit_id}: not_authorized must be a list")
-    if state.get("evidence") == "accepted" and not state.get("result"):
-        errors.append(f"{unit_id}: accepted evidence lacks a result owner")
-    for key in ("protocol", "result", "state_source"):
-        name = state.get(key)
-        if key == "result" and name is None:
+def check_git_sources(root: Path, bundle: dict) -> list[str]:
+    """Compare capture claims with actual baseline Git blobs, not self-hashes alone."""
+    errors = []
+    requests = []
+    for capture in bundle['captures']:
+        baseline = capture['baseline_head']
+        if not re.fullmatch('[0-9a-f]{40}', baseline):
+            raise ValueError('invalid baseline commit')
+        prefix = capture.get('source_prefix')
+        if prefix:
+            tree = subprocess.check_output(['git', 'ls-tree', '-r', '-z', baseline, '--', prefix], cwd=root)
+            expected = {r.split(b'\t', 1)[1].decode() for r in tree.split(b'\0') if r
+                        and r.split(b' ', 1)[0] != b'120000'}
+            captured = {e['source'] for e in capture['files'] if e['git_tracked_at_capture']
+                        and (e['source'] == prefix or e['source'].startswith(prefix + '/'))}
+            if expected != captured:
+                errors.append(f'baseline source coverage mismatch: {prefix}')
+        requests.extend((f"{baseline}:{e['source']}", e) for e in capture['files']
+                        if e['git_tracked_at_capture'])
+    for retired in bundle.get('retirements', []):
+        commit, spec = retired['retired_commit'], retired['recovery_git_spec']
+        if not re.fullmatch('[0-9a-f]{40}', commit) or spec != commit + '^:' + retired['path']:
+            raise ValueError('invalid retirement recovery binding')
+        delta = subprocess.check_output(['git', 'diff-tree', '--no-commit-id', '--name-status',
+                                         '-r', commit, '--', retired['path']], cwd=root, text=True).strip()
+        if delta != 'D\t' + retired['path']:
+            errors.append(f'retirement is not a committed exact deletion: {retired["path"]}')
+        requests.append((spec, retired))
+    payload = ''.join(spec + '\n' for spec, _ in requests).encode()
+    result = subprocess.run(['git', 'cat-file', '--batch'], input=payload, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, cwd=root, check=True)
+    stream = io.BytesIO(result.stdout)
+    for spec, entry in requests:
+        header = stream.readline().decode().strip().split()
+        if len(header) != 3 or header[1] != 'blob':
+            errors.append(f'Git source unavailable: {spec}')
             continue
-        try:
-            if not local_path(root, name).is_file():
-                errors.append(f"{unit_id}: missing {key}: {name}")
-        except (TypeError, ValueError) as exc:
-            errors.append(f"{unit_id}: invalid {key}: {exc}")
+        data = stream.read(int(header[2]))
+        stream.read(1)
+        if digest(data) != entry['sha256']:
+            errors.append(f'Git source differs from capture: {spec}')
     return errors
 
 
-def check_catalog(root: Path, rows: list[dict[str, Any]], manifest: dict[str, Any],
-                  program: Path = PROGRAM) -> list[str]:
-    errors: list[str] = []
-    ids: set[str] = set()
-    protocols: set[str] = set()
-    states: set[str] = set()
+def check_state(root: Path, path: str, unit_id: str) -> tuple[list[str], dict]:
+    errors = []
+    state = json.loads(local_path(root, path).read_text())
+    if state.get('schema_version') != 1 or state.get('unit_id') != unit_id:
+        errors.append(f'{path}: state identity mismatch')
+    if state.get('lifecycle') not in LIFECYCLES or state.get('evidence') not in EVIDENCE_STATES:
+        errors.append(f'{path}: invalid lifecycle/evidence axis')
+    for key in ('disposition', 'state_as_of', 'boundary', 'next_action'):
+        if not isinstance(state.get(key), str) or not state[key].strip():
+            errors.append(f'{path}: missing {key}')
+    if not isinstance(state.get('not_authorized'), list) or not all(
+            isinstance(x, str) for x in state.get('not_authorized', [])):
+        errors.append(f'{path}: invalid not_authorized list')
+    for key in ('protocol', 'state_source', 'result'):
+        value = state.get(key)
+        if key == 'result' and value is None and state.get('evidence') != 'accepted':
+            continue
+        if not value or not local_path(root, value).is_file():
+            errors.append(f'{path}: missing {key} target')
+    return errors, state
+
+
+def check_catalog(root: Path, rows: list[dict], bundle: dict) -> list[str]:
+    errors, ids, protocols, states, readings = [], set(), set(), set(), set()
     for row in rows:
-        unit_id = row["id"]
-        if unit_id in ids:
-            errors.append(f"duplicate catalog id: {unit_id}")
-        ids.add(unit_id)
-        if not row.get("topics"):
-            errors.append(f"{unit_id}: no question retrieval tag")
-        for topic in row.get("topics", []):
-            if not local_path(root, str(program / "questions" / f"{topic}.md")).is_file():
-                errors.append(f"{unit_id}: missing question page {topic}")
-        names = [row["record_root"], row["reading_entry"], *row["protocols"],
-                 *row["result_records"]]
-        for name in names:
-            if not local_path(root, name).exists():
-                errors.append(f"{unit_id}: unresolved catalog path {name}")
-        protocols.update(row["protocols"])
-        if row.get("tracking") not in {"historical", "current"}:
-            errors.append(f"{unit_id}: invalid tracking role")
-        if row.get("tracking") == "current" and not row.get("state"):
-            errors.append(f"{unit_id}: current entry has no state owner")
-        if row.get("tracking") == "current" and "handoff" in Path(row["reading_entry"]).name:
-            errors.append(f"{unit_id}: handoff cannot own the live route")
-        if row.get("state"):
-            state_path = row["state"]
-            if state_path in states:
-                errors.append(f"duplicate state owner: {state_path}")
+        uid = row['id']
+        if uid in ids:
+            errors.append(f'duplicate unit ID: {uid}')
+        ids.add(uid)
+        if not row.get('title') or not row.get('kind') or not row.get('topics'):
+            errors.append(f'{uid}: missing title/kind/topics')
+        for topic in row.get('topics', []):
+            if not local_path(root, f'research/questions/{topic}.md').is_file():
+                errors.append(f'{uid}: missing question {topic}')
+        for name in ('record_root', 'reading_entry'):
+            if not local_path(root, row[name]).exists():
+                errors.append(f'{uid}: missing {name}')
+        for name in ('protocols', 'result_records'):
+            if not isinstance(row.get(name), list):
+                errors.append(f'{uid}: {name} must be a list')
+                continue
+            for path in row[name]:
+                if not local_path(root, path).is_file():
+                    errors.append(f'{uid}: missing catalog target {path}')
+        protocols.update(row.get('protocols', []))
+        readings.add(row['reading_entry'])
+        state_path = row.get('state')
+        if row.get('tracking') == 'current':
+            if not state_path or state_path in states:
+                errors.append(f'{uid}: missing/duplicate current state')
+                continue
             states.add(state_path)
-            state = json.loads(local_path(root, state_path).read_text())
-            errors.extend(check_state(root, state, unit_id))
-            if state.get("protocol") not in row["protocols"]:
-                errors.append(f"{unit_id}: state protocol absent from catalog")
-            if state.get("result") and state["result"] != row["reading_entry"]:
-                errors.append(f"{unit_id}: reading entry differs from current result owner")
-    prefix = manifest["archive_prefix"] + "/qwen3-vl-dense-enumeration/experiments/"
-    imported = [e["archive"] for e in manifest["files"] if e["archive"].startswith(prefix)
-                and e["archive"] != prefix + "index.md"
-                and not e["archive"].startswith(prefix + "history/")]
-    expected_ids = {p[len(prefix):].split("/", 1)[0] for p in imported}
-    if not expected_ids.issubset(ids):
-        errors.append(f"uncatalogued imported experiments: {sorted(expected_ids - ids)}")
-    expected_protocols = {p for p in imported if Path(p).name == "unit.md"}
-    if not expected_protocols.issubset(protocols):
-        errors.append(f"uncatalogued imported protocols: {sorted(expected_protocols - protocols)}")
-    actual_states = {str(p.relative_to(root)) for p in (root / program / "experiments").rglob("state.json")}
-    if actual_states != states:
-        errors.append(f"state/catalog mismatch: {sorted(actual_states ^ states)}")
+            found, state = check_state(root, state_path, uid)
+            errors.extend(found)
+            if 'handoff' in Path(row['reading_entry']).name or row['reading_entry'].startswith('docs/history/'):
+                errors.append(f'{uid}: transport/history owns current route')
+            if state.get('result') and state['result'] not in row['result_records']:
+                errors.append(f'{uid}: state result not catalogued')
+        elif row.get('tracking') != 'historical' or state_path is not None:
+            errors.append(f'{uid}: invalid historical/current ownership')
+    expected_protocols = {e['archive'] for c in bundle['captures'] for e in c['files']
+                          if e['source'].startswith('research/') and Path(e['source']).name == 'unit.md'}
+    if not expected_protocols <= protocols:
+        errors.append('catalog omits preserved protocols')
+    expected_roots = set()
+    for capture in bundle['captures']:
+        for entry in capture['files']:
+            src = entry['source']
+            if not src.startswith('research/') or '/experiments/' not in src:
+                continue
+            tail = src.split('/experiments/', 1)[1]
+            first = tail.split('/', 1)[0]
+            if first not in {'index.md', 'history', 'catalog.jsonl'}:
+                expected_roots.add(Path(first).stem if '/' not in tail else first)
+    if not expected_roots <= ids:
+        errors.append('catalog omits preserved experiment roots: ' + ','.join(sorted(expected_roots - ids)))
+    actual_states = {str(p.relative_to(root)) for p in (root / RESEARCH / 'experiments').rglob('state.json')}
+    if states != actual_states:
+        errors.append('orphan/missing current state')
+    entry = (root / RESEARCH / 'index.md').read_text()
+    for state in states:
+        if posixpath.relpath(state, 'research') not in entry:
+            errors.append(f'frontier omits current state: {state}')
     return errors
 
 
 def links_in(text: str) -> list[str]:
-    return LINK.findall(FENCED.sub("", text))
+    return LINK.findall(FENCED.sub('', text))
 
 
-def check_live_links(root: Path, manifest: dict[str, Any], paths: list[Path]) -> tuple[list[str], int, int]:
-    errors: list[str] = []
-    local_count = external_count = 0
-    for path in paths:
-        text = path.read_text(encoding="utf-8")
-        if re.search(r"@(E|A|H|ROOT|P|C|MANIFEST|GUIDE)(?:/|\))", text):
-            errors.append(f"unexpanded link marker: {path.relative_to(root)}")
-        for target in links_in(text):
-            ref = resolve_reference(root, manifest, str(path.relative_to(root)), target)
-            if ref["kind"] == "external":
+def check_layout(root: Path) -> list[str]:
+    errors = []
+    actual = {p.name for p in (root / RESEARCH).iterdir()}
+    if actual != ROOT_NAMES:
+        errors.append(f'research root differs: extra={sorted(actual - ROOT_NAMES)}, missing={sorted(ROOT_NAMES - actual)}')
+    for path in (root / RESEARCH).rglob('*'):
+        if path.is_symlink() or path.suffix in {'.py', '.pyc', '.sh', '.log'} or path.name == '__pycache__':
+            errors.append(f'executable/cache/alias in research: {path.relative_to(root)}')
+    return errors
+
+
+def check_live_links(root: Path, bundle: dict, documents: list[Path]) -> tuple[list[str], int, int]:
+    errors, local_count, external_count = [], 0, 0
+    for document in documents:
+        rel = str(document.relative_to(root))
+        for target in links_in(document.read_text()):
+            ref = resolve_reference(root, bundle, rel, target)
+            if ref['kind'] == 'external':
                 external_count += 1
-            elif ref["kind"] != "local" or not ref["exists"]:
-                errors.append(f"broken live link: {path.relative_to(root)} -> {target}")
+            elif ref['kind'] != 'local' or not ref['exists']:
+                errors.append(f'{rel}: unresolved live link {target}')
             else:
                 local_count += 1
     return errors, local_count, external_count
 
 
-def historical_link_gaps(root: Path, manifest: dict[str, Any]) -> list[dict[str, str]]:
-    gaps: list[dict[str, str]] = []
-    for entry in manifest["files"]:
-        if not entry["archive"].endswith(".md"):
-            continue
-        for target in links_in(local_path(root, entry["archive"]).read_text(encoding="utf-8")):
-            ref = resolve_reference(root, manifest, entry["archive"], target)
-            if ref["kind"] != "external" and not ref["exists"]:
-                gaps.append({"source": entry["source"], "target": target})
-    return gaps
-
-
-def run_check(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
-    errors = check_sources(root, manifest) + check_git_sources(root, manifest)
-    archived = local_path(root, manifest["archive_prefix"])
-    expected = {e["archive"] for e in manifest["files"] if e["action"] == "relocated_byte_exact"}
-    actual = {str(p.relative_to(root)) for p in archived.rglob("*") if p.is_file()}
-    if actual != expected:
-        errors.append(f"frozen archive tree changed: {sorted(actual ^ expected)[:8]}")
-    alias = manifest["compatibility_alias"]
-    link = root / alias["path"]
-    if not link.is_symlink() or os.readlink(link) != alias["target"]:
-        errors.append("legacy alias is absent or changed")
-    scanroot = link / "qwen3-vl-dense-enumeration"
-    scan = [{"path": str(p.relative_to(root)), "sha256": digest(p.read_bytes())}
-            for p in sorted(scanroot.rglob("*.json"))
-            if "2026-09-12-parallel-owner-research" not in str(p)]
-    if scan != manifest["legacy_json_scan"]:
-        errors.append("legacy transfer-selector JSON scan changed")
-    rows = [json.loads(line) for line in (root / PROGRAM / "experiments.jsonl").read_text().splitlines() if line.strip()]
-    errors.extend(check_catalog(root, rows, manifest))
-    live = [root / "research/index.md", root / "research/CONVENTIONS.md", root / CAPTURE / "README.md"]
-    live.extend(sorted((root / PROGRAM).rglob("*.md")))
-    link_errors, local_links, external = check_live_links(root, manifest, live)
-    errors.extend(link_errors)
-    for p in (root / PROGRAM).rglob("*"):
-        if p.is_symlink() or p.suffix in {".py", ".pyc", ".sh", ".log"} or p.name == "__pycache__":
-            errors.append(f"non-knowledge runtime file in live program: {p.relative_to(root)}")
-    current = (root / PROGRAM / "current.md").read_text()
-    current_targets = {resolve_reference(root, manifest, str(PROGRAM / "current.md"), t).get("path") for t in links_in(current)}
+def check_exposure(root: Path, bundle: dict) -> list[str]:
+    rows = bundle.get('exposure', {}).get('records', [])
+    if not rows:
+        return ['missing frozen exposure inventory']
+    errors = []
+    base = local_path(root, 'docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration')
+    actual = {str(p.relative_to(root)) for p in base.rglob('*.json')
+              if '2026-09-12-parallel-owner-research' not in str(p)}
+    if actual != {r['archive_path'] for r in rows}:
+        errors.append('frozen exposure file-set changed')
     for row in rows:
-        if row["tracking"] == "current" and row["state"] not in current_targets:
-            errors.append(f"current context omits state owner: {row['id']}")
-    gaps = historical_link_gaps(root, manifest) if not errors else []
-    return {"ok": not errors, "errors": errors, "preserved_source_files": len(manifest["files"]),
-            "relocated_source_files": len(expected), "catalog_entries": len(rows),
-            "catalogued_protocols": sum(len(r["protocols"]) for r in rows),
-            "current_state_owners": sum(r["tracking"] == "current" for r in rows),
-            "live_documents": len(live), "valid_live_local_links": local_links,
-            "unverified_external_live_handles": external, "unchanged_legacy_json_paths": len(scan),
-            "historical_unresolved_links": len(gaps), "historical_gap_examples": gaps[:6],
-            "scope": "Local knowledge structure and original Git/source identity; no scientific replication or external-artifact verification."}
+        path = local_path(root, row['archive_path'])
+        if not path.is_file() or digest(path.read_bytes()) != row['sha256']:
+            errors.append(f'exposure source changed: {row["archive_path"]}')
+    return errors
+
+
+def run_check(root: Path, bundle: dict) -> dict[str, Any]:
+    rows = [json.loads(line) for line in local_path(root, str(CATALOG)).read_text().splitlines() if line.strip()]
+    errors = check_sources(root, bundle) + check_git_sources(root, bundle)
+    errors += check_layout(root) + check_catalog(root, rows, bundle) + check_exposure(root, bundle)
+    documents = sorted((root / RESEARCH).rglob('*.md'))
+    live_errors, valid_links, external = check_live_links(root, bundle, documents)
+    errors += live_errors
+    gaps = []
+    for capture in bundle['captures']:
+        for entry in capture['files']:
+            path = local_path(root, entry['archive'])
+            if path.suffix != '.md' or not path.is_file():
+                continue
+            for target in links_in(path.read_text()):
+                ref = resolve_reference(root, bundle, entry['archive'], target)
+                if ref['kind'] == 'local' and not ref['exists'] and 'recovery_git_spec' not in ref:
+                    gaps.append({'source': entry['source'], 'target': target})
+    total = sum(len(c['files']) for c in bundle['captures'])
+    return {'ok': not errors, 'errors': errors, 'source_versions': total,
+            'materialized_source_versions': total - len(bundle.get('retirements', [])),
+            'git_recoverable_preexisting_retirements': len(bundle.get('retirements', [])),
+            'catalog_entries': len(rows), 'catalogued_protocols': sum(len(r['protocols']) for r in rows),
+            'current_state_owners': sum(r['tracking'] == 'current' for r in rows),
+            'live_documents': len(documents), 'valid_live_local_links': valid_links,
+            'unverified_external_live_handles': external,
+            'frozen_exposure_records': len(bundle['exposure']['records']),
+            'historical_unresolved_links': len(gaps), 'historical_gap_examples': gaps[:12],
+            'scope': 'Local knowledge plumbing/source identity only; no scientific replication, external-artifact certification, or authorization to resume.'}
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", nargs="?", choices=("check", "resolve"), default="check")
-    parser.add_argument("document", nargs="?")
-    parser.add_argument("target", nargs="?")
+    sub = parser.add_subparsers(dest='command', required=True)
+    sub.add_parser('check')
+    resolve = sub.add_parser('resolve')
+    resolve.add_argument('document')
+    resolve.add_argument('target')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     try:
-        manifest = json.loads((root / CAPTURE / "manifest.json").read_text())
-        if args.command == "resolve":
-            if args.document is None or args.target is None:
-                parser.error("resolve requires a source document and a link target")
-            result = resolve_reference(root, manifest, args.document, args.target)
-            print(json.dumps(result, ensure_ascii=False, indent=2))
-            return 0 if result["kind"] == "external" or result.get("exists") else 1
-        result = run_check(root, manifest)
+        bundle = load_bundle(root)
+        result = (run_check(root, bundle) if args.command == 'check' else
+                  resolve_reference(root, bundle, args.document, args.target))
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result["ok"] else 1
+        return int(not result['ok']) if args.command == 'check' else 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

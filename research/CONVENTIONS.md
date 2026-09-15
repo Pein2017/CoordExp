@@ -1,105 +1,85 @@
 # Agent-oriented research knowledge convention
 
-This is the repository owner for research **placement, reading and maintenance**. It does not authorize experiments, change scientific acceptance rules, or supersede the current user's instructions. Runtime/implementation contracts remain in `docs/` and `openspec/`; the research-flow Skill routes here rather than maintaining a second layout policy.
+This file owns research placement, reading and maintenance. It grants no experiment, architectural or publication authority. The current user's instructions outrank historical plans; current implementation and compatibility contracts stay with their existing `docs/` and `openspec/` owners. The research-flow Skill routes here, rather than maintaining another layout policy.
 
-## 1. Optimize for catch-up and retained knowledge
+## Flat root, meaningful questions
 
-All primary readers are agents. Optimize useful information recovered per reading path, not minimum line count or a human-facing dashboard. Preserve decisive observations, denominators, counterexamples, abandoned hypotheses, technical failures, untested ideas and reopening conditions. Semantic compression is encouraged only when the original evidence remains recoverable.
-
-Offer two paths: **fast** = current context plus the current state/result; **deep** = research story plus selected question pages and their sources. Neither path requires reading every historical experiment. The full catalog and source manifest support targeted expansion. Do not bury a caveat needed to interpret a headline merely to meet a length target.
-
-## 2. Organize by research program and question
+The whole repository serves this research topic. Do not reintroduce a topic/program wrapper or classify knowledge by its changing lifecycle. The active shape is:
 
 ```text
 research/
-  index.md
-  CONVENTIONS.md
-  <program>/
-    index.md
-    current.md
-    story.md
-    vocabulary.md
-    questions/<question>.md
-    ideas.md
-    experiments.jsonl
-    experiments/<unit-id>/
-      unit.md          # new unit's outline/protocol; freeze at execution
-      state.json       # only live lifecycle/evidence/disposition routing
-      results.md       # accepted facts and bounded interpretation
-  ideas/               # retained independent idea owners
-  decisions/           # existing cross-cutting research decisions
-  mechanisms/          # only genuinely supported reusable explanations
-  archive/             # retained older curated collections; no new raw dump
-
-docs/history/research-records/<capture>/  # immutable source provenance
-probes/<direction>/                     # maintained experiment code
-outputs/research/<program>/<unit-id>/<run-id>/  # durable execution evidence
+  index.md                     # current frontier, user boundary, reading map
+  CONVENTIONS.md               # this placement/maintenance contract
+  story.md                     # how evidence changed the research direction
+  glossary.md                  # shared definitions and ambiguous historical aliases
+  alternatives.md              # selective unresolved ideas and reopening conditions
+  questions/<question>.md      # evidence, interpretation, counterexamples, decisions
+  experiments/
+    catalog.jsonl              # complete searchable metadata, including cold records
+    <unit-id>/
+      unit.md                  # proportionate outline, frozen once execution starts
+      state.json               # current lifecycle and result/protocol pointers
+      results.md               # accepted evidence and bounded interpretation
 ```
 
-A program may cover many experiments and hypotheses. A question page is not a claim that a mechanism is proven. Add directories only for a real distinction; do not recreate a generic `investigations`, `progress`, or `misc` dumping ground. Existing independent ideas/decisions need not be bulk-migrated merely to match a new taxonomy.
+No `ideas/`, `decisions/`, `mechanisms/`, `investigations/`, `archive/`, `reports/`, `handoffs/`, or `progress/` buckets inside the active research root. Temporary migration staging must be emptied before closeout. A new question earns a page through a distinct scientific decision and evidence chain, not through a quota or a speculative future need. Reconsider a program layer only if an actually independent second topic exists.
 
-The sole legacy `research/investigations` alias exists for demonstrated old-path consumers. It is not a category, a current-state entry or an authorized writing surface. See the [archive guide](../docs/history/research-records/2026-09-15/README.md).
+Maintained experimental code lives in `probes/<direction>/`. Existing `outputs/research/...` roots and immutable study/run identifiers remain unchanged: flattening the knowledge tree is not permission to rename model artifacts. Historical protocols, evidence, retired code, consultations and old schemas live in manifest-bound `docs/history/`, not a second active archive.
 
-## 3. One owner per kind of statement
+## Read for a task, not for a file count
 
-| Statement | Owner | Other surfaces do |
-|---|---|---|
-| Current lifecycle, latest user boundary, result/protocol pointers | The unit's `state.json` | Link or give an explicitly contextual summary, not a separately maintained status table |
-| Frozen question, contrast, population, conditions, cost and stop rule | `unit.md` or the state's exact preserved protocol reference | Link; never silently rewrite it after seeing results |
-| Accepted metrics, owner identities, measurement rule and bounded verdict | Accepted result plus its named immutable output receipt | Summarize only decision-bearing facts with attribution, not copy the full ledger |
-| Current interpretation and strongest alternatives | Owning question page | Link the interpretation and distinguish it from observation |
-| Why research choices changed | `story.md` | Preserve causal/decision transitions, not every command or round |
-| Metadata retrieval | `experiments.jsonl` | IDs, titles, topic tags, protocol/result/state paths; no live counters or inferred runtime state |
-| Historical bytes and old assertions | Manifest-bound `docs/history/` sources | Treat dated `current`, `running` and grants as historical data |
-| Temporary transport | A bounded handoff | Integrate its useful delta into owners, then archive it |
+Fast catch-up is `index.md` → current `state.json` → accepted result. Deep catch-up adds `story.md` → relevant question pages → decisive original sources. Search `experiments/catalog.jsonl` and the source manifests for expansion. Maximize useful information recovered, not minimum line count. Keep denominators, conditions and limiting counterexamples beside the claims they limit. Do not require every old experiment to be read on every new task.
 
-A result can be accepted while the stage is incomplete and the task is paused. Keep these axes separate. A stored permission describes an earlier grant; fresh execution still needs current user authority and runtime re-observation.
+## One owner per statement
 
-## 4. New-unit lifecycle without a growing notebook
+| Statement | Owner |
+|---|---|
+| Current task and reading route | `index.md`, as an attributed synthesis of the exact unit state/result |
+| Lifecycle, latest user boundary, protocol/result pointers | The unit's `state.json`; no independently maintained current-status tables |
+| Frozen question, population, contrast, cost, criteria and stop rule | `unit.md` or the state's exact preserved protocol reference |
+| Accepted numbers, identities, evaluation semantics and bounded verdict | Accepted `results.md` plus named immutable execution/evaluation receipts |
+| Current scientific interpretation, alternatives and route choice | The relevant `questions/*.md` |
+| Why the direction changed | `story.md`, not a chronological run log |
+| An important untested or unresolved idea | A concise entry in `alternatives.md`, linked to its question and predecessor |
+| Record identity and retrieval | `experiments/catalog.jsonl`; no live metrics or inferred process state |
+| Old bytes, old grants and retired interpretations | Frozen `docs/history/` sources |
 
-During design, `unit.md` is a proportionate outline. Freeze its decision-bearing content when execution begins. A small exploratory probe does not require a production-sized preregistration. Add a separate explicit amendment only for a semantic change; ordinary mechanical repair does not require a new ceremony. Never change a frozen denominator, criterion or stop rule retroactively.
+Short attributed overlap is useful for catch-up; duplicated ledgers, full repeated backgrounds and separately edited volatile counters are not. A directory name, source code search result or tool success wrapper is not evidence of an accepted scientific claim.
 
-`state.json` uses `schema_version: 1`, `unit_id`, `lifecycle`, `evidence`, `disposition`, `state_as_of`, `protocol`, `result`, `state_source`, `boundary`, `not_authorized`, and `next_action`. Paths are repository-relative. `result` may be null before accepted output; provenance must explain the actual state. Lifecycle is one of `planned`, `ready`, `running`, `blocked`, `paused`, `closed`, `superseded`; evidence is one of `none`, `partial`, `unreviewed`, `accepted`, `invalid`. Disposition states the bounded scientific outcome in plain language or a defined label, independently of lifecycle.
+## Units and evidence lifecycle
 
-Use a run/evaluation receipt for changing counters and attempt identities. Write an accepted result when there is an actual interpretable outcome. For accepted-result corrections, preserve the prior version and record the changed evaluator/semantics; do not overwrite hash-bound records. Long iteration histories belong in provenance, not appended indefinitely to `unit.md` or `current.md`.
+During design, `unit.md` is a proportionate executable outline. Freeze decision-bearing content at execution. A scientific-semantic change needs an explicit amendment or new unit; an ordinary mechanical repair does not require another protocol ceremony. Never rewrite the original denominator, conditioning, intervention, criterion or stop rule after observing outcomes. A migrated paused unit may reference its original frozen protocol instead of creating a retroactive one.
 
-Historical units are exempt from the new schema. Their old status fields are frozen source labels, not current state. A migrated continuing unit may point directly to the byte-preserved original protocol, rather than manufacture a retroactive new preregistration. Historical catalog entries without a state are not automatically complete, failed, or resumable.
+`state.json` uses `schema_version: 1`, `unit_id`, `lifecycle`, `evidence`, `disposition`, `state_as_of`, `protocol`, `result`, `state_source`, `boundary`, `not_authorized` and `next_action`. Paths are repository-relative; `result` may be null before acceptance. Lifecycle is `planned|ready|running|blocked|paused|closed|superseded`; evidence is `none|partial|unreviewed|accepted|invalid`; disposition states the bounded scientific outcome independently. Accepted evidence, an incomplete stage and a paused task can coexist. Historical units keep their old schema as provenance, never as present launch authority.
 
-## 5. Preserve ideas and avoid repeating roads
+Keep live/paused or actually continuing units in `research/experiments/`. At a substantive closeout, distill the useful result and safely retire the source record to `docs/history/`; keep its stable ID and exact paths in the catalog. Do not move whole directories merely because another week passed. Reopening creates an explicit new current contract with a predecessor link; it does not rewrite frozen evidence. Historical phase syntheses and operational studies are labeled as such rather than counted as newly executed scientific experiments.
 
-Before proposing a new experiment, read the relevant question page, search the catalog and read the nearest predecessor result/protocol. Record a short predecessor note: what was tested, what it answered, what remains unresolved, what will differ and what observation changes the decision. A new date or name is not a new discriminator.
+## Preserve sparks without preserving obsolete furniture
 
-Distinguish a bounded scientific negative, a technically invalid attempt, an unexecuted plan, a missing-support gate, a superseded interpretation and an unexplored idea. Do not convert “this recipe failed” into “this family cannot work.” Do not convert an old proposal into a standing launch queue.
+Before calling an idea new, inspect its question page, catalog predecessors, actual result and remaining scope. Record what was tried, what was answered, what remains open, what changes now and which observation changes the decision. A new name/date is not a new discriminator.
 
-Each substantive question page should retain the evidence chain, strongest remaining alternative, closest counterexample/failed shortcut and reopening condition. `ideas.md` holds important dormant alternatives with source links. Preserve source-local names for retrieval but define their meaning once in the shared vocabulary; every materially different checkpoint, metric or arm still needs an unambiguous local identity.
+A tested idea is absorbed into the question/story and catalog, not kept as a parallel active document. Retain unresolved alternatives when evidence is missing, an attempt was technically invalid, a materially new condition changes its value, or it remains a consequential counterfactual. Distinguish these cases explicitly. A failed recipe is not a ban on a whole family; a later related experiment is not automatically the matched control an older idea lacked. When the answer is still unknown, keep the source pointer rather than manufacturing closure.
 
-## 6. Update only the surfaces whose meaning changed
+`alternatives.md` is selective, not an exhaustive brain-dump or a second evidence atlas. Its question links own full scientific context. Keep any special architectural idea as an optional hypothesis with a decisive comparator, never as the assumed implementation. Retire dated governance, old agent prompts and old resource grants without carrying them into current scientific constraints.
 
-Close from evidence outward: accepted receipt/result → `state.json` → question page when belief changes → story when the research trajectory changes → current context when the frontier/user boundary changes. Update catalog metadata when paths or units change. Do not rewrite all layers after every optimizer step or repeat full background in each result.
+## Maintain only what changed
 
-The current page is replaceable context, not append-only history. The story explains transitions, not every experimental episode. Short attributed overlap is allowed when required for safe catch-up; redundant full tables and independently edited volatile counters are not.
+Close from evidence outward: accepted receipt/result → unit state → question when belief changes → story when direction changes → index when frontier/user boundary changes. Update catalog paths/records when necessary. A single optimizer step does not require updates to every layer. Create a handoff only for a real transfer; integrate its useful delta into owners, then retire the transport. Do not create/update durable Project Memory without explicit user authorization.
 
-Create a handoff only for a real transfer, not for every conversation or closeout. A live entry must resolve to an owning current/state/result/question/decision surface, not to a transcript, reviewer prompt or consumed handoff. Do not create or update durable project memory unless the user explicitly requests it.
+Keep observations, supported inference, hypotheses and untested proposals distinct. A technically invalid contrast leaves that contrast unanswered, not scientifically negative. Teacher-forced scores, exact conditional patches and mechanics smoke support their own surfaces, not automatic native-greedy transfer. Unknown/unmatched is not negative, and neutral reward need not imply zero gradient. Preserve checkpoint, parameter surface, token/geometry definitions, decode policy, population and evaluator meaning; do not flatten incompatible histories into a leaderboard.
 
-## 7. Code, artifacts and relocation
+## Preservation and validation
 
-New maintained code belongs in ordinary `probes/<direction>/` packages using existing public owners; runtime outputs belong at the declared output root. The research tree holds interpretation and compact state/index metadata, not model payloads, logs, cache files or another execution framework. Archive retired experiment source without pretending it is a maintained library.
+Before any move/removal, inspect fresh Git, current bytes, references and live consumers; preserve original bytes and logical coordinates. Use exact-source hashes, an explicit source-to-archive mapping and a bounded check. Never alter sealed receipts or source hashes to hide an identity break. Readable source recovery and runnable original-context replay are separate claims. Do not keep old-path aliases permanently: migrate demonstrated consumers, verify their decision-bearing behavior, and remove the alias. Historical links resolve through the source-aware read-only resolver, not by reviving the removed taxonomy.
 
-Before moving a source, search actual callers and evidence bindings, inspect fresh Git/content, preserve original bytes and logical path in a manifest, and distinguish readable-source recovery from executable replay. A compatibility alias may be retained only for a demonstrated dependency, with an explicit limitation and a check. Do not add recursive alias forests or rewrite old hashes to hide a broken binding. `Path(__file__).resolve()` and parent-depth assumptions require special attention.
-
-Do not flatten old results into one leaderboard. Retain checkpoint/parameter surface, natural versus forced/teacher-forced conditioning, data-use population, owner/category/geometry policy, denominator, decode policy, technical validity and claim scope. A documentation migration must not manufacture a scientific promotion.
-
-## 8. Verification and closeout
-
-Run from the verified research-probes checkout:
+From the verified research-probes checkout:
 
 ```sh
 python -B scripts/research/check_research_knowledge.py check
 python -B -m unittest discover -s tests/research -p 'test_research_knowledge.py'
-conda run -n ms python -B scripts/research/check_research_graph.py
 git diff --check
 ```
 
-The knowledge check verifies live local links, catalog/state references, source preservation and the legacy JSON-reader boundary. Its historical-link report distinguishes source-time gaps from new live-link failures. It does not validate external artifacts, scientific correctness, all Markdown syntax, or a model run. No new GPU run is required merely to reorganize documentation.
+The single knowledge checker covers the live layout/links, catalog/state, original-source preservation and known retirement records. Consumer changes also need their focused CPU tests and an actual data-read equivalence check. Historical missing sources must be explicitly reported or bound to verified Git recovery, never ignored merely to pass. The obsolete decision-graph checker is retired, not left as a misleading zero-node success.
 
-At closeout report actual file/route changes, source preservation, tests and known gaps, Project/path/branch, affected sessions/jobs, and retained unrelated work. Commit, push, publication, memory changes and experiment resumption are separate actions, not implied by maintaining this tree.
+Checks do not certify all scientific interpretations, external artifacts, every Markdown construct or model execution. No GPU run is needed for document restructuring. Report exact scope, source preservation, validation/gaps, Project/path/branch, remaining work and active jobs. Git publication, memory writes and research resumption remain separate authorizations.

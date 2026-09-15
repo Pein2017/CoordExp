@@ -1,0 +1,2153 @@
+{
+  "schema_version": 2,
+  "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+  "canonical_root": "/data/CoordExp/.worktrees/research-probes",
+  "source_prefix": "research",
+  "archive_prefix": "docs/history/research-records/2026-09-15-root-collapse/sources/research",
+  "files": [
+    {
+      "source": "docs/AGENT_INDEX.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/docs/AGENT_INDEX.md",
+      "sha256": "68884502f961399c84b46a9eb6ebbaea77e76648ee7c86c7b18470e842e0f877",
+      "bytes": 8803,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "docs/catalog.yaml",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/docs/catalog.yaml",
+      "sha256": "168e0e83ff0073e9b815c02d03ac1ed56fe0bda628579b0ebed60b91b5bdd3fd",
+      "bytes": 22605,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "probes/parallel_owner_research/transfer.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/probes/parallel_owner_research/transfer.py",
+      "sha256": "54f20a46982fd62b04aa33ca1ec4152e625d603658db6a85042303a6bc7e91bc",
+      "bytes": 30770,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/2026-09-09-research-probe-workflow-handoff.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/2026-09-09-research-probe-workflow-handoff.md",
+      "sha256": "dc70ab62a10d8486e79500cda2b739dc7bb501a73f2c1f29f152ad832724193b",
+      "bytes": 16376,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/CONVENTIONS.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/CONVENTIONS.md",
+      "sha256": "2778a9de8c8045f5c80ca09d4f94ab6a8674b690ef6259597c299d91b8c14f38",
+      "bytes": 10461,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/evidence_atlas.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/evidence_atlas.md",
+      "sha256": "202c6a83986976c2cef7ef466a70a349b4e377afab4f555a752eff3a13daf474",
+      "bytes": 122028,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-10_12_autoregressive_duplication_causal_chain.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-10_12_autoregressive_duplication_causal_chain.md",
+      "sha256": "6d768d0871ac3f8796c76613f76fca5abfd47f190a3e55f499b19a537eb95ce3",
+      "bytes": 2160,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-10_12_fn_guidance_and_coordinate_basins.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-10_12_fn_guidance_and_coordinate_basins.md",
+      "sha256": "a2df573cc1db6eaee9b2947c46f1d2a56bae4c854d4e39f2e96772a85fa7605c",
+      "bytes": 2035,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-10_12_pre_onset_duplication_precursors.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-10_12_pre_onset_duplication_precursors.md",
+      "sha256": "a60d7608c6151900e1aff50c974b382b262301942084fb1a7142970548266f34",
+      "bytes": 1959,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-20_object_step_and_coordinate_basin.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-20_object_step_and_coordinate_basin.md",
+      "sha256": "8ed8a7a8d8f5a228d6d2677154c0cbb1acaee7a883f0a5446daeadeae9457d4d",
+      "bytes": 2035,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-21_surface_direction_and_patch_probes.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-21_surface_direction_and_patch_probes.md",
+      "sha256": "0279ba601bf1f09fbba2fbb6d3807319e66845597b6648994f26754d28595857",
+      "bytes": 2024,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-22_formation_state_and_closeout.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-22_formation_state_and_closeout.md",
+      "sha256": "a343e9ebed66dce174502ded37ca32c54d1beefb71e8f7ec786f0223d5cf7c7f",
+      "bytes": 1882,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-23_25_ownership_and_prefix_denoising_bridge.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-23_25_ownership_and_prefix_denoising_bridge.md",
+      "sha256": "ffb7fdd689796f2f93765cc9712cf612bca7c41d518236d387d29b5eef7ab841",
+      "bytes": 1244,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/2026-06-26_27_case_studies_and_x1_y1_routes.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/2026-06-26_27_case_studies_and_x1_y1_routes.md",
+      "sha256": "90b7c502e34e8bee3c32b68d6f0902611199e05268c4e80d4d67f709b00e0267",
+      "bytes": 2042,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/experiments/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/experiments/index.md",
+      "sha256": "12e37aa77694318ecf7fdad2e8f648cc3075acd0c566e499135e619b26a09e6e",
+      "bytes": 891,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/findings.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/findings.md",
+      "sha256": "8fd0cd39ade8f5214768594895000757fdfb515338abf1887ea6eef1cf783a51",
+      "bytes": 2092,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/index.md",
+      "sha256": "ab784854a08c0e700650dbc86e8f89d94188540b433daac1db3ddd1c928fd105",
+      "bytes": 1010,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/mechanisms/coordinate_basin_and_binding_state.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/mechanisms/coordinate_basin_and_binding_state.md",
+      "sha256": "3b2e54d89fe0a5cbc7dbd8db4fcb51a6641583fc756d7766901728be38b1b867",
+      "bytes": 537,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/mechanisms/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/mechanisms/index.md",
+      "sha256": "f552ab9ae1eba7a67f1e4da81968a020a4ee1d2a950eee65d22577722edbbc9b",
+      "bytes": 390,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/mechanisms/prefix_history_and_slot_keys.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/mechanisms/prefix_history_and_slot_keys.md",
+      "sha256": "130903259ad10c6876590e3ae2c4a7c80339a63ea3118c17f1be924a80ac9916",
+      "bytes": 512,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/mechanisms/route_readout_and_value_flow.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/mechanisms/route_readout_and_value_flow.md",
+      "sha256": "2a12ba32eada6c89e7ab845d20ed22c2bb9abf5adc504906bd478468cba3d6b6",
+      "bytes": 529,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/overview.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/autoregressive-binding-template-study/overview.md",
+      "sha256": "0277dcbc4795abc549dd6f69a108b7399f83a2fd4147d396d2229730f599fdba",
+      "bytes": 3153,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/coordexp-infras-physical-length/experiments/2026-07-physical-length-isolation/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/coordexp-infras-physical-length/experiments/2026-07-physical-length-isolation/unit.md",
+      "sha256": "fc43710224b62ae785ed020ea114cb5e5919119056311bae4ae3788811e464a5",
+      "bytes": 3819,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/coordexp-infras-physical-length/experiments/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/coordexp-infras-physical-length/experiments/index.md",
+      "sha256": "46d385cbc7ff6b0f67a691f43814c577eedf896967a6d273990c22a6e1dccf4f",
+      "bytes": 138,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/coordexp-infras-physical-length/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/coordexp-infras-physical-length/index.md",
+      "sha256": "ce9339d2c7aeaa04f2b9675331e2decb3e6d2dc026ebb098637ad22120987d2e",
+      "bytes": 276,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/coordexp-infras-physical-length/summary.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/coordexp-infras-physical-length/summary.md",
+      "sha256": "ef5008c6c091a10f62e9c32ba4cb91233cd4e53c5d783cc7b7bbc3af374ce71d",
+      "bytes": 2569,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/docs-vs-mcp-authority/evidence.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/docs-vs-mcp-authority/evidence.md",
+      "sha256": "4d6ce4ce2ac86f52a476a68a89ba56cbf1c69baeaeb7968c3eada97d06c8718f",
+      "bytes": 2962,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/docs-vs-mcp-authority/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/docs-vs-mcp-authority/index.md",
+      "sha256": "c94994145ad0d98f2efed146b8b9251fec0ed5c7638a56acbfa3dd9d4294f6b9",
+      "bytes": 358,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/docs-vs-mcp-authority/maintenance_guidance.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/docs-vs-mcp-authority/maintenance_guidance.md",
+      "sha256": "b187288c4a6adfd4f302ffb79e7ca7bcc96886bb2cdc5cee258d3a9ac268860a",
+      "bytes": 3222,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/docs-vs-mcp-authority/summary.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/docs-vs-mcp-authority/summary.md",
+      "sha256": "6893d3d25d03646135c97c41dc5c3138c6378dc3c403ecb7ac671adbc71e8162",
+      "bytes": 2478,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/index.md",
+      "sha256": "7b418ad5f86817dd50f02f0d909c68c966f7fe820e6e353e18afc7cbe179e696",
+      "bytes": 1286,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/default-pi-cli-context.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/default-pi-cli-context.md",
+      "sha256": "89b49b4625bdce3fe549f99fd7951a86e668e0809ae2d3de901e8cab237c7b83",
+      "bytes": 4890,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/experiments/2026-07-22-stage0-frozen-task-harness-screen/results.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/experiments/2026-07-22-stage0-frozen-task-harness-screen/results.md",
+      "sha256": "9662de75d8a0363ccb16cce0e03a6b158d5b703a76e7b04333659492ddaef4d2",
+      "bytes": 4634,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/experiments/2026-07-22-stage0-frozen-task-harness-screen/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/experiments/2026-07-22-stage0-frozen-task-harness-screen/unit.md",
+      "sha256": "c0d0c675d091095b4b67466130ba3eada2ed71460b482d111bf3cfa91bf583a2",
+      "bytes": 9894,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/experiments/2026-07-23-stateful-rpc-thread-pilot/results.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/experiments/2026-07-23-stateful-rpc-thread-pilot/results.md",
+      "sha256": "4f5eba82438b234b1a872bf3b3bc36554f2d78b0c4c5ae578512e7f9042ad964",
+      "bytes": 4222,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/experiments/2026-07-23-stateful-rpc-thread-pilot/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/experiments/2026-07-23-stateful-rpc-thread-pilot/unit.md",
+      "sha256": "522d9b56d363f2687ab7fb33ba70af0ebecf0b6bff0ba6cbb1bb7fa3282678a1",
+      "bytes": 4783,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/experiments/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/experiments/index.md",
+      "sha256": "80378b72d9e68216a7665d7d4540540f18726e6afab92969ff5a6fd9e21bda27",
+      "bytes": 388,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/index.md",
+      "sha256": "2f74b902b9ee2af29d00559749a12fdcc261db9fa3ef14b50be06020b0dbb246",
+      "bytes": 917,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/pi-lightweight-worker-ablation/overview.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/pi-lightweight-worker-ablation/overview.md",
+      "sha256": "104fb8dd3072d31640c04b34d0e3db8bcc6ad4e95f770eb6e3afe15c647e762e",
+      "bytes": 4238,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "sha256": "7d943d17887b5b0c2b4bc8518e3a72186a39d210fe954567dd6910e99e994e14",
+      "bytes": 88582,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/self-rollout-a-owner-visual-followup-benchmark/readout.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/self-rollout-a-owner-visual-followup-benchmark/readout.md",
+      "sha256": "ade2ecf9c29535c5a91120c9e3de09e39b3a2409cd0c001b0d1cc423299f4ed5",
+      "bytes": 8233,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/self-rollout-source-rweak-routing-benchmark/acceptance.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/self-rollout-source-rweak-routing-benchmark/acceptance.md",
+      "sha256": "127ba5475c69c2f48f6dfa7c8c347c3d7ba76b8ae5be42a12c2e111dd6638b78",
+      "bytes": 3445,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/archive/self-rollout-source-rweak-routing-benchmark/readout.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/archive/self-rollout-source-rweak-routing-benchmark/readout.md",
+      "sha256": "ecadafc65956ecfb7961b8505840f44d28509a1fb9da225c2d6723ffbe034d06",
+      "bytes": 7436,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/index.md",
+      "sha256": "1eb57d2ed6c8c6cab0b136f40556e398bbd597439b8dfe409cb204b2bfd56a6c",
+      "bytes": 1295,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/let-architecture-emerge-from-hypothesis-gates.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/let-architecture-emerge-from-hypothesis-gates.md",
+      "sha256": "4a796d69b77ac52cc7d133b844a1e442b89eff7ec02b1880936e07fffb8aca09",
+      "bytes": 1862,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/protect-native-capability-during-specialization.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/protect-native-capability-during-specialization.md",
+      "sha256": "ee09ecb1f5020bd6409f02acc4be2e83ad15245730dd9cd966829be1b48d9db0",
+      "bytes": 1910,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/require-target-specific-causal-consumption.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/require-target-specific-causal-consumption.md",
+      "sha256": "3f49265d20b2ede55b55571084857b33f81d2a5def20feb7ca96d10db57de208",
+      "bytes": 2135,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/separate-selection-transcription-commit-and-stop.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/separate-selection-transcription-commit-and-stop.md",
+      "sha256": "3e1cd98d4c46ca63fe903fbbfce57ed60c0f8d107e6558ff9274e9c3ba2f18de",
+      "bytes": 6600,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/use-bagging-as-an-object-support-probe.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/use-bagging-as-an-object-support-probe.md",
+      "sha256": "d67d2da8d9c20dbf74f7e76f5e4ecad3f9a874d7d4544692aa64ca7b83ed329f",
+      "bytes": 4453,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/decisions/use-visual-designation-as-a-causal-teacher.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/decisions/use-visual-designation-as-a-causal-teacher.md",
+      "sha256": "450e92eba629100fc19395ae958aa1cfbd4eed434fd659b6d9107ba55b9897c2",
+      "bytes": 1953,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/index.md",
+      "sha256": "0ae4bb5a250535edb3e48b596756470f52d78e767511601dd8a6f5eb5d23db1c",
+      "bytes": 494,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/archive/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/archive/index.md",
+      "sha256": "7dbe399874b8262f3b1ccc1a1f2f7d875c19b81eda0154b91a2ac9b35bf804e1",
+      "bytes": 247,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/conditions.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/conditions.md",
+      "sha256": "0c638c39c79409a70a37df51ff18a8f606758c6afd9f341ee030b80e07a084c6",
+      "bytes": 4308,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/discussion.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/discussion.md",
+      "sha256": "12c63d44ea2d7997982969db020ca9ae00a5edfc9b1ba4c35ff57fc974b0122a",
+      "bytes": 3404,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/draft.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/draft.md",
+      "sha256": "6f35ea3f167eeb46f1c92893b82c988f1866b27d14993c8dfcab3aa4ec4f9c6e",
+      "bytes": 2619,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/experiments/2026-06-14-launch-health-and-branch-isolation/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/experiments/2026-06-14-launch-health-and-branch-isolation/unit.md",
+      "sha256": "604e4b6e921dab7a396eeca6ce1df6a3c5d4df48eec6e92fd1f87f4783be9ce8",
+      "bytes": 4656,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/experiments/2026-06-16-axis-sort-negative-result/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/experiments/2026-06-16-axis-sort-negative-result/unit.md",
+      "sha256": "21e678d0a5a6c80d8528ba5a9b49618537583850341d39dca91a9efe435a4d34",
+      "bytes": 3941,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/experiments/2026-06-17-inert-objective-root-cause/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/experiments/2026-06-17-inert-objective-root-cause/unit.md",
+      "sha256": "690e33d34b12134b0aa79a0759be34b36e87de3747014ac1e1e24050e742bb7e",
+      "bytes": 4638,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/experiments/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/experiments/index.md",
+      "sha256": "c1e7ac6a71c672514b9a3bfa99d449c544fbeec18c8ee1b2057681c93df761fb",
+      "bytes": 334,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/implementation.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/implementation.md",
+      "sha256": "7d71584ff9e3d288cf67fe394784184140ec5294c643ad1a81ff114a0b91b718",
+      "bytes": 4763,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/index.md",
+      "sha256": "7e4ec67dae39ffed57a2930dd7930231e531eb438b3c5ed331a115b6b95a479c",
+      "bytes": 377,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/prefix-denoising-sft/overview.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/prefix-denoising-sft/overview.md",
+      "sha256": "5a7a4fbfcab8d54442069dc144c453579cc9dab2bbaf63f267034a1b7f7065a6",
+      "bytes": 14360,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md",
+      "sha256": "411a48a9bf81e56c5f774a5a60d82354cb68d18a5c76e295f8af444ef36c82e2",
+      "bytes": 35747,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-05-predicted-ledger-human-annotation-ablation/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-05-predicted-ledger-human-annotation-ablation/unit.md",
+      "sha256": "5499f7a2ec48006c12522dd90da769ab9aae980b9532e1ca3ea42b4d39869a92",
+      "bytes": 11456,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step0-preparation-results/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step0-preparation-results/unit.md",
+      "sha256": "4d1cddbd960e66e35861079400cc01687569f4876c1a3ade941574e086968ac1",
+      "bytes": 8886,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step1-precommit-probes/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step1-precommit-probes/unit.md",
+      "sha256": "03174f9ce95a6a7973dc602496913cc070132eeb97da90224c6b8e3e03c8dc0c",
+      "bytes": 12723,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-anticopy-snap-radius-results/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-anticopy-snap-radius-results/unit.md",
+      "sha256": "6fe0884c809f8d3bbf43699e5c6dcf4f9babad855ca52b67dcdf7da921d9ad6d",
+      "bytes": 9947,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-e0-snap-radius-calibration/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-e0-snap-radius-calibration/unit.md",
+      "sha256": "5de10c306a80e3a52e44b6830385d3202b06ab1611da88ec285df198c6787a87",
+      "bytes": 4055,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-snap-radius-build-probe-plan/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-snap-radius-build-probe-plan/unit.md",
+      "sha256": "ebf66e50e7bf37fb9884686ef236bf8d447f1fa53ca4fddb83b0bcac27760780",
+      "bytes": 8664,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-corrupted-wrong-object-row-binding/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-corrupted-wrong-object-row-binding/unit.md",
+      "sha256": "ebe419d41eff35daa846fec35f8347bb3c6dd4bb68c9fb23ab23f7568703680a",
+      "bytes": 13857,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-cross-image-delta-transfer/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-cross-image-delta-transfer/unit.md",
+      "sha256": "92c14528f2e79fca5f70faee4452772ffbe2ce5e99e18c144f25abb9fa5c1b54",
+      "bytes": 9384,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-replay-cursor/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-replay-cursor/unit.md",
+      "sha256": "d9ae15eb5ab306666c562acd98386416b07f7227c1bba84b43c152fa97898111",
+      "bytes": 9115,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-store-delta-cursor/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-store-delta-cursor/unit.md",
+      "sha256": "3a543df8385d2c2cf53b2617251c2aab1ea24f5b55e693083752851ad187c14f",
+      "bytes": 10131,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-identity-conflict/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-identity-conflict/unit.md",
+      "sha256": "7a7d99da91f0cf5b5b8f5d5bc744f9266954ecee938a0afad7cd5f61db53985c",
+      "bytes": 11626,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-image-embed-spatial-localization/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-image-embed-spatial-localization/unit.md",
+      "sha256": "0597529bbb5c4aca8cb6b4cc5419441b705cd54b88b46c7d1afb2b1dfa65a073",
+      "bytes": 10578,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-layer-boundary-residual-decomposition/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-layer-boundary-residual-decomposition/unit.md",
+      "sha256": "2a45ca0ad8b598b105d1e8f2ed5194236ffc67cdad5f5634fa93ec5c6f7be415",
+      "bytes": 6590,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-local-visual-delta-cursor/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-local-visual-delta-cursor/unit.md",
+      "sha256": "624d359512ebeb2ff4ccfff93769139535b634fce46a87eaf16f832736eb5bf6",
+      "bytes": 11237,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-image-token-equivalence/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-image-token-equivalence/unit.md",
+      "sha256": "9a19cf919423eff8bb0867730b62363a8fd342cc5410e5d597ce34e2776ca588",
+      "bytes": 9219,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "sha256": "040413b7b79d0f272c976ab3514cb6629e3dabfb3a73ade06cd382ed9d166504",
+      "bytes": 8565,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-region-split-visual-delta-cursor/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-region-split-visual-delta-cursor/unit.md",
+      "sha256": "d6113355b324f424b7ee27174fb32213da3482c738c9edfb2fd7850dba266f75",
+      "bytes": 8653,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-residual-patch-causal-sufficiency/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-residual-patch-causal-sufficiency/unit.md",
+      "sha256": "cc75268e08692796bf38f5c846b421ed02e826babd02bea30fad7d6f7c22c418",
+      "bytes": 7234,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-same-object-aug-delta-bridge/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-same-object-aug-delta-bridge/unit.md",
+      "sha256": "b674c42d2fda0ac807719892c78a2d3465e63d354903ad1e325b7df09ae1fdee",
+      "bytes": 6891,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-sublayer-patch-route-split/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-sublayer-patch-route-split/unit.md",
+      "sha256": "4e85ace81f6b1d34bc1f385fcd03ef0de3252b16724727dcbf59be28f2d98b39",
+      "bytes": 6309,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-visual-feature-component-localization/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-visual-feature-component-localization/unit.md",
+      "sha256": "37ddd72683379a0ff3adbea58feaff1b6effa9adaf1d4264d50a5712e5c058d5",
+      "bytes": 10216,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-endogenous-boundary-state-synthesis/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-endogenous-boundary-state-synthesis/unit.md",
+      "sha256": "15abb93ef64b1454d41165d45b92b57938da528eaab649a1ebe1ee867d79cf36",
+      "bytes": 19230,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md",
+      "sha256": "6423cae4690d67bce450281712e13bfcb4fe1b7818163ee477316b09f0a59a64",
+      "bytes": 27856,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "sha256": "17c3b0908ac6d6ca2735c4889e270a2d419f5039ef994a5d999c60b97d38d186",
+      "bytes": 11860,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md",
+      "sha256": "adc0e605fb428fe2246342a3e784cd619cbd1aa57c28ef58afeae44225c2b404",
+      "bytes": 16986,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/heldout-representation-results-2026-07-12.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/heldout-representation-results-2026-07-12.md",
+      "sha256": "3eff35f38e6a735c18b04b1194d222b6ab3faf5ac47bd897283ca53491022978",
+      "bytes": 5071,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/implementation-plan.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/implementation-plan.md",
+      "sha256": "ac21f3a86a0b9e8a1fbe75dcadc6cfc4a03489cd82b8c1134377b9fd3400bbd4",
+      "bytes": 12312,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-behavior-evaluator-contract.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-behavior-evaluator-contract.md",
+      "sha256": "dc69a4cba22abcc2c3cc8ccc439e202ff5c41a72ac5837ed8f6053731ca270bf",
+      "bytes": 5833,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-causal-behavior-results-2026-07-12.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-causal-behavior-results-2026-07-12.md",
+      "sha256": "30f8a34269adfb130c3cd932549665a5f899f5af043d9d7a522caff8b780c925",
+      "bytes": 21013,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/representation-readiness-audit-2026-07-11.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/representation-readiness-audit-2026-07-11.md",
+      "sha256": "6c30c7e76381d3fb897d6ba9b63ad7ee29fbc6f175bf315e4ceeb28c000967d9",
+      "bytes": 12302,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/unit.md",
+      "sha256": "a48abf8e1437e1613843772668e45992a3bdc2a492e22f7615b17a8a2e8a1c8d",
+      "bytes": 79606,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/vf6-results-2026-07-11.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/vf6-results-2026-07-11.md",
+      "sha256": "d872c2b8e3dc2e8904da82d4dacd0e7e03aa7938532e7c859da3cb65ab111d0c",
+      "bytes": 6408,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-commit-field-source-swap/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-commit-field-source-swap/unit.md",
+      "sha256": "4c2cfe8633d812241cbef32f59de2edad29bc01ec146728a552bb280dcf0596a",
+      "bytes": 14261,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-endogenous-commit-write-read-bridge/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-endogenous-commit-write-read-bridge/unit.md",
+      "sha256": "de7c4650f0c65dba8c8bbc521f07f8644c92bb09c91ae70fee306e5f41f4fa0a",
+      "bytes": 17101,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-canonical-commit-depth/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-canonical-commit-depth/unit.md",
+      "sha256": "dca2627f70620faaf0a4918ceea91f0ac79e19af34e48a624262850371c7d7ea",
+      "bytes": 12961,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-identity-slot-counterbalance/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-identity-slot-counterbalance/unit.md",
+      "sha256": "ed43c78863b9edb0f820cb9fe030a06bfb12da37889ed9c83754b674ab3bf637",
+      "bytes": 11638,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-spatial-commit-field/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-spatial-commit-field/unit.md",
+      "sha256": "93ba017a4de701ac4106a314ededc4a2ca13e641b3d5d4d760602cf607d5227b",
+      "bytes": 17033,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-selection-aligned-prefix-state-gating/unit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-selection-aligned-prefix-state-gating/unit.md",
+      "sha256": "12f94a814659d93eea3a9e218cb11681c7b0fb63600c1d295f060809893f5503",
+      "bytes": 20358,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/index.md",
+      "sha256": "2f34f7a9a9b6987f7ba32ac264215d6cc596fcec30dc350b010849994c645d91",
+      "bytes": 3778,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/index.md",
+      "sha256": "03c6fa53b0d922b3da0db1db6fa88eea5690db7e9d40479be3c0ca795406a8c3",
+      "bytes": 1730,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md",
+      "sha256": "c86e972bf6179bf3104130527db7c39efb5f00431b3577bf56fcdb678375f947",
+      "bytes": 31151,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/ideas/qwen3-vl-painted-gt-transcription-probe/review-log.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/review-log.md",
+      "sha256": "b7462355474ed829a54c1b5f0534ae7907fb3c6ad6759b93a4bf0ceecbfcacfb",
+      "bytes": 14977,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/index.md",
+      "sha256": "549bb3ff4256ceb21a8db63ad4e05904323f81a4afe1576d6dfb2930e02ff883",
+      "bytes": 2540,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/mechanisms/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/mechanisms/index.md",
+      "sha256": "1dba90ac6d9f3c7e7238d97773227fe97b4640403442f89174c371bab316f8bf",
+      "bytes": 291,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/current.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/current.md",
+      "sha256": "848213d4d24f04e2a6d7d232ffce94166d63ff483a1e750300530909efb6c198",
+      "bytes": 5062,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/results.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/results.md",
+      "sha256": "fff5b3c681a4902e1669c0a505cb2d75fb41b881f4833924ce98993b2e9a50e4",
+      "bytes": 10281,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/state.json",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/state.json",
+      "sha256": "ed6b36eeb77f2979252969e9028541617c4e19f5f080188609c7336ee51ac36e",
+      "bytes": 1194,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/experiments.jsonl",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/experiments.jsonl",
+      "sha256": "88cc6b5cf311cffa3e0690f5c3d77830b5ed91a9271a8852c8301d96568e03e5",
+      "bytes": 166339,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/ideas.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/ideas.md",
+      "sha256": "862b83b4b99bb3c0f6f03139453c1184e0d3bbdeafa7d263cb70837056a9950a",
+      "bytes": 10295,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/index.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/index.md",
+      "sha256": "ee05b884796827158e6f0242de47329f6c47325ccfa77774e576702a94a3c514",
+      "bytes": 2529,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/capacity-and-readout.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/capacity-and-readout.md",
+      "sha256": "f3caa6650a37cc1f33d5407d0bbf4f56ff9597c68e5209d81dfa1c894f189f6c",
+      "bytes": 4273,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/discovery-and-route-value.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/discovery-and-route-value.md",
+      "sha256": "f6bb080cd239ecef6f90ef13e2514f6fc7b491e67778e45fe111e2a859454237",
+      "bytes": 4109,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/greedy-compilation.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/greedy-compilation.md",
+      "sha256": "b7101c84b7c9a750712294963307242b69f3dceb0c7f94a9c68fa482392cb6bd",
+      "bytes": 4725,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/history-repetition-stopping.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/history-repetition-stopping.md",
+      "sha256": "04ebbc07496cc9c9e20a43b40655d0c7d82ea0b258aba7d5e7fb73d63c428203",
+      "bytes": 4201,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/physical-evaluation.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/physical-evaluation.md",
+      "sha256": "0d8226d5e4c8e3a36f2232a3915f48666154010f18278a5275e0d7734caa1d28",
+      "bytes": 4104,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/preservation-and-credit.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/preservation-and-credit.md",
+      "sha256": "8eebbdef8f170cc708a3c37b86df76c3ea936a4a9b609fdb253ebb79d385144f",
+      "bytes": 4650,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/questions/runtime-and-evidence.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/questions/runtime-and-evidence.md",
+      "sha256": "a5460411da4d12b46238e58b397184062f5b205b4aa33672fd0107de05012135",
+      "bytes": 4221,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/story.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/story.md",
+      "sha256": "fceaa161b4c4f643033244714bd3c45130b7207c4fd262ff72c1dad98cd8fd9b",
+      "bytes": 14114,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "research/qwen3-vl-dense-enumeration/vocabulary.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/research/qwen3-vl-dense-enumeration/vocabulary.md",
+      "sha256": "764b0a0ede46a4c18820798a8de24de44ba368739009307e26f9db35c42be530",
+      "bytes": 4097,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/check_research_graph.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/check_research_graph.py",
+      "sha256": "6c0da9ce126cee96a32551157aad9b16f11e8ebfa8a5ab6d371b2fa68e6c14bf",
+      "bytes": 4090,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/check_research_knowledge.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/check_research_knowledge.py",
+      "sha256": "d2b3dcc495a24b1be2d8294e1e7794450656ebfd7d6528e3effa37b54f993b54",
+      "bytes": 17004,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "tests/research/test_research_knowledge.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/tests/research/test_research_knowledge.py",
+      "sha256": "53cfbb389779d6ba75052f1c0fe78592263c218c917fc0a86254409bc7e62b6e",
+      "bytes": 8691,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    }
+  ],
+  "previous_manifest": "docs/history/research-records/2026-09-15/manifest.json",
+  "previous_manifest_sha256": "aed124a34ad8bb55a6a64bf989c2944e55d718a1b8d0d2965e1173ddcf822f2d",
+  "preexisting_retirements": [
+    {
+      "path": "docs/history/research-records/2026-09-15/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/manifest.json",
+      "source": "research/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/manifest.json",
+      "sha256": "d3f65cbfdc44f76bd68a2558975304c936237d93cfa267732ce89ab443c4736c",
+      "recovery_git_spec": "f39066f6948c799827d706eb88876b931112ade8^:docs/history/research-records/2026-09-15/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/manifest.json",
+      "retired_commit": "f39066f6948c799827d706eb88876b931112ade8",
+      "disposition": "preexisting_committed_retirement_git_recoverable"
+    },
+    {
+      "path": "docs/history/research-records/2026-09-15/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/prompt.md",
+      "source": "research/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/prompt.md",
+      "sha256": "9974eaa617823da107d573aea92bd78bab65be60982de1f9cb1269dd6c0104c3",
+      "recovery_git_spec": "f39066f6948c799827d706eb88876b931112ade8^:docs/history/research-records/2026-09-15/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/prompt.md",
+      "retired_commit": "f39066f6948c799827d706eb88876b931112ade8",
+      "disposition": "preexisting_committed_retirement_git_recoverable"
+    },
+    {
+      "path": "docs/history/research-records/2026-09-15/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/results.json",
+      "source": "research/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/results.json",
+      "sha256": "444428b67f7191198026972311658c5e5905ac6584a1773664fdb4270344ec89",
+      "recovery_git_spec": "f39066f6948c799827d706eb88876b931112ade8^:docs/history/research-records/2026-09-15/investigations/2026-08-30-sol-medium-harness-infra-base-pilot-v2/results.json",
+      "retired_commit": "f39066f6948c799827d706eb88876b931112ade8",
+      "disposition": "preexisting_committed_retirement_git_recoverable"
+    }
+  ],
+  "removed_alias": {
+    "path": "research/investigations",
+    "target": "../docs/history/research-records/2026-09-15/investigations"
+  },
+  "research_json_exposure": {
+    "records": [
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/2026-09-07-research-frontier-sync.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/2026-09-07-research-frontier-sync.json",
+        "sha256": "bcce3812a00d633a7a791cc1bdd974917a55fd7669765f6b8c857a084b838c50",
+        "image_ids": [
+          2299
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/coco-80-review-ontology-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/coco-80-review-ontology-v1.json",
+        "sha256": "b7b3c8f2361189c88e103369fa7a6c207c81b79999f9610897cf949d546ea4fe",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-fixed-encoding-persistent-hard-routing-geometry-donor-eligibility-screen/cohort.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-fixed-encoding-persistent-hard-routing-geometry-donor-eligibility-screen/cohort.json",
+        "sha256": "1a80ec5aeed838c292a71ad7d70a6b672aa5a3390ee6bb7014a7a6ea8c6f78dc",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/cases.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/cases.json",
+        "sha256": "c235327dc74a077d8d69dfe8eaee99474b5cf76ea9c0cf589a70a7e8eaed89dc",
+        "image_ids": [
+          6471,
+          7574,
+          12670,
+          15335,
+          15517,
+          16451
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/pure-cross-entropy-native-branch-cases.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/pure-cross-entropy-native-branch-cases.json",
+        "sha256": "bdb84c6c70eb0c13f2606ccb208486e699b87696e1197c8fbcaf406ed214ec89",
+        "image_ids": [
+          7574,
+          15517,
+          16451
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/18380.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/18380.json",
+        "sha256": "aa6c0ba5ac9f2e0fcfd92e3eb89891609f90f704c9036e835dff797fdec514d6",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/19109.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/19109.json",
+        "sha256": "f97cb69b2cd4cf5fe9b5d303e4da6e93364ccb63b3d89ff4c1048cb41c06b2b3",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/9400.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/9400.json",
+        "sha256": "ca8c76ad14a59c47f8e91d49b00c5d443665fa55dd8ec6ca3dea6b0d45591876",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/9590.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/cases/9590.json",
+        "sha256": "67a8bd35e7c4da7ae397a9c6a4e763a6683d7460d37077121b59db650bbc407e",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/cases.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/cases.json",
+        "sha256": "fd1871cd01d63b188af5d75acd78f1c35cd04cfd83b15890a0adb728d0d8ea24",
+        "image_ids": [
+          9400,
+          9590,
+          18380,
+          19109
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/manifest.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/manifest.json",
+        "sha256": "bde6a7cea766dddb603b070b923b4eb5cf526b923989a5c1f4667dff8a9cae9a",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/discovery-pool.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-local-branch-causality-and-downstream-coverage-value/discovery-pool.json",
+        "sha256": "caa0b8169a8ded7556e6753d9c3531b04fef5d06fce2cb339431e9595897902c",
+        "image_ids": [
+          2299,
+          7816,
+          9400,
+          9590,
+          12576,
+          18380,
+          19109,
+          19432
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-same-covered-set-prefix-order-equivalence/cases-image2299-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-same-covered-set-prefix-order-equivalence/cases-image2299-v2.json",
+        "sha256": "9e8e5f67505773948e8734b8bf2e7d31df1aee515b43156cc7436643a826ea6a",
+        "image_ids": [
+          2299
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-same-covered-set-prefix-order-equivalence/cases-image2299.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-same-covered-set-prefix-order-equivalence/cases-image2299.json",
+        "sha256": "3bd24a0de4d5339ff00a4be889e1218b0f975a82fec6724e6ae81f0637abf24b",
+        "image_ids": [
+          2299
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/provisional-targets.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/provisional-targets.json",
+        "sha256": "986ccd2d5cd71f60eee0557bb5e4feb86e70568557590bbca008e6c7f0c068f5",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage2-admission.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage2-admission.json",
+        "sha256": "96d61221fce17a50a3fcb37970ba73ebc1c3496ac418bc89f18025dcecdcdc1d",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-admission.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage3-admission.json",
+        "sha256": "2f9ea8a1dfe6e7a5647747bf4f0a006285df7fbfd101cb41b17d778e8fe82aca",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage4-final-horizon-admission.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage4-final-horizon-admission.json",
+        "sha256": "d2d5c527268315f485fdbba9f226d98e2b93e37ae6d1c8cf9bc42e7c12d51332",
+        "image_ids": [
+          7816
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage5-coordinate-history-crossover-admission.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage5-coordinate-history-crossover-admission.json",
+        "sha256": "3d6952e08ccaf0515c393e9d09f8266aa4dc58927b7068704882a0a5d138dc82",
+        "image_ids": [
+          7816
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage6-row-four-coordinate-factorial-admission.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage6-row-four-coordinate-factorial-admission.json",
+        "sha256": "e902a13a5b83fa54b9b4ed2c13df71a6f010d19a0dbee07274d8c677b0ff5542",
+        "image_ids": [
+          7816
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage7-image-12576-row-three-row-four-mediation-admission.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-sampled-history-target-reachability-and-complete-row-value/stage7-image-12576-row-three-row-four-mediation-admission.json",
+        "sha256": "758cf2a568ddfdc4394000069678d798d397d667c165f5edb8244f5dcb215f88",
+        "image_ids": [
+          12576
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/candidate-row-scoring-manifest.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/candidate-row-scoring-manifest.json",
+        "sha256": "c21014a8cb620f29c7f145325b353a9aa046d316fe7f5cbe753f9324cb3b2388",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/cases-image2299-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/cases-image2299-v2.json",
+        "sha256": "9e8e5f67505773948e8734b8bf2e7d31df1aee515b43156cc7436643a826ea6a",
+        "image_ids": [
+          2299
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/coordinate-review-cases.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/coordinate-review-cases.json",
+        "sha256": "de6bc4c1e3f9766ce6aa6aa7e5bd3e758270f1f3b3000871fabe9ccf9dba1bf0",
+        "image_ids": [
+          2299,
+          7816,
+          9400,
+          9590,
+          12576,
+          18380,
+          19109,
+          19432
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/coordinate-review-decisions.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/coordinate-review-decisions.json",
+        "sha256": "9682c45626e104e65f9a38c2ba118fd9fafde78d4eda33818e8bafd38eaee4c4",
+        "image_ids": [
+          2299,
+          7816,
+          9400,
+          9590,
+          12576,
+          18380,
+          19109,
+          19432
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/ordinary-inference-input-receipt.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/ordinary-inference-input-receipt.json",
+        "sha256": "42955904ce35e47cdc0ba354ccd2dd73d03250b6f8c53190c8b820a90f6ec2b7",
+        "image_ids": [
+          1584,
+          2299,
+          2685,
+          4134,
+          5001,
+          6040,
+          7511,
+          7816,
+          9400,
+          9590,
+          10707,
+          12576,
+          13348,
+          13923,
+          14038,
+          14439,
+          16228,
+          18380,
+          19109,
+          19432
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/sampled-rescue-review-decisions.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-b-v1/sampled-rescue-review-decisions.json",
+        "sha256": "031f9ac03cb91c7d8b026e2e916df46c7e82e10792402ae91a2ea921685d856c",
+        "image_ids": [
+          7816
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/geometry-event-review.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/geometry-event-review.json",
+        "sha256": "f091432e7e54309378b490315486ca0096154ef152a5bca2d4024b1f6c8464ed",
+        "image_ids": [
+          9400
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/sorted-natural-prefix-rescue-panel-manifest.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/sorted-natural-prefix-rescue-panel-manifest.json",
+        "sha256": "8a94ef869e6b85b6931b21d8231473b5d0283b595e249b064c36a945d2409516",
+        "image_ids": [
+          139,
+          2299,
+          9400,
+          12120,
+          12576,
+          18380
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/sorted-natural-prefix-rescue-search-manifest.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/sorted-natural-prefix-rescue-search-manifest.json",
+        "sha256": "ce313ae6c8303e7e17d6c51a84cffd1a8e776cdc721b4456dfed3b6d97302314",
+        "image_ids": [
+          7816
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/transition-event-review.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-own-prefix-entity-transition-and-coordinate-boundary-calibration-training-screen/smoke-fixture-v1/transition-event-review.json",
+        "sha256": "4428881c51dc436090982b0c50ca4b1746c8b17a7693d481eba9c8a9dd7ba60f",
+        "image_ids": [
+          139,
+          2299,
+          7816,
+          9400,
+          12120,
+          12576,
+          18380
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/person-5001.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/person-5001.json",
+        "sha256": "a121f82ff73da2262f0fd5fad2c9f98f983303dab3d2651c5a21e05d107ad293",
+        "image_ids": [
+          5001
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/person-7511.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/person-7511.json",
+        "sha256": "0e32b275a1b7e251cf947465718fb792e0bb534f2cff5ff7e24c169ae1d80162",
+        "image_ids": [
+          7511
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/wine-glass-2685.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/artifacts/wine-glass-2685.json",
+        "sha256": "2e0c28c71c7c07d49a7b9116c70c0762114f9dc1ef79d5d2dc4498d829a559b7",
+        "image_ids": [
+          2685
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/cases.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-earliest-shared-prefix-branch-pilot/cases.json",
+        "sha256": "2853823ad3c867bfff1c5349e33e161d7d2b063d6b527b27849f168373cb59a0",
+        "image_ids": [
+          2685,
+          5001,
+          7511
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/cases.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/cases.json",
+        "sha256": "75af70466eeff6966c2fc70730113c22c0f4909ba3b2977cce677942c6a5c0e0",
+        "image_ids": [
+          2685,
+          5001,
+          7511,
+          13348
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-individual-trajectory-versus-union-support-audit/review-decisions.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-individual-trajectory-versus-union-support-audit/review-decisions.json",
+        "sha256": "679ad454de1c4d204a1229a9f10b838e48f79fa2987d584996cd1a2cf89f0892",
+        "image_ids": [
+          2685,
+          5001,
+          7511
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/source-b16-pilot-64.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/source-b16-pilot-64.json",
+        "sha256": "a016ce9ec0a7ac0b5c3edba4d0ddc8221c5a5dcf85fab9b2c064e63d83788b48",
+        "image_ids": [
+          831,
+          1757,
+          2346,
+          11774,
+          14940,
+          18688,
+          20720,
+          22004,
+          25147,
+          27862,
+          37413,
+          47739,
+          54943,
+          57213,
+          60203,
+          67116,
+          84968,
+          104808,
+          126950,
+          145429,
+          154435,
+          159061,
+          162102,
+          190738,
+          192579,
+          200492,
+          206956,
+          209822,
+          211609,
+          215132,
+          222662,
+          236048,
+          243222,
+          246576,
+          256444,
+          272015,
+          272439,
+          292171,
+          296182,
+          305093,
+          308235,
+          316170,
+          320333,
+          359775,
+          372874,
+          405114,
+          405174,
+          430273,
+          454252,
+          458338,
+          459731,
+          461311,
+          464087,
+          465050,
+          472700,
+          481222,
+          492268,
+          499134,
+          502089,
+          516408,
+          533079,
+          535750,
+          539216,
+          547528,
+          551622,
+          563597,
+          567274,
+          577512
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-10707.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-10707.json",
+        "sha256": "34725617e046e98df3bcabc9e3b89aed1d83dc15dd3e30825017a48426844f43",
+        "image_ids": [
+          10707
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-14038.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-14038.json",
+        "sha256": "cc0e8670034c64153fb8dabe7b773b263b90df908e60b998d8fdc3ff43e57ec9",
+        "image_ids": [
+          14038
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-16228.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-16228.json",
+        "sha256": "36e0fa9735a5a9eab33e0ef7609e53699a891b008704d2e08ac69c073c936542",
+        "image_ids": [
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-5001.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/causal-micro-panel-5001.json",
+        "sha256": "1423bc4acd30e46dd07d0a4241267ffb18f6d4d869b8acafe679bb5da37def42",
+        "image_ids": [
+          5001
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/partial-coordinate-panel-10707.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/partial-coordinate-panel-10707.json",
+        "sha256": "a6d894d784e7110d8e28a54954523aa449038f2d156087c3140c197ec5aaafd8",
+        "image_ids": [
+          10707
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/partial-coordinate-panel-14038-vertical-books.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/partial-coordinate-panel-14038-vertical-books.json",
+        "sha256": "c8f037f7d64eb2bfb77d3db52fbc0bd08fdb4a1e208567bbdb395ef67ad6db5d",
+        "image_ids": [
+          14038
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/partial-coordinate-panel-16228.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-human-refined-greedy-set-completion-conditions/partial-coordinate-panel-16228.json",
+        "sha256": "16069ab60a2a427974d821df61a6ce26e348d532d4152e00cb21825a0c1469db",
+        "image_ids": [
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/455649-bottle-prefix-counterfactual.case.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-physical-owner-duplication-causality-and-training-treatment/455649-bottle-prefix-counterfactual.case.json",
+        "sha256": "fbc85af8e9662ea54c26ea7932f58d0226347b51897a8810a57a5815e29d10a5",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/source-anchor-gap-review-3-images.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/source-anchor-gap-review-3-images.json",
+        "sha256": "ea48ad7c8b966bb0a8ffe4e207b0e343cbde2002e59ed8399fe4b67bcb823eb2",
+        "image_ids": [
+          57676,
+          190052,
+          319139
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/source-anchor-manual-review.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/source-anchor-manual-review.json",
+        "sha256": "92002844d38b4ccf34b9e934cd936f0bca455715e0d211f18c2bcab3ba7ef5b3",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/treatment-geometry-exception-314812.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/treatment-geometry-exception-314812.json",
+        "sha256": "12add0e98813d3c02a6bb4a2438f7d8ae59f18ffe740cc0fd2f9e7f5a184b647",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/b16-drop-chronology-impact-review-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/b16-drop-chronology-impact-review-v1.json",
+        "sha256": "d7eb0ddb96a1feea3867c795deb392581cbb62f9d7e37add2e86dae9cfd65385",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/contract-independent-review-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/contract-independent-review-v1.json",
+        "sha256": "6fba33f33dcbcfd34632cf023f3a1d7f601f0017f2038ca2b7bf972924f18f0d",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/review-assembler-real-noop-smoke-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/review-assembler-real-noop-smoke-v1.json",
+        "sha256": "ff3cf73a687834f3b50db3ba3d02098818874b11ddb33f629c69124fa0ff26b4",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/stage-zero-independent-audit-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/stage-zero-independent-audit-v2.json",
+        "sha256": "7ff43f27ed9eb582ce6574acda9d0e05c27bc8180faea46e581c59c6f2afa94b",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/candidate-bank-foil-review.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/candidate-bank-foil-review.json",
+        "sha256": "6f84982af713236b821331796c6767fe5bdc1f980e271aa04bb2be8089d6037a",
+        "image_ids": [
+          7511,
+          13923,
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/control-registry.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/control-registry.json",
+        "sha256": "0770523f781fdc273e4730c83231e4a34b448ae59a9cae3772fc3968f0431f2f",
+        "image_ids": [
+          2685
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/sentinel-registry.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/sentinel-registry.json",
+        "sha256": "659501cf2c1fe050aa60e91695462fef63742e6fb77c12b7db227e5741ca5704",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/sentinel-selection-confirmation-receipt.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/sentinel-selection-confirmation-receipt.json",
+        "sha256": "76d3f24abe3857d18968c1c6c039bc27a48df6d4bda975b16755e3b154dc410f",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/sentinel-selection-receipt.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-01-sorted-owner-basin-landscape-and-repair/sentinel-selection-receipt.json",
+        "sha256": "2af9a0575e0d11ed4b04a78b7c217e8c5dfd9843a96f14974fa37fdaea8458a8",
+        "image_ids": [
+          7511,
+          13923
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/canonical-description-registry-receipt.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/canonical-description-registry-receipt.json",
+        "sha256": "c5730a9b8f72dbf013eaa829dda4b43e85ec1152be763fc4cb7170a9e67d22ec",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/canonical-description-registry.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/canonical-description-registry.json",
+        "sha256": "9608ab238985a515f76708d638da6a010aa000c6f24efb40e9b2629a49793331",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/smoke-collision-pairs.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/smoke-collision-pairs.json",
+        "sha256": "95c66bb714fc3aafb19f7ef8dadb3cef8d4f3b1688bf0bf943a2a944589724f2",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/smoke-null-pairs.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-02-sorted-false-negative-mechanism-decomposition/smoke-null-pairs.json",
+        "sha256": "ed66df7056682865779f11992331a41aadd8ef4eac83819caff2d9e6ca965feb",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-03-sorted-owner-accessibility-phenotype-census/discovery-rule-spec.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-03-sorted-owner-accessibility-phenotype-census/discovery-rule-spec.json",
+        "sha256": "524439700a69404567a7cf22d3c7f6c176e0f422645baa3af09e40ae591b2aa4",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/contract-review.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/contract-review.json",
+        "sha256": "fb33cbb93543cc86989f1c29299286c061c03bf788d3054fe533650ad869a9d1",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.json",
+        "sha256": "35ba15db9a7f344c4622a3a2d16d79a1cb71ab4482b818bfc02e4f1682b1b12f",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/smoke-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/smoke-launch-packet-v1.json",
+        "sha256": "1e44b32dbf185bddf103ff9cad85527c24126fc7e4c11c897c45184b27800a9b",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n13-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n13-launch-packet-v1.json",
+        "sha256": "630a1460e97b22f0a0816018497c91f0a14061c658a38e6d30f312bf95e9f7ba",
+        "image_ids": [
+          1584,
+          2299,
+          2685,
+          4134,
+          5001,
+          6040,
+          7511,
+          10707,
+          13348,
+          13923,
+          14038,
+          14439,
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n13-readback-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n13-readback-launch-packet-v1.json",
+        "sha256": "809bb5cf61a5bfef2fc25d9c6b60245ec901190d8bebd493e8748b9f878caf47",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n2-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n2-launch-packet-v1.json",
+        "sha256": "a96002b7bf189529b3487bd6c0ea28821df54701c58a7a4007b11b8e82008653",
+        "image_ids": [
+          6040,
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n2-readback-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n2-readback-launch-packet-v1.json",
+        "sha256": "64cd237d459432f9d38f0a9ec2a1ce4147282e81e17b2f1094678e0a80603b29",
+        "image_ids": [
+          6040,
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n4-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n4-launch-packet-v1.json",
+        "sha256": "0356f8c008c1babda212c6d2a72d2460610b27e3346c1cedcb229998d06581c9",
+        "image_ids": [
+          4134,
+          6040,
+          13923,
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n4-readback-launch-packet-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/n4-readback-launch-packet-v1.json",
+        "sha256": "9131d3ba90fa499b051614c8bf4a9f76c6cd6552925aae1151a5e640a5e15551",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/launch-packet-full-n2-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/launch-packet-full-n2-v1.json",
+        "sha256": "c19dd4925d853091ebffc4867d270a1fa91b7ba02aa3d89cd52e00e61e8d2eee",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/launch-packet-train-n4-v3.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/launch-packet-train-n4-v3.json",
+        "sha256": "dc126853b6b82bbbb8cf5175cc2cf17a528487151dfb6e630412a560f2f9a0e9",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v1.json",
+        "sha256": "2f1cc69286139f3221547b2ada383d6e1f5a57abe30695cb36480881c230d58b",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v2.json",
+        "sha256": "fd07cdd3e569dfebb354b13344ddeec77c3d3dc61e1a3cc48948dd6b7abea726",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v3.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/g0-launch-policy-v3.json",
+        "sha256": "924e455d883f0c447b361b3255fa695ae6ffa3bebfcd0b71376c994c2f4f7b77",
+        "image_ids": [
+          102420
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-dora-prox-linear-n2/launch-paired-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-dora-prox-linear-n2/launch-paired-v1.json",
+        "sha256": "5bb02ca85612c6ba77c13022043a9484f7bbafe83ff25ad6acb5ee67e51b79c5",
+        "image_ids": [
+          6040,
+          16228
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-image2299-logit-lens/lead-acceptance.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-image2299-logit-lens/lead-acceptance.json",
+        "sha256": "909b855ee7d98c7511a49771772da5c7100acc77eb40946294d7e99b87affd61",
+        "image_ids": [
+          2299
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-causal-transfer/lead-acceptance.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-causal-transfer/lead-acceptance.json",
+        "sha256": "0c9490f47488806f67e46ecd8c383702b0515ddb742966ae13a985c1b73a070f",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-natural-continuation/lead-acceptance.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-natural-continuation/lead-acceptance.json",
+        "sha256": "c419055b545c7e9784d14139de7b3c56ef06a19c427e268a228407a60a4f1670",
+        "image_ids": [
+          2299
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-radius-direction/lead-acceptance.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-logit-lens-radius-direction/lead-acceptance.json",
+        "sha256": "7797eec148ef8f2f16643cca9680e8f8946c23eed0f5fcba78755616e74bb957",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-self-rollout-behavior-portfolio/lead-acceptance.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-08-self-rollout-behavior-portfolio/lead-acceptance.json",
+        "sha256": "627097df385f7c7a42e9d47679640e9907afd684dd3b0f7a9af327ff0f01acd5",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/consultation-2026-09-14/root-retained-evidence.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/consultation-2026-09-14/root-retained-evidence.json",
+        "sha256": "31c5afdcf33864b4f20bdc8585cf1fe65a9f7ffacc818687dbe2eacd0295cc35",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v2.json",
+        "sha256": "659c5c9fe2a8391ad8b7bf40097de61522ba4993da6462075174c8612a4c6fe1",
+        "image_ids": [
+          158044,
+          417044
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v3.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v3.json",
+        "sha256": "f1ed31fcb66a8c6e070565e4c502086497ba22452528cac38e10b3e37d437f1e",
+        "image_ids": [
+          158044,
+          417044
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v4.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v4.json",
+        "sha256": "9193c0a7c1dc3e1c445edca562789ca11673c6152a26356973c398a0837527e7",
+        "image_ids": [
+          158044,
+          417044
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v5.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v5.json",
+        "sha256": "0cae66d4f1fbfb93696bdc1e8a4a8ada005a7c41f29043f5b3baec7f3dac9757",
+        "image_ids": [
+          158044,
+          417044
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v6.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation-v6.json",
+        "sha256": "36cd565f4d389860a3f66bc4b2270d59a5abd324f6eb5ae9f011f222575dfef4",
+        "image_ids": [
+          158044,
+          417044
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/implementation.json",
+        "sha256": "ce931cc614733d9c3ab55bf893f66168aea4c6aae4c1ffd7acb18528b702c0b6",
+        "image_ids": [
+          158044,
+          417044
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/root-review-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/overlay/root-review-v1.json",
+        "sha256": "c1f4af4780cf588cfd9d5681b2d82462db95abdebde7372414d08dd76c494b55",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/physical-review-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/physical-review-v1.json",
+        "sha256": "23748d8f4894d257306d199f729554e55e6c26025ba0459b978fca3489142eb1",
+        "image_ids": [
+          16509,
+          23538,
+          24552,
+          31980,
+          39654,
+          77260,
+          81054,
+          112899,
+          124067,
+          142497,
+          158044,
+          165609,
+          221245,
+          225299,
+          274509,
+          353321,
+          375654,
+          388312,
+          394079,
+          454382,
+          461868,
+          487003,
+          493880,
+          520251,
+          534776,
+          574094,
+          577558
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/preflight.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/preflight.json",
+        "sha256": "43d666f0e19140d281c7282b01c7a79b53d501c391e0e2994d6a115593091cca",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/census-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/census-v1.json",
+        "sha256": "b76c74a9ac27d9ae03656319e0cf50c844d0d1da4dea91f241d543259ea4c750",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/individual-view-receipt-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/individual-view-receipt-v1.json",
+        "sha256": "c72a4a288e1f05f524dbf4dadf93f768f37cab045d704fbfc39e53d6a97c1d4c",
+        "image_ids": [
+          16509,
+          23538,
+          24552,
+          31980,
+          39654,
+          77260,
+          81054,
+          112899,
+          124067,
+          142497,
+          158044,
+          165609,
+          221245,
+          225299,
+          274509,
+          353321,
+          375654,
+          388312,
+          394079,
+          454382,
+          461868,
+          487003,
+          493880,
+          520251,
+          534776,
+          574094,
+          577558
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/validation-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/review/validation-v1.json",
+        "sha256": "5c28300e5bea40dcabb0b1578eeeb0c4dc17e8e3eb4c03a1c7ab64ce23418ce0",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/root-individual-review-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission/root-individual-review-v1.json",
+        "sha256": "1d24bbce32fc8dad6a6fee3e586f928c913d930d05b307e0702a683bf36e77b9",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission-join/inputs-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/physical-admission-join/inputs-v1.json",
+        "sha256": "ca0a7548a796f88f1899ba453b906947e0ef183064fa237a98fb70299219efbd",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/capacity-contract-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/capacity-contract-v1.json",
+        "sha256": "345610ea0456c6c8eed15c613900fd015f07b0c5c99d398e8f5b9a25543181b4",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/capacity-summary-v1.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/capacity-summary-v1.json",
+        "sha256": "45d73687bf4c169a4cb9ade77ea39b9b1255dd641df2c79c9da018872e9bf3d0",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/diagnosis-summary-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/diagnosis-summary-v2.json",
+        "sha256": "e77d013efaa34b6fb39c534e067d7f873fcbbb5e7e6482a3783ec9d10ea09691",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/diagnostic-contract-v2.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/diagnostic-contract-v2.json",
+        "sha256": "3199e04b73a3aad68a9909388eef2323ab9fef07cd122445250f542664eb53fc",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/final-technical-contract-v3.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/final-technical-contract-v3.json",
+        "sha256": "e91233911e4702dc636bc64ff013573bb7d7c89c27c5365153f354ef6dccc81c",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/final-technical-summary-v3.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/final-technical-summary-v3.json",
+        "sha256": "a7b3fa58c4e039135d9a7e538a17997ba803c1aefeb84c1e1db666802f01fe8d",
+        "image_ids": [
+          368
+        ]
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/parity-contract.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/throughput/parity-contract.json",
+        "sha256": "901fb52bda2e63c73f152551e65b54d027fef06e6db9ed7804375e5c125d2ca8",
+        "image_ids": []
+      },
+      {
+        "logical_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-label-vs-compilation/supply/result.json",
+        "archive_path": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-label-vs-compilation/supply/result.json",
+        "sha256": "092d19cac2af81e97ba357792c8263a1cd068ce662329dc2b810dc7f5dac9f9d",
+        "image_ids": [
+          360767,
+          381458,
+          418115,
+          429065,
+          444315,
+          568202
+        ]
+      }
+    ],
+    "excluded_image_ids": [
+      139,
+      368,
+      831,
+      1584,
+      1757,
+      2299,
+      2346,
+      2685,
+      4134,
+      5001,
+      6040,
+      6471,
+      7511,
+      7574,
+      7816,
+      9400,
+      9590,
+      10707,
+      11774,
+      12120,
+      12576,
+      12670,
+      13348,
+      13923,
+      14038,
+      14439,
+      14940,
+      15335,
+      15517,
+      16228,
+      16451,
+      16509,
+      18380,
+      18688,
+      19109,
+      19432,
+      20720,
+      22004,
+      23538,
+      24552,
+      25147,
+      27862,
+      31980,
+      37413,
+      39654,
+      47739,
+      54943,
+      57213,
+      57676,
+      60203,
+      67116,
+      77260,
+      81054,
+      84968,
+      102420,
+      104808,
+      112899,
+      124067,
+      126950,
+      142497,
+      145429,
+      154435,
+      158044,
+      159061,
+      162102,
+      165609,
+      190052,
+      190738,
+      192579,
+      200492,
+      206956,
+      209822,
+      211609,
+      215132,
+      221245,
+      222662,
+      225299,
+      236048,
+      243222,
+      246576,
+      256444,
+      272015,
+      272439,
+      274509,
+      292171,
+      296182,
+      305093,
+      308235,
+      316170,
+      319139,
+      320333,
+      353321,
+      359775,
+      360767,
+      372874,
+      375654,
+      381458,
+      388312,
+      394079,
+      405114,
+      405174,
+      417044,
+      418115,
+      429065,
+      430273,
+      444315,
+      454252,
+      454382,
+      458338,
+      459731,
+      461311,
+      461868,
+      464087,
+      465050,
+      472700,
+      481222,
+      487003,
+      492268,
+      493880,
+      499134,
+      502089,
+      516408,
+      520251,
+      533079,
+      534776,
+      535750,
+      539216,
+      547528,
+      551622,
+      563597,
+      567274,
+      568202,
+      574094,
+      577512,
+      577558
+    ],
+    "scope": "Research-side component only; no new dataset selection or model execution"
+  },
+  "authorization": "User approved final root collapse and idea distillation on 2026-09-15. No Git publication, GPU, model experiment, memory or unrelated changes."
+}

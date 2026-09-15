@@ -4,7 +4,7 @@ The reducer is an offline consumer of the frozen selected-panel manifest and sav
 cross outputs. It preserves complete-output global assignment, category handling,
 strict later-repeat counting, and direct/matching-ambiguous versus pure-tail
 attribution. It does not establish causal shares or native deployment quality.
-Scientific owner: `research/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-09-source-rweak-row-cross/readout.md`
+Scientific record: [preserved readout](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-09-source-rweak-row-cross/readout.md)
 (originally in the preserved self-rollout tree).
 
 From the repository root, replay the four saved engineering cases without any

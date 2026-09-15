@@ -1,0 +1,21 @@
+# Capacity and readout: what has actually been demonstrated?
+
+**Question:** does the model lack usable finite-task capacity, or do the chosen constraints, objective and update fail to realize it? Read [vocabulary](../glossary.md) before treating all occurrences of Source, N16 or DoRA as the same object.
+
+## Evidence chain
+
+The [direct Image2299 canonical output-QP](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/results.md) produced a finite 46-owner witness after earlier protected/norm-limited failures. A norm cap failure is not representational infeasibility. The [shared Human13 fit](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md) used one residual across all thirteen images and realized 392/392 annotated owners with its registered clean natural output. The old `identity-generalization` filename must not change that same-panel estimand.
+
+[Internal magnitude fitting](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md) and [pure CE replay](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-human13-pure-ce-replay/results.md) establish ordinary internal-parameter finite-panel success too. Output-head surgery is not necessary merely to fit this exact panel. Magnitude-only and full-adapter learning are different surfaces; do not transplant a successful learning rate by name.
+
+The transfer results are different evidence. A fixed Image2299-authored residual [damaged legacy12 coverage](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md). The [target-blind N256 ladder stopped at N2](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-results-v1.md), while a separate [train-only N4 contrast](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/n4-train-only-results-v1.md) and [continuation amendment](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/train-scaling-continuation-amendment-v1.md) retain semantic/null compression evidence. The imported synthesis reports later N32 as partial; no full N256 or matched N32-null conclusion is established here.
+
+## Supported, not promoted
+
+A shared network can jointly realize at least those finite annotated tasks. That defeats a blanket impossibility argument. It does not show that useful features are equally accessible on all images, that the learned correction transfers, or that the current fuller physical-owner training task has already been solved. Captured teacher states, free states and fitted parameters are different objects.
+
+Small residual norm can reflect compatible structure or image/prefix-specific addressing. Norm depends on constraint deficits and geometry; semantic names do not determine it. Changing selected output rows also changes the parameter space, so historical norm values cannot silently become a fixed-surface scaling theorem.
+
+## Closest rejected shortcut and reopening condition
+
+Do not propose another output/internal QP solely to prove tiny-set fit. The [prox-linear N2 comparison](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-dora-prox-linear-n2/results.md) did not establish an advantage over its simpler comparison recipe. A new optimization study should identify added value such as matched-success cost, actual incumbent preservation or useful pre-refit transfer, and separate certified infeasibility from a finite unsuccessful solve. Current lifecycle and any new grant still come from [research entry](../index.md), not an old capacity success.

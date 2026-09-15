@@ -1,0 +1,229 @@
+{
+  "scope": "Original targets checked against capture Git trees, including the known baseline alias. No previously Git-resolvable local target lost. External/untracked evidence not certified.",
+  "gaps": [
+    {
+      "source": "research/investigations/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-probe-handoff.md",
+      "target": "../../../scripts/research/run_fixed_encoding_downstream_residual_state_portability.py",
+      "logical_target": "scripts/research/run_fixed_encoding_downstream_residual_state_portability.py",
+      "baseline_head": "78bc27d8e5e8639450e01990908fcd3b417bbfa2",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md",
+      "target": "../../../../../scripts/research/run_complete_candidate_row_scoring.py",
+      "logical_target": "scripts/research/run_complete_candidate_row_scoring.py",
+      "baseline_head": "78bc27d8e5e8639450e01990908fcd3b417bbfa2",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/autoregressive-binding-template-study/index.md",
+      "target": "../coordexp-experiment-knowledge-handoff/",
+      "logical_target": "research/archive/coordexp-experiment-knowledge-handoff",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md",
+      "logical_target": "research/archive/experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md",
+      "logical_target": "research/archive/experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md",
+      "logical_target": "research/archive/experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md",
+      "logical_target": "research/archive/experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md",
+      "logical_target": "research/archive/experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/results.md",
+      "logical_target": "research/archive/experiments/2026-08-07-s-k10-h20-natural-crossover/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md",
+      "logical_target": "research/archive/experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/review.md",
+      "logical_target": "research/archive/experiments/2026-08-07-s-k10-h20-natural-crossover/review.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-06-natural-boundary-routing-history-replication/results.md",
+      "logical_target": "research/archive/experiments/2026-08-06-natural-boundary-routing-history-replication/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-06-natural-boundary-routing-history-replication/unit.md",
+      "logical_target": "research/archive/experiments/2026-08-06-natural-boundary-routing-history-replication/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md",
+      "logical_target": "research/archive/experiments/2026-08-06-natural-boundary-routing-history-replication/prior-evidence-semantic-audit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-05-static-dynamic-owner-interface-crossover/results.md",
+      "logical_target": "research/archive/experiments/2026-08-05-static-dynamic-owner-interface-crossover/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-05-static-dynamic-owner-interface-crossover/unit.md",
+      "logical_target": "research/archive/experiments/2026-08-05-static-dynamic-owner-interface-crossover/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "2026-08-05-static-dynamic-owner-interface-probe-handoff.md",
+      "logical_target": "research/archive/2026-08-05-static-dynamic-owner-interface-probe-handoff.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/index.md",
+      "logical_target": "research/archive/experiments/index.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "overview.md",
+      "logical_target": "research/archive/overview.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "../../decisions/",
+      "logical_target": "decisions",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "../../mechanisms/",
+      "logical_target": "mechanisms",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md",
+      "logical_target": "research/archive/experiments/2026-07-18-person25-dominant-owner-commit-and-persistence-closeout/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md",
+      "logical_target": "research/archive/experiments/2026-07-18-fixed-prompt-clean-versus-degraded-coordinate-branch-replication/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md",
+      "logical_target": "research/archive/experiments/2026-07-18-matched-objective-coordinate-branch-signature-comparison/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "../../ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "logical_target": "ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "../../ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-residual-patch-causal-sufficiency/unit.md",
+      "logical_target": "ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-residual-patch-causal-sufficiency/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "../../ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "logical_target": "ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "../../archive/autoregressive-binding-template-study/",
+      "logical_target": "archive/autoregressive-binding-template-study",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/results.md",
+      "logical_target": "research/archive/experiments/2026-08-07-s-k10-h20-natural-crossover/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-08-04-sorted-image2299-prospective-mechanism-extension/results.md",
+      "logical_target": "research/archive/experiments/2026-08-04-sorted-image2299-prospective-mechanism-extension/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-07-23-trajectory-owner-set-admission-census/results.md",
+      "logical_target": "research/archive/experiments/2026-07-23-trajectory-owner-set-admission-census/results.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    },
+    {
+      "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+      "target": "experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md",
+      "logical_target": "research/archive/experiments/2026-07-23-trajectory-owner-set-adjudication-salvage-gate/unit.md",
+      "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+      "target_present_in_baseline_git": false
+    }
+  ]
+}

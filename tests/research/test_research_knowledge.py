@@ -1,4 +1,4 @@
-"""CPU-only synthetic contracts for research-source preservation and routing."""
+"""Synthetic CPU contracts for the flat research tree and frozen-source reader."""
 from __future__ import annotations
 
 import copy
@@ -10,8 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
-    "research_knowledge_checks", ROOT / "scripts/research/check_research_knowledge.py"
-)
+    'research_knowledge_checks', ROOT / 'scripts/research/check_research_knowledge.py')
 assert SPEC is not None and SPEC.loader is not None
 CHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECK)
@@ -19,155 +18,226 @@ SPEC.loader.exec_module(CHECK)
 
 class KnowledgeContracts(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory(prefix="research-knowledge-test-")
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
-        self.program = CHECK.PROGRAM
-        self.unit = "2026-01-01-example"
-        self.original = f"research/investigations/qwen3-vl-dense-enumeration/experiments/{self.unit}/unit.md"
-        self.archive_prefix = "docs/history/capture/investigations"
-        self.archived = self.original.replace("research/investigations", self.archive_prefix, 1)
-        data = b"# Frozen protocol\n"
-        self.write(self.archived, data)
-        self.write("research/ideas/example.md", b"# Retained idea\n")
-        self.write("research/index.md", b"# Live research entry\n")
-        self.write("docs/history/capture/old-index.md", b"# Old entry\n")
-        self.manifest = {
-            "canonical_root": "/original/repository",
-            "source_prefix": "research/investigations",
-            "archive_prefix": self.archive_prefix,
-            "files": [
-                {"source": self.original, "archive": self.archived,
-                 "sha256": CHECK.digest(data), "bytes": len(data),
-                 "action": "relocated_byte_exact", "git_tracked_at_capture": True},
-                {"source": "research/index.md", "archive": "docs/history/capture/old-index.md",
-                 "sha256": CHECK.digest(b"# Old entry\n"), "bytes": len(b"# Old entry\n"),
-                 "action": "snapshot_before_authorized_edit", "git_tracked_at_capture": True},
-            ],
-        }
-        self.state_path = str(self.program / "experiments" / self.unit / "state.json")
-        self.result = str(self.program / "experiments" / self.unit / "results.md")
-        self.write(self.result, b"# Accepted bounded result\n")
-        self.state = {
-            "schema_version": 1, "unit_id": self.unit, "lifecycle": "paused",
-            "evidence": "accepted", "disposition": "stage_incomplete",
-            "state_as_of": "2026-09-15", "protocol": self.archived,
-            "result": self.result, "state_source": self.archived,
-            "boundary": "No further model work authorized.", "not_authorized": ["GPU work"],
-            "next_action": "Discuss the accepted result.",
-        }
-        self.write(self.state_path, json.dumps(self.state).encode())
-        self.write(str(self.program / "questions" / "example.md"), b"# A question\n")
-        self.row = {
-            "id": self.unit, "topics": ["example"],
-            "record_root": str(Path(self.archived).parent),
-            "protocols": [self.archived], "result_records": [],
-            "reading_entry": self.result, "tracking": "current", "state": self.state_path,
-        }
+        temporary = tempfile.TemporaryDirectory(prefix='research-knowledge-test-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.unit = '2026-01-01-example'
+        self.original = f'research/investigations/example/experiments/{self.unit}/unit.md'
+        self.archived = 'docs/history/first/' + self.original
+        self.entry = self.snapshot(self.original, self.archived, '# Frozen question\n')
+        self.capture = {'baseline_head': 'a' * 40, 'source_prefix': 'research/investigations',
+                        'archive_prefix': 'docs/history/first/research/investigations',
+                        'files': [self.entry]}
+        self.bundle = {'canonical_root': '/original/repo', 'captures': [self.capture],
+                       'retirements': [], 'exposure': {}}
+        self.live = f'research/experiments/{self.unit}'
+        self.state_path = self.live + '/state.json'
+        self.result_path = self.live + '/results.md'
+        for name in CHECK.ROOT_NAMES:
+            if '.' in name:
+                self.write('research/' + name, '# Entry\n')
+            else:
+                (self.root / 'research' / name).mkdir(parents=True)
+        self.write('research/questions/example.md', '# Question\n')
+        self.write(self.result_path, '# Accepted result\n')
+        self.state = {'schema_version': 1, 'unit_id': self.unit, 'lifecycle': 'paused',
+                      'evidence': 'accepted', 'disposition': 'stage_incomplete',
+                      'state_as_of': '2026-01-01', 'protocol': self.archived,
+                      'result': self.result_path, 'state_source': self.result_path,
+                      'boundary': 'No resumption.', 'not_authorized': ['GPU'],
+                      'next_action': 'Discuss retained evidence.'}
+        self.save_state()
+        self.write('research/index.md', f'[State](experiments/{self.unit}/state.json)\n')
+        self.row = {'id': self.unit, 'title': 'Example', 'kind': 'experiment',
+                    'topics': ['example'], 'record_root': str(Path(self.archived).parent),
+                    'reading_entry': self.result_path, 'protocols': [self.archived],
+                    'result_records': [self.result_path], 'tracking': 'current',
+                    'state': self.state_path}
 
-    def write(self, name: str, data: bytes) -> None:
+    def write(self, name: str, text: str) -> Path:
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        path.write_text(text)
+        return path
 
-    def resolve(self, document: str, target: str) -> dict:
-        return CHECK.resolve_reference(self.root, self.manifest, document, target)
+    def snapshot(self, source: str, archive: str, text: str) -> dict:
+        path = self.write(archive, text)
+        return {'source': source, 'archive': archive, 'sha256': CHECK.digest(path.read_bytes()),
+                'bytes': path.stat().st_size, 'git_tracked_at_capture': True}
 
-    def test_preserved_source_bytes_pass(self) -> None:
-        self.assertEqual(CHECK.check_sources(self.root, self.manifest), [])
+    def save_state(self) -> None:
+        self.write(self.state_path, json.dumps(self.state))
 
-    def test_changed_source_bytes_fail(self) -> None:
-        self.write(self.archived, b"A silently changed result\n")
-        self.assertTrue(any("source bytes changed" in x for x in CHECK.check_sources(self.root, self.manifest)))
+    def catalog_errors(self, rows: list | None = None) -> list:
+        return CHECK.check_catalog(self.root, rows or [self.row], self.bundle)
 
-    def test_duplicate_source_mapping_fails(self) -> None:
-        self.manifest["files"].append(copy.deepcopy(self.manifest["files"][0]))
-        self.assertTrue(any("duplicate manifest" in x for x in CHECK.check_sources(self.root, self.manifest)))
+    def test_clean_source_catalog_and_layout(self):
+        self.assertEqual(CHECK.check_sources(self.root, self.bundle), [])
+        self.assertEqual(self.catalog_errors(), [])
+        self.assertEqual(CHECK.check_layout(self.root), [])
 
-    def test_original_relative_link_uses_original_coordinates(self) -> None:
-        ref = self.resolve(self.original, "../../../../ideas/example.md")
-        self.assertEqual(ref["path"], "research/ideas/example.md")
-        self.assertTrue(ref["exists"])
+    def test_changed_source_bytes_fail(self):
+        self.write(self.archived, '# Rewritten question\n')
+        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
 
-    def test_archived_relative_link_uses_original_coordinates(self) -> None:
-        ref = self.resolve(self.archived, "../../../../ideas/example.md")
-        self.assertEqual(ref["path"], "research/ideas/example.md")
-        self.assertTrue(ref["exists"])
+    def test_duplicate_mapping_fails(self):
+        self.capture['files'].append(copy.deepcopy(self.entry))
+        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
 
-    def test_absolute_original_path_maps_to_archive(self) -> None:
-        ref = self.resolve(self.archived, "/original/repository/" + self.original)
-        self.assertEqual(ref["path"], self.archived)
-        self.assertTrue(ref["exists"])
+    def test_unexplained_missing_source_fails(self):
+        (self.root / self.archived).unlink()
+        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
 
-    def test_external_artifact_remains_unverified(self) -> None:
-        ref = self.resolve(self.archived, "/some/other/project/outputs/receipt.json")
-        self.assertEqual(ref["kind"], "external")
-        self.assertIsNone(ref["exists"])
+    def test_exact_retirement_is_reported_not_materialized(self):
+        (self.root / self.archived).unlink()
+        self.bundle['retirements'] = [{'path': self.archived, 'source': self.original,
+                                      'sha256': self.entry['sha256'],
+                                      'recovery_git_spec': 'a' * 40 + '^:' + self.archived}]
+        self.assertEqual(CHECK.check_sources(self.root, self.bundle), [])
+        ref = CHECK.resolve_reference(self.root, self.bundle, self.original, '#scope')
+        self.assertFalse(ref['exists'])
+        self.assertEqual(ref['availability'], 'git_recoverable_not_materialized')
 
-    def test_relative_escape_rejected(self) -> None:
-        ref = self.resolve("research/index.md", "../../outside.txt")
-        self.assertEqual(ref["kind"], "invalid")
+    def test_retirement_cannot_hide_modified_existing_file(self):
+        self.bundle['retirements'] = [{'path': self.archived, 'source': self.original,
+                                      'sha256': self.entry['sha256']}]
+        self.write(self.archived, '# Wrong\n')
+        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
+
+    def test_unknown_retirement_fails(self):
+        self.bundle['retirements'] = [{'path': 'docs/history/unknown', 'source': 'unknown',
+                                      'sha256': '0' * 64}]
+        self.assertTrue(CHECK.check_sources(self.root, self.bundle))
+
+    def test_historical_neighbor_uses_original_coordinates(self):
+        source = str(Path(self.original).with_name('results.md'))
+        archived = str(Path(self.archived).with_name('results.md'))
+        self.capture['files'].append(self.snapshot(source, archived, '# Result\n'))
+        ref = CHECK.resolve_reference(self.root, self.bundle, self.archived, 'results.md#result')
+        self.assertEqual(ref['path'], archived)
+        self.assertTrue(ref['exists'])
+        self.assertEqual(ref['fragment'], 'result')
+
+    def test_history_uses_other_capture_when_old_neighbor_was_retired_later(self):
+        source = 'research/ideas/old/overview.md'
+        archived = 'docs/history/second/sources/' + source
+        entry = self.snapshot(source, archived, '# Old idea\n')
+        self.bundle['captures'].append({'baseline_head': 'b' * 40, 'files': [entry]})
+        ref = CHECK.resolve_reference(self.root, self.bundle, self.archived,
+                                      '/original/repo/' + source)
+        self.assertEqual(ref['path'], archived)
+        self.assertTrue(ref['exists'])
+
+    def test_live_index_not_redirected_to_old_snapshot(self):
+        old = self.snapshot('research/index.md', 'docs/history/second/index.md', '# Prior\n')
+        self.bundle['captures'].append({'baseline_head': 'b' * 40, 'files': [old]})
+        ref = CHECK.resolve_reference(self.root, self.bundle, 'research/questions/example.md', '../index.md')
+        self.assertEqual(ref['path'], 'research/index.md')
+
+    def test_live_missing_old_path_is_not_silently_repaired(self):
+        ref = CHECK.resolve_reference(self.root, self.bundle, 'research/index.md',
+                                      self.original.removeprefix('research/'))
+        self.assertFalse(ref['exists'])
+        self.assertEqual(ref['path'], self.original)
+
+    def test_snapshot_self_reference_stays_in_own_capture(self):
+        second = self.snapshot(self.original, 'docs/history/second/unit.md', '# Later\n')
+        self.bundle['captures'].append({'baseline_head': 'b' * 40, 'files': [second]})
+        first = CHECK.resolve_reference(self.root, self.bundle, self.archived, '#old')
+        later = CHECK.resolve_reference(self.root, self.bundle, second['archive'], '#new')
+        self.assertEqual(first['path'], self.archived)
+        self.assertEqual(later['path'], second['archive'])
+
+    def test_external_handles_remain_unverified(self):
+        for target in ('https://example.org/a', '/another/worktree/a'):
+            ref = CHECK.resolve_reference(self.root, self.bundle, 'research/index.md', target)
+            self.assertEqual(ref['kind'], 'external')
+            self.assertIsNone(ref['exists'])
+
+    def test_traversal_and_symlink_escape_rejected(self):
+        for path in ('../secret', '/etc/passwd', 'a\nnew'):
+            with self.assertRaises(ValueError):
+                CHECK.local_path(self.root, path)
+        (self.root / 'outside').symlink_to(self.root.parent)
         with self.assertRaises(ValueError):
-            CHECK.local_path(self.root, "../outside.txt")
+            CHECK.local_path(self.root, 'outside/unknown')
 
-    def test_live_link_does_not_route_to_old_router_snapshot(self) -> None:
-        ref = self.resolve(str(self.program / "current.md"), "../index.md")
-        self.assertEqual(ref["path"], "research/index.md")
+    def test_live_link_contract(self):
+        path = self.write('research/story.md', '[Good](index.md) [Bad](missing.md)\n')
+        errors, local, external = CHECK.check_live_links(self.root, self.bundle, [path])
+        self.assertEqual(len(errors), 1)
+        self.assertEqual((local, external), (1, 0))
 
-    def test_historical_self_reference_keeps_snapshot(self) -> None:
-        ref = self.resolve("docs/history/capture/old-index.md", "#old-entry")
-        self.assertEqual(ref["path"], "docs/history/capture/old-index.md")
+    def test_fenced_examples_not_links(self):
+        self.assertEqual(CHECK.links_in('```text\n[x](missing)\n```\n[x](index.md)'), ['index.md'])
 
-    def test_accepted_incomplete_paused_state_is_valid(self) -> None:
-        self.assertEqual(CHECK.check_state(self.root, self.state, self.unit), [])
+    def test_removed_layers_and_empty_placeholder_fail(self):
+        (self.root / 'research/mechanisms').mkdir()
+        self.assertTrue(CHECK.check_layout(self.root))
 
-    def test_accepted_evidence_requires_result(self) -> None:
-        self.state["result"] = None
-        self.assertTrue(any("lacks a result" in x for x in CHECK.check_state(self.root, self.state, self.unit)))
+    def test_root_alias_and_executable_fail(self):
+        (self.root / 'research/alias').symlink_to(self.root / 'docs/history')
+        self.write('research/questions/helper.py', 'pass\n')
+        self.assertGreaterEqual(len(CHECK.check_layout(self.root)), 2)
 
-    def test_invalid_state_identity_and_axis_fail(self) -> None:
-        self.state.update(unit_id="different", evidence="running", lifecycle="verified")
-        self.assertGreaterEqual(len(CHECK.check_state(self.root, self.state, self.unit)), 3)
+    def test_duplicate_catalog_id_fails(self):
+        self.assertTrue(self.catalog_errors([self.row, copy.deepcopy(self.row)]))
 
-    def test_catalog_complete_fixture_passes(self) -> None:
-        self.assertEqual(CHECK.check_catalog(self.root, [self.row], self.manifest), [])
+    def test_missing_protocol_in_catalog_fails(self):
+        self.row['protocols'] = []
+        self.assertTrue(self.catalog_errors())
 
-    def test_duplicate_catalog_id_fails(self) -> None:
-        errors = CHECK.check_catalog(self.root, [self.row, copy.deepcopy(self.row)], self.manifest)
-        self.assertTrue(any("duplicate catalog id" in x for x in errors))
+    def test_missing_question_fails(self):
+        self.row['topics'] = ['missing']
+        self.assertTrue(self.catalog_errors())
 
-    def test_missing_imported_protocol_fails(self) -> None:
-        self.row["protocols"] = []
-        errors = CHECK.check_catalog(self.root, [self.row], self.manifest)
-        self.assertTrue(any("uncatalogued imported protocols" in x for x in errors))
+    def test_missing_catalog_target_fails(self):
+        self.row['result_records'] = ['research/missing.md']
+        self.assertTrue(self.catalog_errors())
 
-    def test_handoff_cannot_own_current_route(self) -> None:
-        handoff = str(self.program / "handoff.md")
-        self.write(handoff, b"# Temporary transport\n")
-        self.row["reading_entry"] = handoff
-        errors = CHECK.check_catalog(self.root, [self.row], self.manifest)
-        self.assertTrue(any("handoff cannot" in x for x in errors))
+    def test_historical_row_cannot_own_current_state(self):
+        self.row['tracking'] = 'historical'
+        self.assertTrue(self.catalog_errors())
 
-    def test_orphan_state_fails(self) -> None:
-        self.write(str(self.program / "experiments/other/state.json"), b"{}")
-        errors = CHECK.check_catalog(self.root, [self.row], self.manifest)
-        self.assertTrue(any("state/catalog mismatch" in x for x in errors))
+    def test_current_transport_is_not_owner(self):
+        self.row['reading_entry'] = self.live + '/handoff.md'
+        self.write(self.row['reading_entry'], '# Transport\n')
+        self.assertTrue(self.catalog_errors())
 
-    def test_missing_question_target_fails(self) -> None:
-        self.row["topics"] = ["absent"]
-        errors = CHECK.check_catalog(self.root, [self.row], self.manifest)
-        self.assertTrue(any("missing question page" in x for x in errors))
+    def test_current_state_must_be_routed(self):
+        self.write('research/index.md', '# No current state link\n')
+        self.assertTrue(self.catalog_errors())
 
-    def test_code_example_is_not_a_live_markdown_link(self) -> None:
-        text = "# Sample\n```text\n[not a link](missing.md)\n```\n[real](actual.md)\n"
-        self.assertEqual(CHECK.links_in(text), ["actual.md"])
+    def test_orphan_state_fails(self):
+        self.write('research/experiments/orphan/state.json', json.dumps(self.state))
+        self.assertTrue(self.catalog_errors())
 
-    def test_broken_live_link_is_an_error(self) -> None:
-        path = self.root / self.program / "current.md"
-        self.write(str(path.relative_to(self.root)), b"[missing](absent.md)\n")
-        errors, _, _ = CHECK.check_live_links(self.root, self.manifest, [path])
-        self.assertTrue(any("broken live link" in x for x in errors))
+    def test_paused_accepted_incomplete_is_valid(self):
+        self.assertEqual(CHECK.check_state(self.root, self.state_path, self.unit)[0], [])
+
+    def test_invalid_lifecycle_and_evidence_fail(self):
+        self.state.update(lifecycle='active_forever', evidence='probably')
+        self.save_state()
+        self.assertTrue(CHECK.check_state(self.root, self.state_path, self.unit)[0])
+
+    def test_accepted_requires_result(self):
+        self.state['result'] = None
+        self.save_state()
+        self.assertTrue(CHECK.check_state(self.root, self.state_path, self.unit)[0])
+
+    def test_planned_can_have_no_result(self):
+        self.state.update(result=None, evidence='none', lifecycle='planned')
+        self.save_state()
+        self.assertEqual(CHECK.check_state(self.root, self.state_path, self.unit)[0], [])
+
+    def test_state_identity_and_boundary_fail(self):
+        self.state.update(unit_id='other', boundary='', not_authorized='GPU')
+        self.save_state()
+        self.assertGreaterEqual(len(CHECK.check_state(self.root, self.state_path, self.unit)[0]), 3)
+
+    def test_exposure_manifest_is_required(self):
+        self.assertTrue(CHECK.check_exposure(self.root, self.bundle))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

@@ -97,4 +97,5 @@ These are provenance locators, not executable dependencies. Original receipts
 remain unchanged; new plans/updates identify the current code/config inputs.
 Source recovery and CPU checks do not establish real-model numerical parity or
 new owner-recovery evidence. Research interpretation belongs to the
-[investigation](../../research/investigations/qwen3-vl-dense-enumeration/).
+[research entry](../../research/index.md). The old source path above is a
+Git-provenance locator inside the named archived revision, not a live directory.

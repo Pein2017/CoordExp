@@ -12,8 +12,8 @@ native-from-prompt behavior.
 | `python -m probes.logit_lens.radius` | Blocks 24/27 radius-only, direction-only, and full-current factorial with block-28 controls | `probe_logit_lens_radius_direction.py` |
 | `python -m probes.logit_lens.natural` | One block-27 direction-only prefill graft, followed by ordinary cached Source continuation | `probe_logit_lens_natural_continuation.py` |
 
-Scientific owner records are in
-`research/investigations/qwen3-vl-dense-enumeration/experiments/` under the
+Scientific records are indexed in [the research catalog](../../research/experiments/catalog.jsonl)
+and preserved in `docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/` under the
 `2026-09-08-image2299-logit-lens`, `2026-09-08-logit-lens-causal-transfer`,
 `2026-09-08-logit-lens-radius-direction`, and
 `2026-09-08-logit-lens-natural-continuation` directions.

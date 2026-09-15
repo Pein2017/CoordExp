@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "disposition": "knowledge_migration_complete_with_bounded_historical_validation_limits",
+  "observed_at_utc": "2026-09-15T07:29:21.085624+00:00",
+  "project": "agent:coordexp-web-runner:research-probes",
+  "path": "/data/CoordExp/.worktrees/research-probes",
+  "branch": "research-probes",
+  "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+  "observed_head": "f39066f6948c799827d706eb88876b931112ade8",
+  "session_id": "wc_sess_93b95169d3e24c54ad9c96cab0b257fc",
+  "root_entries": [
+    "CONVENTIONS.md",
+    "alternatives.md",
+    "experiments",
+    "glossary.md",
+    "index.md",
+    "questions",
+    "story.md"
+  ],
+  "checks": [
+    {
+      "argv": [
+        "python",
+        "-B",
+        "scripts/research/check_research_knowledge.py",
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout": "{\n  \"ok\": true,\n  \"errors\": [],\n  \"source_versions\": 810,\n  \"materialized_source_versions\": 807,\n  \"git_recoverable_preexisting_retirements\": 3,\n  \"catalog_entries\": 213,\n  \"catalogued_protocols\": 209,\n  \"current_state_owners\": 1,\n  \"live_documents\": 15,\n  \"valid_live_local_links\": 193,\n  \"unverified_external_live_handles\": 11,\n  \"frozen_exposure_records\": 106,\n  \"historical_unresolved_links\": 32,\n  \"historical_gap_examples\": [\n    {\n      \"source\": \"research/investigations/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-probe-handoff.md\",\n      \"target\": \"../../../scripts/research/run_fixed_encoding_downstream_residual_state_portability.py\"\n    },\n    {\n      \"source\": \"research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md\",\n      \"target\": \"../../../../../scripts/research/run_complete_candidate_row_scoring.py\"\n    },\n    {\n      \"source\": \"research/archive/autoregressive-binding-template-study/index.md\",\n      \"target\": \"../coordexp-experiment-knowledge-handoff/\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-08-07-s-k10-h20-natural-crossover/results.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-08-07-s-k10-h20-natural-crossover/review.md\"\n    },\n    {\n      \"source\": \"research/archive/qwen3-vl-dense-enumeration-compass-20260902.md\",\n      \"target\": \"experiments/2026-08-06-natural-boundary-routing-history-replication/results.md\"\n    }\n  ],\n  \"scope\": \"Local knowledge plumbing/source identity only; no scientific replication, external-artifact certification, or authorization to resume.\"\n}\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "env",
+        "CUDA_VISIBLE_DEVICES=-1",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "HF_HUB_OFFLINE=1",
+        "conda",
+        "run",
+        "--no-capture-output",
+        "-n",
+        "ms",
+        "python",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider",
+        "tests/research/test_research_knowledge.py",
+        "tests/research/test_research_transfer_exposure.py"
+      ],
+      "exit_code": 0,
+      "stdout": ".....................................                                    [100%]\n37 passed in 2.12s\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "--no-capture-output",
+        "-n",
+        "ms",
+        "ruff",
+        "check",
+        "--no-cache",
+        "scripts/research/check_research_knowledge.py",
+        "tests/research/test_research_knowledge.py",
+        "tests/research/test_research_transfer_exposure.py"
+      ],
+      "exit_code": 0,
+      "stdout": "All checks passed!\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "knowledge_summary": {
+    "ok": true,
+    "errors": [],
+    "source_versions": 810,
+    "materialized_source_versions": 807,
+    "git_recoverable_preexisting_retirements": 3,
+    "catalog_entries": 213,
+    "catalogued_protocols": 209,
+    "current_state_owners": 1,
+    "live_documents": 15,
+    "valid_live_local_links": 193,
+    "unverified_external_live_handles": 11,
+    "frozen_exposure_records": 106,
+    "historical_unresolved_links": 32,
+    "historical_gap_examples": [
+      {
+        "source": "research/investigations/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-probe-handoff.md",
+        "target": "../../../scripts/research/run_fixed_encoding_downstream_residual_state_portability.py"
+      },
+      {
+        "source": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md",
+        "target": "../../../../../scripts/research/run_complete_candidate_row_scoring.py"
+      },
+      {
+        "source": "research/archive/autoregressive-binding-template-study/index.md",
+        "target": "../coordexp-experiment-knowledge-handoff/"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-09-01-human13-dora-magnitude-finite-overfit/results.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-09-01-scalable-annotated-owner-shared-dora-pilot/results.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/results.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-08-07-s-k10-h20-natural-crossover/review.md"
+      },
+      {
+        "source": "research/archive/qwen3-vl-dense-enumeration-compass-20260902.md",
+        "target": "experiments/2026-08-06-natural-boundary-routing-history-replication/results.md"
+      }
+    ],
+    "scope": "Local knowledge plumbing/source identity only; no scientific replication, external-artifact certification, or authorization to resume."
+  },
+  "scientific_result_body_preserved_except_link_rebasing": true,
+  "six_historical_script_ast_comparisons": "identical after normalizing only the relocated research path strings",
+  "research_exposure_equivalence": {
+    "files": 106,
+    "distinct_image_ids": 135,
+    "actual_reader_hashes_and_ids_equal": true,
+    "real_selection_entry_test": "synthetic universe and temporary output; actual historical research corpus retained; occupied-result rejection checked"
+  },
+  "historical_test_limitations": {
+    "observed_session_test_result": "11 failed, 16 passed",
+    "test_files": [
+      "tests/research/test_build_sorted_all_person_route_landscape.py",
+      "tests/research/test_seal_natural_boundary_pre_gpu_receipt.py",
+      "tests/research/test_seal_s_k10_h20_crossover_pre_gpu_receipt.py"
+    ],
+    "failures": [
+      {
+        "tests": 6,
+        "reason": "Pre-existing frozen unit digest mismatch; expected and actual bytes both unchanged from baseline",
+        "expected_sha256": "6fb2af7019d776572cf4fcaa7666a31eb38fe42818422eeb9a57a1d7b0cf9109",
+        "actual_sha256": "b94ce66143024c9354b8af2991c557dcdb8e48687a7e85de19f75b90be01607f"
+      },
+      {
+        "tests": 5,
+        "reason": "Required old raw-evidence fixture missing at the unchanged external output root",
+        "path": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-08-06-natural-boundary-routing-history-replication/s-k-n-h-evidence-native-fn-supersession-v3/evidence.json"
+      }
+    ],
+    "boundary": "No frozen expected hash relaxed, historical fixture fabricated, output root modified or GPU replay attempted to make these tests pass. Full historical replay is not certified."
+  },
+  "historical_relative_link_gaps": {
+    "count": 32,
+    "previously_resolvable_in_capture_git": 0,
+    "detail": "historical-link-gaps.json",
+    "external_untracked_artifacts_not_certified": true
+  },
+  "root_skill_validation": {
+    "project": "agent:coordexp-web-runner:coordexp",
+    "branch": "main",
+    "head": "a598cde6889c84596f91de4d4b164e535cbda89d",
+    "session_id": "wc_sess_7d24fc65405b4106ac55aebb9410baab",
+    "files": {
+      ".codex/skills/research-flow/SKILL.md": "9a4027f7048984a7468b79b8f099c2c0a772fd832bda3b0dfebaf71f74d74269",
+      ".codex/skills/research-flow/references/research-graph-contract.md": "a3a9f04ebca21d828b45e12d02004f9c01e6d5b3d461eb14a0b7d7316c8f50bc"
+    },
+    "checks": "Exact diff, local Skill links and unrelated pre-existing dirty preservation passed in the owning Project. First-class skill catalog unavailable; exact named local Skill files used."
+  },
+  "parallel_work": {
+    "other_new_paths_observed": [
+      " M probes/training_set_completion/training.py",
+      " M src/config/models.py",
+      " M src/losses/__init__.py",
+      " M src/losses/runner.py",
+      " M tests/research/test_training_set_completion_training.py",
+      "?? probes/training_set_completion/coco80_bank.py",
+      "?? probes/training_set_completion/dual_start.py",
+      "?? src/losses/raw_axis_validity_hinge.py",
+      "?? tests/losses/test_raw_axis_validity_hinge.py",
+      "?? tests/research/test_training_set_completion_coco80_bank.py",
+      "?? tests/research/test_training_set_completion_dual_start.py"
+    ],
+    "shared_current_surfaces_updated_by_another_task": [
+      "research/index.md",
+      "research/experiments/2026-09-14-training-set-completion-curriculum/state.json",
+      "research/experiments/2026-09-14-training-set-completion-curriculum/unit.md"
+    ],
+    "current_lifecycle_observed": "planned",
+    "policy": "Preserved; no rollback to the earlier paused snapshot and no attribution of this work to the migration."
+  },
+  "publication_and_execution": {
+    "staged_by_this_task": false,
+    "committed": false,
+    "pushed": false,
+    "gpu_or_model_execution": false,
+    "durable_memory_changed": false,
+    "session_jobs_observed": 0
+  },
+  "final_file_hashes": {
+    "research/CONVENTIONS.md": "ee32c48488bc85cb3f15846ed2aca556444af9616cdb27398c9b8638830b3c85",
+    "research/alternatives.md": "db2c05a17f992a436dfa772e740611dfc74400d4157010886df10cfe040886bc",
+    "research/experiments/2026-09-14-training-set-completion-curriculum/results.md": "2024eac32749ae9b510eb0244395e4aaff7429b7b263b933341070ef661742c0",
+    "research/experiments/2026-09-14-training-set-completion-curriculum/state.json": "babd7abfa6faa6ad455a3ae897d7c21464658015d06eecdea292c866b9579b1d",
+    "research/experiments/2026-09-14-training-set-completion-curriculum/unit.md": "9f0a13f52b4f98c8c9f4c85e7dfe20f72eae8e59260cd179ae51832ec9c80f33",
+    "research/experiments/catalog.jsonl": "af0c50873ba274649cfb43600140d1764262a978f71105146d39ef34ade0f5de",
+    "research/glossary.md": "0bd7eb12cb58f12ce2e6c5fbff62155f02aba7983676b007cd96cc736d18617e",
+    "research/index.md": "b936cfcdb6fddcf2985523d5feecf5f06cad451caaf3e15d10a46c1260783673",
+    "research/questions/capacity-and-readout.md": "346ede01bb365aa102e26d4279f56df341b8af75914b85585205726a787c8abb",
+    "research/questions/discovery-and-route-value.md": "cafc5af5e5efb5dbb4528e4843e7fe6fa01cc8c1786fc7f62e0753b62c869dc4",
+    "research/questions/greedy-compilation.md": "058b22d4d7c2d822ff7698c068da85be5fe725f541477b5719f68cc97c74c437",
+    "research/questions/history-repetition-stopping.md": "1fe2144ce460b500d5faffdeff61e22495f4fbb0fc4b10c60d920372ea8411a5",
+    "research/questions/physical-evaluation.md": "7a0371fd762bf780d1723eb35f935618346ab75c4de5c120edac3af0326fbc98",
+    "research/questions/preservation-and-credit.md": "473db7d1cc3f05185b50d45996381a3b708f286fe01239e361cbea322e58e9f3",
+    "research/questions/runtime-and-evidence.md": "b1334a22e3b398d48967b23c3af9bffd3e9a3624e4b7bd127f26d822a014a7a5",
+    "research/questions/visual-designation-and-causal-use.md": "6fd74a4b07bf2c17e6f10e27d41a32346be40ccd4b7c7a8ba8a14e43435a08d5",
+    "research/story.md": "2bb02be2c39605814d828aa4798155410d0c59b8d0dd4769cf8f699978666e48",
+    "scripts/research/check_research_knowledge.py": "658c8d0cd8c52f9040334b5cccb1809a1437c82dfaff508e16c57911d9aaa4b3",
+    "tests/research/test_research_knowledge.py": "2c5438a9f28ebc2997163f3ffd9c2f3b388f9cd3b172cabe5f4d7e3be355fde6",
+    "tests/research/test_research_transfer_exposure.py": "e56781899bf36b3f66226590f8e13f5af5fdc2fa9952cceb0f7fe2d5b2f95d4d",
+    "probes/parallel_owner_research/transfer.py": "8b87b5947f8be6bb429c27eb5f701aec027662bca27be6c4c5ba13e956b75111",
+    "docs/AGENT_INDEX.md": "d0cb72be97270486b9d810134385685982960debe1e9ad76270f649351b480d0",
+    "docs/catalog.yaml": "9dd060623957431889e94a797f32dc8b69e4f650660db81601783d2f1b8bd8cc"
+  }
+}

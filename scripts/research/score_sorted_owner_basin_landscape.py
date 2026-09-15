@@ -2,7 +2,7 @@
 """Task-3 runtime scorer for the sorted-owner-basin-landscape-and-repair unit.
 
 Experiment-local to
-``research/investigations/qwen3-vl-dense-enumeration/experiments/
+``docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/
 2026-08-01-sorted-owner-basin-landscape-and-repair/unit.md``.
 
 Scope

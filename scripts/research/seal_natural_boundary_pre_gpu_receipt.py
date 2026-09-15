@@ -41,7 +41,8 @@ RECEIPT_FILENAME = "pre-gpu-receipt.json"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 UNIT_DIR = REPO_ROOT / (
-    "research/investigations/qwen3-vl-dense-enumeration/experiments/"
+    "docs/history/research-records/2026-09-15/investigations/"
+    "qwen3-vl-dense-enumeration/experiments/"
     f"{UNIT_ID}"
 )
 UNIT_PATH = UNIT_DIR / "unit.md"

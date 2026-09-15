@@ -10,7 +10,7 @@ context row -- whether any calibrated support context on the native greedy
 trajectory jointly has an open continue-vs-stop gate, a favorable
 category-route rank, a winning same-category owner competition, and a
 before-or-at-frontier state.  See
-``research/investigations/qwen3-vl-dense-enumeration/experiments/
+``docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/
 2026-08-03-sorted-supported-fn-native-prefix-reachability-prevalence/unit.md``
 for the frozen question and operational definitions this module implements.
 

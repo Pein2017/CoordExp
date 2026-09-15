@@ -56,6 +56,20 @@ def select_ids(universe, exclusions, count=256):
     return sorted(eligible, key=lambda i: hashlib.sha256(f'{SALT}{i}'.encode()).hexdigest())[:count]
 
 
+def research_exposure_sources() -> list[dict]:
+    """Read the frozen research-side exposure corpus, never the live knowledge tree."""
+    records = WORKTREE / (
+        'docs/history/research-records/2026-09-15/investigations/'
+        'qwen3-vl-dense-enumeration'
+    )
+    require(records.is_dir(), 'frozen research exposure corpus missing')
+    paths = [path for path in sorted(records.rglob('*.json'))
+             if '2026-09-12-parallel-owner-research' not in str(path)]
+    require(bool(paths), 'frozen research exposure corpus empty')
+    return [dict(path=str(path), sha256=file_hash(path),
+                 image_ids=sorted(image_ids(read(path)))) for path in paths]
+
+
 def freeze_selection():
     require(not (ROOT / 'selection.json').exists(), 'selection already frozen')
     paths = [Path(p) for p in subprocess.check_output(
@@ -73,15 +87,12 @@ def freeze_selection():
         found = image_ids(values)
         excluded.update(found)
         sources.append(dict(path=str(path), sha256=file_hash(path), image_ids=sorted(found)))
-    # Research-side adjudication/case records sometimes precede raw manifests.
-    records = WORKTREE / 'research/investigations/qwen3-vl-dense-enumeration'
-    for path in sorted(records.rglob('*.json')):
-        if '2026-09-12-parallel-owner-research' in str(path):
-            continue
-        found = image_ids(read(path))
-        excluded.update(found)
-        sources.append(dict(path=str(path), sha256=file_hash(path), image_ids=sorted(found)))
-    rows = [json.loads(line) for line in SOURCE.open()]
+    # Keep the same research-side exclusions after knowledge-tree retirement.
+    for source in research_exposure_sources():
+        excluded.update(source['image_ids'])
+        sources.append(source)
+    with SOURCE.open() as handle:
+        rows = [json.loads(line) for line in handle]
     universe = [r['image_id'] for r in rows]
     require(len(universe) == len(set(universe)), 'duplicate source image identity')
     selected = select_ids(universe, excluded)

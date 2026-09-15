@@ -42,7 +42,7 @@ TASK0_ROOT = (
 )
 UNIT_PATH = (
     ROOT
-    / ".worktrees/research-probes/research/investigations/qwen3-vl-dense-enumeration"
+    / ".worktrees/research-probes/docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration"
     / "experiments/2026-08-03-sorted-all-person-owner-relative-route-landscape/unit.md"
 )
 PANEL_PATH = (

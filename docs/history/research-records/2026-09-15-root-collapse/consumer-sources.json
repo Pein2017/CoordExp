@@ -1,0 +1,95 @@
+{
+  "schema_version": 2,
+  "baseline_head": "f39066f6948c799827d706eb88876b931112ade8",
+  "canonical_root": "/data/CoordExp/.worktrees/research-probes",
+  "files": [
+    {
+      "source": "probes/dora_owner_learning/README.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/probes/dora_owner_learning/README.md",
+      "sha256": "2e3f65e5bf51012518e78734b62cbd2ce3d7c250fea5c439b6f5486929508ca1",
+      "bytes": 5889,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "probes/human13/README.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/probes/human13/README.md",
+      "sha256": "fa4120915b34395a192c01e4f479dc1f2af601312ddfc36490b38369ce454fe9",
+      "bytes": 4214,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "probes/logit_lens/README.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/probes/logit_lens/README.md",
+      "sha256": "afacd71645bc65cd98cedf4b8dc70e89d6a6f74dbcf9288145da00fcf4352bc4",
+      "bytes": 4732,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "probes/source_rweak_row_cross/README.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/probes/source_rweak_row_cross/README.md",
+      "sha256": "1712cee1c53b645f91854bd2bf9784b7c87e418bca637d3183eed4f4b02f6fb6",
+      "bytes": 5687,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "probes/unmatched_judge/codetr_profile/README.md",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/probes/unmatched_judge/codetr_profile/README.md",
+      "sha256": "059dfde26758119a55eccc503734c66ef81116714524ae85c43a8a43f4080044",
+      "bytes": 2317,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/analyze_sorted_supported_fn_native_prefix_reachability_prevalence.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/analyze_sorted_supported_fn_native_prefix_reachability_prevalence.py",
+      "sha256": "1f15cce8e557d6bf71eafd335ff30eca0a5dfbd0f50210e4cfc504dddd0ce839",
+      "bytes": 57627,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/build_sorted_all_person_route_landscape.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/build_sorted_all_person_route_landscape.py",
+      "sha256": "658e5635d98453a6a8b2f718f4d77be45093328e0c8c69fff54bed45170b6e1f",
+      "bytes": 57837,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/prepare_sorted_crossing_boundary_owner_release_realization.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/prepare_sorted_crossing_boundary_owner_release_realization.py",
+      "sha256": "ab03b3c099a2a8a33ae28a508e2cb651d5d8ecf3e525060f9ac68f33e0856314",
+      "bytes": 127581,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/score_sorted_owner_basin_landscape.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/score_sorted_owner_basin_landscape.py",
+      "sha256": "13b37ceb1953c550bd75bd49773fe98646c33bc8908924a8bf87d426e5d33c92",
+      "bytes": 283955,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/seal_natural_boundary_pre_gpu_receipt.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/seal_natural_boundary_pre_gpu_receipt.py",
+      "sha256": "e88278733e31df4d870345351d50b85c26a4c6c7a47bcc3fb72acab66be91ebe",
+      "bytes": 111488,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    },
+    {
+      "source": "scripts/research/seal_s_k10_h20_crossover_pre_gpu_receipt.py",
+      "archive": "docs/history/research-records/2026-09-15-root-collapse/sources/scripts/research/seal_s_k10_h20_crossover_pre_gpu_receipt.py",
+      "sha256": "ebdbdcfdd6df6e18178bcc25771753674b45bf244aa0e5094b54a9bfa7cf56bc",
+      "bytes": 82763,
+      "git_tracked_at_capture": true,
+      "action": "snapshot_before_authorized_edit"
+    }
+  ]
+}

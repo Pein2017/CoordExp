@@ -39,9 +39,11 @@ Do not read the catalog or this index's targets wholesale.
   refactors do not require invented normative deltas.
 - `research/` contains active research interpretation and probe records; the
   fixed `research-probes` worktree is the current research source authority.
-- `research/decisions/` contains the current non-normative belief layer: use it
-  to find evidence-backed route choices and their next discriminators, not as a
-  runtime or architecture contract.
+- [research/index.md](../research/index.md) owns the research frontier and reading map;
+  `research/questions/` owns evidence-backed interpretation and next discriminators.
+  [Research conventions](../research/CONVENTIONS.md) govern the flat knowledge tree.
+  These are not runtime or architecture contracts. Old idea/decision/OKF folders
+  are retired provenance, not parallel current authorities.
 - `docs/history/` contains non-normative provenance for superseded plans and old
   implementation history.
 - `progress/` is a legacy evidence archive. Do not use it for current behavior

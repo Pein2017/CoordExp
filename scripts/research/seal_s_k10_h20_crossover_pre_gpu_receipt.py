@@ -48,7 +48,10 @@ SOURCE_PREFLIGHT_ATTENTION_ARMS = (
 )
 STATUS = "sealed_pre_gpu"
 PLAN_SCHEMA_VERSION = planner.SCHEMA_VERSION
-UNIT_PATH = REPO_ROOT / "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md"
+UNIT_PATH = REPO_ROOT / (
+    "docs/history/research-records/2026-09-15/investigations/"
+    "qwen3-vl-dense-enumeration/experiments/2026-08-07-s-k10-h20-natural-crossover/unit.md"
+)
 DEVICE_PLAN = dict(planner.DEVICE_PLAN)
 SHARD_COUNT = 3
 H0_IDENTITY_FILE_ROLES = (
