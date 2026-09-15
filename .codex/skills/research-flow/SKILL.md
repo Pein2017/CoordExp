@@ -8,6 +8,30 @@ description: Lead or close a bounded CoordExp research investigation while prese
 Use this skill when the durable product is **research knowledge** rather than
 current-behavior documentation, production code, or an ordinary audit.
 
+## Agent catch-up and knowledge maintenance
+
+Resolve the registered research base independently of the Skill's installation
+checkout. The expected base is `research-probes` at
+`/data/CoordExp/.worktrees/research-probes`; verify the runtime identity/path.
+Read its `research/index.md` and `research/CONVENTIONS.md` through that Project,
+not by copying its research tree into the checkout hosting this Skill.
+The convention is the single layout/maintenance owner; this Skill routes to it.
+
+All primary readers are agents. Offer a fast path (current context plus current
+state/result) and a deeper path (story, relevant questions, decisive sources).
+Preserve counterexamples, unfinished ideas and reopening conditions. Before a
+new unit, search the catalog and closest predecessor result/protocol; state the
+actual new discriminator instead of repeating a renamed failed recipe.
+
+Research programs live directly under `research/<program>/`. Do not recreate
+an `investigations` dumping layer. Frozen protocol, current `state.json`,
+accepted results, question-oriented synthesis and historical transport have
+separate roles. A historical `running` field or old compute grant is not live
+state or permission. Handoffs are consumed transport, not permanent frontiers.
+Do not append every run to the current context or duplicate full result tables
+across routers. Archive original evidence byte-faithfully before compression;
+check path/hash-bound consumers before relocating code or records.
+
 ## Authority
 
 - Current operator guidance owns current behavior.
@@ -146,9 +170,12 @@ prior iteration from conversation rather than from the packet.
      the evidence-bearing scientific contrast, or states that one is absent.
 
 6. **Close routing once.**
-   - When evidence changes the route, update the owning result/unit, experiment
-     index, and current decision or compass. Refresh project memory only if
-     continuation state changed; create a handoff only for a real transfer.
+   - Close from the owning accepted receipt/result to the unit's `state.json`.
+     Update a question page only when belief changes, the story only when the
+     research trajectory changes, and current context only when the frontier
+     or user boundary changes. Maintain catalog paths, not another status table.
+     Create a handoff only for a real transfer and archive it after integration.
+     Change durable project memory only on an explicit user request.
    - Route a reusable technical deficiency to its infrastructure owner with the
      exact failure and acceptance boundary. Link it from the research unit, but
      do not move cohort, intervention, estimand, threshold, or claim ownership
@@ -185,8 +212,10 @@ completion; archive authorization remains separate.
   snapshots before synthesis.
 - For supervisor or independent-model packets, make the packet
   decision-focused and keep reviewer output advisory.
-- For Open Knowledge Format style migration, use the repository's native
-  research routers and light frontmatter; avoid app-specific wiki structure.
+- For knowledge migration, use the research base's `research/CONVENTIONS.md`:
+  direct program entry, question/story synthesis, source manifest and targeted
+  retrieval. Keep metadata light; do not retrofit historical protocols merely
+  to satisfy a schema or introduce an app-specific wiki framework.
 - For executed units, keep durable artifacts under the owning output root and
   record immutable run identity once comparison requires it.
 - Before support expansion or a mechanism matrix, require CPU-discoverable

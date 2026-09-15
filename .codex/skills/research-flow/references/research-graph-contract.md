@@ -8,96 +8,61 @@ record, decision update, or mechanism promotion.
 | Surface | Owns | Must not own |
 |---|---|---|
 | `outputs/research/` | Executed artifacts, receipts, traces, metric primitives | Interpretation or current route choice |
-| `research/.../experiments/<unit-id>/` | Evidence-tiered outline or protocol, evidence handles, observed results, bounded verdict | Stable runtime/schema compatibility |
-| `research/investigations/` | Competing explanations and synthesis across units | Implementation authorization |
+| `research/<program>/experiments/<unit-id>/unit.md` or exact preserved protocol | Evidence-tiered outline/protocol, frozen question and contrast | Live lifecycle updates or a growing execution notebook |
+| `research/<program>/experiments/<unit-id>/state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
+| Accepted result and its immutable receipt | Observed outcomes, denominators, bounded verdict and evidence handles | Stable runtime/schema compatibility |
+| `research/<program>/questions/` and `story.md` | Competing explanations, evidence-linked belief state and research transitions | Implementation authorization or copied volatile status tables |
 | `research/decisions/` | Current evidence-backed route choice and next discriminator | Mechanism truth or product contract |
 | `research/mechanisms/` | Reusable bounded explanations supported across independent units | Single-probe correlations |
 | Named infrastructure source, tests, and change | Reusable execution, instrumentation, identity, persistence, recovery, and mechanical acceptance | Cohorts, interventions, estimands, thresholds, scientific outcomes, or claims |
 | `openspec/` | Stable reusable implementation and compatibility contracts | Hypotheses, cohorts, thresholds, or scientific verdicts |
 
-## Recommended Investigation Layout
+## Program Layout and Reading Path
 
-```text
-research/investigations/<topic>/
-  index.md
-  overview.md
-  experiments/
-    index.md
-    <unit-id>/
-      unit.md
-      results.md   # only after execution closes
-      review.md    # only if an audit changes the claim or rerun gate
-```
+The registered research base's `research/CONVENTIONS.md` owns the layout and
+maintenance contract. Resolve that Project first; the Skill's installation
+checkout is not automatically the research base. Begin at `research/index.md`.
 
-Here `<topic>` is a stable investigation identifier and `<unit-id>` is an
-immutable research-unit identifier. The date pattern `YYYY-MM-DD` means a
-four-digit year, two-digit month, and two-digit day.
+New programs use `research/<program>/` directly, with current context, a story,
+question pages, shared vocabulary, an idea register and `experiments.jsonl` for
+metadata retrieval. Do not recreate a generic `investigations` layer. Existing
+independent ideas and decisions need not be moved just for uniformity.
 
-- `index.md`: router, scope, status, reading path, and authority caveat.
-- `overview.md`: stable question decomposition, competing hypotheses, evidence
-  atlas, and current belief state; never a run log.
-- `unit.md`: evidence-tiered executable outline or scientific protocol and the
-  unique closure router.
-- `results.md`: executed facts and bounded interpretation after evidence closes.
-- `review.md`: independent audit findings that narrow, invalidate, or request a
-  rerun. Do not create it as an empty ritual.
+The fast reading path is current context plus its state/result; the deeper path
+adds the story, relevant question pages and decisive original records. Preserve
+ideas, counterexamples and exact source handles rather than forcing every file
+to repeat all background. Before proposing a unit, identify its closest tested
+predecessor, remaining uncertainty, changed factor and reopening condition.
 
-Use the same shape under `research/ideas/<topic>/experiments/` when the unit
-tests a proposed treatment rather than a diagnostic question.
+`unit.md` is the proportionate design/protocol, frozen when execution begins.
+`state.json` is the current lifecycle owner. Accepted results own facts, while
+questions own interpretation. A review exists only for an actual claim/rerun
+risk. Handoffs are integrated transport and then archived, never live frontiers.
+Raw source provenance goes to `docs/history/`; maintained code and executed
+artifacts retain their separate owners. Preserve exact path/hash dependencies
+or explicitly delimit archived-source versus executable-replay compatibility.
 
-## New Unit Frontmatter
+## New Unit Identity and Current State
 
-Use this minimum for newly created units; do not bulk-migrate historical units
-only to satisfy the new vocabulary.
+Use light stable protocol metadata: title, unit_id, program/question identity,
+role, evidence/authorization source and freeze identity when applicable. The
+protocol body owns the actual scientific contract. Do not embed independently
+maintained current lifecycle fields in a frozen launch snapshot.
 
-```yaml
----
-title: ...
-description: ...
-type: investigation          # or idea
-role: research-unit
-authority: non_normative_research
-architecture_promotion_status: not_promoted
-implementation_status: not_authorized  # not_authorized|authorized_within_goal|authorized_separately
-unit_id: YYYY-MM-DD-slug
-topic: parent-topic
-status: planned              # planned|ready|running|blocked|complete|invalidated|superseded
-evidence_status: none        # none|partial|executed_unverified|verified|invalidated
-updated: YYYY-MM-DD
----
-```
+Use the state schema defined once in `research/CONVENTIONS.md`: lifecycle,
+evidence and scientific disposition are separate axes, with exact protocol,
+result and state-source paths, an as-of point, latest user boundary and next
+action. A paused task may have accepted evidence and an incomplete stage.
+Closure never implies mechanism or architecture promotion. A new grant must
+come from the current user, not from a stored `running` or authorization label.
 
-`complete` means execution stopped, evidence scope is fixed, failures are
-visible, and interpretation is closed. It does not mean mechanism or
-architecture promotion.
-
-Lifecycle meanings:
-
-- `planned`: scientific design or exploratory outline is still being formed;
-- `ready`: the evidence-tier-appropriate outline or protocol has enough scope,
-  controls, and execution handles to begin;
-- `running`: execution has begun under the declared scope;
-- `blocked`: execution cannot proceed and the blocker is recorded;
-- `complete`: execution and bounded interpretation are closed;
-- `invalidated`: contract or evidence failure prevents scientific use;
-- `superseded`: a newer named unit replaces this unit's active role;
-- `none`: no executed evidence exists;
-- `partial`: only part of the declared protocol executed;
-- `executed_unverified`: execution exists but receipts or semantics are not yet
-  accepted;
-- `verified`: evidence passed the declared acceptance checks;
-- `not_promoted`: no architecture claim has been promoted from this unit;
-- `not_authorized`: no implementation authority has been granted;
-- `authorized_within_goal`: an active user-authorized research goal permits
-  bounded implementation, controls, and recursive probes within its declared
-  objective and cost boundary;
-- `authorized_separately`: the user authorized this implementation slice
-  outside an active goal.
-
-Initialize `implementation_status` from the active task authority. Do not reset
-an already authorized research goal to `not_authorized` merely because a new
-unit is created. Architecture promotion and stable-contract work remain
-separate decisions.
+Do not bulk-retrofit historical frontmatter. Old status/implementation fields
+remain source-time labels; a current state may point to the exact preserved
+protocol without creating a retroactive preregistration. A historical entry
+without current state is not automatically a completed negative or resumable
+work. Keep planned, technically partial, unexecuted, invalid and scientific
+negative evidence distinguishable. Do not reset a valid current grant simply
+because a new record is created, or preserve an expired grant through a label.
 
 ## Research And Infrastructure Axes
 
@@ -339,19 +304,21 @@ Apply the gate as follows:
    silently block an otherwise valid unit.
 8. Preserve the request and responses as provenance. Create or update the
    concrete unit's `review.md` only when the review changes a claim, rerun gate,
-   launch decision, or next discriminator. Update the compass or decision only
-   if the route changes, and update project memory only when continuation state
-   changes.
+   launch decision, or next discriminator. Update the owning question/current
+   context only if its meaning changes; update durable project memory only on
+   an explicit user request.
 
 ## Closeout Consistency Gate
 
 Close a unit from the evidence owner outward:
 
-1. freeze `results.md` or the result section in `unit.md`;
-2. update the experiment router and lifecycle status;
-3. update the investigation decision or compass only if the route changed;
-4. refresh `memories/current.md` only if continuation changed;
-5. write a durable handoff only when another session or machine needs one.
+1. accept and preserve the result plus its immutable evidence receipt;
+2. update the unit's `state.json`, not a status field inside frozen `unit.md`;
+3. update the question page, story and current context only when their respective
+   belief, research trajectory or frontier/user-boundary meaning changes;
+4. maintain catalog references without copying result ledgers or volatile counts;
+5. use a handoff only for a real transfer, integrate its delta, then archive it.
+   Durable project-memory changes require an explicit user request.
 
 These surfaces may summarize the same decision, but they must not become
 independent authorities. Keep one current frontier, link to the owning result,
@@ -359,7 +326,7 @@ mark superseded routes explicitly, and resolve contradictions before handoff.
 
 A live route means any `current`, `next`, `start here`, fresh-session, or
 minimum-reading-path pointer in a compass, active index, decision, or project
-memory. Its target must be a tracked owning `unit.md`, `results.md`, research
+memory. Its target must be a tracked owning current-context/state/result/question, research
 decision, compass or index, current doc, or stable spec. Handoffs, standalone
 agent-review or audit outputs, reviewer packets, transcripts, memory notes,
 scratch files, and temporary artifacts may be cited only as provenance; they
@@ -371,10 +338,10 @@ route authority.
 Use:
 
 ```text
-outputs/research/<investigation>/<unit-id>/<run-id>/
+outputs/research/<program>/<unit-id>/<run-id>/
 ```
 
-Here `<investigation>` is the stable investigation identifier, `<unit-id>` is
+Here `<program>` is the stable research-program identifier, `<unit-id>` is
 the immutable research-unit identifier, and `<run-id>` is one immutable
 execution identifier.
 
@@ -429,18 +396,22 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
 ## Minimal Verification
 
 - Resolve all local Markdown links.
-- Parse new non-router frontmatter.
+- Parse declared new metadata, especially current state JSON; do not impose
+  a new lifecycle schema on frozen historical frontmatter.
 - Fail review on any unexplained local abbreviation, arm code, hypothesis code,
   metric symbol, or coined name.
 - From `/data/CoordExp/.worktrees/research-probes`, run
   `conda run -n ms python scripts/research/check_research_graph.py` for the
   decision layer.
-- Check for lifecycle contradictions such as a completed result whose router
-  still says `planned`, `ready`, or `running`, or a current decision that names
-  a superseded unit.
+- Run `python -B scripts/research/check_research_knowledge.py check` in the
+  research base for live links, catalog/state references, preserved-source
+  identity and documented legacy data-reader compatibility.
+- Check current-state/result consistency, including accepted-but-incomplete or
+  paused outcomes. Historical snapshot status is not a competing live status;
+  old next-step language must not bypass the current state and user boundary.
 - Verify referenced artifact receipts/hashes when available.
 - Run `git diff --check` on touched files.
 
-Do not expand the graph checker to all historical units until at least two new
-investigations have exercised this unit vocabulary without requiring a bulk
-migration.
+Do not retrofit all historical units to a new schema. Knowledge integrity
+checks target live references and source conservation, not a uniform metadata
+vocabulary or new scientific verdict for every archived protocol.
