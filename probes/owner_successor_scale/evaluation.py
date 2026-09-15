@@ -51,6 +51,33 @@ def _script_binding() -> dict[str, Any]:
     return binding(Path(__file__).resolve())
 
 
+def _command_surface(packet_path: str | Path, phases: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Return commands that enter only this wrapper's validated N16 route."""
+
+    packet = Path(packet_path).resolve()
+    visible = ",".join(str(gpu) for gpu in GPUS)
+    commands: dict[str, dict[str, str]] = {}
+    for phase in ("slice", "full"):
+        run_root = Path(phases[phase]["run_root"])
+        consumer_root = Path(phases[phase]["consumer_root"])
+        commands[phase] = {
+            "launch": (
+                f"CUDA_VISIBLE_DEVICES={visible} python -m "
+                f"probes.owner_successor_scale.evaluation launch --packet {packet} --phase {phase}"
+            ),
+            "merge": (
+                "python -m probes.owner_successor_scale.evaluation merge "
+                f"--packet {packet} --phase {phase}"
+            ),
+            "consume": (
+                "python -m probes.owner_successor_scale.evaluation consume "
+                f"--packet {packet} --phase {phase} --rows {run_root / 'rows.jsonl'} "
+                f"--output {consumer_root}"
+            ),
+        }
+    return commands
+
+
 def _configure_native() -> None:
     """Configure accepted helpers for this immutable N16 anchor route."""
 
@@ -166,6 +193,7 @@ def prepare(*, output: str | Path = ROOT) -> dict[str, Any]:
     # retain it as provenance, then publish this entrypoint's bound contract.
     baseline_intermediate = output / "baseline-packet.accepted-helper.json"
     baseline_path.rename(baseline_intermediate)
+    commands = _command_surface(baseline_path, baseline["phases"])
     baseline["producer"] = _script_binding()
     baseline["arm"] = ARM
     baseline["model"] = packet["model"]
@@ -173,6 +201,23 @@ def prepare(*, output: str | Path = ROOT) -> dict[str, Any]:
     baseline["generation"] = packet["generation"]
     baseline["adapter"] = packet["n16_anchor"]["adapter"]
     baseline["stored_adapter"] = packet["n16_anchor"]["adapter"]
+    baseline["consumer"]["module"] = "probes.owner_successor_scale.evaluation"
+    baseline["consumer"]["merge_command"] = (
+        "python -m probes.owner_successor_scale.evaluation merge "
+        "--packet <baseline-packet.json> --phase <slice|full>"
+    )
+    baseline["consumer"]["consume_command"] = (
+        "python -m probes.owner_successor_scale.evaluation consume "
+        "--packet <baseline-packet.json> --phase <slice|full> --rows <rows.jsonl> --output <consumer-dir>"
+    )
+    baseline["launch_gate"]["launch_command"] = commands["slice"]["launch"]
+    baseline["launch_gate"]["raw_to_consumer"] = {
+        "slice_merge": commands["slice"]["merge"],
+        "slice_consume": commands["slice"]["consume"],
+        "full_launch_after_slice": commands["full"]["launch"],
+        "full_merge": commands["full"]["merge"],
+        "full_consume": commands["full"]["consume"],
+    }
     baseline["claim_boundary"] = "Frozen N16 anchor natural baseline only; no candidate/A/B evaluation or pretraining/SFT-disjointness claim."
     publish(baseline_path, baseline)
     request_path = output / "baseline-launch-request.json"
@@ -182,8 +227,10 @@ def prepare(*, output: str | Path = ROOT) -> dict[str, Any]:
     request["packet"] = binding(baseline_path)
     request["arm"] = ARM
     request["physical_gpus"] = list(GPUS)
-    request["slice"]["launch"] = f"CUDA_VISIBLE_DEVICES={GPUS[0]} python -m probes.owner_successor_scale.evaluation launch --packet {baseline_path} --phase slice --gpu {GPUS[0]}"
-    request["remaining254"]["launch_after_slice_consumer"] = f"CUDA_VISIBLE_DEVICES={GPUS[0]},{GPUS[1]} python -m probes.owner_successor_scale.evaluation launch --packet {baseline_path} --phase full"
+    request["slice"].update(commands["slice"])
+    request["remaining254"]["launch_after_slice_consumer"] = commands["full"]["launch"]
+    request["remaining254"]["merge"] = commands["full"]["merge"]
+    request["remaining254"]["consume"] = commands["full"]["consume"]
     publish(request_path, request)
     return {"packet": binding(output / "packet.json"), "baseline": binding(baseline_path), "slice_ids": baseline["phases"]["slice"]["image_ids"], "remaining": len(baseline["phases"]["full"]["image_ids"]), "model_calls": 0}
 
@@ -358,7 +405,7 @@ def finalize(*, packet_path: str | Path, output: str | Path = ROOT) -> dict[str,
     return result
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("prepare"); p.add_argument("--output", type=Path, default=ROOT)
@@ -367,7 +414,11 @@ def main() -> None:
     p = sub.add_parser("merge"); p.add_argument("--packet", type=Path, required=True); p.add_argument("--phase", choices=("slice", "full"), required=True)
     p = sub.add_parser("consume"); p.add_argument("--packet", type=Path, required=True); p.add_argument("--phase", choices=("slice", "full"), required=True); p.add_argument("--rows", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p = sub.add_parser("finalize"); p.add_argument("--packet", type=Path, required=True); p.add_argument("--output", type=Path, default=ROOT)
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
     if args.command == "prepare": print(json.dumps(prepare(output=args.output), sort_keys=True))
     elif args.command == "launch": print(json.dumps(launch(packet_path=args.packet, phase=args.phase), sort_keys=True))
     elif args.command == "worker": _worker(packet=args.packet, phase=args.phase, shard=args.shard, output=args.output)
