@@ -1,20 +1,20 @@
 {
   "schema_version": 1,
   "unit_id": "2026-09-14-training-set-completion-curriculum",
-  "lifecycle": "paused",
+  "lifecycle": "closed",
   "evidence": "accepted",
-  "disposition": "stage_incomplete",
+  "disposition": "bounded_batch_complete_final_tie_all_known_stage_incomplete",
   "state_as_of": "2026-09-15",
-  "protocol": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/unit.md",
-  "result": "research/experiments/2026-09-14-training-set-completion-curriculum/results.md",
-  "state_source": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/2026-09-15-fourth-fit-final-review.md",
-  "boundary": "Fourth fit and current evaluation finished; user requested discussion before further model work. Documentation restructuring does not authorize resumption.",
+  "protocol": "research/experiments/2026-09-14-training-set-completion-curriculum/unit.md",
+  "result": "research/experiments/2026-09-14-training-set-completion-curriculum/dual-start-results.md",
+  "state_source": "research/experiments/2026-09-14-training-set-completion-curriculum/dual-start-results.md",
+  "boundary": "Lead accepted the frozen paired v3 batch: both arms256 new updates,2816 logical forwards each,88 natural readbacks. Both final endpoints have218/218 scoped coverage,FN0,F1=1,zero output debt; historical232/current-known248 retain14/30 missing. A is clean at the first saved64 readback; B reaches the same clean endpoint at256. Shared geometry integration is accepted. A final is recommended operationally for continuity, not superior final quality.",
   "not_authorized": [
-    "fifth fit",
-    "training-image or target expansion",
-    "new recipe or mechanism probe",
-    "held-out evaluation",
-    "GPU work"
+    "training-image or later-known target expansion in the first paired comparison",
+    "simultaneous ordering or refresh change in the first paired comparison",
+    "silent replacement of historical232 or current-known248 denominators",
+    "held-out evaluation as an early veto",
+    "publication or production promotion"
   ],
-  "next_action": "Read result, identify the remaining training-task failure and discuss a bounded next decision with the user; do not launch from this metadata."
+  "next_action": "Batch stopped for discussion. Preserve both final adapters and all ledgers. Choose a separately authorized next question before any new run; CE normalization and throughput improvements remain candidates, and the9 verified COCO-80 misses remain outside this completed teacher."
 }

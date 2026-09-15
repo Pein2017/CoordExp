@@ -1,5 +1,7 @@
 # Accepted result: fourth fit
 
+Historical result. The latest accepted continuation is the [paired-start result](dual-start-results.md).
+
 This reading edition preserves the numerical and scientific content of the [frozen source](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/2026-09-15-fourth-fit-final-review.md). Current lifecycle is owned only by [state.json](state.json); historical commands below are provenance, not permission to execute them. No model run or visual re-adjudication was performed for the documentation migration.
 
 # Fourth fit: completed training-set evaluation and user stop

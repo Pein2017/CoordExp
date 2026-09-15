@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-15-coco227-ce-normalization",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "bounded_batch_complete_final_and_milestone_tie_scoped227_complete",
+  "state_as_of": "2026-09-15",
+  "protocol": "research/experiments/2026-09-15-coco227-ce-normalization/unit.md",
+  "result": "research/experiments/2026-09-15-coco227-ce-normalization/results.md",
+  "state_source": "research/experiments/2026-09-15-coco227-ce-normalization/results.md",
+  "boundary": "Both CE arms reach sustained clean227-owner completion at saved16 and remain clean through256. Scoped COCO80 stage complete; current-known248 has19 category-unknown and2 nonCOCO owners outside teacher. No normalization winner or generalization claim.",
+  "not_authorized": [
+    "teacher beyond227",
+    "unknown-class guesses",
+    "ordering or refresh contrast",
+    "additional dose or seed sweep",
+    "publication"
+  ],
+  "next_action": "Closed result unchanged. Continue under research/experiments/2026-09-15-coco22-cumulative-expansion/state.json; user approved22-image expansion and historical19 unknowns do not block it."
+}
