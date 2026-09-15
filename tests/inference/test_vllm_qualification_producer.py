@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+import math
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -795,6 +799,106 @@ def test_source_identity_binds_the_child_executor(monkeypatch: pytest.MonkeyPatc
     ]
 
 
+def test_source_identity_covers_static_local_imports_and_package_initializers() -> None:
+    from src.inference import vllm_qualification_producer as producer
+
+    covered = set(producer._SOURCE_PATHS)
+
+    def resolve_module(module: str) -> str | None:
+        module_path = Path(*module.split("."))
+        candidates = (module_path.with_suffix(".py"), module_path / "__init__.py")
+        for candidate in candidates:
+            if (producer._REPO_ROOT / candidate).is_file():
+                return candidate.as_posix()
+        return None
+
+    missing: set[str] = set()
+    for relative in covered:
+        parent = Path(relative).parent
+        while parent.parts and parent.parts[0] == "src":
+            initializer = parent / "__init__.py"
+            if (producer._REPO_ROOT / initializer).is_file():
+                if initializer.as_posix() not in covered:
+                    missing.add(initializer.as_posix())
+            parent = parent.parent
+
+        tree = ast.parse((producer._REPO_ROOT / relative).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    path = Path(relative)
+                    package = list(path.with_suffix("").parts[:-1])
+                    if path.name == "__init__.py":
+                        package = list(path.parent.parts)
+                    package = package[: len(package) - node.level + 1]
+                    base = ".".join(
+                        [*package, *(node.module or "").split(".")]
+                    ).rstrip(".")
+                else:
+                    base = node.module or ""
+                if base:
+                    modules.append(base)
+                    modules.extend(f"{base}.{alias.name}" for alias in node.names)
+            for module in modules:
+                if module != "src" and not module.startswith("src."):
+                    continue
+                resolved = resolve_module(module)
+                if resolved is not None and resolved not in covered:
+                    missing.add(resolved)
+
+    assert not missing
+    assert "src/templates/__init__.py" in covered
+    assert "src/templates/renderer.py" in covered
+
+
+def test_renderer_source_drift_rejects_stale_receipts_through_admission(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src.inference import vllm_qualification_producer as producer
+
+    source_root = tmp_path / "checkout"
+    original_root = producer._REPO_ROOT
+    for relative in producer._SOURCE_PATHS:
+        source = original_root / relative
+        destination = source_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    renderer = source_root / "src/templates/renderer.py"
+    if not renderer.exists():
+        renderer.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original_root / "src/templates/renderer.py", renderer)
+    monkeypatch.setattr(producer, "_REPO_ROOT", source_root)
+
+    identity = _identity(tmp_path)
+    identity["source"] = producer._build_source_identity()
+    receipts = _produce(
+        tmp_path,
+        dependencies=_dependencies(tmp_path, identity=identity),
+    )
+
+    renderer.write_bytes(renderer.read_bytes() + b"\n# qualification drift probe\n")
+    drifted_identity = json.loads(json.dumps(identity))
+    drifted_identity["source"] = producer._build_source_identity()
+
+    with pytest.raises(RuntimeContractError) as exc_info:
+        producer.admit(
+            config_path=tmp_path / "vllm.yaml",
+            receipts_root=receipts,
+            target_root=tmp_path / "admitted",
+            dependencies=producer.QualificationDependencies(
+                build_identity=lambda _: drifted_identity,
+                run_child=lambda _: pytest.fail("admission launched a child"),
+            ),
+        )
+
+    assert exc_info.value.code == "vllm_backend.qualification_identity_drift"
+    assert not (tmp_path / "admitted").exists()
+
+
 def test_process_group_cleanup_detects_and_terminates_an_extant_member() -> None:
     from src.inference.vllm_qualification_producer import (
         _process_group_members,
@@ -891,9 +995,11 @@ def test_gpu_memory_query_is_scoped_to_the_selected_physical_gpu(
     from src.inference import vllm_qualification_producer as producer
 
     commands: list[list[str]] = []
+    timeouts: list[float] = []
 
-    def fake_run(command: list[str], **_: Any) -> SimpleNamespace:
+    def fake_run(command: list[str], **kwargs: Any) -> SimpleNamespace:
         commands.append(command)
+        timeouts.append(kwargs["timeout"])
         return SimpleNamespace(stdout="321\n")
 
     monkeypatch.setattr(producer.subprocess, "run", fake_run)
@@ -907,6 +1013,7 @@ def test_gpu_memory_query_is_scoped_to_the_selected_physical_gpu(
             "--format=csv,noheader,nounits",
         ]
     ]
+    assert timeouts == [producer.GPU_CENSUS_TIMEOUT_SECONDS]
 
 
 def test_process_gpu_memory_query_is_scoped_to_the_selected_physical_gpu(
@@ -925,6 +1032,124 @@ def test_process_gpu_memory_query_is_scoped_to_the_selected_physical_gpu(
     assert producer._gpu_memory_for_pids_mib([42], selector="2") == 128
     assert commands[0][1] == "--id=2"
     assert commands[0][2] == "--query-compute-apps=pid,used_memory"
+
+
+def test_gpu_census_timeout_preserves_unknown_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.inference import vllm_qualification_producer as producer
+
+    def time_out(command: list[str], **kwargs: Any) -> SimpleNamespace:
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(producer.subprocess, "run", time_out)
+
+    assert producer._gpu_memory_used_mib("2") is None
+    assert producer._gpu_memory_for_pids_mib([123], selector="2") == -1
+
+
+@pytest.mark.parametrize(
+    "invalid_timeout",
+    [0, -1, math.nan, math.inf, -math.inf, True, "1"],
+)
+def test_produce_rejects_invalid_child_timeout_before_work(
+    tmp_path: Path,
+    invalid_timeout: object,
+) -> None:
+    from src.inference.vllm_qualification_producer import (
+        QualificationDependencies,
+        produce,
+    )
+
+    def unexpected(*_: Any, **__: Any) -> Any:
+        pytest.fail("invalid timeout reached qualification work")
+
+    output_root = tmp_path / "candidate"
+    with pytest.raises(RuntimeContractError) as exc_info:
+        produce(
+            config_path=tmp_path / "vllm.yaml",
+            output_root=output_root,
+            child_timeout_seconds=invalid_timeout,
+            dependencies=QualificationDependencies(
+                build_identity=unexpected,
+                run_child=unexpected,
+            ),
+        )
+
+    assert exc_info.value.code == "vllm_qualification.child_timeout"
+    assert not output_root.exists()
+
+
+def test_production_supervisor_times_out_and_cleans_pipe_holding_descendant(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from src.inference import vllm_qualification_producer as producer
+
+    pid_path = tmp_path / "child-pids.txt"
+    child_script = (
+        "import os, pathlib, subprocess, sys\n"
+        "descendant = subprocess.Popen("
+        "[sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "pathlib.Path(sys.argv[1]).write_text("
+        "f'{os.getpid()} {descendant.pid}\\n', encoding='utf-8')\n"
+    )
+    monkeypatch.setattr(
+        producer,
+        "_qualification_child_command",
+        lambda _: [sys.executable, "-c", child_script, str(pid_path)],
+    )
+    monkeypatch.setattr(producer, "_visible_physical_gpu_selector", lambda: "0")
+    monkeypatch.setattr(producer, "_gpu_memory_used_mib", lambda _: 0)
+    monkeypatch.setattr(producer, "_gpu_memory_for_pids_mib", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(producer, "_settle_gpu_memory_used_mib", lambda **_: 0)
+
+    output_root = tmp_path / "candidate"
+    child_pid: int | None = None
+    descendant_pid: int | None = None
+    try:
+        started = time.monotonic()
+        with pytest.raises(RuntimeContractError) as exc_info:
+            producer.produce(
+                config_path=tmp_path / "vllm.yaml",
+                output_root=output_root,
+                child_timeout_seconds=1.0,
+                dependencies=producer.QualificationDependencies(
+                    build_identity=lambda _: _identity(tmp_path),
+                    run_child=producer._run_subprocess_child,
+                ),
+            )
+        elapsed = time.monotonic() - started
+        child_pid, descendant_pid = map(
+            int,
+            pid_path.read_text(encoding="utf-8").split(),
+        )
+
+        assert exc_info.value.code == "vllm_qualification.child_timeout"
+        assert exc_info.value.context["worker_reaped"] is True
+        assert exc_info.value.context["process_group_members_after"] == []
+        assert exc_info.value.context["gpu_cleanup_evidence_available"] is True
+        assert elapsed < 10
+        assert producer._process_group_members(child_pid) == []
+        assert not Path(f"/proc/{child_pid}").exists()
+        assert not any(
+            (output_root / name).exists()
+            for name in producer.EXPECTED_RECEIPT_FILENAMES.values()
+        )
+        assert descendant_pid not in producer._process_group_members(child_pid)
+    finally:
+        if child_pid is None and pid_path.is_file():
+            child_pid, descendant_pid = map(
+                int,
+                pid_path.read_text(encoding="utf-8").split(),
+            )
+        if child_pid is not None:
+            producer._terminate_process_group(child_pid)
+        if descendant_pid is not None and Path(f"/proc/{descendant_pid}").exists():
+            try:
+                os.kill(descendant_pid, 9)
+            except ProcessLookupError:
+                pass
 
 
 def test_gpu_memory_settle_is_bounded_and_requires_a_measured_after_value() -> None:
@@ -1133,3 +1358,70 @@ def test_qualification_module_help_exposes_run_and_admit(
     assert "admit" in output
     assert "BF16" in output or "bf16" in output
     assert "_child" not in output
+
+
+@pytest.mark.parametrize(
+    ("extra_args", "expected_timeout"),
+    [([], 1800.0), (["--child-timeout-seconds", "12.5"], 12.5)],
+)
+def test_qualification_run_cli_forwards_child_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    extra_args: list[str],
+    expected_timeout: float,
+) -> None:
+    from src import qualify_vllm
+
+    captured: dict[str, object] = {}
+
+    def fake_produce(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "passed"}
+
+    monkeypatch.setattr(qualify_vllm, "produce", fake_produce)
+    assert (
+        qualify_vllm.main(
+            [
+                "run",
+                "--config",
+                str(tmp_path / "vllm.yaml"),
+                "--output-root",
+                str(tmp_path / "candidate"),
+                *extra_args,
+            ]
+        )
+        == 0
+    )
+
+    assert captured["child_timeout_seconds"] == expected_timeout
+    assert json.loads(capsys.readouterr().out)["status"] == "passed"
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "nan", "inf", "-inf"])
+def test_qualification_run_cli_rejects_invalid_child_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    raw: str,
+) -> None:
+    from src import qualify_vllm
+
+    monkeypatch.setattr(
+        qualify_vllm,
+        "produce",
+        lambda **_: pytest.fail("invalid CLI timeout reached producer"),
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        qualify_vllm.main(
+            [
+                "run",
+                "--config",
+                str(tmp_path / "vllm.yaml"),
+                "--output-root",
+                str(tmp_path / "candidate"),
+                "--child-timeout-seconds",
+                raw,
+            ]
+        )
+
+    assert exc_info.value.code == 2

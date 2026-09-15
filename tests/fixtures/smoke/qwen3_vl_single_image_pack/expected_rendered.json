@@ -325,7 +325,7 @@
         }
       ],
       "supervised_response_text": "<|object_ref_start|>potted plant<|object_ref_end|><|box_start|><|coord_319|><|coord_72|><|coord_718|><|coord_830|><|box_end|><|object_ref_start|>vase<|object_ref_end|><|box_start|><|coord_370|><|coord_364|><|coord_632|><|coord_820|><|box_end|><|im_end|>\n",
-      "template_fingerprint": "8feee87f23928d7d934ff9a76f7f464bddc15266a1d6b80f8e4b17e87799c104"
+      "template_fingerprint": "5929cf3fa990b8c04cc4b4c95b40f67b368522ff5e77508705be7f3b535e6e0b"
     },
     {
       "assistant_content_text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|><|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|>",
@@ -652,7 +652,7 @@
         }
       ],
       "supervised_response_text": "<|object_ref_start|>umbrella<|object_ref_end|><|box_start|><|coord_0|><|coord_78|><|coord_952|><|coord_751|><|box_end|><|object_ref_start|>person<|object_ref_end|><|box_start|><|coord_348|><|coord_254|><|coord_995|><|coord_982|><|box_end|><|im_end|>\n",
-      "template_fingerprint": "8feee87f23928d7d934ff9a76f7f464bddc15266a1d6b80f8e4b17e87799c104"
+      "template_fingerprint": "5929cf3fa990b8c04cc4b4c95b40f67b368522ff5e77508705be7f3b535e6e0b"
     }
   ],
   "schema_version": 1

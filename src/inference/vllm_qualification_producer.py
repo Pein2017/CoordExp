@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import signal
 import shutil
@@ -44,21 +45,40 @@ MAX_EVIDENCE_ARTIFACT_BYTES = 16 * 1024 * 1024
 GPU_MEMORY_TOLERANCE_MIB = 64
 GPU_MEMORY_SETTLE_ATTEMPTS = 20
 GPU_MEMORY_SETTLE_INTERVAL_SECONDS = 0.25
+GPU_CENSUS_TIMEOUT_SECONDS = 5.0
+DEFAULT_CHILD_TIMEOUT_SECONDS = 1800.0
+CHILD_CLEANUP_WAIT_SECONDS = 2.0
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SOURCE_PATHS = (
+_SOURCE_DIRECTORIES = (
+    "src/adapters",
+    "src/common",
+    "src/config",
+    "src/data",
+    "src/inference",
+    "src/losses",
+    "src/packing",
+    "src/qwen",
+    "src/supervision",
+    "src/templates",
+)
+_SOURCE_FILES = (
+    "src/__init__.py",
+    "src/augmentation/__init__.py",
+    "src/augmentation/geometry.py",
+    "src/coordinate_targets.py",
     "src/qualify_vllm.py",
-    *tuple(
-        path.relative_to(_REPO_ROOT).as_posix()
-        for root in (
-            "src/adapters",
-            "src/common",
-            "src/config",
-            "src/data",
-            "src/inference",
-            "src/qwen",
-        )
-        for path in sorted((_REPO_ROOT / root).glob("*.py"))
-    ),
+)
+_SOURCE_PATHS = tuple(
+    sorted(
+        {
+            *_SOURCE_FILES,
+            *(
+                path.relative_to(_REPO_ROOT).as_posix()
+                for root in _SOURCE_DIRECTORIES
+                for path in (_REPO_ROOT / root).glob("*.py")
+            ),
+        }
+    )
 )
 _RUNTIME_PACKAGES = ("vllm", "torch", "transformers", "peft", "qwen-vl-utils")
 _RUNTIME_MODULES = (
@@ -78,6 +98,7 @@ class ChildSpec:
     config_path: Path
     output_root: Path
     evidence_dir: Path
+    child_timeout_seconds: float = DEFAULT_CHILD_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -97,10 +118,12 @@ def produce(
     *,
     config_path: str | Path,
     output_root: str | Path,
+    child_timeout_seconds: float = DEFAULT_CHILD_TIMEOUT_SECONDS,
     dependencies: QualificationDependencies | None = None,
 ) -> dict[str, object]:
     """Run the four isolated qualification modes and publish passed receipts last."""
 
+    child_timeout = _validate_child_timeout_seconds(child_timeout_seconds)
     config = Path(config_path).expanduser().resolve()
     root = Path(output_root).expanduser().resolve()
     if root.exists():
@@ -127,6 +150,7 @@ def produce(
             config_path=config,
             output_root=root,
             evidence_dir=root / "evidence" / kind,
+            child_timeout_seconds=child_timeout,
         )
         execution = deps.run_child(spec)
         _validate_child_process(execution, kind=kind)
@@ -381,6 +405,21 @@ def _build_source_identity() -> dict[str, object]:
     return {"files": files, "fingerprint": _sha256_json(files)}
 
 
+def _validate_child_timeout_seconds(value: object) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        _fail(
+            "qualification child timeout must be finite and positive",
+            code="vllm_qualification.child_timeout",
+            context={"child_timeout_seconds": repr(value)},
+        )
+    return float(value)
+
+
 def _build_config_launch_contracts(
     *,
     config: Any,
@@ -428,10 +467,9 @@ def build_launch_contract(
     return {"payload": payload, "fingerprint": _sha256_json(payload)}
 
 
-def _run_subprocess_child(spec: ChildSpec) -> ChildExecution:
-    spec.evidence_dir.parent.mkdir(parents=True, exist_ok=True)
+def _qualification_child_command(spec: ChildSpec) -> list[str]:
     result_path = spec.output_root / f".{spec.kind}-child-result.json"
-    command = [
+    return [
         sys.executable,
         "-m",
         "src.qualify_vllm",
@@ -447,6 +485,12 @@ def _run_subprocess_child(spec: ChildSpec) -> ChildExecution:
         "--result",
         str(result_path),
     ]
+
+
+def _run_subprocess_child(spec: ChildSpec) -> ChildExecution:
+    spec.evidence_dir.parent.mkdir(parents=True, exist_ok=True)
+    result_path = spec.output_root / f".{spec.kind}-child-result.json"
+    command = _qualification_child_command(spec)
     visible_gpu_selector = _visible_physical_gpu_selector()
     gpu_memory_before = _gpu_memory_used_mib(visible_gpu_selector)
     if gpu_memory_before is None:
@@ -464,14 +508,32 @@ def _run_subprocess_child(spec: ChildSpec) -> ChildExecution:
         start_new_session=True,
     )
     try:
-        stdout, stderr = child.communicate()
+        stdout, stderr = child.communicate(timeout=spec.child_timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(child.pid)
+        child_reaped = _bounded_reap_child(child)
+        members_after_cleanup = _process_group_members(child.pid)
+        group_gpu_memory_after = _gpu_memory_for_pids_mib(
+            members_after_cleanup,
+            selector=visible_gpu_selector,
+        )
+        _close_child_pipes(child)
+        _fail(
+            "qualification child exceeded its execution deadline",
+            code="vllm_qualification.child_timeout",
+            context={
+                "kind": spec.kind,
+                "child_timeout_seconds": spec.child_timeout_seconds,
+                "worker_reaped": child_reaped,
+                "process_group_members_after": members_after_cleanup,
+                "gpu_process_group_memory_after_mib": group_gpu_memory_after,
+                "gpu_cleanup_evidence_available": group_gpu_memory_after >= 0,
+            },
+        )
     except BaseException:
         _terminate_process_group(child.pid)
-        try:
-            child.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait(timeout=2)
+        _bounded_reap_child(child)
+        _close_child_pipes(child)
         raise
     returncode = int(child.returncode)
     process_group_id = child.pid
@@ -562,6 +624,24 @@ def _run_subprocess_child(spec: ChildSpec) -> ChildExecution:
     )
 
 
+def _bounded_reap_child(child: subprocess.Popen[str]) -> bool:
+    try:
+        child.wait(timeout=CHILD_CLEANUP_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        try:
+            child.wait(timeout=CHILD_CLEANUP_WAIT_SECONDS)
+        except subprocess.TimeoutExpired:
+            return False
+    return True
+
+
+def _close_child_pipes(child: subprocess.Popen[str]) -> None:
+    for stream in (child.stdout, child.stderr):
+        if stream is not None:
+            stream.close()
+
+
 def _process_group_members(process_group_id: int) -> list[int]:
     if process_group_id <= 1:
         return []
@@ -613,8 +693,9 @@ def _gpu_memory_for_pids_mib(pids: Sequence[int], *, selector: str) -> int:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            timeout=GPU_CENSUS_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return -1
     total = 0
     try:
@@ -658,8 +739,9 @@ def _gpu_memory_used_mib(selector: str) -> int | None:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            timeout=GPU_CENSUS_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
     try:
         values = [

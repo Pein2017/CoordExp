@@ -4,11 +4,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Sequence
 
-from src.inference.vllm_qualification_producer import admit, produce
+from src.inference.vllm_qualification_producer import (
+    DEFAULT_CHILD_TIMEOUT_SECONDS,
+    admit,
+    produce,
+)
+
+
+def _positive_finite_seconds(raw: str) -> float:
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a finite positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive number")
+    return value
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -21,6 +36,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--config", type=Path, required=True)
     run.add_argument("--output-root", type=Path, required=True)
+    run.add_argument(
+        "--child-timeout-seconds",
+        type=_positive_finite_seconds,
+        default=DEFAULT_CHILD_TIMEOUT_SECONDS,
+        help="finite per-child execution deadline (default: 1800 seconds)",
+    )
 
     admission = subparsers.add_parser(
         "admit",
@@ -55,7 +76,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         args = _parser().parse_args(values)
     if args.command == "run":
-        result = produce(config_path=args.config, output_root=args.output_root)
+        result = produce(
+            config_path=args.config,
+            output_root=args.output_root,
+            child_timeout_seconds=args.child_timeout_seconds,
+        )
     elif args.command == "admit":
         kwargs = {
             "config_path": args.config,

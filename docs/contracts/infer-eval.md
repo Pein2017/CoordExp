@@ -52,6 +52,22 @@ python -m src.qualify_vllm admit \
   --receipts-root /absent/external/vllm-qualification
 ```
 
+Each qualification child has a 1800-second execution deadline by default.
+For a slower host, pass `--child-timeout-seconds 3600` to `run`; the value must
+be finite and positive. This is a per-child operational ceiling, not a model
+performance guarantee or a deadline for the entire four-mode run. On timeout,
+the supervisor terminates its owned process group with bounded cleanup and
+reports failure. GPU census commands also have bounded waits; missing evidence
+cannot establish successful cleanup.
+
+Qualification source identity covers project-local semantic dependencies,
+including template rendering. A change to those source bytes invalidates old
+receipts. Keep historical receipts as evidence and produce a fresh qualification
+set for the current source before admission; do not reseal old receipts to reuse
+them. The expanded coverage in the source-attestation repair intentionally
+requires requalification. Config/model path binding and numerical acceptance
+rules remain in force.
+
 `CUDA_VISIBLE_DEVICES` must name exactly one physical GPU by index or `GPU-...`
 UUID. Qualification measures only that GPU before execution and after a bounded
 settle window. Missing measurements fail closed; memory return is accepted only
