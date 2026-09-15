@@ -8,25 +8,26 @@ record, decision update, or mechanism promotion.
 | Surface | Owns | Must not own |
 |---|---|---|
 | `outputs/research/` | Executed artifacts, receipts, traces, metric primitives | Interpretation or current route choice |
-| `research/<program>/experiments/<unit-id>/unit.md` or exact preserved protocol | Evidence-tiered outline/protocol, frozen question and contrast | Live lifecycle updates or a growing execution notebook |
-| `research/<program>/experiments/<unit-id>/state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
+| `research/experiments/<unit-id>/unit.md` or exact preserved protocol | Evidence-tiered outline/protocol, frozen question and contrast | Live lifecycle updates or a growing execution notebook |
+| `research/experiments/<unit-id>/state.json` | Current lifecycle, evidence/disposition axes, latest user boundary and result/protocol pointers | Metrics ledger or permission inferred from old grants |
 | Accepted result and its immutable receipt | Observed outcomes, denominators, bounded verdict and evidence handles | Stable runtime/schema compatibility |
-| `research/<program>/questions/` and `story.md` | Competing explanations, evidence-linked belief state and research transitions | Implementation authorization or copied volatile status tables |
-| `research/decisions/` | Current evidence-backed route choice and next discriminator | Mechanism truth or product contract |
-| `research/mechanisms/` | Reusable bounded explanations supported across independent units | Single-probe correlations |
+| `research/questions/` and `research/story.md` | Competing explanations, evidence-linked beliefs, bounded mechanisms, route choices and research transitions | Implementation authorization or copied volatile status tables |
+| `research/alternatives.md` | Important unanswered ideas with predecessors and reopening conditions | A parallel result atlas or standing execution queue |
 | Named infrastructure source, tests, and change | Reusable execution, instrumentation, identity, persistence, recovery, and mechanical acceptance | Cohorts, interventions, estimands, thresholds, scientific outcomes, or claims |
 | `openspec/` | Stable reusable implementation and compatibility contracts | Hypotheses, cohorts, thresholds, or scientific verdicts |
 
-## Program Layout and Reading Path
+## Flat Research Root and Reading Path
 
 The registered research base's `research/CONVENTIONS.md` owns the layout and
 maintenance contract. Resolve that Project first; the Skill's installation
 checkout is not automatically the research base. Begin at `research/index.md`.
 
-New programs use `research/<program>/` directly, with current context, a story,
-question pages, shared vocabulary, an idea register and `experiments.jsonl` for
-metadata retrieval. Do not recreate a generic `investigations` layer. Existing
-independent ideas and decisions need not be moved just for uniformity.
+The whole repository serves one research topic. Use the flat research root:
+`index.md` for frontier plus routing, `story.md`, `glossary.md`,
+`alternatives.md`, `questions/`, and `experiments/catalog.jsonl` plus live units.
+Old OKF idea/decision/mechanism/archive buckets and the topic wrapper are retired.
+Valuable scientific distinctions enter question pages; original sources remain
+under `docs/history/`. No permanent compatibility alias or empty future category.
 
 The fast reading path is current context plus its state/result; the deeper path
 adds the story, relevant question pages and decisive original records. Preserve
@@ -44,7 +45,7 @@ or explicitly delimit archived-source versus executable-replay compatibility.
 
 ## New Unit Identity and Current State
 
-Use light stable protocol metadata: title, unit_id, program/question identity,
+Use light stable protocol metadata: title, unit_id, question identity,
 role, evidence/authorization source and freeze identity when applicable. The
 protocol body owns the actual scientific contract. Do not embed independently
 maintained current lifecycle fields in a frozen launch snapshot.
@@ -314,7 +315,7 @@ Close a unit from the evidence owner outward:
 
 1. accept and preserve the result plus its immutable evidence receipt;
 2. update the unit's `state.json`, not a status field inside frozen `unit.md`;
-3. update the question page, story and current context only when their respective
+3. update the question page, story and `research/index.md` only when their respective
    belief, research trajectory or frontier/user-boundary meaning changes;
 4. maintain catalog references without copying result ledgers or volatile counts;
 5. use a handoff only for a real transfer, integrate its delta, then archive it.
@@ -325,9 +326,9 @@ independent authorities. Keep one current frontier, link to the owning result,
 mark superseded routes explicitly, and resolve contradictions before handoff.
 
 A live route means any `current`, `next`, `start here`, fresh-session, or
-minimum-reading-path pointer in a compass, active index, decision, or project
-memory. Its target must be a tracked owning current-context/state/result/question, research
-decision, compass or index, current doc, or stable spec. Handoffs, standalone
+minimum-reading-path pointer in the research entry, question page, or explicitly
+authorized project memory. Its target must be a tracked owning state/result/question,
+research index, current doc, or stable spec. Handoffs, standalone
 agent-review or audit outputs, reviewer packets, transcripts, memory notes,
 scratch files, and temporary artifacts may be cited only as provenance; they
 must never own the live route. A handoff is consumed transport, not a permanent
@@ -341,9 +342,10 @@ Use:
 outputs/research/<program>/<unit-id>/<run-id>/
 ```
 
-Here `<program>` is the stable research-program identifier, `<unit-id>` is
-the immutable research-unit identifier, and `<run-id>` is one immutable
-execution identifier.
+Here `<program>` is the existing artifact namespace, `<unit-id>` is the immutable
+research-unit identifier, and `<run-id>` is one immutable execution identifier.
+Flattening `research/` does not rename existing output roots, run IDs or sealed
+artifact references. This artifact namespace is not an active knowledge wrapper.
 
 Resolve it to an explicit durable absolute root and record that root in the
 unit/result. A run identifier is immutable and never reused after partial or failed
@@ -400,12 +402,14 @@ linear probe, single checkpoint, or mechanics smoke cannot promote a mechanism.
   a new lifecycle schema on frozen historical frontmatter.
 - Fail review on any unexplained local abbreviation, arm code, hypothesis code,
   metric symbol, or coined name.
-- From `/data/CoordExp/.worktrees/research-probes`, run
-  `conda run -n ms python scripts/research/check_research_graph.py` for the
-  decision layer.
-- Run `python -B scripts/research/check_research_knowledge.py check` in the
-  research base for live links, catalog/state references, preserved-source
-  identity and documented legacy data-reader compatibility.
+- From the verified research-probes checkout, run
+  `python -B scripts/research/check_research_knowledge.py check` for flat layout,
+  live links, catalog/state and preserved-source/Git identities, followed by
+  `python -B -m unittest discover -s tests/research -p 'test_research_knowledge.py'`.
+  The obsolete decision-graph checker is retired, not a second acceptance gate.
+- For changed source consumers, verify their actual CPU data-read/output behavior,
+  including exclusion identities and fail-closed missing inputs. Keep historical
+  source recovery separate from runnable original-context replay.
 - Check current-state/result consistency, including accepted-but-incomplete or
   paused outcomes. Historical snapshot status is not a competing live status;
   old next-step language must not bypass the current state and user boundary.

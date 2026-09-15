@@ -17,14 +17,21 @@ Read its `research/index.md` and `research/CONVENTIONS.md` through that Project,
 not by copying its research tree into the checkout hosting this Skill.
 The convention is the single layout/maintenance owner; this Skill routes to it.
 
-All primary readers are agents. Offer a fast path (current context plus current
-state/result) and a deeper path (story, relevant questions, decisive sources).
-Preserve counterexamples, unfinished ideas and reopening conditions. Before a
-new unit, search the catalog and closest predecessor result/protocol; state the
-actual new discriminator instead of repeating a renamed failed recipe.
+All primary readers are agents. Fast catch-up is `research/index.md` plus the
+current unit state/result; deep catch-up adds `story.md`, relevant question pages
+and decisive sources. Preserve counterexamples, unfinished ideas and reopening
+conditions. Before a new unit, search `research/experiments/catalog.jsonl` and
+read the closest predecessor result/protocol; state the actual new discriminator
+instead of repeating a renamed failed recipe.
 
-Research programs live directly under `research/<program>/`. Do not recreate
-an `investigations` dumping layer. Frozen protocol, current `state.json`,
+The entire repository serves this research topic. Knowledge lives directly in
+`research/`, with no topic/program wrapper. Its `index.md` combines frontier and
+routing; `story.md`, `glossary.md`, `alternatives.md`, `questions/` and
+`experiments/` have the roles defined once in the convention. Retire old OKF,
+idea/decision/mechanism/archive buckets; tested ideas enter their question and
+catalog, while genuinely unresolved sparks keep explicit reopening conditions.
+Do not recreate old-path aliases or an empty placeholder category.
+Frozen protocol, current `state.json`,
 accepted results, question-oriented synthesis and historical transport have
 separate roles. A historical `running` field or old compute grant is not live
 state or permission. Handoffs are consumed transport, not permanent frontiers.
@@ -125,7 +132,7 @@ prior iteration from conversation rather than from the packet.
      do not expand this into a mandatory mechanism matrix.
    - For research units, apply
      [Research Graph and Unit Contract](references/research-graph-contract.md).
-   - Complete when one tracked unit/result/decision owns the current statement.
+   - Complete when one tracked unit/result/question owns the current statement.
 
 4. **Resolve semantic deltas.**
    - Compare the originating question and approved route with any later change
@@ -172,7 +179,7 @@ prior iteration from conversation rather than from the packet.
 6. **Close routing once.**
    - Close from the owning accepted receipt/result to the unit's `state.json`.
      Update a question page only when belief changes, the story only when the
-     research trajectory changes, and current context only when the frontier
+     research trajectory changes, and `research/index.md` only when the frontier
      or user boundary changes. Maintain catalog paths, not another status table.
      Create a handoff only for a real transfer and archive it after integration.
      Change durable project memory only on an explicit user request.
@@ -213,7 +220,7 @@ completion; archive authorization remains separate.
 - For supervisor or independent-model packets, make the packet
   decision-focused and keep reviewer output advisory.
 - For knowledge migration, use the research base's `research/CONVENTIONS.md`:
-  direct program entry, question/story synthesis, source manifest and targeted
+  flat root entry, question/story synthesis, source manifest and targeted
   retrieval. Keep metadata light; do not retrofit historical protocols merely
   to satisfy a schema or introduce an app-specific wiki framework.
 - For executed units, keep durable artifacts under the owning output root and
