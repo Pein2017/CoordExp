@@ -90,6 +90,8 @@ handoff/*
 /.proxy/
 /.vendor/
 /.worktrees/
+/.codegraph/
+/.codebase-memory/
 /.mcp.json
 /baidu_net_cookie.txt
 /github_personal_token.txt
