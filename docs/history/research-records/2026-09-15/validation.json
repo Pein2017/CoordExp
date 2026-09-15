@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "validated_at_utc": "2026-09-15T04:18:21.626929+00:00",
+  "project": "agent:coordexp-web-runner:research-probes",
+  "canonical_root": "/data/CoordExp/.worktrees/research-probes",
+  "branch": "research-probes",
+  "head": "78bc27d8e5e8639450e01990908fcd3b417bbfa2",
+  "session_id": "wc_sess_64025c9bfd8d4a9b8271d88b6df5ce69",
+  "before_refactor_checkpoint": "wc_ckpt_6970429a48844711ad63da8eab8f0ad9",
+  "manifest_sha256": "aed124a34ad8bb55a6a64bf989c2944e55d718a1b8d0d2965e1173ddcf822f2d",
+  "outcome": "DOCUMENTATION_RESTRUCTURE_VALIDATED_WITH_EXPLICIT_HISTORICAL_LIMITATIONS",
+  "checks": [
+    {
+      "argv": [
+        "python3",
+        "-B",
+        "scripts/research/check_research_knowledge.py",
+        "check"
+      ],
+      "exit_code": 0,
+      "stdout": "{\n  \"ok\": true,\n  \"errors\": [],\n  \"preserved_source_files\": 674,\n  \"relocated_source_files\": 671,\n  \"catalog_entries\": 164,\n  \"catalogued_protocols\": 171,\n  \"current_state_owners\": 1,\n  \"live_documents\": 16,\n  \"valid_live_local_links\": 169,\n  \"unverified_external_live_handles\": 10,\n  \"unchanged_legacy_json_paths\": 106,\n  \"historical_unresolved_links\": 2,\n  \"historical_gap_examples\": [\n    {\n      \"source\": \"research/investigations/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-probe-handoff.md\",\n      \"target\": \"../../../scripts/research/run_fixed_encoding_downstream_residual_state_portability.py\"\n    },\n    {\n      \"source\": \"research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md\",\n      \"target\": \"../../../../../scripts/research/run_complete_candidate_row_scoring.py\"\n    }\n  ],\n  \"scope\": \"Local knowledge structure and original Git/source identity; no scientific replication or external-artifact verification.\"\n}\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/research",
+        "-p",
+        "test_research_knowledge.py"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 0.048s\n\nOK\n"
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "python",
+        "-B",
+        "scripts/research/check_research_graph.py"
+      ],
+      "exit_code": 0,
+      "stdout": "research_graph_ok decisions=6 edges=6\n\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "conda",
+        "run",
+        "-n",
+        "ms",
+        "ruff",
+        "check",
+        "--no-cache",
+        "scripts/research/check_research_knowledge.py",
+        "tests/research/test_research_knowledge.py"
+      ],
+      "exit_code": 0,
+      "stdout": "All checks passed!\n\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "knowledge_check": {
+    "ok": true,
+    "errors": [],
+    "preserved_source_files": 674,
+    "relocated_source_files": 671,
+    "catalog_entries": 164,
+    "catalogued_protocols": 171,
+    "current_state_owners": 1,
+    "live_documents": 16,
+    "valid_live_local_links": 169,
+    "unverified_external_live_handles": 10,
+    "unchanged_legacy_json_paths": 106,
+    "historical_unresolved_links": 2,
+    "historical_gap_examples": [
+      {
+        "source": "research/investigations/qwen3-vl-dense-enumeration/2026-08-05-static-dynamic-owner-interface-probe-handoff.md",
+        "target": "../../../scripts/research/run_fixed_encoding_downstream_residual_state_portability.py"
+      },
+      {
+        "source": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md",
+        "target": "../../../../../scripts/research/run_complete_candidate_row_scoring.py"
+      }
+    ],
+    "scope": "Local knowledge structure and original Git/source identity; no scientific replication or external-artifact verification."
+  },
+  "original_result_body_preserved": true,
+  "all_preserved_source_files_git_visible": true,
+  "historical_link_gaps_already_absent_at_baseline": [
+    {
+      "target": "scripts/research/run_fixed_encoding_downstream_residual_state_portability.py",
+      "exists_at_baseline": false,
+      "exists_after_migration": false
+    },
+    {
+      "target": "scripts/research/run_complete_candidate_row_scoring.py",
+      "exists_at_baseline": false,
+      "exists_after_migration": false
+    }
+  ],
+  "current_file_bindings": {
+    "research/index.md": {
+      "sha256": "549bb3ff4256ceb21a8db63ad4e05904323f81a4afe1576d6dfb2930e02ff883",
+      "bytes": 2540
+    },
+    "research/CONVENTIONS.md": {
+      "sha256": "2778a9de8c8045f5c80ca09d4f94ab6a8674b690ef6259597c299d91b8c14f38",
+      "bytes": 10461
+    },
+    "docs/catalog.yaml": {
+      "sha256": "168e0e83ff0073e9b815c02d03ac1ed56fe0bda628579b0ebed60b91b5bdd3fd",
+      "bytes": 22605
+    },
+    ".gitignore": {
+      "sha256": "ea24650851e14c5c08e6703b0a6230d011db17c73b8ee4a7322a667b82a4b33b",
+      "bytes": 4052
+    },
+    "research/decisions/separate-selection-transcription-commit-and-stop.md": {
+      "sha256": "3e1cd98d4c46ca63fe903fbbfce57ed60c0f8d107e6558ff9274e9c3ba2f18de",
+      "bytes": 6600
+    },
+    "docs/history/research-records/2026-09-15/README.md": {
+      "sha256": "2a317c3cf09da0402b4cacd04e393ca13e6ef5c267f2a9d6593c7d8cf6561d8e",
+      "bytes": 3660
+    },
+    "scripts/research/check_research_knowledge.py": {
+      "sha256": "d2b3dcc495a24b1be2d8294e1e7794450656ebfd7d6528e3effa37b54f993b54",
+      "bytes": 17004
+    },
+    "tests/research/test_research_knowledge.py": {
+      "sha256": "53cfbb389779d6ba75052f1c0fe78592263c218c917fc0a86254409bc7e62b6e",
+      "bytes": 8691
+    },
+    "research/qwen3-vl-dense-enumeration/vocabulary.md": {
+      "sha256": "764b0a0ede46a4c18820798a8de24de44ba368739009307e26f9db35c42be530",
+      "bytes": 4097
+    },
+    "research/qwen3-vl-dense-enumeration/ideas.md": {
+      "sha256": "862b83b4b99bb3c0f6f03139453c1184e0d3bbdeafa7d263cb70837056a9950a",
+      "bytes": 10295
+    },
+    "research/qwen3-vl-dense-enumeration/experiments.jsonl": {
+      "sha256": "88cc6b5cf311cffa3e0690f5c3d77830b5ed91a9271a8852c8301d96568e03e5",
+      "bytes": 166339
+    },
+    "research/qwen3-vl-dense-enumeration/current.md": {
+      "sha256": "848213d4d24f04e2a6d7d232ffce94166d63ff483a1e750300530909efb6c198",
+      "bytes": 5062
+    },
+    "research/qwen3-vl-dense-enumeration/story.md": {
+      "sha256": "fceaa161b4c4f643033244714bd3c45130b7207c4fd262ff72c1dad98cd8fd9b",
+      "bytes": 14114
+    },
+    "research/qwen3-vl-dense-enumeration/index.md": {
+      "sha256": "ee05b884796827158e6f0242de47329f6c47325ccfa77774e576702a94a3c514",
+      "bytes": 2529
+    },
+    "research/qwen3-vl-dense-enumeration/questions/discovery-and-route-value.md": {
+      "sha256": "f6bb080cd239ecef6f90ef13e2514f6fc7b491e67778e45fe111e2a859454237",
+      "bytes": 4109
+    },
+    "research/qwen3-vl-dense-enumeration/questions/history-repetition-stopping.md": {
+      "sha256": "04ebbc07496cc9c9e20a43b40655d0c7d82ea0b258aba7d5e7fb73d63c428203",
+      "bytes": 4201
+    },
+    "research/qwen3-vl-dense-enumeration/questions/preservation-and-credit.md": {
+      "sha256": "8eebbdef8f170cc708a3c37b86df76c3ea936a4a9b609fdb253ebb79d385144f",
+      "bytes": 4650
+    },
+    "research/qwen3-vl-dense-enumeration/questions/physical-evaluation.md": {
+      "sha256": "0d8226d5e4c8e3a36f2232a3915f48666154010f18278a5275e0d7734caa1d28",
+      "bytes": 4104
+    },
+    "research/qwen3-vl-dense-enumeration/questions/capacity-and-readout.md": {
+      "sha256": "f3caa6650a37cc1f33d5407d0bbf4f56ff9597c68e5209d81dfa1c894f189f6c",
+      "bytes": 4273
+    },
+    "research/qwen3-vl-dense-enumeration/questions/runtime-and-evidence.md": {
+      "sha256": "a5460411da4d12b46238e58b397184062f5b205b4aa33672fd0107de05012135",
+      "bytes": 4221
+    },
+    "research/qwen3-vl-dense-enumeration/questions/greedy-compilation.md": {
+      "sha256": "b7101c84b7c9a750712294963307242b69f3dceb0c7f94a9c68fa482392cb6bd",
+      "bytes": 4725
+    },
+    "research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/state.json": {
+      "sha256": "ed6b36eeb77f2979252969e9028541617c4e19f5f080188609c7336ee51ac36e",
+      "bytes": 1194
+    },
+    "research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/results.md": {
+      "sha256": "fff5b3c681a4902e1669c0a505cb2d75fb41b881f4833924ce98993b2e9a50e4",
+      "bytes": 10281
+    }
+  },
+  "existing_data_consumer": {
+    "path": "probes/parallel_owner_research/transfer.py",
+    "source_sha256": "54f20a46982fd62b04aa33ca1ec4152e625d603658db6a85042303a6bc7e91bc",
+    "source_modified": false,
+    "filtered_json_literal_path_and_hash_count": 106,
+    "comparison": "equal before and after migration; static/CPU file walk, not a model evaluation"
+  },
+  "skill_change_observation": {
+    "method": "separate exact coordexp registered Project tool observation; no cross-project filesystem read in this validator",
+    "project": "agent:coordexp-web-runner:coordexp",
+    "canonical_root": "/data/CoordExp",
+    "branch": "main",
+    "head": "33cc3f42c61da06dd57cb1ab0617696a0bf2af7e",
+    "session_id": "wc_sess_786610be411743e0b2a294e171562c2b",
+    "files": {
+      ".codex/skills/research-flow/SKILL.md": "5c68cc6989627a6b4ec5ba16a1fcef00ef9f26f41fc8ec0952a6af3aa7548b99",
+      ".codex/skills/research-flow/references/research-graph-contract.md": "c89e9908ec2e9b88a2f17382431d99694273acac873b0b77c18bf5631d700299"
+    },
+    "relative_links_and_scoped_diff_check": "passed in owning Project",
+    "preexisting_dirty_file_not_touched": ".codex/skills/native-agent-team-guide/SKILL.md",
+    "skill_catalog": "discovery unavailable; files read/updated directly at user-named path, no runtime installation claim"
+  },
+  "side_effects": {
+    "source_relocation": 671,
+    "byte_exact_original_markdown": 492,
+    "removed_ignored_generated_pyc": 32,
+    "compatibility_symlinks_created": 1,
+    "maintained_model_code_modified": false,
+    "model_or_gpu_runs": 0,
+    "git_staging_commit_push": false,
+    "notion_publication": false,
+    "durable_project_memory_changes": false
+  },
+  "limitations": [
+    "Historical source assertions were curated, not independently re-evaluated against all model artifacts or images.",
+    "The source alias preserves the tested JSON reader, not resolved-path identities or fixed-parent discovery of all sealed historical producers.",
+    "Original-context historical execution needs a separately authorized restoration or new execution identity; old receipts are not rewritten.",
+    "Ten external live artifact handles are preserved but not fetched/verified by the link checker.",
+    "The Markdown check covers inline local link file existence, not every renderer syntax or heading anchor.",
+    "No autonomous-agent catch-up time or future compliance guarantee was experimentally measured."
+  ]
+}

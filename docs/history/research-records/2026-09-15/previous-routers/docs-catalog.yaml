@@ -12,8 +12,7 @@ entrypoints:
     progress: progress/index.yaml
     research: research/index.md
     research_decisions: research/decisions/index.md
-    research_program: research/qwen3-vl-dense-enumeration/index.md
-    research_conventions: research/CONVENTIONS.md
+    research_investigations: research/investigations/index.md
 
 authority:
   current_truth: docs/

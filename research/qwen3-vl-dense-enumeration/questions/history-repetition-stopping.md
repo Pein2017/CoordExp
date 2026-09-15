@@ -1,0 +1,23 @@
+# History, repetition and stopping: what state does a row leave behind?
+
+**Question:** do output changes follow image evidence, supplied token history, checkpoint parameters, or their interaction? A short non-repeating prefix is not proof of escape from later recurrence.
+
+## Evidence chain
+
+[Phrase/geometry factorials](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-prefix-state-phrase-geometry-factorial/results.md), [native sibling-row crossings](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-17-native-sibling-row-branch-value-and-commit-crossover/results.md) and [same-covered-set permutations](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md) established bounded row/history effects without an order-independent covered-owner ledger. Immediate self-suppression is weaker than persistent exclusion after many later rows.
+
+[Small-owner repetition diagnostics](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-small-owner-repeat-origin/results.md) found both image and history dependence; later supplied histories could sustain repetition even on another image. Coordinate changes could release new detections or induce a loop in a clean control. This is neither proof that every repeated row is wholly ungrounded nor a generally safe translation repair.
+
+[Checkpoint/history crossing](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-checkpoint-history-cross/results.md) separated failures that followed the supplied row history from improvements that followed the checkpoint, with mixed cases remaining. [Magnitude-matched wrong-region intervention](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md) also enabled escape in a selected setting. The evidence does not uniquely identify an instance-specific KV ledger, a single layer, or a universal content-free loop.
+
+## Stopping is not selection
+
+[Forced-opener release](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-25-paired-natural-terminal-forced-opener-release/results.md) showed genuine recoverable owners at some natural stops, but many continued outputs were repeats or unmatched. [Source versus transition-step36 with the opener fixed](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-26-source-versus-transition-step36-forced-opener-owner-selection/results.md) separated greater native continuation from an improvement in conditional selection. Merely lengthening generation cannot certify set completion.
+
+The [EOS-numerator control](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-06-eos-numerator-control/results.md) removed terminal supervision under a specified denominator, not all stopping pressure or all label incompleteness. It produced severe cap/invalid-output debt. Removing EOS and “letting the model continue” is not a supported solution to recall.
+
+## Reopening condition
+
+A causal state proposal must make a prediction that image, history, parameter and generic perturbation alternatives do not share. Preserve exact token history and remaining budget; distinguish same text from intervened KV. Use actual full free consequences and appropriate identity/magnitude/native-replay controls when they discriminate the named hypothesis, not as a compulsory large matrix.
+
+Do not require a new special token, slot or ledger merely because a conditional intervention works. For a learned deployment claim, the useful effect must survive ordinary-parameter, original-image, empty-prefix generation without an inference-time oracle. See [ideas](../ideas.md) for explicit architecture reopening conditions.

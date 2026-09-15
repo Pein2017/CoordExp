@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-14-training-set-completion-curriculum",
+  "lifecycle": "paused",
+  "evidence": "accepted",
+  "disposition": "stage_incomplete",
+  "state_as_of": "2026-09-15",
+  "protocol": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/unit.md",
+  "result": "research/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/results.md",
+  "state_source": "docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/2026-09-15-fourth-fit-final-review.md",
+  "boundary": "Fourth fit and current evaluation finished; user requested discussion before further model work. Documentation restructuring does not authorize resumption.",
+  "not_authorized": [
+    "fifth fit",
+    "training-image or target expansion",
+    "new recipe or mechanism probe",
+    "held-out evaluation",
+    "GPU work"
+  ],
+  "next_action": "Read result, identify the remaining training-task failure and discuss a bounded next decision with the user; do not launch from this metadata."
+}

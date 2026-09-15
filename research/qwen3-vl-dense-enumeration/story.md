@@ -1,0 +1,72 @@
+---
+title: From object support to a learned set-completion policy
+role: research-story
+authority: non_normative_research
+updated: 2026-09-15
+---
+# The research story
+
+Read [current](current.md) for the actual task and latest user boundary. This page explains why the questions changed. It is a synthesis of retained records, not a new experiment, an exhaustive causal identification, or a mandate to run every unresolved branch. Exact metrics remain in the cited results; [the catalog](experiments.jsonl) contains the full chronology.
+
+## 1. Recognition was not the same as complete enumeration
+
+The starting puzzle was that descriptions and individual localizations could be plausible while one dense-scene rollout stopped early, repeated owners or assembled bad extents. Spatial crops, masked canvases and repeated whole-image samples were different interventions, not interchangeable ways of measuring one hidden recognition capacity.
+
+The [masked-scope comparison](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-13-spatial-scope-history-disentanglement/results.md) found a local one-opportunity benefit without a safe final-policy advantage over matched-call bagging. Cumulative accepted-row history could hurt, but that bundled length, content, order and visibility consistency. It did not identify a pure context-length disease or prove that the vision tower was innocent.
+
+The next question therefore became: **at the same state, are alternative useful object actions supported, and what does a completed row change?** [Fixed-prefix sampled rescue](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-14-sampled-rescue-object-transition-causal-replay/results.md) supplied multiple local object modes and description-conditioned binding, without a universal commit-to-uncovered operation. A [phrase/geometry factorial](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-15-prefix-state-phrase-geometry-factorial/results.md) showed that neither phrase alone nor geometry alone explained one transition. Its scope was one state, not a reusable ledger architecture.
+
+## 2. History is executable state, but not a verified set ledger
+
+Earlier emitted rows, their order and their coordinates change future behavior. [Same-covered-set permutations](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md) changed many future owner sets while changing completion much less often. [Random-versus-sorted training](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-20-matched-random-sorted-prefix-order-screen/results.md) changed path sensitivity but did not create useful general covered-set invariance. The problem was not solved by choosing a different serialization order.
+
+[Complete-row scoring](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-complete-candidate-row-score-decomposition/results.md) also separated the highest full-row score from the earliest token fork followed by greedy decoding. An owner cannot be identified universally at `x1`: [progressive forced-path release](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-greedy-prefix-forced-owner-path-intervention/results.md) required different intervention depths for different outcomes. Acquiring a target and preserving its full suffix were separate obligations.
+
+This sequence made an explicit ledger/commit token a hypothesis, not a prerequisite. More recently, [magnitude-matched wrong-region KV interventions](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-12-parallel-owner-research/instance-state/amplitude-control/results.md) could also escape a repetition pattern. That weakens a uniquely instance-specific interpretation; it does not erase the existence of useful conditional continuations. [History and stopping](questions/history-repetition-stopping.md) keeps the distinctions together.
+
+## 3. Finite fitting succeeded, so a universal capacity excuse no longer fit
+
+The Image2299 output-QP sequence progressed from protected/norm-limited failures to a direct [canonical 46-owner witness](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-image2299-canonical-g46-global-qp-protected-null-sentinel/results.md). A [shared Human13 output residual](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-human13-shared-output-qp-identity-generalization/results.md) then compiled all 392 annotated owners on the fixed panel. It was one shared residual, not thirteen image-selected heads. Despite the old filename, this was same-panel overfit, not identity generalization.
+
+Crucially, [ordinary internal magnitude-only CE replay](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-05-human13-pure-ce-replay/results.md) also completed Human13. This disproved the practical need for output-QP or new architecture merely to fit that finite task. It did **not** prove that every trusted physical-owner task, every parameter surface or every optimization recipe would be easy.
+
+The follow-up shifted toward reusable corrections. The [Image2299 payload's legacy12 transfer](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-31-image2299-g46-payload-legacy12-transfer/results.md) was damaging on its bound checkpoint. The separate [N256 target-blind screen](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-n256-shared-output-qp-norm-scaling/full-n2-results-v1.md) stopped at N2, whereas later train-only semantic/null ladder results showed bounded structural compression. Those are different estimands. A low norm is not evidence of generalization; an incomplete null arm is not a scientific null. See [capacity](questions/capacity-and-readout.md).
+
+## 4. The difficulty became joint realization and preservation
+
+A selected target can improve while useful old owners disappear. Early [single-route imitation](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md), [multi-route preservation work](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/results.md), and later [native entrance CE](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-10-native-entrance-ce-feasibility/results.md) each exposed variants of this trade-off. These are bounded recipe results, not a theorem that CE cannot learn sets.
+
+Candidate supply and learning realization also separated. The [natural K4 opportunity census](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-09-natural-candidate-opportunity/results.md) found better complete outputs under the same checkpoint; the [first RLOO update](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-09-round1-greedy-realization/results.md) did not realize the registered gained owners in greedy. [Fixed-witness scoring](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-10-fixed-witness-route-access/results.md) found some probability improvement without first-fork crossings. Thus “a useful sequence exists,” “its likelihood rose,” and “greedy now executes a useful sequence” were not the same event.
+
+Protection losses needed equal care. The [greedy-preservation microscope](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-greedy-preservation-microscope/results.md) found many actual discrete changes despite small average KL. A [decision-aware margin treatment](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-margin-preserved-positive-branch/results.md) improved the aggregate, but did not preserve every repair. Its [positive-progress-matched control](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-positive-progress-matched-control/results.md) weakened a simple scalar-dose account without proving universal margin efficacy or transfer.
+
+Likewise, reducing a geometric repeat proxy could shift output toward invalid boxes rather than genuine coverage. [Stable50 dedup](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-stable50-geometric-dedup/results.md) is the concrete counterexample. An earlier [positive-versus-negative-event comparison](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-positive-branch-vs-repeat-event/results.md) had no sampled negative events, so identical endpoints were not evidence about negative-learning efficacy. [Preservation and credit](questions/preservation-and-credit.md) records what each control actually distinguished.
+
+## 5. Two measurement and supervision gaps became unavoidable
+
+The later [native owner scale/state result](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-12-native-owner-scale-and-state/results.md) gave ordinary-parameter natural recovery and a positive fresh-panel GT proxy, but retained physical and incumbent-owner debt. The [broader successor pair](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/results.md) reduced strict repetition while losing confirmation coverage. Larger supply did not automatically mean a better compiled policy.
+
+The [label-versus-compilation follow-up](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-label-vs-compilation/results.md) then separated two facts. First, annotation-relative F1 could rise while reviewed atomic-owner presence fell. Second, from identical supplied histories, both models could realize the trusted first row and immediate successor while later owner sets diverged or an already completed owner was repeated. An objective protecting only `c` and immediate `w` could not distinguish a good full continuation from `c → w → c → ...`.
+
+Neither fact uniquely identified historical missing-label causality, exposure bias, insufficient optimization or a KV storage defect. GT-unmatched proposals were a mixture; a prediction-union audit could not discover objects missed by every model. The [supply audit](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-label-vs-compilation/supply/result.md) was an admission funnel, not a count of missing labels. See [physical evaluation](questions/physical-evaluation.md).
+
+## 6. The user chose a training-first cumulative question
+
+Rather than continuing to test tiny local fixes against an early generalization veto, the user chose a versioned trusted set: GT plus verified old/new physical owners, coherent route learning, and stage completion before image growth. The [original task record](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/unit.md) preserves every phase and correction; the [current result](experiments/2026-09-14-training-set-completion-curriculum/results.md) owns the accepted fourth-fit comparison.
+
+More updates on the unchanged CE recipe substantially improved natural coverage, invalid-output burden and stopping. Some owners and clean-image completions were gained, but one image lost old owners and the overall stage remained incomplete. The teacher-forced expected-coordinate hinge reached zero while greedy geometry errors remained. Lower loss was useful evidence of learning, not a completion certificate or a diagnosis of the remaining mechanism.
+
+The latest unmatched-only review policy changed how physical summaries are formed. Its frozen training target and supplemental all-known population must remain separate. This is why the old experiment history cannot be flattened into one leaderboard or one timeless meaning of “strict owner.”
+
+## The unresolved problem is structured, not one missing module
+
+| Obligation | What a decisive test must distinguish |
+|---|---|
+| Trusted support | Is the object real and individually attributable, or is it a group/part/unknown? |
+| Useful action | Does a candidate improve the declared complete consequence, not just the next row? |
+| Conditional fitting | Under the target history, are the required decisions actually learned? |
+| Natural access | Does the original-input policy reach useful decisions without a supplied prefix? |
+| Continuation / exclusion | After success, are old and new owners preserved without reselection or invalid-output escape? |
+| Measurement | Are changes physical coverage, category/extent changes, matching artifacts or review-policy changes? |
+
+Several obligations may fail simultaneously. The next research choice should identify the cheapest discriminator for the current failure, not re-brand all of them as exposure bias, absent vision information, optimizer impossibility or a missing ledger. [Ideas and reopening conditions](ideas.md) retains alternatives; no item there is a standing execution grant.

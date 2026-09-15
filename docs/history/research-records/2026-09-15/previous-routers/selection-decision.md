@@ -90,11 +90,10 @@ concentrated at `x1`, zero immediate self-repeats, and owner-specific
 redistribution. The historical random-order checkpoint-3668 person-25 closeout
 separately supplies partial, unreliable earlier-history exclusion. These
 checkpoint-scoped findings must not be merged into one checkpoint-independent
-mechanism claim. That July next-step wording is historical: the
-[same-covered-set order study](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-same-covered-set-prefix-order-equivalence/results.md)
-and the [longer-horizon permutation study](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-19-common-object-prefix-permutation-short-horizon/results.md)
-have recorded results. Do not launch them again as an unexecuted July plan.
-The [current research context](../qwen3-vl-dense-enumeration/current.md) and
-[history/repetition question](../qwen3-vl-dense-enumeration/questions/history-repetition-stopping.md)
-own present continuation and synthesis. This routing correction does not merge
-the historical checkpoints or change the original bounded evidence.
+mechanism claim. The
+[dense-enumeration compass](../investigations/qwen3-vl-dense-enumeration/compass.md)
+discriminator queue owns the current next step. The pending same-covered-set
+earlier-row order-equivalence unit is the cheapest missing forced-prefix test
+of local order sensitivity, but it does not by itself establish a native
+covered-set state or decide whether order dependence should be removed during
+training.

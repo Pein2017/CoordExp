@@ -1,0 +1,23 @@
+# Preservation and credit: a new owner can displace an old one
+
+**Question:** does the update improve the declared final owner set and burden, not merely the target token or a local proxy? Gains, losses and retained identities must be visible separately; a net score hides owner exchange.
+
+## Evidence chain
+
+[Single-route imitation](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-21-best-sampled-trajectory-positive-row-imitation-screen/results.md) added selected owners but lost ordinary ones. [Multiple-route/source-preserving training](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-source-route-preservation-and-multiple-sampled-route-training-screen/results.md) was safer in parts of its finite panel, not uniformly safe outside treated images. [Fixed-dose image breadth](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-07-22-constant-dose-image-breadth-treatment-screen/results.md) did not produce its hoped-for held-out advantage. These are contrasts with specific exposure and decode conditions, not a prohibition on data breadth or CE.
+
+[Direct C-D0](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-01-annotated-owner-direct-c-d0-pilot/results.md) stopped its frozen bundle because preservation and quality predicates failed. The separate [soft-owner QP versus refreshed RLOO](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-03-iterative-soft-owner-qp-vs-rloo-vertical/results.md) did not establish useful rescue of a realized owner loss. Their anchors and populations differ; their numbers must not be pooled.
+
+The [KL microscope](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-greedy-preservation-microscope/results.md) found small average KL alongside many protected argmax flips. The [margin-aware fit](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-margin-preserved-positive-branch/results.md) reduced eligible flips and improved the aggregate, but did not satisfy every per-case repair/continuation condition. [Positive-progress matching](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-positive-progress-matched-control/results.md) weakened a scalar-dose explanation while exposing reference-set concentration. Margin flips are not themselves owner-error labels.
+
+## Negative credit has two independent traps
+
+[Positive versus repeat-event learning](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-positive-branch-vs-repeat-event/results.md) collected no eligible sampled negatives, yielding identical weights. That is a supply failure for the contrast, not evidence that the penalty is ineffective. [Stable50 geometric dedup](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-stable50-geometric-dedup/results.md) did change output, but reduced its repeat proxy while increasing invalid geometry. Actual physical re-selection below a strict IoU selector and malformed escape must stay in the outcome.
+
+The later [successor-scale A/B pair](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-13-owner-successor-scale-throughput/results.md) reduced repetition but lost confirmation coverage. A negative term's practical value must be measured jointly with positive realization, later consequences, old-owner retention and stopping, not by negative-event loss alone.
+
+## Reopening condition
+
+Choose the actual preservation obligation before choosing its surrogate. Compare state-specific alternatives and actual owner transitions, and distinguish source-reference exposure from independent confirmation. Keep optimizer exposure, number of replays and wall time explicit when comparing CE, RLOO and constrained updates; matching one does not match the others.
+
+The current cumulative task allows intermediate regression but not unfinished cumulative stage growth. Do not restore a stricter “every SGD step must preserve every old owner” rule from an older protocol. Conversely, do not erase final old-owner losses with only an aggregate gain. [Current](../current.md) and its linked task protocol own that boundary.
