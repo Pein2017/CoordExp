@@ -19,8 +19,6 @@ import time
 from typing import Any, Mapping, Sequence
 
 import torch
-from safetensors import safe_open
-from safetensors.torch import save_file
 
 
 from .prepare import (  # noqa: E402
@@ -41,9 +39,11 @@ from src.losses import aligned_token_logprobs
 from .runtime import build_request, load_policy, materialize
 from src.adapters.dora import (  # noqa: E402
     select_dora_parameters,
-    normalize_dora_state_key,
     inspect_dora_adapter_payload,
+    save_dora_adapter_payload,
 )
+from src.runtime.distributed import gather_objects
+from src.runtime.model_state import parameter_layout, tensor_state_sha256
 from src.qwen.special_token_embeddings import (  # noqa: E402
     inspect_special_token_embedding_delta_payload,
 )
@@ -85,11 +85,7 @@ def _git_commit() -> str:
 
 
 def _dist_values(value: Any) -> list[Any]:
-    import torch.distributed as dist
-
-    values: list[Any] = [None] * dist.get_world_size()
-    dist.all_gather_object(values, value)
-    return values
+    return gather_objects(value)
 
 
 def _all_true(value: bool, device: torch.device) -> bool:
@@ -101,26 +97,11 @@ def _all_true(value: bool, device: torch.device) -> bool:
 
 
 def _parameter_layout(named: Sequence[tuple[str, torch.nn.Parameter]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "name": name,
-            "shape": list(parameter.shape),
-            "numel": parameter.numel(),
-            "dtype": str(parameter.dtype),
-        }
-        for name, parameter in named
-    ]
+    return parameter_layout(named)
 
 
 def _tensor_state_hash(named: Sequence[tuple[str, torch.Tensor]]) -> str:
-    digest = hashlib.sha256()
-    for name, tensor in named:
-        value = tensor.detach().to(device="cpu").contiguous()
-        digest.update(name.encode())
-        digest.update(str(tuple(value.shape)).encode())
-        digest.update(str(value.dtype).encode())
-        digest.update(memoryview(value.numpy()))
-    return digest.hexdigest()
+    return tensor_state_sha256(named)
 
 
 def _objective_scale(arm: str, *, image_count: int, world_size: int = WORLD_SIZE) -> float:
@@ -256,35 +237,13 @@ def _optimizer_step(optimizer: torch.optim.Optimizer) -> int:
 
 
 def _save_adapter_only(model: Any, *, source_root: Path, output: Path) -> dict[str, Any]:
-    get_state = getattr(model, "get_adapter_state_dict", None)
-    require(callable(get_state), "model.get_adapter_state_dict is unavailable")
-    state = get_state("default")
-    require(isinstance(state, Mapping) and state, "materialized adapter state is empty")
-    normalized = {
-        normalize_dora_state_key(str(key), adapter_name="default"): value.detach().cpu()
-        for key, value in state.items()
-    }
-    require(len(normalized) == EXPECTED_TRAINABLE_TENSORS, "materialized adapter key count changed")
-    source_tensor = source_root / "adapter_model.safetensors"
-    with safe_open(str(source_tensor), framework="pt", device="cpu") as handle:
-        source_keys = tuple(handle.keys())
-    payload: dict[str, torch.Tensor] = {}
-    for key in source_keys:
-        normalized_key = normalize_dora_state_key(key, adapter_name="default")
-        require(normalized_key in normalized, f"saved adapter key has no live value: {key}")
-        payload[key] = normalized[normalized_key].contiguous()
-    require(len(payload) == len(normalized), "live adapter has keys absent from source payload")
-    output.mkdir(parents=True, exist_ok=False)
-    shutil.copyfile(source_root / "adapter_config.json", output / "adapter_config.json")
-    save_file(payload, str(output / "adapter_model.safetensors"), metadata={"format": "pt"})
-    identity = inspect_dora_adapter_payload(output, BASE_MODEL)
-    with safe_open(str(output / "adapter_model.safetensors"), framework="pt", device="cpu") as handle:
-        require(
-            tuple(handle.keys()) == tuple(sorted(payload))
-            and all(torch.equal(handle.get_tensor(key), payload[key]) for key in handle.keys()),
-            "saved adapter differs from live materialized state",
-        )
-    return identity
+    return save_dora_adapter_payload(
+        model,
+        source_root=source_root,
+        output=output,
+        expected_base_model_path=BASE_MODEL,
+        expected_tensor_count=EXPECTED_TRAINABLE_TENSORS,
+    )
 
 
 def _materialize_group(*, qwen, frontend, config, raw, group):

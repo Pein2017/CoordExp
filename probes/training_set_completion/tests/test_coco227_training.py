@@ -10,6 +10,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from probes.training_set_completion import coco227_training as training227
+from src.qwen.native import select_compact_replay_logits
 
 
 ACTIVE = [1, 7, 2, 11, 3, 13, 5, 17, 19, 23, 29]
@@ -149,7 +150,7 @@ def test_left_padded_compact_logits_select_exact_causal_rows_and_gradients():
     width = max(lengths) + 1
     logits = torch.arange(3 * width * 7, dtype=torch.float64).reshape(3, width, 7)
     logits.requires_grad_(True)
-    observed = training227.select_aligned_logits(logits, lengths)
+    observed = select_compact_replay_logits(logits, lengths)
     expected = [
         logits[index, width - count - 1 : width - 1].float()
         for index, count in enumerate(lengths)

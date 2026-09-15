@@ -214,7 +214,7 @@ def generation_inputs(batch, ids):
 
 def reduce_output(packet_path, out_dir):
     from tokenizers import Tokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from probes.dora_owner_learning.candidate_opportunity import score
     packet = json.loads(Path(packet_path).read_text())
     out = Path(out_dir)
@@ -265,7 +265,7 @@ def reduce_output(packet_path, out_dir):
 def execute(packet_path, out_dir, smoke):
     from src.config.inference import InferConfig
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.qwen.native import prepare_native_inputs
     from src.qwen.generation import generate_continuations, NativeGenerationPolicy
     packet = json.loads(Path(packet_path).read_text())

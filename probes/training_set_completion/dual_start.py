@@ -29,7 +29,7 @@ PREPARATION = BASE / "dual-start-coco80-preparation-v1/preparation.json"
 TEACHER = BASE / "dual-start-coco80-teacher-v1/bank.json"
 TRIAL_ROOT = BASE / "dual-start-v3"
 TMUX_SESSION = "coordexp-dual-start-v3"
-REPO = Path("/data/CoordExp/.worktrees/research-probes")
+REPO = Path(__file__).resolve().parents[2]
 SCHEMA = "training_set_completion.dual_start.v1"
 ARMS = ("A", "B")
 IMAGE_COUNT = 11
@@ -432,7 +432,7 @@ def readback_worker(*, trial_path: Path, output: Path, arm: str, step: int, gpu:
     import torch
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs

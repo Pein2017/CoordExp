@@ -166,7 +166,7 @@ def _source_description_indexes(rows: list[dict[str, Any]], first_admissions: Ma
 
 def _parser_roundtrip(routes: list[dict[str, Any]], acquisition_path: Path, tokenizer: Any) -> dict[str, Any]:
     """Cold-reparse synthetic literal token output using the production parser."""
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     acquisition = read(acquisition_path)
     goldens = {int(record['image_id']): record['golden'] for record in acquisition['records']}

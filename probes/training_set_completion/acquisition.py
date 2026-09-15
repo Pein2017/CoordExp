@@ -243,7 +243,8 @@ def worker(*, manifest_path: Path, output: Path, phase: str, shard: int, world_s
     import torch
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
@@ -403,7 +404,7 @@ def geometry_invalid_count(rows: Sequence[Mapping[str, Any]]) -> int:
 
 def readback(*, manifest_path: Path, output: Path, phase: str, receipt_name: str | None = None) -> dict[str, Any]:
     from transformers import AutoTokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     manifest = validate_manifest(manifest_path)
     require(phase in ("smoke", "final"), "readback phase")

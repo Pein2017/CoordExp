@@ -22,6 +22,10 @@ import time
 import torch
 
 from src.artifacts import load_canonical_json
+from src.qwen.checkpointing import (
+    install_language_decoder_checkpointing as _install_language_decoder_checkpointing,
+    language_decoder_checkpointing_receipt,
+)
 from .candidate_opportunity import digest, file_hash, require
 from .route_access import CONFIG, ROOT, checked_ids, checkpoint_config, publish
 
@@ -59,72 +63,14 @@ def rank_image_forward_count(rank):
 
 
 def install_language_decoder_checkpointing(model):
-    """Checkpoint exactly the language decoder blocks while preserving eval mode."""
-    from torch.utils.checkpoint import checkpoint
-
-    require(not model.training, "checkpoint installation requires eval-mode model")
-    owners = [(name, module) for name, module in model.named_modules()
-              if name.endswith("language_model")]
-    require(len(owners) == 1, "single named language decoder owner")
-    owner_name, owner = owners[0]
-    layers = owner.layers
-    require(len(layers) == DECODER_LAYER_COUNT and
-            all(not layer.training for layer in layers),
-            "exact 28 eval-mode language decoder blocks")
-    state = dict(
-        enabled=False, phase="disabled", decoder_layers=len(layers),
-        decoder_module_name=owner_name,
-        use_reentrant=False, layer_calls=0, checkpoint_invocations=0,
-        checkpoint_body_calls=0, bypass_no_grad_calls=0,
-        bypass_disabled_calls=0,
+    return _install_language_decoder_checkpointing(
+        model,
+        expected_layer_count=DECODER_LAYER_COUNT,
     )
-
-    def wrapper(original_forward):
-        # Capture each already-bound method here; never close over the loop variable.
-        def checkpointed_forward(*args, **kwargs):
-            state["layer_calls"] += 1
-            if not torch.is_grad_enabled():
-                state["bypass_no_grad_calls"] += 1
-                return original_forward(*args, **kwargs)
-            if not state["enabled"]:
-                state["bypass_disabled_calls"] += 1
-                return original_forward(*args, **kwargs)
-            state["checkpoint_invocations"] += 1
-
-            def invoke(*inner_args, **inner_kwargs):
-                state["checkpoint_body_calls"] += 1
-                return original_forward(*inner_args, **inner_kwargs)
-
-            return checkpoint(invoke, *args, use_reentrant=False, **kwargs)
-        return checkpointed_forward
-
-    for layer in layers:
-        layer.forward = wrapper(layer.forward)
-    require(not model.training and all(not layer.training for layer in layers),
-            "checkpoint installation changed eval mode")
-    return state
 
 
 def checkpointing_receipt(model, state):
-    layers = model.get_submodule(state["decoder_module_name"]).layers
-    require(len(layers) == DECODER_LAYER_COUNT and not model.training and
-            all(not layer.training for layer in layers),
-            "checkpointed model left eval mode")
-    body_calls = int(state["checkpoint_body_calls"])
-    invocations = int(state["checkpoint_invocations"])
-    return dict(
-        mode="non_reentrant_per_language_decoder_block_grad_only",
-        decoder_layers=DECODER_LAYER_COUNT, use_reentrant=False,
-        decoder_module_name=state["decoder_module_name"],
-        enabled=bool(state["enabled"]), phase=str(state["phase"]),
-        layer_calls=int(state["layer_calls"]),
-        checkpoint_invocations=invocations,
-        checkpoint_body_calls=body_calls,
-        recompute_body_calls=max(0, body_calls - invocations),
-        bypass_no_grad_calls=int(state["bypass_no_grad_calls"]),
-        bypass_disabled_calls=int(state["bypass_disabled_calls"]),
-        model_eval=True, all_decoder_layers_eval=True,
-    )
+    return language_decoder_checkpointing_receipt(model, state)
 
 
 def parity_metrics(loss_off, loss_on, gradient_off, gradient_on):

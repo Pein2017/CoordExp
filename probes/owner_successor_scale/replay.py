@@ -12,7 +12,7 @@ from typing import Any
 
 import torch
 
-from src.qwen.native import exact_history_inputs, padded_histories
+from src.qwen.native import exact_history_inputs, padded_histories, select_compact_replay_logits
 
 
 _HISTORY_KEYS = frozenset(
@@ -112,17 +112,7 @@ def batched_aligned_logits(
         pad_token_id=0,
         logits_to_keep=max(map(len, targets)) + 1,
     )
-    logits = model(**replay_inputs).logits
-    if not isinstance(logits, torch.Tensor) or logits.ndim != 3 or logits.shape[0] != len(entries):
-        raise ValueError("batched replay model logits do not match input batch")
-    width = max(map(len, targets)) + 1
-    if logits.shape[1] != width:
-        raise ValueError("batched replay model did not return requested compact logits")
-    result: list[torch.Tensor] = []
-    for index, target in enumerate(targets):
-        start = width - len(target) - 1
-        selected = logits[index, start : width - 1]
-        if selected.shape[0] != len(target):
-            raise ValueError("batched replay logits do not cover exact target")
-        result.append(selected.float())
-    return result
+    return select_compact_replay_logits(
+        model(**replay_inputs).logits,
+        [len(target) for target in targets],
+    )

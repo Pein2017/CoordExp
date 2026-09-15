@@ -11,6 +11,7 @@ import time
 import pytest
 
 from probes.training_set_completion import coco227_recover_readback as recovery
+from src.runtime.process_completion import next_process_completion, start_process_waiter
 
 
 def _child(source: str) -> subprocess.Popen[bytes]:
@@ -33,9 +34,9 @@ def test_real_child_wait_threads_report_success_and_failure_without_polling():
         _child("import time; time.sleep(0.10); raise SystemExit(7)"),
     ]
     for process in processes:
-        recovery._start_waiter(process, completions)
+        start_process_waiter(process, completions, thread_name_prefix="test-readback-wait")
     observed = [
-        recovery._next_completion(completions, deadline_unix=time.time() + 3)
+        next_process_completion(completions, deadline=time.time() + 3, clock=time.time)
         for _ in processes
     ]
     assert {row["pid"] for row in observed} == {process.pid for process in processes}
@@ -46,10 +47,15 @@ def test_real_child_wait_threads_report_success_and_failure_without_polling():
 def test_real_child_deadline_fails_closed_and_can_be_reaped():
     completions: queue.Queue[dict[str, object]] = queue.Queue()
     process = _child("import time; time.sleep(30)")
-    recovery._start_waiter(process, completions)
+    start_process_waiter(process, completions, thread_name_prefix="test-readback-wait")
     try:
         with pytest.raises(TimeoutError, match="original readback phase deadline"):
-            recovery._next_completion(completions, deadline_unix=time.time() + 0.05)
+            next_process_completion(
+                completions,
+                deadline=time.time() + 0.05,
+                clock=time.time,
+                timeout_message="original readback phase deadline reached",
+            )
     finally:
         os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=3)

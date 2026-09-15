@@ -382,7 +382,7 @@ def score_admitted_rows(
         require(isinstance(ids, list) and all(type(item) is int and item >= 0 for item in ids), f"saved ids: {image_id}")
         require(saved.get("generated_token_ids_sha256") == digest(ids), f"saved token hash: {image_id}")
         require(isinstance(text, str) and tokenizer.decode(ids, skip_special_tokens=False, clean_up_tokenization_spaces=False) == text, f"saved decode identity: {image_id}")
-        from probes.source_rweak_row_cross.run import native_record
+        from src.eval.native_rows import native_detection_record as native_record
 
         parsed = native_record(text, records[image_id]["case"], records[image_id]["golden"], saved.get("decode_stop_reason", "unknown"))
         valid, dropped = prior_eval._matchable_rows_with_geometry_debt(parsed)

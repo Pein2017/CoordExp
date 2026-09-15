@@ -232,7 +232,8 @@ def execute(label, shard, phase):
     import torch
     from probes.dora_owner_learning.runtime import load_policy
     from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig
     from src.qwen.native import prepare_native_inputs
@@ -377,7 +378,7 @@ def burden(rows):
 
 
 def cross_credit(row,frozen,tokenizer):
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     prefix=native_record(tokenizer.decode(row['prefix_ids'],skip_special_tokens=False),frozen['case'],frozen['golden'],'conditional')
     suffix=native_record(tokenizer.decode(row['free_ids'],skip_special_tokens=False),frozen['case'],frozen['golden'],row['stop_reason'])
     p=score(prefix,seed=None,length=len(row['prefix_ids']),stop='conditional')
@@ -392,7 +393,7 @@ def merge(phase):
     packet=read(ROOT/'packet.json')
     tokenizer=AutoTokenizer.from_pretrained(packet['model']['base_model_path'],local_files_only=True)
     if phase=='cross':
-        from probes.source_rweak_row_cross.run import native_record
+        from src.eval.native_rows import native_detection_record as native_record
         rows=[];terminals=[]
         require(all(r['exit_code']==0 for r in read(ROOT/phase/'outer-exits.json')),'cross outer failure')
         frozen={r['example_id']:r for r in packet['cross_records']}

@@ -20,6 +20,8 @@ import time
 import traceback
 
 from src.eval.assignment import global_matches as _global_matches
+from src.eval.native_rows import native_detection_record as native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
 from .reduce import (
     CAP,
     EOS,
@@ -128,35 +130,6 @@ def selected_cases(manifest, args):
             "qualification outside common fixtures",
         )
     return [all_cases[x] for x in ids]
-
-
-def native_record(text, case, golden, stop):
-    from src.inference.parsing import parse_compact_object_box_closed
-
-    parsed = parse_compact_object_box_closed(
-        text,
-        row_id=str(case["row_id"]),
-        row_index=golden["row_index"],
-        image_width=golden["image_width"],
-        image_height=golden["image_height"],
-    ).to_artifact_dict()
-    result = {
-        k: copy.deepcopy(golden[k])
-        for k in (
-            "example_id",
-            "gt",
-            "image_height",
-            "image_path",
-            "image_width",
-            "row_id",
-            "row_index",
-        )
-    }
-    result.update({k: v for k, v in parsed.items() if k != "predictions"})
-    result.update(
-        pred=parsed["predictions"], raw_decode_text=text, decode_stop_reason=stop
-    )
-    return result
 
 
 def consume_rows(path, manifest_sha, tokenizer=None):
@@ -448,65 +421,6 @@ def load_components(config, source, device):
         "package_versions": dict(qwen.package_versions),
         "runtime_patches": qwen.runtime_patches,
     }
-
-
-def build_requests(qwen, config, cases):
-    from src.config.models import TemplateConfig
-    from src.data.examples import raw_example_from_jsonl_row
-    from src.inference.prompt import build_prompt_record
-    from src.qwen.native import NativeRequest
-
-    template = config["template"]
-    template_config = TemplateConfig(
-        **{
-            key: template[key]
-            for key in (
-                "object_field_order",
-                "object_ordering",
-                "assistant_format",
-                "prompt",
-            )
-        }
-    )
-    requests, metadata = [], []
-    for case in cases:
-        raw = raw_example_from_jsonl_row(
-            case["input_record"],
-            jsonl_path=Path(config["data"]["input_jsonl"]),
-            row_number=case["row_index"] + 1,
-            raw_line=json.dumps(case["input_record"]),
-        )
-        require(
-            str(raw.example_id) == case["row_id"], "case input row identity differs"
-        )
-        plan = case["image_plan"]
-        prompt = build_prompt_record(
-            raw,
-            template_config,
-            processor=qwen.processor,
-            row_index=case["row_index"],
-            merged_visual_tokens=plan["merged_visual_tokens"],
-            object_order_seed=template.get("object_order_seed"),
-        )
-        require(
-            len(prompt.expected_executed_prompt_token_ids)
-            == plan["backend_prompt_token_count"],
-            "historical prompt width differs",
-        )
-        requests.append(
-            NativeRequest(
-                case["row_id"],
-                prompt.chat_text,
-                case["image_path"],
-                expected_token_ids=tuple(prompt.expected_executed_prompt_token_ids),
-                expected_image_grid=tuple(plan["observed_image_grid_thw"]),
-                expected_image_size=(case["image_width"], case["image_height"]),
-                image_sha256=plan["image_content_sha256"],
-                logical_transform=plan["logical_transform_id"],
-            )
-        )
-        metadata.append(prompt.to_artifact_dict())
-    return requests, metadata
 
 
 def execute(args, manifest, cases, receipt):

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import subprocess
+import time
+
+import pytest
 
 from probes.training_set_completion import coco227_trial as trial
 
@@ -112,3 +116,153 @@ def test_completed_endpoint_collection_receives_trial_and_teacher_bindings(
     assert calls[0]["trial_path"] == trial_path
     assert calls[0]["teacher_bank_path"] == teacher
     assert calls[0]["qualification_result"] == qualification
+
+
+
+def test_controller_timeout_reaps_all_active_workers_and_preserves_failure_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    output = tmp_path / "trial-output"
+    trial_path = tmp_path / "trial.json"
+    release_path = tmp_path / "release.json"
+    qualification = tmp_path / "qualification.json"
+    trial_value = {
+        "arms": {
+            arm: {"training_manifest": {"path": str(tmp_path / f"{arm}.json")}}
+            for arm in trial.ARMS
+        },
+        "readback": {"qualification_result": {"path": str(qualification)}},
+    }
+    trial_path.write_text(json.dumps(trial_value))
+    release_path.write_text(
+        json.dumps(
+            {
+                "status": "released",
+                "trial_sha256": trial.training.file_hash(trial_path),
+            }
+        )
+    )
+    for arm in trial.ARMS:
+        terminal = output / arm / "training" / "terminal.json"
+        terminal.parent.mkdir(parents=True)
+        terminal.write_text(
+            json.dumps(
+                {
+                    "checkpoints": [
+                        {"step": step, "adapter": {"root": str(tmp_path / f"{arm}-{step}")}}
+                        for step in trial.CHECKPOINT_STEPS
+                    ]
+                }
+            )
+        )
+
+    monkeypatch.setattr(trial, "validate_trial", lambda value: value)
+    monkeypatch.setattr(trial, "validate_training_terminal", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        trial.subprocess,
+        "check_output",
+        lambda *args, **kwargs: trial.TRIAL_TMUX_SESSION,
+    )
+    monkeypatch.setattr(trial, "_collect_endpoint_if_complete", lambda **kwargs: None)
+    monkeypatch.setattr(trial, "_readback_command", lambda **kwargs: ["fake-readback"])
+    monkeypatch.setattr(trial, "start_process_waiter", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        trial,
+        "next_process_completion",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            TimeoutError("global readback phase timeout")
+        ),
+    )
+
+    class Process:
+        next_pid = 7000
+
+        def __init__(self):
+            self.pid = Process.next_pid
+            Process.next_pid += 1
+            self.killed = False
+
+        def poll(self):
+            return -15 if self.killed else None
+
+    class Stream:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    processes = []
+    streams = []
+
+    def spawn(*args, **kwargs):
+        process, stream = Process(), Stream()
+        processes.append(process)
+        streams.append(stream)
+        return process, stream, time.monotonic()
+
+    def kill(process):
+        process.killed = True
+
+    monkeypatch.setattr(trial, "_spawn", spawn)
+    monkeypatch.setattr(trial.dual_start, "_owned_kill", kill)
+
+    with pytest.raises(TimeoutError, match="global readback phase timeout"):
+        trial.controller(trial_path=trial_path, output=output, release_path=release_path)
+
+    assert len(processes) == len(streams) == 8
+    assert all(process.killed for process in processes)
+    assert all(stream.closed for stream in streams)
+    failure = json.loads((output / "controller-failures/attempt-001.json").read_text())
+    assert failure["status"] == "failed"
+    assert failure["error"] == "TimeoutError: global readback phase timeout"
+    assert failure["cleanup_errors"] == []
+    assert not (output / "controller-terminal.json").exists()
+
+
+def test_training_qualification_timeout_reaps_owned_worker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    output = tmp_path / "qualification"
+    output.mkdir()
+    plan_path = output / "plan.json"
+    plan_path.write_text("{}")
+    plan = {
+        "configurations": [
+            {
+                "id": "S-mb1-checkpointed",
+                "command": ["fake-training"],
+                "output": str(tmp_path / "worker-output"),
+                "manifest": {"path": str(tmp_path / "manifest.json")},
+            }
+        ]
+    }
+    monkeypatch.setattr(trial, "validate_qualification_plan", lambda value: plan)
+    monkeypatch.setattr(
+        trial.subprocess,
+        "check_output",
+        lambda *args, **kwargs: trial.TRAINING_QUALIFICATION_TMUX_SESSION,
+    )
+
+    class Process:
+        pid = 8123
+        killed = False
+
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired(["fake-training"], timeout)
+
+    process = Process()
+    monkeypatch.setattr(trial.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(
+        trial.dual_start,
+        "_owned_kill",
+        lambda owned: setattr(owned, "killed", True),
+    )
+
+    with pytest.raises(RuntimeError, match="qualification failed"):
+        trial.qualification_controller(plan_path=plan_path, output=output)
+
+    assert process.killed is True
+    terminal = json.loads((output / "terminal.json").read_text())
+    assert terminal["status"] == "failed"
+    assert "qualification failed" in terminal["error"]

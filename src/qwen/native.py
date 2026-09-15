@@ -289,6 +289,37 @@ def exact_history_inputs(
     return kwargs
 
 
+def select_compact_replay_logits(
+    logits: torch.Tensor,
+    continuation_lengths: Sequence[int],
+) -> list[torch.Tensor]:
+    """Select each left-padded continuation's causal rows from compact logits."""
+
+    lengths = tuple(continuation_lengths)
+    if (
+        not isinstance(logits, torch.Tensor)
+        or logits.ndim != 3
+        or logits.shape[0] != len(lengths)
+    ):
+        raise ValueError("compact replay logits do not match the continuation batch")
+    if not lengths or any(
+        isinstance(count, bool) or not isinstance(count, int) or count <= 0
+        for count in lengths
+    ):
+        raise ValueError("continuation lengths must be positive integers")
+    width = max(lengths) + 1
+    if logits.shape[1] != width:
+        raise ValueError("compact replay logits have the wrong trailing history width")
+    rows: list[torch.Tensor] = []
+    for index, count in enumerate(lengths):
+        start = width - count - 1
+        selected = logits[index, start : width - 1]
+        if selected.shape[0] != count:
+            raise ValueError("compact replay logits do not cover an exact continuation")
+        rows.append(selected.float())
+    return rows
+
+
 @dataclass(frozen=True)
 class ExactReplay:
     inputs: Mapping[str, Any]

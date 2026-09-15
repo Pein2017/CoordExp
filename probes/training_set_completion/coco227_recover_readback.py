@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 import queue
 import subprocess
-import threading
 import time
 import traceback
 from typing import Any, Mapping
@@ -22,10 +21,11 @@ from typing import Any, Mapping
 from probes.training_set_completion import coco227_trial as frozen
 from probes.training_set_completion import dual_start
 from probes.training_set_completion import training
+from src.runtime.process_completion import next_process_completion, start_process_waiter
 
 
 SCHEMA = "training_set_completion.coco227_readback_recovery.v1"
-REPO = Path("/data/CoordExp/.worktrees/research-probes")
+REPO = Path(__file__).resolve().parents[2]
 ROOT = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
     "2026-09-15-coco227-ce-normalization"
@@ -104,52 +104,6 @@ def _live_trial_endpoint_processes(
         ):
             result.append(identity)
     return result
-
-
-def _wait_child(
-    process: subprocess.Popen[Any],
-    completions: queue.Queue[dict[str, Any]],
-) -> None:
-    try:
-        code: int | str = process.wait()
-        error = None
-    except BaseException as exc:
-        code = "wait_error"
-        error = f"{type(exc).__name__}: {exc}"
-    completions.put(
-        {
-            "pid": process.pid,
-            "exit_code": code,
-            "wait_error": error,
-            "completed_at": time.time(),
-        }
-    )
-
-
-def _start_waiter(
-    process: subprocess.Popen[Any],
-    completions: queue.Queue[dict[str, Any]],
-) -> threading.Thread:
-    thread = threading.Thread(
-        target=_wait_child,
-        args=(process, completions),
-        name=f"coco227-readback-wait-{process.pid}",
-        daemon=True,
-    )
-    thread.start()
-    return thread
-
-
-def _next_completion(
-    completions: queue.Queue[dict[str, Any]], *, deadline_unix: float
-) -> dict[str, Any]:
-    remaining = deadline_unix - time.time()
-    if remaining <= 0:
-        raise TimeoutError("original readback phase deadline reached")
-    try:
-        return completions.get(timeout=remaining)
-    except queue.Empty as exc:
-        raise TimeoutError("original readback phase deadline reached") from exc
 
 
 def _checkpoint_adapter(
@@ -456,12 +410,21 @@ def controller(
                     "spawned_monotonic": spawned_monotonic,
                     "deadline_unix": deadline,
                 }
-                _start_waiter(process, completions)
+                start_process_waiter(
+                    process,
+                    completions,
+                    thread_name_prefix="coco227-readback-recovery-wait",
+                )
                 emit(
                     f"SPAWN pid={process.pid} arm={arm} step={step} gpu={gpu} "
                     f"deadline={deadline}"
                 )
-            completion = _next_completion(completions, deadline_unix=deadline)
+            completion = next_process_completion(
+                completions,
+                deadline=deadline,
+                clock=time.time,
+                timeout_message="original readback phase deadline reached",
+            )
             item = active.pop(int(completion["pid"]))
             item["stream"].close()
             exit_row = {
@@ -472,7 +435,7 @@ def controller(
                 "wait_error": completion["wait_error"],
                 "command": item["command"],
                 "spawned_at_unix": item["spawned_unix"],
-                "completed_at_unix": completion["completed_at"],
+                "completed_at_unix": completion["completed_at_unix"],
                 "deadline_unix": deadline,
             }
             exits.append(exit_row)

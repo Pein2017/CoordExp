@@ -12,6 +12,9 @@ from probes.dora_owner_learning import runtime
 from probes.dora_owner_learning.selective_preservation import selective_loss
 from src.common.errors import RuntimeContractError
 from src.qwen.native import prepare_replay
+from src.qwen.special_token_embeddings import (
+    load_default_special_token_embedding_source_gate_evidence,
+)
 
 
 def source_model():
@@ -83,6 +86,17 @@ def test_binding_preserves_legacy_profile_replay_and_one_step():
     actual = observe_binding(lambda model: runtime.bind_source256_language_dora(
         model, expected_tensor_count=588, expected_scalar_count=18_006_016))
     assert actual == expected
+
+
+def test_source256_default_source_gate_is_checkout_local_and_complete():
+    root = runtime.PACKAGED_SOURCE_GATE_ROOT.resolve(strict=True)
+    assert root.is_relative_to(Path(runtime.__file__).resolve().parent)
+    evidence = load_default_special_token_embedding_source_gate_evidence(root)
+    assert evidence.source_study_passed is True
+    assert evidence.roundtrip_probe_passed is True
+    assert evidence.probe_receipt is not None
+    assert evidence.probe_receipt["ok"] is True
+    assert evidence.probe_receipt["semantics"] == "additive_delta"
 
 
 @pytest.mark.parametrize("change", ["tensor_count", "scalar_count", "adapter", "missing", "prohibited"])

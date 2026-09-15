@@ -23,6 +23,8 @@ import torch
 
 from src.losses import aligned_token_logprobs
 from src.qwen.native import prepare_replay
+from src.runtime.distributed import gather_objects as _dist_values
+from src.runtime.model_state import parameter_layout as _parameter_layout, tensor_state_sha256 as _tensor_state_hash
 from probes.dora_owner_learning import repeat_recovery_train as old
 from probes.dora_owner_learning import margin_preserved_train as margin_engine
 from probes.dora_owner_learning.candidate_opportunity import file_hash, require
@@ -376,9 +378,11 @@ def execute_rank(*, input_path: Path, arm: str, world_size: int, output_root: Pa
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel as DDP
     from src.adapters.dora import select_dora_parameters
-    from probes.dora_owner_learning.geometric_dedup_train import (
-        install_language_decoder_checkpointing, checkpointing_receipt)
-    from probes.dora_owner_learning.train import _dist_values, _parameter_layout, _save_adapter_only, _tensor_state_hash
+    from src.qwen.checkpointing import (
+        install_language_decoder_checkpointing,
+        language_decoder_checkpointing_receipt as checkpointing_receipt,
+    )
+    from src.adapters.dora import save_dora_adapter_payload
 
     packet, anchor, normals, margins = load_packet(input_path)
     rank, local_rank, world = [int(os.environ.get(key, "-1")) for key in ("RANK", "LOCAL_RANK", "WORLD_SIZE")]
@@ -453,7 +457,7 @@ def execute_rank(*, input_path: Path, arm: str, world_size: int, output_root: Pa
         normal = [_materialize(_normal_record(r), qwen=qwen, frontend=frontend, config=config, raw=raw)
                   for r in normals[rank::world]]
         positive_by_id = {e["record"]["record_id"]: e for e in positives}
-        checkpointing = install_language_decoder_checkpointing(model)
+        checkpointing = install_language_decoder_checkpointing(model, expected_layer_count=28)
         checkpointing["enabled"] = False
         phase = "reference"
         refs: dict[str, torch.Tensor] = {}
@@ -569,8 +573,13 @@ def execute_rank(*, input_path: Path, arm: str, world_size: int, output_root: Pa
         export = None
         if rank == 0:
             try:
-                saved = _save_adapter_only(model, source_root=Path(anchor["stable50_adapter"]["root"]),
-                                            output=output_root / "adapter")
+                saved = save_dora_adapter_payload(
+                    model,
+                    source_root=Path(anchor["stable50_adapter"]["root"]),
+                    output=output_root / "adapter",
+                    expected_base_model_path=anchor["model_identity"]["base_model"],
+                    expected_tensor_count=old.EXPECTED_TRAINABLE_TENSORS,
+                )
                 publish(output_root / "provisional.json", {"schema": "parallel_owner_training.receipt.v1",
                     "status": "unsealed_candidate", "arm": arm, "world_size": world,
                     "updates": len(packet["arms"][arm]["steps"]), "input": binding(input_path),

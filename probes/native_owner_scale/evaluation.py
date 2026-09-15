@@ -863,7 +863,8 @@ def baseline_worker(
 
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
@@ -2629,7 +2630,8 @@ def candidate_worker(
 
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
@@ -3013,7 +3015,7 @@ def _validate_natural_row(
     row: Mapping[str, Any], frozen: Mapping[str, Any], tokenizer: Any, arm: str, packet_sha256: str,
     adapter_fingerprint: str,
 ) -> dict[str, Any]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     require(row.get("arm") == arm, "endpoint arm mismatch")
     require(str(row.get("example_id")) == str(frozen["example_id"]), "endpoint example identity")

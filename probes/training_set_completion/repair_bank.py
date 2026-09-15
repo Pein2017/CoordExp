@@ -168,7 +168,7 @@ def choose_release(rows: Sequence[Mapping[str, Any]], manifest: Mapping[str, Any
 
 
 def _native_parse(ids: Sequence[int], tokenizer: Any, record: Mapping[str, Any], stop_reason: str) -> tuple[str, list[tuple[int, int]], dict[str, Any]]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     text, spans = _exact_token_text_frame(ids, tokenizer)
     parsed = native_record(text, record["case"], record["golden"], stop_reason)

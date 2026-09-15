@@ -142,7 +142,7 @@ def _reference(path):
 
 
 def _case_behavior(case, tokenizer):
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from probes.dora_owner_learning.candidate_opportunity import score
 
     action = case["baseline_action_ids"]
@@ -359,7 +359,7 @@ def _save_capture(path, captured):
 
 
 def _run_one_case(qwen, packet, case, directory, receipt):
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.qwen.native import prepare_native_inputs
     from src.qwen.generation import generate_continuations, NativeGenerationPolicy
 
@@ -558,7 +558,7 @@ def run_stage(packet_path, out_dir, case_ids):
 
 
 def _score_cell(tokenizer, case, cell, native):
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from probes.dora_owner_learning.candidate_opportunity import score
 
     prefix = case["history_ids"]
@@ -592,7 +592,7 @@ def _score_cell(tokenizer, case, cell, native):
 
 def consume_stage(packet_path, out_dir):
     from tokenizers import Tokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from probes.dora_owner_learning.candidate_opportunity import score
 
     packet_path, out = Path(packet_path), Path(out_dir)
