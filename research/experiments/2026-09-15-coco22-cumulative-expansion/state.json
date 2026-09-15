@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "unit_id": "2026-09-15-coco22-cumulative-expansion",
-  "lifecycle": "planned",
-  "evidence": "none",
-  "disposition": "user_authorized_22_image_expansion_handoff_prepared",
+  "lifecycle": "running",
+  "evidence": "partial",
+  "disposition": "user_requested_closeout_real_entry_pending",
   "state_as_of": "2026-09-15",
   "protocol": "research/experiments/2026-09-15-coco22-cumulative-expansion/unit.md",
   "result": null,
   "state_source": "research/experiments/2026-09-15-coco22-cumulative-expansion/unit.md",
-  "boundary": "User approved verified extra real COCO80 owners with manual review and actual per-image unlabeled JSONL writeback, removed hour caps, requested8GPU throughput, and preauthorized conditional Source. Fixed256-update dose retained. Handoff requested before compression; new cohort/teacher/execution not prepared or launched.",
+  "boundary": "Lead froze annotations-v5 and 22-image teacher376=old227+new149. Evaluation shares annotation and GT bindings. Proposal ledger821=processed173+HOLD648; raw exhaustion is not a gate. All subagents ended. Actual8GPU qualification running; fixed256 main remains gated. No added owner review or mechanism work.",
   "not_authorized": [
     "extra dose/seed/third arm",
     "automatic expansion beyond22 images",
@@ -18,5 +18,5 @@
     "Codex memory writes",
     "unrelated dirty cleanup"
   ],
-  "next_action": "After context compression, read handoff.md and unit.md; prepare11 matched new images with reviewed annotation writeback, freeze22-image teacher and qualify8-rank execution, then run authorized main and conditional Source."
+  "next_action": "Finish existing real-entry qualification; run already-authorized fixed256 main only if gates pass, otherwise publish blocked final receipt and end."
 }

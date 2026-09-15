@@ -14,6 +14,10 @@ Latest user rulings, superseding the earlier two-hour/five-hour proposals:
 
 - Extra verified, in-scope real objects are accepted; manual visual review is
   necessary. The user explicitly chose this rule.
+- User clarified during pre-model visual screening: new teachers contain real
+  objects in the original scene, excluding LEGO/toy analogues and objects
+  depicted inside photos. Replace candidates109707 and260604 with the same
+  metadata matching rule before generation, preserving selection-v1 and reasons.
 - Accepted newly discovered unlabeled owners must be written into the matching
   original-format JSONL image record's `unlabeled` field, following the existing
   export/provenance convention. Reports alone are insufficient.
@@ -59,8 +63,13 @@ outcome alone proves capacity limits or irreversible plasticity loss.
 - Preserve the old227 teacher sequences exactly: tokens, descriptions, boxes,
  masks, order and EOS. New owner count follows visual review; do not force227
  new owners. New teachers use the same compact protocol and fixed order rule.
-- Trusted GT plus independently reviewed exploration candidates supplies the
- new teacher. Current greedy output alone cannot define the new obligations.
+- Visually trusted GT plus independently reviewed exploration candidates
+ supplies the new teacher. Preserve every source `objects` record, but bind a
+ per-GT admission sidecar for the new images: confirmed wrong/duplicate GT
+ and unresolved GT do not become trusted teacher or accepted physical-reference
+ owners. The old11 teacher and inherited GT remain unchanged. A verified
+ example motivating this rule is image196090 annotation2039788: its car box
+ covers a person's face. Current greedy output alone cannot define obligations.
 - Freeze teacher and owner identities before training. Newly verified owners
  discovered during evaluation update the annotation ledger immediately, and
  are candidate obligations for the next teacher version; they do not silently
@@ -68,6 +77,21 @@ outcome alone proves capacity limits or irreversible plasticity loss.
 - The19 historical category-unknown and2 known non-COCO owners stay in the full
  ledger outside the active COCO-80 teacher. Their blanket adjudication is not
  a prerequisite to expanding this versioned task.
+
+## Frozen image selection before discovery
+
+The lead admitted cohort-v3 for discovery after original-image visual screening
+and replayed source/exposure checks. New image IDs (old-anchor order):
+`296894,196090,210584,200288,335722,124185,457861,19413,510122,116096,438671`.
+Selection and rebased original-format rows live under
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco22-cumulative-expansion/cohort-v3/`.
+The new-originals SHA256 is
+`e0eb6edefbf84966abb65676fce23000e5c0f2603258de9cca0d71bf3d00cbd4`.
+There are169 source GT annotations; these are not yet the admitted teacher.
+Three candidates were replaced before observing model outputs:109707 and260604
+under the user-accepted real-scene rule;29802 because one recliner was labelled
+both chair and couch with nearly identical boxes. Original selection versions,
+visual evidence and lead/user rulings are preserved in the output root.
 
 ## Objective, dose and runtime
 
@@ -141,8 +165,10 @@ A real physical owner with unresolved category remains `class_status="unknown"`,
 `category_name=null`, `desc=null`, outside trusted category supervision.
 Physical-identity uncertainty alone must not be promoted to valid_unlabeled.
 
-Review is per-owner visual examination of original image, bbox overlay and crop,
-plus a persisted decision and lead admission. Automated matches/proposals alone
+Review is per-owner visual examination of original image, full-image bbox
+overlay and a local context view with the bbox drawn, plus a persisted decision
+and lead admission. The user explicitly reaffirmed that plain crops alone are
+insufficient; use them only as supplementary magnification. Automated matches/proposals alone
 are not manual verification. Follow the previous native visual-review/root-
 ruling workflow; ordinary resolved owner decisions do not require repeated
 user permission. Keep genuinely unresolved cases neutral and explicit.
@@ -154,6 +180,26 @@ notes or detached proposals. Retain prior hash-bound snapshots and frozen
 training banks; this is the existing writeback convention, not refusal to update
 annotations. The source raw public COCO dataset is not silently rewritten.
 
+## Visual geometry ruling and deferred mechanism candidate
+
+The user accepts the natural beach calibration box C09 as a valid bbox for
+the left/rear person despite overlap with another person. Minor hair clipping
+and small localization errors are acceptable. Multiple heads or owners inside
+an axis-aligned rectangle do not alone establish an invalid group box: judge
+whether it reasonably corresponds to one target. Keep owner identity separate
+from localization quality; do not change the frozen numerical matching rules.
+The earlier lead calibration verdict rejecting C09 is superseded. The tennis
+C07 wide union box was a constructed reviewer control, not a model rollout.
+Exact ruling and calibration provenance live in the output root under
+`reviewer-calibration-v1/user-ruling-v2.json`.
+
+Owner commitment before x1, retained across later coordinate tokens, is a
+deferred mechanism candidate. Cross-instance corner selection is a plausible
+failure explanation, not an established autoregressive cause. First gather
+actual rollout examples distinguishing this from ordinary localization error;
+the constructed C07 cannot establish model behavior. No owner-binding ablation
+or loss/architecture change is added to the current COCO22 expansion trial.
+
 ## Next action and stop
 
 Prepare the cohort/teacher ledger, exact bindings, measured execution layout and
@@ -162,3 +208,16 @@ approved scope; no repeated confirmation of the above rulings is needed.
 Stop at the bounded main result, or the conditional matched Source result if
 triggered. Further doubling, label-policy changes, extra doses/seeds and public
 publication require their own next-stage decision.
+
+## User-requested checkpoint closeout (2026-09-15)
+
+The latest explicit instruction supersedes exhaustive proposal review. Freeze
+annotations-v5 and the admitted teacher bank; unadjudicated or ambiguous raw
+proposals remain HOLD and do not block teacher freezing. Do not create or resume
+visual workers or add figures, owners, architecture, shared-loss changes, or a
+third arm. All child agents have ended. The lead directly owns the minimal
+data binding and actual real-entry receipt, then publishes one final accepted
+or blocked checkpoint. Existing fixed256 main authorization remains valid only
+after admission; Source remains conditional on genuine completed-dose failure.
+The closeout artifact root is
+`/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco22-cumulative-expansion/closeout-v1/`.
