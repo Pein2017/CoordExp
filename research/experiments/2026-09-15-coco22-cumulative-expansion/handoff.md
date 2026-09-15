@@ -15,8 +15,8 @@
 - 用户明确允许已核实、范围内的额外真实对象；必须逐对象视觉审核。新 valid/verified unlabeled owner 必须写回对应图像 JSONL 的 `unlabeled`，不能只写报告。
 - 用户取消按小时设置的实验时长上限，并要求尽可能8卡、大吞吐。2h、5h、80GPU-hour 都不是现授权边界。256 full-cohort updates 仍是固定实验剂量。
 - 主臂充分完成剂量后失败，且排除教师/执行/截断问题，才启动相同22图银行上的 Source joint-fit；用户已预授权此条件分支，无需再问。
--19个历史类别未决对象继续单列，不挡扩图。不要把历史旧 mask 机制问题、held-out 或第三个 CE 变体重新变成前置门槛。
--新教师身份、22张图完整清单、实际执行配置、annotation 输出版本都还没有建立。它们是接手工作，不是当前 blocker；按协议自主准备并由 lead 把关。
+- 19个历史类别未决对象继续单列，不挡扩图。不要把历史旧 mask 机制问题、held-out 或第三个 CE 变体重新变成前置门槛。
+- 新教师身份、22张图完整清单、实际执行配置、annotation 输出版本都还没有建立。它们是接手工作，不是当前 blocker；按协议自主准备并由 lead 把关。
 
 ## 最短接手动作
 
@@ -99,7 +99,7 @@ SHA256：`c1485dc0bf2e6617c80da6761d5695f6d9fd219ef845288cebec52f40aebdbca`。
 全历史 catalog：
 `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-14-training-set-completion-curriculum/target-owners-complete-v6.json`。
 
-代码入口：[unlabeled_annotations.py](/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/unlabeled_annotations.py:390)，
+代码入口：[unlabeled_annotations.py](/data/CoordExp/.worktrees/research-probes/probes/training_set_completion/unlabeled_annotations.py)，
 现有测试：[test_training_set_completion_unlabeled_annotations.py](/data/CoordExp/.worktrees/research-probes/tests/research/test_training_set_completion_unlabeled_annotations.py)。
 **不要直接运行旧默认 build 当作22图更新器**：它仍硬编码11图、232历史描述、13历史mask，默认ROOT是v3、catalog是v4；当前实际最新导出已是v4/catalog-v6。复用schema和校验，针对新22图路径做最小适配，并保留原已绑定版本。
 
