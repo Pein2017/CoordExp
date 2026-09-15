@@ -42,8 +42,9 @@ the lead will repeat its entire investigation anyway.
 
 ## Model and effort routing
 
-The main lead dynamically chooses and revises subagent routes to minimize
-expected monetary cost through acceptance, including worker usage, correction,
+Subject to explicit user routing preferences, the main lead dynamically chooses
+and revises subagent routes to minimize expected monetary cost through acceptance,
+including worker usage, correction,
 lead intervention and handoff. Required quality is the acceptance floor; speed
 is not a reason to pay more unless the user supplies a deadline or waiting
 incurs a concrete resource cost. Choose a task-fitting starting route from
@@ -52,22 +53,47 @@ sequence. Start at any appropriate route, skip levels, or move down when the
 remaining work permits. Check actual callable models, efforts and fork
 inheritance before dispatch.
 
+For **critical research-direction decisions**, prefer Astra `xhigh`
+for the subagent responsible for scientific judgment. This
+user preference covers choosing the research question or estimand, distinguishing
+competing mechanisms, and selecting consequential experimental or architecture
+directions. Start there without requiring a cheaper route to fail first. Bounded
+evidence collection does not make the resulting scientific judgment routine;
+execution workers normally use Luna, Terra or Sol. Astra `low` may own difficult
+execution or recovery directly when expected worker, rework and lead intervention
+cost favors it; no cheaper-model failure is required. When moving from advice to
+execution, reconcile scope and choose the execution route afresh rather than
+automatically retaining the adviser. Respect runtime model/effort change limits.
+These are user preferences, not a measured model ranking.
+When independent assessments are requested, give each the original evidence and
+permission to reject the lead's proposal; keep their recommendations separate
+until submission. The number of assessors remains task-specific; this preference
+adds no mandatory review gate. The lead integrates the evidence, and user-owned
+research decisions retain their existing authority boundary.
+
+Use six common configurations to keep routine selection small. This is a working
+menu, not a measured cost ranking or an escalation sequence; choose directly by
+task fit rather than comparing every supported combination on each dispatch.
+
 | Route | Starting fit |
 |---|---|
-| Luna `high` / `xhigh` / `max` | Cost-sensitive, bounded work with clear semantic boundaries and a strong verifier. High is a tentative starting option, not a minimum-quality guarantee; increase effort when comparable evidence or a concrete depth need supports it. Internal interfaces can be discovered by the worker. |
-| Terra `medium` / `high` / `xhigh` / `max` | An alternative code diagnosis/implementation owner when comparable accepted-task evidence favors it. No default max or assumed domain specialty. |
-| Sol `medium` / `high` / `xhigh` / `max` | Integration, implementation or analysis where observed fit justifies the route. Deeper effort may reduce exploration and correction costs; Sol is not a mandatory intermediate family. |
-| Astra `low` / `medium` / `high` / `xhigh` | Difficult coupled work or expensive semantic mistakes. Choose higher effort directly if it is expected to reduce total accepted cost; no prior cheaper-model failure is required. |
+| Luna `high` / `max` | High is the ordinary starting option for bounded, verifiable work. Choose max directly when a concrete depth need or comparable evidence supports it. Neither guarantees quality; internal interfaces remain the worker's to discover. |
+| Terra `xhigh` | Alternative code diagnosis/implementation owner. Retain one common effort while gathering comparable acceptance evidence; do not assume a domain specialty. |
+| Sol `xhigh` | Complete implementation packages, dependency tracing and integration where observed fit supports it. Not a mandatory intermediate family. |
+| Astra `low` / `xhigh` | Low for difficult execution or recovery when expected total acceptance cost favors it; xhigh for critical scientific, mechanism or architecture judgment. |
 
 Use supported efforts and actual runtime availability. Other supported efforts
-remain options when justified. Neither token price nor effort orders total cost.
+remain evidence-driven exceptions, not prohibited choices. For example, use Sol
+max when comparable task evidence favors it over xhigh; no additional benchmark
+or duplicate run is required. Preserve exact model/effort in existing receipts.
+Neither token price nor effort orders total cost.
 Effort tradeoffs are non-monotonic: xhigh can sometimes be cheaper and faster
 than high by reducing exploration and rework. Compare across effort levels at
 equal acceptance quality; do not assume lower effort saves money or require
 trying each level in order. Cost remains primary; speed alone does not justify
 paying more.
-Astra is useful as main lead and as a direct package owner; no family is reserved
-for advice. These are tentative starting fits, not a universal ranking. Evidence
+Astra may serve as the main lead; this menu does not change the running lead's
+setting. These are task-fitting preferences, not a universal ranking. Evidence
 from a small exam cannot establish a domain specialty or a reliable success rate.
 
 ### Learn from task evidence
@@ -87,7 +113,10 @@ skill's authority/acceptance rules. A single success does not set a default.
 
 Distinguish a local implementation error, missing brief facts and environment
 failure from a reasoning or contract-understanding gap. Let the same owner
-repair a concrete verifier failure when that is economical. Raise effort for a
+repair a concrete verifier failure when that is economical. For oversized work
+or missing recoverable results, first adjust batch size and save completed natural
+units before continuing; do not treat delivery failures alone as a depth deficit.
+Raise effort for a
 specific depth deficit; switch family when repeated corrections miss the
 contract or the lead is effectively reimplementing the package. Do not spend
 through every Sol effort before choosing Astra. User-owned ambiguity still
