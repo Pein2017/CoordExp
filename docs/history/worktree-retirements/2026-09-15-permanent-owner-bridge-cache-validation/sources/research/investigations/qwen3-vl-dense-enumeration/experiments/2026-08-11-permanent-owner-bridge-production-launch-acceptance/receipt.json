@@ -1,0 +1,123 @@
+{
+  "policy": "permanent-owner-bridge-stage1-production-launch-acceptance-v1",
+  "schema_version": 1,
+  "created_at": "2026-08-11T06:58:33Z",
+  "claim_boundary": {
+    "accepted": "The one user-authorized append-only recovery successor launched the exact W8 Stage 1 production run. All eight workers initialized, and ten consecutive training observations were finite and applied at the snapshot boundary. The presence of step 2 and later rows proves the synchronous step-1 gradient-bearing owner-bridge artifact contribution completed reduction and accumulation after the step-1 logging row.",
+    "not_accepted": "The production run is not complete, no presentation checkpoint or natural-greedy production result exists yet, and no model-quality or promotion conclusion is made."
+  },
+  "repository": {
+    "worktree": "/data/CoordExp/.worktrees/permanent-owner-bridge",
+    "head": "78df2b87c925677e93080715d42e5a9348dcb05f",
+    "clean_at_preflight": true,
+    "config_path": "/data/CoordExp/.worktrees/permanent-owner-bridge/configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_xy_owner_bridge_stage1_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1.yaml",
+    "config_fingerprint": "770f705f5357fdfc08d1d6fb332d828874265d296c5f567ae4c64266cd3c056c"
+  },
+  "parent_source": {
+    "checkpoint_path": "/data/CoordExp/outputs/research/eight-coordinate-bbox-supervision/2026-08-05-closeout/artifacts/training/four-coordinate-xy/checkpoints/step-2444",
+    "resolved_config_fingerprint": "89e5af1269c42bdcc28b7175c8c701a4b57673e4b2fa8255c8912ee8800283ae",
+    "adapter_fingerprint": "5a59270e1ed1bf2062590fd0eb820e534e39e8914c7a20d91d642a8f2a99452d",
+    "selected_embedding_fingerprint": "635ec008a79fd2657c2acc75772a52cfda70eb0f664ef4f91c4f05c0aa931bc6"
+  },
+  "recovery": {
+    "attempt_ordinal": 1,
+    "maximum_recovery_attempts": 1,
+    "parent_intent_key": "02bdbc993c57f4e3b7f38506d40d80af9acbc2ab327a1330ee1e86789078d3ad",
+    "parent_claim_sha256": "0b597d82b97855b44742b959d5e864149d9f68070701cc8ce2665e15ad82db73",
+    "successor_intent_key": "1c9e834fc83b3fc773746ceab8982a564fbc5f10aa5238333988c3919fc84c03",
+    "successor_claim_path": "/data/CoordExp/outputs/prod/coordexp_swift/.owner_bridge_stage1_launch_ledger/stage1-production-recovery-attempt-1-claim.json",
+    "successor_claim_sha256": "ec4fc7b0fd494ffdfe393c0bb2740576cbde4df58c45c6b5855a3d68e5c95d0d",
+    "successor_claim_fingerprint": "39968a9ac1c29d146c04cfaf3ce18bb05d2417b045e946e47d25744d9b1c745b",
+    "launch_activation_nonce": "c60ee5fe978701d2e4dcb368a9286db7a2ab9ed2f909ee6b9cd39f4afd7f4be9"
+  },
+  "launch": {
+    "command": [
+      "/root/miniconda3/envs/ms/bin/accelerate",
+      "launch",
+      "--multi_gpu",
+      "--num_processes",
+      "8",
+      "--num_machines",
+      "1",
+      "--max_restarts",
+      "0",
+      "-m",
+      "src.train",
+      "--config",
+      "/data/CoordExp/.worktrees/permanent-owner-bridge/configs/coordexp_swift/prod/qwen3_vl_2b_desc_first_geo_sorted_xy_owner_bridge_stage1_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1.yaml"
+    ],
+    "cwd": "/data/CoordExp/.worktrees/permanent-owner-bridge",
+    "visible_gpu_uuids": [
+      "GPU-8d43cb78-19ca-2f59-3179-7ea166cb1a4e",
+      "GPU-f520bc13-34fb-8809-4af8-a6fd8a28aec8",
+      "GPU-bf5f21dd-c4cb-6731-e611-6c6d55001f55",
+      "GPU-7dfec513-1c8a-e86d-ea3f-1ec0eef82208",
+      "GPU-2f35ef2a-9a05-1b8e-391e-06000c1380ab",
+      "GPU-40445989-5638-1e7c-165b-41926b1fc947",
+      "GPU-3d113ebf-fcac-c7d9-d5a6-a6abefeb32ff",
+      "GPU-4e5382fb-e2a6-1057-32bc-12697f2b09fd"
+    ],
+    "launcher": {
+      "pid": 2841385,
+      "start_time_ticks": 3256786717,
+      "process_group_id": 2841385,
+      "session_id": 2841385
+    },
+    "worker_pids": [2842289, 2842290, 2842291, 2842292, 2842293, 2842294, 2842295, 2842296],
+    "run_id": "qwen3_vl_2b_desc_first_geo_sorted_xy_owner_bridge_stage1_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1-770f705f5357",
+    "run_dir": "/data/CoordExp/.worktrees/permanent-owner-bridge/outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_xy_owner_bridge_stage1_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1",
+    "world_size": 8,
+    "resolved_max_steps": 2444
+  },
+  "ledger_sha256": {
+    "launch_intent": "2739567316b942e896ffffe3bcb13582d948db18db8de78a054254cbcced30a4",
+    "activation": "402dc87a0c270667f3ce5f25af5171ef0d998bb1f1215db3b886d8a70676ad21",
+    "run_binding": "967e759e31d6a7bca41e62e72289f79c78e60a22cf6a76e2430eb66d1bcc1056",
+    "preflight": "430cf856b558d40c5c50a2882f2e082148bb3b46ba83eeee55bd2bd6b9588dde",
+    "worker_admissions": [
+      "aeae072f0788225ebb259e49736382b9daece2225347dbc654f9ccd7a94cfc3e",
+      "a3d8d0f43442c41d5d7d2ff163a901a3f6eb5668d29b73aab4f1a9b31e2135fc",
+      "4f7259ac01a08a0e5b652b77a8b9af8e4dd227ca38ea2423c4c1a59d61553abf",
+      "314661fe08ff4604ede2810e720ac6c5ca4c30e1341b8ea4303b9017a4158ac8",
+      "8cb72533c5303e428a5c3a4c26024f1e14d9b85aeed439709e0a8eab188699a1",
+      "82bf89e4cc383dc1d653f1caa327ade66041e3933a308bfd0e9b80f761dbe5e0",
+      "027f2c339630e5d40ee68f4116424a21cc608e14fbd520bd3c3dc5ba64f3c2a2",
+      "f2be6444ab2414d0b73b72f2d8297f952406154a3f90dc41adafe43226dd7fd9"
+    ]
+  },
+  "first_heartbeat_snapshot": {
+    "snapshot_logging_sha256": "d1846c21ffa6e55fdf6ef42ccd6978305448a683b1890f3cedd0fba91db2010d",
+    "row_count": 10,
+    "step_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "all_finite": true,
+    "all_optimizer_updates_applied": true,
+    "all_non_finite_fields_empty": true,
+    "step_1_micro_step_count": 3,
+    "step_1_total_loss": 6.346438840031624,
+    "step_1_owner_atom_loss": 4.943904340267181,
+    "step_1_owner_route_loss": 0.0,
+    "step_1_owner_use_loss": 0.0,
+    "gradient_artifact_ordering_proof": "SupervisedTrainer captures and finite-validates optimizer-group gradient norms before optimizer_step and attaches them to OwnerBridgeRankArtifactContribution. The completed-step handler appends each logging row and then synchronously reduces and accumulates that contribution. Therefore a later logging row cannot exist unless the prior step's gradient-bearing artifact path returned successfully."
+  },
+  "teacher_forced_eval_schedule": [
+    {"planned_step_id": 306, "event_id": "tf_eval:p0:midpoint", "fraction": "1/8"},
+    {"planned_step_id": 611, "event_id": "tf_eval:p0:end", "fraction": "1/4"},
+    {"planned_step_id": 917, "event_id": "tf_eval:p1:midpoint", "fraction": "3/8"},
+    {"planned_step_id": 1222, "event_id": "tf_eval:p1:end", "fraction": "1/2"},
+    {"planned_step_id": 1528, "event_id": "tf_eval:p2:midpoint", "fraction": "5/8"},
+    {"planned_step_id": 1833, "event_id": "tf_eval:p2:end", "fraction": "3/4"},
+    {"planned_step_id": 2139, "event_id": "tf_eval:p3:midpoint", "fraction": "7/8"},
+    {"planned_step_id": 2444, "event_id": "tf_eval:p3:end", "fraction": "1/1"}
+  ],
+  "post_final_hf": {
+    "materialize_command": "PYTHONDONTWRITEBYTECODE=1 TOKENIZERS_PARALLELISM=false conda run -n ms --no-capture-output python -m scripts.coordexp_swift.materialize_owner_bridge_infer_config --training-run-dir outputs/prod/coordexp_swift/qwen3_vl_2b_desc_first_geo_sorted_xy_owner_bridge_stage1_dora_r16a32_llm_12000_accelerate8_ebs24_4epoch_warmup0p1 --input-jsonl /data/CoordExp/public_data/coco/rescale_32_1024_bbox_len12000_xy_sorted/val.coord.jsonl --artifact-root outputs/prod/coordexp_swift_owner_bridge_hf --name owner-bridge-stage1-production-final-78df2b8 --mode production",
+    "infer_command": "CUDA_VISIBLE_DEVICES=0 PYTHONDONTWRITEBYTECODE=1 TOKENIZERS_PARALLELISM=false conda run -n ms --no-capture-output python -m src.infer --config configs/coordexp_swift/infer/materialized_owner_bridge/owner-bridge-stage1-production-final-78df2b8.yaml",
+    "precondition": "Run only after run.json is completed, checkpoints/final.json and the final checkpoint event exist, and the materializer revalidates the complete adapter/embedding/bridge composition against the event trust root."
+  },
+  "monitoring_and_stop": {
+    "authoritative_progress": "logging.jsonl until run.json receives a terminal or checkpoint update",
+    "stdout": "/data/CoordExp/outputs/prod/coordexp_swift/.owner_bridge_stage1_launch_ledger/launch_logs/1c9e834fc83b3fc773746ceab8982a564fbc5f10aa5238333988c3919fc84c03.stdout.log",
+    "stderr": "/data/CoordExp/outputs/prod/coordexp_swift/.owner_bridge_stage1_launch_ledger/launch_logs/1c9e834fc83b3fc773746ceab8982a564fbc5f10aa5238333988c3919fc84c03.stderr.log",
+    "stop_rule": "If any rank exits, run.json becomes failed, any update is unsafe or non-finite, an artifact/checkpoint identity fails, or progress becomes uncertain, preserve the run and ledger evidence and do not issue another activation."
+  }
+}

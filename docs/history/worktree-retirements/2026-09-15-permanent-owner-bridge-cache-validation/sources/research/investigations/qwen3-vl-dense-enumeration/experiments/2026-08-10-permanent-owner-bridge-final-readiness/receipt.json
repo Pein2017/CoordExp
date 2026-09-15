@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "claim_boundary": "Frozen-tree software readiness only. This receipt does not establish model quality, live production launch, production GPU ownership, or a production optimizer heartbeat.",
+  "repository": {
+    "root": "/data/CoordExp/.worktrees/permanent-owner-bridge",
+    "git_commit": "5efe5985d0e08a12ad440379e7835fc3c700ffb0",
+    "clean_at_pytest_invocation": true,
+    "branch": "codex/permanent-owner-bridge"
+  },
+  "canonical_pytest": {
+    "command": "CUDA_VISIBLE_DEVICES='' PYTHONDONTWRITEBYTECODE=1 TOKENIZERS_PARALLELISM=false conda run -n ms python -m pytest -q -p no:cacheprovider -ra --junitxml=research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/canonical-pytest.xml",
+    "collection_command": "CUDA_VISIBLE_DEVICES='' PYTHONDONTWRITEBYTECODE=1 TOKENIZERS_PARALLELISM=false conda run -n ms --no-capture-output python -m pytest --collect-only -q -p no:cacheprovider",
+    "collection_count": 2001,
+    "passed": 2000,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "elapsed_seconds": 228.327,
+    "junit_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/canonical-pytest.xml",
+    "junit_sha256": "5c24457b7313c00c23454b633e06aaf78000db68bf6e07753a06d9987a3dd120",
+    "skip": {
+      "node": "tests/qwen/test_patches.py::test_real_qwen3_vl_patch_embed_linearization_matches_cuda_bf16_forward_and_grad",
+      "reason": "CUDA is required for bf16 parity",
+      "interpretation": "CUDA was deliberately hidden for the deterministic CPU software gate; W1 and W8 GPU smokes separately exercise the real GPU path."
+    },
+    "pytest_testpaths": [
+      "tests/adapters",
+      "tests/artifacts",
+      "tests/augmentation",
+      "tests/common",
+      "tests/config",
+      "tests/data",
+      "tests/eval",
+      "tests/inference",
+      "tests/integration",
+      "tests/losses",
+      "tests/optim",
+      "tests/packing",
+      "tests/qwen",
+      "tests/runtime",
+      "tests/supervision",
+      "tests/templates",
+      "tests/training",
+      "tests/test_gt_vs_pred_visualization.py"
+    ],
+    "legacy_root_boundary": "Top-level legacy tests outside pytest.ini are not part of the current production route. In particular, tests/test_training_runtime_sft_integration.py imports the removed pre-Swift src.sft surface, and tests/test_infer_layout_import_gates.py asserts a retired src.infer package layout. They are retained as historical residue and are not counted in this canonical result."
+  },
+  "runtime": {
+    "python": "3.12.11",
+    "pytest": "8.4.2",
+    "torch": "2.9.1+cu128",
+    "transformers": "4.57.1",
+    "scipy": "1.16.1",
+    "safetensors": "0.6.2",
+    "CUDA_VISIBLE_DEVICES": ""
+  },
+  "import_and_residue_checks": [
+    {
+      "command": "rg -n 'src\\.(sft|bootstrap|training_runtime|trainers)|src\\.infer\\.(backend|engine)' src scripts/coordexp_swift",
+      "exit_code": 1,
+      "meaning": "No forbidden current-source imports matched."
+    },
+    {
+      "command": "rg -n 'scalar[-_ ]density|owner_record.*dict|dict\\[str, Any\\].*owner' src/inference scripts/coordexp_swift",
+      "exit_code": 1,
+      "meaning": "No forbidden legacy owner-record or scalar-density surfaces matched."
+    },
+    {
+      "command": "conda run -n ms python -c 'import src.train, src.training.pipeline, src.training.supervised_trainer, src.inference.hf_backend, src.qwen.owner_bridge'",
+      "exit_code": 0,
+      "meaning": "Current production train, inference, and bridge imports succeed."
+    },
+    {
+      "command": "conda run -n ms python -m compileall -q src scripts/coordexp_swift tests/config tests/training tests/losses tests/optim tests/artifacts tests/qwen tests/inference tests/integration tests/eval tests/algorithm tests/runtime",
+      "exit_code": 0,
+      "meaning": "Current source, scripts, and launch-bearing tests compile."
+    },
+    {
+      "command": "conda run -n ms openspec validate add-permanent-owner-bridge --strict",
+      "exit_code": 0,
+      "meaning": "The OpenSpec change validates strictly."
+    }
+  ],
+  "algorithm_battery": {
+    "receipt": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-wave5-algorithm-accuracy/receipt.json",
+    "executed_clean_parent_commit": "5ecbae86e7a68e89f11ac68985e1a672226e9db4",
+    "final_commit_delta": "The final commit 5efe598 only publishes the refreshed receipt and changes no source, test, or config semantics.",
+    "passed": 23,
+    "failed": 0,
+    "source_set_sha256": "a35e1c016a4d44de8b581b955da543d23738d7432cc0e50806293d6d737fee9c"
+  },
+  "accepted_materializations": {
+    "w1": "configs/coordexp_swift/infer/materialized_owner_bridge/owner-bridge-stage1-w1-fresh-80ded9a.materialization.json",
+    "w8": "configs/coordexp_swift/infer/materialized_owner_bridge/owner-bridge-stage1-w8-fresh-80ded9a.materialization.json",
+    "selection_rule": "Only these two 80ded9a receipts are launch-bearing. The d9d9768 and 56771a8 W1 pairs remain tracked historical provenance and must not satisfy tasks 4.13 or 4.14."
+  },
+  "external_fixture": {
+    "path": "outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917",
+    "target": "/data/CoordExp/.worktrees/CoordExp-swift/outputs/coordexp_swift/infer/val200_support/repaired_special_token_embeddings_step917",
+    "repair_receipt_sha256": "1fe802d1e3cc9c9121f55cb781fc7c31a7c45cb766fcb9f815898a78ad6ba276",
+    "scope": "Legacy Wave7 benchmark-readiness fixture used by one canonical inference test. No owner-bridge Stage1 launch-bearing config or artifact references this path."
+  }
+}

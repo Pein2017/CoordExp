@@ -1,0 +1,3117 @@
+{
+  "schema_version": 1,
+  "kind": "worktree_retirement_source_capture",
+  "captured_at": "2026-09-15",
+  "source": {
+    "worktree": ".worktrees/permanent-owner-bridge-cache-validation",
+    "commit": "4f6fca72e91ae8b752a2a20edb69f772b3f69196",
+    "recoverable_tag": "archive/permanent-owner-bridge-cache-validation-20260915",
+    "status": "clean_detached_head_at_capture"
+  },
+  "comparison": {
+    "target_worktree": ".worktrees/research-probes",
+    "target_commit": "2015041d4c3d907b2ce939bae2bc34edd2b399bd",
+    "source_markdown_files": 1682,
+    "markdown_already_byte_identical_in_target": 1382,
+    "markdown_materialized_here": 300,
+    "owner_bridge_primary_records_materialized": 31,
+    "materialized_file_count": 307,
+    "coverage_rule": "Every source Markdown is either byte-identical in the target tree at capture or copied below. The recoverable tag retains the full source tree, including non-document code and configurations."
+  },
+  "files": [
+    {
+      "source_path": ".codex/RTK.md",
+      "archive_path": "sources/.codex/RTK.md",
+      "git_blob": "048fc404b5d89c6a461baf542bf71eccb93c44af",
+      "bytes": 1341,
+      "sha256": "0b7b235290f8ec85d1389482814c48e42ac9ee540ef119f2829a9468937e3e35",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": ".codex/skills/openspec-apply-change/SKILL.md",
+      "archive_path": "sources/.codex/skills/openspec-apply-change/SKILL.md",
+      "git_blob": "1375861c3ecb0efd5c0e5b22f8d7c0b2431ea4d1",
+      "bytes": 5465,
+      "sha256": "83e0d2d4c47674e312fc9d29297d91e5c018a5507e6961829ee623600e2cf2ff",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": ".codex/skills/openspec-archive-change/SKILL.md",
+      "archive_path": "sources/.codex/skills/openspec-archive-change/SKILL.md",
+      "git_blob": "c0c169d14f0ebf1c098b2046718b4f6e0c974fe6",
+      "bytes": 4965,
+      "sha256": "85c8764715a18fbd11d16ca04bd9e15d8644bf5e4203176ad34eee192b546472",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": ".codex/skills/openspec-explore/SKILL.md",
+      "archive_path": "sources/.codex/skills/openspec-explore/SKILL.md",
+      "git_blob": "771271a8fdbdb4b15ea285e533f1a2a61bc6bc27",
+      "bytes": 11428,
+      "sha256": "79249f798ad0d69bf95f08f3c7a29d44d982e4c1645f1a12a21dfcd488f4ba0d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": ".codex/skills/openspec-propose/SKILL.md",
+      "archive_path": "sources/.codex/skills/openspec-propose/SKILL.md",
+      "git_blob": "716d2d3d39acdbe006a86da81d578987d8f64d7b",
+      "bytes": 5465,
+      "sha256": "a666b2381a7d5e982d8e32183484020f518da2b795c0f387c5ff4b3cb47be0fd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": ".codex/skills/openspec-sync-specs/SKILL.md",
+      "archive_path": "sources/.codex/skills/openspec-sync-specs/SKILL.md",
+      "git_blob": "b6aad67abff5a9d495e7400769860b3058cfa297",
+      "bytes": 5187,
+      "sha256": "420e5815eee33ebd642b9d038f0a5307b176923a5c1a837c4873e51de085aae3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": ".codex/skills/openspec-update-change/SKILL.md",
+      "archive_path": "sources/.codex/skills/openspec-update-change/SKILL.md",
+      "git_blob": "3e1c931d27ac55544bab71e4ed06d9d27d57b147",
+      "bytes": 5791,
+      "sha256": "82a51ed50b10ac3be479d7abc4a99fe3685ee7794078d7d8ea7bfc90ae42c2d9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "README.md",
+      "archive_path": "sources/README.md",
+      "git_blob": "eb3e515a9d547c549eeb34c4975fc9639e7baedb",
+      "bytes": 7522,
+      "sha256": "4b1cd3c11f3d46171e16d5c9d8a46858e5ec5aea4d17c300a2edda7f2336414a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "configs/README.md",
+      "archive_path": "sources/configs/README.md",
+      "git_blob": "10781e8e3e2567c5d3d017fff88f4de6b94e034e",
+      "bytes": 2028,
+      "sha256": "2160c13973752b3a9026a4a0214f9e31b4ea3868cc626bab61bd1742e4845ae4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/AGENT_ENGINEERING_CONSTITUTION.md",
+      "archive_path": "sources/docs/AGENT_ENGINEERING_CONSTITUTION.md",
+      "git_blob": "b9c0f815ace555f1fdd26ef5002be4177b967b56",
+      "bytes": 17723,
+      "sha256": "61267e51a3509fb8af0f791b19383d3f99a12d26298b76980b002649e6b0fb80",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/AGENT_INDEX.md",
+      "archive_path": "sources/docs/AGENT_INDEX.md",
+      "git_blob": "b18e750579fa9a24c25b9fcb5eb916ef6fa57eee",
+      "bytes": 6670,
+      "sha256": "e7c4799c38bbbe2dfec07c4ca57780742ac3f1914dd9022c2352da79b5279b43",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/ARTIFACTS.md",
+      "archive_path": "sources/docs/ARTIFACTS.md",
+      "git_blob": "466ecf6d74aac5de973617baeda9cb33941c15ba",
+      "bytes": 5475,
+      "sha256": "740f72eb54684fbf96435344386db493ec429332e4c6eb3013c6be9bc3c2f857",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/BRANCH_AND_WORKTREE_POLICY.md",
+      "archive_path": "sources/docs/BRANCH_AND_WORKTREE_POLICY.md",
+      "git_blob": "a1e250f2dfbb9848363bc2fbff955f756b58dbf5",
+      "bytes": 3064,
+      "sha256": "15abbd40f2c8d5d851d2435a2f1a9db88f88ab264d8055eaeb373e46152d1795",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/COORDEXP_SWIFT.md",
+      "archive_path": "sources/docs/COORDEXP_SWIFT.md",
+      "git_blob": "8e4480dcdded581bea7a4cb85a40a72717dd0892",
+      "bytes": 12974,
+      "sha256": "1eb521fcea7b614048281685cdf78e52c9ad4d6a911eb2b33e588bae3ed2a5ee",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/IMPLEMENTATION_MAP.md",
+      "archive_path": "sources/docs/IMPLEMENTATION_MAP.md",
+      "git_blob": "c64562f23420e1b6a05c6471e4c0704818065748",
+      "bytes": 6336,
+      "sha256": "0215c7088270c9d5b0327e2e2b1ec32e1c016ae8a171855d91926013716f88fb",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/PROJECT_CONTEXT.md",
+      "archive_path": "sources/docs/PROJECT_CONTEXT.md",
+      "git_blob": "6375f6dd797f4f60aa3ba0e6c3bc22dcea1a5f8f",
+      "bytes": 8053,
+      "sha256": "c95e51741cd2398307f3bef157066a8d8569193ea1286f9baccbb8575d2b2e38",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/README.md",
+      "archive_path": "sources/docs/README.md",
+      "git_blob": "9a4e364d96575befa544ae8a31f880ce282a89e7",
+      "bytes": 2412,
+      "sha256": "80434fe02bd552da3bcfd5081889fd7a4103288a191a94c305d31fab6c96e047",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/SYSTEM_OVERVIEW.md",
+      "archive_path": "sources/docs/SYSTEM_OVERVIEW.md",
+      "git_blob": "f184d0218c51d39126b3471971cc3fab09be615b",
+      "bytes": 6675,
+      "sha256": "bad243ae12c1addd1c55cac9cceb7bc8902d0ca16f09dccaa43fde29ab9d3bb8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/architecture/README.md",
+      "archive_path": "sources/docs/architecture/README.md",
+      "git_blob": "3d9b168cb6cc7810652aedca373f718ee3fed43f",
+      "bytes": 3792,
+      "sha256": "cc9cb5875a6ec41f392137525de81596409bccd404ed39a324f729f8880de5e4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/data/PACKING.md",
+      "archive_path": "sources/docs/data/PACKING.md",
+      "git_blob": "71dccb182fca440de686eca3af5c59594fc25620",
+      "bytes": 2956,
+      "sha256": "1b93db51acf4acf656a003dd9bbfac51367777b7cb4ee32f22b1e42ba0752000",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/data/VISUAL_GENOME.md",
+      "archive_path": "sources/docs/data/VISUAL_GENOME.md",
+      "git_blob": "9f94b1c7f957ad8f2528d97f51f9c777d31f40f5",
+      "bytes": 6870,
+      "sha256": "9b599e9c5212656038a7e2d254a7f29bcf26331c768f9368b8c80b48997a49d5",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/eval/CONTRACT.md",
+      "archive_path": "sources/docs/eval/CONTRACT.md",
+      "git_blob": "e52c07f9198c47c5334bc707da10dff4af27ef57",
+      "bytes": 6650,
+      "sha256": "fd28e2ee63a628b240409554dcf5a780404167b395b0aa8ac34abe187a16cf2c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/eval/README.md",
+      "archive_path": "sources/docs/eval/README.md",
+      "git_blob": "b7e469dc146b190810b81208d0dc16c1b1c8d0bf",
+      "bytes": 2864,
+      "sha256": "9aac6d8a4ad05ea280097a0358a37d20f7b11afa37f4a90c61f0b6a99af21557",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/eval/WORKFLOW.md",
+      "archive_path": "sources/docs/eval/WORKFLOW.md",
+      "git_blob": "765e2108910f142d0caeb6295ebd66659d1f9e93",
+      "bytes": 17677,
+      "sha256": "4789de8f08edeb45a1e7c9aebad7e305f43fbdcc5bd57af4c532a72f51044380",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/README.md",
+      "archive_path": "sources/docs/history/README.md",
+      "git_blob": "281e72e4d8836fa123bc4d3a411033cb53ff0046",
+      "bytes": 1576,
+      "sha256": "28f18f987967ca951a0060aee7c41866b0eeba7574a5eede8a2312ac2643b5a2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/architecture/README.md",
+      "archive_path": "sources/docs/history/architecture/README.md",
+      "git_blob": "41c0718592d86a80dd81c5dec758d66b3ca09347",
+      "bytes": 999,
+      "sha256": "7c5062759b03c4da9b18c2697e591d8bf1a33087746c05d7398d8458539b8029",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/architecture/proposals/2026-06-27-coordexp-swift/BLUEPRINT.md",
+      "archive_path": "sources/docs/history/architecture/proposals/2026-06-27-coordexp-swift/BLUEPRINT.md",
+      "git_blob": "8f33d35556c39cd722209f95504739c9c293607c",
+      "bytes": 179859,
+      "sha256": "e4694ac008f5767e198058f3a9f93d2f64900c88f36b4f2de469ec4d9e5a31dd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/architecture/proposals/2026-06-27-coordexp-swift/DECISIONS.md",
+      "archive_path": "sources/docs/history/architecture/proposals/2026-06-27-coordexp-swift/DECISIONS.md",
+      "git_blob": "59c88e5318a74c626df99444d1225de7a044fe9e",
+      "bytes": 264808,
+      "sha256": "90bdf855c176568c2f721ccdf9cdffb515ddef10d13b179bebc98a5e0b2e2c59",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/dora.md",
+      "archive_path": "sources/docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/dora.md",
+      "git_blob": "e1396ceba7cf5250df6de5fc762f5ea77bc8919a",
+      "bytes": 9695,
+      "sha256": "b96bd7c9c4de23d35037ad6790191bad1b8f580c398a92af1aacd4d1a0554899",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/qwen-noresize-mrope-fa2.md",
+      "archive_path": "sources/docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/qwen-noresize-mrope-fa2.md",
+      "git_blob": "8d28e37f25e31b53fdd0df7f40c16eab092acdf5",
+      "bytes": 9659,
+      "sha256": "33412fb5f0520221315e688df5ae46615cf3a76d5d1f6a5cd358f35143e8f422",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/special-token-embeddings.md",
+      "archive_path": "sources/docs/history/architecture/proposals/2026-06-27-coordexp-swift/source-studies/special-token-embeddings.md",
+      "git_blob": "767bc89436edd50af43ed438df92725ba37e4e8c",
+      "bytes": 9873,
+      "sha256": "e024f8f9754475cfa6ed81136eae6c72becd2aca53b7b03b9fa3047e8da7d193",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-06-30-coordexp-swift-execution-charter.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-06-30-coordexp-swift-execution-charter.md",
+      "git_blob": "9e1f4211ded1273e6617da9b16c4ad0a850afaea",
+      "bytes": 7557,
+      "sha256": "0b41d35fbc4921fdd9d6fb5ad162147101acba57384b72d172f2b71a0ecdd0f2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-06-30-coordexp-swift-roadmap-audit-prompt.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-06-30-coordexp-swift-roadmap-audit-prompt.md",
+      "git_blob": "dbbbbc532b727e1ddae506fc8f565b8f25a481f3",
+      "bytes": 5591,
+      "sha256": "11266e7fcb1be460287dd6ca3bc857911948c14707e0f71d8e306ef0bb4db9bd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-06-30-coordexp-swift-src-rebuild-roadmap.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-06-30-coordexp-swift-src-rebuild-roadmap.md",
+      "git_blob": "7447b18d271397e2340adb2fb289b40b3b2e92b9",
+      "bytes": 57349,
+      "sha256": "78171e9486fd2959e919fb5383c2a9301a2ac4e927fe8df1e84e08f6a471cae2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-06-30-coordexp-swift-wave1a-source-study-plan.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-06-30-coordexp-swift-wave1a-source-study-plan.md",
+      "git_blob": "aaf77533068e236c6767289e8fd55ebb3ba6fafd",
+      "bytes": 5602,
+      "sha256": "41c1a1e529e53a6c9ec311f60b6c97f3bb1c3122b2cbf8533b4c0428b77d8cbc",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-07-02-coordexp-swift-inference-infra-roadmap.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-07-02-coordexp-swift-inference-infra-roadmap.md",
+      "git_blob": "688d6d5a7a7f7692e8c62b12f222d19c1895d23f",
+      "bytes": 19397,
+      "sha256": "53652e500505db16f26c0826f9b045f3e34e795dae2e9d1ea9b3e5b5d7ab08a7",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-07-02-coordexp-swift-production-relaunch-roadmap.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-07-02-coordexp-swift-production-relaunch-roadmap.md",
+      "git_blob": "5e2be58594469ee90f79205353e75c55fc34c7a5",
+      "bytes": 3103,
+      "sha256": "1c47fd57ba70811acb3d532899b9eaa50c57c52d3b2b517add33c271aca376c6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-07-02-coordexp-swift-wave7-benchmark-readiness.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-07-02-coordexp-swift-wave7-benchmark-readiness.md",
+      "git_blob": "fccbf7f493f825de8c510673b971036062e0b211",
+      "bytes": 6674,
+      "sha256": "25016e6092f38c5dacd7b3596d26d69d2322f558f0bde1cbb5a78b4afbaa9dda",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/plans/2026-07-06-coordexp-swift-architecture-upgrade-roadmap.md",
+      "archive_path": "sources/docs/history/superpowers/plans/2026-07-06-coordexp-swift-architecture-upgrade-roadmap.md",
+      "git_blob": "13eb00c2b22badbf41d8ff7622fffa95d87cd3ed",
+      "bytes": 9500,
+      "sha256": "ecdc7d3f078a2343f8bf1c3437d680cc176efe3940fe057a2f056f9c067b8158",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/superpowers/specs/2026-07-07-coordexp-swift-geometry-flip-augmentation-design.md",
+      "archive_path": "sources/docs/history/superpowers/specs/2026-07-07-coordexp-swift-geometry-flip-augmentation-design.md",
+      "git_blob": "71ec44269698752154b2ba25782f29c076f82976",
+      "bytes": 11952,
+      "sha256": "4682ebd9a9a393aaa53f8c323a7caed499e2d55191cdcad80d15115bd4e49ef4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/training/STAGE1_ET_RMP_CE.md",
+      "archive_path": "sources/docs/history/training/STAGE1_ET_RMP_CE.md",
+      "git_blob": "868b44da7817dc467215fc8a7ff35631369c7183",
+      "bytes": 1418,
+      "sha256": "96503d41a55c4574151e61b74be4701393019d3d93845a922df7e334f3b6de54",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/training/STAGE2_DESIGN.md",
+      "archive_path": "sources/docs/history/training/STAGE2_DESIGN.md",
+      "git_blob": "085c5a38f6f41884d6efead8fef2371bf3d8fbeb",
+      "bytes": 1399,
+      "sha256": "f257e3d78def3d06c7438a314d1a248459fbc6da4b69c699dab9620081fbaeb6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-02-low-risk-worktree-recycle/cleanup_report.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-02-low-risk-worktree-recycle/cleanup_report.md",
+      "git_blob": "903c4ce8de6557d0725b80c8c40eab2766c31c73",
+      "bytes": 4804,
+      "sha256": "c7d30061815cf4fc4640b6bbc42a6cc8eb4d0425a011259eb2bd983a263998bc",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/cleanup_report.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/cleanup_report.md",
+      "git_blob": "4f7784b89db5cd2eedee47d5cca41ef90c5ca659",
+      "bytes": 2115,
+      "sha256": "f1004e293828d31bf811931005a32b8f04e4562972eccba71f8a4967afa292dd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-endogenous-boundary-state-synthesis/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-endogenous-boundary-state-synthesis/unit.md",
+      "git_blob": "60c59202ba7eddf48060a581f901a63959254d76",
+      "bytes": 19228,
+      "sha256": "f86dc3eeeb293cec66fb2b745d89519d045a30c9cd4cf47339510ef1f53c6456",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md",
+      "git_blob": "3178aa73bae6118be2ce05330f791ceb20b767b1",
+      "bytes": 27853,
+      "sha256": "b8125abe3d5b7ea88d0287656a16ea171be0be2048fe38a273458e5e0038fb4e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md",
+      "git_blob": "83fee3375f584ffbf1033e30335f7e5546b10565",
+      "bytes": 16984,
+      "sha256": "31af8535ccf13613a5fe40bfa75ca8b95cce73c6f67a730706e72eff54cf374c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/implementation-plan.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/implementation-plan.md",
+      "git_blob": "9b7b86cf263f0ec004f8ee7e1d63696ed7f0a61e",
+      "bytes": 12311,
+      "sha256": "3a12e10552cfe5f9b5c7a2ab76e347e74910a17e285da9e08f467f69e07d8c99",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-behavior-evaluator-contract.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-behavior-evaluator-contract.md",
+      "git_blob": "feee7366c57b23237c32523d040992e8f48151a5",
+      "bytes": 5832,
+      "sha256": "579d8fa5e909968a95e2d14676b042911c8d1ce4c8ec9e56c434ff3336740940",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/unit.md",
+      "git_blob": "b25ab7d59397b86cf5cde2488fab3d5285fcee81",
+      "bytes": 79604,
+      "sha256": "f124b6086f9fb331db96dbb406d561475b3ba2962423e0ba24203810fd1c1bda",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-commit-field-source-swap/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-commit-field-source-swap/unit.md",
+      "git_blob": "c862000c3075e2b8245158a1a6d89517e0d6bf03",
+      "bytes": 14260,
+      "sha256": "258a070c4952a7a72d5135d34da7098ad2c12909fc38e47619d05b7c6890b4a2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-endogenous-commit-write-read-bridge/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-endogenous-commit-write-read-bridge/unit.md",
+      "git_blob": "2ff71b2ae225cb5dd3de62d8f916084ded562a3c",
+      "bytes": 17100,
+      "sha256": "b5fbf68c1f9bee37ab2238fecf7749f57caac24fe75ee374ff288a742c589df6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-canonical-commit-depth/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-canonical-commit-depth/unit.md",
+      "git_blob": "a72ec88452ddaf9c393d14e0bc65ac15e8541d8e",
+      "bytes": 12960,
+      "sha256": "76dee2768007227f15ab87a324b49155187858c1f70656c1e8daae638b16651b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-identity-slot-counterbalance/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-identity-slot-counterbalance/unit.md",
+      "git_blob": "af719eceea472aa5a3abf1e9216d82a3d50d0f45",
+      "bytes": 11636,
+      "sha256": "38469a29a14dd2db2da7c2c2cc9e2c7102c5dc9582343184ca43fd4e02adaf3d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-spatial-commit-field/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-spatial-commit-field/unit.md",
+      "git_blob": "a330b260fc76052c732295758e4a4bdff459c1d0",
+      "bytes": 17032,
+      "sha256": "a1d9c1c42e6caf5435a37d7d4bcc6c9c5d29c08d01e67e4c023b609289a49cea",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-selection-aligned-prefix-state-gating/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-selection-aligned-prefix-state-gating/unit.md",
+      "git_blob": "96401ec9e37c57b9c784ad8fa44134fc45f24123",
+      "bytes": 20357,
+      "sha256": "6b4659c16781bde1f2faf2697c59bf173b0471785d6850f626782880fd648a9b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/investigations/coordexp-swift-physical-length/summary.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/69ed/research/investigations/coordexp-swift-physical-length/summary.md",
+      "git_blob": "792cc34e47b355e9cd2cff8932732aed7101d5ab",
+      "bytes": 2562,
+      "sha256": "bbd06748c967c32d065df12a452fcbfbf77551c61e873231e96489772daf39d9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-04-qwen3-vl-painted-gt-transcription-probe.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-04-qwen3-vl-painted-gt-transcription-probe.md",
+      "git_blob": "b039c68cf66ba727ed595c1b0909c385fd73001c",
+      "bytes": 64771,
+      "sha256": "9c4e099a29d6d17f2401e0d5e855060ddcd380c6d016fe5745e1b148e91b02c2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-06-next-object-steering-plan.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-06-next-object-steering-plan.md",
+      "git_blob": "ed3f154371d92d6b1a7f12a3e4ca0a8ef8cbc8be",
+      "bytes": 20335,
+      "sha256": "3c5c5c78c66843f3e5cbc6345949d068b8a3a562cba5b9edc69aa2b29425e8c2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-06-next-object-steering-roadmap.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-06-next-object-steering-roadmap.md",
+      "git_blob": "fff483938e1f268d1a34218ba004102021a1bf58",
+      "bytes": 32292,
+      "sha256": "25770f9ed932107b282eeaa7af9996f806184dcd94b2d5a4bb6efad6fac53e0e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-08-pvci-step0-preparation-experiments.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-08-pvci-step0-preparation-experiments.md",
+      "git_blob": "fef111be74e820310f462b1c00b2ff96a199605c",
+      "bytes": 8748,
+      "sha256": "66793e9131779dbb9e75cc3711e2f80cac64bd3ed737f36001ef2e31b85482f8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-08-pvci-step1-precommit-probes.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/plans/2026-07-08-pvci-step1-precommit-probes.md",
+      "git_blob": "af56f93d3168a1515eda8ac23d843471b455d030",
+      "bytes": 51096,
+      "sha256": "e9986fe31a2d50f6709a1b03e9d4c9246b44356915e73776614dfdda93a0a8a6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/specs/2026-07-08-pvci-step1-precommit-probes-design.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/docs/superpowers/specs/2026-07-08-pvci-step1-precommit-probes-design.md",
+      "git_blob": "77210c67d4035450c367f1b7fdda493ac6c66d2c",
+      "bytes": 10380,
+      "sha256": "da26f00257565142283762bfa2b64ff71314b933f66983c62270948645ca7d2e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md",
+      "git_blob": "ddb7e50b009b4ab358a9e5981cee7158d638d65c",
+      "bytes": 35736,
+      "sha256": "cedca8cce96402bb97e52432c0e4ba740d687e4239935a8f8a2311d85bb0f6f9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-05-predicted-ledger-human-annotation-ablation/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-05-predicted-ledger-human-annotation-ablation/unit.md",
+      "git_blob": "9ece4df69d45119174126e2793a539d14dfa8341",
+      "bytes": 11455,
+      "sha256": "d62505accb12fa52b1211ccfe4187d4ba504672dd7e921b47b933d40f429838e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step0-preparation-results/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step0-preparation-results/unit.md",
+      "git_blob": "a8bd130afb6c68ac28a6f3c2c5b0ab3b82a872f9",
+      "bytes": 8884,
+      "sha256": "0481f8a2f90f9786f5be2a5cb5796cc7fbfd20261072d21761904e1544817cb6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step1-precommit-probes/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step1-precommit-probes/unit.md",
+      "git_blob": "11ead60a8b2ef4b7519eea5deb6419410f60fd18",
+      "bytes": 12721,
+      "sha256": "886daa779796eb78862f598205f05dcc424aa184ad49274e89a627682ba0d0d6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-anticopy-snap-radius-results/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-anticopy-snap-radius-results/unit.md",
+      "git_blob": "4ed96bacc0b4c89ab765aad306ffc5f5b343a486",
+      "bytes": 9946,
+      "sha256": "76c5b470ae00f0d2f24bf5f1c07d4172aaa0561a13cda636fe681e150a7b9264",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-e0-snap-radius-calibration/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-e0-snap-radius-calibration/unit.md",
+      "git_blob": "8bf6f6826f74e3dc4548240623d52d514c14b84a",
+      "bytes": 4054,
+      "sha256": "5523b60e4aab9d305119608a78c51c44e0ad79dc5d73a60c3900c62171563b41",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-snap-radius-build-probe-plan/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-snap-radius-build-probe-plan/unit.md",
+      "git_blob": "901896c9b4b144d94da07dfd7d838c4347a63e2f",
+      "bytes": 8663,
+      "sha256": "c4aeff3a4723abc9e62110b39d98e6ed881713ba17af0c49fb0d938dd841d305",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-corrupted-wrong-object-row-binding/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-corrupted-wrong-object-row-binding/unit.md",
+      "git_blob": "112519fd8860b4457c7e69d61f8a78b488183bf3",
+      "bytes": 13851,
+      "sha256": "a4ba719329157c83933433972763909d5fe637ace0aaa0d2b2784b430b168d89",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-cross-image-delta-transfer/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-cross-image-delta-transfer/unit.md",
+      "git_blob": "e2c1a5e9cb9df8115c2aebd59633c0b367b1dd8f",
+      "bytes": 9382,
+      "sha256": "e9c3ed31a487b15c6cae925838ed2ba6797a567f3be278c441eda739c3ea30f9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-replay-cursor/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-replay-cursor/unit.md",
+      "git_blob": "66f1538fa40f4e33da68571e733c218da3c3cf69",
+      "bytes": 9114,
+      "sha256": "52ef6e52241132d6d7aa5212e33831df3da4f624156cf21242a417293e08c38b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-store-delta-cursor/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-store-delta-cursor/unit.md",
+      "git_blob": "0970db1dac90c941d6bf338c2cfe7441aa702625",
+      "bytes": 10130,
+      "sha256": "20357da1536ee1aeeb2fdcc0850cbf5f1e33e71e079f2d26a178885a85178ef4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-identity-conflict/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-identity-conflict/unit.md",
+      "git_blob": "22816e1e0f87e3784e4f315ce0acfc3d6ccc58b6",
+      "bytes": 11621,
+      "sha256": "e4ea7a96dcae69dfb48f4691829acd860ebf4334a7bd127084ceb1f06735a283",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-image-embed-spatial-localization/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-image-embed-spatial-localization/unit.md",
+      "git_blob": "60a11f55d0ad9a253aae97b2736b768d2ae21f8b",
+      "bytes": 10577,
+      "sha256": "6f81dc3eb5045e58891d096f647a57bee13d3732c39c942cd3db1dbfe4094d0e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-local-visual-delta-cursor/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-local-visual-delta-cursor/unit.md",
+      "git_blob": "3bd0c0d41992c3ea3204503f11dedc77e95a8100",
+      "bytes": 11236,
+      "sha256": "9b9d64680b7d97c38db330473a471625dbf1f4072d796a54e98f8fe1a97f08eb",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-image-token-equivalence/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-image-token-equivalence/unit.md",
+      "git_blob": "4270e8f7c1718cc16cdd9c194e73145cd632a35b",
+      "bytes": 9218,
+      "sha256": "1277acd8dca4a40038b336025ad772a84805b4ae3f7e6cf9acdaed7fa3a9287b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "git_blob": "67df9919d8818abfcdccd6e5fbfcd963b95af4ae",
+      "bytes": 8564,
+      "sha256": "2097c4c6a47c0fb19671f7da556d92cef4180350ffb434e1a75f154bf52b305c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-region-split-visual-delta-cursor/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-region-split-visual-delta-cursor/unit.md",
+      "git_blob": "8e667a67562694b88514c6cdec50df9fe3279af2",
+      "bytes": 8652,
+      "sha256": "bff801fc98b2b15cc8b9ed36d4ac84d201856f74bb94900e7c498642a5b6fdb8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-same-object-aug-delta-bridge/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-same-object-aug-delta-bridge/unit.md",
+      "git_blob": "c80a0e07ed779c03a5bd2aed766182c65806376e",
+      "bytes": 6889,
+      "sha256": "b63ac5a0c3a38f9d46f426d3883d3ca234ce1c34509a8bea81de6329598555b1",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-visual-feature-component-localization/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-visual-feature-component-localization/unit.md",
+      "git_blob": "d32312a6b3701bd72dae9a577ea55f37f3673e78",
+      "bytes": 10215,
+      "sha256": "e2434fb2519978d2b40f00fd062a4ed5fe59cf5caccc4e5fc5b43fb25b6a1957",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "git_blob": "963b65b4dfefa3168f1bb0e1d35fb03440442067",
+      "bytes": 11859,
+      "sha256": "bae4e228adcd70bc89c4e0b945e384b3fcc1e18e90073adc28fd62e8a120dc6a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md",
+      "git_blob": "159117c9c1f75cf35ffc1b33ec3f5fa389656661",
+      "bytes": 30978,
+      "sha256": "8c2fb7aba421bdf9a517c744236f1b3bd60f7caaa979456720a83d7c5610b6eb",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/review-log.md",
+      "archive_path": "sources/docs/history/worktree-cleanup/2026-07-12-pvci-research-worktree-recycle/snapshots/eb1c/research/ideas/qwen3-vl-painted-gt-transcription-probe/review-log.md",
+      "git_blob": "d00912ed3ef01c927aa3c4b54de6e51d53c2bcda",
+      "bytes": 14973,
+      "sha256": "92006543afbf0c2493b8cb3ad08a1af684f2125cad1ca36798b4fd525dc5c9ca",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/CODE_STYLE.md",
+      "archive_path": "sources/docs/standards/CODE_STYLE.md",
+      "git_blob": "2aa14c8a9f7a42839b8625c1bd39ae8fa9fbd6e0",
+      "bytes": 7240,
+      "sha256": "6042917d733291d359808f2d27bde128b18a521e21b35894bfcd4b84ac47e28e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/PORTING.md",
+      "archive_path": "sources/docs/standards/PORTING.md",
+      "git_blob": "7aa16461383659d0e2b002c510687a1f8361c548",
+      "bytes": 2186,
+      "sha256": "e7321f6d76acfcc2789bd53fe469e3da790b453da90869622559c13a5e481222",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/README.md",
+      "archive_path": "sources/docs/standards/README.md",
+      "git_blob": "e7fbb1695422f5821dece531cc5742b05513414d",
+      "bytes": 945,
+      "sha256": "847e773e57f607dc7db2f77ba3e65c2a427da14d4a4900ace3a9985948396e58",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/REPO_HYGIENE.md",
+      "archive_path": "sources/docs/standards/REPO_HYGIENE.md",
+      "git_blob": "0531440752c46702f17d65277766e1f3f24d3967",
+      "bytes": 6775,
+      "sha256": "838eab75abdb67d1b82a03fba42aefd2e69437399e032a15d36a991e06228fc3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/upstream/MS_SWIFT.md",
+      "archive_path": "sources/docs/standards/upstream/MS_SWIFT.md",
+      "git_blob": "a39421f1d8493231c07a52d038e7f687cedef1fa",
+      "bytes": 6256,
+      "sha256": "e79b3c32149c4835776135baeecfa13a7c743e322e66515e0e25a4c68881d90d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/upstream/QWEN_VL.md",
+      "archive_path": "sources/docs/standards/upstream/QWEN_VL.md",
+      "git_blob": "febcdd846d3475531022859bc462bef0c30c3c56",
+      "bytes": 5105,
+      "sha256": "d3428e6ebb9277ace68f3e2628c5b51964faeafc467276ab6ecf70bfdc58e5a6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/standards/upstream/TRAINING_ECOSYSTEM.md",
+      "archive_path": "sources/docs/standards/upstream/TRAINING_ECOSYSTEM.md",
+      "git_blob": "2393dab47eeab139efb6d87ec9bb907397839bb7",
+      "bytes": 9323,
+      "sha256": "7aa79f4016919285371667fdfcbef1c370373715ba35ce97458e2500380531a8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/training/LVIS.md",
+      "archive_path": "sources/docs/training/LVIS.md",
+      "git_blob": "42e7e63d8b459eef3959329ffd402b5c477ba595",
+      "bytes": 13170,
+      "sha256": "f710219b825af15784f0efa51cfa52e93dbafa4e95cb487537411a3b7d90d15f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/training/PERMANENT_OWNER_BRIDGE_STAGE1.md",
+      "archive_path": "sources/docs/training/PERMANENT_OWNER_BRIDGE_STAGE1.md",
+      "git_blob": "5f3690ab9098f6f6ddce8c577a865047b122e7a8",
+      "bytes": 11130,
+      "sha256": "60cabfd0d2d9cbc42d2aa6ae85840f2b615ac8506f71caf839c35d0439b91d78",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/training/README.md",
+      "archive_path": "sources/docs/training/README.md",
+      "git_blob": "40976af6ee0642473a99901e55e6b5b3c0282bda",
+      "bytes": 2585,
+      "sha256": "ab421cb5e43436417e0b5ecafd3330349f51ba8268683293199f77c03cc46e29",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/training/STAGE1_OBJECTIVE.md",
+      "archive_path": "sources/docs/training/STAGE1_OBJECTIVE.md",
+      "git_blob": "fb5a24c7b576cec79074b347df10e39439c0a46f",
+      "bytes": 27906,
+      "sha256": "41a9a1480e9e4def790278f87b06b50ab23ee8564e7f101b16bb381406fa9691",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "docs/training/STAGE2_RUNBOOK.md",
+      "archive_path": "sources/docs/training/STAGE2_RUNBOOK.md",
+      "git_blob": "6abcca75353edc3f1366dcb9ba43e3d5fab31e79",
+      "bytes": 2077,
+      "sha256": "fd47c9dc3b536b35daed37138c90e171f3c461c96cc8dd0c6d31e268b68a5b46",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/.openspec.yaml",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/.openspec.yaml",
+      "git_blob": "913564e4ba7b8323f7429b6371177764c7517886",
+      "bytes": 40,
+      "sha256": "449e036b3290fb0d08e2d4edf473672b9625b55eb591cc2356a44528ba8ed845",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/design.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/design.md",
+      "git_blob": "35f8ddeb5bee41d68c2689357cf12ae804f404af",
+      "bytes": 50007,
+      "sha256": "7a3862500fb17953b63383bd5f972c5b7e6a4bcecd3813b0f5691ecfb6779e7d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/proposal.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/proposal.md",
+      "git_blob": "e5cfc021d09874f0ad5bfdfb426a0e202de63b02",
+      "bytes": 12318,
+      "sha256": "63440e8cc32aefd3866c10877f533a537f3141322e0babf9e69a7a5cfcd6d222",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-adapters-embeddings-optim/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-adapters-embeddings-optim/spec.md",
+      "git_blob": "fa7c227a9b534ae510bf515e5a4c18bebfaa2e5f",
+      "bytes": 1415,
+      "sha256": "93ec784c294e3b21ce59d5454edc218f93a207c59e6718597623f18eb867a80b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-config-runtime/spec.md",
+      "git_blob": "8f1d420c5b78f354a0b76afd3999e1e596c283c0",
+      "bytes": 5192,
+      "sha256": "052c7cccd2d4c64390b5105d9e91d303c7c806843664247b6a7a7caa0a7289d6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-data-template-encoding/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-data-template-encoding/spec.md",
+      "git_blob": "379c73c3bb60b04feb6db1df2b1546ab4508b267",
+      "bytes": 2054,
+      "sha256": "16e4436234265e04320c5e02fea3ec5dab9422e34c50f87c81897102aa86d8b9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-backend-trace/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-backend-trace/spec.md",
+      "git_blob": "8a691c5964b3e83a0341fde446f24446cd3d2b06",
+      "bytes": 1300,
+      "sha256": "4955a34d743fe8cddfd80aa5897039439910a1a5f95cb74c62835b0088cb0450",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "git_blob": "0af713425055a1dbdced9f4c544286618879847c",
+      "bytes": 1648,
+      "sha256": "280558b8d5742e5dada3d6d2884c7b539bda4dd61371bef0779c2e7e06b373a2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-pipeline/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-pipeline/spec.md",
+      "git_blob": "a25f0fd035535880eb10a633e0d705cf64ab5667",
+      "bytes": 2341,
+      "sha256": "90a1f514864d138a931daca0a5515882a72f966401e71540df6ba8513fac1538",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-scoring-artifacts/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-infer-scoring-artifacts/spec.md",
+      "git_blob": "941c2daa24876f98039f2461e0ee431027f7af09",
+      "bytes": 1015,
+      "sha256": "d28741536cc8d09404d8322b94802af0ad8ba74ad518c9d4b5e9f9d24bc9bd00",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "git_blob": "86a69ef2493da84fba0b41865eb685b82da623ed",
+      "bytes": 1483,
+      "sha256": "b0170ea5eddc344f456967f6ad5de35d4d4865144e118abd390fb310075f10cc",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-packing-forward/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-packing-forward/spec.md",
+      "git_blob": "ac993cc1fb0a54aac84b36e356e8199bb4634127",
+      "bytes": 5441,
+      "sha256": "92107840620e7183b8e3df852b93f5af2765503b37a1084c1c5a5cc68ac06158",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-permanent-owner-bridge/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-permanent-owner-bridge/spec.md",
+      "git_blob": "ee1196ee05dbd933fc89866c838da1e52497fb1e",
+      "bytes": 10389,
+      "sha256": "e14d8ed29d6ce65a5a1fc39b1ebb15e149a71e55f291e9eadeb066b6972f413e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-supervision-losses/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-supervision-losses/spec.md",
+      "git_blob": "7a0de4c02b4381dc3419b84e25d6f3ff101b2dd8",
+      "bytes": 8714,
+      "sha256": "249ae3158281de491d014e91d023c6b550b1157075b0014d018fb9744a2544e8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-training-artifacts/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-training-artifacts/spec.md",
+      "git_blob": "c9c602e7cf9ade07a6aeda10eacdda2fe4a8b9d4",
+      "bytes": 7753,
+      "sha256": "761c34be1aa0c943b61e54e7e4c2219baab3cb4d6a336bc1167fb75f982fac45",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-vertical-smoke/spec.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/specs/coordexp-swift-vertical-smoke/spec.md",
+      "git_blob": "d567ccb364c9c49d0479a6aabd3c1a0849d9e108",
+      "bytes": 12863,
+      "sha256": "a42698db4bce943411eea1670bbb1f008e3d2c44a6ff7b49edc75e3aaa29f709",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/add-permanent-owner-bridge/tasks.md",
+      "archive_path": "sources/openspec/changes/add-permanent-owner-bridge/tasks.md",
+      "git_blob": "c6e4d3b02b0d79e01d22f3e2a759e494d3b0bbea",
+      "bytes": 21587,
+      "sha256": "0b6cc4447488c6272ccdfb8cadee8d2cd81a4e484bfdad7a17af93e1065eb781",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/design.md",
+      "git_blob": "4c2cc25164602258f41c84e4a3c463a677b43451",
+      "bytes": 8739,
+      "sha256": "40d9cab2bb452f91e2fa73c2848b6a026a0c7a17a173edf3886edde102df68de",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/proposal.md",
+      "git_blob": "c037e44c106f93cf14d0f5f7f94fbade61f3402b",
+      "bytes": 4091,
+      "sha256": "9608c724fddcbf0eb6423e4d4df2dd873c0e6e566300564f8898273ed38f1e96",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/specs/coordexp-swift-geometry-augmentation/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/specs/coordexp-swift-geometry-augmentation/spec.md",
+      "git_blob": "ea84a4a4df126d4ea6e1ef1118f3b88b9c645363",
+      "bytes": 10031,
+      "sha256": "3c646f2394aba0a2a2323745b303fc81cf27c96b192c0ab51d392f80cf6a640a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-geometry-flip-augmentation/tasks.md",
+      "git_blob": "ebd9d9093c36fe7063c8f77cc605390517b5c48f",
+      "bytes": 5126,
+      "sha256": "3e81a5e48fa865ec6745f0f14a9295324aabfedc1214918931ba11580c24b884",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/design.md",
+      "git_blob": "eea77f8e867e7aa028a37717e63d3a9945f11de1",
+      "bytes": 10498,
+      "sha256": "0b8517f382763ac83c25bbd108ba11d2c0cb7daf71f331b22b34296d35851812",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/proposal.md",
+      "git_blob": "f3c9d5b76b2fdd91e20542aa4306044ada517515",
+      "bytes": 4809,
+      "sha256": "77d5dba50afde4a7a1e8b1338bcf0c5f1b1efb2fc1ccd8c1de89199f0a3c494f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/review-triage.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/review-triage.md",
+      "git_blob": "2000a6ff5f14b3b9d94d1e5829c68981d9170b3f",
+      "bytes": 7606,
+      "sha256": "68eb93d3da270475c797be1e331a39e0774912987cd6f34371880ecd1bf84d95",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/smoke-evidence.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/smoke-evidence.md",
+      "git_blob": "9088dbedab8a9749901ff6e8bb3cb66b22bf307f",
+      "bytes": 7410,
+      "sha256": "c2612cba82aac7d654983cbb5708d2a0f5429afe62549cb204641f993c3e882f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "git_blob": "5e84cf3cd32fb310c7b2cb0a21a9afc8b2f18039",
+      "bytes": 2585,
+      "sha256": "e0fe20bb76025e87860582922ca17b3a556637d33524e17e18324f0662a05dcd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/specs/coordexp-swift-infer-scoring-artifacts/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/specs/coordexp-swift-infer-scoring-artifacts/spec.md",
+      "git_blob": "f6368169c52708832379390353cee6991e361730",
+      "bytes": 6981,
+      "sha256": "0174ea9bdd0aa1e2ceef319f8dc4f135030620b1033bc381398fd850024016c2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-add-coordexp-swift-infer-data-parallelism/tasks.md",
+      "git_blob": "88585be10b19906ccef8249bbefac0082fcc5629",
+      "bytes": 7574,
+      "sha256": "62b1ef99339ac399d8126dac6b7613bb4080d01ac19508add2e9f127566cdbc7",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/design.md",
+      "git_blob": "9ef06e19848bc9c1abcb1f9cbac7ebb572c33e09",
+      "bytes": 14132,
+      "sha256": "aff46e9e39756c2c4d2b46fc0a6a303de411e24a3355c88042b5c22a34d7bc8d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/proposal.md",
+      "git_blob": "8b8a2c880f45ad0c4ed238027ab21f0530b4557f",
+      "bytes": 5177,
+      "sha256": "a543b103e299b379b4d730eb99a1c0be083a1b6407034f05cbc6d1ede0ad6df8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/review-triage.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/review-triage.md",
+      "git_blob": "f76bbc969961c096b639535f709a8ca44a8f1673",
+      "bytes": 6922,
+      "sha256": "315814561719938a70c210ee56e63a62cef05e843aa27b1b9cb6244b5ab8216b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/source-studies/2026-07-02-wave1-gate-resolution.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/source-studies/2026-07-02-wave1-gate-resolution.md",
+      "git_blob": "dc83df51db43441c900228e44fa66804b0f54edd",
+      "bytes": 14478,
+      "sha256": "4fd9e33600a3d95fedc56ea252aae1a2b95f149c10c02df29e6ce590e00585e6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/source-studies/2026-07-02-wave7-real-smoke-evidence.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/source-studies/2026-07-02-wave7-real-smoke-evidence.md",
+      "git_blob": "49750475b63021811a3b51bf78fff770559b5205",
+      "bytes": 8340,
+      "sha256": "d81a2ae8c6003b0ec6c7b032595459f3e423534a94ad80978cbe06fe69cfd76b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/specs/coordexp-swift-infer-benchmark-smoke/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/specs/coordexp-swift-infer-benchmark-smoke/spec.md",
+      "git_blob": "4e8a500e44d071904f4d8bd41743449ad89b6ebb",
+      "bytes": 5638,
+      "sha256": "d59a3cd858d930c318dc6b9c19aaf9138fd67007775a4244ef7769fe9613ea3e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "git_blob": "f913a31f955e7ce562107dd3627b5d8b5fd47c1c",
+      "bytes": 7598,
+      "sha256": "bd24b9f4616235a42558d50998ce94253ccdd47526a3b74b53d2560f10726aac",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/specs/coordexp-swift-infer-prompt-parsing/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/specs/coordexp-swift-infer-prompt-parsing/spec.md",
+      "git_blob": "682059c63b5c130836e049ab7efd0f9d018ff9e3",
+      "bytes": 5977,
+      "sha256": "cb5b0b3c9ec91dbe43992b588c4ad6107d856716add1c433b9ac967bf0b2b294",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-build-coordexp-swift-inference-infra/tasks.md",
+      "git_blob": "e8f3c18bf8867dcd74a1b966d45cc7be45e70218",
+      "bytes": 15020,
+      "sha256": "c72e427738e06a5aa1a5f1025f96a4ac7a54eb43af7ea3bc3b3c24b903586462",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/design.md",
+      "git_blob": "ba6842ee8fc438d25ad113e5f87799ae62a22412",
+      "bytes": 5681,
+      "sha256": "636cd9f412595cfb99615c9ced9eb5960180ded2107d85872772ce5b04af38a3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/proposal.md",
+      "git_blob": "6b27e27d19417006b7b86e25a704cc1e4a83efd8",
+      "bytes": 3538,
+      "sha256": "9ce28a360e200b69ed81adc5a253aecd23fdad3fc6cba5a1029273708224db0c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/specs/coordexp-swift-checkpoint-handoff-readiness/spec.md",
+      "git_blob": "28e51df1189c89cbc444cbd819c54a925d5c6cf1",
+      "bytes": 4684,
+      "sha256": "8b13d0b8ca538b9345e79bbbc992e2ea6f44a69c1a7838265cf2a068ea195d4f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-harden-coordexp-swift-cache-and-handoff-contracts/tasks.md",
+      "git_blob": "df922e196dba8ce29e7811937c5edaa4cbcadeb0",
+      "bytes": 2316,
+      "sha256": "33584029af0c508d720adf6167c5a1fad095b38ecffbe0649d4b853c8ef9612f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-prepare-coordexp-swift-production-relaunch/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-prepare-coordexp-swift-production-relaunch/design.md",
+      "git_blob": "7e2219831e3406ff7c9010fb1b12a8d584723483",
+      "bytes": 2702,
+      "sha256": "c980999c35bb669e43fd0b27b8f233ee28c001bf59cb2e8c0956a28417a221f0",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-prepare-coordexp-swift-production-relaunch/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-prepare-coordexp-swift-production-relaunch/proposal.md",
+      "git_blob": "7bc275ba23871b269cf65b240d08fb3512540bd4",
+      "bytes": 1800,
+      "sha256": "db4999584a77338d641b3840f13cfb6e2c8418ee6753d50ad88854afac6ab817",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-prepare-coordexp-swift-production-relaunch/specs/coordexp-swift-production-relaunch/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-prepare-coordexp-swift-production-relaunch/specs/coordexp-swift-production-relaunch/spec.md",
+      "git_blob": "bdc484b8bfe8433371849bc2fa5f4c3218d696e5",
+      "bytes": 3699,
+      "sha256": "74b40f3327f9198d98bf4025471ae87b77296d9e12524e9e7546bd0352832059",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/design.md",
+      "git_blob": "7784f9f166c0eb0fd1b9bebfb926e7137586ba2e",
+      "bytes": 15294,
+      "sha256": "a9222007c1411a4a383a32dc0e4a43c157eba738593a0f9b637c024ececbfc5a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/proposal.md",
+      "git_blob": "586d94ee3151d781c2bdf789c775a8be0f626d33",
+      "bytes": 5475,
+      "sha256": "33d5b92b00b773e314dbcb7e308c6346b7c21a6264fb971828c03def7c1ac8b5",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/review-triage.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/review-triage.md",
+      "git_blob": "58ce14bb2da4f43aa129b107e2012a2821132170",
+      "bytes": 17688,
+      "sha256": "493320cf6e167cc7d7c551210dd31502d14b766dd82667d277364c5fe8b72972",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/specs/coordexp-swift-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/specs/coordexp-swift-config-runtime/spec.md",
+      "git_blob": "ce56a3576d22f3f396fff7e7da1075558312038b",
+      "bytes": 13320,
+      "sha256": "92677c460d9b391a1ca6fd981c15c12e5354a6da0604e7125527e2064fbc50dc",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/specs/coordexp-swift-packing-forward/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/specs/coordexp-swift-packing-forward/spec.md",
+      "git_blob": "c51417dbb2514e79533a88d36e303657479ccde1",
+      "bytes": 11532,
+      "sha256": "abd42ab46d9d849e5aaecf3a5675629bfa17e8e8782810bd865475e1685cd61d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/specs/coordexp-swift-supervision-losses/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/specs/coordexp-swift-supervision-losses/spec.md",
+      "git_blob": "d64226a645a647e3e006711aad7f3b97d0531073",
+      "bytes": 10057,
+      "sha256": "5661d748488c414f5b4838b1ca77396877a8f6f0e9d0235d6e26b1115fbfb704",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-rebuild-coordexp-swift-training-infra/tasks.md",
+      "git_blob": "575f34239b9e1ad8388a0411461a880fd6329cd0",
+      "bytes": 10353,
+      "sha256": "9e28dc6d6455a053cad33f9950bc22beb7016ae8476333dd1479d918af9a2250",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/design.md",
+      "git_blob": "ce5e1494f9d3c0ed5f71baa2df375cbfb0e2e548",
+      "bytes": 9217,
+      "sha256": "3bdbbd7c1b8754974d327b17e71b3189b322706dc7f5f410dbcf39eeccfe0497",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/proposal.md",
+      "git_blob": "18e72e25219d6dc55b3611239ccafad21f31c395",
+      "bytes": 3768,
+      "sha256": "341141a7f8d5bd44d80d4644b16a59cd23c720e9f68ceb9c50ec8f2d69e0ffb5",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/specs/coordexp-swift-detection-evaluator/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/specs/coordexp-swift-detection-evaluator/spec.md",
+      "git_blob": "0cbeeac99d53c666ded1afb29a41d4f50a41b1b4",
+      "bytes": 10206,
+      "sha256": "d93997754ceb57dad64555e8c6d92fc3c93b05811c114b7357861fffcadb7dc9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-07-standardize-coordexp-swift-detection-evaluator/tasks.md",
+      "git_blob": "4d2b060ab81d41482eda18f6d4aa6c52897dc8f7",
+      "bytes": 3868,
+      "sha256": "b04a7224055d2cdf021ad5f508fb355471dd2e47f326575f5f527fff60ea369d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/proposal.md",
+      "git_blob": "09c6047b04b7ebddb315aedc34aa1dc73bea1eb3",
+      "bytes": 6098,
+      "sha256": "e6691a89bd572edb89b42779d0d5da6c08e49c1288e75e1005dd7abbb779b028",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-config-runtime/spec.md",
+      "git_blob": "66872678eb2b1aee92b8774251545adc7262806d",
+      "bytes": 11872,
+      "sha256": "c8eb2d01ed474a43c9ca50318a09cd47649e60a148bb84964f8a916935a60de4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-geometry-augmentation/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-geometry-augmentation/spec.md",
+      "git_blob": "d24500ba889452dc78e1f31e7801923a5e5b1c97",
+      "bytes": 5437,
+      "sha256": "2242a949d2a0226dab32ae92991564ed1183ca2fa5f5a3030e57d390aef12ef6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-packing-forward/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-packing-forward/spec.md",
+      "git_blob": "e161931d99035243ca4ff4ff13a62f0336dd71af",
+      "bytes": 6995,
+      "sha256": "0df19054faa0cbe83e29128be65560a4b4e4f24db4eb8cd193e238239b06c3bd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-training-artifacts/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/specs/coordexp-swift-training-artifacts/spec.md",
+      "git_blob": "5a3278ac091d810b301e493a8e781b73f56f8e82",
+      "bytes": 15696,
+      "sha256": "57ff1966fb30cb73dcfd1e6767ea47f5aaf3115aa9d1f36b8be1c2d57f616825",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-12-simplify-coordexp-swift-training-infrastructure/tasks.md",
+      "git_blob": "d0b87da52860e6af6b80c3382d4c447ad5563392",
+      "bytes": 20751,
+      "sha256": "0fced6f2b560b9aae47398166f3627910c4e8357edea4221e7a89863872a1b34",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/design.md",
+      "git_blob": "4b10253f5d4f8732f4e5e66b1560bcfe3265b251",
+      "bytes": 17345,
+      "sha256": "2c760310389d70ebccd52410b4ef09a76654f2b68e6edd72dbc3612aaed146d1",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/proposal.md",
+      "git_blob": "042557cefebaed42a78922e90b30d832d105cbfa",
+      "bytes": 4719,
+      "sha256": "cb35a0a76f0c2e0b59ac1662051b44d62dedcf5c404155b4652a0ab5f959b463",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/review-triage.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/review-triage.md",
+      "git_blob": "574abe758a92aa59ffbf3c2c76c4071f03f6253c",
+      "bytes": 20595,
+      "sha256": "995bff55dd90c859dd65145fb97cc37524e488021dd1f11033758698ae0faa1c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/specs/coordexp-swift-infer-execution-model/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/specs/coordexp-swift-infer-execution-model/spec.md",
+      "git_blob": "a4cb67fb1b03d6a326ba6794b2d285142b8b282a",
+      "bytes": 8958,
+      "sha256": "3528c659a5a41eaa3eba127e51365fd1246f0c0528cdfa05176d415d2fe09c0c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-18-add-coordexp-swift-vllm-inference-backend/tasks.md",
+      "git_blob": "5b8a9ffc52af845deffc8a8c63a9238922876519",
+      "bytes": 8496,
+      "sha256": "53303aeb60586cbe6c71f18ce74daa37245402a8b5f0d509832cdc6dbfac4ca3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-21-simplify-coordexp-swift-vllm-runtime-gates/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-21-simplify-coordexp-swift-vllm-runtime-gates/proposal.md",
+      "git_blob": "d32dc479c4e1628d8001292c1c11987b48958a00",
+      "bytes": 3764,
+      "sha256": "18b208ec44c3934a878d2352f0c67d67804e4f463de44e6108be1fbc6d0eaac3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-07-21-simplify-coordexp-swift-vllm-runtime-gates/review-triage.md",
+      "archive_path": "sources/openspec/changes/archive/2026-07-21-simplify-coordexp-swift-vllm-runtime-gates/review-triage.md",
+      "git_blob": "c55cfb41c6b8223358aa5a36f060d7563c66a683",
+      "bytes": 3757,
+      "sha256": "1027ea5454cffc126eb68be99024b26b624c80d9cdd87b2eb2fea17e319dcfb5",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/design.md",
+      "archive_path": "sources/openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/design.md",
+      "git_blob": "622e64a1656d20c8ffe682b5aecc3327053e4fc0",
+      "bytes": 3956,
+      "sha256": "e7cd2598a4cf6c61784c511377312ef41f85c9aa1cdc998147521f05a2265902",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/proposal.md",
+      "archive_path": "sources/openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/proposal.md",
+      "git_blob": "84632f282b44170496b35a8def1076a0796a774d",
+      "bytes": 2384,
+      "sha256": "4ed4001e96f04664526f6cd3fce925c43cb1e95dd89d2af3c82999388261ecbc",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "git_blob": "6a51ccfd03e763e28cbbf1848188d2eaba472e58",
+      "bytes": 2508,
+      "sha256": "e520739966965f9e28dec209d5cf3ba463a69cc3526cde69911e9629050eb4c0",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/specs/coordexp-swift-packing-forward/spec.md",
+      "archive_path": "sources/openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/specs/coordexp-swift-packing-forward/spec.md",
+      "git_blob": "2cc51ac7cd0114bb560299136ce920e587da6035",
+      "bytes": 3128,
+      "sha256": "1466911352bb863770cd267e8e06eeb8a2d0310d388da83bf410c0f108a27888",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/tasks.md",
+      "archive_path": "sources/openspec/changes/archive/2026-08-03-stream-distributed-pack-cache-runtime/tasks.md",
+      "git_blob": "0d0e8f27b23417962b720742c641caed01d7d926",
+      "bytes": 1517,
+      "sha256": "b8bd1b191b58f4ca6955c640d89b9e84a379ccec92b33e2adf0ed1352d563768",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/design.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/design.md",
+      "git_blob": "5b772308e6fc2b96c0c01c3c4c75bf4d3213a547",
+      "bytes": 20682,
+      "sha256": "f9a4a5064e6af3afc28643f2e1695d3df03810bacb418d185cc956a567ab0f3b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/implementation-notes.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/implementation-notes.md",
+      "git_blob": "e582e8dea0fa6c68074260dcc038037f558c4f43",
+      "bytes": 80632,
+      "sha256": "e785a804e263f8b0e87caefa40ad3ee23acb3c923d531b0a6eb45dc0bd91379d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/measurement-plan.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/measurement-plan.md",
+      "git_blob": "ab076c9f8261c45655419d022430dec0d39d3b5d",
+      "bytes": 11663,
+      "sha256": "a6df2febfc0b9dfdc4f2b838c049de95e9af7725d691a4185312ea2ed809ef77",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/proposal.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/proposal.md",
+      "git_blob": "847fddc25507fc829a0529156357a08b4c40eeb3",
+      "bytes": 11049,
+      "sha256": "40f611fd234ad9c097710c5daf483958e7ae1c37d66a40b6c18e1560a8d0a898",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/review-triage.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/review-triage.md",
+      "git_blob": "64abe54a8c7386c6ea5fd4501ed53302b6ab36ff",
+      "bytes": 77299,
+      "sha256": "02c806415247fbd4593043e44de8411a2c473ac8ab63189f5c4fab084142bffd",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-config-runtime/spec.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-config-runtime/spec.md",
+      "git_blob": "9346dd6a51c9623ad4e3653682a775ea12c04ccf",
+      "bytes": 2555,
+      "sha256": "531b3785e57e1279d489371d95e184d0870b33dd85cd6e64b7fac40b645031a3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "git_blob": "86860c8fe4b622d536af68ae763e525a0410694b",
+      "bytes": 6120,
+      "sha256": "cca1e99aab92b2f4adce4c1b43d6bfb88810105b0b3524e0e4cc668c1e2f4933",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-packing-forward/spec.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-packing-forward/spec.md",
+      "git_blob": "2b0067743d2016177bb02c1b265d91cf77527e3d",
+      "bytes": 7230,
+      "sha256": "c0d69c6c48723e982b2ca35a7c0afba726ac925704628aa901f488a19e138808",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-supervision-losses/spec.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-supervision-losses/spec.md",
+      "git_blob": "4560c0aaeaf682db870e4a9e0b71e0e93ad944ed",
+      "bytes": 4554,
+      "sha256": "8cec006bf13c4a64fec7248e3f63cb1e1a212af23d057f9a254f59d78573b70e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-training-artifacts/spec.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/specs/coordexp-swift-training-artifacts/spec.md",
+      "git_blob": "bc78c62c1a380a345e1f45acab5273da5644bb10",
+      "bytes": 11338,
+      "sha256": "34032c1e16937b46258c0c685b07b7e9ff23373d4e3e5fabd8543d0063770984",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/changes/streamline-coordexp-swift-base-infrastructure/tasks.md",
+      "archive_path": "sources/openspec/changes/streamline-coordexp-swift-base-infrastructure/tasks.md",
+      "git_blob": "9ce536248787384551def3d38261ae4d69c7e79f",
+      "bytes": 124300,
+      "sha256": "22a68187739f94013b4c6ccf4775ed3575c314bb14a91e9ffb1d4be5054a8962",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-adapters-embeddings-optim/spec.md",
+      "git_blob": "74419ae4176c328ea00f9bf4687b5a129db48e9c",
+      "bytes": 11141,
+      "sha256": "5977f6aea288cc050435dc9b7bf38bca583c17bfb489b5646a73c966466a616d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-config-runtime/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-config-runtime/spec.md",
+      "git_blob": "e30791170117c4dde709eb07a2a83d60e072dc1a",
+      "bytes": 14885,
+      "sha256": "99bd86b124b75ee67459b4672ab424e993af8f35f002ba754089dd42da558e70",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-data-template-encoding/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-data-template-encoding/spec.md",
+      "git_blob": "9d2019c931c07016d41842d25ec165cba1c14d2b",
+      "bytes": 8647,
+      "sha256": "fdf2171550ff0a19415f424a8b18512f63e759b81c68fde30a26100992891814",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-detection-evaluator/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-detection-evaluator/spec.md",
+      "git_blob": "dbe44183c1cc9369179b7c5bbe655ae71e3f599f",
+      "bytes": 10374,
+      "sha256": "ee84c51d9efce575a6172e5cb4a47058822f2e85835767fabca335ea8fe6761e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-geometry-augmentation/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-geometry-augmentation/spec.md",
+      "git_blob": "67f8beb7586792e10c61aaed82f89c05ed9055af",
+      "bytes": 10547,
+      "sha256": "ebc937ba809083b67f2f43b1e8c1fa7679283c1dd7642acedd603c9e988e705e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-backend-trace/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-backend-trace/spec.md",
+      "git_blob": "8a9da9546741b42cc3b0402fbdfc03950807e77d",
+      "bytes": 12614,
+      "sha256": "3af823dad634f66b0f1a4d538a393ca1325382eb82215401345e408967473faa",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-benchmark-smoke/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-benchmark-smoke/spec.md",
+      "git_blob": "852998b61e6b6c0adc629159df64dca75ce86389",
+      "bytes": 15697,
+      "sha256": "5112eaa66f5afeaf26d1391cd8fcbec2ae3fe70d57950b1cc504bbe9a83024e4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-config-runtime/spec.md",
+      "git_blob": "f5016b4f86d13591b473f9376b43ee896f496981",
+      "bytes": 21983,
+      "sha256": "fb02f6ca6fe5eb2dccc3001bb732a8dd43f2186eb22e6975ee8cb96ae56cb4bb",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-data-parallel-runtime/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-data-parallel-runtime/spec.md",
+      "git_blob": "b4c1b8a25e8efb4db4ee6cd4b6199dbf1e995024",
+      "bytes": 9026,
+      "sha256": "f9d12aee89de58b9736adc7097c30ea61971f1ee16fea29f09bdfdeb11dc4a45",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-execution-model/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-execution-model/spec.md",
+      "git_blob": "51c55c92e75fc5cee46f09ee21ee7c2f41f0c818",
+      "bytes": 9948,
+      "sha256": "5a4890a56b7f45007d7de5ec78b946072dd0fb98fa4f610298130be611ddea5f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-pipeline/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-pipeline/spec.md",
+      "git_blob": "38d6a79bc3c8f9e145ac8600d1989a8e1e81babf",
+      "bytes": 12258,
+      "sha256": "837ad2ebe9cdbf78d077e7b9c6184fb49f18f6b9102c3e5e24f578c2cb3cbbfb",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-prompt-parsing/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-prompt-parsing/spec.md",
+      "git_blob": "adc4452318280af790a324c656494750a69bb0b8",
+      "bytes": 10901,
+      "sha256": "2b04f975275cfd9cd000a2f62467135fe39f2bc27bec95cd522fd88d45bcc79a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-infer-scoring-artifacts/spec.md",
+      "git_blob": "bfcde81b5a0f189a9a2182ae4f69727a2b1221be",
+      "bytes": 18484,
+      "sha256": "f5f62eeccae9e851d5f0bf71392402e31996433b86582295d44e5f6dc0cf0a5e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-pack-cache-semantic-identity/spec.md",
+      "git_blob": "15d21d89722da43d27dd663f191824d1a8ea82ca",
+      "bytes": 6069,
+      "sha256": "ed1ffb7bf0f6ed378f03f3d5f7ec686aff83a2c6f8b83d4a1347fe0b206ff19e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-packing-forward/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-packing-forward/spec.md",
+      "git_blob": "a215c4c07f0adb096bca4ab0a2b1c7d78a525613",
+      "bytes": 12686,
+      "sha256": "67b7ab9d36bbd6f8779134132cf61d6413aa958195ff213a5f422692262e5dc9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-supervision-losses/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-supervision-losses/spec.md",
+      "git_blob": "862c28eef20ff58013aec87a8e0f0a72a2be6724",
+      "bytes": 11113,
+      "sha256": "5fa99e013a6caf95cf84c9e12a22a0de08af225a2459bd8ed6e802c71d58f155",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-training-artifacts/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-training-artifacts/spec.md",
+      "git_blob": "3d9469eb4639207fb9b636a511caa96f10e6321d",
+      "bytes": 15429,
+      "sha256": "59ac638ecbd4b9717d7a0b291b3d0d9b8182456540d1a6f7a2d88554a7c0fb66",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "openspec/specs/coordexp-swift-vertical-smoke/spec.md",
+      "archive_path": "sources/openspec/specs/coordexp-swift-vertical-smoke/spec.md",
+      "git_blob": "d57c91b9987a0fd65be062f8d196487ffc641040",
+      "bytes": 8397,
+      "sha256": "48fe91c2d02580ccbdcbde0bc3d2db3519d74842447b84cdbbe5d7a3c7bbf881",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/README.md",
+      "archive_path": "sources/progress/README.md",
+      "git_blob": "65d15026322dfa328cbe94cf4714dca909ba8328",
+      "bytes": 3205,
+      "sha256": "92e17b952cd045bf77efa8153485f772089cba70356ad2a9eaf149fc92f2f00b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-01-22_stage1_softce_logging.md",
+      "archive_path": "sources/progress/audits/2026-01-22_stage1_softce_logging.md",
+      "git_blob": "c7e5e63d0c4cde6aa418c81839736ea3f1582dc6",
+      "bytes": 9272,
+      "sha256": "a9f930f9e358b36c6c1bd6ab48a69d0956f393f1d73b272cd1a5803b2846feb9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-02-25_stage2_channel_a_coord_loss.md",
+      "archive_path": "sources/progress/audits/2026-02-25_stage2_channel_a_coord_loss.md",
+      "git_blob": "84e1ae31224def0b00d8c336ddd1d51fdff77c84",
+      "bytes": 18854,
+      "sha256": "7f279e79e39702bfc4dd764a0bd530519f33ef399665de3d1b1faca6af526ba0",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-03_type_schema_architecture_audit.md",
+      "archive_path": "sources/progress/audits/2026-05-03_type_schema_architecture_audit.md",
+      "git_blob": "d9bcfae9f19bee88f12e2af8cfc53f0bd75d7a9d",
+      "bytes": 46701,
+      "sha256": "609ed7a3abf5ba42898f0a74f1ecf95c8da0ff1dc1ee9ea08fdffda3f2af6d24",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-14-instance-trie-gaussian-post-implementation-audit.md",
+      "archive_path": "sources/progress/audits/2026-05-14-instance-trie-gaussian-post-implementation-audit.md",
+      "git_blob": "5455eabe6bcdfa74c356248eec0cce4e0c05fb87",
+      "bytes": 4089,
+      "sha256": "51933f8ba4383a136dcb2f4f4f0215370ebd9bc0965326bf73a8227bca94b6cc",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md",
+      "archive_path": "sources/progress/audits/2026-05-14-instance-trie-gaussian-smoke-behavior-audit.md",
+      "git_blob": "7dfd4d6b0bba5b307904e27f3c61d55957946331",
+      "bytes": 5111,
+      "sha256": "625aa90dafe2a21aae35afba676fd927fc2cf0a132bed546f07a7de382b61afa",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-19_openspec_reactivation_audit.md",
+      "archive_path": "sources/progress/audits/2026-05-19_openspec_reactivation_audit.md",
+      "git_blob": "6b2cc03de98d074979c7ae8360f30f89ebae47be",
+      "bytes": 8633,
+      "sha256": "9822d7c8a49d2c15500a08872934ff2437b67eb3c5a675e0afe3573a6058098b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-20_repository_stewardship_audit.md",
+      "archive_path": "sources/progress/audits/2026-05-20_repository_stewardship_audit.md",
+      "git_blob": "ee1c014c7478d0a951ee2a7862c2b476bab1006c",
+      "bytes": 12556,
+      "sha256": "d7db5d93252a603fbede61f8f8aab6fb66ac52387d30edd65eafcc77934fbc2d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md",
+      "archive_path": "sources/progress/audits/2026-05-31_detection_scene_clean_break_archive_checkpoint.md",
+      "git_blob": "d6e07143df414b6253e697cd34f42e8751662981",
+      "bytes": 1111,
+      "sha256": "ad751b1c58cd3562ea387eec22731abcf2c8a1f816bf4c766d33e343e7e573a1",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md",
+      "archive_path": "sources/progress/audits/2026-05-31_detection_scene_phase0_surface_classification.md",
+      "git_blob": "9e3f82a48229cea5add5c87a611dd408c5200ca9",
+      "bytes": 18224,
+      "sha256": "a205f115ccb7d25210665b0f35566eadc005a70417202d024695164197952423",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/2026-06-01_detection_scene_cleanup_validation.md",
+      "archive_path": "sources/progress/audits/2026-06-01_detection_scene_cleanup_validation.md",
+      "git_blob": "045118323f1ee30606c4e7bc3d00ea8f256c5939",
+      "bytes": 15082,
+      "sha256": "81c679c824c6901a6e8dbf0fe6e6f006d8d5cdb5819361793d4a286cb361a5af",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/audits/README.md",
+      "archive_path": "sources/progress/audits/README.md",
+      "git_blob": "b50bb3b31b000fa60514a803da1b2a95131bb35e",
+      "bytes": 2844,
+      "sha256": "af86be4833755023e6f04cf982fdd85715aaf41e72e0f716fe3115694aa76630",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/benchmarks/2026-07-03_coord_token_val200_benchmark.md",
+      "archive_path": "sources/progress/benchmarks/2026-07-03_coord_token_val200_benchmark.md",
+      "git_blob": "43b20bfee94ad12f8b205e45ec0ab8833af0fa66",
+      "bytes": 16669,
+      "sha256": "6da69c51d288777bd3715da594d0ffb752d9f66b4e9688b6f00b39fda72cde44",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/2026-06-05_row_conditioned_visual_coverage.md",
+      "archive_path": "sources/progress/directions/2026-06-05_row_conditioned_visual_coverage.md",
+      "git_blob": "1eaa792993d397da2aab8b45c970359be87c396e",
+      "bytes": 33084,
+      "sha256": "7fd6f8ee7201c84b6c1ee7de32b318ae823030f71f9b6ccffec5dc1dc431dfe1",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/2026-06-07_segment_aware_packing_infra.md",
+      "archive_path": "sources/progress/directions/2026-06-07_segment_aware_packing_infra.md",
+      "git_blob": "620c8440aa12a26a1e85555ed4ede93a66a41563",
+      "bytes": 34954,
+      "sha256": "6ffa8c1e73df62deca671898b003419f73424eea9f8e8cdc9b8e650131be2b6c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/README.md",
+      "archive_path": "sources/progress/directions/README.md",
+      "git_blob": "195dd82ecf82c69d8c9dd10d9ffe45f10012b167",
+      "bytes": 2598,
+      "sha256": "e2ca6adc7bd57d544a5360f5a33d23ce4f05f6873c2ed97a9138d6a43f932737",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/full_idea_v3.md",
+      "archive_path": "sources/progress/directions/full_idea_v3.md",
+      "git_blob": "2e98f7c47a697163fabef2d2e1c2c99abccf8413",
+      "bytes": 27326,
+      "sha256": "ab581be3c75f05feead73e11e4b5dae77bb7ddedba58488e60e71e1d38f4cc25",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/full_idea_v4.md",
+      "archive_path": "sources/progress/directions/full_idea_v4.md",
+      "git_blob": "ba74fae7eb3d96bc50cd459cadcdea1806498748",
+      "bytes": 19667,
+      "sha256": "024615abeff2bea59c73a42dc406b1ff0c93257150400a297c5d51f0a9e8aeca",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/full_idea_v5.md",
+      "archive_path": "sources/progress/directions/full_idea_v5.md",
+      "git_blob": "f5ad709919f8c2c8556de9fd482524ae7fe72715",
+      "bytes": 28600,
+      "sha256": "998071545892a06b5359ee05667fa9adc3b516dce01ece8bf332cef01cbde45f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/stage2_clean_prefix_v2.md",
+      "archive_path": "sources/progress/directions/stage2_clean_prefix_v2.md",
+      "git_blob": "92660e6b027963cbee6208ff4d37ee5f51ff0ac2",
+      "bytes": 10813,
+      "sha256": "57f9bfff1d753768d60638921f349005519f4dd48744d0076a561b335f966353",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/directions/stage2_emish_set_supervision_v1.md",
+      "archive_path": "sources/progress/directions/stage2_emish_set_supervision_v1.md",
+      "git_blob": "10fd0273e788e87244a55a0ba1b1de97fb6cb536",
+      "bytes": 58599,
+      "sha256": "7e3c4984cb5b30206bf95a40063ed22d002a6b9045f0719a32d140f2e05b41d9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-01-26_stage2_infrastructure.md",
+      "archive_path": "sources/progress/explorations/2026-01-26_stage2_infrastructure.md",
+      "git_blob": "f1431db7527a220fa8c917e79cb601e7404c93d5",
+      "bytes": 4295,
+      "sha256": "0f6211a7e4cff80802ee82938e56b80971aac64197c55af2b0e1e17386068b9b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-03-19_runtime_refactor_architecture_program.md",
+      "archive_path": "sources/progress/explorations/2026-03-19_runtime_refactor_architecture_program.md",
+      "git_blob": "ca2c10d3b29272565abdefa4b26446f9c0df65c0",
+      "bytes": 5743,
+      "sha256": "a3c2786b7512b62b40f548765545204581bd101e84a09eff9f4dfba68ae22770",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md",
+      "archive_path": "sources/progress/explorations/2026-05-15_training_infrastructure_architecture_decisions.md",
+      "git_blob": "9c0502f6b9c1552e498eec761f212ce314e3cce1",
+      "bytes": 131710,
+      "sha256": "0af009c129d215087abefea81b29beaaa4b36873257a56d8c5684fdbf5b899d8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md",
+      "archive_path": "sources/progress/explorations/2026-05-19_unified_teacher_forcing_objective_architecture_decisions.md",
+      "git_blob": "4016bc335f658690c6252729fe01d4461f047321",
+      "bytes": 112511,
+      "sha256": "ceb985a78b69b4937d964bde825adae1b7dff7dc325848ee0bdd710b12735755",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md",
+      "archive_path": "sources/progress/explorations/2026-05-20_stage2_residual_set_self_prefix_ul_redesign.md",
+      "git_blob": "1227d0fc7c1f11a943589b9a5fe4093c9effc156",
+      "bytes": 92102,
+      "sha256": "5e32e99b9ffdf7d3a71919a5bdbddbb9349d1860df7be91b6a1156306af4d2db",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-05-31_grid_anchor_pending_record.md",
+      "archive_path": "sources/progress/explorations/2026-05-31_grid_anchor_pending_record.md",
+      "git_blob": "39ad94e7867b4021703e51fa54bfafbe2c140a11",
+      "bytes": 14639,
+      "sha256": "194f5c7cdbde0aea7804699a0562b677951c31796bcc6dc8a81d54768c10f3be",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md",
+      "archive_path": "sources/progress/explorations/2026-06-12_coord_repel_stage1_sft_design_decisions.md",
+      "git_blob": "ed935d2eff6ccfd5bf69d986fe5b35d643652cb3",
+      "bytes": 54922,
+      "sha256": "9bf8d00f0593b1baa7d3594906d6789a392d201d34cef4cdf5aa50296f588c7f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/explorations/README.md",
+      "archive_path": "sources/progress/explorations/README.md",
+      "git_blob": "16fbbae59e565951f19d526c64cc5f6d12346396",
+      "bytes": 2694,
+      "sha256": "4750cf634678334b205db9c56b8a4082741cfb83f9531f206e17a9de56bf76d6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md",
+      "archive_path": "sources/progress/handoffs/2026-06-11-packed-gaussian-sft-retrain.md",
+      "git_blob": "b0134356fc7e331a5017ed18ed300f775713e1c5",
+      "bytes": 5346,
+      "sha256": "936e7139071812775675f5ac0d143b0fccdfbcb1067c7dfab1b485ff809c3162",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/handoffs/README.md",
+      "archive_path": "sources/progress/handoffs/README.md",
+      "git_blob": "b40457bcf82e8782ae03fa7400f8e0dc6880d4b8",
+      "bytes": 766,
+      "sha256": "f6c1ac42c19f18e086f5b4f20f83094004ada163ecb9fee194a6bc6e52d79ac4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/pretrain/2026-01-26_stage1_ablation.md",
+      "archive_path": "sources/progress/pretrain/2026-01-26_stage1_ablation.md",
+      "git_blob": "0371ac6de474ecc40eb4dde1fa362a28e921c77b",
+      "bytes": 8761,
+      "sha256": "a93bff53aafc54bb3095bd121bb181b320a950aecb0b2a6c83c351a99db567ad",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "progress/pretrain/README.md",
+      "archive_path": "sources/progress/pretrain/README.md",
+      "git_blob": "4fe5bb0fb16a80af3a068de297cfbbfd6ab19b17",
+      "bytes": 931,
+      "sha256": "c02c95c4ba6ea174e0bbbc01abe3028381f4b608d966c919a34e21877b0d08e4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "reference/README.md",
+      "archive_path": "sources/reference/README.md",
+      "git_blob": "f018492f376bd538f8d65fe8fb70a50a9579f499",
+      "bytes": 664,
+      "sha256": "f13937a4713038cc68cae6adb50ed26c44ff5e7aa3f587b9233e656ecf1d3226",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "reference/legacy_openspec_2026-06-29/README.md",
+      "archive_path": "sources/reference/legacy_openspec_2026-06-29/README.md",
+      "git_blob": "ef9c0035d170258d9a138261f90a6b8d89e0e13c",
+      "bytes": 688,
+      "sha256": "847359ef52172d2fda95564e4adda6df75894ac4cb8e28e272170d4c895bf2b7",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/archive/index.md",
+      "archive_path": "sources/research/archive/index.md",
+      "git_blob": "45a45b83bf62376bf7b6e699efa75fe5bfb59fe8",
+      "bytes": 279,
+      "sha256": "c62138012bdcb46e62ccc949db4a30c0273498050632d79368c9c1bd5afd5747",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/decisions/index.md",
+      "archive_path": "sources/research/decisions/index.md",
+      "git_blob": "f149033f7376b2e144e58b83fba80b5bbd011187",
+      "bytes": 1303,
+      "sha256": "9a1bceaa965fe210e05614781ef7e067ac625bc89a3facfc62286e15c4b42753",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/decisions/let-architecture-emerge-from-hypothesis-gates.md",
+      "archive_path": "sources/research/decisions/let-architecture-emerge-from-hypothesis-gates.md",
+      "git_blob": "4c137923c210bd700bf2b3abac858514007c3bfd",
+      "bytes": 1861,
+      "sha256": "9338efe05197558164827262327125022f1a19aeb1e0490949e4ad40d7bfa39f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/decisions/prefer-x-then-y-object-ordering.md",
+      "archive_path": "sources/research/decisions/prefer-x-then-y-object-ordering.md",
+      "git_blob": "a2b49bb484d85f798d0d2978574f7c97b197461c",
+      "bytes": 2064,
+      "sha256": "930556e2072f49cc84bec3d4bba8a1c5861ad7e8f60dd836eb659bea26c8486f",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/decisions/separate-selection-transcription-commit-and-stop.md",
+      "archive_path": "sources/research/decisions/separate-selection-transcription-commit-and-stop.md",
+      "git_blob": "cb326097573e6a12652810d4e590f91a76f3cf6a",
+      "bytes": 2312,
+      "sha256": "c9fec6650ab41d8431fe6ea5814fd50e21837f1353014c85a1cafba24d967a46",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/index.md",
+      "archive_path": "sources/research/ideas/index.md",
+      "git_blob": "84e308fe3917e71abb941f4bdab5a3ab05fe88fd",
+      "bytes": 358,
+      "sha256": "7bacb580c3de1cc795169f5e0050273bd869024f6768c6cda1b0b49d718246ca",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/prefix-denoising-sft/index.md",
+      "archive_path": "sources/research/ideas/prefix-denoising-sft/index.md",
+      "git_blob": "c48ce539de1152c91eb9d1a29d9444251d5f9356",
+      "bytes": 288,
+      "sha256": "3c590a102afbceeae69f2a837d64e71eeae0437fb6c19c8a2493cd9840638918",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/prefix-denoising-sft/overview.md",
+      "archive_path": "sources/research/ideas/prefix-denoising-sft/overview.md",
+      "git_blob": "224a0b6ba8de214a5062597570b4f5130ace47bf",
+      "bytes": 13411,
+      "sha256": "0f1faa93596e2cfa0baf6bdf79890bcc24bfde471ae86e948a947e2c13214887",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiment-plan.md",
+      "git_blob": "ddb7e50b009b4ab358a9e5981cee7158d638d65c",
+      "bytes": 35736,
+      "sha256": "cedca8cce96402bb97e52432c0e4ba740d687e4239935a8f8a2311d85bb0f6f9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-05-predicted-ledger-human-annotation-ablation/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-05-predicted-ledger-human-annotation-ablation/unit.md",
+      "git_blob": "9ece4df69d45119174126e2793a539d14dfa8341",
+      "bytes": 11455,
+      "sha256": "d62505accb12fa52b1211ccfe4187d4ba504672dd7e921b47b933d40f429838e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step0-preparation-results/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step0-preparation-results/unit.md",
+      "git_blob": "a8bd130afb6c68ac28a6f3c2c5b0ab3b82a872f9",
+      "bytes": 8884,
+      "sha256": "0481f8a2f90f9786f5be2a5cb5796cc7fbfd20261072d21761904e1544817cb6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step1-precommit-probes/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step1-precommit-probes/unit.md",
+      "git_blob": "11ead60a8b2ef4b7519eea5deb6419410f60fd18",
+      "bytes": 12721,
+      "sha256": "886daa779796eb78862f598205f05dcc424aa184ad49274e89a627682ba0d0d6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-anticopy-snap-radius-results/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-anticopy-snap-radius-results/unit.md",
+      "git_blob": "4ed96bacc0b4c89ab765aad306ffc5f5b343a486",
+      "bytes": 9946,
+      "sha256": "76c5b470ae00f0d2f24bf5f1c07d4172aaa0561a13cda636fe681e150a7b9264",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-e0-snap-radius-calibration/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-e0-snap-radius-calibration/unit.md",
+      "git_blob": "8bf6f6826f74e3dc4548240623d52d514c14b84a",
+      "bytes": 4054,
+      "sha256": "5523b60e4aab9d305119608a78c51c44e0ad79dc5d73a60c3900c62171563b41",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-snap-radius-build-probe-plan/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-08-pvci-step2-snap-radius-build-probe-plan/unit.md",
+      "git_blob": "901896c9b4b144d94da07dfd7d838c4347a63e2f",
+      "bytes": 8663,
+      "sha256": "c4aeff3a4723abc9e62110b39d98e6ed881713ba17af0c49fb0d938dd841d305",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-corrupted-wrong-object-row-binding/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-corrupted-wrong-object-row-binding/unit.md",
+      "git_blob": "112519fd8860b4457c7e69d61f8a78b488183bf3",
+      "bytes": 13851,
+      "sha256": "a4ba719329157c83933433972763909d5fe637ace0aaa0d2b2784b430b168d89",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-cross-image-delta-transfer/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-cross-image-delta-transfer/unit.md",
+      "git_blob": "e2c1a5e9cb9df8115c2aebd59633c0b367b1dd8f",
+      "bytes": 9382,
+      "sha256": "e9c3ed31a487b15c6cae925838ed2ba6797a567f3be278c441eda739c3ea30f9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-replay-cursor/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-replay-cursor/unit.md",
+      "git_blob": "66f1538fa40f4e33da68571e733c218da3c3cf69",
+      "bytes": 9114,
+      "sha256": "52ef6e52241132d6d7aa5212e33831df3da4f624156cf21242a417293e08c38b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-store-delta-cursor/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-feature-store-delta-cursor/unit.md",
+      "git_blob": "0970db1dac90c941d6bf338c2cfe7441aa702625",
+      "bytes": 10130,
+      "sha256": "20357da1536ee1aeeb2fdcc0850cbf5f1e33e71e079f2d26a178885a85178ef4",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-identity-conflict/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-identity-conflict/unit.md",
+      "git_blob": "22816e1e0f87e3784e4f315ce0acfc3d6ccc58b6",
+      "bytes": 11621,
+      "sha256": "e4ea7a96dcae69dfb48f4691829acd860ebf4334a7bd127084ceb1f06735a283",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-image-embed-spatial-localization/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-image-embed-spatial-localization/unit.md",
+      "git_blob": "60a11f55d0ad9a253aae97b2736b768d2ae21f8b",
+      "bytes": 10577,
+      "sha256": "6f81dc3eb5045e58891d096f647a57bee13d3732c39c942cd3db1dbfe4094d0e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-local-visual-delta-cursor/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-local-visual-delta-cursor/unit.md",
+      "git_blob": "3bd0c0d41992c3ea3204503f11dedc77e95a8100",
+      "bytes": 11236,
+      "sha256": "9b9d64680b7d97c38db330473a471625dbf1f4072d796a54e98f8fe1a97f08eb",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-image-token-equivalence/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-image-token-equivalence/unit.md",
+      "git_blob": "4270e8f7c1718cc16cdd9c194e73145cd632a35b",
+      "bytes": 9218,
+      "sha256": "1277acd8dca4a40038b336025ad772a84805b4ae3f7e6cf9acdaed7fa3a9287b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-post-scatter-layer-onset/unit.md",
+      "git_blob": "67df9919d8818abfcdccd6e5fbfcd963b95af4ae",
+      "bytes": 8564,
+      "sha256": "2097c4c6a47c0fb19671f7da556d92cef4180350ffb434e1a75f154bf52b305c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-region-split-visual-delta-cursor/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-region-split-visual-delta-cursor/unit.md",
+      "git_blob": "8e667a67562694b88514c6cdec50df9fe3279af2",
+      "bytes": 8652,
+      "sha256": "bff801fc98b2b15cc8b9ed36d4ac84d201856f74bb94900e7c498642a5b6fdb8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-same-object-aug-delta-bridge/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-same-object-aug-delta-bridge/unit.md",
+      "git_blob": "c80a0e07ed779c03a5bd2aed766182c65806376e",
+      "bytes": 6889,
+      "sha256": "b63ac5a0c3a38f9d46f426d3883d3ca234ce1c34509a8bea81de6329598555b1",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-visual-feature-component-localization/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-09-pvci-visual-feature-component-localization/unit.md",
+      "git_blob": "d32312a6b3701bd72dae9a577ea55f37f3673e78",
+      "bytes": 10215,
+      "sha256": "e2434fb2519978d2b40f00fd062a4ed5fe59cf5caccc4e5fc5b43fb25b6a1957",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-endogenous-boundary-state-synthesis/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-endogenous-boundary-state-synthesis/unit.md",
+      "git_blob": "60c59202ba7eddf48060a581f901a63959254d76",
+      "bytes": 19228,
+      "sha256": "f86dc3eeeb293cec66fb2b745d89519d045a30c9cd4cf47339510ef1f53c6456",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-native-commit-to-uncovered-redistribution/unit.md",
+      "git_blob": "3178aa73bae6118be2ce05330f791ceb20b767b1",
+      "bytes": 27853,
+      "sha256": "b8125abe3d5b7ea88d0287656a16ea171be0be2048fe38a273458e5e0038fb4e",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-row-trajectory-causal-persistence/unit.md",
+      "git_blob": "963b65b4dfefa3168f1bb0e1d35fb03440442067",
+      "bytes": 11859,
+      "sha256": "bae4e228adcd70bc89c4e0b945e384b3fcc1e18e90073adc28fd62e8a120dc6a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-10-pvci-sequential-control-variable-causal-schedule/unit.md",
+      "git_blob": "83fee3375f584ffbf1033e30335f7e5546b10565",
+      "bytes": 16984,
+      "sha256": "31af8535ccf13613a5fe40bfa75ca8b95cce73c6f67a730706e72eff54cf374c",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/implementation-plan.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/implementation-plan.md",
+      "git_blob": "9b7b86cf263f0ec004f8ee7e1d63696ed7f0a61e",
+      "bytes": 12311,
+      "sha256": "3a12e10552cfe5f9b5c7a2ab76e347e74910a17e285da9e08f467f69e07d8c99",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-behavior-evaluator-contract.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/own-prefix-behavior-evaluator-contract.md",
+      "git_blob": "feee7366c57b23237c32523d040992e8f48151a5",
+      "bytes": 5832,
+      "sha256": "579d8fa5e909968a95e2d14676b042911c8d1ce4c8ec9e56c434ff3336740940",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-causal-proposal-bridge/unit.md",
+      "git_blob": "b25ab7d59397b86cf5cde2488fab3d5285fcee81",
+      "bytes": 79604,
+      "sha256": "f124b6086f9fb331db96dbb406d561475b3ba2962423e0ba24203810fd1c1bda",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-commit-field-source-swap/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-commit-field-source-swap/unit.md",
+      "git_blob": "c862000c3075e2b8245158a1a6d89517e0d6bf03",
+      "bytes": 14260,
+      "sha256": "258a070c4952a7a72d5135d34da7098ad2c12909fc38e47619d05b7c6890b4a2",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-endogenous-commit-write-read-bridge/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-endogenous-commit-write-read-bridge/unit.md",
+      "git_blob": "2ff71b2ae225cb5dd3de62d8f916084ded562a3c",
+      "bytes": 17100,
+      "sha256": "b5fbf68c1f9bee37ab2238fecf7749f57caac24fe75ee374ff288a742c589df6",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-canonical-commit-depth/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-canonical-commit-depth/unit.md",
+      "git_blob": "a72ec88452ddaf9c393d14e0bc65ac15e8541d8e",
+      "bytes": 12960,
+      "sha256": "76dee2768007227f15ab87a324b49155187858c1f70656c1e8daae638b16651b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-identity-slot-counterbalance/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-identity-slot-counterbalance/unit.md",
+      "git_blob": "af719eceea472aa5a3abf1e9216d82a3d50d0f45",
+      "bytes": 11636,
+      "sha256": "38469a29a14dd2db2da7c2c2cc9e2c7102c5dc9582343184ca43fd4e02adaf3d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-spatial-commit-field/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-native-spatial-commit-field/unit.md",
+      "git_blob": "a330b260fc76052c732295758e4a4bdff459c1d0",
+      "bytes": 17032,
+      "sha256": "a1d9c1c42e6caf5435a37d7d4bcc6c9c5d29c08d01e67e4c023b609289a49cea",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-selection-aligned-prefix-state-gating/unit.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/experiments/2026-07-11-pvci-selection-aligned-prefix-state-gating/unit.md",
+      "git_blob": "96401ec9e37c57b9c784ad8fa44134fc45f24123",
+      "bytes": 20357,
+      "sha256": "6b4659c16781bde1f2faf2697c59bf173b0471785d6850f626782880fd648a9b",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/index.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/index.md",
+      "git_blob": "3b800aef712a0d7592f447c35bc1f34ed7b25714",
+      "bytes": 1729,
+      "sha256": "3c7f20d5bff6b69276f77303658bcdf50f40ee3cf40aec5a4a8dbbbb857d5c70",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/overview.md",
+      "git_blob": "f933a06ad661e469de2d11f62309a21792dfd085",
+      "bytes": 31145,
+      "sha256": "2c074d3c01b5e03b3d03bad43cee4e4bfca1d5d86d15f1551ffe82329db4d01a",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/ideas/qwen3-vl-painted-gt-transcription-probe/review-log.md",
+      "archive_path": "sources/research/ideas/qwen3-vl-painted-gt-transcription-probe/review-log.md",
+      "git_blob": "d00912ed3ef01c927aa3c4b54de6e51d53c2bcda",
+      "bytes": 14973,
+      "sha256": "92006543afbf0c2493b8cb3ad08a1af684f2125cad1ca36798b4fd525dc5c9ca",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/index.md",
+      "archive_path": "sources/research/index.md",
+      "git_blob": "b1a8a20c4a9abb3de7459c248751fe78d1fe976c",
+      "bytes": 4778,
+      "sha256": "137d587e3e89e541e986a72684bcda96726d6cbec3c5382c3724a05a05b82869",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/autoregressive-binding-template-study/index.md",
+      "archive_path": "sources/research/investigations/autoregressive-binding-template-study/index.md",
+      "git_blob": "55f7b2ed402c796d9952ba4a3f6349900fc58796",
+      "bytes": 828,
+      "sha256": "06d79807e70a7e9a3e2374110578cfcb32573f14e22a2da363075a2ba12eda8d",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/coordexp-swift-physical-length/experiments/2026-07-physical-length-isolation/unit.md",
+      "archive_path": "sources/research/investigations/coordexp-swift-physical-length/experiments/2026-07-physical-length-isolation/unit.md",
+      "git_blob": "315361476ececbe69b8bf444b348916b9a0cf251",
+      "bytes": 3808,
+      "sha256": "d89401438fe18468fbd40c3c82e305f1674daaa0295bf04746c489958e39c591",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/coordexp-swift-physical-length/experiments/index.md",
+      "archive_path": "sources/research/investigations/coordexp-swift-physical-length/experiments/index.md",
+      "git_blob": "9fd8d564db0a44a913b6414b1b19dc83f55aa989",
+      "bytes": 137,
+      "sha256": "f753924f626a29f5ee990c11f46ccda7179778b4a5daab005c6332dcea548275",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/coordexp-swift-physical-length/index.md",
+      "archive_path": "sources/research/investigations/coordexp-swift-physical-length/index.md",
+      "git_blob": "682ad7867ff80fdbbfbcf2a90587f5dfc371e30d",
+      "bytes": 251,
+      "sha256": "1076f20719dba1878e231974cb9d041a1b28de0a789134163009d582de3b1d67",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/coordexp-swift-physical-length/summary.md",
+      "archive_path": "sources/research/investigations/coordexp-swift-physical-length/summary.md",
+      "git_blob": "792cc34e47b355e9cd2cff8932732aed7101d5ab",
+      "bytes": 2562,
+      "sha256": "bbd06748c967c32d065df12a452fcbfbf77551c61e873231e96489772daf39d9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/docs-vs-mcp-authority/evidence.md",
+      "archive_path": "sources/research/investigations/docs-vs-mcp-authority/evidence.md",
+      "git_blob": "9b8bb21be8cbd654283606352b229a82784a8d57",
+      "bytes": 2957,
+      "sha256": "487d5d8e2088aa6ec7a8159ce55af6a55c5ac97bbc156e8d73720f4c9c92bc99",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/docs-vs-mcp-authority/index.md",
+      "archive_path": "sources/research/investigations/docs-vs-mcp-authority/index.md",
+      "git_blob": "cc45c66e5f26ed035c490eb14afd674fe8e63a36",
+      "bytes": 357,
+      "sha256": "f05424a59d2b17b5ba622761c818b74a940167445ebe7f8fdf6ec89f7a5ed017",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/docs-vs-mcp-authority/maintenance_guidance.md",
+      "archive_path": "sources/research/investigations/docs-vs-mcp-authority/maintenance_guidance.md",
+      "git_blob": "e1499cac8ac63ca45bd3f704cf2ef32170e640b6",
+      "bytes": 3219,
+      "sha256": "8aeecea43c148a56d0d82b8f74b45ef9aa84b4f536279ac5da52be1ca70f9158",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/docs-vs-mcp-authority/summary.md",
+      "archive_path": "sources/research/investigations/docs-vs-mcp-authority/summary.md",
+      "git_blob": "3e1629b13a87257f3860ab99cb220ed5db0d0ccb",
+      "bytes": 2473,
+      "sha256": "4f399846c7562b2431381e691ffd31bf98195b0993f13171c995d08862a77bc8",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/eight-coordinate-bbox-supervision/index.md",
+      "archive_path": "sources/research/investigations/eight-coordinate-bbox-supervision/index.md",
+      "git_blob": "396663f183fd2f950e43ed4ac82aa96edb02caef",
+      "bytes": 1011,
+      "sha256": "11fbe12607dd08eb97ac7db26718d4e449031125c0e9478edc0ed58fa0f258ab",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/eight-coordinate-bbox-supervision/results.md",
+      "archive_path": "sources/research/investigations/eight-coordinate-bbox-supervision/results.md",
+      "git_blob": "50b07eaed0ffce1977b4ff12a37c982714d87a9f",
+      "bytes": 6109,
+      "sha256": "a8b9efed9cffc1b32d6bd9a20a9390b8d55f80e96aa2627233e1797d71bf6ea9",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/index.md",
+      "archive_path": "sources/research/investigations/index.md",
+      "git_blob": "c4233e9b67c088bec46e3c2aa42deaae75acb80b",
+      "bytes": 629,
+      "sha256": "d9cd00a6a01e62aec534b6c673e80b6550c620feb33abc6cdf1c835372f94062",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/audit-verdicts.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/audit-verdicts.md",
+      "git_blob": "da3ff6f9306c28ef3801f731f80c6b77e79cfb38",
+      "bytes": 3056,
+      "sha256": "2f6b681f0cad035f2e6522069e98a870c9e03b5474b1551e189f4fb8e46a2d53",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/canonical-pytest.xml",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/canonical-pytest.xml",
+      "git_blob": "43b06b18d66ec1c66eadc8c86f0bba917068ff10",
+      "bytes": 302440,
+      "sha256": "5c24457b7313c00c23454b633e06aaf78000db68bf6e07753a06d9987a3dd120",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/production-activation-attempt-1-failure.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/production-activation-attempt-1-failure.md",
+      "git_blob": "a19b4dabb7898909c850fcfb63360b9bae5b5cf1",
+      "bytes": 4365,
+      "sha256": "3e95c2705c443a754a68f485ca0b0931e7e47071b0c800ab4884e23131adb829",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/production-launch-readiness.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/production-launch-readiness.md",
+      "git_blob": "113dbdff061de60c447bf9802b6d06a3ea480c3a",
+      "bytes": 10718,
+      "sha256": "b73bc623775f216a70d6d71bcbd37c31405b35037efd627ccaa5fa6ac23886b3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/receipt.json",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-readiness/receipt.json",
+      "git_blob": "2e47a15b3e4b61f7f98ef040a8450608e72e9654",
+      "bytes": 5728,
+      "sha256": "4d6299009e87d25aad702da6fd1f5b54385fd6cca2db3e28021af2924135f2ec",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-smoke-acceptance/results.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-final-smoke-acceptance/results.md",
+      "git_blob": "e9dd28751ee88f8955e692fe7235e2cc79326f23",
+      "bytes": 13609,
+      "sha256": "2c7ffdefc432aa352b4ff68088a9ad1534f40779e46ccda44d242daeb119b3b5",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-premodel-repair-acceptance/algorithm-receipt.json",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-premodel-repair-acceptance/algorithm-receipt.json",
+      "git_blob": "1c3454377e488f76f78ac6b8b52f5eb7e32fae50",
+      "bytes": 31175,
+      "sha256": "e5b0fcc5d07c0bffcf893ea3cb6a7448268458b20397934e53e57bdb44edf7a2",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-premodel-repair-acceptance/premodel-w8-rehearsal-receipt.json",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-premodel-repair-acceptance/premodel-w8-rehearsal-receipt.json",
+      "git_blob": "cd4e2bcfd20dedcc3ff93d5fffc33e07c0275c5c",
+      "bytes": 20351,
+      "sha256": "a9cccc6679398116f8e5a881db8f0f975836f5c0a412091de588d09c962ba059",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-premodel-repair-acceptance/results.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-premodel-repair-acceptance/results.md",
+      "git_blob": "20c33fb4fce773c8285ad9a061e61e26d779edd6",
+      "bytes": 7317,
+      "sha256": "9c6821fd07bc2d2e0ff3b4da2253f8443015082f18d4303f4c6bd17e2f2a7415",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-w8-collective-choreography-failure/results.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-w8-collective-choreography-failure/results.md",
+      "git_blob": "2eb78d0103aec975ac380358a743e2125ea1a427",
+      "bytes": 21805,
+      "sha256": "eeaf803859ca38c493c4e019154d56363623720c9e30ae60e047f550dc8b7278",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-wave5-algorithm-accuracy/receipt.json",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-10-permanent-owner-bridge-wave5-algorithm-accuracy/receipt.json",
+      "git_blob": "ab7a968a2c2a435dd56b755e31d0356f0ff30e6f",
+      "bytes": 31176,
+      "sha256": "349671c4788137ab684807d3ef29d767d74ff77034acad40f91b70be9cff15e7",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-11-permanent-owner-bridge-production-launch-acceptance/receipt.json",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-11-permanent-owner-bridge-production-launch-acceptance/receipt.json",
+      "git_blob": "59e1c488b1ce28f15aa37299d653ee4bed435b4b",
+      "bytes": 8737,
+      "sha256": "e2930d34f0ed0fcf4413a7ec9e82e830712db4937c84a4314ac76a06813671e7",
+      "selection": [
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-11-permanent-owner-bridge-production-launch-acceptance/results.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-11-permanent-owner-bridge-production-launch-acceptance/results.md",
+      "git_blob": "1cf97faca143e5270517d7b5740f4c5d2a6d5e70",
+      "bytes": 5714,
+      "sha256": "6a43a6fcd86f72e396ff23e77ef19498baa09baedecc1694cfb418888c99a7e3",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-11-permanent-owner-bridge-recovery-successor/results.md",
+      "archive_path": "sources/research/investigations/qwen3-vl-dense-enumeration/experiments/2026-08-11-permanent-owner-bridge-recovery-successor/results.md",
+      "git_blob": "449d01b9d8c42539e1334ece9edf9155b5e2ad7a",
+      "bytes": 6146,
+      "sha256": "c24df85b05b614c47f60ffd40b24f8de9bc5e6a47641ff65bfa1b40f8c5b19cf",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head",
+        "owner_bridge_primary_record"
+      ]
+    },
+    {
+      "source_path": "scripts/README.md",
+      "archive_path": "sources/scripts/README.md",
+      "git_blob": "034a92c0eeb90054081a4371fdc947d78d72d5e3",
+      "bytes": 2671,
+      "sha256": "786186abf4a5c371d87384211bc70e6d1bb7c3e32056d7dafced0fe3505d45bf",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "scripts/analysis/rollout_backend_bench/README.md",
+      "archive_path": "sources/scripts/analysis/rollout_backend_bench/README.md",
+      "git_blob": "429d3e3fbf786750b10e451d4ddd63d780f80594",
+      "bytes": 1234,
+      "sha256": "edebcff1f655ad17a3fc74f394a2483c988d7fad2ec34eb3dc54744209ae8cb7",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    },
+    {
+      "source_path": "tests/fixtures/smoke/qwen3_vl_single_image_pack/README.md",
+      "archive_path": "sources/tests/fixtures/smoke/qwen3_vl_single_image_pack/README.md",
+      "git_blob": "03f9c758a6f6cc0930c624cba9cddb660ab6c349",
+      "bytes": 2701,
+      "sha256": "6b445a8f59c24840525623a6e7095de04f8f33d80609e0c72c79137967738599",
+      "selection": [
+        "markdown_not_byte_identical_at_research_probes_head"
+      ]
+    }
+  ]
+}

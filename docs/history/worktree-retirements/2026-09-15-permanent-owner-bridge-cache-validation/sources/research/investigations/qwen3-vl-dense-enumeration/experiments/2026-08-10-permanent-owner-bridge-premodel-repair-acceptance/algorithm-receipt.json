@@ -1,0 +1,786 @@
+{
+  "battery_id": "permanent-owner-bridge-stage1-wave5-algorithm-accuracy-v2",
+  "cases": [
+    {
+      "case": "brute_force_global_injective_assignment",
+      "nodes": [
+        "tests/qwen/test_owner_assignment.py::test_global_assignment_matches_brute_force_over_the_full_inventory"
+      ],
+      "reference": "independent FP64 exhaustive permutation optimum",
+      "tolerance": {
+        "cost_atol": 1e-10,
+        "cost_rtol": 1e-08
+      }
+    },
+    {
+      "case": "fp64_permutation_invariant_set_routing",
+      "nodes": [
+        "tests/losses/test_owner_bridge_atom_route.py::test_route_matches_fp64_scalar_logsumexp_reference_and_uncovered_mass",
+        "tests/losses/test_owner_bridge_atom_route.py::test_route_is_uncovered_order_and_atom_permutation_invariant"
+      ],
+      "reference": "FP64 scalar logsumexp plus atom/uncovered-set permutations",
+      "tolerance": {
+        "atol": 2e-06,
+        "rtol": 2e-06
+      }
+    },
+    {
+      "case": "four_branch_swap_common_pulse_and_gradient_reach",
+      "nodes": [
+        "tests/losses/test_owner_bridge_use.py::test_use_matches_exact_two_by_two_formula_and_separates_regions",
+        "tests/losses/test_owner_bridge_use.py::test_common_pulse_cancels_and_wrappers_are_excluded",
+        "tests/losses/test_owner_bridge_use.py::test_four_branches_balance_rows_values_and_share_one_prefix",
+        "tests/losses/test_owner_bridge_use.py::test_use_gradients_reach_both_values_shared_atomizer_and_row_adapter",
+        "tests/integration/test_owner_bridge_wave2_composition.py::test_public_owner_step_executes_tiny_qwen_train_and_eval_lifecycles"
+      ],
+      "reference": "hand-computed two-by-two margins and paired autograd graph",
+      "tolerance": {
+        "loss_atol": 1e-07,
+        "loss_rtol": 1e-06
+      }
+    },
+    {
+      "case": "rms_clipping",
+      "nodes": [
+        "tests/qwen/test_owner_profile_math.py::test_rms_clip_bounds_energy_and_stays_differentiable",
+        "tests/qwen/test_owner_profile_math.py::test_rms_clip_caps_the_actual_post_cast_residual",
+        "tests/qwen/test_owner_bridge_routing.py::test_admission_residual_is_clipped_to_three_percent",
+        "tests/qwen/test_owner_bridge_forward.py::test_row_update_is_clipped_to_ten_percent_of_the_hidden_rms"
+      ],
+      "reference": "closed-form RMS energy bounds for generic, admission, and row writes",
+      "tolerance": {
+        "cap_slack": 1e-05
+      }
+    },
+    {
+      "case": "zero_bridge_parity",
+      "nodes": [
+        "tests/qwen/test_owner_bridge_forward.py::test_zero_initialized_bridge_reproduces_the_native_forward_exactly"
+      ],
+      "reference": "paired native and installed-zero bridge forward",
+      "tolerance": {
+        "comparison": "bit_exact"
+      }
+    },
+    {
+      "case": "block20_to_final_causal_visibility",
+      "nodes": [
+        "tests/qwen/test_owner_bridge_forward.py::test_block_seam_cannot_observe_the_write_but_the_final_boundary_can"
+      ],
+      "reference": "paired seam-read and post-final-norm hidden-state capture",
+      "tolerance": {
+        "final_min_difference": 0.0,
+        "same_seam": "bit_exact"
+      }
+    },
+    {
+      "case": "activation_checkpoint_forward_gradient_parity",
+      "nodes": [
+        "tests/qwen/test_owner_bridge_forward.py::test_checkpoint_on_off_parity_for_logits_loss_and_bridge_gradients"
+      ],
+      "reference": "checkpoint-off versus checkpoint-on paired logits/loss/gradients",
+      "tolerance": {
+        "forward_atol": 1e-06,
+        "forward_rtol": 1e-05,
+        "gradient_atol": 1e-06,
+        "gradient_rtol": 0.0001
+      }
+    },
+    {
+      "case": "packed_isolated_parity",
+      "nodes": [
+        "tests/algorithm/test_owner_bridge_stage1_accuracy.py::test_packed_and_isolated_owner_bridge_forwards_are_equivalent"
+      ],
+      "reference": "block-diagonal packed forward versus two isolated forwards",
+      "tolerance": {
+        "atol": 1e-06,
+        "rtol": 1e-05
+      }
+    },
+    {
+      "case": "production_owner_use_lane_packed_full_and_rms_receipt",
+      "nodes": [
+        "tests/algorithm/test_owner_use_lane_receipt.py::test_emit_production_owner_use_lane_decision_receipt"
+      ],
+      "reference": "production full-pack branch executor plus executed packed-lane receipt, missing-boundary negative controls, and FP32-compute BF16 post-cast RMS",
+      "tolerance": {
+        "cu_seq_lens": "exact",
+        "logits_l_use_gradient_atol": 1e-06,
+        "logits_l_use_gradient_rtol": 1e-05,
+        "rms_post_cast": "less_than_or_equal_to_cap"
+      }
+    },
+    {
+      "case": "full_teacher_forced_forced_incremental_parity",
+      "nodes": [
+        "tests/qwen/test_owner_bridge_forward.py::test_full_teacher_forced_and_forced_token_incremental_agree_on_the_write"
+      ],
+      "reference": "full trajectory versus token-by-token DynamicCache execution",
+      "tolerance": {
+        "atol": 1e-05,
+        "rtol": 1e-05
+      }
+    },
+    {
+      "case": "production_payload_reload_forward_gradient_parity",
+      "nodes": [
+        "tests/algorithm/test_owner_bridge_stage1_accuracy.py::test_production_payload_reload_preserves_forward_and_bridge_gradients"
+      ],
+      "reference": "in-memory bridge versus strict production safetensors reload",
+      "tolerance": {
+        "forward_atol": 1e-06,
+        "forward_rtol": 1e-05,
+        "gradient_atol": 1e-06,
+        "gradient_rtol": 0.0001
+      }
+    },
+    {
+      "case": "batched_lifecycle_isolation",
+      "nodes": [
+        "tests/qwen/test_owner_bridge_decode_state.py::test_batch_sequences_keep_independent_phases_through_early_eos_and_pad"
+      ],
+      "reference": "two-sequence early-EOS/pad versus independently tracked phases",
+      "tolerance": {
+        "counts": "exact",
+        "terminal_state": "exact"
+      }
+    },
+    {
+      "case": "greedy_image_and_lifecycle_provenance",
+      "nodes": [
+        "tests/inference/test_hf_owner_bridge_backend.py::test_owner_bridge_decode_request_uses_physical_image_span_and_merged_grid",
+        "tests/inference/test_hf_owner_bridge_backend.py::test_hf_bridge_generation_scopes_native_generate_and_projects_lifecycle",
+        "tests/inference/test_owner_bridge_lifecycle_artifacts.py::test_valid_lifecycle_materializes_relocatable_bound_sidecar"
+      ],
+      "reference": "physical image-span request plus native-greedy lifecycle and relocatable sidecar",
+      "tolerance": {
+        "hash": "sha256",
+        "identity": "exact"
+      }
+    }
+  ],
+  "claim_boundary": "Deterministic CPU algorithm/mechanical evidence only. This receipt does not establish real-checkpoint GPU execution, distributed readiness, model quality, recall, duplication, stopping improvement, or production-launch readiness.",
+  "command": [
+    "/root/miniconda3/envs/ms/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "--junitxml=/tmp/owner-bridge-accuracy-u49zj5xk/junit.xml",
+    "tests/qwen/test_owner_assignment.py::test_global_assignment_matches_brute_force_over_the_full_inventory",
+    "tests/losses/test_owner_bridge_atom_route.py::test_route_matches_fp64_scalar_logsumexp_reference_and_uncovered_mass",
+    "tests/losses/test_owner_bridge_atom_route.py::test_route_is_uncovered_order_and_atom_permutation_invariant",
+    "tests/losses/test_owner_bridge_use.py::test_use_matches_exact_two_by_two_formula_and_separates_regions",
+    "tests/losses/test_owner_bridge_use.py::test_common_pulse_cancels_and_wrappers_are_excluded",
+    "tests/losses/test_owner_bridge_use.py::test_four_branches_balance_rows_values_and_share_one_prefix",
+    "tests/losses/test_owner_bridge_use.py::test_use_gradients_reach_both_values_shared_atomizer_and_row_adapter",
+    "tests/integration/test_owner_bridge_wave2_composition.py::test_public_owner_step_executes_tiny_qwen_train_and_eval_lifecycles",
+    "tests/qwen/test_owner_profile_math.py::test_rms_clip_bounds_energy_and_stays_differentiable",
+    "tests/qwen/test_owner_profile_math.py::test_rms_clip_caps_the_actual_post_cast_residual",
+    "tests/qwen/test_owner_bridge_routing.py::test_admission_residual_is_clipped_to_three_percent",
+    "tests/qwen/test_owner_bridge_forward.py::test_row_update_is_clipped_to_ten_percent_of_the_hidden_rms",
+    "tests/qwen/test_owner_bridge_forward.py::test_zero_initialized_bridge_reproduces_the_native_forward_exactly",
+    "tests/qwen/test_owner_bridge_forward.py::test_block_seam_cannot_observe_the_write_but_the_final_boundary_can",
+    "tests/qwen/test_owner_bridge_forward.py::test_checkpoint_on_off_parity_for_logits_loss_and_bridge_gradients",
+    "tests/algorithm/test_owner_bridge_stage1_accuracy.py::test_packed_and_isolated_owner_bridge_forwards_are_equivalent",
+    "tests/algorithm/test_owner_use_lane_receipt.py::test_emit_production_owner_use_lane_decision_receipt",
+    "tests/qwen/test_owner_bridge_forward.py::test_full_teacher_forced_and_forced_token_incremental_agree_on_the_write",
+    "tests/algorithm/test_owner_bridge_stage1_accuracy.py::test_production_payload_reload_preserves_forward_and_bridge_gradients",
+    "tests/qwen/test_owner_bridge_decode_state.py::test_batch_sequences_keep_independent_phases_through_early_eos_and_pad",
+    "tests/inference/test_hf_owner_bridge_backend.py::test_owner_bridge_decode_request_uses_physical_image_span_and_merged_grid",
+    "tests/inference/test_hf_owner_bridge_backend.py::test_hf_bridge_generation_scopes_native_generate_and_projects_lifecycle",
+    "tests/inference/test_owner_bridge_lifecycle_artifacts.py::test_valid_lifecycle_materializes_relocatable_bound_sidecar"
+  ],
+  "elapsed_seconds": 8.638397466391325,
+  "finished_at_utc": "2026-08-10T21:32:44.846940+00:00",
+  "junit_cases": [
+    {
+      "classname": "tests.qwen.test_owner_assignment",
+      "detail": null,
+      "name": "test_global_assignment_matches_brute_force_over_the_full_inventory",
+      "outcome": "passed",
+      "seconds": 0.026
+    },
+    {
+      "classname": "tests.losses.test_owner_bridge_atom_route",
+      "detail": null,
+      "name": "test_route_matches_fp64_scalar_logsumexp_reference_and_uncovered_mass",
+      "outcome": "passed",
+      "seconds": 0.004
+    },
+    {
+      "classname": "tests.losses.test_owner_bridge_atom_route",
+      "detail": null,
+      "name": "test_route_is_uncovered_order_and_atom_permutation_invariant",
+      "outcome": "passed",
+      "seconds": 0.002
+    },
+    {
+      "classname": "tests.losses.test_owner_bridge_use",
+      "detail": null,
+      "name": "test_use_matches_exact_two_by_two_formula_and_separates_regions",
+      "outcome": "passed",
+      "seconds": 0.002
+    },
+    {
+      "classname": "tests.losses.test_owner_bridge_use",
+      "detail": null,
+      "name": "test_common_pulse_cancels_and_wrappers_are_excluded",
+      "outcome": "passed",
+      "seconds": 0.002
+    },
+    {
+      "classname": "tests.losses.test_owner_bridge_use",
+      "detail": null,
+      "name": "test_four_branches_balance_rows_values_and_share_one_prefix",
+      "outcome": "passed",
+      "seconds": 0.001
+    },
+    {
+      "classname": "tests.losses.test_owner_bridge_use",
+      "detail": null,
+      "name": "test_use_gradients_reach_both_values_shared_atomizer_and_row_adapter",
+      "outcome": "passed",
+      "seconds": 0.003
+    },
+    {
+      "classname": "tests.integration.test_owner_bridge_wave2_composition",
+      "detail": null,
+      "name": "test_public_owner_step_executes_tiny_qwen_train_and_eval_lifecycles",
+      "outcome": "passed",
+      "seconds": 0.944
+    },
+    {
+      "classname": "tests.qwen.test_owner_profile_math",
+      "detail": null,
+      "name": "test_rms_clip_bounds_energy_and_stays_differentiable",
+      "outcome": "passed",
+      "seconds": 0.001
+    },
+    {
+      "classname": "tests.qwen.test_owner_profile_math",
+      "detail": null,
+      "name": "test_rms_clip_caps_the_actual_post_cast_residual",
+      "outcome": "passed",
+      "seconds": 0.002
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_routing",
+      "detail": null,
+      "name": "test_admission_residual_is_clipped_to_three_percent",
+      "outcome": "passed",
+      "seconds": 0.043
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_forward",
+      "detail": null,
+      "name": "test_row_update_is_clipped_to_ten_percent_of_the_hidden_rms",
+      "outcome": "passed",
+      "seconds": 0.04
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_forward",
+      "detail": null,
+      "name": "test_zero_initialized_bridge_reproduces_the_native_forward_exactly",
+      "outcome": "passed",
+      "seconds": 0.042
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_forward",
+      "detail": null,
+      "name": "test_block_seam_cannot_observe_the_write_but_the_final_boundary_can",
+      "outcome": "passed",
+      "seconds": 0.048
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_forward",
+      "detail": null,
+      "name": "test_checkpoint_on_off_parity_for_logits_loss_and_bridge_gradients",
+      "outcome": "passed",
+      "seconds": 0.158
+    },
+    {
+      "classname": "tests.algorithm.test_owner_bridge_stage1_accuracy",
+      "detail": null,
+      "name": "test_packed_and_isolated_owner_bridge_forwards_are_equivalent",
+      "outcome": "passed",
+      "seconds": 0.072
+    },
+    {
+      "classname": "tests.algorithm.test_owner_use_lane_receipt",
+      "detail": null,
+      "name": "test_emit_production_owner_use_lane_decision_receipt",
+      "outcome": "passed",
+      "seconds": 0.549
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_forward",
+      "detail": null,
+      "name": "test_full_teacher_forced_and_forced_token_incremental_agree_on_the_write",
+      "outcome": "passed",
+      "seconds": 0.112
+    },
+    {
+      "classname": "tests.algorithm.test_owner_bridge_stage1_accuracy",
+      "detail": null,
+      "name": "test_production_payload_reload_preserves_forward_and_bridge_gradients",
+      "outcome": "passed",
+      "seconds": 0.239
+    },
+    {
+      "classname": "tests.qwen.test_owner_bridge_decode_state",
+      "detail": null,
+      "name": "test_batch_sequences_keep_independent_phases_through_early_eos_and_pad",
+      "outcome": "passed",
+      "seconds": 0.039
+    },
+    {
+      "classname": "tests.inference.test_hf_owner_bridge_backend",
+      "detail": null,
+      "name": "test_owner_bridge_decode_request_uses_physical_image_span_and_merged_grid",
+      "outcome": "passed",
+      "seconds": 0.003
+    },
+    {
+      "classname": "tests.inference.test_hf_owner_bridge_backend",
+      "detail": null,
+      "name": "test_hf_bridge_generation_scopes_native_generate_and_projects_lifecycle",
+      "outcome": "passed",
+      "seconds": 0.001
+    },
+    {
+      "classname": "tests.inference.test_owner_bridge_lifecycle_artifacts",
+      "detail": null,
+      "name": "test_valid_lifecycle_materializes_relocatable_bound_sidecar",
+      "outcome": "passed",
+      "seconds": 0.007
+    }
+  ],
+  "outcome_counts": {
+    "passed": 23
+  },
+  "pytest_output_tail": ".......................                                                  [100%]\n------ generated xml file: /tmp/owner-bridge-accuracy-u49zj5xk/junit.xml -------\n23 passed in 7.01s\n",
+  "pytest_returncode": 0,
+  "receipt_schema_version": 2,
+  "repository": {
+    "dirty": false,
+    "git_branch": "codex/permanent-owner-bridge",
+    "git_commit": "7d6dd733f736f9f3003761c9404d866872e08a66",
+    "root": "/data/CoordExp/.worktrees/permanent-owner-bridge",
+    "source_set_sha256": "a35e1c016a4d44de8b581b955da543d23738d7432cc0e50806293d6d737fee9c",
+    "source_sha256": {
+      "src/losses/owner_bridge.py": "49d9ca424d81fd558182c4b51fe32d438e76a0473dfc4790ae089cd4ccec06ba",
+      "src/qwen/fa2.py": "68808ca79069d6379342422fbcafd06f45c10a95643971485d2a0c8ad6836e53",
+      "src/qwen/forward.py": "d3a527982905f8b90dd85a3cf8c0aeb8201e6728d90c482d2617a98ca1d90285",
+      "src/qwen/owner_bridge.py": "3b6303d32b7ce28911088888f92d2f65655108d9f8f093d05724cbe227cbf08f",
+      "src/qwen/owner_bridge_context.py": "478afbfac44b0b504b32669a297c939e46f6dd0799a145aa868b3f5ff065f78b",
+      "src/qwen/owner_math.py": "597f80087fbe54a0d7e270531b1b2fc4bcacb11cbdd206d6fa06abd38845d46f",
+      "src/training/owner_bridge_step.py": "19df299244220ce6918c89f13cb0c02248f725c726f1539397d999f090d49a0c",
+      "src/training/owner_use_lane.py": "f0039ad982905441bb72a45c64fc85a4bbc890f21c1156b0c0d8daec93f5c5bf",
+      "tests/algorithm/run_owner_bridge_stage1_accuracy.py": "efc1e469aa9b43d657adb34ecf7da40ccf95aa41a98785010e6ffc5757803442",
+      "tests/algorithm/test_owner_bridge_stage1_accuracy.py": "e0237be1e2134f6fa2ce8d55220ec2cc968c2fb6dc0c5157ea7bcfcf6479f75d",
+      "tests/algorithm/test_owner_use_lane_receipt.py": "3ca29534e173d7926decece8c0decb02e929b65d3ad1b47f08e5d64b67531cb9",
+      "tests/inference/test_hf_owner_bridge_backend.py": "2b4ffe52fc443a82dd0b1ee59785efc634bbd4fc46eb9926fe5c55a03cb4df7f",
+      "tests/inference/test_owner_bridge_lifecycle_artifacts.py": "7797e9eaaee1559c3894f9ce132f77dc189047b3ae97c038de380137f7e09a9c",
+      "tests/integration/test_owner_bridge_wave2_composition.py": "2f1394b991b6605055204aa9c3d0133b7e52ada23ccd3f1df08002a2f80a7e2e",
+      "tests/losses/test_owner_bridge_atom_route.py": "a513220597812f72fab81d3476a601be7b58652c11d329e435bf12afe5c69efb",
+      "tests/losses/test_owner_bridge_use.py": "f03d5444bf2e0eb66452c4eac5aeda08f635b4ec18dd44f1d3310e56f632fc6e",
+      "tests/qwen/owner_bridge_fixtures.py": "37bdf7449b200df817604f51c09e24fa1ee6e4fd74ca468d23964d0d5f97ac85",
+      "tests/qwen/test_owner_assignment.py": "b9cb897c223b122d566cd8087b7d94278efc507d2d662480d92f7a57b81fd6a0",
+      "tests/qwen/test_owner_bridge_decode_state.py": "3c2e8aeac72d4fc7a1128f11d3eed04317dbcb640ff55495dbc7c4c8a4e3e75e",
+      "tests/qwen/test_owner_bridge_forward.py": "4760aeb0d408b452ee91716d05815b9331fad958f8aec06eec31a555b8fe49b3",
+      "tests/qwen/test_owner_bridge_routing.py": "ba11041b7886c4ddaad214bb70437a6ceb8237e9b9ebfb79312a34bd9d4d5eea",
+      "tests/qwen/test_owner_profile_math.py": "660b9650a680901dea7399acc7b53bbeaa01c6ee381653d7503f807bf27230c1",
+      "tests/training/test_owner_use_lane.py": "5e760bd1682b561cab397451c733c49218c5a3d0c815f90d2381fb07c83d208b"
+    },
+    "status_short": []
+  },
+  "runtime": {
+    "environment": {
+      "CUDA_VISIBLE_DEVICES": "",
+      "OMP_NUM_THREADS": "1",
+      "PYTHONHASHSEED": "0"
+    },
+    "packages": {
+      "pytest": "8.4.2",
+      "safetensors": "0.6.2",
+      "scipy": "1.16.1",
+      "torch": "2.9.1",
+      "transformers": "4.57.1"
+    },
+    "platform": "Linux-5.15.0-101-generic-x86_64-with-glibc2.35",
+    "python": "3.12.11"
+  },
+  "started_at_utc": "2026-08-10T21:32:36.208530+00:00",
+  "status": "passed",
+  "structured_evidence": {
+    "production_owner_use_lane": {
+      "bf16_post_cast_rms": [
+        {
+          "cap": 0.03,
+          "cap_margin_min": 9.569339454174042e-05,
+          "clipped_fraction": 1.0,
+          "compute_dtype": "torch.float32",
+          "gradient_finite": true,
+          "input_dtype": "torch.bfloat16",
+          "output_dtype": "torch.bfloat16",
+          "passed": true,
+          "path": "admission",
+          "post_cast_rms_ratio_max": 0.029904305934906006
+        },
+        {
+          "cap": 0.1,
+          "cap_margin_min": 0.00013227760791778564,
+          "clipped_fraction": 1.0,
+          "compute_dtype": "torch.float32",
+          "gradient_finite": true,
+          "input_dtype": "torch.bfloat16",
+          "output_dtype": "torch.bfloat16",
+          "passed": true,
+          "path": "row_write",
+          "post_cast_rms_ratio_max": 0.09986772388219833
+        }
+      ],
+      "claim_boundary": "Deterministic CPU production-seam algorithm evidence. Explicit cu_seq_lens and enclosure are observed from the executed forward receipt; no live GPU FA2 kernel proof, DDP readiness, model quality, or production readiness is claimed.",
+      "evidence_id": "wave5-production-owner-use-lane-packed-vs-full-v1",
+      "evidence_schema_version": 1,
+      "evidence_sha256": "62e83db542e08156bb50831e9752d2570858ee1b740e496b7537a14ba29f6be1",
+      "execution": {
+        "full_pack_physical_forward_count": 4,
+        "logical_branch_count": 4,
+        "model_fixture": "real tiny Qwen3-VL text stack with PEFT DoRA, selected embedding delta, and OwnerBridge",
+        "packed_forward_ids": [
+          "executor-parity:lane:owner_use_lane:0"
+        ],
+        "packed_lane_physical_forward_count": 1,
+        "production_seam": "src.training.owner_bridge_step._CanonicalOwnerUseExecutor"
+      },
+      "missing_boundary_fail_close": [
+        {
+          "contrast": "result_receipt_missing_interior_boundary",
+          "expected_error_code": "qwen.owner_use_lane_result_receipt_identity",
+          "observed_error_code": "qwen.owner_use_lane_result_receipt_identity",
+          "passed": true,
+          "removed_boundary": 15
+        },
+        {
+          "contrast": "fa2_proof_missing_interior_boundary",
+          "expected_error_code": "qwen.owner_use_lane_cu_seq_lens_enclosure",
+          "observed_error_code": "qwen.owner_use_lane_cu_seq_lens_enclosure",
+          "passed": true,
+          "removed_boundary": 15
+        }
+      ],
+      "packed_vs_full_reference": {
+        "all_gradients": {
+          "all_parameters_compared": true,
+          "all_passed": true,
+          "parameter_count": 143,
+          "parameter_names_sha256": "a4f9ec99f1c9d56ee823056e4348752cd2236f789233cd9652e9e60dc4cfd455",
+          "surface_counts": {
+            "dora": 126,
+            "owner_bridge": 16,
+            "selected_embedding": 1
+          },
+          "surface_nonzero_counts": {
+            "dora": 126,
+            "owner_bridge": 10,
+            "selected_embedding": 1
+          },
+          "worst_ten": [
+            {
+              "atol": 1e-06,
+              "max_abs_error": 2.1979212760925293e-07,
+              "max_tolerance_ratio": 0.18298107385635376,
+              "name": "base_model.model.model.language_model.embed_tokens.shared_embed_delta",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                1,
+                32
+              ],
+              "surface": "selected_embedding"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 1.2665987014770508e-07,
+              "max_tolerance_ratio": 0.11660582572221756,
+              "name": "base_model.model.model.language_model.layers.0.self_attn.v_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                16,
+                2
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 9.220093488693237e-08,
+              "max_tolerance_ratio": 0.0840642899274826,
+              "name": "base_model.model.model.language_model.layers.0.self_attn.o_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                32,
+                2
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 8.195638656616211e-08,
+              "max_tolerance_ratio": 0.07789985090494156,
+              "name": "base_model.model.model.language_model.layers.0.self_attn.o_proj.lora_magnitude_vector.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                32
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 6.961636245250702e-08,
+              "max_tolerance_ratio": 0.0674920380115509,
+              "name": "base_model.model.model.language_model.layers.4.self_attn.v_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                16,
+                2
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 5.820766091346741e-08,
+              "max_tolerance_ratio": 0.055707886815071106,
+              "name": "base_model.model.model.language_model.layers.2.self_attn.v_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                16,
+                2
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 5.8673322200775146e-08,
+              "max_tolerance_ratio": 0.05545681715011597,
+              "name": "base_model.model.model.language_model.layers.2.self_attn.v_proj.lora_magnitude_vector.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                16
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 5.011679604649544e-08,
+              "max_tolerance_ratio": 0.04989408329129219,
+              "name": "base_model.model.model.language_model.layers.3.self_attn.v_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                16,
+                2
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 4.608591552823782e-08,
+              "max_tolerance_ratio": 0.0460134893655777,
+              "name": "base_model.model.model.language_model.layers.1.self_attn.v_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                16,
+                2
+              ],
+              "surface": "dora"
+            },
+            {
+              "atol": 1e-06,
+              "max_abs_error": 4.3291947804391384e-08,
+              "max_tolerance_ratio": 0.04319869726896286,
+              "name": "base_model.model.model.language_model.layers.1.self_attn.o_proj.lora_B.default.weight",
+              "passed": true,
+              "rtol": 1e-05,
+              "shape": [
+                32,
+                2
+              ],
+              "surface": "dora"
+            }
+          ]
+        },
+        "branch_token_log_likelihoods": {
+          "owner-use:8:0:owner-a:owner-a": {
+            "atol": 1e-06,
+            "max_abs_error": 4.76837158203125e-07,
+            "max_tolerance_ratio": 0.010958423838019371,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              9
+            ]
+          },
+          "owner-use:8:1:owner-a:owner-c": {
+            "atol": 1e-06,
+            "max_abs_error": 0.0,
+            "max_tolerance_ratio": 0.0,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              9
+            ]
+          },
+          "owner-use:8:2:owner-c:owner-c": {
+            "atol": 1e-06,
+            "max_abs_error": 0.0,
+            "max_tolerance_ratio": 0.0,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              9
+            ]
+          },
+          "owner-use:8:3:owner-c:owner-a": {
+            "atol": 1e-06,
+            "max_abs_error": 0.0,
+            "max_tolerance_ratio": 0.0,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              9
+            ]
+          }
+        },
+        "l_use": {
+          "atol": 1e-06,
+          "max_abs_error": 0.0,
+          "max_tolerance_ratio": 0.0,
+          "passed": true,
+          "rtol": 1e-05,
+          "shape": []
+        },
+        "passed": true,
+        "raw_branch_logits": {
+          "owner-use:8:0:owner-a:owner-a": {
+            "atol": 1e-06,
+            "max_abs_error": 4.470348358154297e-08,
+            "max_tolerance_ratio": 0.028675774112343788,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              1,
+              9,
+              64
+            ]
+          },
+          "owner-use:8:1:owner-a:owner-c": {
+            "atol": 1e-06,
+            "max_abs_error": 7.450580596923828e-08,
+            "max_tolerance_ratio": 0.035031478852033615,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              1,
+              9,
+              64
+            ]
+          },
+          "owner-use:8:2:owner-c:owner-c": {
+            "atol": 1e-06,
+            "max_abs_error": 7.450580596923828e-08,
+            "max_tolerance_ratio": 0.02738819271326065,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              1,
+              9,
+              64
+            ]
+          },
+          "owner-use:8:3:owner-c:owner-a": {
+            "atol": 1e-06,
+            "max_abs_error": 8.940696716308594e-08,
+            "max_tolerance_ratio": 0.049714941531419754,
+            "passed": true,
+            "rtol": 1e-05,
+            "shape": [
+              1,
+              9,
+              64
+            ]
+          }
+        }
+      },
+      "realized_attention_enclosure": {
+        "basis": "executed cu_seq_lens exactly enclose each branch, packed target likelihoods equal four isolated full-pack forwards, and both planned-receipt and FA2-proof missing-boundary contrasts fail closed",
+        "branch_enclosure_verified": true,
+        "branch_enclosures": [
+          {
+            "branch_id": "owner-use:8:0:owner-a:owner-a",
+            "lane_end": 18,
+            "lane_prefix_end": 9,
+            "lane_start": 0,
+            "prefix_identity": "f1742e9b70f488747e5fdbaf204a7eb892420305a7307105010c10c9964ce607"
+          },
+          {
+            "branch_id": "owner-use:8:1:owner-a:owner-c",
+            "lane_end": 36,
+            "lane_prefix_end": 27,
+            "lane_start": 18,
+            "prefix_identity": "f1742e9b70f488747e5fdbaf204a7eb892420305a7307105010c10c9964ce607"
+          },
+          {
+            "branch_id": "owner-use:8:2:owner-c:owner-c",
+            "lane_end": 54,
+            "lane_prefix_end": 45,
+            "lane_start": 36,
+            "prefix_identity": "f1742e9b70f488747e5fdbaf204a7eb892420305a7307105010c10c9964ce607"
+          },
+          {
+            "branch_id": "owner-use:8:3:owner-c:owner-a",
+            "lane_end": 72,
+            "lane_prefix_end": 63,
+            "lane_start": 54,
+            "prefix_identity": "f1742e9b70f488747e5fdbaf204a7eb892420305a7307105010c10c9964ce607"
+          }
+        ],
+        "cross_branch_and_cross_prefix_attention_absent": true,
+        "expected_boundaries_from_executed_branch_spans": [
+          0,
+          18,
+          36,
+          54,
+          72
+        ],
+        "kernel_level_fa2_proof_present": false,
+        "observed_cu_seq_lens_k": [
+          0,
+          18,
+          36,
+          54,
+          72
+        ],
+        "observed_cu_seq_lens_q": [
+          0,
+          18,
+          36,
+          54,
+          72
+        ],
+        "observed_max_length_k": 18,
+        "observed_max_length_q": 18
+      },
+      "status": "passed"
+    }
+  },
+  "test_count_expected": 23,
+  "test_count_observed": 23
+}
