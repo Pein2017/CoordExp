@@ -20,6 +20,23 @@ checkpoint.
 
 ## Current questions and evidence
 
+### Paused for user discussion: cumulative training-set completion
+
+The user authorized [training-first cumulative completion](experiments/2026-09-14-training-set-completion-curriculum/unit.md):
+GT plus verified old/new physical owners, self-rollout and low-temperature
+discovery, ordinary-parameter compilation, and original-image empty-prefix
+greedy. Every cumulative training stage must pass before growth; early
+validation is deferred. Class quality and confirmed pre-existing FP debt are
+separate from physical owner coverage. New confirmed errors must be repaired.
+The fourth fit and current11-image evaluation are complete. Under the user's
+unmatched-only visual review rule (inherit existing IoU50 matches), fixed232
+training-owner coverage improves177→212, with41 gains and6 losses. Current
+all-known248 coverage is213;35 remain missing. Final output retains11 physical
+repeat rows,3 false,4 unknown and18 invalid rows, with11/11 natural EOS. The
+stage has not passed. The user requested stopping after this round; no fifth
+fit or expansion is authorized. See the
+[final-round report](experiments/2026-09-14-training-set-completion-curriculum/2026-09-15-fourth-fit-final-review.md).
+
 ### Latest completed: physical measurement and post-entry localization
 
 [Label versus compilation](experiments/2026-09-14-label-vs-compilation/results.md)
