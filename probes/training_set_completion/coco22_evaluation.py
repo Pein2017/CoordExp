@@ -436,7 +436,7 @@ def score_admitted_rows(*, preparation_path: Path, label: str, rows: Sequence[Ma
         raw_text = row.get("raw_decode_text")
         require(isinstance(raw_text, str) and tokenizer.decode(ids, skip_special_tokens=False,
                 clean_up_tokenization_spaces=False) == raw_text, "saved raw text/token decode identity")
-        from probes.source_rweak_row_cross.run import native_record
+        from src.eval.native_rows import native_detection_record as native_record
 
         case = route["case"]
         golden = {"example_id": route["example_id"], "gt": [], "image_height": case["image_height"],

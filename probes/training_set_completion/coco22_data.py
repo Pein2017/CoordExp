@@ -711,7 +711,7 @@ def build_22_bank(
     from probes.training_set_completion.complete_bank import EOS
     from probes.training_set_completion.route_bank import _load_tokenizer
     from probes.training_set_completion.training import coordinate_token_table, validate_route
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"teacher output occupied: {output}")

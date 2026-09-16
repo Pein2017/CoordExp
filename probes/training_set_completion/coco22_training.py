@@ -218,13 +218,13 @@ def run(
     manifest_path: Path, *, output: Path, resume: Path | None = None
 ) -> dict[str, Any] | None:
     """Execute a full 22-image, eight-rank update under torchrun."""
-    from probes.dora_owner_learning.geometric_dedup_train import (
-        checkpointing_receipt,
-        install_language_decoder_checkpointing,
-    )
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
     from src.config.inference import InferConfig
+    from src.qwen.checkpointing import (
+        install_language_decoder_checkpointing,
+        language_decoder_checkpointing_receipt as checkpointing_receipt,
+    )
 
     manifest = validate_manifest(json.loads(manifest_path.read_text()))
     dependencies = dependency_bindings()
@@ -311,7 +311,9 @@ def run(
             named, frozen = training.bind_language_dora(
                 model, source_adapter=manifest["source_adapter"]
             )
-            checkpointing = install_language_decoder_checkpointing(model)
+            checkpointing = install_language_decoder_checkpointing(
+                model, expected_layer_count=28
+            )
             enabled = manifest["runtime"]["activation_checkpointing"]
             checkpointing.update(
                 enabled=enabled, phase="train" if enabled else "train_disabled"

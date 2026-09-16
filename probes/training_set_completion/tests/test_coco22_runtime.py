@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import json
-import queue
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -135,7 +132,7 @@ def test_new_torchrun_command_uses_all_eight_ranks_and_distinct_producer(tmp_pat
     assert command[6] == "probes.training_set_completion.coco22_training"
 
 
-def test_native_scope_restores_legacy_producer_and_portable_wait():
+def test_native_scope_restores_legacy_producer():
     old_schema = previous_readback.SCHEMA
     old_count = previous_readback.IMAGE_COUNT
     old_validator = previous_readback._checkpoint_from_terminal
@@ -146,13 +143,6 @@ def test_native_scope_restores_legacy_producer_and_portable_wait():
     assert previous_readback.SCHEMA == old_schema
     assert previous_readback.IMAGE_COUNT == old_count
     assert previous_readback._checkpoint_from_terminal is old_validator
-    events: queue.Queue[dict] = queue.Queue()
-    process = subprocess.Popen([sys.executable, "-c", "raise SystemExit(7)"])
-    readback22.start_waiter(process, events)
-    event = events.get(timeout=10)
-    assert event["pid"] == process.pid
-    assert event["exit_code"] == 7
-    assert event["wait_error"] is None
 
 
 def test_cold_source0_receipt_requires_exact_adapter_identity():
@@ -171,7 +161,7 @@ def test_cold_source0_receipt_requires_exact_adapter_identity():
 
 @pytest.mark.parametrize(
     "change",
-    ("iou_0_8_owner", "dropped_geometry", "different_class", "shifted_box"),
+    ("unchanged", "iou_0_8_owner", "dropped_geometry", "different_class", "shifted_box"),
 )
 def test_batch_qualification_rejects_hidden_output_or_owner_changes(
     monkeypatch: pytest.MonkeyPatch, change: str,
@@ -185,7 +175,7 @@ def test_batch_qualification_rejects_hidden_output_or_owner_changes(
         "duplicate_pair_count": 0, "outside_coco80_count": 0,
         "stop": "im_end", "cap_debt": 0,
         "assignments": {
-            "0.5": [("owner-a", True)], "0.8": [("owner-a", True)]
+            "0.5": [["owner-a", True]], "0.8": [["owner-a", True]]
         },
         "valid": [{
             "description": "person", "coord_bins_1000": [100, 100, 200, 200]
@@ -200,7 +190,7 @@ def test_batch_qualification_rejects_hidden_output_or_owner_changes(
         changed["raw"]["drop_reasons"] = {"bbox_invalid": 1}
     elif change == "different_class":
         changed["valid"][0]["description"] = "bicycle"
-    else:
+    elif change == "shifted_box":
         changed["valid"][0]["coord_bins_1000"] = [110, 100, 210, 200]
     monkeypatch.setattr(
         readback22, "_qualification_signature",
@@ -209,7 +199,32 @@ def test_batch_qualification_rejects_hidden_output_or_owner_changes(
     comparison = readback22.strict_batch_consistency(
         {"kind": "reference"}, {"kind": "candidate"}, {"image_id": 5},
     )
-    assert comparison["parity"] is False
+    assert comparison["parity"] is (change == "unchanged")
+
+
+def test_native_batch_comparison_survives_json_publication(tmp_path: Path):
+    route = {
+        "image_id": 5, "example_id": "image-5",
+        "case": {"row_id": "image-5", "row_index": 0,
+                 "image_width": 1000, "image_height": 1000,
+                 "image_path": "/fixture/image-5.jpg"},
+        "provenance": {"trace": [{"owner_id": "owner-a", "edited_fields": {
+            "catalog_reference_coord_bins_1000": [100, 100, 200, 200],
+            "selected_description": "person",
+        }}]},
+    }
+    row = {
+        "raw_decode_text": "<|object_ref_start|>person<|object_ref_end|><|box_start|>"
+                           "<|coord_100|><|coord_100|><|coord_200|><|coord_200|>"
+                           "<|box_end|><|im_end|>",
+        "decode_stop_reason": "im_end", "generated_token_ids": [151645],
+    }
+    comparison = readback22.strict_batch_consistency(row, row, route)
+    assert comparison["parity"] is True
+    assert len(comparison["reference_assignments"]["0.5"]) == 1
+    path = tmp_path / "comparison.json"
+    path.write_text(json.dumps(comparison))
+    assert json.loads(path.read_text()) == comparison
 
 
 def _resume_fixture(tmp_path: Path) -> tuple[Path, Path, dict, dict]:

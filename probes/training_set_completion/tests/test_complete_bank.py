@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from probes.training_set_completion import complete_bank as b
 
@@ -37,6 +39,11 @@ def _candidate():
 
 
 def _rehash(candidate):
+    # The stored bank is historical evidence and intentionally retains its exact
+    # producer binding. Semantic mutation tests rebind only the executable
+    # producer to the current implementation; production validation still
+    # rejects the untouched historical bank when that producer has changed.
+    candidate["sources"]["producer"] = b.binding(Path(b.__file__))
     candidate["content_sha256"] = b.digest({key: value for key, value in candidate.items() if key != "content_sha256"})
 
 

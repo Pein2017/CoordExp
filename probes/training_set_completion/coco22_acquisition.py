@@ -13,13 +13,13 @@ import resource
 import shlex
 import subprocess
 import sys
-import threading
 import time
 import traceback
 from typing import Any, Mapping, Sequence
 
 from probes.training_set_completion import acquisition as frozen
 from src.inference import input_materialization
+from src.runtime.process_completion import start_process_waiter
 
 
 BASE = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration")
@@ -371,9 +371,10 @@ def worker(*, manifest_path: Path, output: Path, phase: str, shard: int,
     import torch
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig
+    from src.eval.native_rows import native_detection_record as native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
 
@@ -495,7 +496,7 @@ def validate_result_payload(payload: Mapping[str, Any], request: Mapping[str, An
 
 def readback(*, manifest_path: Path, output: Path, phase: str) -> dict[str, Any]:
     from transformers import AutoTokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     manifest = validate_manifest(manifest_path)
     require(output.resolve() == manifest_path.resolve().parent and phase in ("first", "final"), "readback phase/root")
@@ -656,17 +657,6 @@ def build_review_packets(*, manifest_path: Path, output: Path, gt_index_path: Pa
     return receipt
 
 
-def _wait_child(process: subprocess.Popen[Any], completions: queue.Queue[dict[str, Any]]) -> None:
-    try:
-        code: int | str = process.wait()
-        error = None
-    except BaseException as exc:
-        code = "wait_error"
-        error = f"{type(exc).__name__}: {exc}"
-    completions.put({"pid": process.pid, "exit_code": code, "wait_error": error,
-                     "completed_at": time.time()})
-
-
 def worker_commands(*, manifest_path: Path, output: Path, phase: str) -> list[dict[str, Any]]:
     manifest = validate_manifest(manifest_path)
     require(output.resolve() == manifest_path.resolve().parent, "launch output/manifest identity")
@@ -734,8 +724,11 @@ def launch(*, manifest_path: Path, output: Path, phase: str) -> dict[str, Any]:
             started.append({"shard": spec["shard"], "physical_gpu": spec["physical_gpu"],
                             "pid": process.pid, "command": spec["command"], "log": spec["log"],
                             "expected_requests": spec["expected_requests"]})
-            threading.Thread(target=_wait_child, args=(process, completions),
-                             name=f"coco22-discovery-wait-{process.pid}", daemon=True).start()
+            start_process_waiter(
+                process,
+                completions,
+                thread_name_prefix="coco22-discovery-wait",
+            )
     except BaseException as exc:
         start_error = f"{type(exc).__name__}: {exc}"
     publish(output / f"{phase}-started.json", {"schema": f"{SCHEMA}.started",

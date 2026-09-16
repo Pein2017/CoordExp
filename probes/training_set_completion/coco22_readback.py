@@ -12,7 +12,6 @@ import json
 import os
 import queue
 import subprocess
-import threading
 import time
 import traceback
 from pathlib import Path
@@ -20,6 +19,7 @@ from typing import Any, Mapping
 
 from probes.training_set_completion import coco227_readback as native
 from probes.training_set_completion import training
+from src.runtime.process_completion import start_process_waiter
 
 ROOT = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco22-cumulative-expansion")
 SCHEMA = "training_set_completion.coco22_readback.v1"
@@ -210,30 +210,13 @@ def collect_endpoint(
     return {"endpoint": value, "admission": admission}
 
 
-def _wait_child(process: subprocess.Popen[Any], events: queue.Queue[dict[str, Any]]) -> None:
-    try:
-        code: int | str = process.wait()
-        error = None
-    except BaseException as exc:
-        code, error = "wait_error", f"{type(exc).__name__}: {exc}"
-    events.put({"pid": process.pid, "exit_code": code, "wait_error": error,
-                "completed_at": time.time()})
-
-
-def start_waiter(process: subprocess.Popen[Any], events: queue.Queue[dict[str, Any]]) -> threading.Thread:
-    thread = threading.Thread(target=_wait_child, args=(process, events),
-                              name=f"coco22-readback-wait-{process.pid}", daemon=True)
-    thread.start()
-    return thread
-
-
 def _qualification_signature(
     row: Mapping[str, Any], route: Mapping[str, Any]
 ) -> dict[str, Any]:
     """Project every raw output burden and both frozen owner assignments."""
-    from probes.source_rweak_row_cross.run import native_record
     from probes.training_set_completion import paired_evaluation as paired
     from probes.training_set_completion import readback_selectors as selectors
+    from src.eval.native_rows import native_detection_record as native_record
 
     case = route["case"]
     parsed = native_record(
@@ -262,14 +245,15 @@ def _qualification_signature(
     assignment = {}
     for threshold in (0.5, 0.8):
         ledger = paired._ledger_image(targets, valid, threshold=threshold)
+        # These assignments enter a hash-bound JSON receipt and its cold replay.
         assignment[str(threshold)] = sorted(
-            (
+            [
                 match["reference_owner_id"],
                 paired._class_correct(
                     target=by_owner[match["reference_owner_id"]],
                     prediction=by_prediction[match["prediction_id"]],
                 ),
-            )
+            ]
             for match in ledger["matches"]
         )
     outside = paired._outside_coco80(valid)
@@ -466,7 +450,11 @@ def qualification_controller(
             jobs.append((process, stream, name, log))
             launch.append({"name": name, "pid": process.pid, "gpu": gpu,
                            "batch_size": batch_size, "command": command, "log": str(log)})
-            start_waiter(process, events)
+            start_process_waiter(
+                process,
+                events,
+                thread_name_prefix="coco22-readback-wait",
+            )
         native.publish(output / "launch.json", {
             "schema": f"{SCHEMA}.qualification_launch", "status": "spawned",
             "tmux_session": QUALIFICATION_TMUX, "jobs": launch,

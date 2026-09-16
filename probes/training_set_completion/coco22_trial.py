@@ -19,6 +19,7 @@ from probes.training_set_completion import coco22_training as backend
 from probes.training_set_completion import coco227_training as prior_backend
 from probes.training_set_completion import coco22_readback as readback
 from probes.training_set_completion import training
+from src.runtime.process_completion import start_process_waiter
 
 ROOT = Path("/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco22-cumulative-expansion")
 REPO = Path(__file__).resolve().parents[2]
@@ -889,7 +890,11 @@ def controller(*, trial_path: Path, output: Path, release_path: Path) -> None:
                 active[process.pid] = (
                     process, stream, name, step, adapter, gpu, command, log
                 )
-                readback.start_waiter(process, events)
+                start_process_waiter(
+                    process,
+                    events,
+                    thread_name_prefix="coco22-readback-wait",
+                )
             event = events.get()
             process, stream, name, step, adapter, gpu, command, log = active.pop(event["pid"])
             stream.close()
