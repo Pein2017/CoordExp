@@ -18,7 +18,24 @@ Keep the frozen training population and the later all-known supplemental populat
 
 Confirmed false objects, repeats, wrong category, wrong extent, malformed/invalid rows and unknown support are distinct debts. Unknown rows stay neither automatic positives nor negatives. They also limit any claim of physical-zero error; silence or a favorable aggregate is not exhaustive verification.
 
+The2026-09-16 user clarification permits dense-scene group annotations when the
+unit is explicitly a group. Keep individual owners, groups, body/object parts and
+unresolved granularity separate. A valid individual box may contain neighbors;
+overlap alone is not cross-owner failure. A group box may earn declared group
+coverage, but cannot silently credit an unverified number of atomic owners.
+Mixed annotation granularity is a measurement/supervision condition to record,
+not a reason to tighten every box until existing valid owners become negatives.
+The hand-sized person rejection remains an identity/part-as-whole example.
+
 ## Reopening condition
+
+User ruling2026-09-16: future unmatched diagnosis follows the project-wide
+[TIDE-aligned review vocabulary](../../docs/eval/UNMATCHED_REVIEW.md). Co-DETR is
+the preferred primary proxy, with no default VLM judge; unresolved instances go
+to lead/subagent review. Detector agreement supports nomination, not automatic GT
+or training admission. The
+[detector-only retained-output diagnostic](../experiments/2026-09-16-codetr-only-review-proxy/unit.md)
+examines the nearest existing evidence before proposing new calibration.
 
 When a proposed result changes its matching/review rule, apply it symmetrically to the intended paired raw outputs or keep the result non-comparable. Preserve the previous evaluation and publish a new evaluation identity. A model judge remains a screening instrument until the intended error/admission boundary is independently tested; [the automated evaluator pilot](../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-10-autonomous-unmatched-evaluator/results.md) did not create an oracle or a hard reward authority.
 

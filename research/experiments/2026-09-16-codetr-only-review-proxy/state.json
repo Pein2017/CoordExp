@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-codetr-only-review-proxy",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "user_corrected_two_extent_labels_detector_only_15_clean_1_wrong_4_gray",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-codetr-only-review-proxy/unit.md",
+  "result": "research/experiments/2026-09-16-codetr-only-review-proxy/results.md",
+  "state_source": "research/experiments/2026-09-16-codetr-only-review-proxy/results.md",
+  "boundary": "Historical64-case replay preserved. User inspected3 displayed cases: dog/chair accurate, person wrong hand-region prediction. Detector-only20 supports now15 clean/1 wrong/4 gray, with only3 newly user-adjudicated. Co-DETR used crops+resize. No teacher write or new inference.",
+  "not_authorized": [
+    "automatic detector-to-GT promotion",
+    "retroactive changes to COCO22 teacher/metrics",
+    "new SFT training or expansion under this record",
+    "unbounded review or threshold sweeps"
+  ],
+  "next_action": "Keep the proxy as screening evidence; revise reference standards before calibration. Set the next research question relative to the existing Human13/COCO22 fixed-SFT baselines before additional execution.",
+  "checkpoint_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-codetr-only-review-proxy/user-adjudication-v1/summary.json"
+}

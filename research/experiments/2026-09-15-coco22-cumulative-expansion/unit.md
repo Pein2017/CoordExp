@@ -1,14 +1,13 @@
-# COCO22 cumulative expansion: authorized preparation contract
+# COCO22 cumulative expansion: frozen protocol and execution history
 
 ## Authority and state
 
 Root lead owns scope, admission, execution coordination and final acceptance.
-The latest user conversation authorizes the following22-image stage and its
-conditional Source control. The user requested a handoff before context
-compression; no new data collection, annotation mutation or GPU launch occurred
-in the handoff turn. Current lifecycle is in [state.json](state.json).
-This outline is approved in research direction; image IDs, new teacher contents
-and production execution bindings remain to be prepared and frozen before launch.
+This unit is now closed and lead-accepted; current lifecycle is in [state.json](state.json)
+and accepted metrics/artifacts are in [results.md](results.md). The sections below
+preserve the frozen 22-image protocol and chronological execution history. Earlier
+preparation or launch wording is historical context, not current authorization to
+resume this unit.
 
 Latest user rulings, superseding the earlier two-hour/five-hour proposals:
 
@@ -200,7 +199,7 @@ actual rollout examples distinguishing this from ordinary localization error;
 the constructed C07 cannot establish model behavior. No owner-binding ablation
 or loss/architecture change is added to the current COCO22 expansion trial.
 
-## Next action and stop
+## Historical pre-launch next action and stop
 
 Prepare the cohort/teacher ledger, exact bindings, measured execution layout and
 review-ready launch packet. Root admits these then launches within this already
@@ -221,3 +220,41 @@ or blocked checkpoint. Existing fixed256 main authorization remains valid only
 after admission; Source remains conditional on genuine completed-dose failure.
 The closeout artifact root is
 `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco22-cumulative-expansion/closeout-v1/`.
+
+## Historical blocked checkpoint
+
+Task closed: **BLOCKED** at native readback result publication, not model
+learning failure. Frozen22-image/376-owner data and8-rank training entry
+accepted;29 tests passed. All66 readback requests completed, but direct
+Python equality after JSON publication failed because assignment tuples
+roundtrip as lists. The lead reproduced this on image25274. Main256 and
+Source were not launched. All owned workers ended.
+
+Final receipt: `/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco22-cumulative-expansion/closeout-v1/final-receipt.json`.
+No visual review or runtime repair continues in this task.
+
+## Historical authorized repair and continuation
+
+The user explicitly authorized repairing the tuple/list publication mismatch
+and continuing the frozen22-image main. The source now emits JSON-native
+assignment lists;31 tests pass and all66 saved readback rows cold-replay to
+the unchanged original result. Old failed receipts remain preserved. See
+`runtime-repair-v1/admission.json` under the existing output root.
+Primary step0 uses the admitted native batch3; then the existing256-update
+S main may proceed. No area threshold, teacher refresh, visual-sink experiment
+or owner-binding intervention is added to this run.
+
+## User visibility ruling for the next target version
+
+The user explicitly excludes objects with virtually no visual information
+whose category requires scene priors or extreme magnification. At actual
+model input resolution, such targets should not be supervised or counted as
+required-recall/FN obligations. Preserve raw GT and exclusion reasons. Small
+area screens candidates; no numeric blanket threshold was specified. Decide
+visibility before model outcomes. The tiny510122 kite1855388 is already HOLD
+and outside the frozen376 targets, which remain unchanged. Exact ruling is
+in `runtime-repair-v1/user-visibility-ruling.json` under the output root.
+
+## Final acceptance
+
+The frozen256-update main completed and is lead-accepted. See [results.md](results.md) for the complete trajectory, exact adapter/config/digests and receipt. Sustained completion begins at saved128 and holds at256. Source is not triggered; this unit is closed. Earlier preparation and BLOCKED sections preserve history.

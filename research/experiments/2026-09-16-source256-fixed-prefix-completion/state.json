@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-source256-fixed-prefix-completion",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "no_incremental_value_at_registered_dose",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-source256-fixed-prefix-completion/unit.md",
+  "result": "research/experiments/2026-09-16-source256-fixed-prefix-completion/results.md",
+  "state_source": "research/experiments/2026-09-16-source256-fixed-prefix-completion/results.md",
+  "boundary": "Closed registered64-update paired contrast:143/256 eligible completions, shared1988-owner train bank, all80 bs4 evaluation shards accepted. B fails known-owner coverage, incumbent retention, dev and output-burden gates. Physical false-instance count remains unresolved after user stopped view_images. No promotion or automatic expansion.",
+  "not_authorized": [
+    "main GPU training before verified prefix eligibility gate and real-entry qualification",
+    "automatic Co-DETR teacher admission",
+    "new objective, architecture, refresh, seed or cohort sweep",
+    "publication, Git commits or unrelated dirty changes",
+    "Codex memory changes",
+    "further view_images or visual review expansion after user stop"
+  ],
+  "next_action": "None within this contract. Do not advance B or automatically add dose,seed,refresh,cohort,objective or visual review."
+}

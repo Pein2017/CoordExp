@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-research-direction-workshop",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "workshop_complete_next_contrast_proposed_not_launched",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-research-direction-workshop/unit.md",
+  "result": "research/experiments/2026-09-16-research-direction-workshop/results.md",
+  "state_source": "research/experiments/2026-09-16-research-direction-workshop/results.md",
+  "boundary": "Source-bounded synthesis only. Two read-only advisers completed; lead verified the COCO22 source partition. No GPU/model invocation or new scientific experiment. Next contrast has no frozen numeric dose, implementation or acceptance thresholds.",
+  "not_authorized": [
+    "new training or inference runs",
+    "automatic owner admission or GT mutation",
+    "architecture or loss changes",
+    "unbounded proposal review",
+    "continuous rollout refresh",
+    "publication or Git commit"
+  ],
+  "next_action": "Discuss and freeze one learning contrast using the predecessor recap. Same-information full-continuation correction is preferred, but EOS uncertainty, preservation, cohort, dose and acceptance remain to be specified."
+}
