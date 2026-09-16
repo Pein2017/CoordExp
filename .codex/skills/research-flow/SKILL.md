@@ -19,10 +19,18 @@ The convention is the single layout/maintenance owner; this Skill routes to it.
 
 All primary readers are agents. Fast catch-up is `research/index.md` plus the
 current unit state/result; deep catch-up adds `story.md`, relevant question pages
-and decisive sources. Preserve counterexamples, unfinished ideas and reopening
-conditions. Before a new unit, search `research/experiments/catalog.jsonl` and
-read the closest predecessor result/protocol; state the actual new discriminator
-instead of repeating a renamed failed recipe.
+and decisive sources. Before recommending a new direction or creating a unit,
+search `research/experiments/catalog.jsonl` and read the closest decisive results,
+including successful baselines and limiting counterexamples. Give one compact
+predecessor recap: what is settled; what remains unresolved; what this proposal
+changes; and which possible outcomes change the next decision. Check the proposal
+against the user's ultimate objective, not only a convenient intermediate metric.
+Name replication, scale checks and execution qualification as such; do not
+present them as a new algorithmic discriminator. Reuse settled evidence unless
+the new task crosses its stated boundary. If the incremental question is unclear,
+resolve it in discussion before expanding preparation or compute. Keep the recap
+in the existing discussion/unit rather than a second checklist or review chain;
+continuation within an unchanged contract reuses it without full-history rereads.
 
 The entire repository serves this research topic. Knowledge lives directly in
 `research/`, with no topic/program wrapper. Its `index.md` combines frontier and
