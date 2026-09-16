@@ -29,7 +29,7 @@ def _source_by_image(path: Path) -> dict[int,dict[str,Any]]:
 
 def _load_prefixes(plan: Mapping[str,Any], records: Mapping[int,Mapping[str,Any]], tokenizer: Any, coord: Sequence[int]) -> dict[int,dict[str,Any]]:
     from probes.dora_owner_learning.geometric_dedup import _character_span_to_token_interval, _exact_token_text_frame
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     s16,s32=_source_by_image(STEP16),_source_by_image(STEP32); special_names=("object_ref_start","object_ref_end","box_start","box_end")
     specials={name:tokenizer.convert_tokens_to_ids(f"<|{name}|>") for name in special_names}
     require(all(type(x)is int and x>=0 and tokenizer.convert_ids_to_tokens(x)==f"<|{n}|>" for n,x in specials.items()),"special token binding")
@@ -91,7 +91,8 @@ def worker(*,manifest_path:Path,output:Path,shard:int,gpu:int)->None:
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
     from probes.native_owner_scale.evaluation import _candidate_materialized_case
-    from probes.source_rweak_row_cross.run import build_requests,native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy,generate_continuations
     from src.qwen.native import prepare_native_inputs

@@ -804,7 +804,7 @@ def score_readback(
             tokenizer.decode(ids, skip_special_tokens=False, clean_up_tokenization_spaces=False) == text,
             f"saved decode identity: {image_id}",
         )
-        from probes.source_rweak_row_cross.run import native_record
+        from src.eval.native_rows import native_detection_record as native_record
 
         parsed = native_record(text, records[image_id]["case"], records[image_id]["golden"], saved.get("decode_stop_reason", "unknown"))
         valid, dropped = _matchable_rows_with_geometry_debt(parsed)

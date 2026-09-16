@@ -8,7 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
-import selectors
+import queue
 import signal
 import subprocess
 import time
@@ -20,10 +20,11 @@ import torch
 from probes.training_set_completion import coco227_training as backend
 from probes.training_set_completion import dual_start
 from probes.training_set_completion import training
+from src.runtime.process_completion import next_process_completion, start_process_waiter
 
 
 SCHEMA = "training_set_completion.coco227_ce_normalization.v1"
-REPO = Path("/data/CoordExp/.worktrees/research-probes")
+REPO = Path(__file__).resolve().parents[2]
 BASE = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-15-coco227-ce-normalization"
 )
@@ -577,7 +578,7 @@ def qualification_controller(*, plan_path: Path, output: Path) -> dict[str, Any]
             try:
                 code = process.wait(timeout=QUALIFICATION_WALL_SECONDS)
             except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGTERM)
+                dual_start._owned_kill(process)
                 code = "timeout"
             finally:
                 stream.close()
@@ -1056,7 +1057,7 @@ def controller(*, trial_path: Path, output: Path, release_path: Path) -> None:
     started = time.monotonic()
     exits = []
     live: list[tuple[Any, ...]] = []
-    active: dict[int, tuple[Any, ...]] = {}
+    active: dict[int, dict[str, Any]] = {}
     try:
         for arm in ARMS:
             manifest_path = Path(trial["arms"][arm]["training_manifest"]["path"])
@@ -1157,105 +1158,97 @@ def controller(*, trial_path: Path, output: Path, release_path: Path) -> None:
         phase_deadline = time.monotonic() + READBACK_PHASE_SECONDS
         available = list(range(8))
         wave = 0
-        with selectors.DefaultSelector() as selector:
-            while pending or active:
-                while pending and available:
-                    require(
-                        time.monotonic() < phase_deadline,
-                        "global readback phase timeout",
-                    )
-                    arm, step, adapter = pending.pop(0)
-                    gpu = available.pop(0)
-                    wave += 1
-                    attempt_id = f"controller-{attempt:03d}-job-{wave:03d}"
-                    command = _readback_command(
-                        trial=trial,
-                        trial_path=trial_path,
-                        training_manifest=Path(
-                            trial["arms"][arm]["training_manifest"]["path"]
-                        ),
-                        training_terminal=output / arm / "training/terminal.json",
-                        adapter=adapter,
-                        arm=arm,
-                        step=step,
-                        output=output / "readback",
-                        gpu=gpu,
-                        qualification_result=Path(
-                            trial["readback"]["qualification_result"]["path"]
-                        ),
-                        attempt=attempt_id,
-                    )
-                    process, stream, spawned = _spawn(
-                        command,
-                        visible_devices=str(gpu),
-                        log_path=output
-                        / "logs"
-                        / f"readback-{arm}-{step:05d}-{attempt_id}.log",
-                    )
-                    worker_deadline = min(
-                        spawned + READBACK_PHASE_SECONDS, phase_deadline
-                    )
-                    pidfd = os.pidfd_open(process.pid)
-                    selector.register(pidfd, selectors.EVENT_READ, process.pid)
-                    active[process.pid] = (
-                        process,
-                        stream,
-                        command,
-                        arm,
-                        step,
-                        adapter,
-                        gpu,
-                        spawned,
-                        worker_deadline,
-                        pidfd,
-                    )
-                remaining = phase_deadline - time.monotonic()
-                require(remaining > 0, "global readback phase timeout")
-                events = selector.select(timeout=remaining)
-                require(events, "global readback phase timeout")
-                for key, _ in events:
-                    done_pid = int(key.data)
-                    (
-                        process,
-                        stream,
-                        command,
-                        arm,
-                        step,
-                        adapter,
-                        gpu,
-                        spawned,
-                        worker_deadline,
-                        pidfd,
-                    ) = active.pop(done_pid)
-                    selector.unregister(pidfd)
-                    os.close(pidfd)
-                    code = process.wait(timeout=0)
-                    stream.close()
-                    exits.append(
-                        {
-                            "name": f"readback-{arm}-{step}",
-                            "pid": process.pid,
-                            "gpu": gpu,
-                            "exit_code": code,
-                            "command": command,
-                            "spawned_at_monotonic": spawned,
-                            "deadline_monotonic": worker_deadline,
-                        }
-                    )
-                    available.append(gpu)
-                    available.sort()
-                    require(code == 0, f"readback {arm}/{step} failed")
-                    collection = _collect_endpoint_if_complete(
-                        readback_module=coco227_readback,
-                        trial=trial,
-                        trial_path=trial_path,
-                        output=output,
-                        arm=arm,
-                        step=step,
-                        adapter=adapter,
-                    )
-                    require(collection is not None, "worker left incomplete endpoint")
-                    collections.append(collection)
+        completions: queue.Queue[dict[str, Any]] = queue.Queue()
+        while pending or active:
+            while pending and available:
+                require(
+                    time.monotonic() < phase_deadline,
+                    "global readback phase timeout",
+                )
+                arm, step, adapter = pending.pop(0)
+                gpu = available.pop(0)
+                wave += 1
+                attempt_id = f"controller-{attempt:03d}-job-{wave:03d}"
+                command = _readback_command(
+                    trial=trial,
+                    trial_path=trial_path,
+                    training_manifest=Path(
+                        trial["arms"][arm]["training_manifest"]["path"]
+                    ),
+                    training_terminal=output / arm / "training/terminal.json",
+                    adapter=adapter,
+                    arm=arm,
+                    step=step,
+                    output=output / "readback",
+                    gpu=gpu,
+                    qualification_result=Path(
+                        trial["readback"]["qualification_result"]["path"]
+                    ),
+                    attempt=attempt_id,
+                )
+                process, stream, spawned = _spawn(
+                    command,
+                    visible_devices=str(gpu),
+                    log_path=output
+                    / "logs"
+                    / f"readback-{arm}-{step:05d}-{attempt_id}.log",
+                )
+                worker_deadline = min(
+                    spawned + READBACK_PHASE_SECONDS, phase_deadline
+                )
+                active[process.pid] = {
+                    "process": process,
+                    "stream": stream,
+                    "command": command,
+                    "arm": arm,
+                    "step": step,
+                    "adapter": adapter,
+                    "gpu": gpu,
+                    "spawned": spawned,
+                    "deadline": worker_deadline,
+                }
+                start_process_waiter(
+                    process,
+                    completions,
+                    thread_name_prefix="coco227-readback-wait",
+                )
+            completion = next_process_completion(
+                completions,
+                deadline=phase_deadline,
+                timeout_message="global readback phase timeout",
+            )
+            item = active.pop(int(completion["pid"]))
+            item["stream"].close()
+            exits.append(
+                {
+                    "name": f"readback-{item['arm']}-{item['step']}",
+                    "pid": completion["pid"],
+                    "gpu": item["gpu"],
+                    "exit_code": completion["exit_code"],
+                    "wait_error": completion["wait_error"],
+                    "command": item["command"],
+                    "spawned_at_monotonic": item["spawned"],
+                    "completed_at_monotonic": completion["completed_at_monotonic"],
+                    "deadline_monotonic": item["deadline"],
+                }
+            )
+            available.append(int(item["gpu"]))
+            available.sort()
+            require(
+                completion["exit_code"] == 0,
+                f"readback {item['arm']}/{item['step']} failed",
+            )
+            collection = _collect_endpoint_if_complete(
+                readback_module=coco227_readback,
+                trial=trial,
+                trial_path=trial_path,
+                output=output,
+                arm=item["arm"],
+                step=item["step"],
+                adapter=item["adapter"],
+            )
+            require(collection is not None, "worker left incomplete endpoint")
+            collections.append(collection)
         result = collect_readbacks(
             trial_path=trial_path, output=output, collections=collections
         )
@@ -1278,16 +1271,32 @@ def controller(*, trial_path: Path, output: Path, release_path: Path) -> None:
         }
         emit("COCO227_COMPLETED_UNSCORED")
     except BaseException as exc:
+        cleanup_errors: list[dict[str, Any]] = []
+
+        def cleanup_owned(process: Any, stream: Any, name: str) -> None:
+            try:
+                if process.poll() is None:
+                    dual_start._owned_kill(process)
+            except BaseException as cleanup_exc:
+                cleanup_errors.append(
+                    {"name": name, "error": f"{type(cleanup_exc).__name__}: {cleanup_exc}"}
+                )
+            finally:
+                try:
+                    stream.close()
+                except BaseException as cleanup_exc:
+                    cleanup_errors.append(
+                        {"name": name, "error": f"stream close: {type(cleanup_exc).__name__}: {cleanup_exc}"}
+                    )
+
         for item in live:
-            process = item[0]
-            if process.poll() is None:
-                dual_start._owned_kill(process)
+            cleanup_owned(item[0], item[1], str(item[3]))
         for item in active.values():
-            process, stream, *_, pidfd = item
-            if process.poll() is None:
-                dual_start._owned_kill(process)
-            stream.close()
-            os.close(pidfd)
+            cleanup_owned(
+                item["process"],
+                item["stream"],
+                f"readback-{item['arm']}-{item['step']}",
+            )
         failure = {
             "schema": f"{SCHEMA}.controller_failure.v1",
             "status": "failed",
@@ -1296,6 +1305,7 @@ def controller(*, trial_path: Path, output: Path, release_path: Path) -> None:
             "error": f"{type(exc).__name__}: {exc}",
             "traceback": traceback.format_exc(),
             "exits": exits,
+            "cleanup_errors": cleanup_errors,
             "elapsed_seconds": time.monotonic() - started,
         }
         failure_path = output / "controller-failures" / f"attempt-{attempt:03d}.json"

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Mapping
 
 import torch
-from safetensors.torch import safe_open
+from safetensors.torch import safe_open, save_file
 from torch import nn
 
 from src.adapters.source_gates import AdapterSetupPlan
@@ -751,6 +752,85 @@ def _validate_inference_adapter_payload(
         }
     )
     return evidence
+
+
+def save_dora_adapter_payload(
+    model: Any,
+    *,
+    source_root: str | Path,
+    output: str | Path,
+    expected_base_model_path: str | Path | None = None,
+    expected_tensor_count: int | None = None,
+    adapter_name: str = DEFAULT_ADAPTER_NAME,
+) -> dict[str, Any]:
+    """Export one live adapter using the source payload's exact tensor-key layout.
+
+    This owns only adapter serialization and byte/readback checks.  The caller
+    owns which parameters were trainable and whether the resulting checkpoint is
+    scientifically admissible.
+    """
+
+    source_root = Path(source_root).expanduser().resolve(strict=True)
+    output = Path(output).expanduser().resolve()
+    get_state = getattr(model, "get_adapter_state_dict", None)
+    if not callable(get_state):
+        raise RuntimeContractError(
+            "model does not expose get_adapter_state_dict",
+            code="adapter.export_state_unavailable",
+            context={"adapter_name": adapter_name},
+        )
+    state = get_state(adapter_name)
+    if not isinstance(state, Mapping) or not state:
+        raise RuntimeContractError(
+            "materialized adapter state is empty",
+            code="adapter.export_state_empty",
+            context={"adapter_name": adapter_name},
+        )
+    normalized = {
+        normalize_dora_state_key(str(key), adapter_name=adapter_name): value.detach().cpu()
+        for key, value in state.items()
+    }
+    if expected_tensor_count is not None and len(normalized) != expected_tensor_count:
+        raise RuntimeContractError(
+            "materialized adapter tensor count changed",
+            code="adapter.export_tensor_count",
+            context={"expected": expected_tensor_count, "observed": len(normalized)},
+        )
+    source_tensor = source_root / "adapter_model.safetensors"
+    with safe_open(str(source_tensor), framework="pt", device="cpu") as handle:
+        source_keys = tuple(handle.keys())
+    payload: dict[str, torch.Tensor] = {}
+    for key in source_keys:
+        normalized_key = normalize_dora_state_key(key, adapter_name=adapter_name)
+        if normalized_key not in normalized:
+            raise RuntimeContractError(
+                "source adapter key has no live materialized value",
+                code="adapter.export_key_missing",
+                context={"key": key, "normalized_key": normalized_key},
+            )
+        payload[key] = normalized[normalized_key].contiguous()
+    if len(payload) != len(normalized):
+        raise RuntimeContractError(
+            "live adapter has keys absent from source payload",
+            code="adapter.export_extra_live_keys",
+            context={"source_key_count": len(payload), "live_key_count": len(normalized)},
+        )
+    output.mkdir(parents=True, exist_ok=False)
+    shutil.copyfile(source_root / "adapter_config.json", output / "adapter_config.json")
+    save_file(payload, str(output / "adapter_model.safetensors"), metadata={"format": "pt"})
+    identity = inspect_dora_adapter_payload(output, expected_base_model_path)
+    with safe_open(str(output / "adapter_model.safetensors"), framework="pt", device="cpu") as handle:
+        saved_keys = tuple(handle.keys())
+        equal = saved_keys == tuple(sorted(payload)) and all(
+            torch.equal(handle.get_tensor(key), payload[key]) for key in saved_keys
+        )
+    if not equal:
+        raise RuntimeContractError(
+            "saved adapter differs from live materialized state",
+            code="adapter.export_readback_mismatch",
+            context={"output": str(output)},
+        )
+    return identity
 
 
 def _adapter_tensor_evidence(keys: list[str]) -> dict[str, Any]:

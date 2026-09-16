@@ -110,7 +110,7 @@ def _load_tokenizer(root: str | Path):
 
 
 def score_readback(readback: Mapping[str, Any], acquisition: Mapping[str, Any], target: Mapping[str, Any], tokenizer: Any, *, cap: int) -> dict[str, Any]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     records = {int(row["image_id"]): row for row in acquisition["records"]}
     references = {}

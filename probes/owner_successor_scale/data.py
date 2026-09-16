@@ -17,7 +17,8 @@ import traceback
 from probes.native_owner_scale import evaluation as e
 from probes.native_owner_scale import scale
 from probes.parallel_owner_research.history import complete_rows, continuation_ledger
-from probes.source_rweak_row_cross.run import build_requests, native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
+from src.eval.native_rows import native_detection_record as native_record
 from src.data.geometry import iou_xyxy
 
 ROOT = e.ROOT.parent.parent / '2026-09-13-owner-successor-scale-throughput' / 'supply'

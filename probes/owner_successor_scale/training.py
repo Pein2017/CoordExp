@@ -35,6 +35,7 @@ from probes.dora_owner_learning import margin_preserved_train as margin_engine
 from probes.parallel_owner_research import training as old_training
 from probes.owner_successor_scale.replay import batched_aligned_logits
 from src.losses import aligned_token_logprobs
+from src.runtime.model_state import tensor_state_sha256 as _tensor_state_hash
 
 
 SCHEMA = "owner_successor_scale.training.inputs.v1"
@@ -1441,7 +1442,7 @@ def _mine_one(
     before_update: int,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """Full-greedy refresh at the same h+; row selection is entirely no-grad."""
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     from src.data.geometry import iou_xyxy
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import NativeBatch
@@ -1701,10 +1702,9 @@ def calibrate(
     banks = _runtime_banks(packet, device=device, evidence_dir=output_root)
     model = banks["qwen"].model
     named, frozen = _select_trainable(model)
-    from probes.dora_owner_learning.geometric_dedup_train import install_language_decoder_checkpointing
-    from probes.dora_owner_learning.train import _tensor_state_hash
+    from src.qwen.checkpointing import install_language_decoder_checkpointing
 
-    checkpoint = install_language_decoder_checkpointing(model)
+    checkpoint = install_language_decoder_checkpointing(model, expected_layer_count=28)
     checkpoint["enabled"] = packet["throughput"]["activation_checkpointing"]
     checkpoint["phase"] = "calibration"
     initial_selected = _tensor_state_hash(named)
@@ -1789,10 +1789,11 @@ def execute_rank(
 ) -> None:
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel as DDP
-    from probes.dora_owner_learning.geometric_dedup_train import (
-        checkpointing_receipt, install_language_decoder_checkpointing,
+    from src.adapters.dora import save_dora_adapter_payload
+    from src.qwen.checkpointing import (
+        install_language_decoder_checkpointing,
+        language_decoder_checkpointing_receipt as checkpointing_receipt,
     )
-    from probes.dora_owner_learning.train import _save_adapter_only, _tensor_state_hash
 
     verify_root_grant(input_path, grant_path, updates=updates, arm=arm,
                       world_size=world_size, output_root=output_root)
@@ -1849,7 +1850,7 @@ def execute_rank(
         frozen_hash = _tensor_state_hash(frozen)
         source_hash = _tensor_state_hash(named)
         references = _local_reference_cache(banks, rank=rank, world=world)
-        checkpoint = install_language_decoder_checkpointing(model)
+        checkpoint = install_language_decoder_checkpointing(model, expected_layer_count=28)
         checkpoint["enabled"] = packet["throughput"]["activation_checkpointing"]
         checkpoint["phase"] = "train"
         scorer = DDP(BatchedObjective(model), device_ids=[local_rank], output_device=local_rank,
@@ -1902,7 +1903,12 @@ def execute_rank(
         final_scores = None
         if rank == 0:
             final_scores = old_training._score_records(model, [*banks["old_positive"], *banks["new_positive"]])
-            saved = _save_adapter_only(model, source_root=N16_ROOT / "adapter", output=output_root / "adapter")
+            saved = save_dora_adapter_payload(
+                model,
+                source_root=N16_ROOT / "adapter",
+                output=output_root / "adapter",
+                expected_tensor_count=old_training.old.EXPECTED_TRAINABLE_TENSORS,
+            )
             old_training.publish(output_root / "provisional.json", {
                 "schema": "owner_successor_scale.training.receipt.v1", "status": "unsealed_candidate",
                 "arm": arm, "updates": updates, "world_size": world, "input": _binding(input_path),

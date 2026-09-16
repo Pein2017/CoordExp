@@ -14,7 +14,7 @@ import traceback
 from probes.dora_owner_learning.candidate_opportunity import score
 from probes.dora_owner_learning.entrance_ce_eval import owner_change
 from probes.dora_owner_learning.route_access import checkpoint_config
-from probes.source_rweak_row_cross.run import native_record
+from src.eval.native_rows import native_detection_record as native_record
 from src.data.geometry import coord_bins_to_pixel_xyxy, iou_xyxy
 
 PRIOR = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-11-positive-branch-vs-repeat-event')
@@ -256,7 +256,7 @@ def run(packet_path, out_dir, case_id, slice_only=False, reuse_slice=None):
         import torch as torch_module
         torch = torch_module
         from probes.dora_owner_learning.runtime import load_policy
-        from probes.source_rweak_row_cross.run import build_requests
+        from src.inference.bound_requests import build_bound_native_requests as build_requests
         from src.config.inference import InferConfig
         from src.qwen.generation import NativeGenerationPolicy, generate_continuations
         from src.qwen.native import prepare_native_inputs, prepare_replay

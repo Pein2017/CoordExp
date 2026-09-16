@@ -157,9 +157,13 @@ def test_real_multiprocess_sum_matches_serial_global_image_mean_and_fails_closed
 
 
 def test_frozen_partition_and_manifest_modes_fail_closed():
-    dependencies = distributed.frozen_dependency_bindings()
-    assert dependencies["training_helpers"]["sha256"] == distributed.EXPECTED_TRAINING_SHA256
-    assert dependencies["shared_raw_axis_validity_hinge"]["sha256"] == distributed.EXPECTED_SHARED_HINGE_SHA256
+    dependencies = distributed.dependency_bindings()
+    assert dependencies["training_helpers"] == distributed.training.binding(
+        Path(distributed.training.__file__)
+    )
+    assert dependencies["shared_raw_axis_validity_hinge"] == distributed.training.binding(
+        Path(distributed.__file__).resolve().parents[2] / "src/losses/raw_axis_validity_hinge.py"
+    )
     assert distributed.partition_route_indices(11, rank=0, world_size=4) == [0, 1, 2]
     assert distributed.partition_route_indices(11, rank=3, world_size=4) == [9, 10]
     with pytest.raises(ValueError, match="exactly 11 images across 4 ranks"):

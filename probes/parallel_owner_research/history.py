@@ -19,7 +19,7 @@ import time
 import traceback
 
 from probes.dora_owner_learning.candidate_opportunity import digest, file_hash, require, score
-from probes.source_rweak_row_cross.run import native_record
+from src.eval.native_rows import native_detection_record as native_record
 
 BASE = Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration')
 ROOT = BASE / '2026-09-12-parallel-owner-research/history'
@@ -278,7 +278,7 @@ def endpoint_rank(endpoint_packet_path, output, shard, physical_gpu):
     import torch
     from probes.dora_owner_learning.runtime import load_policy
     from probes.dora_owner_learning.route_access import checkpoint_config
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations

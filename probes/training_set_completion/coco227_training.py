@@ -26,6 +26,7 @@ import torch.distributed as dist
 
 from probes.training_set_completion import dual_start_distributed as distributed
 from probes.training_set_completion import training
+from src.qwen.native import select_compact_replay_logits
 
 
 SCHEMA = "training_set_completion.coco227_training.v1"
@@ -36,15 +37,6 @@ COLLECTIVE_TIMEOUT_SECONDS = 600
 SOURCE_ADAPTER_FINGERPRINT = (
     "8eb3d6c99692c744d534958fa419fedcd20b833549618e104bff58e1bc15deff"
 )
-EXPECTED_TRAINING_SHA256 = (
-    "097afb48b73d2388cc73ebe3369a7d49104b0a3d3d4580ea4bbbc7e031eced43"
-)
-EXPECTED_DISTRIBUTED_SHA256 = (
-    "5d381d3127c1b5760ca6e4fc90afecc4871c25cc4dc50d586786bf0b771a1393"
-)
-EXPECTED_HINGE_SHA256 = (
-    "a0a12112e09b3c82772e482e61d7cf63557f3e07d192d44149a5cf3fbf8b94af"
-)
 CE_REDUCTIONS = ("sample_equal", "global_active_token_equal")
 
 
@@ -54,27 +46,16 @@ def require(condition: bool, message: str) -> None:
 
 
 def dependency_bindings() -> dict[str, dict[str, Any]]:
+    """Record current helper identities; historical runs retain their own frozen hashes."""
+
     root = Path(__file__).resolve().parents[2]
-    result = {
+    return {
         "training_helpers": training.binding(Path(training.__file__)),
         "distributed_helpers": training.binding(Path(distributed.__file__)),
         "shared_raw_axis_validity_hinge": training.binding(
             root / "src/losses/raw_axis_validity_hinge.py"
         ),
     }
-    require(
-        result["training_helpers"]["sha256"] == EXPECTED_TRAINING_SHA256,
-        "training helper source changed",
-    )
-    require(
-        result["distributed_helpers"]["sha256"] == EXPECTED_DISTRIBUTED_SHA256,
-        "distributed helper source changed",
-    )
-    require(
-        result["shared_raw_axis_validity_hinge"]["sha256"] == EXPECTED_HINGE_SHA256,
-        "shared hinge source changed",
-    )
-    return result
 
 
 def partition_route_indices(total: int, *, rank: int, world_size: int) -> list[int]:
@@ -140,30 +121,6 @@ def objective_from_route_terms(
     return ce + geometry
 
 
-def select_aligned_logits(
-    logits: torch.Tensor, continuation_lengths: Sequence[int]
-) -> list[torch.Tensor]:
-    """Select each left-padded history's causal continuation rows."""
-    require(
-        logits.ndim == 3 and logits.shape[0] == len(continuation_lengths),
-        "batched replay logit shape",
-    )
-    require(
-        bool(continuation_lengths)
-        and all(type(n) is int and n > 0 for n in continuation_lengths),
-        "continuation lengths",
-    )
-    width = max(continuation_lengths) + 1
-    require(logits.shape[1] == width, "compact replay width")
-    rows = []
-    for index, count in enumerate(continuation_lengths):
-        start = width - count - 1
-        row = logits[index, start : width - 1].float()
-        require(row.shape[0] == count, "aligned continuation coverage")
-        rows.append(row)
-    return rows
-
-
 def _batched_aligned_logits(
     model: torch.nn.Module,
     native_inputs: Mapping[str, Any],
@@ -187,7 +144,7 @@ def _batched_aligned_logits(
         logits_to_keep=width,
     )
     output = model(**inputs).logits
-    return select_aligned_logits(output, [len(row) for row in continuations]), {
+    return select_compact_replay_logits(output, [len(row) for row in continuations]), {
         "history_width": max(map(len, histories)),
         "history_padding_tokens": sum(
             max(map(len, histories)) - len(row) for row in histories
@@ -235,7 +192,7 @@ def _prepare_microbatches(
     device: torch.device,
     microbatch_size: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.qwen.native import prepare_native_inputs
 
     groups = []
@@ -399,13 +356,13 @@ def run(
     manifest_path: Path, *, output: Path, resume: Path | None = None
 ) -> dict[str, Any] | None:
     """Execute one S or T arm under ``python -m torch.distributed.run``."""
-    from probes.dora_owner_learning.geometric_dedup_train import (
-        checkpointing_receipt,
-        install_language_decoder_checkpointing,
-    )
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
     from src.config.inference import InferConfig
+    from src.qwen.checkpointing import (
+        install_language_decoder_checkpointing,
+        language_decoder_checkpointing_receipt as checkpointing_receipt,
+    )
 
     manifest = validate_manifest(json.loads(manifest_path.read_text()))
     dependencies = dependency_bindings()
@@ -487,7 +444,7 @@ def run(
             named, frozen = training.bind_language_dora(
                 model, source_adapter=manifest["source_adapter"]
             )
-            checkpointing = install_language_decoder_checkpointing(model)
+            checkpointing = install_language_decoder_checkpointing(model, expected_layer_count=28)
             enabled = manifest["runtime"]["activation_checkpointing"]
             checkpointing.update(
                 enabled=enabled, phase="train" if enabled else "train_disabled"

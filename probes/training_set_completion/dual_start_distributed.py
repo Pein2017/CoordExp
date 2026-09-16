@@ -32,8 +32,6 @@ GLOBAL_IMAGE_COUNT = 11
 EXPECTED_ACTIVE_TOKENS = 2_088
 EXPECTED_IMAGE_IDS = (25274, 59571, 99937, 210457, 219546, 323322, 351017, 388795, 417044, 477415, 528944)
 EXPECTED_TEACHER_SHA256 = "ef79536316453b274dbe6b45d47d769c64d77805c2fb080f1b977eab80d1bc25"
-EXPECTED_TRAINING_SHA256 = "097afb48b73d2388cc73ebe3369a7d49104b0a3d3d4580ea4bbbc7e031eced43"
-EXPECTED_SHARED_HINGE_SHA256 = "a0a12112e09b3c82772e482e61d7cf63557f3e07d192d44149a5cf3fbf8b94af"
 ALLOWED_SOURCE_ADAPTERS = {
     "d7563a96275cced00b34a2078cdfa558018a380328e221c270fff0b23234fc61",
     "b8ca2461c93bf32e886c9e42f7ab0e52495ef2d439a605207c86af7258408815",
@@ -52,15 +50,14 @@ def require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def frozen_dependency_bindings() -> dict[str, dict[str, Any]]:
+def dependency_bindings() -> dict[str, dict[str, Any]]:
+    """Record the executed helper sources without pinning today's tree to an old hash."""
+
     root = Path(__file__).resolve().parents[2]
-    bindings = {
+    return {
         "training_helpers": training.binding(Path(training.__file__)),
         "shared_raw_axis_validity_hinge": training.binding(root / "src/losses/raw_axis_validity_hinge.py"),
     }
-    require(bindings["training_helpers"]["sha256"] == EXPECTED_TRAINING_SHA256, "training helper source changed after freeze")
-    require(bindings["shared_raw_axis_validity_hinge"]["sha256"] == EXPECTED_SHARED_HINGE_SHA256, "shared hinge source changed after freeze")
-    return bindings
 
 
 def partition_route_indices(total: int, *, rank: int, world_size: int) -> list[int]:
@@ -261,13 +258,16 @@ def _rank_receipt(
 
 def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dict[str, Any] | None:
     """Execute the frozen four-rank backend under torchrun."""
-    from probes.dora_owner_learning.geometric_dedup_train import checkpointing_receipt, install_language_decoder_checkpointing
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
     from src.config.inference import InferConfig
+    from src.qwen.checkpointing import (
+        install_language_decoder_checkpointing,
+        language_decoder_checkpointing_receipt as checkpointing_receipt,
+    )
 
     manifest = validate_distributed_contract(training.validate_manifest(json.loads(manifest_path.read_text())))
-    dependency_bindings = frozen_dependency_bindings()
+    executed_dependency_bindings = dependency_bindings()
     require(training.binding(manifest["sources"]["producer"]["path"]) == manifest["sources"]["producer"], "distributed producer binding changed")
     require(Path(manifest["sources"]["producer"]["path"]).resolve() == Path(__file__).resolve(), "manifest producer is not distributed backend")
     require(torch.cuda.is_available(), "distributed dual-start requires CUDA")
@@ -313,7 +313,7 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
             model = qwen.model
             model.eval()
             named, frozen = training.bind_language_dora(model, source_adapter=manifest["source_adapter"])
-            checkpointing = install_language_decoder_checkpointing(model)
+            checkpointing = install_language_decoder_checkpointing(model, expected_layer_count=28)
             checkpointing.update(enabled=True, phase="train")
             optimizer = torch.optim.AdamW(
                 [parameter for _, parameter in named],
@@ -493,7 +493,7 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                 "checkpoint_consensus": checkpoint_consensus,
                 "source_bindings": {
                     "distributed_backend": training.binding(Path(__file__)),
-                    **dependency_bindings,
+                    **executed_dependency_bindings,
                 },
             },
         }

@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -139,3 +140,25 @@ def test_real_bound_tokenizer_has_coord_zero_and_no_object_ref_alias():
     assert table["ids"][0] == 151670
     assert table["ids"][124] == 151794
     assert table["ids"][0] != 151646
+
+
+
+def test_execution_producer_gate_accepts_current_bytes_and_rejects_other_binding(tmp_path: Path):
+    current = t.binding(Path(t.__file__))
+    assert t.validate_training_execution_producer({"sources": {"producer": current}}) == current
+
+    other = tmp_path / "other.py"
+    other.write_text("# different producer\n")
+    with pytest.raises(ValueError, match="execution producer differs"):
+        t.validate_training_execution_producer(
+            {"sources": {"producer": t.binding(other)}}
+        )
+
+
+def test_single_gpu_run_rejects_historical_manifest_before_cuda_or_output(tmp_path: Path):
+    from probes.training_set_completion import continue_training
+
+    output = tmp_path / "attempt"
+    with pytest.raises(ValueError, match="execution producer differs"):
+        t.run(continue_training.OLD_MANIFEST, output=output, device="cuda:0")
+    assert not output.exists()

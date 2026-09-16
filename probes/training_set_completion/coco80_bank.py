@@ -299,7 +299,7 @@ def _parser_roundtrip(
 ) -> dict[str, Any]:
     """Use the production compact parser on the newly materialized rows."""
 
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     acquisition = read(acquisition_path)
     goldens = {int(record["image_id"]): record["golden"] for record in acquisition["records"]}

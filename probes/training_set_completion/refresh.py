@@ -119,7 +119,8 @@ def worker(*, manifest_path: Path, output: Path, phase: str, shard: int, world_s
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
     from probes.native_owner_scale.evaluation import _candidate_materialized_case
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.adapters.dora import inspect_dora_adapter_payload
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
@@ -181,7 +182,7 @@ def _compare_greedy(row: Mapping[str, Any], expected: Mapping[str, Any]) -> dict
 
 def _collect(manifest_path: Path, output: Path) -> dict[str, Any]:
     from transformers import AutoTokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     manifest = read(manifest_path); validate_manifest(manifest)
     by_image = {int(row["image_id"]): row for row in manifest["records"]}
@@ -204,36 +205,83 @@ def _collect(manifest_path: Path, output: Path) -> dict[str, Any]:
     return value
 
 
+def _stop_owned_process(process: subprocess.Popen[Any]) -> int | str | None:
+    """Best-effort terminate/reap without letting cleanup mask the caller failure."""
+    code = process.poll()
+    if code is not None:
+        return code
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return process.poll()
+    try:
+        return process.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            return process.poll()
+        try:
+            return process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            return "kill_timeout"
+
+
 def controller(*, manifest_path: Path, output: Path) -> None:
     """Run preflight once, then the remaining 43 routes on eight isolated workers."""
     manifest = read(manifest_path); validate_manifest(manifest)
     terminal = {"schema": f"{SCHEMA}.controller", "status": "running", "manifest": binding(manifest_path), "started_unix": time.time()}
     publish(output / "controller-start.json", terminal)
     started = time.monotonic()
+    owned: list[tuple[subprocess.Popen[Any], Any, dict[str, Any]]] = []
     try:
         def spawn(phase: str, shard: int, world: int, gpu: int) -> tuple[subprocess.Popen[Any], Any, dict[str, Any]]:
             command = [sys.executable, "-m", "probes.training_set_completion.refresh", "worker", "--manifest", str(manifest_path), "--output", str(output), "--phase", phase, "--shard", str(shard), "--world-size", str(world), "--physical-gpu", str(gpu)]
             log_path = output / "logs" / f"{phase}-shard-{shard}.log"; log_path.parent.mkdir(parents=True, exist_ok=True)
             log = log_path.open("x")
             process = subprocess.Popen(command, cwd=Path(__file__).resolve().parents[2], stdout=log, stderr=subprocess.STDOUT, env={**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu), "OMP_NUM_THREADS": "2", "TOKENIZERS_PARALLELISM": "false"})
-            return process, log, {"phase": phase, "shard": shard, "gpu": gpu, "pid": process.pid, "command": command, "log": str(log_path)}
+            item = (process, log, {"phase": phase, "shard": shard, "gpu": gpu, "pid": process.pid, "command": command, "log": str(log_path)})
+            owned.append(item)
+            return item
         preflight, log, spec = spawn("preflight", 0, 1, 0)
-        code = preflight.wait(timeout=WORKER_SECONDS); log.close(); require(code == 0, "native preflight worker failed")
+        try:
+            code = preflight.wait(timeout=WORKER_SECONDS)
+        except subprocess.TimeoutExpired:
+            _stop_owned_process(preflight)
+            raise
+        finally:
+            log.close()
+        require(code == 0, "native preflight worker failed")
         preflight_row = read(_row_path(output, manifest["requests"][0])); expected = read(PARENT_READBACK)["rows"][0]
         comparison = _compare_greedy(preflight_row, expected); publish(output / "preflight.json", {"schema": f"{SCHEMA}.preflight", "status": "passed" if comparison["same_token_ids"] else "technical_greedy_mismatch", "worker": spec, "comparison": comparison})
         require(comparison["same_token_ids"], "native preflight differs from saved step-16 greedy")
         workers = [spawn("main", shard, 8, gpu) for shard, gpu in enumerate(GPUS)]
         exits = []
         for process, worker_log, worker_spec in workers:
-            try: code = process.wait(timeout=WORKER_SECONDS)
-            except subprocess.TimeoutExpired: process.terminate(); code = process.wait(timeout=30)
-            worker_log.close(); exits.append({**worker_spec, "exit_code": code})
+            try:
+                code = process.wait(timeout=WORKER_SECONDS)
+            except subprocess.TimeoutExpired:
+                code = _stop_owned_process(process)
+            finally:
+                worker_log.close()
+            exits.append({**worker_spec, "exit_code": code})
         publish(output / "main-exits.json", {"schema": f"{SCHEMA}.exits", "exits": exits})
         require(all(item["exit_code"] == 0 for item in exits), "refresh main worker failed")
         result = _collect(manifest_path, output); require(result["status"] == "candidate_ready", "saved step-16 greedy mismatch")
         terminal.update(status="completed", result=binding(output / "result.json"))
     except BaseException as exc:
-        terminal.update(status="failed", error=f"{type(exc).__name__}: {exc}", traceback=traceback.format_exc())
+        cleanup_errors = []
+        for process, worker_log, worker_spec in owned:
+            try:
+                if process.poll() is None:
+                    code = _stop_owned_process(process)
+                    if code == "kill_timeout":
+                        cleanup_errors.append({"pid": process.pid, "error": "kill_timeout"})
+            except BaseException as cleanup_exc:
+                cleanup_errors.append({"pid": process.pid, "error": f"{type(cleanup_exc).__name__}: {cleanup_exc}"})
+            finally:
+                worker_log.close()
+        terminal.update(status="failed", error=f"{type(exc).__name__}: {exc}", traceback=traceback.format_exc(), cleanup_errors=cleanup_errors)
     finally:
         terminal["elapsed_seconds"] = time.monotonic() - started
         publish(output / "terminal.json", terminal)

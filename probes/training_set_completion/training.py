@@ -20,7 +20,11 @@ from typing import Any, Mapping, Sequence
 
 import torch
 
-from src.adapters.dora import inspect_dora_adapter_payload, select_dora_parameters
+from src.adapters.dora import (
+    inspect_dora_adapter_payload,
+    save_dora_adapter_payload,
+    select_dora_parameters,
+)
 from src.losses import (
     aligned_token_logprobs,
     raw_axis_validity_hinge as _shared_raw_axis_validity_hinge,
@@ -135,9 +139,19 @@ def validate_manifest(value: Mapping[str, Any], *, verify_sources: bool = True) 
     sources = value["sources"]
     require(isinstance(sources, Mapping) and set(sources) == {"reviewed_routes", "producer"}, "route/code source bindings")
     if verify_sources:
+        producer = sources["producer"]
+        require(
+            isinstance(producer, Mapping)
+            and set(producer) == {"path", "sha256", "size_bytes"}
+            and isinstance(producer["path"], str)
+            and isinstance(producer["sha256"], str)
+            and len(producer["sha256"]) == 64
+            and type(producer["size_bytes"]) is int
+            and producer["size_bytes"] >= 0,
+            "training producer provenance binding",
+        )
         _verify_reference(value["acquisition_manifest"], "acquisition manifest")
         _verify_reference(sources["reviewed_routes"], "reviewed routes")
-        _verify_reference(sources["producer"], "training producer")
     adapter = value["source_adapter"]
     require(isinstance(adapter, Mapping) and isinstance(adapter.get("root"), str) and isinstance(adapter.get("fingerprint"), str), "source adapter identity")
     if verify_sources:
@@ -171,6 +185,24 @@ def validate_manifest(value: Mapping[str, Any], *, verify_sources: bool = True) 
     require(isinstance(runtime["checkpoint_steps"], list) and all(type(step) is int and 0 < step <= runtime["updates"] for step in runtime["checkpoint_steps"]), "checkpoint schedule")
     require(type(runtime["max_model_forwards"]) is int and runtime["max_model_forwards"] >= runtime["updates"] * len(routes), "forward budget")
     return dict(value)
+
+
+def validate_training_execution_producer(
+    manifest: Mapping[str, Any], *, producer_path: str | Path = Path(__file__)
+) -> dict[str, Any]:
+    """Bind a mutating training launch to the exact producer bytes executing it.
+
+    ``validate_manifest`` deliberately remains able to read historical manifests
+    whose recorded producer path has since changed. Mutation is stricter: the
+    manifest must have been prepared for this exact executable producer.
+    """
+
+    expected = binding(producer_path)
+    require(
+        manifest.get("sources", {}).get("producer") == expected,
+        "training execution producer differs from manifest binding",
+    )
+    return expected
 
 
 def coordinate_token_table(base_model: str | Path) -> dict[str, list[Any]]:
@@ -241,13 +273,17 @@ def _layout(named: Sequence[tuple[str, torch.nn.Parameter]]) -> list[dict[str, A
 
 
 def _checkpoint(output: Path, *, manifest_path: Path, manifest: Mapping[str, Any], model: Any, optimizer: torch.optim.Optimizer, named: Sequence[tuple[str, torch.nn.Parameter]], step: int) -> dict[str, Any]:
-    from probes.dora_owner_learning.train import _save_adapter_only
-
     root = output / "checkpoints" / f"step-{step:05d}"
     require(not root.exists(), "checkpoint collision")
     root.mkdir(parents=True)
     adapter_dir = root / "adapter"
-    identity = _save_adapter_only(model, source_root=Path(manifest["source_adapter"]["root"]), output=adapter_dir)
+    identity = save_dora_adapter_payload(
+        model,
+        source_root=Path(manifest["source_adapter"]["root"]),
+        output=adapter_dir,
+        expected_base_model_path=manifest["model_config"]["model"]["base_model"],
+        expected_tensor_count=manifest["source_adapter"]["semantic_identity"]["tensor_key_count"],
+    )
     state = {"schema": f"{SCHEMA}.checkpoint.v1", "manifest": binding(manifest_path), "source_adapter": manifest["source_adapter"], "saved_adapter": identity, "step": step, "parameter_layout": _layout(named), "optimizer": manifest["optimizer"], "optimizer_state_dict": optimizer.state_dict(), "torch_rng_state": torch.get_rng_state(), "python_random_state": random.getstate()}
     if torch.cuda.is_available():
         state["cuda_rng_state_all"] = torch.cuda.get_rng_state_all()
@@ -271,7 +307,7 @@ def _restore(resume: Path, *, manifest_path: Path, manifest: Mapping[str, Any], 
 
 
 def _native_entries(qwen: Any, manifest: Mapping[str, Any], device: torch.device) -> list[dict[str, Any]]:
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     entries = []
     for route in manifest["routes"]:
         requests, _ = build_requests(qwen, manifest["model_config"], [route["case"]])
@@ -287,10 +323,14 @@ def run(manifest_path: Path, *, output: Path, device: str, resume: Path | None =
     """Run one explicitly bounded single-GPU attempt.  Caller owns tmux/launch."""
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.dora_owner_learning.geometric_dedup_train import install_language_decoder_checkpointing, checkpointing_receipt
     from src.config.inference import InferConfig
+    from src.qwen.checkpointing import (
+        install_language_decoder_checkpointing,
+        language_decoder_checkpointing_receipt as checkpointing_receipt,
+    )
 
     manifest = validate_manifest(json.loads(manifest_path.read_text()))
+    execution_producer = validate_training_execution_producer(manifest)
     require(device.startswith("cuda") and torch.cuda.is_available(), "single-GPU CUDA device required")
     require(not output.exists(), "attempt output already exists")
     output.mkdir(parents=True)
@@ -312,7 +352,7 @@ def run(manifest_path: Path, *, output: Path, device: str, resume: Path | None =
         model = qwen.model
         model.eval()
         named, frozen = bind_language_dora(model, source_adapter=manifest["source_adapter"])
-        checkpointing = install_language_decoder_checkpointing(model)
+        checkpointing = install_language_decoder_checkpointing(model, expected_layer_count=28)
         checkpointing.update(enabled=True, phase="train")
         optimizer = torch.optim.AdamW([parameter for _, parameter in named], **{**manifest["optimizer"], "betas": tuple(manifest["optimizer"]["betas"])})
         require(resume is not None or not optimizer.state, "fresh attempt requires a fresh AdamW optimizer")
@@ -340,9 +380,9 @@ def run(manifest_path: Path, *, output: Path, device: str, resume: Path | None =
             publish(output / "updates" / f"step-{step:05d}.json", update)
             if step in manifest["runtime"]["checkpoint_steps"] or step == manifest["runtime"]["updates"]:
                 checkpoints.append(_checkpoint(output, manifest_path=manifest_path, manifest=manifest, model=model, optimizer=optimizer, named=named, step=step))
-        terminal = {"schema": f"{SCHEMA}.terminal.v1", "status": "completed", "manifest": binding(manifest_path), "loaded_model": loaded, "optimizer_mode": "resume" if resume else "fresh", "trainable_surface": _layout(named), "updates": manifest["runtime"]["updates"], "model_forwards": forwards, "checkpoints": checkpoints, "activation_checkpointing": checkpointing_receipt(model, checkpointing), "elapsed_seconds": time.monotonic() - started}
+        terminal = {"schema": f"{SCHEMA}.terminal.v1", "status": "completed", "manifest": binding(manifest_path), "execution_producer": execution_producer, "loaded_model": loaded, "optimizer_mode": "resume" if resume else "fresh", "trainable_surface": _layout(named), "updates": manifest["runtime"]["updates"], "model_forwards": forwards, "checkpoints": checkpoints, "activation_checkpointing": checkpointing_receipt(model, checkpointing), "elapsed_seconds": time.monotonic() - started}
     except Exception as exc:
-        terminal = {"schema": f"{SCHEMA}.terminal.v1", "status": "failed", "manifest": binding(manifest_path), "phase": phase, "step": start_step, "model_forwards": forwards, "error": f"{type(exc).__name__}: {exc}", "elapsed_seconds": time.monotonic() - started}
+        terminal = {"schema": f"{SCHEMA}.terminal.v1", "status": "failed", "manifest": binding(manifest_path), "execution_producer": execution_producer, "phase": phase, "step": start_step, "model_forwards": forwards, "error": f"{type(exc).__name__}: {exc}", "elapsed_seconds": time.monotonic() - started}
         publish(output / "terminal.json", terminal)
         raise
     finally:
@@ -384,7 +424,7 @@ def readback(manifest_path: Path, *, adapter: Path, output: Path, device: str) -
     """
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
 
@@ -407,7 +447,7 @@ def readback(manifest_path: Path, *, adapter: Path, output: Path, device: str) -
             generated, = generate_continuations(qwen.model, batch, extensions=[[]], budgets=[cap], eos_token_id=manifest["runtime"]["eos_token_id"], pad_token_id=qwen.tokenizer.pad_token_id, policy=policy, trace="none", seed=None)
         ids = list(generated.token_ids)
         rows.append({"route_id": route["route_id"], "image_id": route["image_id"], "empty_assistant_prefix": True, "prompt_token_ids": route["prompt_token_ids"], "generated_token_ids": ids, "generated_token_ids_sha256": digest(ids), "decode_stop_reason": generated.stop_reason, "raw_decode_text": qwen.tokenizer.decode(ids, skip_special_tokens=False), "executed_media_sha256": batch.media_sha256[0], "observed_image_grid_thw": list(batch.image_grids[0])})
-    receipt = {"schema": f"{SCHEMA}.native_readback.v1", "status": "completed_unscored", "manifest": binding(manifest_path), "adapter": adapter_identity, "loaded_model": loaded, "policy": {"empty_assistant_prefix": True, "temperature": 0.0, "top_p": 1.0, "top_k": 0, "repetition_penalty": 1.0, "assistant_token_cap": cap}, "rows": rows}
+    receipt = {"schema": f"{SCHEMA}.native_readback.v1", "status": "completed_unscored", "manifest": binding(manifest_path), "execution_producer": binding(Path(__file__)), "adapter": adapter_identity, "loaded_model": loaded, "policy": {"empty_assistant_prefix": True, "temperature": 0.0, "top_p": 1.0, "top_k": 0, "repetition_penalty": 1.0, "assistant_token_cap": cap}, "rows": rows}
     publish(output, receipt)
     return receipt
 

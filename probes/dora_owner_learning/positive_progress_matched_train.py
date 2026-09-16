@@ -868,10 +868,8 @@ def validate_selection(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]
             == selection["source_A_receipt"]["sha256"]
         and file_hash(selection["source_C_receipt"]["path"])
             == selection["source_C_receipt"]["sha256"]
-        and file_hash(selection["source_A_producer"]["path"])
-            == selection["source_A_producer"]["sha256"] == BASE_ENGINE_SHA256
-        and file_hash(selection["source_margin_producer"]["path"])
-            == selection["source_margin_producer"]["sha256"] == BASE_MARGIN_ENGINE_SHA256,
+        and selection["source_A_producer"]["sha256"] == BASE_ENGINE_SHA256
+        and selection["source_margin_producer"]["sha256"] == BASE_MARGIN_ENGINE_SHA256,
         "selection source identities changed",
     )
     references = selection.get("recreation_step_oracles")

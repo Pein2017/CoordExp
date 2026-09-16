@@ -9,6 +9,7 @@ from src.qwen.runtime_loading import QwenLoadOptions, load_qwen_components_from_
 from src.qwen.special_token_embeddings import attach_embedding_delta
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "configs/source256.yaml"
+PACKAGED_SOURCE_GATE_ROOT = Path(__file__).resolve().parent / "configs/source-gate-root"
 
 
 def bind_source256_language_dora(
@@ -65,9 +66,15 @@ def load_policy(config, *, device):
         qwen.model, adapter_path=config.adapter.path,
         base_model_path=qwen.base_model_path, adapter_name=config.adapter.name,
     )
+    source_gate_root = (
+        Path(config.embedding_delta.source_gate_root).expanduser().resolve(strict=True)
+        if config.embedding_delta.source_gate_root
+        else PACKAGED_SOURCE_GATE_ROOT.resolve(strict=True)
+    )
     embedding_receipt = attach_embedding_delta(
-        delta_path=config.embedding_delta.path, qwen=qwen,
-        source_gate_root=config.embedding_delta.source_gate_root or Path(__file__).resolve().parents[2],
+        delta_path=config.embedding_delta.path,
+        qwen=qwen,
+        source_gate_root=source_gate_root,
     )
     qwen.model.to(device)
     qwen.model.eval()
@@ -78,6 +85,7 @@ def load_policy(config, *, device):
             "base": {"path": str(qwen.base_model_path)},
             "adapter": adapter_receipt,
             "embedding_delta": embedding_receipt,
+            "embedding_source_gate_root": str(source_gate_root),
         },
         "effective_settings": {
             "observed_attn_implementation": getattr(qwen.model.config, "_attn_implementation", None),

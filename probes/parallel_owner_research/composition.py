@@ -305,7 +305,7 @@ def acquisition_job(case, stage):
 
 
 def reduce_acquisition(records, packet, tok):
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     expected = {(c['image_id'], s) for c in packet['records'] for s in packet['branches']}
     require({(r['image_id'], r['stage']) for r in records} == expected
@@ -406,7 +406,7 @@ def residual_outcome(baseline, current, *, new_owner, forced_assigned,
 
 def validate_residual_packet(packet, *, verify_sources=True):
     from tokenizers import Tokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     require(packet['schema'] == 'parallel_owner_composition.residual_admission.v1', 'residual schema')
     require(packet['candidate_source']['sha256'] == RESIDUAL_CANDIDATE_SHA256, 'frozen residual candidate identity')
@@ -537,7 +537,7 @@ def prepare_residual_admission(candidates_path: Path, output_dir: Path):
 
 
 def reduce_residual_admission(records, packet, tok):
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     expected = {(c['image_id'], 'residual_B') for c in packet['records']}
     require(len(records) == len(expected) and {(r['image_id'], r['stage']) for r in records} == expected,
@@ -582,7 +582,8 @@ def execute_acquisition(input_path: Path, output_dir: Path, *, physical_gpu=None
     from tokenizers import Tokenizer
     from probes.dora_owner_learning.route_access import CONFIG, checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import load_research_infer_config
     from src.qwen.generation import generate_continuations, NativeGenerationPolicy
     from src.qwen.native import prepare_native_inputs

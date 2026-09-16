@@ -6,7 +6,7 @@ status: canonical
 domain: research
 summary: Direct research execution and optional integrity capabilities at their existing owners.
 tags: [research, probes, artifacts, inference]
-updated: 2026-09-09
+updated: 2026-09-15
 ---
 
 # Research Probe Infrastructure Base
@@ -32,13 +32,20 @@ local scientific configuration, not a global runtime class or registry.
 | --- | --- | --- |
 | Direction-local V1 inference profile | `src.config.inference.load_research_infer_config` | Scientific values and actual native generation policy; this loader does not enable debug or relax value validation |
 | Selected prompt and annotated-target planning | `src.inference.inputs.plan_examples` | Ordered rows, resolved profile, target length; pixel materialization remains explicit |
+| Frozen-case native request reconstruction | `src.inference.bound_requests.build_bound_native_requests` | The already-bound input row/image plan and its identity checks; this is not fresh replanning |
 | Qwen processor/tokenizer/model loading | `src.qwen.runtime_loading.QwenLoadOptions`, `load_qwen_components_from_options` | Device, model lifetime, train/eval mode and selected checkpoint |
 | Deterministic scored inference | `src.inference.runtime` and `src.inference.backend` | Input/policy, output interpretation and claims |
 | Exact multimodal history/replay | `src.qwen.native.prepare_native_inputs`, `prepare_replay` | Literal token IDs, images, model mode/device; invalid shapes and token histories fail |
+| Compact batched replay alignment | `src.qwen.native.select_compact_replay_logits` | Batch construction, target masks, reduction and optimizer meaning |
 | Budgeted native continuation | `src.qwen.generation.generate_continuations`, `NativeGenerationPolicy` | Per-request budgets, seed/batch order, policy and optional traces |
 | Named layer capture | `src.qwen.inspection.CaptureInputs`, `CaptureHiddenRows` | Selected sites and intervention formulas; context exit removes hooks |
 | Aligned differentiable scores | `src.losses.token_scores.aligned_token_logprobs` | Causal alignment, masks, reductions, credit and distributed factors |
 | Global annotated-owner assignment | `src.eval.assignment.global_matches` | Category/threshold policy; cardinality then quantized IoU, distinct from greedy visualization |
+| Native decode to standard detection row | `src.eval.native_rows.native_detection_record` | What is a trusted owner, category policy and scientific scoring |
+| Qwen decoder activation checkpointing | `src.qwen.checkpointing` | Whether it is enabled, expected decoder depth, parity criterion and memory/speed tradeoff |
+| Adapter-only serialization | `src.adapters.dora.save_dora_adapter_payload` | Trainable-surface choice, optimizer state and checkpoint-selection semantics |
+| Deterministic tensor/layout identity | `src.runtime.model_state` | Which tensors constitute a scientific state or acceptance criterion |
+| Owned-child completion wait | `src.runtime.process_completion` | Which jobs may launch/retry, GPU allocation, scientific deadline and continuation policy |
 | Packed training | `src.training`, `src.runtime`, `src.supervision`, `src.packing` | Selected training config, loss and synchronization contract |
 | Simple validated result publication | `src.artifacts.publish_json_exclusive` | Payload meaning and an absent final output path |
 
@@ -176,13 +183,64 @@ Model-facing changes need the applicable native/adapter consumer checks;
 helper tests alone do not establish real-model parity. Record that evidence
 boundary rather than adding ceremonial receipts.
 
+## Coding-agent rules for maintained probes
+
+These rules are intentionally small and enforceable. They protect the research
+semantics from being hidden inside convenience abstractions while preventing a
+new direction from copying an old experiment's machinery.
+
+1. **Keep scientific meaning direction-local.** Cohorts, teacher construction,
+   masks, owner/admission semantics, loss numerators and denominators, credit,
+   update schedules, acceptance thresholds and stop rules stay in
+   `probes/<direction>/`. Similar loops are not evidence that these meanings are
+   interchangeable.
+2. **Give repeated mechanics a concept owner.** When two maintained directions
+   need the same operation with the same contract, reuse or add the smallest
+   owner under `src/`. A maintained direction must not import a reusable
+   execution helper from another direction merely because that experiment
+   implemented it first. Prefer a small primitive over a new base class,
+   registry, trainer framework or plugin surface.
+3. **Separate execution checkout from evidence locations.** Python/module source,
+   subprocess `cwd` and executable helper paths derive from the current checkout.
+   Never hard-code a sibling worktree as the execution root. Absolute dataset,
+   checkpoint, immutable artifact and provenance paths may remain explicit when
+   they are part of the scientific binding.
+4. **Preserve evidence, not obsolete executable compatibility.** Closed producers
+   may be recovered by their recorded Git/source snapshots. Do not keep live
+   aliases or duplicate implementations solely so an old command still executes
+   from today's tree.
+5. **Put maintained tests beside the direction.** New direction regression tests
+   live in `probes/<direction>/tests/` and must be discovered by
+   `python -m pytest -q probes`. `tests/research/` is not the home for new
+   direction-local tests. Shared primitives additionally receive tests at their
+   `tests/<owner>/` surface when a direction test does not directly exercise the
+   contract.
+6. **Mechanical refactors may not silently change scientific invariants.** Byte
+   encoding/hash identity, token history, loss denominator, gradient collective,
+   owner population, decode policy and stop semantics require an explicit
+   migration plus a parity or counterexample test when changed.
+7. **Performance claims require measured scope plus parity.** Record the exact
+   workload, device count, wall/step metric, memory and behavior-equivalence
+   criterion. A faster configuration that misses its declared parity gate is a
+   candidate for investigation, not a new default.
+8. **Do not generalize on aesthetics.** A new global abstraction needs at least
+   two current consumers with the same demonstrated contract and evidence that a
+   smaller shared primitive or local composition would not remove the repeated
+   work. Historical similarity alone is insufficient.
+
 ## Maintained direction entries
 
 - [DORA owner learning](../probes/dora_owner_learning/README.md): Source256 preparation, sampling and CE/RLOO; separate coordinate/full-action scoring.
 - [Source/Rweak row crossing](../probes/source_rweak_row_cross/README.md): frozen manifest preparation, native continuation and offline assignment/reduction.
 - [Human13](../probes/human13/README.md): output-QP and magnitude finite-panel profiles.
 - [Logit lens](../probes/logit_lens/README.md): base, causal, radius/direction and natural continuation profiles.
+- `parallel_owner_research`: conditional-credit/composition and owner-preservation lanes.
+- `native_owner_scale`: scaled owner supply, state probes and independent evaluation.
+- `owner_successor_scale`: credible-successor supply, conditional credit and replay throughput.
+- `training_set_completion`: acquisition, reviewed teacher construction, CE training, natural readback and physical evaluation.
 
-Each README supplies real inputs and the cheapest CPU entry. Run `python -m pytest -q probes` for their joint regression suite; saved-input row-cross checks require the documented manifest and preserved original-code root. The [acceptance record](../openspec/changes/restructure-research-probe-development/acceptance.md) separates these checks from the one-case Source model smoke.
+Maintained direction tests live beside their package and are discovered by
+`python -m pytest -q probes`. Saved-input row-cross checks additionally require
+the documented manifest and preserved original-code root. The [acceptance record](../openspec/changes/restructure-research-probe-development/acceptance.md) separates these checks from the one-case Source model smoke.
 
 The remaining `scripts/research` closure supports existing optional admission/evidence consumers, coverage comparison and research navigation checks. Its historical producers and dedicated tests are listed in the [retirement disposition](../openspec/changes/restructure-research-probe-development/retired-files.md); new direction work starts in the four packages above or a new ordinary direction package.

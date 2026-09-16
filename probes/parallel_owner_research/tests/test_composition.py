@@ -141,7 +141,7 @@ class ObjectTokens:
 def residual_native_fixture(*, include_incumbent=True):
     from probes.dora_owner_learning.candidate_opportunity import score as native_score
     from probes.parallel_owner_research.composition import output_burden, residual_job
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     tok = ObjectTokens()
     boxes = {'old': [10, 10, 100, 100], 'A': [210, 210, 300, 300],
              'incumbent': [410, 410, 500, 500], 'B': [610, 610, 700, 700]}

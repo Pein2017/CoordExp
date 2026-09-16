@@ -30,7 +30,8 @@ from probes.dora_owner_learning.candidate_opportunity import file_hash, require,
 from probes.dora_owner_learning.geometric_dedup_eval import overlap_counts
 from probes.native_owner_scale import evaluation as evaluation
 from probes.parallel_owner_research.history import complete_rows, continuation_ledger
-from probes.source_rweak_row_cross.run import build_requests, native_record
+from src.inference.bound_requests import build_bound_native_requests as build_requests
+from src.eval.native_rows import native_detection_record as native_record
 from src.data.geometry import iou_xyxy
 from src.losses.token_scores import aligned_token_logprobs
 from src.qwen.native import prepare_native_inputs, prepare_replay

@@ -185,7 +185,7 @@ def _cold_reconsume_anchor(old_rows: Sequence[Mapping[str, Any]], new_rows: Sequ
                            old_packet: Mapping[str, Any], new_packet: Mapping[str, Any]) -> None:
     """Replay tokenizer, accepted parser, scorer and overlap accounting on CPU."""
     from transformers import AutoTokenizer
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     tokenizer = AutoTokenizer.from_pretrained(new_packet["model"]["base_model_path"], local_files_only=True)
     native.validate_endpoint_rows(
@@ -437,7 +437,8 @@ def worker(*, packet_path: str | Path, arm: str, shard: int, physical_gpu: int,
     import torch
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests, native_record
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
+    from src.eval.native_rows import native_detection_record as native_record
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
@@ -600,7 +601,7 @@ def _validate_endpoint_rows(rows: Sequence[Mapping[str, Any]], packet: Mapping[s
     _exact_rows(rows, packet["records"], arm=arm,
                 adapter_fingerprint=packet["endpoints"][arm]["adapter"]["fingerprint"],
                 packet_sha256=packet["_file_sha256"])
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
     checked = []
     for row, frozen in zip(rows, packet["records"], strict=True):
         ids = list(row["action_ids"]); native.accepted._checked_action(ids, row["stop_reason"], CAP)

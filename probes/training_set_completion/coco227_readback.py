@@ -19,7 +19,7 @@ import traceback
 from typing import Any, Mapping, Sequence
 
 
-REPO = Path("/data/CoordExp/.worktrees/research-probes")
+REPO = Path(__file__).resolve().parents[2]
 ROOT = Path(
     "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/"
     "2026-09-15-coco227-ce-normalization"
@@ -34,7 +34,6 @@ SOURCE_ADAPTER = PRIOR / "A/training/checkpoints/step-00256/adapter"
 SOURCE_ROWS = PRIOR / "readback/A/new-step-256/rows"
 SOURCE_COLLECTION = PRIOR / "readback-result.json"
 QUALIFICATION_ROOT = ROOT / "readback-qualification"
-QUALIFICATION_TMUX_SESSION = "coordexp-coco227-readback-qualification"
 SCHEMA = "training_set_completion.coco227_readback.v1"
 IMAGE_COUNT = 11
 CAP = 3_084
@@ -558,7 +557,7 @@ def _run_worker(
     import torch
     from probes.dora_owner_learning.route_access import checkpoint_config
     from probes.dora_owner_learning.runtime import load_policy
-    from probes.source_rweak_row_cross.run import build_requests
+    from src.inference.bound_requests import build_bound_native_requests as build_requests
     from src.config.inference import InferConfig
     from src.qwen.generation import NativeGenerationPolicy, generate_continuations
     from src.qwen.native import prepare_native_inputs
@@ -928,7 +927,7 @@ def _golden(route: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _parse_row(row: Mapping[str, Any], route: Mapping[str, Any]) -> dict[str, Any]:
-    from probes.source_rweak_row_cross.run import native_record
+    from src.eval.native_rows import native_detection_record as native_record
 
     parsed = native_record(
         row["raw_decode_text"],
@@ -1444,14 +1443,7 @@ def qualification_controller(
         "evaluation_preparation": binding(evaluation_preparation),
     }
     try:
-        tmux_session = subprocess.check_output(
-            ["tmux", "display-message", "-p", "#S"], text=True
-        ).strip()
-        require(
-            tmux_session == QUALIFICATION_TMUX_SESSION,
-            "qualification controller must run in its named tmux session",
-        )
-        value["tmux_session"] = tmux_session
+        value["execution_root"] = str(REPO)
         result = _qualification_controller_inner(
             manifest_path,
             attempt=attempt,
