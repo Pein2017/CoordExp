@@ -69,6 +69,12 @@ appropriate export path; see [submission scope](COCO_TEST_SUBMISSION.md).
 
 ## Explain an unmatched row before naming its cause
 
+Effective 2026-09-16, use the project-wide
+[TIDE-aligned unmatched review vocabulary](UNMATCHED_REVIEW.md) for new analyses.
+It separates reference-relative `Cls/Loc/Both/Dupe/Bkg/Miss`, physical evidence,
+geometry, detector-proxy support and training admission. This adds diagnostic
+terminology; it does not replace frozen matching or make detector output GT.
+
 Keep these distinct: malformed object span; invalid geometry; valid box below the
 IoU threshold; one-to-one competition for an already matched owner; class mismatch;
 and missing/ambiguous annotation. Near-duplicate boxes and multiple boxes referring

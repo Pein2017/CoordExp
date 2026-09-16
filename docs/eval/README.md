@@ -33,6 +33,10 @@ research comparison.
 
 ## Page Roles
 
+- [UNMATCHED_REVIEW.md](UNMATCHED_REVIEW.md)
+  - project-wide TIDE-aligned unmatched taxonomy, Co-DETR-first proxy boundaries,
+    conservative teacher admission and residual visual review
+
 - [CONTRACT.md](CONTRACT.md)
   - evaluator inputs, record shape, coordinate handling, scoring rules, output invariants, failure policy, and shared visualization contract
 - [WORKFLOW.md](WORKFLOW.md)
