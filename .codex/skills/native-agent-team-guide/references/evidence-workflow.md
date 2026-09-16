@@ -1,18 +1,20 @@
 # Learn delegation routes from accepted work
 
-This is a small evidence workflow, not a scheduler or automatic model ranking.
+Use this reference only when a requested or decision-changing cost comparison
+needs structured records. Ordinary delegation does not require these receipts.
+This is an optional evidence workflow, not a scheduler or automatic model ranking.
 The lead owns labels and route decisions. No new benchmark, reviewer, background
 service or model call is required to maintain it. Use task evidence already
 collected; do not rescan full sessions just to fill a receipt.
 
-## Use it in real work
+## Optional use for a requested comparison
 
 1. Before a consequential assignment, read a relevant existing summary if it is
    available. Compare task class, contract/acceptance, risk, verifier, brief and
-   topology. With no comparable evidence, use the skill's tentative starting
-   fits. Record the chosen route and short rationale in the ordinary brief.
-2. At a meaningful acceptance, repair, switch or later invalidation boundary,
-   the lead writes one full task snapshot to a task-owned
+   topology. With no comparable evidence, keep the choice tentative and use the
+   current task's verifier and uncertainty. Record the chosen route and short rationale in the ordinary brief.
+2. When the comparison needs an acceptance, repair, switch or invalidation
+   update, the lead writes one full task snapshot to a task-owned
    `routing/revision-0001/delegation-outcomes.jsonl`. A later snapshot goes in
    `revision-0002/` with the same stable task ID and incremented revision. Keep
    prior attempts in order. Only that task's owner writes there; unrelated leads

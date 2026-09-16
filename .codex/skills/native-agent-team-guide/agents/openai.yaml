@@ -1,4 +1,4 @@
 interface:
   display_name: "Native Agent Team Guide"
-  short_description: "Task-shaped teams, model effort, and package ownership"
-  default_prompt: "Use $native-agent-team-guidance to choose the smallest useful native team, model and effort, ownership, and message flow; consider bounded nested package delegation when it fits the package and acceptance contract."
+  short_description: "Strong lead, bounded workers, early questions and handoff"
+  default_prompt: "Use $native-agent-team-guidance for my current lead or worker role: bound execution, ask parent early, report milestones, and hand durable runtime monitoring to root."
