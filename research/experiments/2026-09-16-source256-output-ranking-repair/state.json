@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-source256-output-ranking-repair",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "bounded_repair_gates_unmet_no_promotion",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-source256-output-ranking-repair/unit.md",
+  "result": "research/experiments/2026-09-16-source256-output-ranking-repair/results.md",
+  "state_source": "research/experiments/2026-09-16-source256-output-ranking-repair/results.md",
+  "boundary": "Frozen15 weak complete-output pairs, P/R16 each, same Bnormalized64 anchor; no local-credit or GT claim.",
+  "not_authorized": [
+    "extra dose/seed/coefficient sweep",
+    "new pairs/labels/rollouts/weak bank",
+    "Git publication or memory edits"
+  ],
+  "next_action": "STOP. Fixed paired16 endpoint accepted; no further run authorized."
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-source256-completion-ce-normalization",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "weaker_learning_mixed_improvement_not_promoted",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-source256-completion-ce-normalization/unit.md",
+  "result": "research/experiments/2026-09-16-source256-completion-ce-normalization/results.md",
+  "state_source": "research/experiments/2026-09-16-source256-completion-ce-normalization/results.md",
+  "boundary": "Independent B-normalized successor; only eligible completion CE denominator becomes same-image canonical target length. Fixed bank/history/masks/geometry/64updates; reuse exact controls; no new visual review.",
+  "not_authorized": [
+    "new bank or weak-bank admission",
+    "soft CE masks",
+    "additional seed,dose,refresh,cohort or objective",
+    "modification of predecessor receipts",
+    "Git commits or memory edits"
+  ],
+  "next_action": "Fixed-dose result closed; no further execution authorized."
+}

@@ -1,0 +1,85 @@
+# Bounded incumbent-match credit diagnosis
+
+Artifact-only follow-up to the closed normalized64 result. No new model forward, sampling, label, image review, admission, training or infrastructure. The original result and protocol are unchanged.
+
+## Population and evidence
+
+Exact population: `(Source0 matched ∩ A64 matched) − Bnormalized64 matched`, train IoU50 one-to-one owner identities. Recomputed independently from comparison loss sets and endpoint covered sets: **28 owners / 18 images**. Reverse difference8; both A and normalized lose27 Source owners. Net loss-count gap20 is not28 independent physical omissions.
+
+Loss strata (prefix / suffix / canonical fallback): A11/17/7; B20/39/16; normalized12/31/12. These are full train loss sets, not the28 subset. Excess failures are not concentrated in masked prefix owners. Admission is reused unchanged: original B cuts before the first unadmitted/unknown/error row and remaining obligations are bank minus covered IDs.
+
+[Bound diagnostic JSON](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/lead/credit-diagnosis-v1/diagnosis.json) (SHA256 `60fe6eb196fc641809daad974b8f58b194d59875ca0b1e09f65ed3647f3fdb74`) includes all per-owner endpoint evidence, row offsets, selected image predictions, hashes, strata and route comparisons. [Reproducer](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/lead/credit-diagnosis-v1/reproduce.py) checks all32 retained train shard hashes, prompt/media parity and population invariants. It performs CPU parsing only.
+
+## Strongest supported classification
+
+| Primary category | Owners | Meaning |
+|---|---:|---|
+| 1: localization/extent candidate | 8 | Nearby same-description rows persist but fall below IoU50; geometry correction candidate, not proven physical forgetting. |
+| 1: assignment competition | 1 | A legal pizza row is assigned to pizza rather than the overlapping table; reassignment alone just trades coverage. |
+| 2: known-obligation EOS | 7 | Trusted obligation remains uncovered at natural EOS; supports limited stop correction, not an exhaustive-scene claim or a verified positive continuation at that history. |
+| 2: invalid-output / cap | 6 | All six share image548337; invalid coordinate spans and output degeneration precede cap. Local validity failure is provable, owner-recovery causality is not. |
+| 3: route divergence only, as exclusive primary | 0 | Route-level comparisons exist as secondary evidence; they need not displace a more specific observed symptom. |
+| 4: identity/context HOLD | 6 | Crowding, broad boxes or overlapping utensils/persons prevent owner-specific local credit. |
+
+Eight geometry candidates are manually adjudicated from retained Source/A/normalized rows, not admitted by a new numerical threshold. Their best normalized IoUs range .366–.481. In particular image143132 changes x2 from774 to770 on an otherwise identical person row and crosses IoU50; calling this disappearance would misdiagnose it.
+
+Image536467: normalized pizza row0 overlaps table419690 at IoU.595 but is assigned to pizza1076691. It is a legal competing owner, not a local negative. A contains a separate table row; recovering that obligation must not erase the pizza.
+
+Image548337: 291 native-parser geometry_invalid drops, one malformed span,44 strict-repeat proxy rows and a length cap. Existing result counters include all292 drops under malformed_row_count and report evaluation invalid_geometry_count0; this diagnostic exposes parser reasons without rewriting the accepted metric. Image360573 similarly has one zero-width person row, unrelated to the missing motorcycle identity. Zero in the legacy evaluation field must not be read as absence of raw invalid-coordinate outputs.
+
+## Per-owner table
+
+S/A are the stored matched-row IoUs. N is the best normalized geometric overlap, regardless of category or assignment, and is not automatically the same owner. Row orders are zero-based original generated orders. Every evidence link selects the saved normalized generation row; full four-endpoint pointers and character spans are in diagnosis.json.
+
+| Image | Owner | Class | S / A IoU | N best (row) | Primary | Evidence |
+|---|---|---|---:|---:|---|---|
+| 25274 | source256-unlabeled-candidate-6a15c3f6aad653a243d1 | person | 1.000 / 0.840 | 0.366 (r24) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-04.json#/generation/rows/1) |
+| 64010 | 2175974 | umbrella | 0.535 / 0.881 | 0.481 (r11) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-04.json#/generation/rows/3) |
+| 101636 | 1760455 | person | 0.694 / 0.754 | 0.404 (r2) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-02.json#/generation/rows/5) |
+| 102420 | 1285990 | person | 0.897 / 0.895 | 0.261 (r3) | 4 HOLD | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-03.json#/generation/rows/5) |
+| 102420 | 2009434 | person | 0.838 / 0.829 | 0.000 (r0) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-03.json#/generation/rows/5) |
+| 133279 | 1787288 | car | 0.738 / 0.719 | 0.429 (r6) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/7) |
+| 143132 | 544475 | person | 0.501 / 0.501 | 0.472 (r13) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-05.json#/generation/rows/7) |
+| 158044 | 1663172 | book | 0.686 / 0.613 | 0.000 (r0) | 4 HOLD | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/8) |
+| 158044 | 1663276 | book | 0.525 / 0.741 | 0.061 (r5) | 4 HOLD | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/8) |
+| 201145 | 2100392 | cup | 0.600 / 0.600 | 0.476 (r6) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-07.json#/generation/rows/10) |
+| 203986 | 2029641 | person | 0.587 / 0.571 | 0.402 (r5) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-00.json#/generation/rows/11) |
+| 203986 | source256-unlabeled-candidate-5937568de085ca903862 | person | 1.000 / 0.989 | 0.038 (r5) | 4 HOLD | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-00.json#/generation/rows/11) |
+| 203986 | source256-unlabeled-candidate-5bda81ea3b2033331aa7 | person | 1.000 / 0.923 | 0.014 (r5) | 4 HOLD | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-00.json#/generation/rows/11) |
+| 234328 | 97641 | bottle | 0.826 / 0.826 | 0.407 (r11) | 1 extent candidate | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/12) |
+| 270570 | source256-unlabeled-candidate-612d6eb787cf4a128471 | tv | 1.000 / 0.848 | 0.080 (r3) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/14) |
+| 360573 | 1789916 | motorcycle | 0.954 / 0.954 | 0.064 (r5) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-07.json#/generation/rows/20) |
+| 422969 | 1097649 | laptop | 0.661 / 0.661 | 0.014 (r1) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-00.json#/generation/rows/23) |
+| 422969 | 1606884 | potted plant | 0.851 / 0.851 | 0.000 (r0) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-00.json#/generation/rows/23) |
+| 446835 | 1955469 | potted plant | 0.944 / 0.932 | 0.052 (r0) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-05.json#/generation/rows/23) |
+| 527822 | 1521959 | knife | 0.841 / 0.802 | 0.294 (r5) | 4 HOLD | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/28) |
+| 536467 | 419690 | dining table | 0.995 / 0.993 | 0.595 (r0) | 1 assignment | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-00.json#/generation/rows/29) |
+| 548337 | 1076307 | pizza | 0.957 / 0.957 | 0.129 (r0) | 2 invalid/cap | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/30) |
+| 548337 | 189099 | person | 0.966 / 0.966 | 0.315 (r12) | 2 invalid/cap | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/30) |
+| 548337 | 196884 | person | 0.885 / 0.881 | 0.183 (r8) | 2 invalid/cap | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/30) |
+| 548337 | 326347 | cell phone | 0.723 / 0.723 | 0.013 (r1) | 2 invalid/cap | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/30) |
+| 548337 | 675713 | cup | 0.941 / 0.956 | 0.037 (r0) | 2 invalid/cap | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/30) |
+| 548337 | 714855 | bowl | 0.908 / 0.908 | 0.009 (r0) | 2 invalid/cap | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-01.json#/generation/rows/30) |
+| 575627 | 1877026 | cup | 0.732 / 0.700 | 0.017 (r6) | 2 EOS | [raw](/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-source256-completion-ce-normalization/runtime/main-normalized-v1/readback/Bnormalized64/train/shard-06.json#/generation/rows/31) |
+
+## Credit limits and route evidence
+
+**No row/token is labeled the causal earliest harmful action.** No saved logits, same-history intervention or successful alternative continuation is inferred. A worse eventual suffix cannot make a legal owner/order choice intrinsically wrong. Exact or high-overlap boxes alone do not prove duplicate physical identity; unknown rows are never relabeled FP. Description correctness and complete-trajectory correctness do not follow from box matching.
+
+For the7 EOS cases, the negative judgment is limited to termination with unmet trusted-bank obligations, subject to the stated retained-evidence identity assessment. It does not supply a correct next token or a same-history positive suffix. Geometry candidates are excluded from this immediate stop attribution. For image548337, validity of the explicit zero-width box can be rejected locally, but no claim says correcting it will recover any particular one of the six owners.
+
+At the **complete-continuation** level, A64 has a strict superset of normalized known-owner matches on15/18 selected images, with no worse malformed/repeat-proxy/cap counts. These same-prompt/image pairs support a bounded known-bank preference, including cases with HOLD on local identity. They do not certify every A token or unmatched row. The remaining images25274,64010,102420 trade known owners: no strict set-dominance preference is assigned. This is selected diagnostic evidence, not fresh generalization evaluation or15 independent mechanism confirmations.
+
+## One recommended next discriminator — proposal only
+
+**Question:** Does complete-continuation preference add natural-greedy preservation beyond learning the very same preferred continuations positively? This tests credit at the route level; it does not invent local negatives at legal divergence tokens.
+
+**Proposed contrast, requiring a new authorization:** from the same accepted B-normalized64 checkpoint, use only the15 retained same-image/prompt A64-versus-normalized64 strict-dominance pairs. Compare (P) positive-only CE on the preferred complete continuations with (R) the identical positive term plus one predeclared full-continuation preference term against the retained lower-coverage continuation. Keep canonical replay, geometry, image schedule, optimizer, dose and positive denominator identical. Suggested bounded dose: one seed,16 updates per arm, one frozen preference coefficient, no sweep. Pairwise credit belongs to the complete continuation under the original prompt, not to an imagined common-history local action. These are model-generated known-bank preferences, not new GT; sequence likelihood can still reinforce unknown rows, so this risk must be explicit rather than claimed gradient-neutral.
+
+**Predecessor difference:** the earlier [positive-progress matched margin result](../../../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-11-positive-progress-matched-control/results.md) found +31 TP50 on reference56 but -4 outside328. R would rank complete same-prompt continuations by trusted-owner set dominance, not enforce a floor on Source tokens or punish the first differing legal row. P is necessary because merely teaching A completions could explain any benefit.
+
+**Strongest alternative:** apparent benefit is reference imitation or changed effective positive learning, with no incremental route-credit value. Both arms must report preferred-continuation learning and natural outcomes; unequal positive learning limits mechanism attribution and does not trigger a dose-matching sweep. The15 selected images are training/reference evidence, not an unbiased endpoint.
+
+**Natural-greedy acceptance:** evaluate the full frozen train256/dev128 with the same bs4/RP1/cap3084 and one-to-one bank. Report selected15 separately from outside-reference train241 and dev128. R must improve full-train FN over P and the starting checkpoint, preserve at least the starting91 Source-new gains, reduce starting55 Source-old losses, and avoid any output-debt category regression versus P. Dev FN must not regress versus either P or starting276; outside-reference owner coverage must not regress versus P. Recovering only the selected28 deficits is insufficient. Promotion additionally retains the original stricter A/Source gates (train FN<628, train old loss<=35, dev FN<=271, dev old loss<=26, debt no worse A).
+
+**Stop:** one frozen endpoint per arm; any failure closes this discriminator without extra seed/dose/refresh or expensive witness collection. If pair admission cannot be defended from retained evidence, HOLD rather than broadening admission. No run is authorized or launched by this recommendation.

@@ -14,6 +14,10 @@ This repository studies this research topic as a whole. `research/` is its knowl
 
 ## Exact continuation boundary
 
+The [paired16 complete-output ranking repair result](experiments/2026-09-16-source256-output-ranking-repair/results.md) is technically accepted and closed. R improves train/dev FN to632/265 versus P638/284, but outside-reference coverage and output-debt gates fail; actual starting91 gains retain59 with32 lost and31 replacements. Neither arm is promoted. [State](experiments/2026-09-16-source256-output-ranking-repair/state.json) owns the stop boundary; no further run is authorized.
+
+The [Source256 completion CE normalization result](experiments/2026-09-16-source256-completion-ce-normalization/results.md) is technically accepted and [closed](experiments/2026-09-16-source256-completion-ce-normalization/state.json). Normalization reduced original B's forgetting and output errors, but gains also shrank; canonical and Source-dev advancement gates remain unmet. The fixed dose is complete; no additional run, weak-bank or visual review is authorized.
+
 The [Source256 fixed-history completion](experiments/2026-09-16-source256-fixed-prefix-completion/unit.md)
 is now [closed](experiments/2026-09-16-source256-fixed-prefix-completion/state.json):
 [no incremental value at the registered64-update dose](experiments/2026-09-16-source256-fixed-prefix-completion/results.md).
