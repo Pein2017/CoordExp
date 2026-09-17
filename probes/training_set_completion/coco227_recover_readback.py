@@ -8,6 +8,8 @@ queue.  It has no ``pidfd`` dependency and never polls child state.
 
 from __future__ import annotations
 
+from src.runtime.owned_process import terminate_owned_process
+
 import argparse
 import json
 import os
@@ -19,7 +21,6 @@ import traceback
 from typing import Any, Mapping
 
 from probes.training_set_completion import coco227_trial as frozen
-from probes.training_set_completion import dual_start
 from probes.training_set_completion import training
 from src.runtime.process_completion import next_process_completion, start_process_waiter
 
@@ -496,7 +497,7 @@ def controller(
         for item in active.values():
             process = item["process"]
             if process.poll() is None:
-                dual_start._owned_kill(process)
+                terminate_owned_process(process)
             item["stream"].close()
         failure = {
             "schema": f"{SCHEMA}.controller_failure",

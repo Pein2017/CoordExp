@@ -12,21 +12,7 @@ from typing import Any
 
 import torch
 
-from src.qwen.native import exact_history_inputs, padded_histories, select_compact_replay_logits
-
-
-_HISTORY_KEYS = frozenset(
-    {
-        "input_ids",
-        "attention_mask",
-        "position_ids",
-        "token_type_ids",
-        "cache_position",
-        "rope_deltas",
-        "past_key_values",
-        "inputs_embeds",
-    }
-)
+from src.qwen.native import combine_singleton_native_inputs, exact_history_inputs, select_compact_replay_logits
 
 
 def _target_ids(entry: Mapping[str, Any]) -> list[int]:
@@ -52,43 +38,6 @@ def _prompt_ids(entry: Mapping[str, Any]) -> list[int]:
     return list(values)
 
 
-def _combine_native_inputs(entries: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Combine singleton materializations without guessing non-tensor semantics."""
-    input_rows: list[Mapping[str, Any]] = []
-    for entry in entries:
-        inputs = entry.get("inputs")
-        if not isinstance(inputs, Mapping):
-            raise ValueError("batched replay entry lacks materialized inputs")
-        input_ids = inputs.get("input_ids")
-        if not isinstance(input_ids, torch.Tensor) or input_ids.ndim != 2 or input_ids.shape[0] != 1:
-            raise ValueError("batched replay requires singleton materialized input_ids")
-        input_rows.append(inputs)
-    keys = set(input_rows[0])
-    if any(set(row) != keys for row in input_rows[1:]):
-        raise ValueError("batched replay materializations have different native fields")
-    if "image_grid_thw" not in keys:
-        raise ValueError("batched replay requires native image_grid_thw")
-
-    result: dict[str, Any] = {}
-    for key in keys - _HISTORY_KEYS:
-        values = [row[key] for row in input_rows]
-        if not all(isinstance(value, torch.Tensor) for value in values):
-            raise ValueError(f"batched replay cannot combine non-tensor native field: {key}")
-        tensors = [value for value in values if isinstance(value, torch.Tensor)]
-        if not all(tensor.ndim >= 1 for tensor in tensors):
-            raise ValueError(f"batched replay cannot combine scalar native field: {key}")
-        try:
-            result[key] = torch.cat(tensors, dim=0)
-        except RuntimeError as exc:
-            raise ValueError(f"batched replay cannot concatenate native field: {key}") from exc
-
-    # ``exact_history_inputs`` only needs this source field for its batch-size
-    # assertion before it replaces it with the exact replay histories.
-    prompts = [_prompt_ids(entry) for entry in entries]
-    result["input_ids"], _ = padded_histories(prompts, pad_token_id=0)
-    return result
-
-
 def batched_aligned_logits(
     model: Any, entries: Sequence[Mapping[str, Any]]
 ) -> list[torch.Tensor]:
@@ -103,8 +52,11 @@ def batched_aligned_logits(
     if not entries:
         raise ValueError("batched replay requires at least one entry")
     targets = [_target_ids(entry) for entry in entries]
-    histories = [(*_prompt_ids(entry), *target) for entry, target in zip(entries, targets, strict=True)]
-    native_inputs = _combine_native_inputs(entries)
+    prompts = [_prompt_ids(entry) for entry in entries]
+    histories = [(*prompt, *target) for prompt, target in zip(prompts, targets, strict=True)]
+    native_inputs = combine_singleton_native_inputs(
+        [entry.get("inputs") for entry in entries], prompt_token_ids=prompts,
+    )
     replay_inputs = exact_history_inputs(
         model,
         native_inputs,

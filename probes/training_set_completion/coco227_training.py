@@ -9,6 +9,8 @@ padding can introduce a local mean-of-means.
 
 from __future__ import annotations
 
+from probes.training_set_completion import replay
+
 import argparse
 import json
 import math
@@ -24,9 +26,8 @@ from typing import Any, Mapping, Sequence
 import torch
 import torch.distributed as dist
 
-from probes.training_set_completion import dual_start_distributed as distributed
+from probes.training_set_completion import distributed
 from probes.training_set_completion import training
-from src.qwen.native import select_compact_replay_logits
 
 
 SCHEMA = "training_set_completion.coco227_training.v1"
@@ -51,7 +52,11 @@ def dependency_bindings() -> dict[str, dict[str, Any]]:
     root = Path(__file__).resolve().parents[2]
     return {
         "training_helpers": training.binding(Path(training.__file__)),
+        "artifact_primitives": training.binding(root / "probes/training_set_completion/artifacts.py"),
+        "native_replay_helpers": training.binding(root / "src/qwen/native.py"),
+        "batched_replay_helpers": training.binding(Path(replay.__file__)),
         "distributed_helpers": training.binding(Path(distributed.__file__)),
+        "partition_recipe": training.binding(root / "probes/training_set_completion/dual_start_distributed.py"),
         "shared_raw_axis_validity_hinge": training.binding(
             root / "src/losses/raw_axis_validity_hinge.py"
         ),
@@ -59,16 +64,8 @@ def dependency_bindings() -> dict[str, dict[str, Any]]:
 
 
 def partition_route_indices(total: int, *, rank: int, world_size: int) -> list[int]:
-    return distributed.partition_route_indices(total, rank=rank, world_size=world_size)
-
-
-def microbatch_slices(count: int, microbatch_size: int) -> list[list[int]]:
-    require(type(count) is int and count > 0, "microbatch item count")
-    require(microbatch_size in (1, 2, 3), "microbatch size must be 1, 2, or 3")
-    return [
-        list(range(start, min(count, start + microbatch_size)))
-        for start in range(0, count, microbatch_size)
-    ]
+    from probes.training_set_completion.dual_start_distributed import partition_route_indices as fixed_partition
+    return fixed_partition(total, rank=rank, world_size=world_size)
 
 
 def objective_from_route_terms(
@@ -119,122 +116,6 @@ def objective_from_route_terms(
         )
     geometry = geometry_weight * sum(raw_hinges, zero) / global_image_count
     return ce + geometry
-
-
-def _batched_aligned_logits(
-    model: torch.nn.Module,
-    native_inputs: Mapping[str, Any],
-    routes: Sequence[Mapping[str, Any]],
-    *,
-    pad_token_id: int,
-) -> tuple[list[torch.Tensor], dict[str, int]]:
-    from src.qwen.native import exact_history_inputs
-
-    continuations = [list(route["continuation_token_ids"]) for route in routes]
-    histories = [
-        [*route["prompt_token_ids"], *continuation]
-        for route, continuation in zip(routes, continuations, strict=True)
-    ]
-    width = max(map(len, continuations)) + 1
-    inputs = exact_history_inputs(
-        model,
-        native_inputs,
-        histories,
-        pad_token_id=pad_token_id,
-        logits_to_keep=width,
-    )
-    output = model(**inputs).logits
-    return select_compact_replay_logits(output, [len(row) for row in continuations]), {
-        "history_width": max(map(len, histories)),
-        "history_padding_tokens": sum(
-            max(map(len, histories)) - len(row) for row in histories
-        ),
-        "compact_logit_width": width,
-    }
-
-
-def _route_terms(
-    logits: torch.Tensor,
-    route: Mapping[str, Any],
-    hinge: Mapping[str, Any],
-) -> tuple[torch.Tensor, torch.Tensor, int, dict[str, Any]]:
-    targets = torch.tensor(
-        route["continuation_token_ids"], dtype=torch.long, device=logits.device
-    )
-    ce, metrics = training.masked_ce_loss(logits, targets, route["ce_weights"])
-    raw_hinge = training.raw_axis_validity_hinge(
-        logits,
-        route["trusted_boxes"],
-        coordinate_token_ids=hinge["coordinate_token_ids"],
-        coordinate_bin_values=hinge["coordinate_bin_values"],
-        margin=hinge["margin"],
-    )
-    require(
-        bool(torch.isfinite(ce)) and bool(torch.isfinite(raw_hinge)),
-        "nonfinite route terms",
-    )
-    active = int(metrics["active_tokens"])
-    card = {
-        "route_id": route["route_id"],
-        "active_tokens": active,
-        "masked_nll_sum": metrics["masked_nll_sum"],
-        "active_token_mean_ce": float(ce.detach()),
-        "raw_axis_validity_hinge": float(raw_hinge.detach()),
-    }
-    return ce, raw_hinge, active, card
-
-
-def _prepare_microbatches(
-    qwen: Any,
-    manifest: Mapping[str, Any],
-    routes: Sequence[Mapping[str, Any]],
-    *,
-    device: torch.device,
-    microbatch_size: int,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    from src.inference.bound_requests import build_bound_native_requests as build_requests
-    from src.qwen.native import prepare_native_inputs
-
-    groups = []
-    prompt_padding = 0
-    for indices in microbatch_slices(len(routes), microbatch_size):
-        selected = [routes[index] for index in indices]
-        requests, _ = build_requests(
-            qwen, manifest["model_config"], [route["case"] for route in selected]
-        )
-        batch = prepare_native_inputs(
-            qwen.processor, requests, device=device, record_media_identity=True
-        )
-        require(
-            [list(row) for row in batch.prompt_token_ids]
-            == [route["prompt_token_ids"] for route in selected],
-            "live batched prompt differs",
-        )
-        require(
-            list(batch.media_sha256 or ())
-            == [route["image_identity"]["executed_media_sha256"] for route in selected],
-            "live batched media differs",
-        )
-        require(
-            [list(row) if row is not None else None for row in batch.image_grids]
-            == [
-                route["image_identity"]["observed_image_grid_thw"] for route in selected
-            ],
-            "live batched grids differ",
-        )
-        attention = batch.inputs.get("attention_mask")
-        require(
-            isinstance(attention, torch.Tensor) and attention.ndim == 2,
-            "batched prompt attention mask",
-        )
-        prompt_padding += int((attention == 0).sum().item())
-        groups.append({"routes": selected, "inputs": dict(batch.inputs)})
-    return groups, {
-        "microbatch_size": microbatch_size,
-        "microbatch_count": len(groups),
-        "microbatch_image_counts": [len(group["routes"]) for group in groups],
-        "prompt_padding_tokens": prompt_padding,
-    }
 
 
 def validate_manifest(
@@ -348,7 +229,7 @@ def _rank_receipt(
         "local_model_calls": local_model_calls,
         "elapsed_seconds": time.monotonic() - started,
         "native_preparation": dict(preparation),
-        "resources": distributed._resource_receipt(device),
+        "resources": distributed.resource_receipt(device),
     }
 
 
@@ -412,7 +293,7 @@ def run(
                 require(not output.exists(), "attempt output already exists")
                 output.mkdir(parents=True)
 
-        distributed._coordinated_call(prepare_output, phase=phase)
+        distributed.coordinated_call(prepare_output, phase=phase)
         dist.barrier()
         signal.signal(signal.SIGALRM, expired)
         signal.alarm(math.ceil(manifest["runtime"]["wall_seconds"]))
@@ -486,10 +367,10 @@ def run(
             )
 
         qwen, loaded, model, named, frozen, checkpointing, optimizer, start_step = (
-            distributed._coordinated_call(setup_model, phase=phase)
+            distributed.coordinated_call(setup_model, phase=phase)
         )
         setup_seconds = time.monotonic() - setup_started
-        distributed._require_consensus(
+        distributed.require_consensus(
             distributed.state_fingerprint(named, optimizer), label="initial state"
         )
         route_indices = partition_route_indices(
@@ -498,8 +379,8 @@ def run(
         local_routes = [manifest["routes"][index] for index in route_indices]
         phase = "native_input_setup"
         native_started = time.monotonic()
-        microbatches, preparation = distributed._coordinated_call(
-            lambda: _prepare_microbatches(
+        microbatches, preparation = distributed.coordinated_call(
+            lambda: replay.prepare_microbatches(
                 qwen,
                 manifest,
                 local_routes,
@@ -534,7 +415,7 @@ def run(
                     local_step_calls, \
                     history_padding
                 for group in microbatches:
-                    logits_rows, padding = _batched_aligned_logits(
+                    logits_rows, padding = replay.batched_aligned_logits(
                         model,
                         group["inputs"],
                         group["routes"],
@@ -544,7 +425,7 @@ def run(
                     hinges = []
                     active = []
                     for logits, route in zip(logits_rows, group["routes"], strict=True):
-                        ce, raw_hinge, count, card = _route_terms(
+                        ce, raw_hinge, count, card = replay.route_terms(
                             logits, route, manifest["validity_hinge"]
                         )
                         ce_means.append(ce)
@@ -588,7 +469,7 @@ def run(
                     "frozen parameter received gradient",
                 )
 
-            distributed._coordinated_call(forward_backward, phase=phase)
+            distributed.coordinated_call(forward_backward, phase=phase)
             forward_seconds = time.monotonic() - forward_started
             phase = f"update_{step}_gradient_sum"
             collective_started = time.monotonic()
@@ -610,7 +491,7 @@ def run(
                         )
                         gradient_snapshot = training.binding(path)
 
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     save_snapshot, phase="qualification_gradient_snapshot"
                 )
                 snapshot_seconds = time.monotonic() - snapshot_started
@@ -642,7 +523,7 @@ def run(
                 )
             )
             global_hinge = float(metric[1].item() / GLOBAL_IMAGE_COUNT)
-            gathered_cards = distributed._gather_objects(cards)
+            gathered_cards = distributed.gather_objects(cards)
             ordered_cards = [card for rows in gathered_cards for card in rows]
             require(
                 [card["route_id"] for card in ordered_cards]
@@ -660,9 +541,9 @@ def run(
                 "local_logical_forwards": len(local_routes),
                 "history_padding_tokens": history_padding,
                 "prompt_padding_tokens": prompt_padding,
-                "resources": distributed._resource_receipt(device),
+                "resources": distributed.resource_receipt(device),
             }
-            rank_timings = distributed._gather_objects(local_timing)
+            rank_timings = distributed.gather_objects(local_timing)
             update = {
                 "schema": f"{SCHEMA}.update.v1",
                 "step": step,
@@ -703,7 +584,7 @@ def run(
                     },
                 },
             }
-            distributed._coordinated_call(
+            distributed.coordinated_call(
                 lambda: training.publish(
                     output / "updates" / f"step-{step:05d}.json", update
                 )
@@ -714,7 +595,7 @@ def run(
             if step in manifest["runtime"]["checkpoint_steps"]:
                 phase = f"checkpoint_{step}"
                 state = distributed.state_fingerprint(named, optimizer)
-                states = distributed._require_consensus(
+                states = distributed.require_consensus(
                     state, label=f"checkpoint {step}"
                 )
                 require(state["optimizer_steps"] == [step], "optimizer counter")
@@ -733,13 +614,13 @@ def run(
                             step=step,
                         )
 
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     save_checkpoint, phase=f"checkpoint_{step}_save"
                 )
                 dist.barrier()
                 save_seconds = time.monotonic() - save_started
                 consensus = {"step": step, "state": state, "rank_count": len(states)}
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     lambda: training.publish(
                         output / "checkpoints" / f"step-{step:05d}" / "consensus.json",
                         consensus,
@@ -748,7 +629,7 @@ def run(
                     else None,
                     phase=f"checkpoint_{step}_consensus_receipt",
                 )
-                gathered_io = distributed._gather_objects(
+                gathered_io = distributed.gather_objects(
                     {"rank": rank, "checkpoint_io_seconds": save_seconds}
                 )
                 checkpoint_consensus.append(consensus)
@@ -772,8 +653,8 @@ def run(
                 "native_input_setup_seconds": native_seconds,
             },
         )
-        receipts = distributed._gather_objects(receipt)
-        distributed._coordinated_call(
+        receipts = distributed.gather_objects(receipt)
+        distributed.coordinated_call(
             lambda: training.publish(
                 output / "ranks" / f"rank-{rank:03d}.json", receipt
             ),
@@ -817,7 +698,7 @@ def run(
                 },
             },
         }
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: training.publish(output / "terminal.json", terminal)
             if rank == 0
             else None,

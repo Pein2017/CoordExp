@@ -276,21 +276,39 @@ def test_qualification_receipt_binds_qualification_and_main_entries(tmp_path) ->
     ) == receipt
 
 
-def test_runner_seam_uses_private_globals_without_mutating_predecessor() -> None:
-    originals = {
-        "schema": predecessor.SCHEMA,
-        "file": predecessor.__file__,
-        "terms": predecessor._route_terms,
-        "resolver": predecessor.resolve_update_presentations,
-        "validator": predecessor.validate_training_manifest,
-    }
-    runner = normalized._runner()
-    assert predecessor.SCHEMA == originals["schema"]
-    assert predecessor.__file__ == originals["file"]
-    assert predecessor._route_terms is originals["terms"]
-    assert predecessor.resolve_update_presentations is originals["resolver"]
-    assert predecessor.validate_training_manifest is originals["validator"]
-    assert runner.__globals__["_route_terms"] is normalized._route_terms
-    assert runner.__globals__["resolve_update_presentations"] is normalized.resolve_update_presentations
-    assert runner.__globals__["validate_training_manifest"] is normalized.validate_training_manifest
-    assert runner.__globals__["training"] is not normalized.training
+def test_actual_entry_passes_explicit_variant_functions_without_changing_predecessor(tmp_path, monkeypatch) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}")
+    manifest = {"mode": "main", "arm": normalized.B_NORMALIZED}
+    calls = []
+    original_terms = normalized.replay.route_terms
+    original_resolver = predecessor.resolve_update_presentations
+    monkeypatch.setattr(normalized, "validate_training_manifest", lambda value: manifest)
+    monkeypatch.setattr(normalized, "validate_release", lambda *args, **kwargs: {})
+    monkeypatch.setattr(normalized, "_dependency_bindings", lambda: {"normalized": {"sha256": "bound"}})
+    def execute(path, **kwargs):
+        calls.append((path, kwargs))
+        return {"status": "completed"}
+    monkeypatch.setattr(predecessor, "run_paired_training", execute)
+    assert normalized.run(manifest_path, output=tmp_path / "output", release_receipt=tmp_path / "release") == {"status": "completed"}
+    path, options = calls.pop()
+    assert path == manifest_path.resolve()
+    assert options["receipt_schema"] == normalized.SCHEMA
+    assert options["validate_manifest"] is normalized.validate_training_manifest
+    assert options["resolve_presentations"] is normalized.resolve_update_presentations
+    assert options["route_terms"] is normalized._route_terms
+    assert options["enrich_update"] is normalized._enrich_update
+    assert options["dependency_bindings"] == {"normalized": {"sha256": "bound"}}
+    assert normalized.replay.route_terms is original_terms
+    assert predecessor.resolve_update_presentations is original_resolver
+
+
+def test_normalized_projection_preserves_original_variant_input_and_digest() -> None:
+    # Exercise the projection boundary independently of production artifacts.
+    original = {"arm": normalized.B_NORMALIZED, "ce_normalization": {"completion_only": True},
+                "objective": {}, "schema": normalized.MANIFEST_SCHEMA}
+    shadow = normalized._shadow_for_predecessor_validation(original)
+    assert shadow["arm"] == "B" and "ce_normalization" not in shadow
+    assert original["arm"] == normalized.B_NORMALIZED
+    assert shadow["content_sha256"] == normalized.training.digest(
+        {key: value for key, value in shadow.items() if key != "content_sha256"})

@@ -8,16 +8,18 @@ eligible completion route:
 
 Canonical routes and canonical fallbacks retain their active-token mean.  The
 geometry hinge, its denominator and its weight are delegated to the unchanged
-Source256 implementation.  The adapter around the runner exists so the old
-producer remains byte-for-byte bound to its historical receipts.
+Source256 implementation.  The shared runner receives explicit
+variant functions. Historical receipts continue to identify their original
+Git/source snapshots; current launches must bind the refactored sources.
 """
 from __future__ import annotations
+
+from probes.training_set_completion import distributed, replay
 
 import copy
 import json
 from pathlib import Path
 import statistics
-from types import FunctionType
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -41,8 +43,6 @@ SHARED_PREPARATION_SHA256 = (
 )
 SOURCE_CONFIG = Path(__file__).resolve().parents[1] / "dora_owner_learning/configs/source256.yaml"
 PREDECESSOR_PATH = Path(predecessor.__file__).resolve()
-_PREDECESSOR_VALIDATE_MANIFEST = predecessor.validate_training_manifest
-_PREDECESSOR_RESOLVE_PRESENTATIONS = predecessor.resolve_update_presentations
 SCHEMA = "training_set_completion.source256_normalized_training.v1"
 MANIFEST_SCHEMA = "training_set_completion.source256_normalized_training_manifest.v1"
 PREPARATION_SCHEMA = "training_set_completion.source256_normalized_preparation.v1"
@@ -68,9 +68,6 @@ SOURCE_ADAPTER_FINGERPRINT = predecessor.SOURCE_ADAPTER_FINGERPRINT
 SOURCE_ADAPTER_SCALAR_COUNT = predecessor.SOURCE_ADAPTER_SCALAR_COUNT
 
 # These are read-only aliases to the established producer/runtime helpers.
-_batched_aligned_logits = predecessor._batched_aligned_logits
-_prepare_microbatches = predecessor._prepare_microbatches
-distributed = predecessor.distributed
 validate_schedule = predecessor.validate_schedule
 validate_route_record = predecessor.validate_route_record
 validate_records = predecessor.validate_records
@@ -155,7 +152,7 @@ def resolve_update_presentations(
     require(len(by_image) == len(records), "duplicate route-record image")
     # The predecessor resolver owns common/variable schedule semantics.  It is
     # called with its historical B spelling solely to select the same routes.
-    selected = _PREDECESSOR_RESOLVE_PRESENTATIONS(records, update, arm="B")
+    selected = predecessor.resolve_update_presentations(records, update, arm="B")
     checked: list[dict[str, Any]] = []
     for presentation in selected:
         image_id = int(presentation["image_id"])
@@ -468,7 +465,10 @@ def _dependency_bindings() -> dict[str, dict[str, Any]]:
         "normalized_training": training.binding(Path(__file__)),
         "data_consumer": training.binding(Path(source256_data.__file__)),
         "training_helpers": training.binding(Path(training.__file__)),
-        "batched_replay_helpers": training.binding(PREDECESSOR_PATH),
+        "artifact_primitives": training.binding(root / "probes/training_set_completion/artifacts.py"),
+        "native_replay_helpers": training.binding(root / "src/qwen/native.py"),
+        "paired_training_backend": training.binding(PREDECESSOR_PATH),
+        "batched_replay_helpers": training.binding(Path(replay.__file__)),
         "distributed_helpers": training.binding(Path(distributed.__file__)),
         "shared_geometry": training.binding(root / "src/losses/raw_axis_validity_hinge.py"),
     }
@@ -488,26 +488,6 @@ def _shadow_for_predecessor_validation(value: Mapping[str, Any]) -> dict[str, An
         {key: item for key, item in shadow.items() if key != "content_sha256"}
     )
     return shadow
-
-
-def _validate_with_predecessor_contract(
-    shadow: Mapping[str, Any], *, verify_sources: bool
-) -> dict[str, Any]:
-    """Run the old structural validator through private globals."""
-
-    validator_globals = _PREDECESSOR_VALIDATE_MANIFEST.__globals__.copy()
-    validator_globals.update(
-        {
-            "MANIFEST_SCHEMA": MANIFEST_SCHEMA,
-            "__file__": str(Path(__file__).resolve()),
-        }
-    )
-    validator = FunctionType(
-        _PREDECESSOR_VALIDATE_MANIFEST.__code__,
-        validator_globals,
-        name="source256_normalized_predecessor_manifest_validator",
-    )
-    return validator(shadow, verify_sources=verify_sources)
 
 
 def validate_training_manifest(
@@ -563,7 +543,10 @@ def validate_training_manifest(
         "normalized CE contract",
     )
     shadow = _shadow_for_predecessor_validation(value)
-    _validate_with_predecessor_contract(shadow, verify_sources=verify_sources)
+    predecessor.validate_training_recipe(
+        shadow, manifest_schema=MANIFEST_SCHEMA, producer_path=Path(__file__),
+        verify_sources=verify_sources,
+    )
     return dict(value)
 
 
@@ -930,63 +913,6 @@ def validate_qualification_receipt(
     return dict(value)
 
 
-class _TrainingProxy:
-    """Delegate the runner's helpers while enriching only normalized updates."""
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(training, name)
-
-    def publish(self, path: str | Path, value: Any) -> None:
-        training.publish(path, _enrich_update(value))
-
-
-_TRAINING_PROXY = _TrainingProxy()
-
-
-def _normalized_rank_receipt(**kwargs: Any) -> dict[str, Any]:
-    receipt = predecessor._rank_receipt(**kwargs)
-    receipt["schema"] = f"{SCHEMA}.rank.v1"
-    return receipt
-
-
-def _runner() -> FunctionType:
-    """Create a private-global view of the old runner without mutating it.
-
-    ``source256_training.run`` has no dependency-injection parameter.  A
-    FunctionType view keeps its tested distributed/checkpoint control flow while
-    resolving only the normalized globals in this module.  The predecessor
-    module object and its bound bytes remain untouched in every process.
-    """
-
-    runner_globals = predecessor.run.__globals__.copy()
-    runner_globals.update(
-        {
-            "SCHEMA": SCHEMA,
-            "MANIFEST_SCHEMA": MANIFEST_SCHEMA,
-            "__file__": str(Path(__file__).resolve()),
-            "training": _TRAINING_PROXY,
-            "_route_terms": _route_terms,
-            "resolve_update_presentations": resolve_update_presentations,
-            "validate_training_manifest": validate_training_manifest,
-            "_dependency_bindings": _dependency_bindings,
-            "_rank_receipt": _normalized_rank_receipt,
-            "objective_from_presentation_terms": objective_from_presentation_terms,
-            "validate_preparation": validate_preparation,
-            "hydrate_bound_cases": hydrate_bound_cases,
-            "source_adapter_scalar_count": source_adapter_scalar_count,
-            "_batched_aligned_logits": _batched_aligned_logits,
-            "_prepare_microbatches": _prepare_microbatches,
-            "distributed": distributed,
-            "partition_update_presentations": partition_update_presentations,
-            "BRANCHES": BRANCHES,
-            "PRESENTATIONS_PER_UPDATE": PRESENTATIONS_PER_UPDATE,
-        }
-    )
-    return FunctionType(
-        predecessor.run.__code__, runner_globals, name="source256_normalized_run"
-    )
-
-
 def _default_main_manifest_path(qualification_manifest_path: Path) -> Path:
     """Locate the paired main manifest in the standard successor runtime root."""
 
@@ -1031,7 +957,12 @@ def run(
             manifest,
             main_manifest_path or _default_main_manifest_path(manifest_path),
         )
-    result = _runner()(manifest_path, output=output)
+    result = predecessor.run_paired_training(
+        manifest_path, output=output, producer_path=Path(__file__),
+        receipt_schema=SCHEMA, validate_manifest=validate_training_manifest,
+        resolve_presentations=resolve_update_presentations, route_terms=_route_terms,
+        dependency_bindings=_dependency_bindings(), enrich_update=_enrich_update,
+    )
     if result is not None and manifest["mode"] == "qualification":
         require(paired_main is not None, "paired main manifest qualification binding")
         paired_main_path, _paired_main_manifest = paired_main

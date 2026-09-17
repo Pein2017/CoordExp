@@ -1,9 +1,11 @@
 """COCO22 full-replay sample-mean trainer; all eight ranks sum gradients once/update.
 
-The prior COCO227 replay and checkpoint helpers are reused without changing their
+The shared completion replay and checkpoint helpers are reused without changing their
 hash-bound producer. No wall-clock signal or experiment kill cap is installed.
 """
 from __future__ import annotations
+
+from probes.training_set_completion import replay
 import argparse
 import copy
 import json
@@ -18,7 +20,7 @@ from typing import Any, Mapping, Sequence
 import torch
 import torch.distributed as dist
 from probes.training_set_completion import coco227_training as previous
-from probes.training_set_completion import dual_start_distributed as distributed
+from probes.training_set_completion import distributed
 from probes.training_set_completion import training
 
 SCHEMA = "training_set_completion.coco22_training.v1"
@@ -33,16 +35,14 @@ OLD_BANK = Path(
     "2026-09-15-coco227-ce-normalization/data-v1/bank.json"
 )
 OLD_BANK_SHA256 = "d65126ec827a9cd070b6a06c4557f44e2bb6c5a37b3fb3fc1b1fb6e94d172aac"
-_batched_aligned_logits = previous._batched_aligned_logits
-_route_terms = previous._route_terms
-_prepare_microbatches = previous._prepare_microbatches
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
 
 def dependency_bindings() -> dict[str, dict[str, Any]]:
-    return previous.dependency_bindings()
+    return {**previous.dependency_bindings(),
+            "ce_reduction_recipe": training.binding(Path(previous.__file__))}
 
 def partition_route_indices(total: int, *, rank: int, world_size: int) -> list[int]:
     require(total == GLOBAL_IMAGE_COUNT and world_size == REQUIRED_WORLD_SIZE and 0 <= rank < world_size,
@@ -210,7 +210,7 @@ def _rank_receipt(
         "local_model_calls": local_model_calls,
         "elapsed_seconds": time.monotonic() - started,
         "native_preparation": dict(preparation),
-        "resources": distributed._resource_receipt(device),
+        "resources": distributed.resource_receipt(device),
     }
 
 
@@ -269,7 +269,7 @@ def run(
                 require(not output.exists(), "attempt output already exists")
                 output.mkdir(parents=True)
 
-        distributed._coordinated_call(prepare_output, phase=phase)
+        distributed.coordinated_call(prepare_output, phase=phase)
         dist.barrier()
         phase = "model_setup"
         setup_started = time.monotonic()
@@ -356,10 +356,10 @@ def run(
             )
 
         qwen, loaded, model, named, frozen, checkpointing, optimizer, start_step, cold_adapter = (
-            distributed._coordinated_call(setup_model, phase=phase)
+            distributed.coordinated_call(setup_model, phase=phase)
         )
         setup_seconds = time.monotonic() - setup_started
-        distributed._require_consensus(
+        distributed.require_consensus(
             distributed.state_fingerprint(named, optimizer), label="initial state"
         )
         route_indices = partition_route_indices(
@@ -368,8 +368,8 @@ def run(
         local_routes = [manifest["routes"][index] for index in route_indices]
         phase = "native_input_setup"
         native_started = time.monotonic()
-        microbatches, preparation = distributed._coordinated_call(
-            lambda: _prepare_microbatches(
+        microbatches, preparation = distributed.coordinated_call(
+            lambda: replay.prepare_microbatches(
                 qwen,
                 manifest,
                 local_routes,
@@ -404,7 +404,7 @@ def run(
                     local_step_calls, \
                     history_padding
                 for group in microbatches:
-                    logits_rows, padding = _batched_aligned_logits(
+                    logits_rows, padding = replay.batched_aligned_logits(
                         model,
                         group["inputs"],
                         group["routes"],
@@ -414,7 +414,7 @@ def run(
                     hinges = []
                     active = []
                     for logits, route in zip(logits_rows, group["routes"], strict=True):
-                        ce, raw_hinge, count, card = _route_terms(
+                        ce, raw_hinge, count, card = replay.route_terms(
                             logits, route, manifest["validity_hinge"]
                         )
                         ce_means.append(ce)
@@ -458,7 +458,7 @@ def run(
                     "frozen parameter received gradient",
                 )
 
-            distributed._coordinated_call(forward_backward, phase=phase)
+            distributed.coordinated_call(forward_backward, phase=phase)
             forward_seconds = time.monotonic() - forward_started
             phase = f"update_{step}_gradient_sum"
             collective_started = time.monotonic()
@@ -480,7 +480,7 @@ def run(
                         )
                         gradient_snapshot = training.binding(path)
 
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     save_snapshot, phase="qualification_gradient_snapshot"
                 )
                 snapshot_seconds = time.monotonic() - snapshot_started
@@ -512,7 +512,7 @@ def run(
                 )
             )
             global_hinge = float(metric[1].item() / GLOBAL_IMAGE_COUNT)
-            gathered_cards = distributed._gather_objects(cards)
+            gathered_cards = distributed.gather_objects(cards)
             ordered_cards = [card for rows in gathered_cards for card in rows]
             require(
                 [card["route_id"] for card in ordered_cards]
@@ -530,9 +530,9 @@ def run(
                 "local_logical_forwards": len(local_routes),
                 "history_padding_tokens": history_padding,
                 "prompt_padding_tokens": prompt_padding,
-                "resources": distributed._resource_receipt(device),
+                "resources": distributed.resource_receipt(device),
             }
-            rank_timings = distributed._gather_objects(local_timing)
+            rank_timings = distributed.gather_objects(local_timing)
             update = {
                 "schema": f"{SCHEMA}.update.v1",
                 "step": step,
@@ -574,7 +574,7 @@ def run(
                     },
                 },
             }
-            distributed._coordinated_call(
+            distributed.coordinated_call(
                 lambda: training.publish(
                     output / "updates" / f"step-{step:05d}.json", update
                 )
@@ -585,7 +585,7 @@ def run(
             if step in manifest["runtime"]["checkpoint_steps"]:
                 phase = f"checkpoint_{step}"
                 state = distributed.state_fingerprint(named, optimizer)
-                states = distributed._require_consensus(
+                states = distributed.require_consensus(
                     state, label=f"checkpoint {step}"
                 )
                 require(state["optimizer_steps"] == [step], "optimizer counter")
@@ -604,13 +604,13 @@ def run(
                             step=step,
                         )
 
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     save_checkpoint, phase=f"checkpoint_{step}_save"
                 )
                 dist.barrier()
                 save_seconds = time.monotonic() - save_started
                 consensus = {"step": step, "state": state, "rank_count": len(states)}
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     lambda: training.publish(
                         output / "checkpoints" / f"step-{step:05d}" / "consensus.json",
                         consensus,
@@ -619,7 +619,7 @@ def run(
                     else None,
                     phase=f"checkpoint_{step}_consensus_receipt",
                 )
-                gathered_io = distributed._gather_objects(
+                gathered_io = distributed.gather_objects(
                     {"rank": rank, "checkpoint_io_seconds": save_seconds}
                 )
                 checkpoint_consensus.append(consensus)
@@ -643,7 +643,7 @@ def run(
                 "native_input_setup_seconds": native_seconds,
             },
         )
-        receipts = distributed._gather_objects(receipt)
+        receipts = distributed.gather_objects(receipt)
         segment_steps = manifest["runtime"]["updates"] - start_step
         segment_calls = segment_steps * sum(
             math.ceil(count / manifest["runtime"]["microbatch_size"])
@@ -655,7 +655,7 @@ def run(
             and sum(row["local_model_calls"] for row in receipts) == segment_calls,
             "executed segment/full-cohort receipt counters",
         )
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: training.publish(
                 output / "ranks" / f"rank-{rank:03d}.json", receipt
             ),
@@ -708,7 +708,7 @@ def run(
                 },
             },
         }
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: training.publish(output / "terminal.json", terminal)
             if rank == 0
             else None,

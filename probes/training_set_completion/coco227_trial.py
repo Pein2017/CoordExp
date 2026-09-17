@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+
+from src.runtime.owned_process import spawn_logged_process, terminate_owned_process
+
 import argparse
 import copy
 import json
@@ -578,7 +581,7 @@ def qualification_controller(*, plan_path: Path, output: Path) -> dict[str, Any]
             try:
                 code = process.wait(timeout=QUALIFICATION_WALL_SECONDS)
             except subprocess.TimeoutExpired:
-                dual_start._owned_kill(process)
+                terminate_owned_process(process)
                 code = "timeout"
             finally:
                 stream.close()
@@ -845,26 +848,12 @@ def validate_trial(
     return dict(value)
 
 
-def _spawn(
-    command: list[str], *, visible_devices: str, log_path: Path
-) -> tuple[subprocess.Popen[Any], Any, float]:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    stream = log_path.open("x")
-    started = time.monotonic()
-    process = subprocess.Popen(
-        command,
-        cwd=REPO,
-        stdout=stream,
-        stderr=subprocess.STDOUT,
-        env={
-            **os.environ,
-            "CUDA_VISIBLE_DEVICES": visible_devices,
-            "OMP_NUM_THREADS": "2",
-            "TOKENIZERS_PARALLELISM": "false",
-        },
-        start_new_session=True,
+def _spawn(command: list[str], *, visible_devices: str, log_path: Path) -> tuple[subprocess.Popen[Any], Any, float]:
+    return spawn_logged_process(
+        command, cwd=REPO, log_path=log_path,
+        env={"CUDA_VISIBLE_DEVICES": visible_devices, "OMP_NUM_THREADS": "2",
+             "TOKENIZERS_PARALLELISM": "false"},
     )
-    return process, stream, started
 
 
 def _readback_command(
@@ -1276,7 +1265,7 @@ def controller(*, trial_path: Path, output: Path, release_path: Path) -> None:
         def cleanup_owned(process: Any, stream: Any, name: str) -> None:
             try:
                 if process.poll() is None:
-                    dual_start._owned_kill(process)
+                    terminate_owned_process(process)
             except BaseException as cleanup_exc:
                 cleanup_errors.append(
                     {"name": name, "error": f"{type(cleanup_exc).__name__}: {cleanup_exc}"}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from probes.training_set_completion import replay
+
 from collections import Counter
 import json
 from pathlib import Path
@@ -203,7 +205,7 @@ def test_completion_prefix_is_masked_but_remains_in_differentiable_history() -> 
     route = record["completion_route"]
     assert route is not None and route["ce_weights"] == [0, 0, 1, 1, 1, 1, 1]
     model = CausalToy()
-    logits, _ = source256._batched_aligned_logits(
+    logits, _ = replay.batched_aligned_logits(
         model,
         {
             "input_ids": torch.ones((1, 2), dtype=torch.long),
@@ -212,7 +214,7 @@ def test_completion_prefix_is_masked_but_remains_in_differentiable_history() -> 
         [route],
         pad_token_id=0,
     )
-    ce, _, active, _ = source256._route_terms(
+    ce, _, active, _ = replay.route_terms(
         logits[0],
         route,
         {

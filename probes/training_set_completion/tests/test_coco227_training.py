@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from probes.training_set_completion import replay
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +16,13 @@ from src.qwen.native import select_compact_replay_logits
 
 
 ACTIVE = [1, 7, 2, 11, 3, 13, 5, 17, 19, 23, 29]
+
+
+def test_execution_bindings_include_the_actual_partition_recipe():
+    from probes.training_set_completion import dual_start_distributed
+
+    expected = training227.training.binding(Path(dual_start_distributed.__file__))
+    assert expected in training227.dependency_bindings().values()
 
 
 def _model() -> torch.nn.Module:
@@ -207,7 +216,7 @@ def test_exact_history_batch_padding_and_supervision_gradient_match_serial():
         "image_grid_thw": torch.ones((3, 3), dtype=torch.long),
     }
     batched_model = _ExactHistoryModel()
-    batched, padding = training227._batched_aligned_logits(
+    batched, padding = replay.batched_aligned_logits(
         batched_model, native, routes, pad_token_id=0
     )
     batched_loss = sum(
@@ -223,7 +232,7 @@ def test_exact_history_batch_padding_and_supervision_gradient_match_serial():
     serial_model = _ExactHistoryModel()
     serial_loss = serial_model.scale.new_zeros(())
     for index, route in enumerate(routes):
-        logits, _ = training227._batched_aligned_logits(
+        logits, _ = replay.batched_aligned_logits(
             serial_model,
             {
                 "input_ids": native["input_ids"][index : index + 1],
@@ -248,7 +257,7 @@ def test_exact_history_batch_padding_and_supervision_gradient_match_serial():
 
 
 def test_microbatch_slices_preserve_local_order_without_empty_batches():
-    assert training227.microbatch_slices(3, 1) == [[0], [1], [2]]
-    assert training227.microbatch_slices(3, 2) == [[0, 1], [2]]
-    assert training227.microbatch_slices(3, 3) == [[0, 1, 2]]
-    assert training227.microbatch_slices(2, 3) == [[0, 1]]
+    assert replay.microbatch_slices(3, 1) == [[0], [1], [2]]
+    assert replay.microbatch_slices(3, 2) == [[0, 1], [2]]
+    assert replay.microbatch_slices(3, 3) == [[0, 1, 2]]
+    assert replay.microbatch_slices(2, 3) == [[0, 1]]

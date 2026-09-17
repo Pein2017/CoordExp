@@ -7,6 +7,8 @@ resume without retraining a valid checkpoint.
 """
 from __future__ import annotations
 
+from src.runtime.owned_process import spawn_logged_process, terminate_owned_process, wait_owned_process
+
 import argparse
 import json
 import os
@@ -148,33 +150,11 @@ def tmux_launch_command(*, packet_path: Path, release_path: Path, output: Path) 
 
 
 def _spawn(command: list[str], *, visible_devices: str, log_path: Path) -> tuple[subprocess.Popen[Any], Any, float]:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    stream = log_path.open("x")
-    started = time.monotonic()
-    process = subprocess.Popen(
-        command,
-        cwd=Path(__file__).resolve().parents[2],
-        stdout=stream,
-        stderr=subprocess.STDOUT,
-        env={
-            **os.environ,
-            "CUDA_VISIBLE_DEVICES": visible_devices,
-            "OMP_NUM_THREADS": "2",
-            "TOKENIZERS_PARALLELISM": "false",
-        },
-        start_new_session=True,
+    return spawn_logged_process(
+        command, cwd=Path(__file__).resolve().parents[2], log_path=log_path,
+        env={"CUDA_VISIBLE_DEVICES": visible_devices, "OMP_NUM_THREADS": "2",
+             "TOKENIZERS_PARALLELISM": "false"},
     )
-    return process, stream, started
-
-
-def _kill(process: subprocess.Popen[Any]) -> None:
-    if process.poll() is None:
-        os.killpg(process.pid, 15)
-        try:
-            process.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, 9)
-            process.wait(timeout=30)
 
 
 def _wait_one(
@@ -189,9 +169,7 @@ def _wait_one(
 ) -> dict[str, Any]:
     deadline = started + wall_seconds
     try:
-        remaining = deadline - time.monotonic()
-        require(remaining > 0, f"{name} wall deadline before wait")
-        code = process.wait(timeout=remaining)
+        code = wait_owned_process(process, deadline=deadline)
         return {
             "name": name,
             "pid": process.pid,
@@ -202,7 +180,6 @@ def _wait_one(
             "deadline_monotonic": deadline,
         }
     except subprocess.TimeoutExpired as exc:
-        _kill(process)
         raise TimeoutError(f"{name} wall deadline") from exc
     finally:
         stream.close()
@@ -413,7 +390,7 @@ def controller(*, packet_path: Path, release_path: Path, output: Path) -> dict[s
         cleanup_errors = []
         for item in active.values():
             try:
-                _kill(item["process"])
+                terminate_owned_process(item["process"])
             except BaseException as cleanup_exc:
                 cleanup_errors.append(f"{type(cleanup_exc).__name__}: {cleanup_exc}")
             finally:

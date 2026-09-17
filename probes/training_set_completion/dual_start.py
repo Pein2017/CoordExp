@@ -8,6 +8,8 @@ durable per-row natural readbacks.
 """
 from __future__ import annotations
 
+from src.runtime.owned_process import spawn_logged_process, terminate_owned_process, wait_owned_process
+
 import argparse
 import copy
 import hashlib
@@ -529,22 +531,10 @@ def load_admitted_readback_rows(result_path: Path, *, arm: str, step: int) -> tu
     return rows, result
 
 
-def _owned_kill(process: subprocess.Popen[Any]) -> None:
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait(timeout=30)
-
-
 def _stop_live(processes: Sequence[tuple[subprocess.Popen[Any], Any, list[str], str, Any, float]]) -> None:
     for process, _stream, _command, _name, _gpu, _spawned_at in processes:
         if process.poll() is None:
-            _owned_kill(process)
+            terminate_owned_process(process)
 
 
 def distributed_training_command(*, manifest_path: Path, output: Path) -> list[str]:
@@ -574,11 +564,11 @@ def validate_training_terminal(output: Path, *, arm: str) -> dict[str, Any]:
 
 
 def _spawn(command: list[str], *, visible_devices: str, log_path: Path) -> tuple[subprocess.Popen[Any], Any, float]:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    stream = log_path.open("x")
-    spawned_at = time.monotonic()
-    process = subprocess.Popen(command, cwd=REPO, stdout=stream, stderr=subprocess.STDOUT, env={**os.environ, "CUDA_VISIBLE_DEVICES": visible_devices, "OMP_NUM_THREADS": "2", "TOKENIZERS_PARALLELISM": "false"}, start_new_session=True)
-    return process, stream, spawned_at
+    return spawn_logged_process(
+        command, cwd=REPO, log_path=log_path,
+        env={"CUDA_VISIBLE_DEVICES": visible_devices, "OMP_NUM_THREADS": "2",
+             "TOKENIZERS_PARALLELISM": "false"},
+    )
 
 
 def wait_owned_processes(processes: Sequence[tuple[subprocess.Popen[Any], Any, list[str], str, Any, float]], *, wall_seconds: float) -> list[dict[str, Any]]:
@@ -587,18 +577,9 @@ def wait_owned_processes(processes: Sequence[tuple[subprocess.Popen[Any], Any, l
     for process, stream, command, name, gpu, spawned_at in processes:
         deadline = spawned_at + float(wall_seconds)
         try:
-            # A child may have exited while an earlier sibling consumed this
-            # waiter's wall budget.  Completed work is successful even when
-            # observed after its deadline; only a live child is terminated.
-            code = process.poll()
-            if code is None:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise subprocess.TimeoutExpired(command, wall_seconds)
-                code = process.wait(timeout=remaining)
+            code = wait_owned_process(process, deadline=deadline)
             result.append({"name": name, "pid": process.pid, "gpu": gpu, "exit_code": code, "command": command, "spawned_at_monotonic": spawned_at, "deadline_monotonic": deadline})
         except subprocess.TimeoutExpired:
-            _owned_kill(process)
             result.append({"name": name, "pid": process.pid, "gpu": gpu, "exit_code": "timeout", "command": command, "spawned_at_monotonic": spawned_at, "deadline_monotonic": deadline})
             raise
         finally:

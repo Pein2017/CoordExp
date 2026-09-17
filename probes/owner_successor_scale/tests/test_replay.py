@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from probes.owner_successor_scale import replay
+from src.qwen.native import padded_histories
 
 
 class FakeModel:
@@ -43,7 +44,7 @@ def fake_exact_history_inputs(model, native_inputs, histories, *, pad_token_id, 
     assert pad_token_id == 0 and logits_to_keep == 4
     assert native_inputs["pixel_values"].shape[0] == 3
     assert native_inputs["image_grid_thw"].tolist() == [[1, 1, 1], [2, 1, 1]]
-    ids, mask = replay.padded_histories(histories, pad_token_id=pad_token_id)
+    ids, mask = padded_histories(histories, pad_token_id=pad_token_id)
     return {"input_ids": ids, "attention_mask": mask, "logits_to_keep": logits_to_keep}
 
 

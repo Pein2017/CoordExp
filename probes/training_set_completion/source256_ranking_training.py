@@ -3,11 +3,13 @@
 The data producer owns the 256-route preparation, fifteen observed pairs and
 the fixed schedule.  This module owns only the model calls, loss accounting,
 fresh AdamW step, checkpoint, and the 30-route frozen reference cache.  It
-deliberately reuses the Source256 native replay helpers instead of changing the
-historical Source256 runner.
+uses the shared completion replay implementation; its ranking objective and
+reference-cache contract remain separate from the Source256 paired CE runner.
 """
 
 from __future__ import annotations
+
+from probes.training_set_completion import replay
 
 import argparse
 import copy
@@ -26,7 +28,7 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from probes.training_set_completion import dual_start_distributed as distributed
+from probes.training_set_completion import distributed
 from probes.training_set_completion import source256_ranking_data as data_source
 from probes.training_set_completion import source256_training as source256
 from probes.training_set_completion import training
@@ -49,11 +51,6 @@ GEOMETRY_WEIGHT = 0.01
 RANKING_DENOMINATOR = "max_recorded_action_lengths"
 REFERENCE_NAME = "frozen_starting_Bnormalized64"
 ARMS = ("P", "R")
-
-# These are intentionally aliases to the old backend's private replay seam.
-# The old producer's bytes remain independently bound by the preparation.
-_prepare_microbatches = source256._prepare_microbatches
-_batched_aligned_logits = source256._batched_aligned_logits
 
 # The parent requested these names as the narrow data boundary.
 load_data = data_source.load_data
@@ -504,7 +501,7 @@ def _forward_routes(
     require(len(routes) > 0 and len(routes) <= MICROBATCH_SIZE, "native microbatch route count")
     context = torch.no_grad() if no_grad else torch.enable_grad()
     with context:
-        groups, preparation = _prepare_microbatches(
+        groups, preparation = replay.prepare_microbatches(
             qwen,
             manifest,
             routes,
@@ -512,7 +509,7 @@ def _forward_routes(
             microbatch_size=MICROBATCH_SIZE,
         )
         require(len(groups) == 1 and len(groups[0]["routes"]) == len(routes), "one direct ranking microbatch")
-        logits, padding = _batched_aligned_logits(
+        logits, padding = replay.batched_aligned_logits(
             model,
             groups[0]["inputs"],
             groups[0]["routes"],
@@ -552,12 +549,12 @@ def build_reference_cache(manifest_path: Path, *, output: Path | None = None) ->
     rank, local_rank, world, device = _init_dist()
     started = time.monotonic()
     try:
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: (require(not cache_path.exists(), "reference cache already exists"), cache_path.parent.mkdir(parents=True, exist_ok=True)) if rank == 0 else None,
             phase="reference_output_setup",
         )
         dist.barrier()
-        qwen, loaded, model, _, _, _ = distributed._coordinated_call(
+        qwen, loaded, model, _, _, _ = distributed.coordinated_call(
             lambda: _load_model(manifest, device=device, train=False), phase="reference_model_setup"
         )
         pad_token_id = qwen.tokenizer.pad_token_id
@@ -586,8 +583,8 @@ def build_reference_cache(manifest_path: Path, *, output: Path | None = None) ->
                 local_calls += 1
                 local_forwards += len(selected)
                 local_padding += int(padding["history_padding_tokens"]) + int(preparation["prompt_padding_tokens"])
-        gathered = distributed._gather_objects(local_values)
-        receipts = distributed._gather_objects({"rank": rank, "local_routes": len(local), "model_calls": local_calls, "logical_model_forwards": local_forwards, "padding_tokens": local_padding})
+        gathered = distributed.gather_objects(local_values)
+        receipts = distributed.gather_objects({"rank": rank, "local_routes": len(local), "model_calls": local_calls, "logical_model_forwards": local_forwards, "padding_tokens": local_padding})
         if rank == 0:
             values = [row for rows in gathered for row in rows]
             require(len(values) == 30 and len({row["key"] for row in values}) == 30, "reference cache gathered routes")
@@ -606,7 +603,7 @@ def build_reference_cache(manifest_path: Path, *, output: Path | None = None) ->
             require(payload["counts"]["model_calls"] == 16, "reference cache call count")
         else:
             payload = None
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: training.publish(cache_path, payload) if rank == 0 else None,
             phase="reference_publish",
         )
@@ -634,6 +631,9 @@ def _dependency_bindings(manifest: Mapping[str, Any]) -> dict[str, Any]:
         "ranking_data": manifest["sources"]["data_producer"],
         "source256_training": training.binding(Path(source256.__file__)),
         "training_helpers": training.binding(Path(training.__file__)),
+        "artifact_primitives": training.binding(root / "probes/training_set_completion/artifacts.py"),
+        "native_replay_helpers": training.binding(root / "src/qwen/native.py"),
+        "batched_replay_helpers": training.binding(Path(replay.__file__)),
         "distributed_helpers": training.binding(Path(distributed.__file__)),
         "shared_geometry": training.binding(root / "src/losses/raw_axis_validity_hinge.py"),
     }
@@ -703,14 +703,14 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
         raise TimeoutError("ranking training wall budget")
 
     try:
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: (require(not output.exists(), "ranking output already exists"), output.mkdir(parents=True)) if rank == 0 else None,
             phase="training_output_setup",
         )
         dist.barrier()
         signal.signal(signal.SIGALRM, expired)
         signal.alarm(math.ceil(manifest["runtime"]["wall_seconds"]))
-        qwen, loaded, model, named, frozen, checkpointing = distributed._coordinated_call(
+        qwen, loaded, model, named, frozen, checkpointing = distributed.coordinated_call(
             lambda: _load_model(manifest, device=device, train=True), phase="training_model_setup"
         )
         optimizer = torch.optim.AdamW(
@@ -723,7 +723,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             T_max=manifest["scheduler"]["total_updates"],
             eta_min=manifest["optimizer"]["lr"] * manifest["scheduler"]["min_lr_ratio"],
         )
-        distributed._require_consensus(distributed.state_fingerprint(named, optimizer), label="ranking initial state")
+        distributed.require_consensus(distributed.state_fingerprint(named, optimizer), label="ranking initial state")
         pad_token_id = qwen.tokenizer.pad_token_id
         require(type(pad_token_id) is int and pad_token_id >= 0, "training pad token")
         dist.barrier()
@@ -876,7 +876,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                 require(all(parameter.grad is not None and bool(torch.isfinite(parameter.grad).all()) for _, parameter in named), "missing/nonfinite DoRA gradient")
                 require(all(parameter.grad is None for _, parameter in frozen), "frozen parameter received ranking gradient")
 
-            distributed._coordinated_call(forward_backward, phase=phase)
+            distributed.coordinated_call(forward_backward, phase=phase)
             distributed.sum_gradients_(named)
             raw_norm = float(torch.nn.utils.clip_grad_norm_([parameter for _, parameter in named], manifest["runtime"]["gradient_clip_norm"], error_if_nonfinite=True, foreach=False))
             applied_lr = float(optimizer.param_groups[0]["lr"])
@@ -886,7 +886,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             metric = torch.tensor([local_metric[key] for key in metric_keys], dtype=torch.float64, device=device)
             dist.all_reduce(metric, op=dist.ReduceOp.SUM)
             global_metric = {key: float(metric[index].item()) for index, key in enumerate(metric_keys)}
-            gathered_cards = distributed._gather_objects(local_cards)
+            gathered_cards = distributed.gather_objects(local_cards)
             cards = [card for rows in gathered_cards for card in rows]
             cards.sort(key=lambda card: card["presentation_index"])
             require(len(cards) == GLOBAL_PRESENTATIONS and [card["presentation_index"] for card in cards] == list(range(GLOBAL_PRESENTATIONS)), "ranking presentation cards")
@@ -897,7 +897,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             ranking_mean = global_metric["ranking_sum"] / GLOBAL_BRANCH_IMAGES
             p_total = 0.5 * (canonical_ce + GEOMETRY_WEIGHT * canonical_geometry + preferred_ce + GEOMETRY_WEIGHT * preferred_geometry)
             objective_total = p_total + (0.5 * ranking_mean if manifest["arm"] == "R" else 0.0)
-            rank_timings = distributed._gather_objects({"rank": rank, "local_presentations": 16, "local_model_calls": local_model_calls - local_calls_before, "local_logical_model_forwards": local_forwards - local_forwards_before, "history_padding_tokens": history_padding, "prompt_padding_tokens": prompt_padding, "elapsed_seconds": time.monotonic() - update_started, "resources": distributed._resource_receipt(device)})
+            rank_timings = distributed.gather_objects({"rank": rank, "local_presentations": 16, "local_model_calls": local_model_calls - local_calls_before, "local_logical_model_forwards": local_forwards - local_forwards_before, "history_padding_tokens": history_padding, "prompt_padding_tokens": prompt_padding, "elapsed_seconds": time.monotonic() - update_started, "resources": distributed.resource_receipt(device)})
             update_receipt = {
                 "schema": f"{SCHEMA}.update.v1",
                 "status": "completed",
@@ -930,13 +930,13 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     },
                 },
             }
-            distributed._coordinated_call(
+            distributed.coordinated_call(
                 lambda: training.publish(output / "updates" / f"step-{step:05d}.json", update_receipt) if rank == 0 else None,
                 phase=f"training_update_{step}_receipt",
             )
             if step in manifest["runtime"]["checkpoint_steps"]:
                 state = distributed.state_fingerprint(named, optimizer)
-                states = distributed._require_consensus(state, label=f"ranking checkpoint {step}")
+                states = distributed.require_consensus(state, label=f"ranking checkpoint {step}")
                 require(state["optimizer_steps"] == [step], "ranking optimizer step counter")
                 holder: dict[str, Any] = {}
 
@@ -944,10 +944,10 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     if rank == 0:
                         holder["receipt"] = _checkpoint_save(output=output, manifest_path=manifest_path, manifest=manifest, model=model, optimizer=optimizer, scheduler=scheduler, named=named, step=step)
 
-                distributed._coordinated_call(save, phase=f"ranking_checkpoint_{step}_save")
+                distributed.coordinated_call(save, phase=f"ranking_checkpoint_{step}_save")
                 dist.barrier()
                 consensus = {"step": step, "state": state, "rank_count": len(states)}
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     lambda: training.publish(output / "checkpoints" / f"step-{step:05d}" / "consensus.json", consensus) if rank == 0 else None,
                     phase=f"ranking_checkpoint_{step}_consensus",
                 )
@@ -965,10 +965,10 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             "local_model_calls": local_model_calls,
             "local_logical_model_forwards": local_forwards,
             "updates": manifest["runtime"]["updates"],
-            "resources": distributed._resource_receipt(device),
+            "resources": distributed.resource_receipt(device),
         }
-        rank_receipts = distributed._gather_objects(rank_receipt)
-        distributed._coordinated_call(lambda: training.publish(output / "ranks" / f"rank-{rank:03d}.json", rank_receipt), phase="ranking_rank_receipt")
+        rank_receipts = distributed.gather_objects(rank_receipt)
+        distributed.coordinated_call(lambda: training.publish(output / "ranks" / f"rank-{rank:03d}.json", rank_receipt), phase="ranking_rank_receipt")
         terminal = {
             "schema": f"{SCHEMA}.terminal.v1",
             "status": "completed",
@@ -1002,7 +1002,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                 "source_bindings": _dependency_bindings(manifest),
             },
         }
-        distributed._coordinated_call(lambda: training.publish(output / "terminal.json", terminal) if rank == 0 else None, phase="ranking_terminal")
+        distributed.coordinated_call(lambda: training.publish(output / "terminal.json", terminal) if rank == 0 else None, phase="ranking_terminal")
         dist.barrier()
         return terminal if rank == 0 else None
     except Exception as exc:
@@ -1052,13 +1052,13 @@ def likelihood(manifest_path: Path, *, checkpoint: Path, output: Path) -> dict[s
     rank, local_rank, world, device = _init_dist()
     started = time.monotonic()
     try:
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: (require(not output.exists(), "likelihood output already exists"), output.parent.mkdir(parents=True, exist_ok=True)) if rank == 0 else None,
             phase="likelihood_output_setup",
         )
         dist.barrier()
         config = checkpoint_config(InferConfig.model_validate(manifest["model_config"]), str(adapter))
-        qwen, loaded = distributed._coordinated_call(lambda: load_policy(config, device=device), phase="likelihood_model_setup")
+        qwen, loaded = distributed.coordinated_call(lambda: load_policy(config, device=device), phase="likelihood_model_setup")
         model = qwen.model
         model.eval()
         pad_token_id = qwen.tokenizer.pad_token_id
@@ -1073,8 +1073,8 @@ def likelihood(manifest_path: Path, *, checkpoint: Path, output: Path) -> dict[s
                     score, length, _ = _route_logp(logits, item["route"])
                     local_values.append({"key": item["key"], "logp_sum": float(score), "length": length})
                 local_calls += 1
-        gathered = distributed._gather_objects(local_values)
-        call_receipts = distributed._gather_objects({"rank": rank, "model_calls": local_calls, "logical_model_forwards": len(local)})
+        gathered = distributed.gather_objects(local_values)
+        call_receipts = distributed.gather_objects({"rank": rank, "model_calls": local_calls, "logical_model_forwards": len(local)})
         if rank == 0:
             values = [row for rows in gathered for row in rows]
             by_key = {row["key"]: row for row in values}
@@ -1098,7 +1098,7 @@ def likelihood(manifest_path: Path, *, checkpoint: Path, output: Path) -> dict[s
             require(payload["counts"]["model_calls"] == 16, "likelihood call count")
         else:
             payload = None
-        distributed._coordinated_call(lambda: training.publish(output, payload) if rank == 0 else None, phase="likelihood_publish")
+        distributed.coordinated_call(lambda: training.publish(output, payload) if rank == 0 else None, phase="likelihood_publish")
         dist.barrier()
         return payload if rank == 0 else None
     finally:

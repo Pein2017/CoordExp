@@ -7,6 +7,8 @@ It deliberately does not construct or repair Source prefixes.
 """
 from __future__ import annotations
 
+from probes.training_set_completion import replay
+
 from collections import Counter
 import copy
 from datetime import timedelta
@@ -18,12 +20,12 @@ import random
 import signal
 import socket
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 import torch.distributed as dist
 
-from probes.training_set_completion import coco227_training as previous
+from probes.training_set_completion import distributed
 from probes.training_set_completion import training
 
 
@@ -41,11 +43,6 @@ MIN_COMPLETION_PRESENTATIONS = 512
 REQUIRED_WORLD_SIZE = 4
 SOURCE_ADAPTER_FINGERPRINT = "b8ca2461c93bf32e886c9e42f7ab0e52495ef2d439a605207c86af7258408815"
 SOURCE_ADAPTER_SCALAR_COUNT = 18_006_016
-
-_batched_aligned_logits = previous._batched_aligned_logits
-_route_terms = previous._route_terms
-_prepare_microbatches = previous._prepare_microbatches
-distributed = previous.distributed
 
 
 def require(condition: bool, message: str) -> None:
@@ -503,8 +500,9 @@ def source_adapter_scalar_count(adapter: Mapping[str, Any]) -> int:
     return total
 
 
-def validate_training_manifest(
-    value: Mapping[str, Any], *, verify_sources: bool = True
+def validate_training_recipe(
+    value: Mapping[str, Any], *, manifest_schema: str,
+    producer_path: Path, verify_sources: bool = True,
 ) -> dict[str, Any]:
     """Validate one arm's lean manifest against its immutable preparation."""
 
@@ -525,7 +523,7 @@ def validate_training_manifest(
         "content_sha256",
     }
     require(set(value) == required, "training manifest fields")
-    require(value["schema"] == MANIFEST_SCHEMA, "training manifest schema")
+    require(value["schema"] == manifest_schema, "training manifest schema")
     require(
         value["content_sha256"]
         == training.digest({key: item for key, item in value.items() if key != "content_sha256"}),
@@ -543,7 +541,7 @@ def validate_training_manifest(
         for name, source in sources.items():
             require(training.binding(source["path"]) == source, f"{name} source changed")
         require(
-            Path(sources["producer"]["path"]).resolve() == Path(__file__).resolve(),
+            Path(sources["producer"]["path"]).resolve() == producer_path.resolve(),
             "training producer path",
         )
         require(
@@ -646,6 +644,16 @@ def validate_training_manifest(
         "runtime wall bound",
     )
     return dict(value)
+
+
+def validate_training_manifest(
+    value: Mapping[str, Any], *, verify_sources: bool = True
+) -> dict[str, Any]:
+    """Validate the original A/B recipe with its own producer identity."""
+    return validate_training_recipe(
+        value, manifest_schema=MANIFEST_SCHEMA, producer_path=Path(__file__),
+        verify_sources=verify_sources,
+    )
 
 
 def resolve_update_presentations(
@@ -782,7 +790,9 @@ def _dependency_bindings() -> dict[str, dict[str, Any]]:
     return {
         "data_consumer": training.binding(Path(source256_data.__file__)),
         "training_helpers": training.binding(Path(training.__file__)),
-        "batched_replay_helpers": training.binding(Path(previous.__file__)),
+        "artifact_primitives": training.binding(root / "probes/training_set_completion/artifacts.py"),
+        "native_replay_helpers": training.binding(root / "src/qwen/native.py"),
+        "batched_replay_helpers": training.binding(Path(replay.__file__)),
         "distributed_helpers": training.binding(Path(distributed.__file__)),
         "shared_geometry": training.binding(root / "src/losses/raw_axis_validity_hinge.py"),
     }
@@ -790,6 +800,7 @@ def _dependency_bindings() -> dict[str, dict[str, Any]]:
 
 def _rank_receipt(
     *,
+    receipt_schema: str,
     rank: int,
     local_rank: int,
     start_step: int,
@@ -800,7 +811,7 @@ def _rank_receipt(
     device: torch.device,
 ) -> dict[str, Any]:
     return {
-        "schema": f"{SCHEMA}.rank.v1",
+        "schema": f"{receipt_schema}.rank.v1",
         "status": "completed",
         "rank": rank,
         "local_rank": local_rank,
@@ -812,12 +823,25 @@ def _rank_receipt(
         "local_logical_forwards": local_forwards,
         "local_model_calls": local_model_calls,
         "elapsed_seconds": time.monotonic() - started,
-        "resources": distributed._resource_receipt(device),
+        "resources": distributed.resource_receipt(device),
     }
 
 
-def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
-    """Run one fresh Source256 arm under four-rank ``torchrun``."""
+def run_paired_training(
+    manifest_path: Path, *, output: Path, producer_path: Path, receipt_schema: str,
+    validate_manifest: Callable[..., dict[str, Any]],
+    resolve_presentations: Callable[..., list[dict[str, Any]]],
+    route_terms: Callable[..., tuple[torch.Tensor, torch.Tensor, int, dict[str, Any]]],
+    dependency_bindings: Mapping[str, Mapping[str, Any]],
+    enrich_update: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Execute the shared Source256 A/B and B-normalized four-rank recipe.
+
+    This is not a generic trainer. Population, partition, geometry, SUM,
+    scheduler and checkpoint semantics remain the fixed Source256 contract.
+    Variant-owned validation, routes, CE terms and update evidence are explicit;
+    no copied globals, module proxy or code-object transplantation is involved.
+    """
 
     from probes.dora_owner_learning.runtime import (
         bind_source256_language_dora,
@@ -830,12 +854,14 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
     )
 
     manifest_path = manifest_path.resolve(strict=True)
-    manifest = validate_training_manifest(json.loads(manifest_path.read_text()))
+    manifest = validate_manifest(json.loads(manifest_path.read_text()))
     prepared = validate_preparation(
         json.loads(Path(manifest["preparation"]["path"]).read_text())
     )
     hydrated_records = hydrate_bound_cases(prepared)
-    dependencies = _dependency_bindings()
+    dependencies = dict(dependency_bindings)
+    require(manifest["sources"]["producer"] == training.binding(producer_path),
+            "paired training execution producer differs from manifest")
     require(torch.cuda.is_available(), "Source256 distributed training requires CUDA")
     rank = int(os.environ.get("RANK", "-1"))
     local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
@@ -863,7 +889,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
         raise TimeoutError("Source256 distributed training wall budget")
 
     try:
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: (
                 require(not output.exists(), "attempt output already exists"),
                 output.mkdir(parents=True),
@@ -931,8 +957,8 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             checkpointing,
             optimizer,
             scheduler,
-        ) = distributed._coordinated_call(setup_model, phase=phase)
-        distributed._require_consensus(
+        ) = distributed.coordinated_call(setup_model, phase=phase)
+        distributed.require_consensus(
             distributed.state_fingerprint(named, optimizer), label="initial state"
         )
         pad_token_id = qwen.tokenizer.pad_token_id
@@ -943,7 +969,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
         for step in range(1, manifest["runtime"]["updates"] + 1):
             optimizer.zero_grad(set_to_none=True)
             update_started = time.monotonic()
-            presentations = resolve_update_presentations(
+            presentations = resolve_presentations(
                 hydrated_records,
                 prepared["schedule"]["updates"][step - 1],
                 arm=manifest["arm"],
@@ -964,7 +990,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                 for start in range(0, len(local), manifest["runtime"]["microbatch_size"]):
                     selected = local[start : start + manifest["runtime"]["microbatch_size"]]
                     routes = [row["route"] for row in selected]
-                    groups, preparation = _prepare_microbatches(
+                    groups, preparation = replay.prepare_microbatches(
                         qwen,
                         manifest,
                         routes,
@@ -973,7 +999,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     )
                     require(len(groups) == 1, "one runtime microbatch per preparation")
                     group = groups[0]
-                    logits_rows, padding = _batched_aligned_logits(
+                    logits_rows, padding = replay.batched_aligned_logits(
                         model,
                         group["inputs"],
                         group["routes"],
@@ -983,7 +1009,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     hinges: list[torch.Tensor] = []
                     branches: list[str] = []
                     for logits, presentation in zip(logits_rows, selected, strict=True):
-                        ce, hinge, active, card = _route_terms(
+                        ce, hinge, active, card = route_terms(
                             logits, presentation["route"], manifest["validity_hinge"]
                         )
                         branch = presentation["branch"]
@@ -1028,7 +1054,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     "frozen parameter received gradient",
                 )
 
-            distributed._coordinated_call(forward_backward, phase=phase)
+            distributed.coordinated_call(forward_backward, phase=phase)
             phase = f"update_{step}_gradient_sum"
             distributed.sum_gradients_(named)
             raw_norm = float(
@@ -1055,7 +1081,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                 device=device,
             )
             dist.all_reduce(metric, op=dist.ReduceOp.SUM)
-            gathered_cards = distributed._gather_objects(local_cards)
+            gathered_cards = distributed.gather_objects(local_cards)
             cards = [card for rows in gathered_cards for card in rows]
             order = {
                 row["presentation_id"]: index for index, row in enumerate(presentations)
@@ -1081,7 +1107,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                 * values["sample_equal_raw_geometry"]
                 for values in branch_metrics.values()
             )
-            rank_timings = distributed._gather_objects(
+            rank_timings = distributed.gather_objects(
                 {
                     "rank": rank,
                     "local_presentations": len(local),
@@ -1089,11 +1115,11 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     "history_padding_tokens": history_padding,
                     "prompt_padding_tokens": prompt_padding,
                     "elapsed_seconds": time.monotonic() - update_started,
-                    "resources": distributed._resource_receipt(device),
+                    "resources": distributed.resource_receipt(device),
                 }
             )
             update = {
-                "schema": f"{SCHEMA}.update.v1",
+                "schema": f"{receipt_schema}.update.v1",
                 "step": step,
                 "arm": manifest["arm"],
                 "image_presentations": 64,
@@ -1118,9 +1144,10 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     },
                 },
             }
-            distributed._coordinated_call(
+            distributed.coordinated_call(
                 lambda: training.publish(
-                    output / "updates" / f"step-{step:05d}.json", update
+                    output / "updates" / f"step-{step:05d}.json",
+                    update if enrich_update is None else enrich_update(update),
                 )
                 if rank == 0
                 else None,
@@ -1129,7 +1156,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             if step in manifest["runtime"]["checkpoint_steps"]:
                 phase = f"checkpoint_{step}"
                 state = distributed.state_fingerprint(named, optimizer)
-                states = distributed._require_consensus(
+                states = distributed.require_consensus(
                     state, label=f"checkpoint {step}"
                 )
                 require(state["optimizer_steps"] == [step], "optimizer counter")
@@ -1152,12 +1179,12 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                         torch.save(scheduler.state_dict(), scheduler_path)
                         holder["receipt"]["scheduler"] = training.binding(scheduler_path)
 
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     save_checkpoint, phase=f"checkpoint_{step}_save"
                 )
                 dist.barrier()
                 consensus = {"step": step, "state": state, "rank_count": len(states)}
-                distributed._coordinated_call(
+                distributed.coordinated_call(
                     lambda: training.publish(
                         output / "checkpoints" / f"step-{step:05d}" / "consensus.json",
                         consensus,
@@ -1171,6 +1198,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     checkpoints.append(holder["receipt"])
 
         receipt = _rank_receipt(
+            receipt_schema=receipt_schema,
             rank=rank,
             local_rank=local_rank,
             start_step=0,
@@ -1180,13 +1208,13 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
             started=started,
             device=device,
         )
-        receipts = distributed._gather_objects(receipt)
-        distributed._coordinated_call(
+        receipts = distributed.gather_objects(receipt)
+        distributed.coordinated_call(
             lambda: training.publish(output / "ranks" / f"rank-{rank:03d}.json", receipt),
             phase="rank_receipt",
         )
         terminal = {
-            "schema": f"{SCHEMA}.terminal.v1",
+            "schema": f"{receipt_schema}.terminal.v1",
             "status": "completed",
             "arm": manifest["arm"],
             "mode": manifest["mode"],
@@ -1213,12 +1241,12 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                     "post_collective_divisor": 1,
                 },
                 "source_bindings": {
-                    "training_backend": training.binding(Path(__file__)),
+                    "training_backend": training.binding(producer_path),
                     **dependencies,
                 },
             },
         }
-        distributed._coordinated_call(
+        distributed.coordinated_call(
             lambda: training.publish(output / "terminal.json", terminal)
             if rank == 0
             else None,
@@ -1232,7 +1260,7 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
                 training.publish(
                     output / "terminal.json",
                     {
-                        "schema": f"{SCHEMA}.terminal.v1",
+                        "schema": f"{receipt_schema}.terminal.v1",
                         "status": "failed",
                         "manifest": training.binding(manifest_path),
                         "phase": phase,
@@ -1251,6 +1279,16 @@ def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
         signal.signal(signal.SIGALRM, old_alarm)
         if dist.is_initialized():
             dist.destroy_process_group()
+
+
+def run(manifest_path: Path, *, output: Path) -> dict[str, Any] | None:
+    """Original Source256 A/B entry; variant choices are bound at the call site."""
+    return run_paired_training(
+        manifest_path, output=output, producer_path=Path(__file__),
+        receipt_schema=SCHEMA, validate_manifest=validate_training_manifest,
+        resolve_presentations=resolve_update_presentations,
+        route_terms=replay.route_terms, dependency_bindings=_dependency_bindings(),
+    )
 
 
 def main() -> None:

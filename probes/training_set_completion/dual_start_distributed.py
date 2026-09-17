@@ -7,19 +7,19 @@ therefore no collective inside the unequal 3/3/3/2 forward/backward loops.
 """
 from __future__ import annotations
 
+from probes.training_set_completion import distributed
+
 import argparse
-import hashlib
 import json
 import math
 import os
 import random
-import resource
 import signal
 import socket
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, TypeVar
+from typing import Any, Mapping, Sequence
 
 import torch
 import torch.distributed as dist
@@ -38,11 +38,6 @@ ALLOWED_SOURCE_ADAPTERS = {
 }
 COLLECTIVE_TIMEOUT_SECONDS = 600
 SCHEMA = "training_set_completion.dual_start_distributed.v1"
-T = TypeVar("T")
-
-
-class DistributedTrainingError(RuntimeError):
-    """A failure that every live rank has observed and accepted."""
 
 
 def require(condition: bool, message: str) -> None:
@@ -56,6 +51,9 @@ def dependency_bindings() -> dict[str, dict[str, Any]]:
     root = Path(__file__).resolve().parents[2]
     return {
         "training_helpers": training.binding(Path(training.__file__)),
+        "artifact_primitives": training.binding(root / "probes/training_set_completion/artifacts.py"),
+        "native_replay_helpers": training.binding(root / "src/qwen/native.py"),
+        "distributed_helpers": training.binding(Path(distributed.__file__)),
         "shared_raw_axis_validity_hinge": training.binding(root / "src/losses/raw_axis_validity_hinge.py"),
     }
 
@@ -112,120 +110,6 @@ def validate_distributed_contract(manifest: Mapping[str, Any]) -> dict[str, Any]
     return dict(manifest)
 
 
-def _coordination_device() -> torch.device:
-    return torch.device("cuda", torch.cuda.current_device()) if dist.get_backend() == "nccl" else torch.device("cpu")
-
-
-def raise_if_rank_failed(error: BaseException | None, *, phase: str) -> None:
-    """Propagate an ordinary local failure before starting the next collective phase."""
-    local_failed = torch.tensor([int(error is not None)], dtype=torch.int32, device=_coordination_device())
-    dist.all_reduce(local_failed, op=dist.ReduceOp.MAX)
-    if not int(local_failed.item()):
-        return
-    local_message = None if error is None else f"{type(error).__name__}: {error}"
-    messages: list[str | None] = [None] * dist.get_world_size()
-    dist.all_gather_object(messages, local_message)
-    failures = "; ".join(f"rank {rank}: {message}" for rank, message in enumerate(messages) if message is not None)
-    raise DistributedTrainingError(f"{phase} failed collectively: {failures}")
-
-
-def _coordinated_call(function: Callable[[], T], *, phase: str) -> T:
-    value: T | None = None
-    error: BaseException | None = None
-    try:
-        value = function()
-    except Exception as exc:
-        error = exc
-    raise_if_rank_failed(error, phase=phase)
-    return value  # type: ignore[return-value]
-
-
-def sum_gradients_(named: Sequence[tuple[str, torch.nn.Parameter]]) -> None:
-    """SUM already-global-normalized gradients in a fixed parameter order."""
-    preflight_error: BaseException | None = None
-    try:
-        for name, parameter in named:
-            if parameter.grad is None:
-                raise ValueError(f"missing local gradient before SUM: {name}")
-            if not bool(torch.isfinite(parameter.grad).all()):
-                raise ValueError(f"nonfinite local gradient before SUM: {name}")
-    except Exception as exc:
-        preflight_error = exc
-    raise_if_rank_failed(preflight_error, phase="gradient_sum_preflight")
-    for _, parameter in named:
-        dist.all_reduce(parameter.grad, op=dist.ReduceOp.SUM)
-    postflight_error: BaseException | None = None
-    try:
-        for name, parameter in named:
-            if not bool(torch.isfinite(parameter.grad).all()):
-                raise ValueError(f"nonfinite global gradient after SUM: {name}")
-    except Exception as exc:
-        postflight_error = exc
-    raise_if_rank_failed(postflight_error, phase="gradient_sum_postflight")
-
-
-def _hash_tensor(hasher: Any, *, name: str, tensor: torch.Tensor) -> None:
-    cpu = tensor.detach().cpu().contiguous()
-    hasher.update(training.canonical({"name": name, "shape": list(cpu.shape), "dtype": str(cpu.dtype)}))
-    hasher.update(cpu.reshape(-1).view(torch.uint8).numpy().tobytes())
-
-
-def state_fingerprint(
-    named: Sequence[tuple[str, torch.nn.Parameter]],
-    optimizer: torch.optim.Optimizer,
-) -> dict[str, Any]:
-    """Hash trainable parameters and Adam state without persisting per-rank copies."""
-    parameters = hashlib.sha256()
-    optimizer_state = hashlib.sha256()
-    steps: set[int] = set()
-    for name, parameter in named:
-        _hash_tensor(parameters, name=name, tensor=parameter)
-        state = optimizer.state.get(parameter, {})
-        optimizer_state.update(training.canonical({"parameter": name, "keys": sorted(state)}))
-        for key in sorted(state):
-            value = state[key]
-            if isinstance(value, torch.Tensor):
-                _hash_tensor(optimizer_state, name=f"{name}:{key}", tensor=value)
-                if key == "step" and value.numel() == 1:
-                    steps.add(int(value.item()))
-            else:
-                optimizer_state.update(training.canonical({"name": f"{name}:{key}", "value": value}))
-                if key == "step":
-                    steps.add(int(value))
-    return {
-        "parameter_sha256": parameters.hexdigest(),
-        "optimizer_sha256": optimizer_state.hexdigest(),
-        "optimizer_steps": sorted(steps),
-        "parameter_count": len(named),
-        "scalar_count": sum(parameter.numel() for _, parameter in named),
-    }
-
-
-def _gather_objects(value: T) -> list[T]:
-    values: list[T | None] = [None] * dist.get_world_size()
-    dist.all_gather_object(values, value)
-    return [item for item in values if item is not None]
-
-
-def _require_consensus(value: Mapping[str, Any], *, label: str) -> list[dict[str, Any]]:
-    values = _gather_objects(dict(value))
-    require(len(values) == dist.get_world_size(), f"{label} rank receipt missing")
-    require(len({training.digest(item) for item in values}) == 1, f"{label} differs across ranks")
-    return values
-
-
-def _resource_receipt(device: torch.device) -> dict[str, Any]:
-    receipt: dict[str, Any] = {
-        "peak_rss_kib": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
-    }
-    if device.type == "cuda":
-        receipt.update(
-            peak_cuda_allocated_bytes=int(torch.cuda.max_memory_allocated(device)),
-            peak_cuda_reserved_bytes=int(torch.cuda.max_memory_reserved(device)),
-        )
-    return receipt
-
-
 def _rank_receipt(
     *,
     rank: int,
@@ -252,7 +136,7 @@ def _rank_receipt(
         "terminal_step": terminal_step,
         "local_forwards": local_forwards,
         "elapsed_seconds": time.monotonic() - started,
-        "resources": _resource_receipt(device),
+        "resources": distributed.resource_receipt(device),
     }
 
 
@@ -296,7 +180,7 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                 require(not output.exists(), "attempt output already exists")
                 output.mkdir(parents=True)
 
-        _coordinated_call(prepare_output, phase=phase)
+        distributed.coordinated_call(prepare_output, phase=phase)
         dist.barrier()
         signal.signal(signal.SIGALRM, expired)
         signal.alarm(math.ceil(manifest["runtime"]["wall_seconds"]))
@@ -330,14 +214,14 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
             require(restored < manifest["runtime"]["updates"], "resume already reaches terminal step")
             return qwen, loaded, model, named, frozen, checkpointing, optimizer, restored
 
-        qwen, loaded, model, named, frozen, checkpointing, optimizer, start_step = _coordinated_call(setup_model, phase=phase)
-        initial_state = state_fingerprint(named, optimizer)
-        _require_consensus(initial_state, label="initial trainable/optimizer state")
+        qwen, loaded, model, named, frozen, checkpointing, optimizer, start_step = distributed.coordinated_call(setup_model, phase=phase)
+        initial_state = distributed.state_fingerprint(named, optimizer)
+        distributed.require_consensus(initial_state, label="initial trainable/optimizer state")
 
         route_indices = partition_route_indices(GLOBAL_IMAGE_COUNT, rank=rank, world_size=world_size)
         local_routes = [manifest["routes"][index] for index in route_indices]
         phase = "native_input_setup"
-        entries = _coordinated_call(
+        entries = distributed.coordinated_call(
             lambda: training._native_entries(qwen, {**manifest, "routes": local_routes}, device),
             phase=phase,
         )
@@ -363,9 +247,9 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                 require(all(parameter.grad is not None and bool(torch.isfinite(parameter.grad).all()) for _, parameter in named), "missing/nonfinite local DoRA gradients")
                 require(all(parameter.grad is None for _, parameter in frozen), "frozen parameter received gradient")
 
-            _coordinated_call(local_objectives, phase=phase)
+            distributed.coordinated_call(local_objectives, phase=phase)
             phase = f"train_update_{step}_gradient_sum"
-            sum_gradients_(named)
+            distributed.sum_gradients_(named)
 
             local_loss_sum = torch.tensor(
                 [sum(float(loss.item()) for loss in local_losses)],
@@ -374,7 +258,7 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
             )
             dist.all_reduce(local_loss_sum, op=dist.ReduceOp.SUM)
             global_objective_mean = float(local_loss_sum.item() / GLOBAL_IMAGE_COUNT)
-            gathered_cards = _gather_objects(local_cards)
+            gathered_cards = distributed.gather_objects(local_cards)
             cards = [card for rank_cards in gathered_cards for card in rank_cards]
             require([card["route_id"] for card in cards] == [route["route_id"] for route in manifest["routes"]], "gathered route order changed")
 
@@ -393,9 +277,9 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                 "local_forwards": local_forwards,
                 "local_objective_sum": sum(float(loss.item()) for loss in local_losses),
                 "elapsed_seconds": time.monotonic() - update_started,
-                "resources": _resource_receipt(device),
+                "resources": distributed.resource_receipt(device),
             }
-            rank_updates = _gather_objects(local_update_receipt)
+            rank_updates = distributed.gather_objects(local_update_receipt)
             update = {
                 "schema": f"{training.SCHEMA}.update.v1",
                 "step": step,
@@ -418,15 +302,15 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                     },
                 },
             }
-            _coordinated_call(
+            distributed.coordinated_call(
                 lambda: training.publish(output / "updates" / f"step-{step:05d}.json", update) if rank == 0 else None,
                 phase=f"train_update_{step}_receipt",
             )
 
             if step in manifest["runtime"]["checkpoint_steps"] or step == manifest["runtime"]["updates"]:
                 phase = f"checkpoint_{step}_consensus"
-                state = state_fingerprint(named, optimizer)
-                states = _require_consensus(state, label=f"checkpoint {step} trainable/optimizer state")
+                state = distributed.state_fingerprint(named, optimizer)
+                states = distributed.require_consensus(state, label=f"checkpoint {step} trainable/optimizer state")
                 require(state["optimizer_steps"] == [step], f"checkpoint {step} optimizer counter")
                 checkpoint_consensus.append({"step": step, "state": state, "rank_count": len(states)})
 
@@ -442,7 +326,7 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                             step=step,
                         ))
 
-                _coordinated_call(save_checkpoint, phase=f"checkpoint_{step}_save")
+                distributed.coordinated_call(save_checkpoint, phase=f"checkpoint_{step}_save")
                 dist.barrier()
 
         phase = "rank_receipts"
@@ -457,8 +341,8 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
             local_forwards=local_forwards,
             started=started,
         )
-        rank_receipts = _gather_objects(rank_receipt)
-        _coordinated_call(
+        rank_receipts = distributed.gather_objects(rank_receipt)
+        distributed.coordinated_call(
             lambda: training.publish(output / "ranks" / f"rank-{rank:03d}.json", rank_receipt),
             phase=phase,
         )
@@ -497,7 +381,7 @@ def run(manifest_path: Path, *, output: Path, resume: Path | None = None) -> dic
                 },
             },
         }
-        _coordinated_call(
+        distributed.coordinated_call(
             lambda: training.publish(output / "terminal.json", terminal) if rank == 0 else None,
             phase="terminal_publication",
         )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from probes.training_set_completion import distributed as shared_distributed
+
 import json
 from pathlib import Path
 
@@ -62,7 +64,7 @@ def _distributed_worker(rank: int, world_size: int, init_path: str, output: str)
             per_image_loss = torch.nn.functional.mse_loss(model(features), target)
             (per_image_loss / distributed.GLOBAL_IMAGE_COUNT).backward()
 
-        distributed.sum_gradients_(named)
+        shared_distributed.sum_gradients_(named)
         gradients = {name: parameter.grad.detach().tolist() for name, parameter in named}
         torch.nn.utils.clip_grad_norm_(
             [parameter for _, parameter in named],
@@ -71,7 +73,7 @@ def _distributed_worker(rank: int, world_size: int, init_path: str, output: str)
             foreach=False,
         )
         optimizer.step()
-        state = distributed.state_fingerprint(named, optimizer)
+        state = shared_distributed.state_fingerprint(named, optimizer)
         parameters = {name: parameter.detach().tolist() for name, parameter in named}
         states = [None] * world_size
         dist.all_gather_object(states, state)
@@ -82,8 +84,8 @@ def _distributed_worker(rank: int, world_size: int, init_path: str, output: str)
             named[-1][1].grad = None
         coordinated_error = None
         try:
-            distributed.sum_gradients_(named)
-        except distributed.DistributedTrainingError as exc:
+            shared_distributed.sum_gradients_(named)
+        except shared_distributed.DistributedTrainingError as exc:
             coordinated_error = str(exc)
 
         Path(output, f"rank-{rank}.json").write_text(
@@ -138,7 +140,7 @@ def test_real_multiprocess_sum_matches_serial_global_image_mean_and_fails_closed
 
     torch.nn.utils.clip_grad_norm_(serial.parameters(), 1.0, error_if_nonfinite=True, foreach=False)
     serial_optimizer.step()
-    serial_state = distributed.state_fingerprint(tuple(serial.named_parameters()), serial_optimizer)
+    serial_state = shared_distributed.state_fingerprint(tuple(serial.named_parameters()), serial_optimizer)
     parameter_max_abs_diff = 0.0
     for rank_result in rank_results:
         for name, expected in serial.named_parameters():

@@ -1,6 +1,9 @@
 """CPU contracts for the dual-start trial packet and durable readback seam."""
 from __future__ import annotations
 
+from src.runtime.owned_process import terminate_owned_process
+
+
 import copy
 import subprocess
 import time
@@ -205,7 +208,7 @@ def test_readback_deadline_is_absolute_from_each_spawn_and_kills_owned_process()
         d.wait_owned_processes(entries, wall_seconds=.15)
     elapsed = time.monotonic() - started
     assert elapsed < .35
-    d._owned_kill(second)
+    terminate_owned_process(second)
 
 
 def test_deadline_accepts_child_that_finished_before_observation_even_if_deadline_passed():

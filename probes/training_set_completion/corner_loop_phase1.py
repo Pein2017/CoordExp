@@ -7,7 +7,7 @@ from src.config.inference import InferConfig
 from probes.dora_owner_learning.runtime import load_policy
 from src.inference.bound_requests import build_bound_native_requests
 from src.qwen.native import prepare_native_inputs,exact_history_inputs
-from probes.owner_successor_scale.replay import _combine_native_inputs
+from src.qwen.native import combine_singleton_native_inputs
 
 ROOT=Path('/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-mechanism')
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
@@ -80,7 +80,7 @@ def execute(label,iid):
     tokens=row['tokens'];ids=prompt+history+tokens
     recomputed,pos=full(ids,keep=len(tokens)+1);f=recomputed[0,:-1]
     again,_=full(ids,keep=len(tokens)+1);noop=float((again[0,:-1]-f).abs().max())
-    native4=_combine_native_inputs([{'inputs':batch.inputs,'prompt_ids':prompt}]*4)
+    native4=combine_singleton_native_inputs([batch.inputs]*4,prompt_token_ids=[prompt]*4)
     four,_=full(ids,native_inputs=native4,rows=4,keep=len(tokens)+1);shape_delta=float((four[0,:-1]-f).abs().max())
     branch=copy.deepcopy(cache);v=current.clone();cached=[];rowpositions=[]
     for j,t in enumerate(tokens):

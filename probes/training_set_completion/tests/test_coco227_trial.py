@@ -118,7 +118,6 @@ def test_completed_endpoint_collection_receives_trial_and_teacher_bindings(
     assert calls[0]["qualification_result"] == qualification
 
 
-
 def test_controller_timeout_reaps_all_active_workers_and_preserves_failure_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
@@ -205,7 +204,7 @@ def test_controller_timeout_reaps_all_active_workers_and_preserves_failure_recor
         process.killed = True
 
     monkeypatch.setattr(trial, "_spawn", spawn)
-    monkeypatch.setattr(trial.dual_start, "_owned_kill", kill)
+    monkeypatch.setattr(trial, "terminate_owned_process", kill)
 
     with pytest.raises(TimeoutError, match="global readback phase timeout"):
         trial.controller(trial_path=trial_path, output=output, release_path=release_path)
@@ -254,8 +253,8 @@ def test_training_qualification_timeout_reaps_owned_worker(
     process = Process()
     monkeypatch.setattr(trial.subprocess, "Popen", lambda *args, **kwargs: process)
     monkeypatch.setattr(
-        trial.dual_start,
-        "_owned_kill",
+        trial,
+        "terminate_owned_process",
         lambda owned: setattr(owned, "killed", True),
     )
 

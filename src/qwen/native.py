@@ -230,6 +230,48 @@ def padded_histories(
     return ids, mask
 
 
+def combine_singleton_native_inputs(
+    input_rows: Sequence[Mapping[str, Any]], *,
+    prompt_token_ids: Sequence[Sequence[int]], pad_token_id: int = 0,
+) -> dict[str, Any]:
+    """Combine singleton materializations without guessing non-tensor semantics."""
+    import torch
+
+    if not input_rows or len(input_rows) != len(prompt_token_ids):
+        raise ValueError("native input/prompt cardinality differs or is empty")
+    history_keys = frozenset({"input_ids", "attention_mask", "position_ids", "token_type_ids",
+                              "cache_position", "rope_deltas", "past_key_values", "inputs_embeds"})
+    for inputs in input_rows:
+        if not isinstance(inputs, Mapping):
+            raise ValueError("batched replay entry lacks materialized inputs")
+        input_ids = inputs.get("input_ids")
+        if not isinstance(input_ids, torch.Tensor) or input_ids.ndim != 2 or input_ids.shape[0] != 1:
+            raise ValueError("batched replay requires singleton materialized input_ids")
+    keys = set(input_rows[0])
+    if any(set(row) != keys for row in input_rows[1:]):
+        raise ValueError("batched replay materializations have different native fields")
+    if "image_grid_thw" not in keys:
+        raise ValueError("batched replay requires native image_grid_thw")
+
+    result: dict[str, Any] = {}
+    for key in keys - history_keys:
+        values = [row[key] for row in input_rows]
+        if not all(isinstance(value, torch.Tensor) for value in values):
+            raise ValueError(f"batched replay cannot combine non-tensor native field: {key}")
+        tensors = [value for value in values if isinstance(value, torch.Tensor)]
+        if not all(tensor.ndim >= 1 for tensor in tensors):
+            raise ValueError(f"batched replay cannot combine scalar native field: {key}")
+        try:
+            result[key] = torch.cat(tensors, dim=0)
+        except RuntimeError as exc:
+            raise ValueError(f"batched replay cannot concatenate native field: {key}") from exc
+
+    # ``exact_history_inputs`` only needs this source field for its batch-size
+    # assertion before it replaces it with the exact replay histories.
+    result["input_ids"], _ = padded_histories(prompt_token_ids, pad_token_id=pad_token_id)
+    return result
+
+
 def _checked_token_ids(values: Sequence[int]) -> tuple[int, ...]:
     ids = tuple(values)
     if any(isinstance(i, bool) or not isinstance(i, int) or i < 0 for i in ids):

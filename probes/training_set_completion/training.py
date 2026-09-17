@@ -6,9 +6,10 @@ positions; it never parses text to infer a target or repairs a supplied box.
 """
 from __future__ import annotations
 
+from probes.training_set_completion.artifacts import canonical, digest, file_hash
+
 import argparse
 import copy
-import hashlib
 import json
 import math
 import os
@@ -40,22 +41,6 @@ DEFAULT_OPTIMIZER = {"lr": 1e-5, "betas": [0.9, 0.999], "eps": 1e-8, "weight_dec
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
-
-
-def canonical(value: Any) -> bytes:
-    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
-
-
-def digest(value: Any) -> str:
-    return hashlib.sha256(canonical(value)).hexdigest()
-
-
-def file_hash(path: str | Path) -> str:
-    h = hashlib.sha256()
-    with Path(path).open("rb") as source:
-        for block in iter(lambda: source.read(8 << 20), b""):
-            h.update(block)
-    return h.hexdigest()
 
 
 def binding(path: str | Path) -> dict[str, Any]:

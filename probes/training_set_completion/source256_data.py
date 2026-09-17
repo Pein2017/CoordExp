@@ -8,6 +8,8 @@ rebuilds the same manifest against the updated bank.  It never calls a model.
 
 from __future__ import annotations
 
+from probes.training_set_completion.artifacts import canonical, file_hash
+
 import argparse
 import collections
 import hashlib
@@ -82,26 +84,11 @@ def require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
-def canonical(value: Any) -> bytes:
-    return (
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        + "\n"
-    ).encode()
-
-
 def digest(value: Any, *, newline: bool = True) -> str:
     payload = canonical(value) if newline else json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode()
     return hashlib.sha256(payload).hexdigest()
-
-
-def file_hash(path: str | Path) -> str:
-    result = hashlib.sha256()
-    with Path(path).open("rb") as source:
-        for block in iter(lambda: source.read(8 << 20), b""):
-            result.update(block)
-    return result.hexdigest()
 
 
 def binding(path: str | Path) -> dict[str, Any]:

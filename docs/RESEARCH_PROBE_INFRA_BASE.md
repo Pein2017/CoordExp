@@ -6,7 +6,7 @@ status: canonical
 domain: research
 summary: Direct research execution and optional integrity capabilities at their existing owners.
 tags: [research, probes, artifacts, inference]
-updated: 2026-09-15
+updated: 2026-09-17
 ---
 
 # Research Probe Infrastructure Base
@@ -46,6 +46,8 @@ local scientific configuration, not a global runtime class or registry.
 | Adapter-only serialization | `src.adapters.dora.save_dora_adapter_payload` | Trainable-surface choice, optimizer state and checkpoint-selection semantics |
 | Deterministic tensor/layout identity | `src.runtime.model_state` | Which tensors constitute a scientific state or acceptance criterion |
 | Owned-child completion wait | `src.runtime.process_completion` | Which jobs may launch/retry, GPU allocation, scientific deadline and continuation policy |
+| Owned-child spawn, absolute wait and termination | `src.runtime.owned_process` | Explicit command/cwd/environment, resource assignment and recovery policy; only newly owned child handles |
+| Singleton native materialization combination | `src.qwen.native.combine_singleton_native_inputs` | Literal ordered prompts and compatible media fields; no research route or mask selection |
 | Packed training | `src.training`, `src.runtime`, `src.supervision`, `src.packing` | Selected training config, loss and synchronization contract |
 | Simple validated result publication | `src.artifacts.publish_json_exclusive` | Payload meaning and an absent final output path |
 
@@ -237,7 +239,7 @@ new direction from copying an old experiment's machinery.
 - `parallel_owner_research`: conditional-credit/composition and owner-preservation lanes.
 - `native_owner_scale`: scaled owner supply, state probes and independent evaluation.
 - `owner_successor_scale`: credible-successor supply, conditional credit and replay throughput.
-- `training_set_completion`: acquisition, reviewed teacher construction, CE training, natural readback and physical evaluation.
+- [Training-set completion](../probes/training_set_completion/README.md): acquisition, reviewed teacher construction, CE training, natural readback and physical evaluation; shared replay/distributed owners and historical-source migration boundaries.
 
 Maintained direction tests live beside their package and are discovered by
 `python -m pytest -q probes`. Saved-input row-cross checks additionally require
