@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-endpoint-loop-natural-readout-norm",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead_accepted_two_natural_recoveries_one_persistent_loop_healthy_retained",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-endpoint-loop-natural-readout-norm/unit.md",
+  "result": "research/experiments/2026-09-16-endpoint-loop-natural-readout-norm/results.md",
+  "state_source": "research/experiments/2026-09-16-endpoint-loop-natural-readout-norm/results.md",
+  "boundary": "4 original images,4 original native groups,identity+single normalized policy,no supplied history",
+  "not_authorized": [
+    "normalization variants",
+    "training",
+    "new images",
+    "parameter/KV interventions",
+    "agents",
+    "automatic successor"
+  ],
+  "next_action": "CLOSED. Overnight endpoint-loop diagnostic series is consolidated and stopped. No live owned jobs or follow-up launch. No normalization variant, training, deployment or population-level promotion; a genuinely new decision-changing question needs a separate lead contract.",
+  "lead_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-endpoint-loop-natural-readout-norm/lead-acceptance.json"
+}

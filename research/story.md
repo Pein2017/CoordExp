@@ -2,7 +2,7 @@
 title: From object support to a learned set-completion policy
 role: research-story
 authority: non_normative_research
-updated: 2026-09-15
+updated: 2026-09-17
 ---
 # The research story
 
@@ -62,11 +62,31 @@ Neither fact uniquely identified historical missing-label causality, exposure bi
 
 ## 6. The user chose a training-first cumulative question
 
-Rather than continuing to test tiny local fixes against an early generalization veto, the user chose a versioned trusted set: GT plus verified old/new physical owners, coherent route learning, and stage completion before image growth. The [original task record](../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/unit.md) preserves every phase and correction; the [current result](experiments/2026-09-14-training-set-completion-curriculum/results.md) owns the accepted fourth-fit comparison.
+Rather than continuing to test tiny local fixes against an early generalization veto, the user chose a versioned trusted set: GT plus verified old/new physical owners, coherent route learning, and stage completion before image growth. The [original task record](../docs/history/research-records/2026-09-15/investigations/qwen3-vl-dense-enumeration/experiments/2026-09-14-training-set-completion-curriculum/unit.md) preserves every phase and correction; the [fourth-fit result](experiments/2026-09-14-training-set-completion-curriculum/results.md) is an accepted intermediate comparison.
 
 More updates on the unchanged CE recipe substantially improved natural coverage, invalid-output burden and stopping. Some owners and clean-image completions were gained, but one image lost old owners and the overall stage remained incomplete. The teacher-forced expected-coordinate hinge reached zero while greedy geometry errors remained. Lower loss was useful evidence of learning, not a completion certificate or a diagnosis of the remaining mechanism.
 
-The latest unmatched-only review policy changed how physical summaries are formed. Its frozen training target and supplemental all-known population must remain separate. This is why the old experiment history cannot be flattened into one leaderboard or one timeless meaning of “strict owner.”
+That stage's unmatched-only review policy changed how physical summaries were formed. Its frozen training target and supplemental all-known population remain separate. This is why the old experiment history cannot be flattened into one leaderboard or one timeless meaning of “strict owner.”
+
+Later [paired-start fitting](experiments/2026-09-14-training-set-completion-curriculum/dual-start-results.md) and [sample/token CE normalization](experiments/2026-09-15-coco227-ce-normalization/results.md) reached clean227/227, followed by [22-image cumulative fitting](experiments/2026-09-15-coco22-cumulative-expansion/results.md) at376/376 with old227 retained. The latter completed at saved128/256; its conditional Source arm was not needed. These close the finite fixed-teacher question at those scales. They do not identify whether extra labels or self-rollout history caused the benefit, establish an online-refresh advantage, or make full annotation a prerequisite for further research.
+
+## 7. Learning useful continuations still incurred preservation costs
+
+The [direction workshop](experiments/2026-09-16-research-direction-workshop/results.md) restored the original aim: reduce physical misses under incomplete labels, then learn useful discovery into natural greedy. The [Source256 fixed-history comparison](experiments/2026-09-16-source256-fixed-prefix-completion/results.md) passed its scarcity gate but did not beat canonical learning at the fixed dose. [CE normalization](experiments/2026-09-16-source256-completion-ce-normalization/results.md) reduced forgetting and output errors while reducing gains too. These are completed matched learning tests, not an isolated fixed-versus-online-refresh comparison.
+
+[Complete-output ranking repair](experiments/2026-09-16-source256-output-ranking-repair/results.md) improved some train/dev FN measures but failed the joint promotion gate: reference-external coverage deteriorated, repetitions increased, and many starting gained identities were replaced. Better local coverage therefore did not imply a stable retained set. The next question became why a model with available object support re-enters concentrated repetitive trajectories.
+
+## 8. Readout control changes trajectories, without identifying the full loop cause
+
+The [corner-loop diagnosis](experiments/2026-09-16-corner-loop-mechanism/results.md) and [readout/state decomposition](experiments/2026-09-16-endpoint-loop-readout-state/results.md) narrowed simple cache mismatch and newly changed coordinate-embedding explanations. Selected one-bin edits failed; whole-row category/extent bridges temporarily released owners but relapsed. Effective output-row norms could change particular winning coordinates, including legitimate border decisions, while many endpoint wins survived equalization.
+
+A fixed output-only norm policy then rescued two [original-image, empty-prefix cases](experiments/2026-09-16-endpoint-loop-natural-readout-norm/results.md). In [fresh128](experiments/2026-09-17-readout-norm-fresh128/results.md), invalid rows fell476→5, strict repeat rows604→40 and caps2→0, but known matches578→592 included30 gains and16 losses. Healthy119 images netted only+1; nine abnormal images netted+13. The image-bootstrap interval included zero and selective physical review was incomplete. This is accepted inference evidence for structural improvement, not a population physical-recall claim or a promoted global policy. Later shadow changes also prevent treating the exact rescued routes as the consequence of only one early edit.
+
+## 9. Human review shifts attention toward distinct-owner progress
+
+The user's [fresh128 image review and the replayed CPU census](experiments/2026-09-17-readout-norm-fresh128/human-review-duplication-discussion.md) change the practical priority. Many nonduplicate unmatched predictions appear to be real objects; annotation extent, visibility and part/group granularity account for further ambiguity. These observations are not a measured population rate or automatic label admission. The overlay's overlap-pair hints must be separated from exact repeated rows and repeated physical identity. Most strict repeats were concentrated in a few images, so category totals do not establish a category-specific mechanism or annotation-origin cause.
+
+The proposed next discriminator is whether a complete-row change at a naturally reached confirmed recurrence restores **subsequent free distinct-owner enumeration**, while retaining credible old and unlabeled owners. A same-owner alternative row is an important control for a distinct-owner row; the supplied owner earns no recovery credit. This proposal is unlaunched. It must retain the older spatial-history counterexample and failed dedup-to-recovery shortcuts: fewer repeats can also mean jitter, invalid boxes or premature EOS. Co-DETR remains optional screening support; neither exhaustive GT completion nor a new training sweep is the default next step.
 
 ## The unresolved problem is structured, not one missing module
 

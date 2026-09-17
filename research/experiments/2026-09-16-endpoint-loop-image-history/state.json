@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-endpoint-loop-image-history",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead_accepted_visual_input_changes_loop_form_no_donor_known_recovery",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-endpoint-loop-image-history/unit.md",
+  "result": "research/experiments/2026-09-16-endpoint-loop-image-history/results.md",
+  "state_source": "research/experiments/2026-09-16-endpoint-loop-image-history/results.md",
+  "boundary": "One qualified donor x C00/C10; one mechanical identity; primary free-only own-bank matching",
+  "not_authorized": [
+    "additional donors or cells",
+    "training",
+    "KV/embedding changes",
+    "agents",
+    "automatic successor"
+  ],
+  "next_action": "CLOSED. Lead selected a separate natural-empty-prefix output-row-norm intervention on the original three failure cases plus healthy7116, under overnight authorization. No donor or K sweep.",
+  "lead_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-endpoint-loop-image-history/lead-acceptance.json"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-corner-loop-bridge-factorial",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "single_edits_recover16_then_endpoint_relapse",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-corner-loop-bridge-factorial/unit.md",
+  "state_source": "research/experiments/2026-09-16-corner-loop-bridge-factorial/results.md",
+  "result": "research/experiments/2026-09-16-corner-loop-bridge-factorial/results.md",
+  "boundary": "477415/R16 row137 fixed category x y1 2x2; exact original bs4; exclude supplied137 matching credit; phase only.",
+  "not_authorized": [
+    "training/checkpoint/annotation/loss changes",
+    "additional rows/images/seeds/doses/backends",
+    "KV/embedding interventions",
+    "next causal phase without lead decision"
+  ],
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-bridge-factorial/lead-acceptance.json",
+  "next_action": "STOP this four-cell phase. Lead accepted transient recovery with endpoint relapse. Any single-control continuation uses a separate contract under the user's autonomous diagnosis grant."
+}

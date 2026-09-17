@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-17-owner-recurrence-row-branch",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead-accepted bounded conditional bird route release; no precision-preserving repair or mechanism/policy promotion",
+  "state_as_of": "2026-09-17",
+  "protocol": "research/experiments/2026-09-17-owner-recurrence-row-branch/unit.md",
+  "result": "research/experiments/2026-09-17-owner-recurrence-row-branch/results.md",
+  "state_source": "research/experiments/2026-09-17-owner-recurrence-row-branch/results.md",
+  "boundary": "Fixed two executable cases and one HOLD; independently accepted saved evidence. No new execution.",
+  "not_authorized": [
+    "training",
+    "cohort expansion",
+    "annotation changes",
+    "new scientific controls",
+    "global decode policy promotion"
+  ],
+  "next_action": "Closed. Matched-displacement covered-owner control remains a proposal; no automatic successor."
+}

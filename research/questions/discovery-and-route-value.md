@@ -14,7 +14,9 @@ The later [natural opportunity census](../../docs/history/research-records/2026-
 
 Keep three identities distinct: the physical owner, its literal row, and the exact conditioning history. Multiple rows can represent one owner; a literal coordinate change can be harmless; one target can be useful after one history and harmful after another. Preserve remaining token budget and full consequence policy as part of a witness.
 
-Unknown spans may remain as literal conditions without direct positive supervision. Removing them changes the state, so the old suffix evidence no longer certifies the new route. Conversely, requiring every candidate already be greedy or every full route already be perfect would exclude precisely the repair obligations the training-first task is meant to learn.
+Unknown spans may remain as literal conditions without direct positive supervision. Removing them changes the state, so the old suffix evidence no longer certifies the new route. Conversely, requiring every candidate already be greedy or every full route already be perfect would exclude the repair obligations of a continuation-learning task. Context admission and learning credit still require separate decisions; masking an unknown span does not remove its influence.
+
+The [closed Source256 fixed-history comparison](../experiments/2026-09-16-source256-fixed-prefix-completion/results.md) passed its candidate-scarcity gate but did not establish learning superiority. Its later normalization/ranking successors do not isolate online refresh. The [fresh128 human-review discussion](../experiments/2026-09-17-readout-norm-fresh128/human-review-duplication-discussion.md) instead proposes reusing already-supported rows at confirmed recurrence and evaluating their complete free consequences. Discovery support is an input to this contrast; the supplied owner is not itself a recovered free owner, and full annotation is not a prerequisite.
 
 ## Reopening conditions
 

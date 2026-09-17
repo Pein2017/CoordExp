@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-17-readout-norm-fresh128",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "modest_known_gain_debt_reduction_with_turnover_physical_unresolved_no_promotion",
+  "state_as_of": "2026-09-17",
+  "protocol": "research/experiments/2026-09-17-readout-norm-fresh128/unit.md",
+  "result": "research/experiments/2026-09-17-readout-norm-fresh128/results.md",
+  "state_source": "research/experiments/2026-09-17-readout-norm-fresh128/results.md",
+  "boundary": "128 paired fresh images;4 separate diagnostics; selective partial visual review after explicit user stop",
+  "not_authorized": [
+    "training",
+    "coefficient sweep",
+    "new labels or bank admission",
+    "automatic successor"
+  ],
+  "next_action": "Experiment closed and lead-accepted; no model run, training, sweep or successor. Separately authorized human-review exports continue in the worker task without changing frozen scoring."
+}

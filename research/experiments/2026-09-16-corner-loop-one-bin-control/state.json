@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-corner-loop-one-bin-control",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead_accepted_Y998_insufficient_exact_C00_free_suffix",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-corner-loop-one-bin-control/unit.md",
+  "state_source": "research/experiments/2026-09-16-corner-loop-one-bin-control/results.md",
+  "result": "research/experiments/2026-09-16-corner-loop-one-bin-control/results.md",
+  "boundary": "Exactly one Y998 cell at original477415/R16 first136 rows; reuse accepted factorial controls; no supplied137 credit.",
+  "not_authorized": [
+    "training/labels/loss/checkpoint changes",
+    "control GPU reruns absent concrete conflict",
+    "additional rows/images/seeds/doses or follow-up arms",
+    "embedding/KV interventions"
+  ],
+  "lead_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-one-bin-control/lead-acceptance.json",
+  "next_action": "CLOSED. Lead approved one separate matched y1:999->998 unit under autonomous-diagnosis authorization; stop local coordinate substitution series after that comparison."
+}

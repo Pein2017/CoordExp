@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-corner-loop-y1-one-bin-control",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead_accepted_both_tested_one_bin_edits_insufficient_exact_C00_suffix",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-corner-loop-y1-one-bin-control/unit.md",
+  "result": "research/experiments/2026-09-16-corner-loop-y1-one-bin-control/results.md",
+  "state_source": "research/experiments/2026-09-16-corner-loop-y1-one-bin-control/results.md",
+  "boundary": "One Y1_998 cell; inherited controls; supplied137 zero credit; final local substitution control.",
+  "not_authorized": [
+    "further controls or successor",
+    "training/labels/loss",
+    "embedding/KV edits",
+    "subagents"
+  ],
+  "next_action": "CLOSED. Local coordinate-substitution series stopped. The user subsequently authorized overnight first-principles mechanism diagnosis; any such work owns a separate frozen unit and does not reopen this result.",
+  "lead_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-y1-one-bin-control/lead-acceptance.json"
+}

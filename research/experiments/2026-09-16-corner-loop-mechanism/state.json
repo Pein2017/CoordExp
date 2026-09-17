@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-corner-loop-mechanism",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "conditional_exit_retained_no_material_parity_failure",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-corner-loop-mechanism/unit.md",
+  "state_source": "research/experiments/2026-09-16-corner-loop-mechanism/results.md",
+  "result": "research/experiments/2026-09-16-corner-loop-mechanism/results.md",
+  "acceptance_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-corner-loop-mechanism/lead-acceptance.json",
+  "boundary": "Phase1 fixed-history slot and cache parity evidence accepted on three images and three checkpoints. Conditional exit preferences are retained; natural access, a full free suffix and causal mechanism remain untested.",
+  "not_authorized": ["phase2 token-forcing or KV/embedding intervention without a new phase decision", "training or coefficient/dose/seed sweeps", "annotation changes", "promotion from conditional evidence"],
+  "next_action": "STOP. Phase1 accepted. One bridge-sufficiency pair proposed for lead/user discussion; no phase2 launched."
+}

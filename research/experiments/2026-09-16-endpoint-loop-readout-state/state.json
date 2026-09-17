@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unit_id": "2026-09-16-endpoint-loop-readout-state",
+  "lifecycle": "closed",
+  "evidence": "accepted",
+  "disposition": "lead_accepted_norm_contribution_not_sufficient_state_alignment_persists",
+  "state_as_of": "2026-09-16",
+  "protocol": "research/experiments/2026-09-16-endpoint-loop-readout-state/unit.md",
+  "result": "research/experiments/2026-09-16-endpoint-loop-readout-state/results.md",
+  "state_source": "research/experiments/2026-09-16-endpoint-loop-readout-state/results.md",
+  "boundary": "36 fixed forwards,144 slots,9 cells; conditional mechanism diagnostic only",
+  "not_authorized": [
+    "training",
+    "new causal interventions",
+    "coordinate sweep",
+    "new agents",
+    "automatic successor"
+  ],
+  "next_action": "CLOSED. Under overnight autonomous-diagnosis authorization, lead selected a separate fixed-history x natural-image maintenance contrast. No K transplant or decoder repair is authorized by this result.",
+  "lead_receipt": "/data/CoordExp/outputs/research/qwen3-vl-dense-enumeration/2026-09-16-endpoint-loop-readout-state/lead-acceptance.json"
+}
