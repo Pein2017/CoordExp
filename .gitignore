@@ -12,7 +12,6 @@
 !ops/
 !repo_lifecycle/
 !scripts/
-!codex-wake-me-up/
 !codex-usage-ledger/
 !manifests/
 !openspec/
@@ -32,7 +31,6 @@
 !ops/**
 !repo_lifecycle/**
 !scripts/**
-!codex-wake-me-up/**
 !codex-usage-ledger/**
 !manifests/**
 !openspec/**
@@ -54,6 +52,7 @@
 # Hard local-only workspace roots. These patterns are intentionally explicit
 # even though the repo uses an allowlist, so future allowlist edits do not
 # accidentally surface runtime state, secrets, checkpoints, or external clones.
+/codex-wake-me-up/
 /output/
 /outputs/
 /output_remote/
